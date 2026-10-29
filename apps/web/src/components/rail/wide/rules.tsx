@@ -10,12 +10,12 @@
 // every tier) asks for a second, explicit tap.
 // The rules live in <root>/.ai/lens-scan/work/bp-rules.json: every agent door honours them, and Personas reads the file.
 import { useEffect, useMemo, useState } from 'react';
-import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type Rule, type RuleKind } from '@bp/core/scan/rules';
+import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
 import { revokeRule, setRule, useRules, type DraftBody } from '@/lib/rules/client';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Evidence, Now, Verdict, useReplay } from './rules-evidence';
-import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 
 const WRITE = 'rules:write';
 const KINDS: { k: RuleKind; head: string; sub: string }[] = [
@@ -59,10 +59,10 @@ export function LiveRules({ slug }: { slug: string }) {
   useEffect(() => () => E.setOrdHi(null), [E]);
 
   const row = (r: Rule) => (
-    <Row key={r.id} id={r.id} on={cur === r.id} onPick={() => setSel(r.id)} cls={'rl-k-' + r.kind + (isLive(r, now) ? '' : ' rl-ended')} label={r.id + ': ' + r.text}>
+    <Row key={r.id} id={r.id} on={cur === r.id} onPick={() => setSel(r.id)} cls={'rl-k-' + r.kind + (isLive(r, now) ? '' : ' rl-ended') + (v.breaches[r.id]?.length ? ' u-high' : '')} label={r.id + ': ' + r.text}>
       <span className="rk"><span>{r.id}</span><span>{kindWord(r)}</span></span>
       <span className="rt">{r.text}</span>
-      <span className="rm"><span>{r.scope.label}</span><span>{leftOf(r, now)}</span></span>
+      <span className="rm"><span>{r.scope.label}{v.held[r.id] ? ' · held ' + v.held[r.id].items + (v.held[r.id].refused ? ', refused ' + v.held[r.id].refused : '') : ''}{v.breaches[r.id]?.length ? ' · ' + v.breaches[r.id].length + ' breach' + (v.breaches[r.id].length === 1 ? '' : 'es') : ''}</span><span>{leftOf(r, now)}</span></span>
     </Row>
   );
   const list = (
@@ -90,11 +90,11 @@ export function LiveRules({ slug }: { slug: string }) {
           <span className="wb-src" title="<root>/.ai/lens-scan/work/bp-rules.json: every agent door reads it, and so can Personas">bp-rules.json · every agent door</span>
         </>
       )}
-      detail={r ? <RuleDetail slug={slug} r={r} now={now} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
+      detail={r ? <RuleDetail slug={slug} r={r} now={now} held={v.held[r.id]} breaches={v.breaches[r.id] ?? []} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
   );
 }
 
-function RuleDetail({ slug, r, now }: { slug: string; r: Rule; now: number }) {
+function RuleDetail({ slug, r, now, held, breaches }: { slug: string; r: Rule; now: number; held?: HeldTally; breaches: DecidedRow[] }) {
   const E = useEngine(), P = E.M.P;
   const draft = useMemo(() => draftOf(r), [r]);
   const rp = useReplay(slug, draft);
@@ -121,6 +121,26 @@ function RuleDetail({ slug, r, now }: { slug: string; r: Rule; now: number }) {
           <span className="wb-meta">The plan outlines its places while it is selected.</span>
         </div>
         {err && <p className="wb-err">{err}</p>}
+        {isOrder(r.kind) && (
+          <Sec head="What it has done" aside={held ? 'last ' + when(held.last) : 'nothing yet'}>
+            <div className="wb-figs">
+              <Fig n={held?.items ?? 0} label={'items held out of agents’ work'} tone={held?.items ? 'amber' : undefined} />
+              <Fig n={held?.refused ?? 0} label="acts refused whole" />
+              <Fig n={breaches.length} label={breaches.length === 1 ? 'breach' : 'breaches'} tone={breaches.length ? 'red' : 'mint'} title="Findings approved in its place against it since it was set: only something that went around bp's doors can make one" />
+            </div>
+            {held && <p className="wb-meta">Held at {held.tools.join(', ')}; every door that refused cited {r.id} and its author.</p>}
+            {breaches.length > 0 ? (
+              <ul className="rl-rows" aria-label={'Breaches of ' + r.id}>
+                {breaches.map((b) => (
+                  <li key={b.id} className="rl-row stop"><button type="button" onClick={() => P.F[b.feature] && E.flyToFeature(b.feature)}>
+                    <span className="tx"><small>{P.F[b.feature]?.name ?? b.feature} · approved by {b.by} · {when(b.at)}</small>{b.title}</span>
+                    <span className="vs"><b className="t-red">breach</b></span>
+                  </button></li>
+                ))}
+              </ul>
+            ) : <p className="none">No finding has been approved in its place against it since it was set.</p>}
+          </Sec>
+        )}
         {on && <Sec head={r.kind === 'grant' ? 'What agents may decide alone now' : 'What it holds now'} aside="the open backlog"><Now now={rp.r?.now} kind={r.kind} busy={rp.busy} /></Sec>}
         <Sec head="Replayed over your decisions now" aside="the same replay as when it was set">
           <Evidence bt={rp.r?.backtest} busy={rp.busy} error={rp.error} />

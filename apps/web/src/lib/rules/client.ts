@@ -4,15 +4,22 @@
 // and again after every write. Setting and revoking a rule is a person's act: those carry the human token
 // (components/companion/stream.ts humanToken), which only bp's own page can fetch.
 import { useEffect, useSyncExternalStore } from 'react';
-import type { Backtest, Impact, Rule, RuleKind } from '@bp/core/scan/rules';
+import type { Backtest, DecidedRow, HeldTally, Impact, Rule, RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
 import { humanToken } from '@/components/companion/stream';
 
 export const POLL_MS = 10000;
 const HUMAN_HEADER = 'x-bp-human'; // contract.ts HUMAN_HEADER, as stream.ts keeps it
 
-export interface RulesView { rules: Rule[]; record: { decided: number; synthetic: number }; loaded: boolean; error?: string }
-const EMPTY: RulesView = { rules: [], record: { decided: 0, synthetic: 0 }, loaded: false };
+export interface RulesView {
+  rules: Rule[]; record: { decided: number; synthetic: number };
+  /** Per rule: what the doors held or refused under it (work/bp-rules-log.jsonl). */
+  held: Record<string, HeldTally>;
+  /** Per order: findings approved in its place against it since it was set (something went around bp's doors). */
+  breaches: Record<string, DecidedRow[]>;
+  loaded: boolean; error?: string;
+}
+const EMPTY: RulesView = { rules: [], record: { decided: 0, synthetic: 0 }, held: {}, breaches: {}, loaded: false };
 
 /** A draft the writer sends: preview it, then set it. */
 export interface DraftBody { kind: RuleKind; scope: ScanScope; lenses?: string[]; maxEffort?: string; model?: string; minTier?: number; hours?: number; text?: string }
@@ -33,8 +40,8 @@ export async function refreshRules(slug: string): Promise<void> {
   s.inflight = true;
   try {
     const r = await fetch(api(slug), { signal: AbortSignal.timeout(15000) });
-    const j = (await r.json().catch(() => null)) as { rules?: Rule[]; record?: RulesView['record']; error?: string } | null;
-    s.view = r.ok && j?.rules ? { rules: j.rules, record: j.record ?? EMPTY.record, loaded: true } : { ...s.view, loaded: true, error: j?.error ?? 'rules unavailable (' + r.status + ')' };
+    const j = (await r.json().catch(() => null)) as Partial<RulesView> | null;
+    s.view = r.ok && j?.rules ? { rules: j.rules, record: j.record ?? EMPTY.record, held: j.held ?? {}, breaches: j.breaches ?? {}, loaded: true } : { ...s.view, loaded: true, error: j?.error ?? 'rules unavailable (' + r.status + ')' };
   } catch (e) { s.view = { ...s.view, loaded: true, error: (e as Error).message }; }
   finally { s.inflight = false; }
   for (const fn of s.subs) fn();

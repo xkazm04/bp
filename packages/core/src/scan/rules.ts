@@ -212,6 +212,32 @@ export function backtest(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort'
 /** Whether the evidence lets a person grant it as it is: no stop-ship row, no open tier, and it spoke at least once. */
 export const trustworthy = (b: Backtest): boolean => !b.flags.some((f) => f.key === 'stop-ship' || f.key === 'any-tier' || f.key === 'silent');
 
+/**
+ * Breaches: findings approved inside an order's place, against it, after it was set (and before it ended). bp's own doors
+ * refuse those, so a breach means something went around them (a CLI run, another app's runner): the order's record says
+ * so. Grant-signed decisions (`rule:`) are the grants' own and never a breach of an order the gate let them through.
+ */
+export function breachesOf(r: Rule, decided: readonly DecidedRow[]): DecidedRow[] {
+  if (!isOrder(r.kind)) return [];
+  const end = r.revokedAt ?? r.expiresAt;
+  return decided.filter((x) => x.owner === 'approve' && x.at > r.at && (!end || x.at < end) && verdictOf(r, x) === 'hold');
+}
+
+/** One line of the rules log (work/bp-rules-log.jsonl): a door that held items or refused an act, citing the rule. */
+export interface HeldEntry { at: string; rule: string; tool: string; ids: string[]; refused: boolean }
+/** What the log says about each rule: how often it held, how many items, and the last time. */
+export interface HeldTally { times: number; items: number; refused: number; last: string; tools: string[] }
+export function tallyHeld(log: readonly HeldEntry[]): Record<string, HeldTally> {
+  const out: Record<string, HeldTally> = {};
+  for (const e of log) {
+    const t = (out[e.rule] ??= { times: 0, items: 0, refused: 0, last: e.at, tools: [] });
+    t.times++; t.items += e.ids.length; if (e.refused) t.refused++;
+    if (e.at > t.last) t.last = e.at;
+    if (!t.tools.includes(e.tool)) t.tools.push(e.tool);
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------------------------------------ what it does now
 /** A finding still open (proposed or approved): what a rule would act on the moment it is set. */
 export interface OpenRow { id: string; title: string; feature: string; lens: string; tier?: number }

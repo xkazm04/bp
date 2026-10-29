@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
 import type { ScanScope } from '../scan/jobs.ts';
-import { gate, gateWords, type Act, type DecidedRow, type GateAnswer, type OpenRow, type Rule, type RulesFile } from '../scan/rules.ts';
+import { gate, gateWords, type Act, type DecidedRow, type GateAnswer, type HeldEntry, type OpenRow, type Rule, type RulesFile } from '../scan/rules.ts';
 import { hasStore, recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { snapshotOf } from './store.server.ts';
 import { listWaves } from './waves.server.ts';
@@ -111,6 +111,29 @@ export function itemsOf(p: ProductEntry, ids: readonly string[]): { id: string; 
     .map((x) => ({ id: x.id, feature: x.feature, lens: x.lens, ...(x.tier !== undefined && x.tier !== null ? { tier: x.tier } : {}) }));
 }
 
+// ------------------------------------------------------------------------------------------------ the log
+const logFile = (root: string): string => path.join(root, '.ai', 'lens-scan', 'work', 'bp-rules-log.jsonl');
+export const LOG_MAX = 2000;
+/** Append what a door held or refused (one line per rule per act); a log that cannot be written is said once, never fatal. */
+function logHeld(root: string, g: GateAnswer, tool: string): void {
+  const at = new Date().toISOString(), by = new Map<string, string[]>();
+  for (const h of g.held) by.set(h.order.id, [...(by.get(h.order.id) ?? []), h.id]);
+  if (g.refused && !by.size) by.set(g.refused.id, []);
+  const lines = [...by].map(([rule, ids]) => JSON.stringify({ at, rule, tool, ids, refused: !!g.refused } satisfies HeldEntry)).join('\n');
+  if (!lines) return;
+  try { fs.mkdirSync(path.dirname(logFile(root)), { recursive: true }); fs.appendFileSync(logFile(root), lines + '\n'); } catch (e) { warnOnce(logFile(root), e); }
+}
+/** The newest LOG_MAX lines of the log; torn or foreign lines are skipped. */
+export function readHeld(root: string): HeldEntry[] {
+  let text = '';
+  try { text = fs.readFileSync(logFile(root), 'utf8'); } catch { return []; }
+  const out: HeldEntry[] = [];
+  for (const line of text.split('\n').slice(-LOG_MAX - 1)) {
+    try { const e = JSON.parse(line) as HeldEntry; if (e && typeof e.rule === 'string' && typeof e.at === 'string' && Array.isArray(e.ids)) out.push(e); } catch { /* torn */ }
+  }
+  return out;
+}
+
 // ------------------------------------------------------------------------------------------------ the doors' gate
 /** The gate's answer for an act on this product, with the words a door answers in. */
 export interface Gated extends GateAnswer { words: string }
@@ -120,12 +143,16 @@ export function gateBuild(p: ProductEntry, tool: string, ids: readonly string[],
   const rules = listRules(p.root);
   if (!rules.length) return { held: [], words: '' };
   const act: Act = { kind: 'build', tool, items: itemsOf(p, ids), ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
-  return answer(gate(rules, act));
+  const g = gate(rules, act);
+  if (g.held.length) logHeld(p.root, g, tool);
+  return answer(g);
 }
 export function gateScan(p: ProductEntry, tool: string, lens: string, scope: ScanScope): Gated {
   const rules = listRules(p.root);
   if (!rules.length) return { held: [], words: '' };
-  return answer(gate(rules, { kind: 'scan', tool, lens, scope }));
+  const g = gate(rules, { kind: 'scan', tool, lens, scope });
+  if (g.refused) logHeld(p.root, g, tool);
+  return answer(g);
 }
 /** The 403 a door answers when an order refuses the whole act: the order's id, author, time and words travel with it. */
 export const refusedBy = (g: Gated): Response => Response.json({ error: g.words, order: g.refused, held: g.held }, { status: 403 });

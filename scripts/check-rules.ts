@@ -188,8 +188,18 @@ try {
   const rl = await call('rules_list', { slug: 'kl' });
   check('MCP rules.list names the order, its author and place', !rl.isError && rl.json?.rules?.[0]?.id === 'O-1' && rl.json.rules[0].scope?.label === 'Billing', rl.text);
 
+  {
+    const db = new DatabaseSync(path.join(KL, '.ai', 'lens-scan', 'scan.db'));
+    const later = new Date(Date.now() + 1000).toISOString();
+    db.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, standard, kind, status, decided_by, decided_at, created_at, updated_at) VALUES ('q-around', 'run-demo-b', 'card-payments', 'design', 'Built around bp', 'none', 'fix', 'approved', 'user:cli', ?, ?, ?)").run(later, later, later);
+    db.close();
+    const g = await req('GET', API);
+    check('GET rules tallies what O-1 held (items, refusals, the doors) from work/bp-rules-log.jsonl', g.json?.held?.['O-1']?.items >= 2 && g.json.held['O-1'].refused >= 2 && g.json.held['O-1'].tools.includes('wave.compose') && g.json.held['O-1'].tools.includes('scan.place'), j(g.json?.held));
+    check('a finding approved in the held place after O-1, around bp\'s doors, is a breach of O-1', g.json?.breaches?.['O-1']?.some((b: { id: string }) => b.id === 'q-around'), j(g.json?.breaches));
+  }
   const gr = await req('POST', API, H, { kind: 'grant', minTier: 3, hours: 24, scope: BOOKING });
   check('a person grants G-1: backlog findings in Booking, 24 h', gr.status === 201 && gr.json?.rule?.id === 'G-1', j(gr.json));
+  const before = (await req('GET', API)).json?.record?.decided;
   const da = await call('decision_answer', { slug: 'kl', id: 'q-book', decision: 'approve' });
   check('MCP decision.answer on a covered backlog finding runs at once under G-1 (no card waits)', !da.isError && da.json?.state === 'done' && da.json?.decidedBy === 'policy' && da.json?.policy === 'G-1', da.text);
   {
@@ -197,7 +207,7 @@ try {
     const row = db.prepare("SELECT status, decided_by FROM proposals WHERE id = 'q-book'").get() as { status: string; decided_by: string } | undefined;
     db.close();
     const g = await req('GET', API);
-    check("the store signs the grant's decision rule:G-1 (not the person), and the replay record leaves it out", row?.status === 'approved' && row.decided_by === 'rule:G-1' && g.json?.record?.decided === g0.json?.record?.decided, j([row, g.json?.record, g0.json?.record]));
+    check("the store signs the grant's decision rule:G-1 (not the person), and the replay record leaves it out", row?.status === 'approved' && row.decided_by === 'rule:G-1' && g.json?.record?.decided === before, j([row, g.json?.record, before]));
   }
   const d0 = await call('decision_answer', { slug: 'kl', id: 'q-book0', decision: 'approve' });
   check('MCP decision.answer on a stop-ship in the same place still waits for the person', d0.json?.state === 'pending', d0.text);
