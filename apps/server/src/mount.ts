@@ -123,54 +123,68 @@ export function listener(routes: Route[]) {
       refused(req, 403, 'foreign-peer');
       return json(res, 403, { error: 'only served to this machine' });
     }
-    // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
-    let url: URL, route: Route | undefined, params: Params | null = null;
-    try {
-      url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-      for (const r of routes) if ((params = r.match(url.pathname))) { route = r; break; }
-    } catch {
-      refused(req, 400, 'malformed-url');
-      return json(res, 400, { error: 'malformed request URL or Host' });
-    }
-    if (!route || !params) return json(res, 404, { error: `no route ${url.pathname}` });
-    const method = (req.method ?? 'GET').toUpperCase() as Verb;
-    // The verbs this route actually serves, as Next reports them: its exported ones, plus HEAD when it exports GET,
-    // plus OPTIONS. `route.methods` stays the exported set, so the printed route table and check:server do not move.
-    const allow = [...route.methods, ...(route.handlers.GET ? ['HEAD'] : []), 'OPTIONS'].join(', ');
-    // Next implements OPTIONS itself: 204 and the Allow header, no handler involved.
-    if (method === 'OPTIONS') { res.writeHead(204, { allow }); res.end(); return; }
-    // ...and HEAD from the GET handler, with the body dropped (below, where the body would be piped).
-    const handler = method === 'HEAD' ? route.handlers.GET : route.handlers[method];
-    if (!handler) return json(res, 405, { error: `${method} not allowed on ${route.path}` }, { allow });
+    return dispatch(routes, req, res);
+  };
+}
 
-    const headers = new Headers();
+/** A request the S8 LAN door (lan-door.ts) has admitted, authenticated and scoped, handed to this mount in-process. The
+ *  URL and the headers are the door's rewrite (a loopback Host, the door as the one X-Forwarded-For hop, the device it
+ *  derived from the token), so every handler guard runs on it exactly as on a loopback caller. The body is still read
+ *  from the socket's request. */
+export interface Forwarded { url: URL; headers: Headers }
+
+/** Route, adapt, call, stream back: the listener's work after its peer check, and the door's after its own. */
+export async function dispatch(routes: Route[], req: IncomingMessage, res: ServerResponse, fwd?: Forwarded): Promise<void> {
+  // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
+  let url: URL, route: Route | undefined, params: Params | null = null;
+  try {
+    url = fwd ? fwd.url : new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+    for (const r of routes) if ((params = r.match(url.pathname))) { route = r; break; }
+  } catch {
+    refused(req, 400, 'malformed-url');
+    return json(res, 400, { error: 'malformed request URL or Host' });
+  }
+  if (!route || !params) return json(res, 404, { error: `no route ${url.pathname}` });
+  const method = (req.method ?? 'GET').toUpperCase() as Verb;
+  // The verbs this route actually serves, as Next reports them: its exported ones, plus HEAD when it exports GET,
+  // plus OPTIONS. `route.methods` stays the exported set, so the printed route table and check:server do not move.
+  const allow = [...route.methods, ...(route.handlers.GET ? ['HEAD'] : []), 'OPTIONS'].join(', ');
+  // Next implements OPTIONS itself: 204 and the Allow header, no handler involved.
+  if (method === 'OPTIONS') { res.writeHead(204, { allow }); res.end(); return; }
+  // ...and HEAD from the GET handler, with the body dropped (below, where the body would be piped).
+  const handler = method === 'HEAD' ? route.handlers.GET : route.handlers[method];
+  if (!handler) return json(res, 405, { error: `${method} not allowed on ${route.path}` }, { allow });
+
+  let headers = fwd?.headers;
+  if (!headers) {
+    headers = new Headers();
     for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) for (const one of Array.isArray(v) ? v : [v]) headers.append(k, one);
     const remote = req.socket.remoteAddress ?? '';
     headers.set('x-forwarded-for', headers.has('x-forwarded-for') ? `${headers.get('x-forwarded-for')}, ${remote}` : remote);
-    const abort = new AbortController();
-    res.on('close', () => { if (!res.writableFinished) abort.abort(); });
-    const hasBody = method !== 'GET' && method !== 'HEAD' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
-    const reqBody = hasBody ? await readBody(req) : null;
-    if (reqBody === TOO_LARGE) { refused(req, 413, 'body-too-large'); return tooLarge(res); }
-    if (hasBody && !reqBody) { refused(req, 'abort', 'client-left'); res.destroy(); return; }
-    const request = new Request(url, { method, headers, signal: abort.signal, ...(reqBody ? { body: new Uint8Array(reqBody) } : {}) });
+  }
+  const abort = new AbortController();
+  res.on('close', () => { if (!res.writableFinished) abort.abort(); });
+  const hasBody = method !== 'GET' && method !== 'HEAD' && (req.headers['content-length'] !== undefined ? req.headers['content-length'] !== '0' : req.headers['transfer-encoding'] !== undefined);
+  const reqBody = hasBody ? await readBody(req) : null;
+  if (reqBody === TOO_LARGE) { refused(req, 413, 'body-too-large'); return tooLarge(res); }
+  if (hasBody && !reqBody) { refused(req, 'abort', 'client-left'); res.destroy(); return; }
+  const request = new Request(url, { method, headers, signal: abort.signal, ...(reqBody ? { body: new Uint8Array(reqBody) } : {}) });
 
-    let response: Response;
-    try { response = await handler(request, { params: Promise.resolve(params) }); } catch (e) {
-      console.error(`${method} ${url.pathname}:`, e);
-      return json(res, 500, { error: `handler failed (${method} ${route.path}); the server log has the detail` });
-    }
-    // The client left while the handler ran: res has closed already, so nothing below would ever cancel the body (an SSE
-    // stream would keep its timers and subscriptions for good).
-    if (abort.signal.aborted || res.destroyed) { void response.body?.cancel().catch(() => {}); return; }
-    const out: Record<string, string | string[]> = {};
-    response.headers.forEach((v, k) => { out[k] = k === 'set-cookie' ? response.headers.getSetCookie() : v; });
-    res.writeHead(response.status, response.statusText, out);
-    if (!response.body || method === 'HEAD') { void response.body?.cancel().catch(() => {}); res.end(); return; }
-    res.flushHeaders();
-    const body = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>);
-    res.on('close', () => body.destroy());
-    body.on('error', () => res.destroy());
-    body.pipe(res);
-  };
+  let response: Response;
+  try { response = await handler(request, { params: Promise.resolve(params) }); } catch (e) {
+    console.error(`${method} ${url.pathname}:`, e);
+    return json(res, 500, { error: `handler failed (${method} ${route.path}); the server log has the detail` });
+  }
+  // The client left while the handler ran: res has closed already, so nothing below would ever cancel the body (an SSE
+  // stream would keep its timers and subscriptions for good).
+  if (abort.signal.aborted || res.destroyed) { void response.body?.cancel().catch(() => {}); return; }
+  const out: Record<string, string | string[]> = {};
+  response.headers.forEach((v, k) => { out[k] = k === 'set-cookie' ? response.headers.getSetCookie() : v; });
+  res.writeHead(response.status, response.statusText, out);
+  if (!response.body || method === 'HEAD') { void response.body?.cancel().catch(() => {}); res.end(); return; }
+  res.flushHeaders();
+  const body = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream<Uint8Array>);
+  res.on('close', () => body.destroy());
+  body.on('error', () => res.destroy());
+  body.pipe(res);
 }
