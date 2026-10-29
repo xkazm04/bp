@@ -201,7 +201,8 @@ function adviceOf(declines: BriefDecided[], p: Brief['precedent']): Brief['advic
   if (d) return { say: 'withdraw', why: `${who} was declined ${d.at}${d.by ? ' by ' + d.by : ''}${d.note ? ': "' + d.note + '"' : ' (no note)'}` };
   if (p.declined >= 3 && p.declined > p.approved) return { say: 'ask', why: `${p.declined} of ${p.declined + p.approved} similar decisions were declines` };
   const n = p.approved + p.declined;
-  return { say: 'proceed', why: n ? `${p.approved} of ${n} similar decisions were approvals` : 'no precedent yet' };
+  return { say: 'proceed', why: !n ? 'no precedent yet' : p.approved >= p.declined ? `${p.approved} of ${n} similar decisions were approvals`
+    : `${p.declined} of ${n} similar decisions were declines, none of this idea` };
 }
 
 // ------------------------------------------------------------------------------------------- words for the card
