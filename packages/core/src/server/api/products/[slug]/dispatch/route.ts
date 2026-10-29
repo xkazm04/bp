@@ -17,6 +17,7 @@ import { NOTHING_TO_BUILD } from '@bp/core/scan/admit';
 import { writesOff } from '@bp/core/scan/writes';
 import { triageBy } from '@bp/core/server/release.server';
 import { takeForBuild } from '@bp/core/server/waves.server';
+import { gateBuild, refusedBy } from '@bp/core/server/rules.server';
 import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
@@ -39,9 +40,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!p) return unknownProduct(slug);
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   const file = storeFile(p);
-  const { approved, go, skipped, error } = takeForBuild(file, ids as string[], busyProposals(slug), await triageBy());
+  // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited; all of it held = 403
+  const g = gateBuild(p, 'dispatch', ids as string[]), held = new Set(g.held.map((h) => h.id));
+  if (g.refused) return refusedBy(g);
+  const { approved, go, skipped, error } = takeForBuild(file, (ids as string[]).filter((x) => !held.has(x)), busyProposals(slug), await triageBy());
+  skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));
   if (error) return Response.json({ error: `dispatch failed: ${error}`, approved, skipped }, { status: 503 });
   if (!go.length) return Response.json({ error: NOTHING_TO_BUILD, skipped }, { status: 409 });
   const r = enqueueExecute(slug, p.root, go);
-  return r.ok ? Response.json({ job: r.job, approved, skipped }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
+  return r.ok ? Response.json({ job: r.job, approved, skipped, ...(g.words ? { held: g.held, note: g.words } : {}) }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
 }

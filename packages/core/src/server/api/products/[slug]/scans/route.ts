@@ -13,6 +13,7 @@ import { MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind }
 import { enqueueMeasure, list } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
 import { isObj } from '@bp/core/scan/guards';
+import { gateScan, refusedBy } from '@bp/core/server/rules.server';
 import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
 
 const KINDS: readonly ScanScopeKind[] = SCAN_SCOPE_KINDS;
@@ -47,6 +48,8 @@ const scans = door('products/[slug]/scans', {
       if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
       const scope = parseScope(body.scope, map.features);
       if (!scope) return Response.json({ error: 'bad-scope' }, { status: 400 });
+      const g = gateScan(p, 'scan.place', entry.id, scope); // a standing order (rules.server.ts) may refuse it, cited
+      if (g.refused) return refusedBy(g);
       const r = enqueueMeasure(slug, p.root, entry.id, scope);
       return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
     },

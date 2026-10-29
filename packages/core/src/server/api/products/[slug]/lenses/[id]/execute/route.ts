@@ -19,6 +19,7 @@ import { snapshotOf } from '@bp/core/server/store.server';
 import { writesOff } from '@bp/core/scan/writes';
 import { triageBy } from '@bp/core/server/release.server';
 import { takeForBuild } from '@bp/core/server/waves.server';
+import { gateBuild, refusedBy } from '@bp/core/server/rules.server';
 
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
   const denied = localOnly(req);
@@ -37,11 +38,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
 
   const file = storeFile(p);
-  let ids: string[];
-  try { ids = snapshotOf(file).proposals.filter((x) => x.lens === lens).map((x) => x.id); } catch (e) {
+  let ids: string[], open: string[];
+  try {
+    const xs = snapshotOf(file).proposals.filter((x) => x.lens === lens);
+    ids = xs.map((x) => x.id); open = xs.filter((x) => x.status === 'proposed' || x.status === 'approved').map((x) => x.id);
+  } catch (e) {
     return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 });
   }
-  const { approved, go, skipped, error } = takeForBuild(file, ids, busyProposals(slug), await triageBy());
+  // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited
+  const g = gateBuild(p, 'lens.execute', open), held = new Set(g.held.map((h) => h.id));
+  if (g.refused) return refusedBy(g);
+  const { approved, go, skipped, error } = takeForBuild(file, ids.filter((x) => !held.has(x)), busyProposals(slug), await triageBy());
+  skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));
   if (error) return Response.json({ error: `execute failed: ${error}`, approved, skipped }, { status: 503 });
   if (!go.length) return Response.json({ error: 'nothing to execute', skipped }, { status: 409 });
 
@@ -51,5 +59,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     if (!r.ok) return Response.json({ error: `${r.error}; ${jobs.length} of ${chunks.length} execute jobs queued`, jobs, approved, skipped }, { status: r.status });
     jobs.push(r.job);
   }
-  return Response.json({ jobs, approved, skipped }, { status: 202 });
+  return Response.json({ jobs, approved, skipped, ...(g.words ? { held: g.held, note: g.words } : {}) }, { status: 202 });
 }

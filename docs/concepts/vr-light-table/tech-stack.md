@@ -134,6 +134,8 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `decision.answer` (Approve or decline one proposal (final: no route reopens a decided proposal)) | no | internal | GATED |
 | `triage.set` (Triage shipped items: accept, rework, descope or reopen) | yes | internal | AUTO |
 | `policy.propose` (Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it) | no | internal | GATED |
+| `rules.list` (The owner's standing rules for a product: orders and grants, each with its id, author, place and expiry) | yes | none | AUTO |
+| `rule.propose` (Propose a standing rule to the owner; they see it replayed over their own past decisions before they set it) | no | internal | GATED |
 | `wave.compose` (Group findings into a draft wave of packages, each with a model and an effort) | yes | internal | AUTO |
 | `wave.dispatch` (Dispatch a draft wave: queue its packages' build jobs, which spend money and edit code) | no | external | GATED |
 | `release.draft` (Create a draft release from shipped items (its version stays taken: no route deletes a draft)) | no | internal | GATED |

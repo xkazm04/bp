@@ -27,6 +27,8 @@ import { bounded, isGated, productOf, toolOf, toolRequest } from './tool-call.ts
 import { findProduct, hasStore, storeFile, writeAtomic } from '../../products.server.ts';
 import { snapshotOf } from '../../store.server.ts';
 import { listWaves } from '../../waves.server.ts';
+import { itemsOf, listRules } from '../../rules.server.ts';
+import { grantFor, type Rule } from '../../../scan/rules.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
 
@@ -123,6 +125,25 @@ export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date
   return null;
 }
 
+/** The owner's standing grant (bp-rules.json, rules.server.ts) that lets this call run without a card: a decision.answer
+ *  that approves, or a wave.dispatch, every finding of it inside the grant's place and of its tier floor or milder. */
+export function ruleGrantFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now()): Rule | null {
+  const slug = productOf(args), p = slug ? findProduct(slug) : null;
+  if (!p) return null;
+  let ids: string[] = [];
+  if (t.name === 'decision.answer' && args.decision === 'approve' && typeof args.id === 'string') ids = [args.id];
+  else if (t.name === 'wave.dispatch') {
+    const w = listWaves(p.root).find((x) => x.id === args.wave), pk = Array.isArray(args.packages) ? new Set(args.packages) : null;
+    ids = w ? w.packages.filter((k) => !pk || pk.has(k.id)).flatMap((k) => k.ids) : [];
+  }
+  if (!ids.length) return null;
+  try {
+    const rules = listRules(p.root), items = itemsOf(p, ids);
+    if (items.length !== new Set(ids).size) return null; // an id the store lacks is never covered
+    return grantFor(rules, t.name, items, now) ?? null;
+  } catch { return null; }
+}
+
 // ------------------------------------------------------------------------------------------------ cards
 export const CARD_TTL_MS = 24 * 3600000;
 export const CARD_LIST_MAX = 50;
@@ -200,9 +221,9 @@ export async function fileCard(tool: unknown, args: unknown, o: Origin): Promise
   if ('error' in req) return { ok: false, status: 400, error: req.error };
   const product = productOf(a);
   const card: Card = { id: sortableId('card_'), tool: t.name, args: a, summary: summaryOf(t, a), ...(product ? { product } : {}), state: 'pending', createdAt: new Date().toISOString() };
-  const grant = policyFor(t, a);
+  const grant = policyFor(t, a)?.id ?? ruleGrantFor(t, a)?.id;
   if (!grant) return { ok: true, card: put(card) };
-  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant.id });
+  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant });
   return { ok: true, card: await execute(approved, t, o, false) };
 }
 
