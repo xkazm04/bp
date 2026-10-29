@@ -52,6 +52,29 @@ process only; HKLM still names the Simulator). Under Git Bash, `--game-mode /Scr
   - After `entering standby` (the headset taken off, 15:30:41) SteamVR throttled the app to about 100 to 210 ms; those
     samples are not the app's cost.
 
+## Follow-up: is the sheet's resolution the limit? (2026-10-29, no)
+
+- `bp.SheetPx` (new) sets the width of the sheet render targets. The default is 4096; 8192 is the option. Stroke widths
+  are in base pixels and scale with it, so the drawing stays the same size in cm. Mips and anisotropic filtering were
+  already on for both sheets.
+- **The headset arithmetic.** A 4096 texel is 0.40 mm of paper. From the seated eye, the nearest paper is about 52 cm
+  away, where one Quest 3S display pixel (about 20 px/deg) covers about 0.45 mm. Every display pixel already gets at
+  least one texel; nearer than about 30 cm (leaning in) is the first place 8192 could show. The Steam Link stream (1216
+  wide) is coarser than both.
+- **The captures.** Target pose, editor PIE, bundle data:
+
+  | Capture | 4096 | 8192 |
+  |---|---|---|
+  | 1600 x 900, mean gradient | 14.131 | 14.139 |
+  | 1600 x 900, pixels differing by more than 24 | 0.36% | |
+  | 3200 x 1800, mean gradient (two repeats) | 8.288, 8.289 | 8.288 |
+
+  Far-edge crops are indistinguishable. The softest text, the far room names on the paper ("SCHEDULING & CLASSES"), is
+  as soft at 8192. It is limited by its cap size and the viewing angle, not by texels.
+- The first 3200 capture at 4096 came out with a blank grey paper. The two repeats did not, so it was a capture glitch.
+- **Verdict.** Keep 4096. The levers for the paper's legibility are the far labels' cap size and placement, plus the
+  stream's and the render's resolution.
+
 ## Open from the session script
 
 Seat verification, comfort, text grades (`BpView.TextCard 1`), gesture hit rates, the CSV frame capture on pof, the
