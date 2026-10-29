@@ -88,6 +88,10 @@ res = await POST(new Request(URL0, { method: 'POST', headers: { host: '127.0.0.1
 check('a body that is not application/json: 415', res.status === 415);
 res = await POST(req('POST', URL0, { op: 'hello', ...web }, { origin: 'http://evil.example' }));
 check('a write from a foreign origin: 403', res.status === 403);
+res = await POST(req('POST', URL0, { op: 'publish', reader: 'web-1', surface: 'vr', label: 'Headset', place: room('dispatch') }, { 'x-bp-device': 'quest:p1' }));
+check('a device (the LAN door sets x-bp-device) speaks only as its own reader, whatever its body says', res.status === 201 && ((await res.json()) as { view: View }).view.shared?.reader === 'vr:quest:p1');
+res = await POST(req('POST', URL0, { op: 'publish', ...web, place: room('scheduling') }));
+check('...and the page it tried to speak for is untouched (it leads again by its own publish)', res.status === 201);
 check('the record is on disk under BP_HOME', fs.existsSync(focusFile()) && focusFile().startsWith(HOME));
 const g = globalThis as unknown as { __bpSharedFocus?: unknown };
 delete g.__bpSharedFocus; // a restart: the process forgets, the file remembers
