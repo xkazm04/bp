@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
 import type { ScanScope } from '../scan/jobs.ts';
-import { gate, gateWords, type Act, type DecidedRow, type GateAnswer, type Rule, type RulesFile } from '../scan/rules.ts';
+import { gate, gateWords, type Act, type DecidedRow, type GateAnswer, type OpenRow, type Rule, type RulesFile } from '../scan/rules.ts';
 import { hasStore, recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { snapshotOf } from './store.server.ts';
 import { listWaves } from './waves.server.ts';
@@ -80,7 +80,7 @@ export function decidedRows(p: ProductEntry): DecidedRow[] {
   for (const w of listWaves(p.root)) for (const k of w.packages) for (const id of k.ids) built.set(id, { model: k.model, effort: k.effort });
   const out: DecidedRow[] = [];
   for (const x of snapshotOf(storeFile(p)).proposals) {
-    if (x.status === 'proposed' || !x.decided_at) continue;
+    if (x.status === 'proposed' || !x.decided_at || x.decided_by?.startsWith(RULE_SIGN)) continue;
     const b = built.get(x.id);
     out.push({
       id: x.id, title: x.title, feature: x.feature, lens: x.lens,
@@ -90,6 +90,17 @@ export function decidedRows(p: ProductEntry): DecidedRow[] {
     });
   }
   return out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/** Decisions made under a grant are signed `rule:<id>` (door.server.ts): the record a rule is replayed over is the
+ *  owner's, so they are left out of it. */
+export const RULE_SIGN = 'rule:';
+
+/** The open findings (proposed or approved), what a rule acts on the moment it is set. */
+export function openRows(p: ProductEntry): OpenRow[] {
+  if (!hasStore(p)) return [];
+  return snapshotOf(storeFile(p)).proposals.filter((x) => x.status === 'proposed' || x.status === 'approved')
+    .map((x) => ({ id: x.id, title: x.title, feature: x.feature, lens: x.lens, ...(x.tier !== undefined && x.tier !== null ? { tier: x.tier } : {}) }));
 }
 
 /** The finding ids as gate items (feature, lens, tier); ids the store lacks are left out (the door refuses them itself). */

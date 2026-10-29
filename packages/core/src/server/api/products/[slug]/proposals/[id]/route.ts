@@ -7,6 +7,7 @@ import { door } from '@bp/core/server/route-door.server';
 import { storeFile } from '@bp/core/server/products.server';
 import { decide, parseDecision } from '@bp/core/server/store.server';
 import { triageBy } from '@bp/core/server/release.server';
+import { ruleSigner } from '../../../../companion/door.server.ts';
 import type { DecisionBody } from '@bp/core/scan/types';
 
 const proposal = door('products/[slug]/proposals/[id]', {
@@ -14,9 +15,10 @@ const proposal = door('products/[slug]/proposals/[id]', {
     body: (raw) => parseDecision(raw) ?? Response.json({ error: "body must be { decision: 'approve' | 'decline', note?: string }" }, { status: 400 }),
     store: 'required',
     writes: true,
-    live: async ({ product: p, params: { id }, body }) => {
+    live: async ({ req, product: p, params: { id }, body }) => {
       try {
-        const r = decide(storeFile(p), id, body as DecisionBody, await triageBy());
+        // a standing grant's own call is signed rule:<id> (door.server.ts ruleSigner), never with the person's name
+        const r = decide(storeFile(p), id, body as DecisionBody, ruleSigner(req) ?? await triageBy());
         if (r.ok) return Response.json(r.proposal);
         if (r.status === 404) return Response.json({ error: `no proposal ${id}` }, { status: 404 });
         return Response.json(r.proposal, { status: 409 });

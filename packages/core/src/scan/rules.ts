@@ -14,6 +14,7 @@
 import type { ScanScope } from './jobs.ts';
 import { SAFE_ID } from './jobs.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, type WaveEffort, type WaveModel } from './waves.ts';
+import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
 
 export type RuleKind = 'hold' | 'only' | 'cap' | 'grant';
 export const RULE_KINDS: readonly RuleKind[] = ['hold', 'only', 'cap', 'grant'];
@@ -211,9 +212,31 @@ export function backtest(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort'
 /** Whether the evidence lets a person grant it as it is: no stop-ship row, no open tier, and it spoke at least once. */
 export const trustworthy = (b: Backtest): boolean => !b.flags.some((f) => f.key === 'stop-ship' || f.key === 'any-tier' || f.key === 'silent');
 
+// ------------------------------------------------------------------------------------------------ what it does now
+/** A finding still open (proposed or approved): what a rule would act on the moment it is set. */
+export interface OpenRow { id: string; title: string; feature: string; lens: string; tier?: number }
+export interface Impact {
+  /** Open findings on the product. */
+  open: number;
+  /** The ones the rule acts on now: an order holds (a cap: their builds are capped), a grant lets agents approve alone. */
+  hits: (OpenRow & { verdict: RuleVerdict })[];
+  /** Features the rule governs (every feature for `all`: `total`). */
+  features: number;
+}
+/** What the rule would do to the open backlog right now: the steer, before the replay says whether to trust it. */
+export function impact(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort' | 'model' | 'minTier'>, open: readonly OpenRow[], total: number): Impact {
+  const hits: Impact['hits'] = [];
+  for (const o of open) {
+    if (!(r.scope.kind === 'all' || r.scope.features.includes(o.feature))) continue;
+    const v: RuleVerdict | null = r.kind === 'cap' ? 'hold' : verdictOf(r, { ...o, owner: 'approve', by: '', at: '' });
+    if (v) hits.push({ ...o, verdict: v });
+  }
+  return { open: open.length, hits, features: r.scope.kind === 'all' ? total : r.scope.features.length };
+}
+
 // ------------------------------------------------------------------------------------------------ a rule a person writes
 export type RuleDraft = Omit<Rule, 'id' | 'by' | 'at' | 'revokedAt' | 'revokedBy' | 'evidence'> & { hours?: number };
-const SCOPE_KINDS = ['feature', 'bay', 'room', 'wing', 'all', 'selection'];
+const SCOPE_KINDS: readonly string[] = SCAN_SCOPE_KINDS;
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x);
 
 /** The draft in a request body, or why not. `features` checks a scope's features against the map; `lens` its lenses. */

@@ -41,6 +41,16 @@ export function isHuman(req: Request): boolean {
   const got = Buffer.from(req.headers.get(HUMAN_HEADER) ?? ''), want = Buffer.from(humanToken());
   return got.length === want.length && timingSafeEqual(got, want);
 }
+/** A card a standing grant ran (bp-rules.json G-n) carries `x-bp-rule: <id>` and this per-process token, so the route it
+ *  calls signs the decision `rule:<id>` instead of the person's name: the store says who decided, and the replay of a rule
+ *  reads only the owner's own decisions (rules.server.ts RULE_SIGN). Minted like the human token; never handed out. */
+const ruleToken = (): string => ((g as { __bpRuleToken?: string }).__bpRuleToken ??= randomBytes(32).toString('hex'));
+export const RULE_HEADER = 'x-bp-rule', RULE_TOKEN_HEADER = 'x-bp-rule-token';
+/** `rule:<id>` when the request is this server's own call under a standing grant, else null. */
+export function ruleSigner(req: Request): string | null {
+  const id = req.headers.get(RULE_HEADER), got = Buffer.from(req.headers.get(RULE_TOKEN_HEADER) ?? ''), want = Buffer.from(ruleToken());
+  return id && /^G-\d{1,6}$/.test(id) && got.length === want.length && timingSafeEqual(got, want) ? 'rule:' + id : null;
+}
 /** Only a browser on bp's own page sends both; neither can be set by a page on another origin. */
 export const fromOwnPage = (req: Request): boolean => req.headers.get('sec-fetch-site') === 'same-origin' && req.headers.get('sec-fetch-mode') === 'cors';
 export const notHuman = (): Response => Response.json({ error: `a person's answer: needs the ${HUMAN_HEADER} token from bp's own page` }, { status: 403 });
@@ -198,7 +208,10 @@ async function execute(c: Card, t: ToolSpec, o: Origin, human: boolean): Promise
   try {
     const res = await fetch(o.origin + r.path, {
       method: r.method,
-      headers: { 'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}) },
+      headers: {
+        'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}),
+        ...(!human && c.policy && /^G-\d+$/.test(c.policy) ? { [RULE_HEADER]: c.policy, [RULE_TOKEN_HEADER]: ruleToken() } : {}),
+      },
       ...(r.body ? { body: JSON.stringify(r.body) } : {}),
       redirect: 'manual',
       signal: AbortSignal.timeout(60000),

@@ -3,16 +3,17 @@
 // rules.list.
 // POST /api/products/[slug]/rules, body a rule draft `{ kind: hold|only|cap|grant, scope: { kind, id?, label, features },
 // lenses?, maxEffort?, model?, minTier?, tools?, hours?, text?, preview? }` (scan/rules.ts checkRuleBody):
-//   preview: true   the backtest of the draft over the owner's decided findings, nothing written (any client: an agent
-//                   may show the owner the evidence before it proposes the rule). 200 `{ rule, backtest }`.
+//   preview: true   the backtest of the draft over the owner's decided findings, and what it would do to the open
+//                   findings now (`now`: scan/rules.ts impact), nothing written (any client: an agent may show the owner
+//                   the evidence before it proposes the rule). 200 `{ rule, backtest, now }`.
 //   otherwise       the HUMAN path (the `x-bp-human` token, 403 without it): the rule is written to bp-rules.json with
 //                   its author (`user:<gh login>`) and the evidence it was set on. 201 `{ rule, backtest }`.
 // 400 for a bad draft; 404 for an unknown product or one with no map. Localhost only. Kettle has no rules (its orders
 // are the sim's): 405.
 import { door } from '@bp/core/server/route-door.server';
-import { backtest, checkRuleBody, ruleOf } from '@bp/core/scan/rules';
+import { backtest, checkRuleBody, impact, ruleOf } from '@bp/core/scan/rules';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
-import { addRule, decidedRows, listRules } from '@bp/core/server/rules.server';
+import { addRule, decidedRows, listRules, openRows } from '@bp/core/server/rules.server';
 import { triageBy } from '@bp/core/server/release.server';
 import { isHuman, notHuman } from '../../../companion/door.server.ts';
 import { isGated, toolOf } from '../../../companion/tool-call.ts';
@@ -38,7 +39,7 @@ const rules = door('products/[slug]/rules', {
       if (draft.tools) draft.tools = draft.tools.map((t) => toolOf(t)!.name);
       const rows = read(() => decidedRows(p)), bt = backtest(draft, rows);
       const preview = (body as { preview?: unknown }).preview === true;
-      if (preview) return Response.json({ rule: { ...draft, id: null }, backtest: bt });
+      if (preview) return Response.json({ rule: { ...draft, id: null }, backtest: bt, now: impact(draft, read(() => openRows(p)), map.features.size) });
       if (!isHuman(req)) return notHuman();
       const by = await triageBy(), at = new Date().toISOString();
       const rule = addRule(p.root, (all) => ({ ...ruleOf(draft, all, by), evidence: { decided: bt.decided, matched: bt.matched, differed: bt.differed, abstained: bt.abstained, at } }));

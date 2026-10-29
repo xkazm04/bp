@@ -23,7 +23,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-((await import('./lib/src-hooks.mjs')) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
+const HOOKS = './lib/src-hooks.mjs';
+((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 const R = await import('../packages/core/src/scan/rules.ts');
 type Rule = import('../packages/core/src/scan/rules.ts').Rule;
 type Row = import('../packages/core/src/scan/rules.ts').DecidedRow;
@@ -165,6 +166,7 @@ try {
   check('GET rules: none yet; the record counts the decided rows and the synthetic ones', g0.status === 200 && g0.json?.rules?.length === 0 && g0.json?.record?.decided >= 96 && g0.json?.record?.synthetic === 96, j(g0.json));
   const pv = await req('POST', API, {}, { kind: 'hold', scope: BILLING, preview: true });
   check('preview: 200 with the replay, nothing written', pv.status === 200 && pv.json?.backtest?.decided >= 96 && pv.json.rule.id === null && !fs.existsSync(FILE), j(pv.json?.backtest));
+  check('preview: `now` names the open findings it would hold the moment it is set (q-pay in Billing, not q-book)', pv.json?.now?.hits?.some((h: { id: string; verdict: string }) => h.id === 'q-pay' && h.verdict === 'hold') && !pv.json.now.hits.some((h: { id: string }) => h.id === 'q-book') && pv.json.now.features === BILLING.features.length, j(pv.json?.now));
   const red = await req('POST', API, {}, { kind: 'grant', hours: 24, scope: { kind: 'all', label: 'Everything', features: [] }, preview: true });
   check('RED CASE over the seeded record: a grant over every tier is flagged for the stop-ships it would approve', red.json?.backtest?.flags?.some((f: { key: string }) => f.key === 'stop-ship'), j(red.json?.backtest?.flags));
   const nh = await req('POST', API, {}, { kind: 'hold', scope: BILLING });
@@ -190,6 +192,13 @@ try {
   check('a person grants G-1: backlog findings in Booking, 24 h', gr.status === 201 && gr.json?.rule?.id === 'G-1', j(gr.json));
   const da = await call('decision_answer', { slug: 'kl', id: 'q-book', decision: 'approve' });
   check('MCP decision.answer on a covered backlog finding runs at once under G-1 (no card waits)', !da.isError && da.json?.state === 'done' && da.json?.decidedBy === 'policy' && da.json?.policy === 'G-1', da.text);
+  {
+    const db = new DatabaseSync(path.join(KL, '.ai', 'lens-scan', 'scan.db'), { readOnly: true });
+    const row = db.prepare("SELECT status, decided_by FROM proposals WHERE id = 'q-book'").get() as { status: string; decided_by: string } | undefined;
+    db.close();
+    const g = await req('GET', API);
+    check("the store signs the grant's decision rule:G-1 (not the person), and the replay record leaves it out", row?.status === 'approved' && row.decided_by === 'rule:G-1' && g.json?.record?.decided === g0.json?.record?.decided, j([row, g.json?.record, g0.json?.record]));
+  }
   const d0 = await call('decision_answer', { slug: 'kl', id: 'q-book0', decision: 'approve' });
   check('MCP decision.answer on a stop-ship in the same place still waits for the person', d0.json?.state === 'pending', d0.text);
 

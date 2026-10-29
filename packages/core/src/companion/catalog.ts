@@ -4,6 +4,8 @@
 // Class is derived, never declared: AUTO when reversible and not external, else GATED (a card, or a policy grant).
 // Each tool is one HTTP call to bp (`route`), so the companion is a principal on the same door as every other client.
 
+import { WAVE_EFFORTS } from '../standard/schema-vocab.ts';
+
 export type SideEffects = 'none' | 'internal' | 'external';
 export type ToolClass = 'AUTO' | 'GATED';
 
@@ -39,7 +41,7 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: 'rules.list', description: "The owner's standing rules for a product: orders (what agents may not do: hold a place, only some lenses' work there, an effort cap) and grants (what agents may decide alone), each with its id, author, place and expiry. Read them before composing, dispatching or scanning; a door refuses what an order holds and cites it.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { slug }, required: ['slug'] }, route: { method: 'GET', path: '/api/products/{slug}/rules' } },
   { name: 'rule.propose', description: "Propose a standing rule to the owner (kind hold|only|cap|grant over a place's features); they see it replayed over their own past decisions before they set it. Only the person can set it.", reversible: false, side_effects: 'internal',
-    params_schema: { type: 'object', properties: { slug, kind: { type: 'string', enum: ['hold', 'only', 'cap', 'grant'] }, scope: { type: 'object', description: '{ kind: feature|bay|room|wing|all|selection, id?, label, features: feature slugs (plan.find) }' }, lenses: { type: 'array', items: { type: 'string' } }, maxEffort: { type: 'string', enum: ['low', 'medium', 'high', 'xhigh'] }, minTier: { type: 'number' }, hours: { type: 'number' }, text: str("the rule in the owner's words") }, required: ['slug', 'kind', 'scope'] },
+    params_schema: { type: 'object', properties: { slug, kind: { type: 'string', enum: ['hold', 'only', 'cap', 'grant'] }, scope: { type: 'object', description: '{ kind: feature|bay|room|wing|all|selection, id?, label, features: feature slugs (plan.find) }' }, lenses: { type: 'array', items: { type: 'string' } }, maxEffort: { type: 'string', enum: [...WAVE_EFFORTS] }, minTier: { type: 'number' }, hours: { type: 'number' }, text: str("the rule in the owner's words") }, required: ['slug', 'kind', 'scope'] },
     route: { method: 'POST', path: '/api/products/{slug}/rules' } },
   { name: 'wave.compose', description: 'Group findings into a draft wave of packages, each with a model and an effort.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, name: str('the wave name'), packages: { type: 'array', maxItems: 20, items: { type: 'object', description: '{ name, model: sonnet|opus, effort: low|medium|high|xhigh, ids }' } } }, required: ['slug', 'name', 'packages'] },
