@@ -34,6 +34,7 @@
 @media (prefers-reduced-motion: reduce) { .cp-voice.s-speaking .cp-v1, .cp-voice.s-speaking .cp-v2 { animation: none; } }
 /* the agent trail (AgentTrail.tsx): what an agent heard of the person's decisions and what it did next */
 .cp-trail { display: flex; flex-direction: column; gap: 8px; }
+.bp:has(#dcard) .cp-trail { display: none; } /* the open decision card carries the brief itself */
 .cp-tr { border-color: var(--accent); }
 .cp-tr .tr-k { display: flex; justify-content: space-between; align-items: center; margin: 0 0 6px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
 .cp-tr .tr-k button { border: 0; background: none; padding: 0 2px; color: var(--ink-2); font-size: 14px; }

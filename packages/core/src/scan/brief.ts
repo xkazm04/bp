@@ -16,6 +16,7 @@
 // one rendering a small card (VR) and a prompt share. Pure: no I/O, no clock unless `now` is passed.
 import type { Pack, Proposal, ProposalSize, RiskClass, Run, ScanSnapshot, Tier } from './types.ts';
 import { TIER_SAYS } from './derive.ts';
+import type { Structure } from '../standard/load.ts';
 
 export const BRIEF_VERSION = 1;
 /** The line budget every surface shares (a VR decision card shows exactly this). */
@@ -73,6 +74,17 @@ export function briefMapOf(raw: unknown): BriefMap {
     capabilities: arr(j.capabilities).filter((r) => s(r.slug)).map((r) => ({ ...node(r), ...(s(r.domain) ? { domain: s(r.domain) } : {}) })),
     domains: arr(j.domains).filter((r) => s(r.slug)).map(node),
     lenses: arr(j.lenses).filter((r) => s(r.id)).map((r) => ({ id: s(r.id)!, name: s(r.name) ?? s((r.manifest as Record<string, unknown> | undefined)?.name) ?? s(r.id)! })),
+  };
+}
+
+/** The same slice from a loaded map (standard/load.ts): what the app already holds for a live product AND for Kettle, so
+ *  the browser needs no second read of the raw document. Ids are base slugs (no product-line suffix). */
+export function briefMapOfStructure(S: Pick<Structure, 'features' | 'capabilities' | 'domains' | 'allLenses'>): BriefMap {
+  return {
+    features: S.features.map((f) => ({ slug: f.slug, name: f.name, ...(f.code ? { id: f.code } : {}), ...(f.capability ? { capability: f.capability } : {}), ...(f.stage ? { stage: f.stage } : {}), depends_on: f.dependsOn })),
+    capabilities: S.capabilities.map((c) => ({ slug: c.base, name: c.name, ...(c.code ? { id: c.code } : {}), domain: S.domains.find((d) => d.id === c.domain)?.base ?? c.domain })),
+    domains: S.domains.map((d) => ({ slug: d.base, name: d.name, ...(d.code ? { id: d.code } : {}) })),
+    lenses: S.allLenses.map((l) => ({ id: l.id, name: l.name })),
   };
 }
 

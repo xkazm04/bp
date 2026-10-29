@@ -161,7 +161,7 @@ function LiveLamp({ skin, product }: { skin: LampSkin; product: string }) {
       <skin.Component {...props} />
       <div className="cp-side">
         <AnimatePresence>{away && <Notice key={away.n} text={away.text} href={away.href} onClose={() => setAway(null)} />}</AnimatePresence>
-        <AgentTrail />
+        <AgentTrail product={product} />
         {!skin.ownsCards && <Cards cards={s.cards} onCard={onCard} />}
         {!skin.ownsVoice && <VoiceToggle />}
       </div>

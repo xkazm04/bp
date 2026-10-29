@@ -17,12 +17,16 @@
 //  12. the card's recommendation: briefAdvice (no map) agrees with the full brief; a repeat recommends Decline with a
 //      note naming the decision it repeats (repeatNote, <= 500); the live feed uses it and Engine.decide carries it;
 //  13. the agent trail: a draft that met a decline reads as heard + withdrew; a later approval on the same feature drops
-//      the "withdrew"; a recommendation quoting a decline already shown names it by id; old sessions go; the slip polls it.
-// Run: node scripts/check-decision-brief.ts
+//      the "withdrew"; a recommendation quoting a decline already shown names it by id; old sessions go; a product
+//      filter keeps that product's rows; the slip polls it;
+//  14. one map, two reads: briefMapOf (the raw document, the server) and briefMapOfStructure (the loaded map, the browser)
+//      agree on Kettle's 133 features, rooms, wings and lenses, so the card and the routes count the same blast radius.
+// Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
-import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
+import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, briefMapOfStructure, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
+import { loadMap } from '../packages/core/src/data/index.ts';
 import { TRAIL_WINDOW_MS, trailSessions, type TrailRow } from '../packages/core/src/companion/trail.ts';
 import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
 
@@ -175,6 +179,21 @@ const sec = [
   ok(13, by('c')?.lines[0]?.text === 'Read 1 brief; none met a standing decline', 'a quiet session says so', by('c')?.lines);
   ok(13, ss[0]?.conversation === 'c' && trailSessions(rows, T0 + TRAIL_WINDOW_MS + 60000).length === 0, 'newest first; old sessions go');
   ok(13, /AgentTrail/.test(fs.readFileSync(path.join(ROOT, 'apps/web/src/components/companion/CompanionLive.tsx'), 'utf8')) && fs.existsSync(path.join(ROOT, 'apps/web/src/app/api/companion/trail/route.ts')), 'the slip shows the trail; its route is mounted');
+}
+
+// 13b. product filter
+{
+  const r = (c: string, product: string): TrailRow => ({ at: '2026-10-20T12:00:00Z', conversation: c, kind: 'brief', product, feature: 'f', title: 't', advice: 'proceed' });
+  const ss = trailSessions([r('x', 'kettle-live'), r('y', 'kettle')], Date.parse('2026-10-20T12:01:00Z'), 3, 'kettle');
+  ok(13, ss.length === 1 && ss[0].conversation === 'y', 'the product filter keeps that product only', ss.map((x) => x.conversation));
+}
+// 14. one map, two reads
+{
+  const raw = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  type M = ReturnType<typeof briefMapOf>;
+  const norm = (m: M) => JSON.stringify({ f: m.features.map((f) => [f.slug, f.id, f.name, f.capability, f.stage, (f.depends_on ?? []).join()]).sort(), c: m.capabilities.map((c) => [c.slug, c.name, c.domain]).sort(), d: m.domains.map((d) => [d.slug, d.name]).sort(), l: m.lenses.map((l) => [l.id, l.name]).sort() });
+  const a = briefMapOf(raw), b = briefMapOfStructure(loadMap(raw, ''));
+  ok(14, a.features.length === 133 && norm(a) === norm(b), 'briefMapOf and briefMapOfStructure agree on Kettle', [a.features.length, b.features.length]);
 }
 
 console.log(`check-decision-brief: ${passed} passed, ${failures.length} failed`);

@@ -26,10 +26,13 @@ export interface TrailSession {
 
 const q = (s: string, n = 90) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-/** The sessions of the rows, newest first; at most `max`. */
-export function trailSessions(rows: readonly TrailRow[], now: number, max = 3): TrailSession[] {
+/** The sessions of the rows, newest first; at most `max`; `product` keeps only that product's rows. */
+export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, product?: string): TrailSession[] {
   const by = new Map<string, TrailRow[]>();
-  for (const r of rows) { const l = by.get(r.conversation); if (l) l.push(r); else by.set(r.conversation, [r]); }
+  for (const r of rows) {
+    if (product && r.product !== product) continue;
+    const l = by.get(r.conversation); if (l) l.push(r); else by.set(r.conversation, [r]);
+  }
   const out: TrailSession[] = [];
   for (const [conversation, rs] of by) {
     const last = rs[rs.length - 1].at;

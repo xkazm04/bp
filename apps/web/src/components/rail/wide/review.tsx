@@ -170,7 +170,7 @@ function PlaceActions({ d }: { d: SimDecision }) {
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
-  const brief = useBrief(d.base);
+  const brief = useBrief(d);
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
   useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
@@ -268,6 +268,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
   const f = M.P.F[d.f], bn = sim.blocksNow(d);
   const note = V.ui?.queueNote?.(d, view, M) ?? null, hn = useAnswerNote(d.id);
   const affects = d.affects.filter((id) => id !== d.f && M.P.F[id]).slice(0, 8);
+  const brief = useBrief(d);
   return (
     <>
       <div className="wb-scroll">
@@ -280,6 +281,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <div className="wb-fig"><b className="wd">{pname(M.P, d.decider)}</b><span>decides</span></div>
           <div className="wb-fig"><b className="wd">{pname(M.P, d.by)}</b><span>asked</span></div>
         </div>
+        {brief && <BriefFacts b={brief} />}
         {note && <div className="wb-note">{note}</div>}
         <Sec head="Answers" aside={d.opts.length + ' options · 1–' + d.opts.length + ' on the plan'}>
           <ol className="wb-opts">

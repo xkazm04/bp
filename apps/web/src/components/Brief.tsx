@@ -1,22 +1,36 @@
 'use client';
-// The decision brief on a card: packages/core/src/scan/brief.ts computed here, in the browser, over the live product's
-// own map and scan snapshot - the same function GET .../proposals/<id>/brief and the plan.brief tool run on the server,
-// so the person and the agents read identical context. It follows the stream: a decision elsewhere updates the brief.
+// The decision brief on a card: packages/core/src/scan/brief.ts computed here, in the browser, over the map the app already
+// holds (briefMapOfStructure) and the scan - the same function GET .../proposals/<id>/brief and the plan.brief tool run on
+// the server, so the person and the agents read identical context. It follows the stream: a decision elsewhere updates it.
+// A live proposal gets the whole brief. A Kettle question (the sample's swarm) gets the facts that apply to a question -
+// what it touches and how decisions under its lens went in the sample's own history (its ScanSim) - and not the undo or
+// cost lines, which describe a proposal's build path the sample question does not take.
 // Each fact is one plain line; a fact with evidence opens it (the similar decisions, the declines, the dependents, the
 // builds the cost comes from). `compact` (the plan's decision card) keeps the evidence lists short.
 import { useMemo, useState } from 'react';
-import { briefFor, briefMapOf, subjectOf, type Brief, type BriefDecided, type BriefFact } from '@bp/core/scan/brief';
-import { useEngine, useLive } from './hooks';
+import { baseId, type SimDecision } from '@bp/core/model';
+import { briefFor, briefMapOfStructure, subjectOf, type Brief, type BriefDecided, type BriefFact, type FactKey } from '@bp/core/scan/brief';
+import { useBp, useEngine, useLive } from './hooks';
 import './decision-brief.css';
 
-/** The brief of a live proposal, or null (Kettle's swarm questions, a row not in the snapshot yet, no map yet). */
-export function useBrief(id: string | undefined): Brief | null {
-  const product = useLive()?.product, scan = product?.scan, structure = product?.structure;
-  const map = useMemo(() => (structure ? briefMapOf(structure) : null), [structure]);
+const QUESTION_FACTS: readonly FactKey[] = ['blast', 'declined', 'precedent'];
+
+/** The brief of a decision on the card: a live proposal's, or a Kettle question's (sample: fewer facts); null without data. */
+export function useBrief(d: SimDecision | null | undefined): Brief | null {
+  const E = useEngine(), M = E.M, product = useLive()?.product, simV = useBp((s) => s.simV);
+  const scan = product?.scan, rev = product?.structureRev;
+  const map = useMemo(() => briefMapOfStructure(M.P.base), [M, rev]); // eslint-disable-line react-hooks/exhaustive-deps
   return useMemo(() => {
-    const p = id && scan ? scan.proposals.find((x) => x.id === id) : undefined;
-    return p && scan && map ? briefFor(subjectOf(p), scan, map) : null;
-  }, [id, scan, map]);
+    if (!d) return null;
+    if (M.sim.live) {
+      const p = scan?.proposals.find((x) => x.id === d.base);
+      return p && scan ? briefFor(subjectOf(p), scan, map) : null;
+    }
+    const s = M.scanSim?.snapshot();
+    if (!s) return null;
+    const b = briefFor({ feature: baseId(d.f), title: d.q, lens: d.lens }, s, map);
+    return { ...b, facts: b.facts.filter((f) => QUESTION_FACTS.includes(f.key)), lines: b.facts.filter((f) => QUESTION_FACTS.includes(f.key)).map((f) => f.text) };
+  }, [d, M, scan, map, simV]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 const ADVICE: Record<Brief['advice']['say'], string | null> = { withdraw: 'Repeats a decline', ask: 'Mostly declined before', proceed: null };

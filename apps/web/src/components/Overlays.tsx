@@ -232,7 +232,7 @@ export function DecisionCard() {
   const [keep, setKeep] = useState(false);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
   const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, note = useAnswerNote(d?.id ?? ''), writes = useWritesOn();
-  const brief = useBrief(sim.live ? d?.base : undefined);
+  const brief = useBrief(d);
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
