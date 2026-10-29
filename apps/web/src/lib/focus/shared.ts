@@ -86,7 +86,7 @@ class SharedFocus {
   }
 
   private async read(): Promise<void> {
-    try { const r = await fetch(FOCUS_URL, { cache: 'no-store' }); if (r.ok) this.take((await r.json()) as SharedView); } catch { /* the stream's state says whether the server is there */ }
+    try { const r = await fetch(FOCUS_URL, { cache: 'no-store' }); if (r.ok) { this.set({ online: true }); this.take((await r.json()) as SharedView); } } catch { /* the stream's state says whether the server is there */ }
   }
 
   private take(v: SharedView): void {
@@ -94,7 +94,8 @@ class SharedFocus {
     const follows = this.local ? '*' : mine ? mine.follows : this.state.follows;
     this.set({ view: v, follows });
     const p = toApply(v, this.me, follows, this.applied);
-    if (v.rev > this.applied) this.applied = v.rev;
+    // only a following reader moves its mark: turning Follow on then goes to where the shared focus is now
+    if (follows && v.rev > this.applied) this.applied = v.rev;
     if (!p || !v.shared) return;
     this.hushUntil = Date.now() + APPLY_HUSH_MS; this.lastApplied = p;
     for (const a of this.appliers) a(p, { label: v.shared.label, surface: v.shared.surface });
@@ -104,7 +105,7 @@ class SharedFocus {
     if (this.local) return null;
     try {
       const r = await fetch(FOCUS_URL, { method: 'POST', cache: 'no-store', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reader: this.me, surface: this.surface, label: this.label, ...body }) });
-      if (r.ok) { const j = (await r.json()) as { view?: SharedView }; if (j.view) this.take(j.view); }
+      if (r.ok) { const j = (await r.json()) as { view?: SharedView }; if (j.view) { if (!this.state.online) this.set({ online: true }); this.take(j.view); } }
       return r;
     } catch { return null; }
   }
