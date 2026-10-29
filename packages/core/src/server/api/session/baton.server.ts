@@ -1,8 +1,8 @@
 // The one place baton this server holds (session/place.ts decides every move; this keeps the record). In memory, on
 // globalThis because Next bundles each route apart and they must agree; a restart forgets it, as an expired baton is
 // forgotten. The device is named by the `x-bp-device` header: on the design's path the APK reaches this server only
-// through the S8 LAN door (:3101), which derives the device from its paired Bearer; that door is not built, so today
-// the caller names itself, and only on loopback.
+// through the S8 LAN door (:3101, apps/server/src/lan-door.ts, opt-in with --lan), which derives the device from its
+// paired Bearer. A loopback caller still names itself.
 // The rule the door must keep (docs/concepts/desk-to-table/plan.md, D1): it drops any `x-bp-device` the client sent and
 // sets it from the paired fingerprint, so a LAN caller can never name another device. `deviceOf` is the only reader of
 // the header, so that is the one seam to change; check:place-baton fails if any other server file reads it.
