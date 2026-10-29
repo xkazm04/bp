@@ -24,7 +24,7 @@ import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, drawTableTop, featRect, resetOutlines } from './render/plan';
 import {
-  drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
+  drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawRuleZones, drawOverlays, drawPins, drawPreview,
   drawPulses, drawReleases, drawTargets, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
@@ -35,6 +35,7 @@ import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
 import { rs, smooth, type SRect, type View } from './render/view';
 import { GENERAL } from '@bp/core/data/types';
+import type { Rule } from '@bp/core/scan/rules';
 
 export interface EngineOptions {
   canvas: HTMLCanvasElement;
@@ -463,7 +464,7 @@ export class Engine {
     this.hits.reset(); this.stampHits();
     drawOverlays(this, ctx, v, lod);
     if (this.introOn) { this.flags = NO_FLAGS; return; }
-    drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
+    drawOrderZones(this, ctx, v, lod); drawRuleZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawTracks(this, ctx, v, lod); drawBreaches(this, ctx, v, lod, now);
@@ -787,6 +788,9 @@ export class Engine {
     return this.apVal;
   }
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
+  /** A live product's standing rules (lib/rules/client.ts), drawn on the plan by drawRuleZones. */
+  liveRules: readonly Rule[] = [];
+  setLiveRules(rules: readonly Rule[]) { if (this.liveRules !== rules) { this.liveRules = rules; this.dirty(); } }
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }

@@ -9,7 +9,9 @@ import { SPEND_CAP, pname, sheetOf } from '@bp/core/model';
 import type { DockTab } from '@/engine/state';
 import { MorningButton, oncePerProposal } from './Queue';
 import { FindPanel, useRunningScans } from './rail/panels';
-import { shallowEqual, useBp, useEngine } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { useRules } from '@/lib/rules/client';
+import { isLive, isOrder } from '@bp/core/scan/rules';
 import { WideBody, isWide } from './rail/wide';
 import { setFlyoutWidth } from '@/engine/chrome';
 import { toggleTableCard } from './crossing/CrossingHost';
@@ -77,6 +79,10 @@ function useItems(): Item[] {
   }, shallowEqual);
   // the Agents figure: working agents plus running scans that are not already agents on the plan (useRunningScans)
   const scans = useRunningScans();
+  // a live product's standing rules (lib/rules/client.ts): the rail counts them and the plan wears their places
+  const live = useLive(), rv = useRules(live?.slug ?? null);
+  useEffect(() => { E.setLiveRules(live ? rv.rules : []); }, [E, live, rv.rules]);
+  const now = Date.now(), on = rv.rules.filter((r) => isLive(r, now)), rules = { n: on.length, g: on.filter((r) => !isOrder(r.kind)).length };
   const out: Item[] = [];
   out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
   if (sim.has) {
@@ -86,7 +92,8 @@ function useItems(): Item[] {
       glyph: G.asks, n: s.asks, n2: s.hi, n2title: s.hi + ' urgent', tone: s.asks ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
     });
     out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents + (scans ? ' · ' + scans + ' scan' + (scans === 1 ? '' : 's') + ' running' : ''), glyph: G.swarm, n: s.working + scans, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
-    if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
+    if (sim.live && live) out.push({ k: 'orders', label: 'Rules', title: 'Standing rules · ' + rules.n + ' live', glyph: G.orders, n: rules.n, tone: 'ink', sub: rules.g ? rules.g + ' grant' + (rules.g === 1 ? '' : 's') : undefined });
+    else if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
     if (!sim.live) out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + s.pct + '% of the cap', glyph: G.steer, n: s.pct + '%', tone: s.pct >= 100 ? 'red' : s.pct >= 80 ? 'amber' : 'ink' });
   }
   const sh = sheetOf(M.P, s.view);

@@ -329,3 +329,32 @@
 #flyout.wide .wb-spend .bar i { background: var(--mint); }
 #flyout.wide .wb-spend b { font: 600 16px var(--mono); color: var(--ink-hi); text-align: right; }
 #flyout.wide .wb-agents-l .pc b.t-red { color: var(--red-2); font: 600 13px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
+/* ---------- rules (a live product's Orders, rules.tsx): the writer's kinds, its options, the replay's rows */
+#flyout.wide .rl-kinds button { display: flex; flex-direction: column; gap: 4px; }
+#flyout.wide .rl-kinds button b { font-size: 16px; font-weight: 600; color: var(--ink-hi); }
+#flyout.wide .rl-kinds button span { font-size: 14px; line-height: 1.4; color: var(--ink-2); }
+#flyout.wide .rl-kinds button[aria-pressed='true'] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); box-shadow: inset 3px 0 0 var(--accent); }
+#flyout.wide .rl-opts { margin-top: 12px; }
+#flyout.wide .rl-opts button { text-transform: none; letter-spacing: 0.01em; font-size: 14px; }
+#flyout.wide .wb-row.rl-k-grant .rk > span:first-child { color: var(--mint-2); }
+#flyout.wide .wb-row.rl-k-hold .rk > span:first-child, #flyout.wide .wb-row.rl-k-only .rk > span:first-child, #flyout.wide .wb-row.rl-k-cap .rk > span:first-child { color: var(--amber-2); }
+#flyout.wide .wb-row.rl-ended .rt { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--ink-3); }
+#flyout.wide .rl-ev.busy { opacity: 0.6; transition: opacity 0.2s; }
+#flyout.wide .rl-syn b { color: var(--amber-2); letter-spacing: 0.06em; }
+#flyout.wide .rl-rows { list-style: none; margin: 0; padding: 0; }
+#flyout.wide .rl-row button { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 9px 10px 9px 12px; background: none; border: 0; border-bottom: 1px solid var(--ink-4); border-left: 3px solid var(--ink-4); text-align: left; color: var(--ink); }
+#flyout.wide .rl-row.bad button { border-left-color: var(--amber); }
+#flyout.wide .rl-row.stop button { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 6%, transparent); }
+#flyout.wide .rl-row.ok button { border-left-color: var(--mint); }
+#flyout.wide .rl-row button:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#flyout.wide .rl-row .tx { font-size: 15px; line-height: 1.4; color: var(--ink-hi); min-width: 0; overflow-wrap: anywhere; }
+#flyout.wide .rl-row .tx small { display: block; font-size: 13px; color: var(--ink-2); }
+#flyout.wide .rl-row .syn { margin-left: 8px; padding: 0 5px; border: 1px solid var(--amber); font: normal 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber-2); }
+#flyout.wide .rl-row .vs { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+#flyout.wide .rl-more { margin-top: 10px; height: 34px; }
+#flyout.wide .rl-set { margin-top: 22px; }
+#flyout.wide .rl-set .bt.go { height: 42px; padding: 0 20px; font-size: 15px; }
+#flyout.wide .rl-set .bt.go:disabled { opacity: 0.5; }
+#flyout.wide .rl-armed { border-color: var(--red); color: var(--red-2); box-shadow: inset 3px 0 0 var(--red); }
+#flyout.wide .rl-revoke:hover { border-color: var(--red); color: var(--red-2); }
+#flyout.wide .wb-meta.t-red { color: var(--red-2); }

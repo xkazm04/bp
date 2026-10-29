@@ -164,7 +164,7 @@ export function stopTurn(store: CompanionStore): boolean {
 // ------------------------------------------------------------------------------------------- cards
 let token: Promise<string> | null = null;
 /** The human token, fetched once per page (and again after the server refuses it: a restarted server mints a new one). */
-function humanToken(fresh = false): Promise<string> {
+export function humanToken(fresh = false): Promise<string> {
   if (fresh) token = null;
   return (token ??= fetch('/api/companion/human-token').then(async (r) => {
     const j = (await r.json().catch(() => null)) as { token?: string } | null;

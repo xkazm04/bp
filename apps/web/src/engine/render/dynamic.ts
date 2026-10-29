@@ -11,6 +11,7 @@ import { featRect } from './plan';
 import { PRESENT } from './hits';
 import { onView, rs, sxv, syv, type SRect, type View } from './view';
 import { GENERAL } from '@bp/core/data/types';
+import { isLive, isOrder } from '@bp/core/scan/rules';
 
 // Reduced motion (E.cam.reduced, the engine's one signal): dashes hold still, expanding rings hold at mid radius.
 const dashOff = (E: Engine, m: number) => (E.cam.reduced ? 0 : E.dashT * m);
@@ -171,6 +172,58 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
           ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.strokeStyle = th.amber; ctx.lineWidth = 1.3;
           ctx.fillRect(fr.x + 4 * u, fr.y + fr.h - 22 * u, 36 * u, 17 * u); ctx.strokeRect(fr.x + 4.5 * u, fr.y + fr.h - 21.5 * u, 36 * u - 1, 17 * u - 1);
           drawText(ctx, o.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), th.amberText);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * A live product's standing rules (Engine.liveRules): each live rule's place on the plan, the governed-place drawing of
+ * the sim's orders. A room it covers whole wears a dashed inset (amber for an order, mint for a grant), a hold's room the
+ * hatch too, and a badge with the rule's id; a part of a room, each covered feature's dashed outline. A rule over
+ * everything outlines nothing until it is selected (the Orders panel sets ordHi), then every room.
+ */
+export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
+  const rules = E.liveRules; if (!rules.length) return;
+  const S = E.S, th = E.th, u = E.U, L = E.M.L, now = Date.now();
+  for (const r of rules) {
+    if (!isLive(r, now)) continue;
+    const hi = S.ordHi === r.id, all = r.scope.kind === 'all';
+    if (all && !hi) continue;
+    const ord = isOrder(r.kind), col = ord ? th.amber : th.mint, txt = ord ? th.amberText : th.mintText;
+    const ids = new Set(r.scope.features);
+    for (const R of L.rooms) {
+      let c = 0; for (const f of R.feats) if (all || ids.has(f.id)) c++;
+      if (!c) continue;
+      if (c === R.feats.length) {
+        const q = rs(v, R, sr1); if (!onView(v, q)) continue;
+        ctx.save(); ctx.beginPath(); ctx.rect(q.x, q.y, q.w, q.h); ctx.clip();
+        if (r.kind === 'hold') { // the hold's hatch: the room is closed to new work
+          ctx.strokeStyle = th.alpha(col, hi ? 0.28 : 0.16); ctx.lineWidth = 1.2;
+          ctx.beginPath(); for (let x = q.x - q.h; x < q.x + q.w; x += 14 * u) { ctx.moveTo(x, q.y + q.h); ctx.lineTo(x + q.h, q.y); } ctx.stroke();
+        }
+        if (hi) { ctx.fillStyle = th.alpha(col, 0.08); ctx.fillRect(q.x, q.y, q.w, q.h); }
+        ctx.restore();
+        ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(col, 0.85); ctx.lineWidth = hi ? 2.5 : 1.6; ctx.setLineDash(ord ? DASH_ZONE : DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
+        ctx.strokeRect(q.x + 5 * u, q.y + 5 * u, q.w - 10 * u, q.h - 10 * u); ctx.restore();
+        if (q.w >= 120 * u && q.h >= 40 * u) {
+          const bw = 40 * u, bx = q.x + q.w - bw - 10 * u, by = q.y + 10 * u;
+          ctx.fillStyle = th.alpha(th.panel, 0.94); ctx.fillRect(bx, by, bw, 18 * u);
+          ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 18 * u - 1);
+          ctx.textAlign = 'center'; drawText(ctx, r.id, bx + bw / 2, by + 13.5 * u, E.tx.f(12, 600, true), txt); ctx.textAlign = 'left';
+        }
+      } else {
+        for (const f of R.feats) {
+          if (!ids.has(f.id)) continue;
+          const fr = featRect(E, v, f.id, lod, sr2); if (!fr || !onView(v, fr, 0)) continue;
+          ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(col, 0.85); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
+          ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4); ctx.restore();
+          if (lod > 0.5 && fr.w >= 60 * u) {
+            ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.fillRect(fr.x + 4 * u, fr.y + fr.h - 22 * u, 36 * u, 17 * u);
+            ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.strokeRect(fr.x + 4.5 * u, fr.y + fr.h - 21.5 * u, 36 * u - 1, 17 * u - 1);
+            drawText(ctx, r.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), txt);
+          }
         }
       }
     }
