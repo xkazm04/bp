@@ -1,0 +1,141 @@
+#!/usr/bin/env node
+// Gate: the decision brief (packages/core/src/scan/brief.ts) says each fact right, says thin evidence as thin, stays in
+// its line budget, and reaches both doors. Fixtures are built here, by hand, so every number below is checkable:
+//   1. no history: no precedent yet, nothing depends on it, risk class unknown, no build history, advice proceed;
+//   2. not on the plan: blast radius unknown, no ids;
+//   3. blast: the features whose depends_on name it, counted with their rooms, ids = their slugs;
+//   4. precedent: same lens AND tier counts (a tier-2 row under the lens does not), "approved 5 of 6", 6 ids;
+//   5. declines: the matching decline is quoted in the owner's words, latest first, one per standard; advice withdraw;
+//   6. words: a draft "add retry to checkout" hears "Add retries to checkout payment calls"; one shared word plus the
+//      feature's own name ("booking" ~ book-a-class) is NOT similar (the first run's false positive);
+//   7. undo: money -> a revert may not undo it, reliability -> a revert PR, none -> unknown;
+//   8. cost: 24 min execute run with 2 items in its pack -> about 12 min, under the lens, on its model; else any lens;
+//   9. budget: at most BRIEF_LINES facts of at most BRIEF_WIDTH characters, a long note cut with an ellipsis;
+//  10. same input, same brief (byte for byte), and facts == lines;
+//  11. the doors: plan.brief is in the catalog, AUTO, on GET /api/companion/brief; both route modules and their web
+//      mounts exist; the web decision card and Review detail render the brief through useBrief + BriefFacts.
+// Run: node scripts/check-decision-brief.ts
+import fs from 'node:fs';
+import path from 'node:path';
+import { BRIEF_LINES, BRIEF_WIDTH, briefFor, briefMapOf, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
+import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
+import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
+
+const ROOT = path.resolve(import.meta.dirname, '..');
+const failures: string[] = [];
+let passed = 0;
+const ok = (n: number, cond: boolean, what: string, got?: unknown) => { if (cond) passed++; else failures.push(`${n}. ${what}${got !== undefined ? '  (got ' + JSON.stringify(got) + ')' : ''}`); };
+const fact = (b: Brief, key: string) => b.facts.find((f) => f.key === key);
+
+// ------------------------------------------------------------------------------------------- fixtures
+const map: BriefMap = briefMapOf({
+  domains: [{ slug: 'booking', name: 'Booking & Attendance' }, { slug: 'payments', name: 'Payments' }],
+  capabilities: [{ slug: 'booking.core', name: 'Booking', domain: 'booking' }, { slug: 'booking.waits', name: 'Waitlists', domain: 'booking' }, { slug: 'payments.billing', name: 'Billing', domain: 'payments' }],
+  features: [
+    { slug: 'book-a-class', id: 'BKG-01', name: 'Book a class', capability: 'booking.core', stage: 'live' },
+    { slug: 'cancel', id: 'BKG-02', name: 'Cancel', capability: 'booking.core', depends_on: ['book-a-class'] },
+    { slug: 'waitlist', id: 'BKG-04', name: 'Waitlist', capability: 'booking.waits', depends_on: ['book-a-class'] },
+    { slug: 'promote', id: 'BKG-05', name: 'Auto-promote', capability: 'booking.waits', depends_on: ['waitlist', 'book-a-class'] },
+    { slug: 'card-payments', id: 'PAY-07', name: 'Card payments', capability: 'payments.billing' },
+    { slug: 'lonely', name: 'Lonely', capability: 'payments.billing' },
+  ],
+  lenses: [{ id: 'security', name: 'Security' }, { id: 'development', name: 'Development' }],
+});
+const day = (d: number) => new Date(Date.parse('2026-10-20T12:00:00Z') - d * 86400000).toISOString();
+const P = (x: Partial<Proposal> & { id: string }): Proposal => ({ run_id: 'r0', feature: 'cancel', lens: 'security', title: x.id + ' title', standard: 'none', kind: 'fix', status: 'approved', created_at: day(30), updated_at: day(20), decided_at: day(20), decided_by: 'user:owner', ...x });
+const scanOf = (proposals: Proposal[], runs: Run[] = [], packs: Pack[] = []): ScanSnapshot => ({ ...emptyScan(), proposals, runs, packs });
+
+// 1. no history
+{
+  const b = briefFor({ feature: 'lonely', title: 'Tidy the lonely page', lens: 'security' }, scanOf([]), map);
+  ok(1, fact(b, 'precedent')?.text === 'No precedent yet under Security', 'no precedent yet under the lens', fact(b, 'precedent')?.text);
+  ok(1, /nothing depends on it/.test(fact(b, 'blast')?.text ?? ''), 'nothing depends on it', fact(b, 'blast')?.text);
+  ok(1, /after release unknown \(no risk class\)/.test(fact(b, 'undo')?.text ?? ''), 'risk class unknown is said', fact(b, 'undo')?.text);
+  ok(1, fact(b, 'cost')?.text === 'Cost: no build history yet' && b.cost.builds === 0, 'no build history yet', fact(b, 'cost')?.text);
+  ok(1, b.advice.say === 'proceed' && b.advice.why === 'no precedent yet' && !fact(b, 'declined'), 'advice proceed, no declined line', b.advice);
+}
+// 2. not on the plan
+{
+  const b = briefFor({ feature: 'ghost', title: 'x' }, scanOf([]), map);
+  ok(2, fact(b, 'blast')?.text === 'Touches ghost, which is not on the plan: blast radius unknown' && b.blast.feature === null && fact(b, 'blast')!.ids.length === 0, 'not on the plan', fact(b, 'blast'));
+}
+// 3. blast
+{
+  const b = briefFor({ feature: 'book-a-class', title: 'x', lens: 'security' }, scanOf([]), map);
+  ok(3, fact(b, 'blast')?.text === 'Touches Book a class (BKG-01) in Booking · 3 features depend on it, in 2 rooms', 'dependents and rooms', fact(b, 'blast')?.text);
+  ok(3, JSON.stringify(fact(b, 'blast')?.ids) === JSON.stringify(['cancel', 'waitlist', 'promote']) && b.blast.wing?.name === 'Booking & Attendance' && b.blast.stage === 'live', 'ids, wing, stage', b.blast);
+}
+// 4. precedent: same lens and tier
+const sec = [
+  P({ id: 'S1', tier: 1, status: 'released' }), P({ id: 'S2', tier: 1, status: 'accepted' }), P({ id: 'S3', tier: 1, status: 'done' }),
+  P({ id: 'S4', tier: 1, status: 'approved' }), P({ id: 'S5', tier: 1, status: 'failed' }),
+  P({ id: 'S6', tier: 1, status: 'declined', decision_note: 'Not while the auth rewrite is open.' }),
+  P({ id: 'S7', tier: 2, status: 'declined' }), P({ id: 'D1', lens: 'development', tier: 1, status: 'declined' }),
+];
+{
+  const o = P({ id: 'O1', feature: 'lonely', title: 'Add rate limits to the booking API', tier: 1, risk_class: 'reliability', status: 'proposed' });
+  const b = briefFor(subjectOf(o), scanOf([...sec, o]), map);
+  ok(4, fact(b, 'precedent')?.text === 'You approved 5 of 6 similar decisions under Security, tier 1 · declined 1', 'approved 5 of 6 under the lens and tier', fact(b, 'precedent')?.text);
+  ok(4, fact(b, 'precedent')?.ids.length === 6 && !fact(b, 'precedent')!.ids.includes('S7') && !fact(b, 'precedent')!.ids.includes('D1'), 'evidence is the 6 rows, not the tier-2 or other-lens ones', fact(b, 'precedent')?.ids);
+  ok(4, !fact(b, 'declined') && b.advice.say === 'proceed', 'a same-lens decline is precedent, not a stand against this idea', b.advice);
+}
+// 5. declines: quoted, latest first, one per standard
+{
+  const h8 = P({ id: 'H8', feature: 'card-payments', lens: 'development', title: 'Retry failed card captures in the job queue', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(9), decision_note: 'Same as checkout: idempotency first.' });
+  const h7 = P({ id: 'H7', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout payment calls', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(5), decision_note: 'No retries until idempotency keys land.' });
+  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Retry the payment webhook on timeout', standard: 'reliability/retry-backoff', status: 'proposed', risk_class: 'money' });
+  const b = briefFor(subjectOf(o), scanOf([h8, h7, o]), map);
+  ok(5, b.declines.length === 1 && b.declines[0].id === 'H7', 'one decline per standard, the latest', b.declines.map((d) => d.id));
+  ok(5, fact(b, 'declined')?.text === `Declined ${day(5).slice(0, 10)} by owner: "No retries until idempotency keys land." (H7)`, "the owner's words, quoted", fact(b, 'declined')?.text);
+  ok(5, b.advice.say === 'withdraw' && /No retries until idempotency keys land/.test(b.advice.why), 'advice withdraw, quoting', b.advice);
+  ok(5, /money risk, a revert PR may not undo it/.test(fact(b, 'undo')?.text ?? ''), '7. money: a revert may not undo it', fact(b, 'undo')?.text);
+  // 6. words
+  const d = briefFor({ feature: 'card-payments', title: 'add retry to checkout' }, scanOf([h8, h7]), map);
+  ok(6, d.declines[0]?.id === 'H7' && d.advice.say === 'withdraw', 'a draft hears the matching decline', d.declines.map((x) => x.id));
+  const fp = P({ id: 'FP', feature: 'book-a-class', lens: 'development', title: 'Fold the duplicated date helpers in book-a-class', status: 'declined', decision_note: 'Not before the release' });
+  const r = briefFor({ feature: 'book-a-class', title: 'Add rate limits to the booking API', lens: 'security' }, scanOf([fp]), map);
+  ok(6, r.precedent.rows.length === 0 && r.advice.say === 'proceed', 'one shared word that is the feature name is not similar', r.precedent.rows.map((x) => x.id + ':' + x.match));
+}
+// 7. undo by risk class
+{
+  const u = (rc?: BriefSubject['risk_class']) => fact(briefFor({ feature: 'lonely', title: 'x', ...(rc ? { risk_class: rc } : {}) }, scanOf([]), map), 'undo')?.text ?? '';
+  ok(7, /after release, a revert PR/.test(u('reliability')) && /secret risk, a revert PR may not undo it/.test(u('secret')) && /A decline is final/.test(u()), 'undo words per risk class', [u('reliability'), u('secret')]);
+}
+// 8. cost
+{
+  const run = (id: string, lens: string, min: number, model: string): Run => ({ id, started_at: day(13), updated_at: day(13), ended_at: new Date(Date.parse(day(13)) + min * 60000).toISOString(), phase: 'execute', status: 'done', lenses: [lens], model });
+  const pack: Pack = { id: 'k-sec-1', lens: 'security', n: 1, branch: 'pack/sec-1', base_ref: 'main', base_sha: '0', run_id: 'E1', status: 'triaged', created_at: day(13), updated_at: day(12) };
+  const items = [P({ id: 'I1', pack_id: 'k-sec-1' }), P({ id: 'I2', pack_id: 'k-sec-1' })];
+  const s = scanOf(items, [run('E1', 'security', 24, 'sonnet'), run('E2', 'design', 40, 'opus')], [pack]);
+  const b = briefFor({ feature: 'lonely', title: 'x', lens: 'security' }, s, map);
+  ok(8, fact(b, 'cost')?.text === 'Cost: about 12 min per item, from 1 build under Security on sonnet' && JSON.stringify(b.cost.runs) === '["E1"]', 'cost under the lens', fact(b, 'cost')?.text);
+  const any = briefFor({ feature: 'lonely', title: 'x', lens: 'development' }, s, map);
+  ok(8, any.cost.basis === 'any lens' && /\(any lens\)/.test(fact(any, 'cost')?.text ?? ''), 'no build under the lens: any lens, said', fact(any, 'cost')?.text);
+}
+// 9. budget
+{
+  const long = P({ id: 'L1', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout', status: 'declined', decision_note: 'word '.repeat(60) });
+  const b = briefFor({ feature: 'card-payments', title: 'retries to checkout', lens: 'development' }, scanOf([long]), map);
+  ok(9, b.facts.length <= BRIEF_LINES && b.lines.every((l) => l.length <= BRIEF_WIDTH), `<= ${BRIEF_LINES} lines of <= ${BRIEF_WIDTH}`, b.lines.map((l) => l.length));
+  ok(9, (fact(b, 'declined')?.text ?? '').endsWith('…'), 'a long note is cut with an ellipsis', fact(b, 'declined')?.text);
+}
+// 10. deterministic, facts == lines
+{
+  const s = scanOf(sec), sub: BriefSubject = { feature: 'book-a-class', title: 'Rate limits', lens: 'security', tier: 1 };
+  const a = briefFor(sub, s, map), b = briefFor(sub, s, map);
+  ok(10, JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(a.lines) === JSON.stringify(a.facts.map((f) => f.text)), 'same input, same brief; lines are the facts');
+}
+// 11. the doors
+{
+  const t = TOOLS.find((x) => x.name === 'plan.brief');
+  ok(11, !!t && classOf(t) === 'AUTO' && t.route.method === 'GET' && t.route.path === '/api/companion/brief', 'plan.brief: AUTO, GET /api/companion/brief', t?.route);
+  for (const f of ['packages/core/src/server/api/companion/brief/route.ts', 'packages/core/src/server/api/products/[slug]/proposals/[id]/brief/route.ts',
+    'apps/web/src/app/api/companion/brief/route.ts', 'apps/web/src/app/api/products/[slug]/proposals/[id]/brief/route.ts']) ok(11, fs.existsSync(path.join(ROOT, f)), 'exists: ' + f);
+  const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+  const card = src('apps/web/src/components/Overlays.tsx'), review = src('apps/web/src/components/rail/wide/review.tsx');
+  ok(11, /useBrief\(/.test(card) && /<BriefFacts /.test(card), 'the plan decision card renders the brief');
+  ok(11, /useBrief\(/.test(review) && /<BriefFacts /.test(review), 'the Review detail renders the brief');
+}
+
+console.log(`check-decision-brief: ${passed} passed, ${failures.length} failed`);
+if (failures.length) { for (const f of failures) console.log('FAIL  ' + f); process.exit(1); }
