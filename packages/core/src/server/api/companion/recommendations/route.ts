@@ -7,6 +7,7 @@ import { SAFE_ID } from '../../../../scan/jobs.ts';
 import { findProduct } from '../../../products.server.ts';
 import type { Verdict } from '../../../../companion/contract.ts';
 import { recommend } from '../door.server.ts';
+import { trail } from '../../../brief.server.ts';
 
 const VERDICTS: Verdict[] = ['approve', 'decline', 'rework', 'descope'];
 
@@ -23,5 +24,6 @@ export async function POST(req: Request): Promise<Response> {
   }
   if (!findProduct(b.slug)) return Response.json({ error: `unknown product ${b.slug}` }, { status: 404 });
   const r = recommend(b.slug, b.id, { verdict: b.verdict as Verdict, why: b.why.trim() });
+  trail(req, { kind: 'recommend', product: b.slug, id: b.id, verdict: r.verdict, why: r.why });
   return Response.json({ slug: b.slug, id: b.id, ...r }, { status: 201 });
 }
