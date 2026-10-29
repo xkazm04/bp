@@ -157,6 +157,14 @@ bool ABpPawn::Seat(float EyeAboveFloorCm)
 	const double FloorZ = Table->GetHomeTransform().GetLocation().Z;
 	FVector Eye = Camera->GetComponentLocation();
 	if (EyeAboveFloorCm > 0.f) Eye.Z = FloorZ + EyeAboveFloorCm;
+	double FloorFixCm = 0.0;
+	if (EyeAboveFloorCm <= 0.f && IsHeadsetOn() && Eye.Z - FloorZ < SeatEyeMinCm)
+	{
+		FloorFixCm = SeatedEyeCm - (Eye.Z - FloorZ);
+		AddActorWorldOffset(FVector(0.0, 0.0, FloorFixCm));
+		Eye.Z += FloorFixCm;
+		UE_LOG(LogBpTable, Log, TEXT("BpView: seat floor corrected by %.1f cm (the runtime's floor stood %.1f cm under the eye)"), FloorFixCm, SeatedEyeCm - FloorFixCm);
+	}
 	const double HeadYaw = Camera->GetComponentRotation().Yaw;
 	const FTransform Was = Table->GetActorTransform();
 	const double Top = TableTopCm();

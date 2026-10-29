@@ -110,6 +110,11 @@ public:
 	 *  the eye stood that high (BpView.Seat's argument). Logs `BpView: seat ...`. */
 	bool Seat(float EyeAboveFloorCm = -1.f);
 	static constexpr float SeatTopMinCm = 55.f;
+	/** A runtime whose floor is wrong (Steam Link on a Quest 3S, Lynx 2026-10-29: a seated eye read 67.5 cm over it) puts a
+	 *  headset eye under SeatEyeMinCm. The seat then corrects the floor once, raising the pawn (the tracking origin) so the
+	 *  eye stands SeatedEyeCm over it, as a runtime's recenter does, and seats the table to that eye. */
+	static constexpr float SeatEyeMinCm = 95.f;
+	static constexpr float SeatedEyeCm = 120.f;
 	/** The start's seat waits for the head to be tracked: it tries every SeatRetryS, at most SeatTries times. */
 	static constexpr float SeatRetryS = 0.5f;
 	static constexpr int32 SeatTries = 20;
