@@ -356,7 +356,10 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	const bool bSwitch = !RoomModeId.IsEmpty() || !ShownRoomMode.IsEmpty();
 	RoomModeId = InRoomId;
 	RoomsVisited.Add(InRoomId);
-	RoomEntryNow = GRoomEntry;
+	// A follow (BpFollow.cpp) shows where it goes first: the lift entry, at its own pace; every other route takes BpRoom.Entry.
+	RoomEntryNow = bFollowEntering ? EBpRoomEntry::Lift : GRoomEntry;
+	RoomFadeNowS = bFollowEntering ? (bSwitch ? FollowSwitchFadeS : FollowFadeS) : 0.f;
+	RoomHoldNowS = bFollowEntering ? FollowLiftHoldS : -1.f;
 	LiftAlpha = LiftHoldClock = 0.f;
 	LiftRoomId.Reset();
 	// A switch from another room's map dives straight in; the lift is the way in from the site plan.
@@ -385,6 +388,8 @@ void ABpTable::ExitRoomMode()
 	}
 	const FString Left = RoomModeId;
 	RoomModeId.Reset();
+	RoomFadeNowS = 0.f;
+	RoomHoldNowS = -1.f;
 	LiftRoomId.Reset();
 	ColumnScale = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: exit %s"), *Left);
@@ -407,7 +412,8 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 {
 	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
 	const bool bInstant = Reduced && Reduced->GetInt() != 0;
-	const float Step = bInstant ? 1.f : DeltaSeconds / FMath::Max(CVarRoomFadeS.GetValueOnGameThread(), 0.01f);
+	const float FadeS = RoomFadeNowS > 0.f ? RoomFadeNowS : CVarRoomFadeS.GetValueOnGameThread();
+	const float Step = bInstant ? 1.f : DeltaSeconds / FMath::Max(FadeS, 0.01f);
 	const auto FadeOut = [this, Step]()
 	{
 		RoomFade = FMath::Max(0.f, RoomFade - Step);
@@ -438,7 +444,8 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 			if (LiftRoomId.IsEmpty())
 			{
 				LiftRoomId = RoomModeId;
-				UE_LOG(LogBpTable, Log, TEXT("BpRoom: lift %s from x%.2f to x%.2f, hold %.2f s"), *LiftRoomId, LiftFrom, RoomLiftColumnScale, CVarRoomLiftHoldS.GetValueOnGameThread());
+				UE_LOG(LogBpTable, Log, TEXT("BpRoom: lift %s from x%.2f to x%.2f, hold %.2f s"), *LiftRoomId, LiftFrom, RoomLiftColumnScale,
+					RoomHoldNowS >= 0.f ? RoomHoldNowS : CVarRoomLiftHoldS.GetValueOnGameThread());
 			}
 			if (LiftAlpha < 1.f)
 			{
@@ -447,7 +454,7 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 				return;
 			}
 			LiftHoldClock += DeltaSeconds;
-			if (!bInstant && LiftHoldClock < CVarRoomLiftHoldS.GetValueOnGameThread()) return;
+			if (!bInstant && LiftHoldClock < (RoomHoldNowS >= 0.f ? RoomHoldNowS : CVarRoomLiftHoldS.GetValueOnGameThread())) return;
 			bLiftDone = true;
 		}
 		ShownRoomMode = RoomModeId;

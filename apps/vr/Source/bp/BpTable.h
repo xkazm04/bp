@@ -661,6 +661,36 @@ public:
 	static constexpr float TextCardHeightCm = 46.f;
 	static constexpr float TextCardPxPerCm = 21.f;
 
+	// ---- The shared focus, followed (BpFollow.cpp; the "one place" morning) ----------------------------------------------
+	/** Goes where another surface says the owner is looking (BpLink's OnFollow), the way the table's own routes go: a room
+	 *  (or a bay's room, or a feature's) in room mode, a wing by its lift, the site plan home. The view never moves. Each
+	 *  target id is looked up as a room, a bay, a wing, then a feature (a demo product's room is a Kettle bay); an id that
+	 *  is none of them keeps the table where it is and only the caption changes. */
+	void Follow(const struct FBpFollowPlace& Place);
+	/** A follow's pace (an ease, never a jump): from the site plan the room's column rises over LevelEaseS, holds
+	 *  FollowLiftHoldS and the paper cross-fades to the room's map over FollowFadeS (about a second in all); from another
+	 *  room's map each half of the fade takes FollowSwitchFadeS. */
+	static constexpr float FollowFadeS = 0.5f;
+	static constexpr float FollowLiftHoldS = 0.15f;
+	static constexpr float FollowSwitchFadeS = 0.35f;
+	/** The quiet caption ("Following Web", then the place): a small glass plate FollowCaptionWidthCm x FollowCaptionHeightCm
+	 *  standing on the frame's near rim, a little right of centre (FollowCaptionXCm, FollowCaptionYCm, its centre
+	 *  FollowCaptionAboveTopCm over the top; the table's axes), square to the target view so it reads level: under the
+	 *  breadcrumb and off the paper, where a drafting table keeps its name plate. Its two lines' caps are FollowCaptionCapCm
+	 *  and FollowCaptionPlaceCapCm (both over the 12 px floor from the target eye), drawn at FollowCaptionPxPerCm, faded in
+	 *  over FollowCaptionFadeS. */
+	static constexpr float FollowCaptionWidthCm = 24.f;
+	static constexpr float FollowCaptionHeightCm = 4.8f;
+	static constexpr float FollowCaptionXCm = -46.f;
+	static constexpr float FollowCaptionYCm = 16.f;
+	static constexpr float FollowCaptionAboveTopCm = 2.5f;
+	static constexpr float FollowCaptionCapCm = 1.0f;
+	static constexpr float FollowCaptionPlaceCapCm = 0.9f;
+	static constexpr float FollowCaptionPxPerCm = 24.f;
+	static constexpr float FollowCaptionFadeS = 0.4f;
+	/** The caption's lines as shown (empty while nothing was followed). */
+	FString GetFollowLine() const { return FollowLine; }
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -1365,6 +1395,29 @@ private:
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
 	FDelegateHandle ScanHandle;
+
+	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
+	FDelegateHandle FollowHandle;
+	void InitFollow();
+	/** Steps the caption's fade and a feature's deck focus; true while the caption fades. */
+	bool TickFollow(float DeltaSeconds);
+	/** A follow that came before the plan: ApplyPlan takes BpLink's last place when it lands. */
+	bool bFollowPending = false;
+	/** EnterRoomMode is running for a follow (it then takes the lift entry and the follow's pace). */
+	bool bFollowEntering = false;
+	/** The pace of the room-mode change under way: the fade and the lift's hold in seconds (0 and -1: the cvars'). */
+	float RoomFadeNowS = 0.f;
+	float RoomHoldNowS = -1.f;
+	/** The feature (or the bay, by its first feature in the deck) whose screen comes to the front once its room's map has
+	 *  settled. */
+	FString FollowFeature;
+	FString FollowBay;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> FollowCaption;
+	FString FollowLine;
+	float FollowCaptionAlpha = 0.f;
+	void ShowFollowCaption(const FString& Who, const FString& Where);
+	void ApplyFollowCaption();
 
 	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
 	UPROPERTY(Transient)

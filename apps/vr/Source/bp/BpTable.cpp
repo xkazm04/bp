@@ -577,6 +577,8 @@ void ABpTable::BeginPlay()
 	PlanHandle = Link.OnPlan().AddUObject(this, &ABpTable::ApplyPlan);
 	FailedHandle = Link.OnPlanFailed().AddUObject(this, &ABpTable::ShowNoPlan);
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpTable::ReceiveScanState);
+	// The shared focus (BpFollow.cpp): the place another surface published, now and whenever it moves.
+	FollowHandle = Link.OnFollow().AddUObject(this, &ABpTable::Follow);
 	if (const FBpPlan* Plan = Link.GetPlan())
 	{
 		ApplyPlan(*Plan);
@@ -585,6 +587,7 @@ void ABpTable::BeginPlay()
 	{
 		ShowNoPlan();
 	}
+	if (const FBpFollowPlace* Place = Link.GetFollowPlace()) Follow(*Place);
 }
 
 void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -594,6 +597,7 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnPlan().Remove(PlanHandle);
 		Link->OnPlanFailed().Remove(FailedHandle);
 		Link->OnScanState().Remove(ScanHandle);
+		Link->OnFollow().Remove(FollowHandle);
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -644,7 +648,9 @@ void ABpTable::Tick(float DeltaSeconds)
 	if (bScanLive || bScanReplay || ScanStrength > 0.f) UpdateScan(FMath::Min(DeltaSeconds, 0.1f));
 	// Switching and the hands' room actions (BpSwitch.cpp): the lamp, its caption and ring, a pending switch and the lasso
 	// run at the frame rate while they move; then the tick drops back as the others do.
-	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f))) SetActorTickInterval(0.f);
+	// The follow caption's fade and a followed feature's deck focus (BpFollow.cpp) ride the same rule.
+	const bool bFollowMoving = TickFollow(FMath::Min(DeltaSeconds, 0.05f));
+	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving) SetActorTickInterval(0.f);
 	else if (GetActorTickInterval() == 0.f && !IsLevelMoving() && !IsRoomModeMoving() && !IsDeckMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 }
 
@@ -828,6 +834,8 @@ void ABpTable::LoadArt()
 	InitDeck();
 	// Switching rooms, the lamp in room mode and the lasso (BpSwitch.cpp).
 	InitSwitch();
+	// The shared focus's caption (BpFollow.cpp).
+	InitFollow();
 }
 
 void ABpTable::ApplyColumnLook()
@@ -1183,6 +1191,13 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 	for (const FString& Command : Pending)
 	{
 		if (GEngine) GEngine->Exec(GetWorld(), *Command);
+	}
+
+	// A shared focus that came before the plan goes now (BpFollow.cpp).
+	if (bFollowPending)
+	{
+		bFollowPending = false;
+		if (const FBpFollowPlace* Place = FBpLinkModule::Get().GetFollowPlace()) Follow(*Place);
 	}
 }
 

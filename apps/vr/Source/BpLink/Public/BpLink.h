@@ -87,6 +87,29 @@ struct BPLINK_API FBpScanState
 /** Fired on the game thread when a poll brought back something new. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
 
+/** The shared focus ("one place"): the place the owner is looking at, as another surface published it (GET /api/session/focus,
+ *  packages/core/src/session/focus.ts SharedView.shared). Ids only, never a selection. */
+struct BPLINK_API FBpFollowPlace
+{
+	/** The product it was published on (place.product). A demo product is a copy of Kettle's map, so its ids are the plan's. */
+	FString Product;
+	/** place.target: feature, room, wing or site; empty when the place is the product as a whole. */
+	FString Kind;
+	FString Id;
+	/** place.level (L0..L4) and place.say (one plain line), when the publisher sent them. */
+	FString Level;
+	FString Say;
+	/** Who put it there: the reader's id, its surface (web, phone, morning...) and its label ("Web"). */
+	FString Reader;
+	FString Surface;
+	FString Label;
+	/** The record's rev that made it the shared place. */
+	int32 Rev = 0;
+};
+
+/** Fired on the game thread when the shared focus moved to a place another reader published, while BpLink follows. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpFollow, const FBpFollowPlace&);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -168,7 +191,44 @@ public:
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
 
+	/** The shared focus, followed (packages/core/src/session/focus.ts): BpLink is the reader FollowReader on surface `vr`,
+	 *  says `follow *` once (and again whenever the record no longer shows it following), `hello` every FollowHelloS,
+	 *  and reads GET /api/session/focus every FollowPollS. A new rev whose place another reader published fires OnFollow;
+	 *  BpLink never publishes, so nothing it does can come back to it as news (and the server makes no rev for a place that
+	 *  is already the shared one). Off with no server to ask (the bundle). */
+	static constexpr float FollowPollS = 1.f;
+	static constexpr float FollowHelloS = 15.f;
+	static const TCHAR* const FollowReader;
+	FOnBpFollow& OnFollow() { return FollowDelegate; }
+	/** The last place followed, or null while none has been: a table that begins play later goes there at once. */
+	const FBpFollowPlace* GetFollowPlace() const { return bHasFollowPlace ? &FollowPlace : nullptr; }
+	bool IsFollowing() const { return bFollowing; }
+	/** BpLink.Follow on|off: off says `unfollow` and stops applying; on says `follow *` and applies the shared place as it
+	 *  stands, if another reader published it. */
+	void SetFollowing(bool bOn);
+
 private:
+	bool TickFollow(float DeltaSeconds);
+	/** POST /api/session/focus { op, reader, surface, label[, of] } as FollowReader. */
+	void SendFollowOp(const TCHAR* Op);
+	void ReceiveFollowView(const FString& Body);
+
+	FOnBpFollow FollowDelegate;
+	FTSTicker::FDelegateHandle FollowTicker;
+	FBpFollowPlace FollowPlace;
+	bool bHasFollowPlace = false;
+	bool bFollowing = true;
+	/** The server has our `follow *` (it answered 200), so the poll only reads. */
+	bool bFollowSaid = false;
+	bool bFollowPollOut = false;
+	bool bFollowOpOut = false;
+	/** The rev last read; -1 before the first read, so the place standing when VR starts is followed too. */
+	int32 FollowRev = -1;
+	double NextFollowPollS = 0.0;
+	double NextFollowHelloS = 0.0;
+	/** The poll's "no server" is logged once per outage, not every second. */
+	bool bFollowUnreachableLogged = false;
+
 	/** The one door for wave writes: POST .../waves or PATCH .../waves/<id>, nothing else. A dispatch, a DELETE or any other
 	 *  route is refused and logged, on every product (the owner's ruling: no dispatch from VR). */
 	void SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32 Status, const FString& Body)> OnDone);

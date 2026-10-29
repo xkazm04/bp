@@ -424,16 +424,20 @@ void FBpLinkModule::StartupModule()
 	{
 		FetchProduct();
 		ScanTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickScanPoll), 0.1f);
+		// The shared focus: hello, follow and the poll (FollowPollS), on the same core ticker.
+		FollowTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickFollow), 0.1f);
 	}
 }
 
 void FBpLinkModule::ShutdownModule()
 {
 	FTSTicker::GetCoreTicker().RemoveTicker(ScanTicker);
+	FTSTicker::GetCoreTicker().RemoveTicker(FollowTicker);
 	GClient.Reset();
 	PlanDelegate.Clear();
 	PlanFailedDelegate.Clear();
 	ScanStateDelegate.Clear();
+	FollowDelegate.Clear();
 }
 
 // ---- The scan side (spark vr-fidelity-40 FC1): the jobs, the store's tables and the waves, polled ----------------------
@@ -759,4 +763,198 @@ void FBpLinkModule::AddToDraft(const TArray<FString>& ProposalIds, TFunction<voi
 		}
 		Done(false, FString(), FString::Printf(TEXT("%s refused %d %.200s"), *Note, Status, *Answer));
 	});
+}
+
+// ---- The shared focus, followed (the "one place" morning: packages/core/src/session/focus.ts) ---------------------------
+// Another surface (the web's Morning Watch, a phone, the companion) publishes where the owner is looking; the table follows.
+// BpLink is one reader of the server's focus record: it says `follow *` (whoever moved last) once, `hello` every
+// FollowHelloS so the others see it live, and polls the record every FollowPollS (UE's HTTP cannot hold the SSE stream:
+// machine.md, reading 13). A rev it has not seen, whose place another reader published, fires OnFollow. It never publishes,
+// so no echo of its own can reach it; the server makes no rev for a place that is already the shared one either. The place
+// baton (vr:<device> through /api/session/place) is another route and is not used here.
+
+const TCHAR* const FBpLinkModule::FollowReader = TEXT("vr:table");
+
+namespace
+{
+	const TCHAR* const FocusRoute = TEXT("/api/session/focus");
+	const TCHAR* const FollowSurface = TEXT("vr");
+	const TCHAR* const FollowLabel = TEXT("VR table");
+
+	FAutoConsoleCommand GFollowCommand(TEXT("BpLink.Follow"), TEXT("BpLink.Follow on|off: follow the shared focus (the place another surface published), or stop."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: follow is %s"), Module->IsFollowing() ? TEXT("on") : TEXT("off"));
+				return;
+			}
+			Module->SetFollowing(Args[0] != TEXT("off") && Args[0] != TEXT("0"));
+		}));
+}
+
+void FBpLinkModule::SetFollowing(bool bOn)
+{
+	if (bOn == bFollowing) return;
+	bFollowing = bOn;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: follow %s"), bOn ? TEXT("on") : TEXT("off"));
+	if (bOn)
+	{
+		// The shared place as it stands is taken at the next read, as at start.
+		bFollowSaid = false;
+		FollowRev = -1;
+		NextFollowPollS = 0.0;
+	}
+	else
+	{
+		SendFollowOp(TEXT("unfollow"));
+	}
+}
+
+bool FBpLinkModule::TickFollow(float)
+{
+	// The bundle has no server to keep a focus record.
+	if (GFromBundle) return true;
+	const double Now = FPlatformTime::Seconds();
+	if (!bFollowOpOut)
+	{
+		if (bFollowing && !bFollowSaid) SendFollowOp(TEXT("follow"));
+		else if (Now >= NextFollowHelloS) SendFollowOp(TEXT("hello"));
+	}
+	if (!bFollowPollOut && Now >= NextFollowPollS)
+	{
+		NextFollowPollS = Now + FollowPollS;
+		if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+		bFollowPollOut = true;
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + FocusRoute, TEXT("application/json"));
+		Request->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			Module->bFollowPollOut = false;
+			const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+			if (Status != 200)
+			{
+				if (!Module->bFollowUnreachableLogged)
+				{
+					UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s answered %d; the table keeps its place until the shared focus reads again"), FocusRoute, Status);
+					Module->bFollowUnreachableLogged = true;
+				}
+				return;
+			}
+			Module->bFollowUnreachableLogged = false;
+			Module->ReceiveFollowView(Response->GetContentAsString());
+		});
+		Request->ProcessRequest();
+	}
+	return true;
+}
+
+void FBpLinkModule::SendFollowOp(const TCHAR* Op)
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("op"), Op);
+	Body->SetStringField(TEXT("reader"), FollowReader);
+	Body->SetStringField(TEXT("surface"), FollowSurface);
+	Body->SetStringField(TEXT("label"), FollowLabel);
+	const bool bFollow = FCString::Strcmp(Op, TEXT("follow")) == 0;
+	if (bFollow) Body->SetStringField(TEXT("of"), TEXT("*"));
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + FocusRoute);
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Text);
+	bFollowOpOut = true;
+	// Any op says we are here, so the next hello is due FollowHelloS from now; a failed one is tried again sooner.
+	NextFollowHelloS = FPlatformTime::Seconds() + FollowHelloS;
+	const FString Said = Op;
+	Request->OnProcessRequestComplete().BindLambda([Said, bFollow](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module) return;
+		Module->bFollowOpOut = false;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status != 200)
+		{
+			Module->NextFollowHelloS = FPlatformTime::Seconds() + 2.0 * FollowPollS;
+			if (bFollow) UE_LOG(LogBpLink, Warning, TEXT("BpLink: POST %s %s answered %d; asked again in %.0f s"), FocusRoute, *Said, Status, 2.0 * FollowPollS);
+			return;
+		}
+		if (bFollow)
+		{
+			Module->bFollowSaid = true;
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: following the shared focus as %s (whoever moves last)"), FollowReader);
+		}
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ReceiveFollowView(const FString& Body)
+{
+	// SharedView: { rev, shared: { place: { product, target?: { kind, id }, level?, say? }, reader, surface, label } | null,
+	// readers: [{ id, follows? }] }. Read by hand: the record is small and has no generated type yet.
+	TSharedPtr<FJsonObject> View;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), View) || !View.IsValid())
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not parse: %.120s"), FocusRoute, *Body);
+		return;
+	}
+	// The record no longer shows us following (a fresh record, or one that forgot us): say it again.
+	const TArray<TSharedPtr<FJsonValue>>* Readers = nullptr;
+	bool bListed = false;
+	if (View->TryGetArrayField(TEXT("readers"), Readers))
+	{
+		for (const TSharedPtr<FJsonValue>& Value : *Readers)
+		{
+			const TSharedPtr<FJsonObject>* Reader = nullptr;
+			FString Id, Follows;
+			if (!Value.IsValid() || !Value->TryGetObject(Reader) || !(*Reader)->TryGetStringField(TEXT("id"), Id) || Id != FollowReader) continue;
+			(*Reader)->TryGetStringField(TEXT("follows"), Follows);
+			bListed = Follows == TEXT("*");
+		}
+	}
+	if (bFollowing && bFollowSaid && !bListed && !bFollowOpOut) bFollowSaid = false;
+
+	int32 Rev = 0;
+	View->TryGetNumberField(TEXT("rev"), Rev);
+	if (Rev == FollowRev) return;
+	const bool bFirst = FollowRev < 0;
+	FollowRev = Rev;
+	const TSharedPtr<FJsonObject>* Shared = nullptr;
+	const TSharedPtr<FJsonObject>* PlaceJson = nullptr;
+	if (!View->TryGetObjectField(TEXT("shared"), Shared) || !(*Shared)->TryGetObjectField(TEXT("place"), PlaceJson))
+	{
+		// No shared place (a fresh record): nothing to go to, and the last one is no longer the owner's.
+		bHasFollowPlace = false;
+		return;
+	}
+	FBpFollowPlace Place;
+	Place.Rev = Rev;
+	(*Shared)->TryGetStringField(TEXT("reader"), Place.Reader);
+	(*Shared)->TryGetStringField(TEXT("surface"), Place.Surface);
+	(*Shared)->TryGetStringField(TEXT("label"), Place.Label);
+	(*PlaceJson)->TryGetStringField(TEXT("product"), Place.Product);
+	(*PlaceJson)->TryGetStringField(TEXT("level"), Place.Level);
+	(*PlaceJson)->TryGetStringField(TEXT("say"), Place.Say);
+	const TSharedPtr<FJsonObject>* Target = nullptr;
+	if ((*PlaceJson)->TryGetObjectField(TEXT("target"), Target))
+	{
+		(*Target)->TryGetStringField(TEXT("kind"), Place.Kind);
+		(*Target)->TryGetStringField(TEXT("id"), Place.Id);
+	}
+	// Our own publish is never news (BpLink publishes nothing today; this keeps a later VR publisher safe).
+	if (Place.Reader == FollowReader) return;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: shared focus rev %d%s: %s %s:%s by %s (%s)%s"), Rev, bFirst ? TEXT(" (as it stood)") : TEXT(""), *Place.Product,
+		Place.Kind.IsEmpty() ? TEXT("site") : *Place.Kind, *Place.Id, *Place.Label, *Place.Surface, bFollowing ? TEXT("") : TEXT("; not following, so not applied"));
+	if (!bFollowing) return;
+	FollowPlace = Place;
+	bHasFollowPlace = true;
+	FollowDelegate.Broadcast(FollowPlace);
 }
