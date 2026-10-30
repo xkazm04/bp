@@ -187,7 +187,8 @@ export function drawOrderZones(E: Engine, ctx: CanvasRenderingContext2D, v: View
 export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number) {
   const rules = E.liveRules; if (!rules.length) return;
   const S = E.S, th = E.th, u = E.U, L = E.M.L, now = Date.now();
-  for (const r of rules) {
+  // grants first, orders over them: where both govern a place, the order is what an agent meets
+  for (const r of [...rules].sort((a, b) => Number(isOrder(a.kind)) - Number(isOrder(b.kind)))) {
     if (!isLive(r, now)) continue;
     const hi = S.ordHi === r.id, all = r.scope.kind === 'all';
     if (all && !hi) continue;
@@ -207,7 +208,7 @@ export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View,
         ctx.restore();
         ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(col, 0.85); ctx.lineWidth = hi ? 2.5 : 1.6; ctx.setLineDash(ord ? DASH_ZONE : DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
         ctx.strokeRect(q.x + 5 * u, q.y + 5 * u, q.w - 10 * u, q.h - 10 * u); ctx.restore();
-        if (q.w >= 120 * u && q.h >= 40 * u) {
+        if ((ord || hi) && q.w >= 120 * u && q.h >= 40 * u) { // a grant's badge only while it is selected: a wide grant would badge every room
           const bw = 40 * u, bx = q.x + 10 * u, by = q.y + q.h - 28 * u; // bottom-left: the room's label and its pins hold the top
           ctx.fillStyle = th.alpha(th.panel, 0.94); ctx.fillRect(bx, by, bw, 18 * u);
           ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 18 * u - 1);
@@ -219,7 +220,7 @@ export function drawRuleZones(E: Engine, ctx: CanvasRenderingContext2D, v: View,
           const fr = featRect(E, v, f.id, lod, sr2); if (!fr || !onView(v, fr, 0)) continue;
           ctx.save(); ctx.strokeStyle = hi ? th.inkHi : th.alpha(col, 0.85); ctx.lineWidth = hi ? 2.4 : 1.5; ctx.setLineDash(DASH_C); ctx.lineDashOffset = dashOff(E, -0.5);
           ctx.strokeRect(fr.x - 2, fr.y - 2, fr.w + 4, fr.h + 4); ctx.restore();
-          if (lod > 0.5 && fr.w >= 60 * u) {
+          if ((ord || hi) && lod > 0.5 && fr.w >= 60 * u) {
             ctx.fillStyle = th.alpha(th.panel, 0.92); ctx.fillRect(fr.x + 4 * u, fr.y + fr.h - 22 * u, 36 * u, 17 * u);
             ctx.strokeStyle = col; ctx.lineWidth = 1.3; ctx.strokeRect(fr.x + 4.5 * u, fr.y + fr.h - 21.5 * u, 36 * u - 1, 17 * u - 1);
             drawText(ctx, r.id, fr.x + 9 * u, fr.y + fr.h - 9 * u, E.tx.f(12, 600, true), txt);

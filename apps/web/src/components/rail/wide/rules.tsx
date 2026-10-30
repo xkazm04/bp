@@ -161,7 +161,7 @@ function RuleDetail({ slug, r, now, held, breaches, all, onSet }: { slug: string
             ) : <p className="none">No finding has been approved in its place against it since it was set.</p>}
           </Sec>
         )}
-        {on && <Sec head={r.kind === 'grant' ? 'What agents may decide alone now' : 'What it holds now'} aside="the open backlog"><Now now={rp.r?.now} kind={r.kind} busy={rp.busy} /></Sec>}
+        {on && <Sec head={r.kind === 'grant' ? 'What agents may decide alone now' : 'What it holds now'} aside="the open backlog"><Now now={rp.r?.now} kind={r.kind} busy={rp.busy} live /></Sec>}
         <Sec head="Replayed over your decisions now" aside="the same replay as when it was set">
           <Evidence bt={rp.r?.backtest} busy={rp.busy} error={rp.error} />
         </Sec>
@@ -278,9 +278,8 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
       <div className="wb-act rl-act">
         {draft ? <Verdict bt={bt} /> : <span className="rl-vd">Pick a place and a rule</span>}
         <span className="sp" />
-        {risky && !armed && <span className="wb-meta t-red">flagged: tap twice</span>}
-        <button type="button" className={'bt go' + (armed ? ' rl-armed' : '')} disabled={!draft || !bt || rp.busy} onClick={set}>
-          {armed ? 'Grant it anyway' : !draft ? 'Set' : kind === 'grant' ? 'Grant ' + nextId + ' for ' + (hours || 24) + ' h' : 'Set order ' + nextId}
+        <button type="button" className={'bt go' + (armed ? ' rl-armed' : '')} disabled={!draft || !bt || rp.busy} onClick={set} title={risky && !armed ? 'The replay flags this grant: the first tap arms it, the second sets it' : undefined}>
+          {armed ? 'Tap again: grant despite the flags' : !draft ? 'Set' : kind === 'grant' ? 'Grant ' + nextId + ' for ' + (hours || 24) + ' h' : 'Set order ' + nextId}
         </button>
       </div>
     </>

@@ -51,13 +51,13 @@ function RowLine({ r }: { r: BacktestRow }) {
 }
 
 /** What the rule does to the open backlog now. */
-export function Now({ now, kind, busy }: { now: Impact | undefined; kind: RuleKind; busy?: boolean }) {
+export function Now({ now, kind, busy, live }: { now: Impact | undefined; kind: RuleKind; busy?: boolean; live?: boolean }) {
   const E = useEngine(), P = E.M.P;
   if (!now) return <p className="wb-meta">{busy ? 'Reading the open backlog…' : 'Pick a place and a rule to see what it does now.'}</p>;
   const verb = kind === 'grant' ? 'agents may approve alone' : kind === 'cap' ? 'builds capped' : 'held';
   return (
     <div className={'rl-now' + (busy ? ' busy' : '')}>
-      <p className="rl-now-l"><b>{now.hits.length}</b> of {now.open} open finding{now.open === 1 ? '' : 's'} {kind === 'grant' ? 'agents could approve without asking you' : kind === 'cap' ? 'would build under its cap' : 'would be held'}, across <b>{now.features}</b> feature{now.features === 1 ? '' : 's'}{kind === 'hold' || kind === 'only' ? '; scans there are refused too' : ''}.</p>
+      <p className="rl-now-l"><b>{now.hits.length}</b> of {now.open} open finding{now.open === 1 ? '' : 's'} {kind === 'grant' ? (live ? 'agents may approve without asking you' : 'agents could approve without asking you') : kind === 'cap' ? (live ? 'build under its cap' : 'would build under its cap') : live ? 'are held' : 'would be held'}, across <b>{now.features}</b> feature{now.features === 1 ? '' : 's'}{kind === 'hold' || kind === 'only' ? '; scans there are refused too' : ''}.</p>
       {now.hits.length > 0 ? (
         <ul className="rl-rows" aria-label="Open findings it acts on now">
           {now.hits.slice(0, 8).map((h) => {

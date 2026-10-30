@@ -392,3 +392,4 @@
 #flyout.wide .rl-trust .ok em { color: var(--mint-2); } #flyout.wide .rl-trust .no em { color: var(--amber-2); }
 #flyout.wide .wb-row.rl-sug .rk > span:first-child { color: var(--accent); }
 #flyout.wide .wb-row.rl-sug .rt { font-weight: 400; }
+#flyout.wide .rl-act .rl-vd { min-width: 0; overflow: hidden; }
