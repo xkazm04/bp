@@ -59,6 +59,8 @@ export function WavesBar({ L }: { L: Ledger }) {
               <option value="">All findings</option>
               {waves.waves.map((w) => <option key={w.id} value={w.id}>{w.name} · {waves.states.get(w.id) ?? 'draft'} · {size(w)}</option>)}
             </select>
+            {/* a failed reload over a held list keeps the tabs (they are the last list read) and says they may be out of date */}
+            {waves.error ? <span className="wv-stale" role="status" data-wave="refresh-error">Could not refresh: {waves.error} <button type="button" className="wv-retry" onClick={waves.reload}>Try again</button></span> : null}
           </>
         )}
         {writes
