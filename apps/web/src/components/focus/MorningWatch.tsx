@@ -198,7 +198,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       {card?.kind === 'decision' ? (
         <div className="act">
           {card.decision?.brief?.recommend === 'decline' && (
-            <button type="button" className="bt go rec" disabled={busy || !!s?.ok} onClick={() => void steer('decline')} title={'Recommended: ' + card.decision.brief.note}><kbd>Enter</kbd> Decline · repeat</button>
+            <button type="button" className="bt go rec" disabled={busy || !!s?.ok} onClick={() => void steer('decline')} title={'Recommended: ' + card.decision.brief.note}>{phone ? null : <kbd>Enter</kbd>}Decline · repeat</button>
           )}
           <button type="button" className={'bt' + (card.decision?.brief?.recommend ? '' : ' go')} disabled={busy || !!s?.ok} onClick={() => void steer('approve')}><kbd>A</kbd> Approve</button>
           <button type="button" className="bt" disabled={busy || !!s?.ok} onClick={() => void steer('defer')}><kbd>D</kbd> Defer</button>
