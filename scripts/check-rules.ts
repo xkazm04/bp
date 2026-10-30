@@ -117,6 +117,29 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
   check('ids: O-n and G-n count apart and are never reused', R.nextRuleId(RULES, 'hold') === 'O-6' && R.nextRuleId(RULES, 'grant') === 'G-2');
 }
 
+// ------------------------------------------------------------------------------------------------ the shared cases
+// docs/standard/rules-1.cases.json: the gate's behaviour as data, so a second enforcer (a Personas port) runs the same table
+{
+  type Case = { name: string; rules: string[]; now: string; act?: import('../packages/core/src/scan/rules.ts').Act; grant?: { tool: string; items: { feature: string; tier?: number }[] }; expect: { held?: Record<string, string>; refused?: string | null; grant?: string | null } };
+  const table = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/standard/rules-1.cases.json'), 'utf8')) as { version: number; rules: Record<string, Rule>; cases: Case[] };
+  const bad: string[] = [];
+  for (const c of table.cases) {
+    const rules = c.rules.map((k) => table.rules[k]), now = Date.parse(c.now);
+    if (c.grant) {
+      const got = R.grantFor(rules, c.grant.tool, c.grant.items, now)?.id ?? null;
+      if (got !== c.expect.grant) bad.push(`${c.name}: grant ${got}, want ${c.expect.grant}`);
+      continue;
+    }
+    const g = R.gate(rules, c.act!, now), held = Object.fromEntries(g.held.map((h) => [h.id, h.order.id]));
+    if (JSON.stringify(held) !== JSON.stringify(c.expect.held) || (g.refused?.id ?? null) !== c.expect.refused) bad.push(`${c.name}: held ${j(held)} refused ${g.refused?.id ?? null}`);
+  }
+  check(`the shared gate cases (docs/standard/rules-1.cases.json, ${table.cases.length}) all hold on bp's gate`, table.version === 1 && table.cases.length >= 20 && !bad.length, bad.join('; '));
+  // the table is a contract: a gate that ignored expiry would fail it (a seeded control, run on a mutated copy of the rules)
+  const mut = table.cases.find((c) => c.name.startsWith('expired and revoked'))!;
+  const mg = R.gate(mut.rules.map((k) => ({ ...table.rules[k], expiresAt: undefined, revokedAt: undefined })), mut.act!, Date.parse(mut.now));
+  check('control: the same case with the expiry and the revoke stripped would hold (the table would catch a gate that ignored them)', mg.held.length === 1);
+}
+
 // ------------------------------------------------------------------------------------------------ the doors
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-check-rules-'));
 const KL = path.join(tmp, 'kl'), NOW = '2026-10-20T12:00:00.000Z';

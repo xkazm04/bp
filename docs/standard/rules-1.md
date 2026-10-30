@@ -103,6 +103,10 @@ every item is held, the first holding order refuses the whole act and the door a
 `{ error, order, held }`. A build that names no effort is never held by a `cap`. A refusal cites the rule as
 `{ id, kind, by, at, text, place }`, where `place` is `scope.label`.
 
+The gate's behaviour is also kept as data: [`rules-1.cases.json`](rules-1.cases.json) lists rules, acts and what the gate
+answers (held ids with their order, the refusing order, the covering grant). `scripts/check-rules.ts` replays every case on
+bp's gate; any other enforcer of this file (a Personas port) must pass the same table.
+
 ## 7. The log and the record
 
 Each act the gate held items from, or refused, appends one line per citing rule to `bp-rules-log.jsonl`:

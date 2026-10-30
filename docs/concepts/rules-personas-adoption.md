@@ -123,7 +123,7 @@ The two ways to honour orders on Personas' path:
 | Exists today | no. bp has no gate-check route: `gateBuild` / `gateScan` run only inside the doors that act. | the file is in the directory Personas already resolves |
 | Needs bp running | yes. Personas never calls bp's server today (bp `.hackathon/DOSSIER.md` section 4). | no |
 | Needs | a new bp route, an HTTP client in Personas, and the product slug, which Personas can only guess (`bpSlug`, `bpLink.ts:12-16`) | a port of `gate`, about 40 pure lines (bp `rules.ts:103-129`), and one file read |
-| Drift risk | none | the port can drift. A shared case table guards it: bp's `check:rules` gate cases exported as JSON fixtures that a Rust test replays |
+| Drift risk | none | the port can drift. A shared case table guards it: [`docs/standard/rules-1.cases.json`](../standard/rules-1.cases.json) (20 cases; bp's `check:rules` replays every one on bp's gate) is the table a Rust test of the port replays |
 
 **Reading the file is cheaper**, and it works with bp off. That matters because a hold should hold when the owner
 has closed bp. Put the gate in Rust, at the door, as the first step of `lens_scan_start` before `start_drive`. A
