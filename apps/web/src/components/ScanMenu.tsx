@@ -62,7 +62,7 @@ export function ScanMenu() {
 const focusPlan = () => (document.querySelector('.bp-map') as HTMLElement | null)?.focus({ preventScroll: true });
 
 function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
-  const E = useEngine(), ctx = useScanCtx(), P = E.M.P, { list } = useProjects();
+  const E = useEngine(), ctx = useScanCtx(), P = E.M.P, { list, error: listError } = useProjects();
   const ref = useRef<HTMLDivElement>(null);
   const sel = useLedgerSelection().features;
   // the ledger's selection, when it has one, as a last scope (the first MAX_SELECTION features in map order)
@@ -76,6 +76,9 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const lensView = view !== GENERAL ? lenses.find((l) => l.id === view) : undefined;
   // what each live lens lacks in the repo; Kettle's sample needs nothing
   const needs = useMemo(() => new Map((ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.setup ?? [] : []).map((n) => [n.lens, n])), [ctx.slug, list]);
+  // a live product before the list has ever answered: what each lens needs is not known yet (still reading, or the read
+  // failed), which is not the same as "needs nothing". The items stay usable; the footer says the setup is unknown.
+  const setupUnknown = !!ctx.slug && list === null ? (listError ? 'error' : 'checking') : null;
   const scanOk = lenses.filter((l) => l.ok && !needs.has(l.id)), off = lenses.filter((l) => !l.ok);
   const needy = lenses.filter((l) => l.ok && needs.has(l.id));
   const viewNeed = lensView ? needs.get(lensView.id) : undefined;
@@ -210,6 +213,11 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
       ))}
       {(lensView ? !!viewNeed : needy.length > 0) && <div className="sm-f need">{lensView ? viewNeed!.why : needy.map((l) => l.name + ': ' + needs.get(l.id)!.why).join('; ')}. Prepare queues Claude Code to add it to the repo.</div>}
       {(lensView ? !lensView.ok : off.length > 0) && <div className="sm-f">No scan method: {(lensView ? [lensView] : off).map((l) => l.name).join(', ')}. Add a manifest <code>scan</code> block to scan it.</div>}
+      {setupUnknown === 'checking' && <div className="sm-f" role="status">Checking which lenses need repo setup…</div>}
+      {setupUnknown === 'error' && (
+        // no Try again item: the menu reads the list again on every opening (below), so reopening it is the retry
+        <div className="sm-f need" role="status">{listError} - setup unknown: a lens may need repo setup this menu cannot see. Reopen the menu to read the list again.</div>
+      )}
       {ctx.slug && <div className="sm-f warn">Runs Claude Code {root ? <>in <code>{root}</code></> : 'in this product’s checkout'} with permissions skipped</div>}
     </div>
   );
