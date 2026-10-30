@@ -144,12 +144,13 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   }, [ui.focus]);
 
   // a wide window opens the first pack item in the compare panel the first time the table shows it (A/1); once per
-  // show, so a later close stays closed
+  // show, so a later close stays closed. The once is spent only when the pack table is actually what shows: the
+  // ledger opens on Backlog, and spending it there left In packs with nothing open and J/K with nowhere to start
   const autoOpened = useRef(false), first = L.scoped[0]?.p.id;
   useEffect(() => {
     if (autoOpened.current || !first) return;
-    autoOpened.current = true;
     if (phone || lv !== 'triage' || ui.scope !== 'packs' || window.innerWidth <= 1100) return;
+    autoOpened.current = true;
     set((u) => (u.open || u.focus ? u : { ...u, focus: first, open: first }));
   }, [first, phone, lv, ui.scope, set]);
 
