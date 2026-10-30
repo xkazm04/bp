@@ -143,6 +143,14 @@ check('another device still cannot write the baton: 403, and the shared focus do
   check('wire: GET, a POST answer, its body and an empty view conform to shared-focus-1', !fails.length && view.readers.length > 0, fails.join(' | '));
   check('wire control: a view without rev, a place with a foreign kind, an unknown op are refused',
     !!asView({ ...view, rev: undefined }) && !!asAnswer({ moved: true, view: { ...view, shared: { ...view.shared, place: { product: 'kettle', target: { kind: 'decision', id: 'x' } } } } }) && !!asPost({ ...body, op: 'shout' }));
+  // the golden (packages/schema/golden/shared-focus.json, what a port reproduces): current, and every view in it is wire
+  const { FOCUS_GOLDEN, focusGolden } = await import('./focus-golden.ts');
+  const now = focusGolden(), committed = fs.existsSync(FOCUS_GOLDEN) ? fs.readFileSync(FOCUS_GOLDEN, 'utf8').replace(/\r\n/g, '\n') : '';
+  check('golden: packages/schema/golden/shared-focus.json is what focus.ts computes now (node scripts/focus-golden.ts --write)', committed === now);
+  const gd = JSON.parse(now) as { focusStep: { view: View; moved: boolean }[]; sameSpot: unknown[]; toApply: unknown[]; followingWords: unknown[]; readFocusPlace: unknown[] };
+  const badViews = gd.focusStep.map((x) => asView(x.view)).filter(Boolean);
+  check('golden: it covers every rule (13 moves, 11 pairs, 7 applies, 6 chips, 12 bodies) and each view in it is shared-focus-1',
+    gd.focusStep.length === 13 && gd.sameSpot.length === 11 && gd.toApply.length === 7 && gd.followingWords.length === 6 && gd.readFocusPlace.length === 12 && gd.focusStep.filter((x) => x.moved).length === 3 && !badViews.length, badViews.join(' | '));
 }
 off();
 fs.rmSync(HOME, { recursive: true, force: true });

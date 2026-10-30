@@ -71,6 +71,7 @@
     "check:kettle-host-reload": "node scripts/check-kettle-host-reload.mjs",
     "check:athena-host": "node --import @bp/core/register scripts/check-athena-host.mjs",
     "check:schema": "node packages/schema/generate.mjs --check",
+    "check:contract": "node scripts/check-contract.mjs",
     "check:camera": "node scripts/check-camera.ts",
     "check:render-units": "node scripts/check-render-units.ts",
     "check:variant-copies": "node apps/web/src/variants/check-copies.ts",

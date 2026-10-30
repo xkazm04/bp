@@ -1,18 +1,24 @@
 #!/usr/bin/env node
 // The decision brief's golden file: fixed inputs (a map slice and a store of decided rows) and the exact brief
-// packages/core/src/scan/brief.ts computes for five subjects - an approve-shaped card, a repeat of a decline, an agent's
+// packages/core/src/scan/brief.ts computes for six subjects - an approve-shaped card, a repeat of a decline, an agent's
 // draft, a feature not on the plan, a lens with no decisions yet, and a like idea declined on another feature (ask). It is the sync contract outside bp: Personas' card (or any
 // port of brief.ts) runs the same inputs and must produce these bytes (docs/concepts/decision-brief/personas-adoption.md).
 // bp's side is held by check:decision-brief, which fails when the committed file is not what brief.ts computes now.
-//   node scripts/brief-golden.ts           print whether the committed file is current (exit 1 when not)
-//   node scripts/brief-golden.ts --write   rewrite docs/concepts/decision-brief/golden.json
+// Its home is packages/schema/golden/decision-brief.json, beside the contract's other artifacts (packages/schema/
+// contract.json, moved 2026-10-30, roadmap S2). The old path docs/concepts/decision-brief/golden.json stays a
+// byte-identical copy (MIRRORS), because ports copied it from there and pin its sha256; check:contract and
+// check:decision-brief hold the two equal.
+//   node scripts/brief-golden.ts           print whether the committed files are current (exit 1 when not)
+//   node scripts/brief-golden.ts --write   rewrite packages/schema/golden/decision-brief.json and its mirror
 import fs from 'node:fs';
 import path from 'node:path';
 import { briefFor, briefMapOf, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { emptyScan, type Proposal, type Run, type Pack } from '../packages/core/src/scan/types.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
-export const GOLDEN = path.join(ROOT, 'docs/concepts/decision-brief/golden.json');
+export const GOLDEN = path.join(ROOT, 'packages/schema/golden/decision-brief.json');
+/** The old home, kept byte for byte (Personas' brief.golden.test.ts pins it). */
+export const MIRRORS = [path.join(ROOT, 'docs/concepts/decision-brief/golden.json')];
 
 const map = {
   domains: [{ slug: 'booking', id: 'BKG', name: 'Booking & Attendance' }, { slug: 'payments', id: 'PAY', name: 'Payments' }],
@@ -57,10 +63,10 @@ export function golden(): string {
 
 if (import.meta.filename === path.resolve(process.argv[1] ?? '')) {
   const now = golden();
-  if (process.argv.includes('--write')) { fs.mkdirSync(path.dirname(GOLDEN), { recursive: true }); fs.writeFileSync(GOLDEN, now); console.log('wrote ' + path.relative(ROOT, GOLDEN)); }
+  if (process.argv.includes('--write')) for (const f of [GOLDEN, ...MIRRORS]) { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, now); console.log('wrote ' + path.relative(ROOT, f)); }
   else {
-    const same = fs.existsSync(GOLDEN) && fs.readFileSync(GOLDEN, 'utf8').replace(/\r\n/g, '\n') === now;
-    console.log(same ? 'golden.json is current' : 'golden.json is stale: node scripts/brief-golden.ts --write');
+    const same = [GOLDEN, ...MIRRORS].every((f) => fs.existsSync(f) && fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n') === now);
+    console.log(same ? 'the brief golden and its mirror are current' : 'the brief golden is stale: node scripts/brief-golden.ts --write');
     process.exit(same ? 0 : 1);
   }
 }
