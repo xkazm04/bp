@@ -290,8 +290,10 @@ export function reconcileJobs(slug: string, root: string): void {
     const ph = phaseOf(l);
     const r: Rec = { job: { ...l.job }, root, prompt: '', buf: '', lastErr: '', phase: ph, ...(l.pid !== undefined ? { pid: l.pid } : {}) };
     const gone = (why: string) => { Object.assign(r.job, { status: 'failed', error: why }); r.job.ended_at ??= now(); step(r, 'exit'); };
-    // an old pid may belong to a stranger by now: never adopted, never killed
-    const adoptable = (pid: number | undefined): pid is number => pid !== undefined && Date.now() - Date.parse(l.at) < ORPHAN_MAX_MS && pidAlive(pid);
+    // an old pid may belong to a stranger by now: never adopted, never killed. A line dated in the future (written while the
+    // clock was ahead, or edited by hand) has no trustworthy age either, and an unparseable one none at all.
+    const age = Date.now() - Date.parse(l.at);
+    const adoptable = (pid: number | undefined): pid is number => pid !== undefined && age >= 0 && age < ORPHAN_MAX_MS && pidAlive(pid);
     if (ph === 'queued') gone('the server restarted while this job was queued; it never ran');
     else if (ph === 'running') {
       if (adoptable(r.pid)) r.orphan = true;
