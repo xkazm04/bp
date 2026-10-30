@@ -82,11 +82,18 @@ export function drawTableTop(E: Engine, ctx: CanvasRenderingContext2D, v: View) 
 const failedByEngine = new WeakMap<Engine, Set<string>>();
 const failed = (E: Engine, l: string) => failedByEngine.get(E)?.has(l) ?? false;
 /** Log a lens failure once per engine and lens and record it. The hover card (components/Overlays.tsx) calls this too, so
- *  an aggregate that throws under the plan and under the card is one line in the console, not two. */
+ *  an aggregate that throws under the plan and under the card is one line in the console, not two. The failed set also
+ *  goes into the store once per new lens (S.failedLenses), so the plan says so on screen (Overlays.tsx LensFailNotice)
+ *  instead of reading as a lens with no findings; deferred, since this runs mid-draw and mid-render. */
 export function lensFailed(E: Engine, l: string, part: string, err: unknown) {
   let s = failedByEngine.get(E);
   if (!s) failedByEngine.set(E, (s = new Set()));
-  if (!s.has(l)) { s.add(l); console.error(`[lens ${l}] ${part} failed`, err); }
+  if (s.has(l)) return;
+  s.add(l); console.error(`[lens ${l}] ${part} failed`, err);
+  // the hover card also reaches this on a partial engine (check:overlays' stub has no store): the log still counts there
+  if (typeof E.patch !== 'function') return;
+  const all = [...s];
+  queueMicrotask(() => E.patch({ failedLenses: all }));
 }
 
 /** Variant decoration under the plan, weighted by each lens's dominance. */

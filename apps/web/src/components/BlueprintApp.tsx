@@ -34,7 +34,7 @@ import { FollowHost } from './focus/FollowHost';
 import { MorningWatch } from './focus/MorningWatch';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
-import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
+import { Callout, DecisionCard, HoverCard, Ladder, LensFailNotice, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
 import { FeatureSheet } from './FeatureSheet';
 import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -63,6 +63,7 @@ const Chrome = memo(function Chrome() {
       <BaseBar />
       <Ladder />
       <ScaleBar />
+      <LensFailNotice />
       <Ticker />
       <SelBar />
       <Callout />
