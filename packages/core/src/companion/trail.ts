@@ -26,8 +26,36 @@ export interface TrailSession {
 
 const q = (s: string, n = 90) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
-/** The sessions of the rows, newest first; at most `max`; `product` keeps only that product's rows. */
-export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, product?: string): TrailSession[] {
+/** Whether an agent pushed a draft on after hearing a decline: a later approval recommended on the same feature, or a
+ *  card on the same product, in the same conversation. */
+function pushedAfter(rs: readonly TrailRow[], i: number, r: Extract<TrailRow, { kind: 'brief' }>): boolean {
+  const featureOf = new Map<string, string>();
+  for (const x of rs) if (x.kind === 'brief' && x.id) featureOf.set(x.id, x.feature);
+  return rs.slice(i + 1).some((x) => (x.kind === 'recommend' && x.verdict === 'approve' && featureOf.get(x.id) === r.feature) || (x.kind === 'card' && x.product === r.product));
+}
+/** A draft that met a decline - of the same idea (withdraw) or a like one, quoted (ask): the moment worth showing. */
+const metDecline = (r: TrailRow): r is Extract<TrailRow, { kind: 'brief' }> => r.kind === 'brief' && !r.id && (r.advice === 'withdraw' || (r.advice === 'ask' && !!r.quoted));
+
+/** What agents did with the person's decisions in [since, until], in counts (the Morning Watch's opening card): briefs
+ *  read, distinct declines quoted back to them, drafts withdrawn after a decline (nothing for it came through the door
+ *  after), and declines recommended. Only what passed through bp's door is counted. */
+export interface TrailTally { reads: number; heard: number; withdrew: number; recommended: number; conversations: number }
+export function trailTally(rows: readonly TrailRow[], since: string, until: string): TrailTally {
+  const by = new Map<string, TrailRow[]>();
+  for (const r of rows) if (r.at >= since && r.at <= until) { const l = by.get(r.conversation); if (l) l.push(r); else by.set(r.conversation, [r]); }
+  const heard = new Set<string>(), t: TrailTally = { reads: 0, heard: 0, withdrew: 0, recommended: 0, conversations: by.size };
+  for (const rs of by.values()) rs.forEach((r, i) => {
+    if (r.kind === 'brief') { t.reads++; if (r.declineId && (r.advice === 'withdraw' || r.quoted)) heard.add(r.product + ' ' + r.declineId); }
+    if (metDecline(r) && !pushedAfter(rs, i, r)) t.withdrew++;
+    if (r.kind === 'recommend' && r.verdict === 'decline') t.recommended++;
+  });
+  t.heard = heard.size;
+  return t;
+}
+
+/** The sessions of the rows, newest first; at most `max`; `product` keeps only that product's rows; a session is shown while
+ *  its newest row is younger than `windowMs` (the Morning Watch passes its own window instead). */
+export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, product?: string, windowMs = TRAIL_WINDOW_MS): TrailSession[] {
   const by = new Map<string, TrailRow[]>();
   for (const r of rows) {
     if (product && r.product !== product) continue;
@@ -36,23 +64,19 @@ export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, p
   const out: TrailSession[] = [];
   for (const [conversation, rs] of by) {
     const last = rs[rs.length - 1].at;
-    if (now - Date.parse(last) > TRAIL_WINDOW_MS) continue;
+    if (now - Date.parse(last) > windowMs) continue;
     const titles = new Map<string, string>(), heard = new Map<string, string>(), lines: TrailSession['lines'] = [];
     for (const r of rs) if (r.kind === 'brief' && r.id) titles.set(r.id, r.title);
-    const featureOf = new Map<string, string>();
-    for (const r of rs) if (r.kind === 'brief' && r.id) featureOf.set(r.id, r.feature);
     let reads = 0;
     for (const [i, r] of rs.entries()) {
       if (r.kind === 'brief') {
         reads++;
-        // a draft that met a decline - of the same idea (withdraw) or a like one, quoted (ask): the moment worth showing
-        if ((r.advice !== 'withdraw' && !(r.advice === 'ask' && r.quoted)) || r.id) continue;
+        if (!metDecline(r)) continue;
         if (r.quoted && r.declineId) heard.set(r.quoted, r.declineId);
         lines.push({ tone: 'heard', id: r.declineId,
           text: `Was about to propose "${q(r.title, 60)}" on ${r.featureName ?? r.feature}; read your decline${r.declineId ? ' ' + r.declineId : ''}${r.quoted ? `: "${q(r.quoted)}"` : ''}` });
         // pushed on anyway: a later approval recommended on the same feature, or a card on the same product
-        const pushed = rs.slice(i + 1).some((x) => (x.kind === 'recommend' && x.verdict === 'approve' && featureOf.get(x.id) === r.feature) || (x.kind === 'card' && x.product === r.product));
-        if (!pushed) lines.push({ tone: 'quiet', text: 'Withdrew it: nothing for it came through the door after' });
+        if (!pushedAfter(rs, i, r)) lines.push({ tone: 'quiet', text: 'Withdrew it: nothing for it came through the door after' });
       } else if (r.kind === 'recommend') {
         // a reason that quotes a decline already shown says so by its id, not by the same words twice (a quote of a few
         // characters, "no", would match any reason: only one long enough to be a quote counts)

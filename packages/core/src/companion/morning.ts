@@ -6,31 +6,55 @@
 //   built     per product: what agents built overnight (and what failed), at the room where most of it landed
 //   release   per product: a release merged in the window, and whether readings taken after it confirm its items
 //   quiet     per product with nothing in the window: said once, calmly, so silence is never mistaken for "not read"
-//   decision  the top blockers across products (tier first: stop-ship, then high...), each Approve / Defer / Hold
-//   close     what was decided this morning, and where the steering log is
+//   agents    what agents did with the owner's decisions overnight (the agent trail, companion/trail.ts): the briefs they
+//             read before proposing, the declines they heard back, what they withdrew and what they recommended
+//   decision  the top blockers across products (tier first: stop-ship, then high...), each Approve / Defer / Hold, and each
+//             carrying its decision brief (scan/brief.ts: what it touches, the owner's declines quoted, undo, cost). Only
+//             when the brief says the same idea was declined before (advice 'withdraw') does Decline join the keys, as
+//             the recommendation, with the "Repeats <id> ..." note; a likeness only shows the quote (never flips)
+//   close     what was decided this morning (repeats declined counted), and where the steering log is
 // Headlines are one plain line. Honesty: a release item counts as confirmed only on a reading taken after the release
 // that meets its expected value (scan/track.ts); anything else is "not measured since", never good.
 import type { FocusPlace } from '../session/focus.ts';
 import type { Proposal, ScanSnapshot } from '../scan/types.ts';
 import { tracksOf, type Track } from '../scan/track.ts';
+import { briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap } from '../scan/brief.ts';
+import { trailSessions, trailTally, type TrailRow, type TrailTally } from './trail.ts';
 
-export type CardKind = 'open' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+export type CardKind = 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
 export type Tone = 'good' | 'warn' | 'bad' | 'calm';
-export type Verdict = 'approve' | 'defer' | 'hold';
-export const VERDICTS: readonly Verdict[] = ['approve', 'defer', 'hold'];
+/** `decline` is offered on a repeat only (the card's brief recommends it); the server refuses it on any other card. */
+export type Verdict = 'approve' | 'defer' | 'hold' | 'decline';
+export const VERDICTS: readonly Verdict[] = ['approve', 'defer', 'hold', 'decline'];
 
 export interface Where { room: string; roomName: string; wing: string; wingName: string; name: string }
 export interface ProductFacts {
   slug: string;
   name: string;
-  scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases'>;
+  scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases' | 'runs'>;
   /** feature slug -> where it sits on the product's plan. */
   where: ReadonlyMap<string, Where>;
   /** `lens|metric` -> the manifest's label ('Secrets in code'), when the map has one. */
   labels?: ReadonlyMap<string, string>;
+  /** The plan as the decision brief reads it (briefMapOfStructure); absent -> every brief says 'not on the plan'. */
+  map?: BriefMap;
 }
-/** One row of a product's steering log (work/steering-log.jsonl). */
-export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string }
+/** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
+export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
+
+/** A decision card's brief: the decision brief (scan/brief.ts) as the deck, the phone, a follower's lower third and an agent
+ *  on morning.brief all read it. `recommend` is 'decline' only when the same idea was declined before (advice 'withdraw'),
+ *  and `note` is then what a Decline writes to the store ("Repeats <id>, declined <day>: ..."). `decline` is the decline the
+ *  card repeats, or (advice 'ask') the like one it only quotes. `short` is the one-line form for small surfaces. */
+export interface CardBrief {
+  facts: BriefFact[];
+  lines: string[];
+  advice: Brief['advice'];
+  decline?: Pick<BriefDecided, 'id' | 'title' | 'feature' | 'at' | 'by' | 'note' | 'match'>;
+  recommend?: 'decline';
+  note?: string;
+  short: string;
+}
 
 export interface CardLine { text: string; tone?: Tone }
 export interface MorningCard {
@@ -42,10 +66,10 @@ export interface MorningCard {
   lines: CardLine[];
   tone: Tone;
   place?: FocusPlace;
-  decision?: { proposal: string; tier?: number; steered?: SteerRow };
+  decision?: { proposal: string; tier?: number; steered?: SteerRow; brief?: CardBrief };
 }
 export interface ProductSummary { slug: string; name: string; built: number; failed: number; releases: number; confirmed: number; short: number; waiting: number }
-export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[] }
+export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally }
 
 export const TOP_DECISIONS = 3;
 export const HELD_SHOWN = 2;
@@ -54,6 +78,26 @@ const n = (k: number, one: string, many = one + 's') => `${k} ${k === 1 ? one : 
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]);
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
 const hoursAgo = (iso: string, now: number) => { const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3600e3)); return h < 1 ? 'just now' : h + ' h ago'; };
+
+const EMPTY_MAP = briefMapOf({});
+const clip = (t: string, k: number) => (t.length <= k ? t : t.slice(0, k - 1).trimEnd() + '…');
+
+/** The brief of one decision on the morning's table: THE function every surface's card brief comes from (the deck, the
+ *  phone, a follower's lower third through the place's `say`, morning.brief for agents, the server's Decline). */
+export function cardBrief(p: Pick<ProductFacts, 'scan' | 'map'>, x: Proposal): CardBrief {
+  const b = briefFor(subjectOf(x), p.scan, p.map ?? EMPTY_MAP), d = b.declines[0];
+  const repeat = b.advice.say === 'withdraw' && !!d;
+  const who = d?.by ? ' by ' + d.by.replace(/^user:/, '') : '';
+  const short = d && repeat ? `Repeats your decline ${d.id} (${d.at}${who})${d.note ? `: "${d.note}"` : ''}`
+    : d && b.advice.say === 'ask' ? `Like an idea you declined (${d.id})${d.note ? `: "${d.note}"` : ''}; yours to decide`
+      : b.lines[0] ?? '';
+  return {
+    facts: b.facts, lines: b.lines, advice: b.advice,
+    ...(d ? { decline: { id: d.id, title: d.title, feature: d.feature, at: d.at, match: d.match, ...(d.by ? { by: d.by } : {}), ...(d.note ? { note: d.note } : {}) } } : {}),
+    ...(d && repeat ? { recommend: 'decline' as const, note: repeatNote(d) } : {}),
+    short: clip(short, 160),
+  };
+}
 
 /** The room most of these features sit in (ties: the first met), or undefined. */
 function busiestRoom(fs: readonly string[], where: ReadonlyMap<string, Where>): Where | undefined {
@@ -86,7 +130,8 @@ function openDecisions(p: ProductFacts, steer: readonly SteerRow[], since: strin
   return out;
 }
 
-export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number): MorningDeck {
+/** `trail`: the agent trail's rows (brief.server.ts readTrail); the ones in the window make the agents card. */
+export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number, trail: readonly TrailRow[] = []): MorningDeck {
   const until = new Date(now).toISOString(), cards: MorningCard[] = [], sums: ProductSummary[] = [];
   const decisions: (Choice & { p: ProductFacts })[] = [];
   const perProduct: MorningCard[][] = [];
@@ -149,9 +194,26 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `Releases: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
       { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} ${Math.min(TOP_DECISIONS, S.waiting) === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
   });
+  // the agent trail of the window: one line on the opening card, and a card of its own with what they heard and did
+  const inWin = trail.filter((r) => r.at >= since && r.at <= until), agents = inWin.length ? trailTally(inWin, since, until) : undefined;
+  if (agents?.reads) {
+    cards[0].lines.push({
+      text: `Overnight, agents checked your decisions ${n(agents.reads, 'time')} before proposing: they heard ${n(agents.heard, 'decline')} of yours and withdrew ${n(agents.withdrew, 'proposal')}${agents.recommended ? `, and recommend you decline ${n(agents.recommended, 'repeat')}` : ''}.`,
+      ...(agents.heard ? { tone: 'warn' as Tone } : {}),
+    });
+    const lines = trailSessions(inWin, now, 3, undefined, Infinity).flatMap((x) => x.lines).slice(0, 6);
+    const met = inWin.find((r): r is Extract<TrailRow, { kind: 'brief' }> => r.kind === 'brief' && !r.id && (r.advice === 'withdraw' || !!r.quoted));
+    const at = met ? products.find((p) => p.slug === met.product) : undefined;
+    const headline = agents.heard ? `Agents heard your declines and stood down ${n(agents.withdrew, 'time')}.` : `Agents checked your decisions ${n(agents.reads, 'time')}; none met a decline.`;
+    cards.push({
+      id: 'agents', kind: 'agents', headline, tone: agents.heard ? 'warn' : 'calm',
+      lines: lines.map((l) => ({ text: l.text, ...(l.tone === 'heard' ? { tone: 'warn' as Tone } : l.tone === 'act' ? { tone: 'good' as Tone } : {}) })),
+      ...(met && at ? { product: at.slug, productName: at.name, place: featurePlace(at.slug, met.feature, headline) } : {}),
+    });
+  }
   for (const m of perProduct) cards.push(...m);
   top.forEach(({ p, x, s, held }, i) => {
-    const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined;
+    const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined, brief = cardBrief(p, x);
     cards.push({
       id: `decision:${p.slug}:${x.id}`, kind: 'decision', product: p.slug, productName: p.name, headline: x.title, tone: x.tier === 0 ? 'bad' : 'warn',
       lines: [
@@ -160,12 +222,13 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
         ...(stakes(p, x) ? [{ text: stakes(p, x)! }] : []),
         ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
       ],
-      place: featurePlace(p.slug, x.feature, x.title),
-      decision: { proposal: x.id, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(s ? { steered: s } : {}) },
+      // a follower's lower third reads the place's words: the title, then the brief's short line (<= 280 on the wire)
+      place: featurePlace(p.slug, x.feature, clip(x.title, 118) + (brief.short ? '\n' + brief.short : '')),
+      decision: { proposal: x.id, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(s ? { steered: s } : {}), brief },
     });
   });
   cards.push({ id: 'close', kind: 'close', headline: 'That is the morning.', tone: 'calm', lines: [] });
-  return { since, until, products: sums, cards };
+  return { since, until, products: sums, cards, ...(agents ? { agents } : {}) };
 }
 
 /** What deciding buys, in one line: "Now 9.3 literals, expected 7 · size S · change risk 3 of 10" (the number only when the
@@ -209,6 +272,8 @@ export function decidedElsewhere(products: readonly ProductFacts[], steer: reado
   return out;
 }
 
+const VERDICT_WORD: Record<Verdict, string> = { approve: 'Approved', defer: 'Deferred', hold: 'Held', decline: 'Declined as a repeat' };
+
 /** The close card's lines for what was steered this morning (rows at or after `since`) and what was decided elsewhere. */
 export function closeLines(steer: readonly SteerRow[], since: string, logWhere: string, elsewhere: readonly Elsewhere[] = []): CardLine[] {
   const today = steer.filter((r) => r.at >= since);
@@ -218,8 +283,8 @@ export function closeLines(steer: readonly SteerRow[], since: string, logWhere: 
     : [];
   if (!today.length) return [{ text: 'Nothing was decided on this deck this morning. The decisions will be here tomorrow.' }, ...other];
   return [
-    { text: `${k('approve')} approved, ${k('defer')} deferred to tomorrow, ${k('hold')} held.`, tone: 'good' },
-    ...today.slice(-5).map((r) => ({ text: `${r.verdict === 'approve' ? 'Approved' : r.verdict === 'defer' ? 'Deferred' : 'Held'}: ${r.title}` })),
+    { text: `${k('approve')} approved, ${k('defer')} deferred to tomorrow, ${k('hold')} held, ${k('decline')} declined as ${k('decline') === 1 ? 'a repeat' : 'repeats'}.`, tone: 'good' },
+    ...today.slice(-5).map((r) => ({ text: `${VERDICT_WORD[r.verdict]}: ${r.title}` })),
     ...other,
     { text: `Steering log: ${logWhere}` },
   ];

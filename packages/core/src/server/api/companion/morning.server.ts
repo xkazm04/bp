@@ -7,13 +7,16 @@
 // owner's word only, kept in the log: a deferred decision leaves the deck until tomorrow morning, a held one stays, marked.
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildDeck, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
+import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
+import { briefMapOf, briefMapOfStructure, type BriefMap } from '../../../scan/brief.ts';
 import type { ProductEntry } from '../../../scan/types.ts';
 import { writesOff } from '../../../scan/writes.ts';
+import { loadMap } from '../../../data/index.ts';
 import { findProduct, hasStore, storeDir, storeFile, warnOnce } from '../../products.server.ts';
 import { decide, mapRev } from '../../store.server.ts';
 import { projectPlan } from '../../plan-projection.ts';
 import { triageBy } from '../../release.server.ts';
+import { readTrail } from '../../brief.server.ts';
 import { snapshots } from './views.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('morning.server.ts is server-only');
@@ -26,13 +29,15 @@ export const DEFER_MS = 20 * 3600e3;
 const logFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'steering-log.jsonl');
 const mdFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'steering-log.md');
 
-/** feature -> its room and wing on the product's plan, and the lens manifests' metric labels, cached per map rev. */
-interface MapFacts { where: Map<string, Where>; labels: Map<string, string> }
+/** feature -> its room and wing on the product's plan, the lens manifests' metric labels, and the plan as the decision brief
+ *  reads it (through the loader the browser uses, as brief.server.ts does), cached per map rev. */
+interface MapFacts { where: Map<string, Where>; labels: Map<string, string>; map: BriefMap }
 const g = globalThis as unknown as { __bpMorningMaps?: Map<string, { rev: string; facts: MapFacts }> };
 function whereOf(p: ProductEntry): MapFacts {
   const cache = (g.__bpMorningMaps ??= new Map()), dir = storeDir(p), rev = mapRev(dir), hit = cache.get(p.root);
   if (hit && hit.rev === rev) return hit.facts;
   const where = new Map<string, Where>(), labels = new Map<string, string>();
+  let brief: BriefMap = briefMapOf({});
   try {
     let events = '';
     try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
@@ -44,8 +49,9 @@ function whereOf(p: ProductEntry): MapFacts {
       const room = rooms.get(bays.get(t.parentId)?.parentId ?? ''), wing = room ? wings.get(room.parentId) : undefined;
       if (room && wing) where.set(t.id, { room: room.id, roomName: room.name, wing: wing.id, wingName: wing.name, name: t.name });
     }
+    try { brief = briefMapOfStructure(loadMap(map, events)); } catch (e) { warnOnce('morning brief map ' + p.slug, e); }
   } catch (e) { warnOnce('morning plan ' + p.slug, e); }
-  const facts = { where, labels };
+  const facts = { where, labels, map: brief };
   cache.set(p.root, { rev, facts });
   return facts;
 }
@@ -70,7 +76,7 @@ export function morningDeck(since: string | undefined, now = Date.now()): Mornin
     facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p) });
     steer.push(...readSteer(p));
   }
-  const deck = buildDeck(facts, steer, from, now);
+  const deck = buildDeck(facts, steer, from, now, readTrail());
   const close = deck.cards.find((c) => c.kind === 'close');
   const logs = read.map(({ p }) => path.relative(p.root, mdFile(p)).split(path.sep).join('/'));
   if (close) close.lines = closeLines(steer.sort((a, b) => (a.at < b.at ? -1 : 1)), from, logs.length ? `${logs[0]} in each product` : 'none', decidedElsewhere(facts, steer, from, deck.until));
@@ -88,17 +94,25 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
   if (x.status !== 'proposed') return { status: 409, error: `${proposal} is already ${x.status}` };
   const by = await triageBy();
   // asked gh the first time: someone may have decided while we waited
-  const again = snapshots(product).read[0]?.scan.proposals.find((r) => r.id === proposal);
+  const now2 = snapshots(product).read[0]?.scan ?? read[0]!.scan, again = now2.proposals.find((r) => r.id === proposal);
   if (again && again.status !== 'proposed') return { status: 409, error: `${proposal} is already ${again.status}` };
-  if (verdict === 'approve') {
+  // Decline is the card brief's recommendation, never a free verdict here: only the same idea declined before (advice
+  // 'withdraw') takes it, and the note is the brief's own "Repeats <id> ..." - the plan's Decline writes the same (live-feed.ts)
+  let note: string | undefined;
+  if (verdict === 'decline') {
+    const b = cardBrief({ scan: now2, map: whereOf(p).map }, again ?? x);
+    if (b.recommend !== 'decline' || !b.note) return { status: 409, error: `${proposal} does not repeat a declined idea: decline it on the plan, with your own note` };
+    note = b.note;
+  }
+  if (verdict === 'approve' || verdict === 'decline') {
     const off = writesOff();
     if (off) return { status: 403, error: off };
     try {
-      const r = decide(storeFile(p), proposal, { decision: 'approve', note: 'Morning Watch' }, by);
+      const r = decide(storeFile(p), proposal, verdict === 'approve' ? { decision: 'approve', note: 'Morning Watch' } : { decision: 'decline', note: note! }, by);
       if (!r.ok) return { status: r.status === 404 ? 404 : 409, error: r.status === 404 ? `no proposal ${proposal}` : `${proposal} was decided first` };
     } catch (e) { return { status: 503, error: `decision failed: ${(e as Error).message}` }; }
   }
-  const row: SteerRow = { at: new Date(now).toISOString(), product, proposal, verdict, title: x.title, by, ...(verdict === 'defer' ? { until: new Date(now + DEFER_MS).toISOString() } : {}) };
+  const row: SteerRow = { at: new Date(now).toISOString(), product, proposal, verdict, title: x.title, by, ...(verdict === 'defer' ? { until: new Date(now + DEFER_MS).toISOString() } : {}), ...(note ? { note } : {}) };
   try {
     fs.mkdirSync(path.dirname(logFile(p)), { recursive: true });
     fs.appendFileSync(logFile(p), JSON.stringify(row) + '\n');
@@ -115,7 +129,7 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
 export function renderLog(p: ProductEntry, rows: readonly SteerRow[], now: number): string {
   // "today" is the morning's own window (the last 20 h), not a UTC calendar day that can split one morning in two
   const day = new Date(now).toISOString().slice(0, 10), from = new Date(now - DEFER_MS).toISOString(), today = rows.filter((r) => r.at >= from);
-  const word = (v: Verdict) => (v === 'approve' ? 'Approved' : v === 'defer' ? 'Deferred to tomorrow' : 'Held');
-  return [`# Daily steering log - ${p.name}, ${day}`, '', 'Written by bp\'s Morning Watch; one line per decision. Approve also moved the finding to approved in this store.', '',
-    ...(today.length ? today.map((r) => `- ${r.at.slice(11, 16)} UTC - ${word(r.verdict)}: ${r.title} (\`${r.proposal}\`, ${r.by})`) : ['- Nothing decided yet today.']), ''].join('\n');
+  const word = (v: Verdict) => (v === 'approve' ? 'Approved' : v === 'defer' ? 'Deferred to tomorrow' : v === 'decline' ? 'Declined as a repeat' : 'Held');
+  return [`# Daily steering log - ${p.name}, ${day}`, '', 'Written by bp\'s Morning Watch; one line per decision. Approve and Decline also moved the finding in this store.', '',
+    ...(today.length ? today.map((r) => `- ${r.at.slice(11, 16)} UTC - ${word(r.verdict)}: ${r.title} (\`${r.proposal}\`, ${r.by})${r.note ? ' - ' + r.note : ''}`) : ['- Nothing decided yet today.']), ''].join('\n');
 }

@@ -52,6 +52,7 @@
     "check:place-baton": "node --import @bp/core/register scripts/check-place-baton.ts",
     "check:shared-focus": "node --import @bp/core/register scripts/check-shared-focus.ts",
     "check:morning-watch": "node --import @bp/core/register scripts/check-morning-watch.ts",
+    "check:morning-brief": "node --import @bp/core/register scripts/check-morning-brief.ts",
     "check:crossing": "node --import @bp/core/register scripts/check-crossing.ts",
     "check:lan-door": "node --import @bp/core/register scripts/check-lan-door.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
