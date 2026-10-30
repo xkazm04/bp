@@ -8,29 +8,33 @@
 // Each fact is one plain line; a fact with evidence opens it (the similar decisions, the declines, the dependents, the
 // builds the cost comes from). `compact` (the plan's decision card) keeps the evidence lists short.
 import { useMemo, useState } from 'react';
-import { baseId, type SimDecision } from '@bp/core/model';
-import { briefFor, briefMapOfStructure, subjectOf, type Brief, type BriefDecided, type BriefFact, type FactKey } from '@bp/core/scan/brief';
+import { baseId, type Model, type SimDecision } from '@bp/core/model';
+import { briefFor, briefMapOfStructure, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap, type FactKey } from '@bp/core/scan/brief';
+import type { ScanSnapshot } from '@bp/core/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 import './decision-brief.css';
 
 const QUESTION_FACTS: readonly FactKey[] = ['blast', 'declined', 'precedent'];
 
-/** The brief of a decision on the card: a live proposal's, or a Kettle question's (sample: fewer facts); null without data. */
+/** The brief of a decision: a live proposal's over `scan` (the live product's), or a Kettle question's over the sample's
+ *  ScanSim (fewer facts); null without data. The one recipe the card, the Review and the crossing's VR stand-in share. */
+export function briefOfDecision(M: Model, d: SimDecision, scan: ScanSnapshot | undefined, map: BriefMap = briefMapOfStructure(M.P.base)): Brief | null {
+  if (M.sim.live) {
+    const p = scan?.proposals.find((x) => x.id === d.base);
+    return p && scan ? briefFor(subjectOf(p), scan, map) : null;
+  }
+  const s = M.scanSim?.snapshot();
+  if (!s) return null;
+  const b = briefFor({ feature: baseId(d.f), title: d.q, lens: d.lens }, s, map), facts = b.facts.filter((f) => QUESTION_FACTS.includes(f.key));
+  return { ...b, facts, lines: facts.map((f) => f.text) };
+}
+
+/** briefOfDecision for a card, following the stream (a scan delta, a sim step). */
 export function useBrief(d: SimDecision | null | undefined): Brief | null {
   const E = useEngine(), M = E.M, product = useLive()?.product, simV = useBp((s) => s.simV);
   const scan = product?.scan, rev = product?.structureRev;
   const map = useMemo(() => briefMapOfStructure(M.P.base), [M, rev]); // eslint-disable-line react-hooks/exhaustive-deps
-  return useMemo(() => {
-    if (!d) return null;
-    if (M.sim.live) {
-      const p = scan?.proposals.find((x) => x.id === d.base);
-      return p && scan ? briefFor(subjectOf(p), scan, map) : null;
-    }
-    const s = M.scanSim?.snapshot();
-    if (!s) return null;
-    const b = briefFor({ feature: baseId(d.f), title: d.q, lens: d.lens }, s, map);
-    return { ...b, facts: b.facts.filter((f) => QUESTION_FACTS.includes(f.key)), lines: b.facts.filter((f) => QUESTION_FACTS.includes(f.key)).map((f) => f.text) };
-  }, [d, M, scan, map, simV]); // eslint-disable-line react-hooks/exhaustive-deps
+  return useMemo(() => (d ? briefOfDecision(M, d, scan, map) : null), [d, M, scan, map, simV]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 const ADVICE: Record<Brief['advice']['say'], string | null> = { withdraw: 'Repeats a decline', ask: 'Mostly declined before', proceed: null };
