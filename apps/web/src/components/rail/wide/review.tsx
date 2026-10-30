@@ -65,9 +65,6 @@ export function Review() {
   const ids = useMemo(() => items.map((d) => d.id), [items]);
   // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
   const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
-  // the open proposals whose idea (same feature + lens, or an attempt they follow) was declined before: a row mark
-  const scan = live?.product.scan;
-  const declinedBefore = useMemo(() => new Set(scan ? scan.proposals.filter((p) => p.status === 'proposed' && priorRecord(scan, p).same.some((e) => e.stage === 'declined')).map((p) => p.id) : []), [scan]);
   const cur = items.find((d) => d.id === selId) ?? items[0] ?? null;
   const onKey = useWalk(ids, cur?.id ?? null, setSelId as (id: string | null) => void, listRef);
 
@@ -98,7 +95,7 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && declinedBefore.has(p.id) && <span className="db" title="This idea was declined before: see Before you decide">declined before</span>}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && d.recNote && <span className="db" title={'The decision brief: ' + d.recNote}>declined before</span>}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
