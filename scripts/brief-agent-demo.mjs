@@ -4,7 +4,7 @@
 // would (initialize, tools/list, tools/call), against a running apps/server. Its "reasoning" is three fixed rules, said
 // out loud as it goes:
 //   1. before proposing, find the feature (plan.find) and read its brief (plan.brief) with the draft's words;
-//   2. advice 'withdraw' -> do not propose; quote the decline it heard;
+//   2. a decline heard on this feature - the same idea ('withdraw') or a like one ('ask', quoted) -> do not propose;
 //   3. then look for open proposals that repeat a declined idea (inbox.list + plan.brief on each) and recommend
 //      declining them in the person's own words (decision.recommend, AUTO: it decides nothing).
 // Every call carries BP_CONVERSATION, so bp keeps the agent trail the cards slip shows.
@@ -53,8 +53,9 @@ try {
   say('plan.brief ->'); for (const l of b.lines) say('  ' + l);
   say(`advice: ${b.advice.say} - ${b.advice.why}`);
 
-  if (b.advice.say === 'withdraw') {
-    step(`Rule 2: a matching decline stands. I withdraw "${DRAFT}" and propose nothing.`);
+  const heard = b.declines.filter((d) => d.feature === f.id);
+  if (b.advice.say === 'withdraw' || (b.advice.say === 'ask' && heard.length)) {
+    step(`Rule 2: the person declined ${b.advice.say === 'withdraw' ? 'this idea' : 'a like idea'} on this feature. I withdraw "${DRAFT}" and propose nothing.`);
     const declined = new Set(b.declines.map((d) => d.id));
     step('Rule 3: does an open proposal repeat a declined idea? Reading the inbox.');
     const { items } = await call('inbox_list', { limit: 50 });
@@ -72,7 +73,7 @@ try {
     }
     if (!n) say('none repeats it: nothing to recommend.');
   } else if (b.advice.say === 'ask') {
-    step(`Rule 2: ${b.advice.why}. Not a stand against "${DRAFT}", but close: I would ask the person first; this script stops here.`);
+    step(`Rule 2: ${b.advice.why}. Not on this feature: I would ask the person first; this script stops here.`);
   } else {
     step(`Rule 2: no decline stands against "${DRAFT}" (${b.advice.why}). I would propose it now; this script stops here.`);
   }

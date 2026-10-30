@@ -42,12 +42,16 @@ with sync_playwright() as p:
     pg.locator('#dcard .bf-precedent > button').click(); time.sleep(0.4)
     ok(pg.locator('#dcard .bf-precedent .bf-ev li').count() >= 4, '1 the precedent evidence opens')
     pg.screenshot(path=OUT + '1.png')
-    # 2. the repeat
+    # 2. the repeat (the declined idea filed again), then a like idea (asks, never flips)
     pg.keyboard.press('j'); time.sleep(1.3)
-    ok('Retry the payment webhook' in (pg.locator('#dcard h3').text_content() or ''), '2 J reaches the webhook retry')
+    ok('Add retry to the checkout payment calls' in (pg.locator('#dcard h3').text_content() or ''), '2 J reaches the re-filed retry')
     ok(pg.locator('#dcard .bf-adv').count() == 1 and 'Repeats a decline' in pg.locator('#dcard .bf-adv').text_content(), '2 marked repeats a decline')
     ok('you declined this before' in (pg.locator('#dcard .op.rec').text_content() or '').lower(), '2 Decline is the recommendation')
     pg.screenshot(path=OUT + '2.png')
+    pg.keyboard.press('j'); time.sleep(1.3)
+    ok('Retry the payment webhook' in (pg.locator('#dcard h3').text_content() or ''), '2b J reaches the webhook retry, a like idea')
+    ok('Like a declined idea' in (pg.locator('#dcard .bf-adv').text_content() or '') and 'Approve' in (pg.locator('#dcard .op.rec').text_content() or ''), '2b it shows the decline but Approve stays the default')
+    pg.screenshot(path=OUT + '2b.png')
     pg.keyboard.press('Escape'); time.sleep(0.5)
     # 3. the agent
     r = node('scripts/brief-agent-demo.mjs', '--url', SRV)
@@ -57,7 +61,7 @@ with sync_playwright() as p:
     ok(pg.locator('.cp-trail').count() == 1 and 'read your decline brief-h7' in pg.locator('.cp-trail').text_content(), '4 the slip shows what the agent heard')
     pg.screenshot(path=OUT + '4.png')
     pg.get_by_text('Then recommended you decline').first.click(); time.sleep(1.3)
-    ok('Retry the payment webhook' in (pg.locator('#dcard h3').text_content() or ''), '4 the slip line opens brief-o2')
+    ok('Add retry to the checkout payment calls' in (pg.locator('#dcard h3').text_content() or ''), '4 the slip line opens brief-o2')
     # 5. one keystroke
     pg.keyboard.press('Enter'); time.sleep(2.5)
     st = status('brief-o2')

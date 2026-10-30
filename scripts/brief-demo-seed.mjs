@@ -6,8 +6,10 @@
 //     with a note, and one finished security execute run with its pack (two items in 24 minutes);
 //   - two declines of retry ideas under one standard, the latest with the owner's words ("No retries until idempotency
 //     keys land"), so an agent's draft "add retry to checkout" hears them back;
-//   - three OPEN proposals: "Add rate limits to the booking API" (the A9 card), and two that repeat a declined idea -
-//     "Retry the payment webhook on timeout" and "Rotate the session keys every week" (Review: Decline 2 repeats).
+//   - four OPEN proposals: "Add rate limits to the booking API" (the A9 card); two that file a declined idea again -
+//     "Add retry to the checkout payment calls" and "Rotate the session signing keys monthly" (the card recommends
+//     Decline; Review: Decline 2 repeats); and "Retry the payment webhook on timeout", a LIKE idea under the same
+//     standard, which only asks (the owner's words in amber, Approve stays the default).
 // Every row id starts `brief-`; a rerun replaces them (idempotent). It writes the store directly, as scan-demo does: this
 // is a seed, not a product path (lens-scan's store.mjs owns transitions on a real store).
 //   node scripts/brief-demo-seed.mjs [--dir .demo/kettle-live] [--now <iso>]
@@ -47,9 +49,11 @@ const rows = [
 const open = [
   ['brief-o1', OPEN, 'book-a-class', 'security', 'Add rate limits to the booking API', 'api/rate-limits', 1, 'reliability', 'S', 4,
     '## Summary\nThe booking API accepts unlimited requests per member, so one script can hold every class.\n\n## Expected impact\nBursts above 20 requests a minute per member are refused with 429.'],
-  ['brief-o2', OPEN, 'card-payments', 'development', 'Retry the payment webhook on timeout', 'reliability/retry-backoff', 2, 'money', 'S', 6,
+  ['brief-o2', OPEN, 'card-payments', 'development', 'Add retry to the checkout payment calls', 'reliability/retry-backoff', 2, 'money', 'S', 6,
+    '## Summary\nA checkout payment call that fails transiently is lost; one retry with backoff would recover most of them.'],
+  ['brief-o4', OPEN, 'card-payments', 'development', 'Retry the payment webhook on timeout', 'reliability/retry-backoff', 2, 'money', 'S', 5,
     '## Summary\nA webhook that times out is dropped; retrying it three times with backoff would recover most of them.'],
-  ['brief-o3', OPEN, 'email-password-sign-in', 'security', 'Rotate the session keys every week', 'secrets/key-rotation', 2, 'secret', 'S', 5,
+  ['brief-o3', OPEN, 'email-password-sign-in', 'security', 'Rotate the session signing keys monthly', 'secrets/key-rotation', 2, 'secret', 'S', 5,
     '## Summary\nSession signing keys never rotate; a weekly rotation limits how long a leaked key works.'],
 ];
 
@@ -67,7 +71,7 @@ try {
     p.run(id, run, f, lens, title, std, status, tier, rc, owner, ago(days), note, pack, 'S', 4, null, ago(16), ago(days));
   }
   for (const [id, run, f, lens, title, std, tier, rc, size, risk, body] of open) {
-    const at = id === 'brief-o3' ? ago(0, 1) : ago(0, 2); // newest last, so J walks o1, o2, then o3
+    const at = id === 'brief-o3' ? ago(0, 1) : id === 'brief-o4' ? ago(0, 1.5) : ago(0, 2); // J walks o1, o2, o4, then o3
     p.run(id, run, f, lens, title, std, 'proposed', tier, rc, null, null, null, null, size, risk, body, at, at);
   }
   db.exec('COMMIT');
