@@ -98,15 +98,15 @@ const sec = [
 {
   const h8 = P({ id: 'H8', feature: 'card-payments', lens: 'development', title: 'Retry failed card captures in the job queue', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(9), decision_note: 'Same as checkout: idempotency first.' });
   const h7 = P({ id: 'H7', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout payment calls', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(5), decision_note: 'No retries until idempotency keys land.' });
-  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Retry the payment webhook on timeout', standard: 'reliability/retry-backoff', status: 'proposed', risk_class: 'money' });
+  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Add retry to checkout payment calls', standard: 'reliability/retry-backoff', status: 'proposed', risk_class: 'money' });
   const b = briefFor(subjectOf(o), scanOf([h8, h7, o]), map);
   ok(5, b.declines.length === 1 && b.declines[0].id === 'H7', 'one decline per standard, the latest', b.declines.map((d) => d.id));
-  ok(5, fact(b, 'declined')?.text === `Declined ${day(5).slice(0, 10)} by owner: "No retries until idempotency keys land." (H7)`, "the owner's words, quoted", fact(b, 'declined')?.text);
+  ok(5, fact(b, 'declined')?.text === `Declined ${day(5).slice(0, 10)} by owner (H7): "No retries until idempotency keys land."`, "the owner's words, quoted", fact(b, 'declined')?.text);
   ok(5, b.advice.say === 'withdraw' && /No retries until idempotency keys land/.test(b.advice.why), 'advice withdraw, quoting', b.advice);
   ok(5, /money risk, a revert PR may not undo it/.test(fact(b, 'undo')?.text ?? ''), '7. money: a revert may not undo it', fact(b, 'undo')?.text);
   // 6. words
   const d = briefFor({ feature: 'card-payments', title: 'add retry to checkout' }, scanOf([h8, h7]), map);
-  ok(6, d.declines[0]?.id === 'H7' && d.advice.say === 'withdraw', 'a draft hears the matching decline', d.declines.map((x) => x.id));
+  ok(6, d.declines[0]?.id === 'H7' && d.advice.say === 'ask' && /No retries until idempotency keys land/.test(d.advice.why), 'a draft like a declined idea hears the decline, as an ask', d.advice);
   const fp = P({ id: 'FP', feature: 'book-a-class', lens: 'development', title: 'Fold the duplicated date helpers in book-a-class', status: 'declined', decision_note: 'Not before the release' });
   const r = briefFor({ feature: 'book-a-class', title: 'Add rate limits to the booking API', lens: 'security' }, scanOf([fp]), map);
   ok(6, r.precedent.rows.length === 0 && r.advice.say === 'proceed', 'one shared word that is the feature name is not similar', r.precedent.rows.map((x) => x.id + ':' + x.match));
@@ -161,7 +161,7 @@ const sec = [
 // 12. the recommendation
 {
   const h7 = P({ id: 'H7', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout payment calls', standard: 'reliability/retry-backoff', status: 'declined', decided_at: day(5), decision_note: 'No retries until idempotency keys land.' });
-  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Retry the payment webhook on timeout', standard: 'reliability/retry-backoff', status: 'proposed' });
+  const o = P({ id: 'O2', feature: 'card-payments', lens: 'development', title: 'Add retry to checkout payment calls', standard: 'reliability/retry-backoff', status: 'proposed' });
   const s = scanOf([h7, o]), a = briefAdvice(subjectOf(o), s), full = briefFor(subjectOf(o), s, map);
   ok(12, a.say === full.advice.say && a.why === full.advice.why && a.decline?.id === 'H7', 'briefAdvice is the brief advice', a);
   ok(12, a.decline ? repeatNote(a.decline) === `Repeats H7, declined ${day(5).slice(0, 10)}: "No retries until idempotency keys land."` : false, 'the repeat note', a.decline && repeatNote(a.decline));
@@ -214,7 +214,7 @@ const sec = [
   const o = P({ id: 'U2', feature: 'card-payments', lens: 'security', title: 'Add CSRF tokens to the checkout form', standard: 'web/csrf', status: 'proposed' });
   const b = briefFor(subjectOf(o), scanOf([other, o]), map);
   ok(17, !fact(b, 'declined') && b.advice.say === 'proceed' && b.precedent.declined === 1 && b.precedent.rows[0]?.match === 'same lens', 'an unrelated decline on the same feature + lens: counted, not quoted, no flip', { advice: b.advice, rows: b.precedent.rows.map((r) => r.id + ':' + r.match) });
-  const same = P({ id: 'U3', feature: 'card-payments', lens: 'security', title: 'Rotate the payment keys every week', standard: 'secrets/key-rotation', status: 'proposed' });
+  const same = P({ id: 'U3', feature: 'card-payments', lens: 'security', title: 'Rotate payment keys monthly', standard: 'secrets/key-rotation', status: 'proposed' });
   const c = briefFor(subjectOf(same), scanOf([other, same]), map);
   ok(17, c.advice.say === 'withdraw' && c.declines[0]?.id === 'U1' && c.declines[0]?.match === 'same idea', 'the same idea on the same place still stands', c.declines.map((r) => r.id + ':' + r.match));
 }
@@ -232,8 +232,8 @@ const sec = [
   const w = say(open({ id: 'W2', feature: 'checkout', title: 'Describe the checkout images', standard: 'wcag/alt-text' }), [dec({ id: 'W1', feature: 'search', title: 'Describe the search thumbnails', standard: 'wcag/alt-text' })]);
   ok(18, w.advice.say === 'ask' && w.declines[0]?.id === 'W1' && !!fact(w, 'declined') && !briefAdvice(subjectOf(P({ id: 'W2', feature: 'checkout', title: 'Describe the checkout images', standard: 'wcag/alt-text', status: 'proposed' })), scanOf([dec({ id: 'W1', feature: 'search', title: 'Describe the search thumbnails', standard: 'wcag/alt-text' })])).say.startsWith('withdraw'),
     'the same standard on another feature: shown and asked about, never a stand', w.advice);
-  const r = say(open({ id: 'R2', feature: 'checkout', title: 'Retry the checkout payment call on timeout' }), [dec({ id: 'R1', feature: 'checkout', title: 'Add retries to the checkout payment call' })]);
-  ok(18, r.advice.say === 'withdraw' && r.declines[0]?.match === 'same idea', 'same place, the same idea in other words: a stand', r.declines.map((x) => x.id + ':' + x.match));
+  const r = say(open({ id: 'R2', feature: 'checkout', title: 'Retry the checkout payment call' }), [dec({ id: 'R1', feature: 'checkout', title: 'Add retries to the checkout payment call' })]);
+  ok(18, r.advice.say === 'withdraw' && r.declines[0]?.match === 'same idea', 'the same proposal filed again in other words: a stand', r.declines.map((x) => x.id + ':' + x.match));
   // a run whose times do not read is left out of the cost, never NaN (the wire omits, never nulls)
   const bad: Run = { id: 'B1', started_at: 'not a time', updated_at: day(1), ended_at: day(1), phase: 'execute', status: 'done', lenses: ['security'] };
   const nb = briefFor({ feature: 'lonely', title: 'x', lens: 'security' }, scanOf([], [bad]), map);
@@ -249,16 +249,24 @@ const sec = [
     ['Retry failed payments', 'Stop retrying failed payments'], ['Increase request timeout', 'Decrease request timeout'], ['Raise rate limits', 'Lower rate limits'],
     ['Show error banner', 'Hide error banner'], ['Compress product images', 'Cache product images'], ['Cache search results', 'Paginate search results'],
     ['Log slow queries', 'Index slow queries'], ['Validate uploaded file size', 'Limit uploaded file size'],
+    // the third review's: the same verb, a different object or value
+    ['Store session tokens in localStorage', 'Store session tokens in httpOnly cookies'], ['Hash passwords with bcrypt', 'Hash passwords with argon2'],
+    ['Rate-limit the login endpoint', 'Rate-limit the password reset endpoint'], ['Validate email input', 'Validate phone input'], ['Log failed login attempts', 'Log successful login attempts'],
+    ['Set request timeout to 5 s', 'Set request timeout to 30 s'], ['Cache product images', 'Cache search results'], ['Checkout page: lazy-load images', 'Checkout page: compress images'],
+    ['Fix N+1 query in order list', 'Fix N+1 query in invoice list'], ['Cap page size at 100', 'Cap page size at 500'], ['Add tests for login', 'Add tests for logout'],
+    ['Upgrade lodash to 4.17.21', 'Upgrade axios to 1.7.4'], ['Remove unused imports', 'Remove unused CSS'], ['Sort results by relevance', 'Sort results by date'],
+    ['Add release notes to the changelog', 'Add release notes to the changelog page'],
   ];
   const bad = never.filter(([a, b]) => pair(a, b) === 'withdraw' || pair(a, b, 'perf/x') === 'withdraw');
   ok(20, bad.length === 0, `none of ${never.length} opposite or different-action pairs stands, with or without a shared standard`, bad);
   ok(20, pair('Add an empty state to the order list', 'Show a retry on the error state of the order list', 'design/state-coverage') === 'ask', 'a broad shared standard with a different action: ask, not a stand');
   const real: [string, string, string][] = [
-    ['Add retries to checkout payment calls', 'Retry the payment webhook on timeout', 'reliability/retry-backoff'], ['Rotate the payment keys monthly', 'Rotate the payment keys every week', 'secrets/key-rotation'],
-    ['Retry failed payments', 'Retry failed payments on timeout', 'none'], ['Add rate limits to the login endpoint', 'Rate-limit the login endpoint', 'api/rate-limits'],
+    ['Add retries to checkout payment calls', 'Retry checkout payment calls', 'reliability/retry-backoff'], ['Rotate the payment keys monthly', 'Rotate payment keys monthly', 'secrets/key-rotation'],
+    ['Retry failed payments', 'Retry the failed payments', 'none'], ['Add rate limits to the login endpoint', 'Rate-limit the login endpoint', 'api/rate-limits'],
   ];
+  ok(20, pair('Add retries to checkout payment calls', 'Retry the payment webhook on timeout', 'reliability/retry-backoff') === 'ask', 'a like idea under the same standard: ask, never a stand');
   const missed = real.filter(([a, b, s]) => pair(a, b, s) !== 'withdraw');
-  ok(20, missed.length === 0, `each of ${real.length} real re-wordings still stands`, missed);
+  ok(20, missed.length === 0, `each of ${real.length} re-filings (the same idea words) stands`, missed);
 }
 // 14b. one map, two reads, on a rough non-Kettle map: long ids, a capability with an unknown domain, a dangling and a
 //      self depends_on, a feature with no capability (the loader's Unplaced)

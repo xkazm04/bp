@@ -203,7 +203,7 @@
           "run_id": "r1",
           "feature": "card-payments",
           "lens": "development",
-          "title": "Retry the payment webhook on timeout",
+          "title": "Add retry to checkout payment calls",
           "standard": "reliability/retry-backoff",
           "kind": "fix",
           "status": "proposed",
@@ -375,7 +375,7 @@
       "subject": {
         "id": "o2",
         "feature": "card-payments",
-        "title": "Retry the payment webhook on timeout",
+        "title": "Add retry to checkout payment calls",
         "lens": "development",
         "standard": "reliability/retry-backoff",
         "tier": 2,
@@ -386,7 +386,7 @@
         "subject": {
           "id": "o2",
           "feature": "card-payments",
-          "title": "Retry the payment webhook on timeout",
+          "title": "Add retry to checkout payment calls",
           "lens": "development",
           "standard": "reliability/retry-backoff",
           "tier": 2,
@@ -480,7 +480,7 @@
           },
           {
             "key": "declined",
-            "text": "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (h4)",
+            "text": "Declined 2026-10-10 by owner (h4): \"No retries until idempotency keys land.\"",
             "ids": [
               "h4"
             ]
@@ -507,7 +507,7 @@
         ],
         "lines": [
           "Touches Card payments (PAY-07) in Billing · 1 feature depends on it, in 1 room",
-          "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (h4)",
+          "Declined 2026-10-10 by owner (h4): \"No retries until idempotency keys land.\"",
           "You approved 0 of 1 similar decision under Development, tier 2 · declined 1",
           "Undo: ships only after you accept it; money risk, a revert PR may not undo it. A decline is final",
           "Cost: about 12 min per item, from 1 build (any lens) on sonnet"
@@ -566,7 +566,7 @@
               "by": "user:owner",
               "note": "No retries until idempotency keys land.",
               "standard": "reliability/retry-backoff",
-              "match": "same idea"
+              "match": "similar words"
             }
           ],
           "approved": 0,
@@ -584,7 +584,7 @@
             "by": "user:owner",
             "note": "No retries until idempotency keys land.",
             "standard": "reliability/retry-backoff",
-            "match": "same idea"
+            "match": "similar words"
           }
         ],
         "reversible": {
@@ -602,8 +602,8 @@
           ]
         },
         "advice": {
-          "say": "withdraw",
-          "why": "This idea was declined 2026-10-10 by user:owner: \"No retries until idempotency keys land.\""
+          "say": "ask",
+          "why": "A similarly worded idea was declined on card-payments 2026-10-10 by user:owner: \"No retries until idempotency keys land.\""
         },
         "facts": [
           {
@@ -615,7 +615,7 @@
           },
           {
             "key": "declined",
-            "text": "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (h4)",
+            "text": "Declined 2026-10-10 by owner (similar words, h4): \"No retries until idempotency keys land.\"",
             "ids": [
               "h4"
             ]
@@ -642,7 +642,7 @@
         ],
         "lines": [
           "Touches Card payments (PAY-07) in Billing · 1 feature depends on it, in 1 room",
-          "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (h4)",
+          "Declined 2026-10-10 by owner (similar words, h4): \"No retries until idempotency keys land.\"",
           "You approved 0 of 1 similar decision · declined 1",
           "Undo: ships only after you accept it; after release unknown (no risk class). A decline is final",
           "Cost: about 12 min per item, from 1 build (any lens) on sonnet"
@@ -948,7 +948,7 @@
           },
           {
             "key": "declined",
-            "text": "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (same standard, h4)",
+            "text": "Declined 2026-10-10 by owner (same standard, h4): \"No retries until idempotency keys land.\"",
             "ids": [
               "h4"
             ]
@@ -975,7 +975,7 @@
         ],
         "lines": [
           "Touches Receipts (PAY-08) in Billing · nothing depends on it",
-          "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (same standard, h4)",
+          "Declined 2026-10-10 by owner (same standard, h4): \"No retries until idempotency keys land.\"",
           "You approved 0 of 1 similar decision under Development, tier 2 · declined 1",
           "Undo: ships only after you accept it; after release unknown (no risk class). A decline is final",
           "Cost: about 12 min per item, from 1 build (any lens) on sonnet"

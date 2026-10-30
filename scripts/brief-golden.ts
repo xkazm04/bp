@@ -37,11 +37,11 @@ const proposals: Proposal[] = [
   P({ id: 'h4', feature: 'card-payments', lens: 'development', title: 'Add retries to checkout payment calls', standard: 'reliability/retry-backoff', tier: 2, status: 'declined',
     decided_at: '2026-10-10T09:00:00.000Z', decision_note: 'No retries until idempotency keys land.' }),
   P({ id: 'o1', feature: 'book-a-class', title: 'Add rate limits to the booking API', standard: 'api/rate-limits', tier: 1, risk_class: 'reliability', status: 'proposed' }),
-  P({ id: 'o2', feature: 'card-payments', lens: 'development', title: 'Retry the payment webhook on timeout', standard: 'reliability/retry-backoff', tier: 2, risk_class: 'money', status: 'proposed' }),
+  P({ id: 'o2', feature: 'card-payments', lens: 'development', title: 'Add retry to checkout payment calls', standard: 'reliability/retry-backoff', tier: 2, risk_class: 'money', status: 'proposed' }),
 ];
 const subjects: [string, BriefSubject][] = [
   ['an approve-shaped card', { id: 'o1', feature: 'book-a-class', title: 'Add rate limits to the booking API', lens: 'security', standard: 'api/rate-limits', tier: 1, risk_class: 'reliability' }],
-  ['a repeat of a decline', { id: 'o2', feature: 'card-payments', title: 'Retry the payment webhook on timeout', lens: 'development', standard: 'reliability/retry-backoff', tier: 2, risk_class: 'money' }],
+  ['a repeat of a decline', { id: 'o2', feature: 'card-payments', title: 'Add retry to checkout payment calls', lens: 'development', standard: 'reliability/retry-backoff', tier: 2, risk_class: 'money' }],
   ["an agent's draft", { feature: 'card-payments', title: 'add retry to checkout' }],
   ['not on the plan', { feature: 'ghost', title: 'Tidy the ghost page', lens: 'security' }],
   ['no precedent under its lens', { feature: 'receipts', title: 'Show the receipt total in bold', lens: 'performance' }],

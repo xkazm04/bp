@@ -45,7 +45,8 @@ export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, p
     for (const [i, r] of rs.entries()) {
       if (r.kind === 'brief') {
         reads++;
-        if (r.advice !== 'withdraw' || r.id) continue; // a draft that met a standing decline: the moment worth showing
+        // a draft that met a decline - of the same idea (withdraw) or a like one, quoted (ask): the moment worth showing
+        if ((r.advice !== 'withdraw' && !(r.advice === 'ask' && r.quoted)) || r.id) continue;
         if (r.quoted && r.declineId) heard.set(r.quoted, r.declineId);
         lines.push({ tone: 'heard', id: r.declineId,
           text: `Was about to propose "${q(r.title, 60)}" on ${r.featureName ?? r.feature}; read your decline${r.declineId ? ' ' + r.declineId : ''}${r.quoted ? `: "${q(r.quoted)}"` : ''}` });

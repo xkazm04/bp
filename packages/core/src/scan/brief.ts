@@ -113,10 +113,13 @@ const STOP = new Set('a an and the to of in on for with by from at as is are be 
  *  a miss only loses a match, the cheap kind of mistake here. */
 const stem = (w: string) => w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '');
 const tokens = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
-/** Content words, stemmed, so a re-worded idea still shares them. */
+/** Content words, stemmed, so a re-worded idea still shares them; numbers at any length ("5 s" and "30 s" differ). */
 export function words(t: string): Set<string> {
   const out = new Set<string>();
-  for (const w of tokens(t)) if (w.length >= 3 && !STOP.has(w)) { const s = stem(w); if (s.length >= 3) out.add(s); }
+  for (const w of tokens(t)) {
+    if (/^\d+$/.test(w)) { out.add(w); continue; }
+    if (w.length >= 3 && !STOP.has(w)) { const s = stem(w); if (s.length >= 3) out.add(s); }
+  }
   return out;
 }
 const overlap = (a: Set<string>, b: Set<string>) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n; };
@@ -127,13 +130,14 @@ const OPPOSITES: readonly [string, string][] = ([['add', 'remove'], ['add', 'del
   ['keep', 'drop']] as const).map(([x, y]) => [stem(x), stem(y)]);
 /** A negation in a title ("Do not retry", "Never cache", "Stop retrying") turns it against the same words without one. */
 const NEGATIONS = new Set(['not', 'no', 'never', 'without', 'don', 'dont', 'stop']);
-const negated = (s: Set<string>) => { for (const w of NEGATIONS) if (s.has(w)) return true; return false; };
+/** Read on the words as written, never stemmed: "notes" is not "not", "stops" is not "stop". */
+export const negated = (t: string): boolean => tokens(t).some((w) => NEGATIONS.has(w));
 /** Every word of a title, stemmed, stop words kept (the direction words are short and common). */
 export const allWords = (t: string): Set<string> => new Set(tokens(t).map(stem));
 /** Whether two titles point opposite ways: one negated and the other not, or one names a direction and the other its
- *  opposite (and neither names both). */
-export function opposite(a: Set<string>, b: Set<string>): boolean {
-  if (negated(a) !== negated(b)) return true;
+ *  opposite (and neither names both). `na` / `nb`: whether each title is negated (negated()). */
+export function opposite(a: Set<string>, b: Set<string>, na: boolean, nb: boolean): boolean {
+  if (na !== nb) return true;
   return OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !a.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !a.has(x) && !b.has(y)));
 }
 /** Words that open an imperative title without naming its action ("Add retries ..." acts by retrying). */
@@ -147,10 +151,10 @@ export const actionOf = (t: string): string => { for (const w of tokens(t)) if (
 const ideaWords = (t: string, f: string) => { const w = words(t); for (const x of words(f.replace(/-/g, ' '))) w.delete(x); return w; };
 /** Per row object (a snapshot's rows survive its deltas), so the live feed's advice per open card does not re-read every
  *  title on every tick: 300 open x 3000 rows took 1.4 s uncached. */
-const ROW_WORDS = new WeakMap<Proposal, { idea: Set<string>; all: Set<string>; act: string }>();
+const ROW_WORDS = new WeakMap<Proposal, { idea: Set<string>; all: Set<string>; neg: boolean; act: string }>();
 const rowWords = (x: Proposal) => {
   let w = ROW_WORDS.get(x);
-  if (!w) ROW_WORDS.set(x, (w = { idea: ideaWords(x.title, x.feature), all: allWords(x.title), act: actionOf(x.title) }));
+  if (!w) ROW_WORDS.set(x, (w = { idea: ideaWords(x.title, x.feature), all: allWords(x.title), neg: negated(x.title), act: actionOf(x.title) }));
   return w;
 };
 
@@ -186,28 +190,28 @@ function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = fa
     if (!x || x.id === sub.id || chain.has(x.id)) continue;
     chain.add(x.id); todo.push(x.attempt_of, x.parent_id);
   }
-  const mine = ideaWords(sub.title, sub.feature), mineAll = allWords(sub.title), mineAct = actionOf(sub.title), rows: BriefDecided[] = [];
+  const mine = ideaWords(sub.title, sub.feature), mineAll = allWords(sub.title), mineNeg = negated(sub.title), mineAct = actionOf(sub.title), rows: BriefDecided[] = [];
   let approved = 0, declined = 0;
   for (const x of scan.proposals) {
     if (x.id === sub.id || x.status === 'proposed') continue;
     const rw = rowWords(x), theirs = rw.idea, shared = overlap(mine, theirs);
-    // "the same idea" is what flips a card to Decline, and a decline is final, so it is held to the strictest reading that
-    // still hears a re-worded repeat: the attempt chain, or the same feature (and lens), the same ACTION (the title's first
-    // real verb: "Add retries to checkout" and "Retry the payment webhook" both retry; "Compress product images" and
-    // "Cache product images" do not), never opposite (a negation, or enable/disable and the like), AND either the same
-    // standard or the same words (2+ shared idea words, two thirds of the shorter title's). Words or a standard shared on
-    // another feature, or without the same action, are shown and asked about, never a stand; the same place alone is
-    // lens precedent.
-    // on the same feature, two thirds of the shorter title's idea words; elsewhere (an "ask", which is noise when loose),
-    // the same action and half of all the words of both
+    // "the same idea" is the only match that flips a card to Decline, and a decline is final, so it is IDENTITY, never
+    // likeness: the attempt chain, the same external item, or the same proposal filed again on the same place - the same
+    // idea words, numbers included (the feature's own name aside), at least two, never opposite. Three independent
+    // reviews showed that any likeness rule also matches different changes ("Hash passwords with bcrypt" / "... with
+    // argon2", "Validate email input" / "Validate phone input"). Likeness only asks: a like idea on this feature (the same
+    // action and two thirds of the shorter title's idea words), or elsewhere (the same action and half of all the words
+    // of both), or the same standard. A miss is the cheap error: the card still shows the person's words in amber.
     const stdHit = !!sub.standard && sub.standard !== 'none' && x.standard === sub.standard;
     const sameAction = !!mineAct && mineAct === rw.act, here = x.feature === sub.feature;
-    const close = shared >= 2 && (here ? shared * 3 >= 2 * Math.min(mine.size, theirs.size) : sameAction && shared * 2 >= mine.size + theirs.size - shared);
-    const flipped = (stdHit || close || here) && opposite(mineAll, rw.all);
+    let flip: boolean | undefined; // read only where it decides something (the live feed runs this per open card, per tick)
+    const flipped = () => (flip ??= opposite(mineAll, rw.all, mineNeg, rw.neg));
     const samePlace = here && (!sub.lens || x.lens === sub.lens);
-    const sameStd = stdHit && !flipped, alike = close && !flipped;
-    const match: Match | null = chain.has(x.id) || (samePlace && sameAction && !flipped && (sameStd || alike)) ? 'same idea'
-      : sameStd ? 'same standard'
+    const refiled = samePlace && mine.size >= 2 && shared === mine.size && shared === theirs.size && !flipped();
+    const sameItem = !!self?.external_ref && self.external_ref === x.external_ref;
+    const alike = sameAction && shared >= 2 && (here ? shared * 3 >= 2 * Math.min(mine.size, theirs.size) : shared * 2 >= mine.size + theirs.size - shared) && !flipped();
+    const match: Match | null = chain.has(x.id) || sameItem || refiled ? 'same idea'
+      : stdHit && !flipped() ? 'same standard'
       : alike ? 'similar words'
       : sub.lens && x.lens === sub.lens && (x.feature === sub.feature || sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;
     if (!match) continue;
@@ -279,7 +283,8 @@ export function briefFacts(b: Omit<Brief, 'facts' | 'lines'>, map: Pick<BriefMap
     : `Touches ${at(B.feature)}${B.room ? ' in ' + B.room.name : ''}` + (B.dependents.length ? ` · ${plural(B.dependents.length, 'feature')} depend${B.dependents.length === 1 ? 's' : ''} on it, in ${plural(B.rooms, 'room')}` : ' · nothing depends on it'),
   B.dependents.map((x) => x.slug));
   const d = b.declines[0];
-  if (d) fact('declined', `Declined ${d.at}${d.by ? ' by ' + d.by.replace(/^user:/, '') : ''}: ` + (d.note ? `"${d.note}"` : 'no note given') + (d.match !== 'same idea' ? ` (${d.match}, ${d.id})` : ` (${d.id})`), b.declines.map((x) => x.id));
+  // the provenance before the quote, so a long note is what the budget cuts, never which decision it was
+  if (d) fact('declined', `Declined ${d.at}${d.by ? ' by ' + d.by.replace(/^user:/, '') : ''} (${d.match !== 'same idea' ? d.match + ', ' : ''}${d.id}): ` + (d.note ? `"${d.note}"` : 'no note given'), b.declines.map((x) => x.id));
   fact('precedent', !(P.approved + P.declined) ? `No precedent yet${lens ? ' under ' + lens : ''}`
     : `You approved ${P.approved} of ${plural(P.approved + P.declined, 'similar decision')}${lens ? ' under ' + lens : ''}` + (P.declined ? ` · declined ${P.declined}` : ''), P.rows.map((x) => x.id));
   const after = R.afterRelease === 'care' ? `${R.riskClass} risk, a revert PR may not undo it` : R.afterRelease === 'revert' ? 'after release, a revert PR' : 'after release unknown (no risk class)';
