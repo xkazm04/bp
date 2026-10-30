@@ -178,13 +178,15 @@ export function toApply(v: SharedView, me: string, follows: string | undefined, 
   return v.shared.place;
 }
 
-/** "Following Web, 1 s ago": who the shared place came from and how long since, in plain words. */
+/** "Following Web, just now" / "Following Web, 12 s ago": who the shared place came from and how long since, in plain words. */
 export function followingWords(v: SharedView, follows: string | undefined, now: number): string | null {
   if (!follows) return null;
   const whom = follows === '*' ? (v.shared?.label ?? 'whoever moves') : (v.readers.find((x) => x.id === follows)?.label ?? follows);
   if (!v.shared || (follows !== '*' && v.shared.reader !== follows)) return `Following ${whom}`;
   const s = Math.max(0, Math.round((now - Date.parse(v.shared.at)) / 1000));
-  return `Following ${whom}, ${s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h'} ago`;
+  // under 5 s it says "just now": a deck read card by card re-leads every few seconds, and a clock stuck at "0 s ago" /
+  // "1 s ago" read as frozen in the demo pass; a resting place counts on in seconds, then minutes
+  return `Following ${whom}, ${s < 5 ? 'just now' : (s < 60 ? s + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : Math.round(s / 3600) + ' h') + ' ago'}`;
 }
 
 /** The place's level from its target kind, when the publisher did not say (feature L4, room L2, wing L1, site L0). */

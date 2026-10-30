@@ -60,7 +60,8 @@ check('...but a follower reporting the room it flew to, without a hash, is still
 let crowd = focusStep(focusStep(EMPTY_RECORD, { kind: 'publish', ...vr, place: room('billing') }, T0).record, { kind: 'forget', reader: 'standin' }, T0 + 1).record;
 for (let i = 0; i < MAX_READERS + 2; i++) crowd = focusStep(crowd, { kind: 'hello', reader: 'r' + i, surface: 'web', label: 'Web' }, T0 + 10 + i).record;
 check('over the reader cap the lead is never the one dropped: the shared place survives', viewOf(crowd, T0 + 100).shared?.place.target?.id === 'billing' && crowd.readers.length <= MAX_READERS + 1);
-check('"Following Web, 2 s ago"', followingWords(viewOf(focusStep(EMPTY_RECORD, { kind: 'publish', ...web, place: room('x') }, T0).record, T0), '*', T0 + 2000) === 'Following Web, 2 s ago');
+check('"Following Web, just now"', followingWords(viewOf(focusStep(EMPTY_RECORD, { kind: 'publish', ...web, place: room('x') }, T0).record, T0), '*', T0 + 2000) === 'Following Web, just now');
+check('"Following Web, 12 s ago"', followingWords(viewOf(focusStep(EMPTY_RECORD, { kind: 'publish', ...web, place: room('x') }, T0).record, T0), '*', T0 + 12000) === 'Following Web, 12 s ago');
 check('readFocusPlace keeps ids and words only', JSON.stringify(readFocusPlace({ product: 'kettle', target: { kind: 'feature', id: 'f1' }, say: 'hi', selection: [1, 2] })) === '{"product":"kettle","target":{"kind":"feature","id":"f1"},"say":"hi"}');
 for (const [why, bad] of [['a product that is no slug', { product: '../x' }], ['a target of an unknown kind', { product: 'kettle', target: { kind: 'selection', id: 'x' } }], ['a hash without #', { product: 'kettle', hash: 'at=x' }], ['a level past L4', { product: 'kettle', level: 'L7' }], ['not an object', 'kettle']] as const) {
   check('readFocusPlace refuses ' + why, typeof readFocusPlace(bad) === 'string');
