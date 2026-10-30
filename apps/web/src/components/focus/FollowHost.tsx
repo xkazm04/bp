@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FocusPlace } from '@bp/core/session/focus';
 import type { Engine } from '@/engine/Engine';
-import { projectHref } from '@/lib/scan/projects';
+import { switchProduct } from '@/lib/scan/projects';
 import { sharedFocus } from '@/lib/focus/shared';
 import { useBp, useEngine, shallowEqual } from '../hooks';
 import { arrived, placeOf } from '../crossing/place';
@@ -36,15 +36,10 @@ export function flyToPlace(E: Engine, p: FocusPlace): string | null {
   return `${t.kind} ${t.id} is not on this plan`;
 }
 
-/** Go to a place: fly on this product, or open the product it is in (keeping every other parameter). */
+/** Go to a place: fly on this product, or open the product it is in, in place (keeping every other parameter). */
 export function goToPlace(E: Engine, p: FocusPlace, extra?: Record<string, string>): string | null {
   const here = E.M.live?.slug ?? 'kettle';
-  if (p.product !== here) {
-    const u = new URL(projectHref(p.product === 'kettle' ? null : p.product), location.origin);
-    for (const [k, v] of Object.entries(extra ?? {})) u.searchParams.set(k, v);
-    location.assign(u.pathname + u.search);
-    return null;
-  }
+  if (p.product !== here) { switchProduct(p.product === 'kettle' ? null : p.product, extra); return null; }
   return flyToPlace(E, p);
 }
 
@@ -68,7 +63,11 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
     born.current = performance.now();
     const q = new URLSearchParams(location.search);
     fx.start({ surface: phone ? 'phone' : 'web', label: phone ? 'Phone' : 'Web', viaLamp: !phone && q.get('lamp-fixture') !== '1', follow: q.get('follow') === '1' });
+    // a place in another product: the product opens in place and this host mounts again on its engine, where it lands here
+    const landing = fx.takeArrival(E.M.live?.slug ?? 'kettle');
+    if (landing) { fx.hush(4000); setTimeout(() => { flyToPlace(E, landing); setArrive((n) => n + 1); void arrived(E).then(() => fx.hush(900)); }, 120); }
     const off = fx.onApply((p) => {
+      if (p.product !== (E.M.live?.slug ?? 'kettle')) fx.arrive(p);
       const why = goToPlace(E, p);
       if (why) return;
       setArrive((n) => n + 1);

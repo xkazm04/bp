@@ -63,7 +63,7 @@ export const FORGET_MS = 24 * 3600_000;
 export const MAX_READERS = 32;
 export const EMPTY_RECORD: FocusRecord = { rev: 0, readers: [] };
 
-const ID = /^[\w.:-]{1,80}$/, SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
+const ID = /^[\w.:-]{1,80}$/, SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/; // SLUG: the registry's own rule (registry.server.ts)
 export const isReaderId = (v: unknown): v is string => typeof v === 'string' && ID.test(v);
 
 /** A FocusPlace from an untrusted body, or the reason it is not one. */

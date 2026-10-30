@@ -23,7 +23,7 @@ import { holdsBuild } from '@bp/core/scan/admit';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
-import { projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
+import { SWITCH_EVENT, projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant, loadVariant } from '@/variants/registry';
 import type { Variant, VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
@@ -211,6 +211,14 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // undefined until mounted (the server render cannot read the query); null = Kettle
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
+  // another product in place (switchProduct: the shared focus or the Morning deck opening it), and back / forward across
+  // such a switch: the product follows the URL, the engine rebuilds, the page does not reload. No intro after a switch.
+  const switched = useRef(false);
+  useEffect(() => {
+    const take = () => { const p = new URLSearchParams(location.search).get('product') || null; setProduct((cur) => { if (cur !== p) switched.current = true; return p; }); };
+    addEventListener(SWITCH_EVENT, take); addEventListener('popstate', take);
+    return () => { removeEventListener(SWITCH_EVENT, take); removeEventListener('popstate', take); };
+  }, []);
   // a live product's tab reads "<name> · blueprint" (the name from the registry, else the slug); Kettle keeps the page metadata
   // it follows the registry name, so a rename shows at once
   const title = useProductName(product || null, product || '');
@@ -241,7 +249,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     const mount = (model: Model) => {
       // the Kettle sim's jobs, rows and findings outlive a rebuild: its readings go over the new model from scratch
       if (kept?.sim && model.scanSim && !model.live) { model.scanSim.dispose(); model.scanSim = kept.sim; }
-      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: !kept && qs.get('intro') !== '0' && !location.hash });
+      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: !kept && !switched.current && qs.get('intro') !== '0' && !location.hash });
       if (kept) e.cam.set(kept.cam); // the hash restored lens, place and page; the camera stands exactly where it was
       built = e;
       setEngine(e);

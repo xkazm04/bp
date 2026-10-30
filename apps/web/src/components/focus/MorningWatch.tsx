@@ -15,6 +15,7 @@ import { postHuman } from '../crossing/follow';
 import { goToPlace } from './FollowHost';
 
 const SINCE_KEY = 'bp:morning-since';
+let kept: MorningDeck | null = null;
 /** The deck's right edge in UI px (focus.css #mw: 18 + 460, and a margin): the plan frames places to its right. */
 const DECK_INSET = 500;
 type Deck = MorningDeck & { skipped?: { product: string; why: string }[] };
@@ -34,7 +35,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const E = useEngine(), live = useLive(), fx = sharedFocus(), here = live?.slug ?? null;
   const st = useSyncExternalStore(fx.subscribe, fx.get, fx.get), calm = useReducedMotion();
   const [open, setOpen] = useState(false);
-  const [deck, setDeck] = useState<Deck | null>(null);
+  // the deck outlives an in-place product switch (this component mounts again on the new engine): no re-read flash
+  const [deck, setDeck] = useState<Deck | null>(() => kept);
   const [i, setI] = useState(0);
   const [steered, setSteered] = useState<Record<string, Steered>>({});
   const [busy, setBusy] = useState(false);
@@ -47,13 +49,14 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       if (!r.ok) return null;
       const d = (await r.json()) as Deck;
       if (!since) keepSince(d.since);
+      kept = d;
       setDeck(d);
       return d;
     } catch { return null; }
   }, []);
 
   const start = useCallback((at: string | null) => { want.current = at; setOpen(true); void load(); }, [load]);
-  const close = useCallback(() => { setOpen(false); setDeck(null); setI(0); shown.current = null; keepSince(null); setParam(null); fx.pause(false); }, [fx]);
+  const close = useCallback(() => { setOpen(false); setDeck(null); kept = null; setI(0); shown.current = null; keepSince(null); setParam(null); fx.pause(false); }, [fx]);
 
   // on a phone the deck is the clicker: it leads the shared focus and the desk follows (a phone has no plan of its own to fly)
   useEffect(() => { if (phone) fx.start({ surface: 'phone', label: 'Phone' }); }, [phone, fx]);

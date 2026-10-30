@@ -55,6 +55,10 @@ class SharedFocus {
   subscribe = (l: Listener): (() => void) => { this.listeners.add(l); return () => { this.listeners.delete(l); }; };
   /** Publish nothing for `ms`: this page is arriving at a place it was sent to, and where it lands is not news. */
   hush(ms: number): void { this.hushUntil = Date.now() + ms; }
+  private landing: FocusPlace | null = null;
+  /** A followed place in another product: kept while the product opens in place, for the page's next engine to land on. */
+  arrive(p: FocusPlace): void { this.landing = p; }
+  takeArrival(product: string): FocusPlace | null { const p = this.landing; if (!p || p.product !== product) return null; this.landing = null; return p; }
   /** While a deck leads (the Morning Watch), the page's own resting places are not published: the deck publishes its cards. */
   pause(on: boolean): void { this.paused = on; }
   /** Called with every place this reader should go to (following, not its own, not seen before). */
