@@ -17,8 +17,8 @@ exactly `briefFor(subject, scan, briefMapOf(structure))`. No IPC, no server, no 
    `risk_class` by presence, so v3 rows simply give `risk class unknown`), `BRIEF_MATCHES` (schema-vocab.ts: four strings)
    and the `Structure` type, used only by `briefMapOfStructure`, which Personas does not need.
 2. Add one test: read bp's `docs/concepts/decision-brief/golden.json`, run every case's `subject` over its `inputs`,
-   and assert the output equals the case's `brief`, deep-equal. This is the gate PARITY.md says is missing ("Nothing
-   gates bp ↔ Personas drift"): when bp changes the brief, the golden changes in the same commit (bp's
+   and assert the output equals the case's `brief`, deep-equal. The Blueprint port has no such gate today: its ~57
+   "PORTED from bp" files are pinned to an old bp commit and nothing fails when they drift. When bp changes the brief, the golden changes in the same commit (bp's
    `check:decision-brief` refuses otherwise), and Personas' test goes red until the port follows.
 3. Optionally validate each brief against `packages/schema/schema/decision-brief-1.schema.json`.
 
