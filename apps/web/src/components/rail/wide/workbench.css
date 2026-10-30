@@ -393,3 +393,8 @@
 #flyout.wide .wb-row.rl-sug .rk > span:first-child { color: var(--accent); }
 #flyout.wide .wb-row.rl-sug .rt { font-weight: 400; }
 #flyout.wide .rl-act .rl-vd { min-width: 0; overflow: hidden; }
+#flyout.wide .rlmk { padding: 0 5px; border: 1px solid var(--amber); color: var(--amber-2); white-space: nowrap; }
+#flyout.wide .rlmk.grant { border-color: var(--mint); color: var(--mint-2); }
+#flyout.wide .rlmk-note { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+#flyout.wide .rlmk-note.grant { border-left-color: var(--mint); background: color-mix(in srgb, var(--mint) 6%, transparent); }
+#flyout.wide .rlmk-note .bt { height: 30px; padding: 0 10px; font-size: 13px; text-transform: none; letter-spacing: 0.01em; }
