@@ -59,6 +59,8 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: 'plan.find', description: "Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { product: str('the slug'), q: str('words of the name; empty lists the wings and rooms'), limit: { type: 'number' } }, required: ['product'] },
     route: { method: 'GET', path: '/api/companion/find' } },
+  { name: 'morning.brief', description: "The Morning Watch: one standup across every live product, as cards - what agents built overnight, releases confirmed or short by readings after them, the top blockers by tier - each with the place it shows (pass a card's place to focus.show and every following screen flies there).", reversible: true, side_effects: 'none',
+    params_schema: { type: 'object', properties: { since: str('an ISO instant the morning starts from; default the last 16 hours') } }, route: { method: 'GET', path: '/api/companion/morning' } },
   { name: 'focus.show', description: 'Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens.', reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { product: str('the slug'), kind: { type: 'string', enum: ['feature', 'room', 'wing', 'decision', 'wave', 'release', 'ledger-row', 'lens'] }, id: str('the target id'), say: str('one short line shown with it') }, required: ['product', 'kind', 'id'] },
     route: { method: 'POST', path: '/api/companion/focus' } },
