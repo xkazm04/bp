@@ -16,7 +16,10 @@ the same room.
   applies its own write; a page arriving at a place it was sent publishes nothing until it lands; a gone reader holds
   nothing (shown gone after 45 s, forgotten after 24 h).
 - Writers that go through it: any page (where it rests), the Morning deck (each card), the companion's `focus.show`
-  (as `Glim`), the place baton's table writes (as `VR table`). The baton itself is unchanged.
+  (as `Glim`), the VR table when moved by hand (as `VR table`), the place baton's table writes (as `VR table`). The
+  baton itself is unchanged.
+- Over the LAN: the S8 door's `focus` scope admits GET and POST; a caller with `x-bp-device` (the door sets it) is pinned
+  to reader `vr:<device>`, so a headset cannot speak as another surface.
 
 ## The Morning Watch
 - Deck: `packages/core/src/companion/morning.ts` (pure) over every registered live product's store and plan
@@ -26,15 +29,25 @@ the same room.
   products, stop-ship first -> close (what was decided, where the log is).
 - Steering (`POST`, human path only): **A**pprove = the plan's own `decide`; **D**efer = off the deck for 20 h;
   **H**old = stays, marked. Each verdict is a row in `<root>/.ai/lens-scan/work/steering-log.jsonl`, rendered as the
-  day's `steering-log.md`.
-- On the page: **M** on a live product opens the deck docked left; the plan frames each card's place to its right
-  (`Engine.setInsetLeft`). `→ ←`, `A D H`, `Esc`. A card in another product opens that product (`?morning=<card>`).
+  day's `steering-log.md`. This morning's decisions keep their slots (marked) so the deck never reshuffles mid-standup;
+  decisions taken elsewhere (the plan, the ledger, Personas through its own path) are counted on the close card.
+- Decision cards say what deciding buys: the metric now and expected (the manifest's label), size, change risk.
+- On the page: **M** (wherever live products are registered) opens the deck docked left; the plan frames each card's
+  place to its right (`Engine.setInsetLeft`). `→ ←`, `A D H`, `V` (the browser's own voice), `Esc`. A card in another
+  product opens it **in place** (`switchProduct`: no reload; the deck and every follower keep their state).
 
 ## Surfaces
-- **Web**: the deck, and the follow chip on every page ("Following Web, 2 s ago" · Stop / Follow). `?follow=1` follows
-  on load.
+- **Web**: the deck, and the follow chip on every page ("Following Web, 2 s ago" · Stop / Follow) with the leader's line
+  as a lower third. `?follow=1` follows on load (labelled "Web window").
+- **Phone**: the clicker. The deck runs full screen and leads; the desk follows.
+- **VR table (UE)**: BpLink follows (1 Hz poll, `vr:table`), the table enters the room with its lift and fade and says
+  "Following Web" on its rim; moving the table by hand publishes ("Shared from this table"). `BpLink.Follow|Publish
+  on|off`, `BpLink.Goto <id>`. Captures from the target pose: `vr-*.jpg` here.
 - **VR table, headless stand-in**: `scripts/focus-standin.ts` follows over the real stream and frames each place on the
   product's own plan (room, bay's room, wing, feature's room). `--lead` publishes the next room (the table leads).
+  `--personas` plays Personas' Monitor (1 Hz poll, prints its Blueprint-sheet call): see `personas-adoption.md`.
+- **Agents (MCP)**: `morning.brief` reads the deck; `focus.show` moves every follower. `scripts/morning-agent-walk.mjs`
+  walks the deck through the real door (scripted, no model).
 - **Gates**: `check:shared-focus`, `check:morning-watch` (seeds a temp portfolio, steers it, drives the stand-in through
   a real apps/server).
 
