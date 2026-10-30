@@ -50,8 +50,15 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   const ver = rel?.version ?? (suggested && suggested !== 'failed' ? suggested.ver : null);
   const noVer = !ver && suggested === 'failed';
 
+  // a decision acts on every selected item, the ones the filters hide included (LedgerPage targets): say how many of
+  // them the person cannot see, on the live label, before a button acts on them (table/filtering)
+  const hidden = useMemo(() => {
+    if (!n) return 0;
+    const shown = new Set(L.scoped.map((f) => f.p.id));
+    return targets.filter((id) => !shown.has(id)).length;
+  }, [n, L.scoped, targets]);
   // A/1's words: the focused item reads "focused" (open in compare or not); only an open item the focus left reads "open"
-  const label = n ? n + ' selected' : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
+  const label = n ? n + ' selected' + (hidden ? ' · ' + hidden + ' hidden by filters' : '') : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
   return (
     <div className="lg-bar tr-bar" role="region" aria-label="Decide" data-role="tr-bar">
       {L.ui.note?.at === 'bar' ? <Decide ids={L.ui.note.ids} /> : (
