@@ -88,9 +88,16 @@ export function readFocusPlace(v: unknown): FocusPlace | string {
   };
 }
 
-/** The same spot: one product and one target (the hash and the words do not make it another place). */
-export const sameSpot = (a: FocusPlace | undefined, b: FocusPlace | undefined): boolean =>
-  !!a && !!b && a.product === b.product && (a.target?.kind ?? '') === (b.target?.kind ?? '') && (a.target?.id ?? '') === (b.target?.id ?? '');
+/** The page's own place id in a hash ('#at=bkg-06&lens=perf' -> 'bkg-06'), or undefined. */
+const atOf = (h: string | undefined): string | undefined => { const m = h ? /[#&]at=([^&]*)/.exec(h) : null; return m ? decodeURIComponent(m[1]) : undefined; };
+/** The same spot: one product and one target, and - where both sides say them - one level and one hash place (a bay has
+ *  no place kind, so two bays of a room differ only there). The words never make it another place. */
+export const sameSpot = (a: FocusPlace | undefined, b: FocusPlace | undefined): boolean => {
+  if (!a || !b || a.product !== b.product || (a.target?.kind ?? '') !== (b.target?.kind ?? '') || (a.target?.id ?? '') !== (b.target?.id ?? '')) return false;
+  if (a.level && b.level && a.level !== b.level) return false;
+  const x = atOf(a.hash), y = atOf(b.hash);
+  return !(x !== undefined && y !== undefined && x !== y);
+};
 
 export type FocusMove =
   | { kind: 'hello'; reader: string; surface: Surface; label: string }
@@ -110,7 +117,8 @@ export interface FocusStep {
 /** The record with readers unseen for FORGET_MS dropped, and at most MAX_READERS kept (the longest unseen go first). */
 export function prune(r: FocusRecord, now: number): FocusRecord {
   let rs = r.readers.filter((x) => now - Date.parse(x.seenAt) < FORGET_MS || x.id === r.lead);
-  if (rs.length > MAX_READERS) rs = [...rs].sort((a, b) => Date.parse(b.seenAt) - Date.parse(a.seenAt)).slice(0, MAX_READERS);
+  // over the cap the longest unseen go first - never the lead, whose place IS the shared focus
+  if (rs.length > MAX_READERS) rs = [...rs].sort((a, b) => (a.id === r.lead ? -1 : b.id === r.lead ? 1 : Date.parse(b.seenAt) - Date.parse(a.seenAt))).slice(0, MAX_READERS);
   return rs.length === r.readers.length ? r : { ...r, readers: rs };
 }
 

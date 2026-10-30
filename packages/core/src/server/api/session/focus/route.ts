@@ -13,6 +13,7 @@ import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { SURFACES, isReaderId, readFocusPlace, viewOf, type FocusMove, type Surface } from '../../../../session/focus.ts';
 import { moveFocus, readFocus } from '../focus.server.ts';
 import { deviceOf } from '../baton.server.ts';
+import { KETTLE_SLUG, findProduct } from '../../../products.server.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 const OPS = ['hello', 'publish', 'follow', 'unfollow', 'forget'] as const;
@@ -50,6 +51,8 @@ export async function POST(req: Request): Promise<Response> {
   if (device) b = { ...b, reader: 'vr:' + device };
   const m = readMove(b);
   if (typeof m === 'string') return Response.json({ error: m }, { status: 400, headers: NO_STORE });
+  // a place in a product this server cannot open would strand every follower on an empty page
+  if (m.kind === 'publish' && m.place.product !== KETTLE_SLUG && !findProduct(m.place.product)) return Response.json({ error: `unknown product ${m.place.product}` }, { status: 404, headers: NO_STORE });
   const now = Date.now(), r = moveFocus(m, now);
   if (r.error) return Response.json({ error: r.error }, { status: r.status, headers: NO_STORE });
   return Response.json({ moved: r.moved, view: viewOf(r.record, now) }, { status: r.status, headers: NO_STORE });

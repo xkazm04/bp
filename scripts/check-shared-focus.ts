@@ -11,7 +11,7 @@ import path from 'node:path';
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-shared-focus-'));
 process.env.BP_HOME = HOME;
 
-const { EMPTY_RECORD, FORGET_MS, LIVE_MS, focusStep, followingWords, readFocusPlace, toApply, viewOf } = await import('../packages/core/src/session/focus.ts');
+const { EMPTY_RECORD, FORGET_MS, LIVE_MS, MAX_READERS, focusStep, followingWords, readFocusPlace, toApply, viewOf } = await import('../packages/core/src/session/focus.ts');
 const { GET, POST } = await import('../packages/core/src/server/api/session/focus/route.ts');
 const { POST: FOCUS_SHOW } = await import('../packages/core/src/server/api/companion/focus/route.ts');
 const { POST: PLACE, GET: PLACE_GET } = await import('../packages/core/src/server/api/session/place/route.ts');
@@ -53,6 +53,13 @@ check('a reader unseen for LIVE_MS reads as gone, and holds nothing', v.readers.
 const later = focusStep(s.record, { kind: 'hello', reader: 'phone', surface: 'phone', label: 'Phone' }, T0 + FORGET_MS + 5000);
 check('a reader unseen for FORGET_MS is forgotten, except the one whose place is shared', !later.record.readers.some((x) => x.id === 'web-1') && later.record.readers.some((x) => x.id === 'standin'));
 check('forgetting the lead keeps the shared place', viewOf(focusStep(s.record, { kind: 'forget', reader: 'standin' }, T0 + 4000).record, T0 + 4000).shared?.place.target?.id === 'billing');
+const bay = (at: string) => ({ ...room('scheduling'), level: 'L3' as const, hash: '#at=' + at });
+const b1 = focusStep(EMPTY_RECORD, { kind: 'publish', ...web, place: bay('scheduling.timetable') }, T0);
+check('two bays of one room are two places (a bay has no kind; the level and the hash say it)', focusStep(b1.record, { kind: 'publish', ...web, place: bay('scheduling.classes') }, T0 + 1).moved);
+check('...but a follower reporting the room it flew to, without a hash, is still an echo', !focusStep(b1.record, { kind: 'publish', ...vr, place: room('scheduling') }, T0 + 1).moved);
+let crowd = focusStep(focusStep(EMPTY_RECORD, { kind: 'publish', ...vr, place: room('billing') }, T0).record, { kind: 'forget', reader: 'standin' }, T0 + 1).record;
+for (let i = 0; i < MAX_READERS + 2; i++) crowd = focusStep(crowd, { kind: 'hello', reader: 'r' + i, surface: 'web', label: 'Web' }, T0 + 10 + i).record;
+check('over the reader cap the lead is never the one dropped: the shared place survives', viewOf(crowd, T0 + 100).shared?.place.target?.id === 'billing' && crowd.readers.length <= MAX_READERS + 1);
 check('"Following Web, 2 s ago"', followingWords(viewOf(focusStep(EMPTY_RECORD, { kind: 'publish', ...web, place: room('x') }, T0).record, T0), '*', T0 + 2000) === 'Following Web, 2 s ago');
 check('readFocusPlace keeps ids and words only', JSON.stringify(readFocusPlace({ product: 'kettle', target: { kind: 'feature', id: 'f1' }, say: 'hi', selection: [1, 2] })) === '{"product":"kettle","target":{"kind":"feature","id":"f1"},"say":"hi"}');
 for (const [why, bad] of [['a product that is no slug', { product: '../x' }], ['a target of an unknown kind', { product: 'kettle', target: { kind: 'selection', id: 'x' } }], ['a hash without #', { product: 'kettle', hash: 'at=x' }], ['a level past L4', { product: 'kettle', level: 'L7' }], ['not an object', 'kettle']] as const) {
@@ -78,6 +85,11 @@ check('publish: 201, moved, and the stream carries the place with who put it the
 heard.length = 0;
 res = await POST(req('POST', URL0, { op: 'publish', ...vr, place: room('scheduling') }));
 check('an echo over the route: 200, nothing on the stream', res.status === 200 && heard.length === 0);
+heard.length = 0;
+res = await POST(req('POST', URL0, { op: 'publish', ...web, place: { ...room('scheduling'), say: 'A second card on the same room' } }));
+check('the lead saying the same spot with a new line: no new rev, but the stream carries the line', res.status === 200 && heard.length === 1 && heard[0].shared?.place.say === 'A second card on the same room');
+res = await POST(req('POST', URL0, { op: 'publish', ...web, place: room('scheduling', 'no-such-product') }));
+check('a place in a product this server cannot open: 404 (it would strand every follower)', res.status === 404);
 res = await POST(req('POST', URL0, { op: 'publish', ...web, place: { product: 'kettle', target: { kind: 'selection', id: 'x' } } }));
 check('a bad place: 400', res.status === 400);
 res = await POST(req('POST', URL0, { op: 'teleport', ...web }));

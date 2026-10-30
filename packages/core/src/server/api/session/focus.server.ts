@@ -47,6 +47,9 @@ export function moveFocus(m: FocusMove, now = Date.now()): FocusStep {
   const before = readFocus(), r = focusStep(before, m, now);
   if (r.error) return r;
   writeFocus(r.record);
-  if (r.moved || presence(before, now) !== presence(r.record, now)) publish({ type: 'shared', shared: viewOf(r.record, now) });
+  // also when only the shared place's words or hash changed (the lead said the same spot again with a new line: every
+  // follower's caption must read it, though nobody flies)
+  const said = (x: FocusRecord) => JSON.stringify(x.readers.find((y) => y.id === x.lead)?.place ?? null);
+  if (r.moved || said(before) !== said(r.record) || presence(before, now) !== presence(r.record, now)) publish({ type: 'shared', shared: viewOf(r.record, now) });
   return r;
 }
