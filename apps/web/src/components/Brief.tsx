@@ -50,9 +50,12 @@ function Decided({ r }: { r: BriefDecided }) {
   );
 }
 
-function Evidence({ b, f, max, line }: { b: Brief; f: BriefFact; max: number; line: string }) {
+function Evidence({ b, f, max: cap, line }: { b: Brief; f: BriefFact; max: number; line: string }) {
   const E = useEngine();
-  const more = (n: number) => (n > max ? <li className="more">and {n - max} more</li> : null);
+  // the fold opens: a number on the card says how many stand behind it, so every one of them must be reachable (the demo
+  // pass found 2 of 6 decisions folded under a plain "and 2 more")
+  const [all, setAll] = useState(false), max = all ? Infinity : cap;
+  const more = (n: number) => (n > max ? <li className="more"><button type="button" onClick={() => setAll(true)} title="Show every one">and {n - max} more</button></li> : null);
   if (f.key === 'precedent' || f.key === 'declined') {
     const rows = f.key === 'declined' ? b.declines : b.precedent.rows;
     return <ol className="bf-ev">{rows.slice(0, max).map((r) => <Decided key={r.id} r={r} />)}{more(rows.length)}</ol>;

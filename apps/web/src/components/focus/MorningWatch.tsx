@@ -191,7 +191,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
-          {(card.kind === 'open' || card.kind === 'close') && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
+          {card.kind === 'open' && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
           {deck?.skipped?.length ? card.kind === 'open' && <div className="where">Not read: {deck.skipped.map((x) => x.product + ' (' + x.why + ')').join('; ')}</div> : null}
         </motion.div>
       ) : <div className="card"><h2>{deck ? 'Nothing to brief.' : 'Reading every product…'}</h2></div>}
