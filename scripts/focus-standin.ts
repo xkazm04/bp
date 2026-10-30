@@ -4,14 +4,19 @@
 // feature's room - the same resolution the table makes) and "flies" there: an eased 0.8 s move printed as the table's
 // framing, with the line the publisher said. It never applies its own writes and never publishes what it was sent.
 // With --lead, `n` moves the stand-in to the next room on its own and publishes it (the headset leading; the web follows).
-//   node --import @bp/core/register scripts/focus-standin.ts [--base http://127.0.0.1:3313] [--lead] [--once] [--reader vr:standin]
+// With --personas it plays Personas' Monitor instead, as docs/concepts/one-morning/personas-adoption.md prescribes for its
+// Rust side: it polls GET /api/session/focus at 1 Hz (no stream), matches the product by its registry root's folder name
+// (Personas' bpSlug) and prints the call its Blueprint sheet would make for each place (a bp room is a Personas bay).
+//   node --import @bp/core/register scripts/focus-standin.ts [--base http://127.0.0.1:3313] [--lead] [--once] [--personas] [--reader vr:standin]
 // --once exits 0 after the first place it applied (scripts/check-morning-watch.ts drives it that way), 1 after 20 s without one.
 import { toApply, type FocusPlace, type SharedView } from '../packages/core/src/session/focus.ts';
 
 const argv = process.argv.slice(2);
 const opt = (k: string, d: string) => { const i = argv.indexOf(k); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
 const BASE = opt('--base', 'http://127.0.0.1:3313').replace(/\/$/, ''), ONCE = argv.includes('--once'), LEAD = argv.includes('--lead');
-const ME = opt('--reader', 'vr:standin'), LABEL = opt('--label', 'VR table (stand-in)');
+const PERSONAS = argv.includes('--personas');
+const ME = opt('--reader', PERSONAS ? 'personas:monitor' : 'vr:standin'), LABEL = opt('--label', PERSONAS ? 'Personas (stand-in)' : 'VR table (stand-in)');
+const SURFACE = PERSONAS ? 'personas' : 'standin';
 const tty = process.stdout.isTTY, dim = (s: string) => (tty ? `\x1b[2m${s}\x1b[0m` : s), hi = (s: string) => (tty ? `\x1b[1m${s}\x1b[0m` : s);
 
 interface Node { id: string; name: string; parentId?: string }
@@ -53,18 +58,31 @@ async function fly(p: FocusPlace, from: string): Promise<void> {
 
 async function post(body: Record<string, unknown>): Promise<SharedView | null> {
   try {
-    const r = await fetch(`${BASE}/api/session/focus`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reader: ME, surface: 'standin', label: LABEL, ...body }) });
+    const r = await fetch(`${BASE}/api/session/focus`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reader: ME, surface: SURFACE, label: LABEL, ...body }) });
     const j = (await r.json()) as { view?: SharedView; error?: string };
     if (!r.ok) { console.error(`focus ${body.op}: ${r.status} ${j.error ?? ''}`); return null; }
     return j.view ?? null;
   } catch (e) { console.error(`focus ${body.op}: ${(e as Error).message}`); return null; }
 }
 
+/** Personas' side of a place (adoption note 2.3): its project by folder name, and the sheet call for the target. */
+const roots = new Map<string, string>();
+async function personasOf(p: FocusPlace): Promise<void> {
+  if (!roots.size) try { for (const x of (await (await fetch(`${BASE}/api/products`)).json()) as { slug: string; root: string }[]) roots.set(x.slug, x.root); } catch { /* none */ }
+  const root = roots.get(p.product), folder = root ? root.split(/[\\/]/).filter(Boolean).pop() : undefined;
+  const t = p.target, call = !t || t.kind === 'site' ? 'nav.toLevel(0)' : t.kind === 'feature' ? `nav.openSheet('${t.id}')` : t.kind === 'room' ? `nav.flyToPlace('bay', '${t.id}')` : `nav.flyToPlace('wing', '${t.id}')`;
+  console.log(`${hi('▸ Following ' + (lastFrom || 'bp'))} ${dim('·')} ${p.product}${p.say ? dim('  "' + p.say + '"') : ''}`);
+  console.log(`  Personas project ${hi(folder ?? '?')}${folder && folder !== p.product ? dim(' (folder name; bp slug ' + p.product + ')') : ''}`);
+  console.log(`  Blueprint sheet: ${hi(call)}   ${dim('deep link ' + BASE + '/?product=' + p.product + (t && t.kind !== 'site' ? '#' + (t.kind === 'feature' ? 'open=' : 'at=') + t.id : ''))}`);
+}
+let lastFrom = '';
+
 async function take(v: SharedView): Promise<void> {
   const p = toApply(v, ME, '*', applied);
   if (v.rev > applied) applied = v.rev;
   if (!p || !v.shared) return;
-  await fly(p, v.shared.label);
+  lastFrom = v.shared.label;
+  if (PERSONAS) await personasOf(p); else await fly(p, v.shared.label);
   if (ONCE) { await post({ op: 'forget' }); process.exit(0); }
 }
 
@@ -90,7 +108,7 @@ async function stream(): Promise<void> {
   }
 }
 
-console.log(`${hi(LABEL)} ${dim('- a headless stand-in for the VR light table, following the shared focus at ' + BASE)}`);
+console.log(`${hi(LABEL)} ${dim(PERSONAS ? "- Personas' Monitor as one more follower (not Personas itself: what its Rust side would do), polling " + BASE : '- a headless stand-in for the VR light table, following the shared focus at ' + BASE)}`);
 const first = await post({ op: 'hello' });
 if (!first) { console.error('the server is not reachable: start bp first (see .hackathon/DEMO.md)'); process.exit(2); }
 await post({ op: 'follow', of: '*' });
@@ -115,4 +133,5 @@ if (LEAD && process.stdin.isTTY) {
     await post({ op: 'publish', place: { product, target: { kind: 'room', id: room.id }, level: 'L2', say: `The table moved to ${room.name}` } });
   });
 }
-void stream();
+if (PERSONAS) setInterval(async () => { try { const r = await fetch(`${BASE}/api/session/focus`, { cache: 'no-store' }); if (r.ok) await take((await r.json()) as SharedView); } catch { /* again in 1 s */ } }, 1000);
+else void stream();

@@ -62,7 +62,8 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
   useEffect(() => {
     born.current = performance.now();
     const q = new URLSearchParams(location.search);
-    fx.start({ surface: phone ? 'phone' : 'web', label: phone ? 'Phone' : 'Web', viaLamp: !phone && q.get('lamp-fixture') !== '1', follow: q.get('follow') === '1' });
+    // a window opened to follow is named apart from the one that leads, so "Following: Web window, VR table" reads plainly
+    fx.start({ surface: phone ? 'phone' : 'web', label: phone ? 'Phone' : q.get('follow') === '1' ? 'Web window' : 'Web', viaLamp: !phone && q.get('lamp-fixture') !== '1', follow: q.get('follow') === '1' });
     // a place in another product: the product opens in place and this host mounts again on its engine, where it lands here
     const landing = fx.takeArrival(E.M.live?.slug ?? 'kettle');
     if (landing) { fx.hush(4000); setTimeout(() => { flyToPlace(E, landing); setArrive((n) => n + 1); void arrived(E).then(() => fx.hush(900)); }, 120); }
