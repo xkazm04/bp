@@ -1819,3 +1819,279 @@ struct BPLINK_API FBpScanWire
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpWave> waves;
 };
+
+/** What is decided: an open proposal (id set) or an agent's draft (a feature and its words). */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefSubject
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString standard;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 tier = 0;
+
+	/** one of: secret, authz, money, data, llm, perf, reliability, ux, debt */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString risk_class;
+
+	/** one of: XS, S, M, L, XL */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString size;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefRef
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString slug;
+
+	/** The map's short code (BKG-01), when it has one */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+};
+
+/** The feature on the plan and the features whose depends_on name it. feature, room and wing are omitted when the feature is not on the plan. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefBlast
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefRef feature;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefRef room;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefRef wing;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString stage;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpBriefRef> dependents;
+
+	/** The rooms the dependents sit in. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 rooms = 0;
+
+	/** Other open proposals on the same feature. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> openHere;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefDecided
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString lens;
+
+	/** one of: approved, declined. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString verdict;
+
+	/** The day it was decided, YYYY-MM-DD. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString by;
+
+	/** The decline note (or the triage note): the owner's own words */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString standard;
+
+	/** one of: same idea, same standard, similar words, same lens. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString match;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefPrecedent
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpBriefDecided> rows;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 approved = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 declined = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString basis;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefReversible
+{
+	GENERATED_BODY()
+
+	/** An approval builds on a pack branch and ships only through triage and a release. always "until-triage". required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString approve;
+
+	/** No route reopens a decided proposal. always "final". required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decline;
+
+	/** one of: revert, care, unknown. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString afterRelease;
+
+	/** one of: secret, authz, money, data, llm, perf, reliability, ux, debt */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString riskClass;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefCost
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 builds = 0;
+
+	/** Median minutes per item of the finished execute runs */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 minutes = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString model;
+
+	/** one of: lens, any lens, none. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString basis;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> runs;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefAdvice
+{
+	GENERATED_BODY()
+
+	/** one of: withdraw, ask, proceed. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString say;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString why;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefFact
+{
+	GENERATED_BODY()
+
+	/** one of: blast, declined, precedent, undo, cost. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString key;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString text;
+
+	/** What the fact's number opens: dependents, decided rows, or execute runs. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> ids;
+};
+
+/** GET /api/products/{slug}/proposals/{id}/brief and GET /api/companion/brief (the plan.brief tool): the context of one decision, computed once in core (packages/core/src/scan/brief.ts) for every reader - the web decision card, the VR decision card (BpLink), Personas' card and agents. Four facts, each with the ids that back it: blast radius from the plan, precedent from decided rows (the owner's declines quoted), reversibility, cost from finished builds. Thin evidence is said in the words, never filled in. `lines` is the brief in plain words under a fixed budget (at most 5 lines of at most 120 characters): a small card shows exactly these. Absent values are omitted, never null. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpDecisionBrief
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 v = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefSubject subject;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefBlast blast;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefPrecedent precedent;
+
+	/** The declines that match the idea (not merely its lens), latest first, one per standard, with the owner's note. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpBriefDecided> declines;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefReversible reversible;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefCost cost;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefAdvice advice;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpBriefFact> facts;
+
+	/** facts[].text: the one rendering every small surface shares. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lines;
+};

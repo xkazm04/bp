@@ -56,7 +56,7 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
       out.push({
         product: p.slug, id: x.id, kind, title: x.title, ...(x.tier !== undefined ? { tier: x.tier } : {}),
         ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), value: ev.get(x.id) ?? 0,
-        ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why } } : {}),
+        ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why, ...(rec.brief ? { brief: rec.brief.lines } : {}) } } : {}),
       });
     }
   }

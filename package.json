@@ -20,6 +20,7 @@
     "schema:generate": "node packages/schema/generate.mjs",
     "check:data": "node scripts/kettle-to-v3.ts --check",
     "check:fixtures": "node scripts/check-fixtures.ts",
+    "check:decision-brief": "node --import @bp/core/register scripts/check-decision-brief.ts",
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:scan-jobs": "node scripts/check-scan-jobs.ts",
     "check:job-journal": "node scripts/check-job-journal.ts",

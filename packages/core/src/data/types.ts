@@ -31,6 +31,9 @@ export interface Decision {
   arrivesAt?: number;
   /** v4 (a live scan's proposal): its severity tier, 0 stop-ship .. 3 backlog; absent = untriaged. The queue's first key. */
   tier?: 0 | 1 | 2 | 3;
+  /** Live: why `recommended` is not the default Approve - the decision brief found a standing decline of the same idea
+   *  (scan/brief.ts briefAdvice); the note a Decline taken on it carries, naming the decision it repeats. */
+  recommendedNote?: string;
 }
 /**
  * An answer option. `effects`: what choosing it does in the simulation, in a closed vocabulary, and only what

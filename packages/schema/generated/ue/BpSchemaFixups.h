@@ -31,6 +31,7 @@ namespace BpSchema
 	inline bool FixUp(const FJsonObject& Json, FBpPlan& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpStructureEnvelope& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpScanWire& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpDecisionBrief& Out);
 
 	/**
 	 * Why the last FromJson on this thread returned false, for a log line: the call that failed first, the path of its
@@ -218,6 +219,12 @@ namespace BpSchema
 	}
 
 	inline bool FixUp(const FJsonObject& Json, FBpScanWire& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpDecisionBrief& Out)
 	{
 		(void)Json; (void)Out;
 		return true; // nothing carried

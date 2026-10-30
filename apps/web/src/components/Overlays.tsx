@@ -18,6 +18,7 @@ import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVa
 import { LiveSteerButtons } from './LiveSteer';
 import { STAGE_WORDS, TrackRecord } from './TrackRecord';
 import { proposalSummary } from './Queue';
+import { BriefFacts, useBrief } from './Brief';
 import { lensWords } from './sheet/words';
 
 // ---------------------------------------------------------------------------------- ladder, scale
@@ -231,6 +232,7 @@ export function DecisionCard() {
   const [keep, setKeep] = useState(false);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
   const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, note = useAnswerNote(d?.id ?? ''), writes = useWritesOn();
+  const brief = useBrief(d);
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
@@ -265,9 +267,10 @@ export function DecisionCard() {
               {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>{d.ord ? <>, asked because of <b>{d.ord}</b></> : null}.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span>{down ? <span>{down} agent{down === 1 ? '' : 's'} blocked downstream</span> : null}</div>
+              {brief && <BriefFacts b={brief} d={d} compact />}
               {(writes || !sim.live) && d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => (keep ? E.keepAnswer(d.id, i) : E.decide(d.id, i))} {...optHover(E, d.id, i)}>
-                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
+                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recNote ? 'you declined this before' : d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
               {!sim.live && <label className="keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order<small>{s.tl || M.P.D[f.domain]?.name || f.domain}</small></label>}

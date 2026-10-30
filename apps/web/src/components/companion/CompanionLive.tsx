@@ -22,6 +22,7 @@ import { PLACE_EVENT } from '../crossing/follow';
 import { SHARED_EVENT } from '@/lib/focus/shared';
 import { planFocus, runFocus, targetRect, type Rect } from './focus';
 import { Cards, Notice } from './Cards';
+import { AgentTrail } from './AgentTrail';
 import { hush, speak } from './voice';
 import { VoiceToggle } from './VoiceToggle';
 import './companion.css';
@@ -161,6 +162,7 @@ function LiveLamp({ skin, product }: { skin: LampSkin; product: string }) {
       <skin.Component {...props} />
       <div className="cp-side">
         <AnimatePresence>{away && <Notice key={away.n} text={away.text} href={away.href} onClose={() => setAway(null)} />}</AnimatePresence>
+        <AgentTrail product={product} />
         {!skin.ownsCards && <Cards cards={s.cards} onCard={onCard} />}
         {!skin.ownsVoice && <VoiceToggle />}
       </div>
