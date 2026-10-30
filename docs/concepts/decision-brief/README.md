@@ -57,4 +57,5 @@ The data side is ready; the C++ is not written (this worktree has no UE build tu
 
 See `.hackathon/DEMO.md` in the entry worktree, or: `node scripts/scan-demo.mjs --reset`,
 `node scripts/brief-demo-seed.mjs`, apps/server and the web on throwaway `BP_HOME`, then
-`node scripts/brief-agent-demo.mjs` (a scripted agent, no model).
+`node scripts/brief-agent-demo.mjs` (a scripted agent, no model). `python scripts/brief-demo-rehearse.py` walks the
+whole path headless and asserts it.
