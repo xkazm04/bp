@@ -87,6 +87,9 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
   if (!x) return { status: 404, error: `no proposal ${proposal} in ${product}` };
   if (x.status !== 'proposed') return { status: 409, error: `${proposal} is already ${x.status}` };
   const by = await triageBy();
+  // asked gh the first time: someone may have decided while we waited
+  const again = snapshots(product).read[0]?.scan.proposals.find((r) => r.id === proposal);
+  if (again && again.status !== 'proposed') return { status: 409, error: `${proposal} is already ${again.status}` };
   if (verdict === 'approve') {
     const off = writesOff();
     if (off) return { status: 403, error: off };
@@ -99,14 +102,19 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
   try {
     fs.mkdirSync(path.dirname(logFile(p)), { recursive: true });
     fs.appendFileSync(logFile(p), JSON.stringify(row) + '\n');
-    fs.writeFileSync(mdFile(p), renderLog(p, readSteer(p), now));
-  } catch (e) { return { status: 503, error: `the steering log could not be written: ${(e as Error).message}` }; }
+  } catch (e) {
+    // an approve is already in the store: say it happened and that the log missed it (never a 503 that invites a retry)
+    if (verdict === 'approve') return { status: 200, row: { ...row, warning: `approved, but the steering log could not be written: ${(e as Error).message}` } };
+    return { status: 503, error: `the steering log could not be written: ${(e as Error).message}` };
+  }
+  try { fs.writeFileSync(mdFile(p), renderLog(p, readSteer(p), now)); } catch { /* the .md renders the jsonl; the next verdict writes it again */ }
   return { status: 200, row };
 }
 
 /** The day's steering log as Markdown: what was decided this morning, newest last. */
 export function renderLog(p: ProductEntry, rows: readonly SteerRow[], now: number): string {
-  const day = new Date(now).toISOString().slice(0, 10), today = rows.filter((r) => r.at.slice(0, 10) === day);
+  // "today" is the morning's own window (the last 20 h), not a UTC calendar day that can split one morning in two
+  const day = new Date(now).toISOString().slice(0, 10), from = new Date(now - DEFER_MS).toISOString(), today = rows.filter((r) => r.at >= from);
   const word = (v: Verdict) => (v === 'approve' ? 'Approved' : v === 'defer' ? 'Deferred to tomorrow' : 'Held');
   return [`# Daily steering log - ${p.name}, ${day}`, '', 'Written by bp\'s Morning Watch; one line per decision. Approve also moved the finding to approved in this store.', '',
     ...(today.length ? today.map((r) => `- ${r.at.slice(11, 16)} UTC - ${word(r.verdict)}: ${r.title} (\`${r.proposal}\`, ${r.by})`) : ['- Nothing decided yet today.']), ''].join('\n');

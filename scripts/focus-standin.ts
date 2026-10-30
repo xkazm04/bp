@@ -39,7 +39,7 @@ function resolve(plan: Plan, p: FocusPlace): { room?: Node; wing?: Node; what: s
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-let framed = 'the whole site', applied = 0, flights = 0;
+let framed = 'the whole site', applied = 0, flights = 0, listening = false;
 async function fly(p: FocusPlace, from: string): Promise<void> {
   const plan = await planOf(p.product), where = plan ? resolve(plan, p) : { what: `${p.target?.kind ?? 'site'} ${p.target?.id ?? ''} (no plan for ${p.product})` };
   const n = ++flights;
@@ -91,6 +91,9 @@ async function stream(): Promise<void> {
     try {
       const r = await fetch(`${BASE}/api/companion/stream`, { headers: { accept: 'text/event-stream' } });
       if (!r.ok || !r.body) throw new Error(`stream ${r.status}`);
+      // connected: anything published before the stream was open is in the record, not on the stream - read it once
+      try { const g = await fetch(`${BASE}/api/session/focus`, { cache: 'no-store' }); if (g.ok) await take((await g.json()) as SharedView); } catch { /* the stream carries the next */ }
+      if (!listening) { listening = true; console.log(dim('listening on the companion stream')); }
       const dec = new TextDecoder();
       let buf = '';
       for await (const chunk of r.body as unknown as AsyncIterable<Uint8Array>) {
@@ -133,5 +136,6 @@ if (LEAD && process.stdin.isTTY) {
     await post({ op: 'publish', place: { product, target: { kind: 'room', id: room.id }, level: 'L2', say: `The table moved to ${room.name}` } });
   });
 }
+if (PERSONAS) console.log(dim('listening: polling every second'));
 if (PERSONAS) setInterval(async () => { try { const r = await fetch(`${BASE}/api/session/focus`, { cache: 'no-store' }); if (r.ok) await take((await r.json()) as SharedView); } catch { /* again in 1 s */ } }, 1000);
 else void stream();

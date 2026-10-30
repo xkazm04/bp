@@ -62,7 +62,12 @@ class SharedFocus {
   /** While a deck leads (the Morning Watch), the page's own resting places are not published: the deck publishes its cards. */
   pause(on: boolean): void { this.paused = on; }
   /** Called with every place this reader should go to (following, not its own, not seen before). */
-  onApply(a: Apply): () => void { this.appliers.add(a); return () => { this.appliers.delete(a); }; }
+  onApply(a: Apply): () => void {
+    this.appliers.add(a);
+    // a page that mounts again (an in-place product switch) re-reads the record: a move made meanwhile is not lost
+    if (this.started) void this.read();
+    return () => { this.appliers.delete(a); };
+  }
   private set(s: Partial<SharedState>) { this.state = { ...this.state, ...s }; for (const l of this.listeners) l(); }
 
   /** Start once per tab: the stream, the first read and the heartbeat. */
@@ -85,7 +90,6 @@ class SharedFocus {
     if (!this.local) {
       void this.post({ op: 'hello' }).then(() => (o.follow ? this.follow('*') : undefined));
       setInterval(() => { if (document.visibilityState !== 'hidden') void this.post({ op: 'hello' }); }, HELLO_MS);
-      addEventListener('pagehide', () => { try { navigator.sendBeacon?.(FOCUS_URL, new Blob([JSON.stringify({ op: 'forget', reader: this.me })], { type: 'application/json' })); } catch { /* best effort */ } });
     }
   }
 
@@ -99,6 +103,8 @@ class SharedFocus {
     this.set({ view: v, follows });
     const p = toApply(v, this.me, follows, this.applied);
     // only a following reader moves its mark: turning Follow on then goes to where the shared focus is now
+    // ...and only while something can apply it: during an in-place switch nothing is mounted, and the move must wait
+    if (!this.appliers.size) return;
     if (follows && v.rev > this.applied) this.applied = v.rev;
     if (!p || !v.shared) return;
     this.hushUntil = Date.now() + APPLY_HUSH_MS; this.lastApplied = p;

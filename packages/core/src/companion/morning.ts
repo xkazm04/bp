@@ -30,7 +30,7 @@ export interface ProductFacts {
   labels?: ReadonlyMap<string, string>;
 }
 /** One row of a product's steering log (work/steering-log.jsonl). */
-export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string }
+export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string }
 
 export interface CardLine { text: string; tone?: Tone }
 export interface MorningCard {

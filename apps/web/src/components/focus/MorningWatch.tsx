@@ -41,6 +41,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const [i, setI] = useState(0);
   const [steered, setSteered] = useState<Record<string, Steered>>({});
   const [busy, setBusy] = useState(false);
+  const busyNow = useRef(false), alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const want = useRef<string | null>(null), ref = useRef<HTMLElement>(null), shown = useRef<string | null>(null);
 
   const load = useCallback(async (): Promise<Deck | null> => {
@@ -63,13 +65,21 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   useEffect(() => { if (phone) fx.start({ surface: 'phone', label: 'Phone' }); }, [phone, fx]);
   // the Kettle sample's page opens the deck too when live products are registered (M stays the sample's own overlay there)
   const projects = useProjects(), anyLive = (projects.list ?? []).some((p) => p.live);
-  useEffect(() => { if (!projects.list && !projects.loading) void refreshProjects(); }, [projects.list, projects.loading]);
+  // once per mount: a registry that cannot be read must not be asked again in a loop
+  const asked = useRef(false);
+  useEffect(() => { if (!asked.current && !projects.list && !projects.loading) { asked.current = true; void refreshProjects(); } }, [projects.list, projects.loading]);
   // read aloud: this browser's own speech voice (free, offline; not the lamp's voice), off unless asked, kept for the tab
   const [voice, setVoice] = useState(() => { try { return sessionStorage.getItem(VOICE_KEY) === '1'; } catch { return false; } });
-  useEffect(() => { try { sessionStorage.setItem(VOICE_KEY, voice ? '1' : '0'); } catch { /* this visit only */ } if (!voice) speechSynthesis?.cancel(); }, [voice]);
+  useEffect(() => { try { sessionStorage.setItem(VOICE_KEY, voice ? '1' : '0'); } catch { /* this visit only */ } if (!voice && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel(); }, [voice]);
   // ?morning=<card id>: this page was opened by the deck (a card in this product); pick up there
   useEffect(() => { const at = new URLSearchParams(location.search).get('morning'); if (at && here) start(at); }, [here, start]);
-  useEffect(() => { if (!deck || !want.current) return; const k = deck.cards.findIndex((c) => c.id === want.current); want.current = null; if (k >= 0) setI(k); }, [deck]);
+  // a deck read (or read again: a card came or went) keeps the card the owner is on, by its id, not its index
+  useEffect(() => {
+    if (!deck) return;
+    const id = want.current ?? shown.current; want.current = null;
+    const k = id ? deck.cards.findIndex((c) => c.id === id) : -1;
+    if (k >= 0) setI(k);
+  }, [deck]);
   useEffect(() => {
     fx.pause(open);
     if (!phone) E.setInsetLeft(open ? DECK_INSET : 0);
@@ -87,7 +97,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     const p = card.place;
     if (!p) { if ((card.kind === 'open' || card.kind === 'close') && !phone) E.goHome(); return; }
     void fx.publishNow(p).then(() => {
-      if (phone) return;
+      // only the card still shown, on the page still mounted, moves anything (two fast presses answer out of order)
+      if (phone || shown.current !== card.id || !alive.current) return;
       fx.hush(4000);
       const why = goToPlace(E, p, { morning: card.id });
       if (why) setSteered((s) => ({ ...s, [card.id + ':where']: { verdict: 'hold', ok: false, text: why } }));
@@ -105,18 +116,18 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const go = useCallback((d: number) => { if (!deck) return; setI((k) => Math.max(0, Math.min(deck.cards.length - 1, k + d))); }, [deck]);
 
   const steer = useCallback(async (v: Verdict) => {
-    if (!card?.decision || !card.product || busy || (steered[card.id] ?? fromDeck(card, deck))?.ok) return;
-    setBusy(true);
+    if (!card?.decision || !card.product || busyNow.current || (steered[card.id] ?? fromDeck(card, deck))?.ok) return;
+    busyNow.current = true; setBusy(true);
     try {
       const r = await postHuman('/api/companion/morning', { product: card.product, proposal: card.decision.proposal, verdict: v });
-      const j = (await r.json().catch(() => ({}))) as { error?: string };
+      const j = (await r.json().catch(() => ({}))) as { error?: string; warning?: string };
       const ok = r.ok;
-      const text = ok ? `${VERB[v]}${v === 'approve' ? `: moved to approved in ${card.productName ?? card.product}'s store` : ''}. Logged.` : j.error ?? `HTTP ${r.status}`;
+      const text = ok && j.warning ? j.warning : ok ? `${VERB[v]}${v === 'approve' ? `: moved to approved in ${card.productName ?? card.product}'s store` : ''}. Logged.` : j.error ?? `HTTP ${r.status}`;
       setSteered((s) => ({ ...s, [card.id]: { verdict: v, ok, text } }));
       if (ok) setTimeout(() => go(1), 900);
     } catch (e) {
       setSteered((s) => ({ ...s, [card.id]: { verdict: v, ok: false, text: (e as Error).message } }));
-    } finally { setBusy(false); }
+    } finally { busyNow.current = false; setBusy(false); }
   }, [card, busy, steered, go, deck]);
 
   // keys: capture phase, ahead of the plan's own (M is the sample's overlay there)

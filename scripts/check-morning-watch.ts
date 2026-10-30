@@ -109,7 +109,7 @@ if (up) {
   let so = '';
   standin.stdout.on('data', (b) => { so += String(b); });
   const done = new Promise<number>((r) => standin.on('exit', (c) => r(c ?? 1)));
-  for (let i = 0; i < 60 && !so.includes('nothing shared yet') && !so.includes('opening at'); i++) await new Promise((r) => setTimeout(r, 100));
+  for (let i = 0; i < 100 && !so.includes('listening'); i++) await new Promise((r) => setTimeout(r, 100));
   const card = d.cards.find((c) => c.kind === 'built')!;
   const pub = await fetch(`${base}/api/session/focus`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ op: 'publish', reader: 'web-check', surface: 'web', label: 'Web', place: card.place }) });
   check("the deck's card publishes over the real server: 201", pub.status === 201);
@@ -117,7 +117,9 @@ if (up) {
   check('the headless VR stand-in followed and framed the card\'s room on its own plan', code === 0 && so.includes('Following Web') && so.includes('table framed on'), so.slice(-400));
   if (code === 99) standin.kill();
 }
+const gone = new Promise((r) => server.once('exit', r));
 server.kill();
-fs.rmSync(TMP, { recursive: true, force: true });
+await Promise.race([gone, new Promise((r) => setTimeout(r, 3000))]);
+try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* a temp dir Windows still holds: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning watch)`);
 process.exit(failed ? 1 : 0);

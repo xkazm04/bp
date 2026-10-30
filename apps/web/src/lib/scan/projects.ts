@@ -105,5 +105,6 @@ export function projectHref(slug: string | null): string {
   const u = new URL(location.href);
   if (slug) u.searchParams.set('product', slug); else u.searchParams.delete('product');
   u.hash = ''; // the hash names places in the previous product's plan
+  u.searchParams.delete('morning'); // the deck's card belongs to the page that showed it (switchProduct sets its own)
   return u.pathname + u.search;
 }
