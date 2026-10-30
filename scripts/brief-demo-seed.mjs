@@ -12,7 +12,10 @@
 //     standard, which only asks (the owner's words in amber, Approve stays the default).
 // Every row id starts `brief-`; a rerun replaces them (idempotent). It writes the store directly, as scan-demo does: this
 // is a seed, not a product path (lens-scan's store.mjs owns transitions on a real store).
-//   node scripts/brief-demo-seed.mjs [--dir .demo/kettle-live] [--now <iso>]
+// --morning (scripts/morning-up.mjs, into the Morning Watch's kettle-web): the re-filed retry (brief-o2) and the like idea
+// (brief-o4) are ranked tier 1, so the morning's top three decisions are the stop-ship secret, a repeat (Decline is
+// recommended, Enter takes it) and a likeness (only asks). The rest is the same history.
+//   node scripts/brief-demo-seed.mjs [--dir .demo/kettle-live] [--now <iso>] [--morning]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +27,7 @@ const opt = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1
 const DIR = opt('--dir') ? path.resolve(opt('--dir')) : path.join(ROOT, '.demo', 'kettle-live');
 const DB = path.join(DIR, '.ai', 'lens-scan', 'scan.db');
 if (!fs.existsSync(DB)) { console.error(`no store at ${DB}: run node scripts/scan-demo.mjs first`); process.exit(2); }
-const NOW = opt('--now') ? Date.parse(opt('--now')) : Date.now();
+const NOW = opt('--now') ? Date.parse(opt('--now')) : Date.now(), MORNING = argv.includes('--morning');
 if (!Number.isFinite(NOW)) { console.error('--now is not an ISO instant'); process.exit(2); }
 const ago = (days, hours = 0) => new Date(NOW - days * 86400000 - hours * 3600000).toISOString();
 
@@ -49,9 +52,9 @@ const rows = [
 const open = [
   ['brief-o1', OPEN, 'book-a-class', 'security', 'Add rate limits to the booking API', 'api/rate-limits', 1, 'reliability', 'S', 4,
     '## Summary\nThe booking API accepts unlimited requests per member, so one script can hold every class.\n\n## Expected impact\nBursts above 20 requests a minute per member are refused with 429.'],
-  ['brief-o2', OPEN, 'card-payments', 'development', 'Add retry to the checkout payment calls', 'reliability/retry-backoff', 2, 'money', 'S', 6,
+  ['brief-o2', OPEN, 'card-payments', 'development', 'Add retry to the checkout payment calls', 'reliability/retry-backoff', MORNING ? 1 : 2, 'money', 'S', 6,
     '## Summary\nA checkout payment call that fails transiently is lost; one retry with backoff would recover most of them.'],
-  ['brief-o4', OPEN, 'card-payments', 'development', 'Retry the payment webhook on timeout', 'reliability/retry-backoff', 2, 'money', 'S', 5,
+  ['brief-o4', OPEN, 'card-payments', 'development', 'Retry the payment webhook on timeout', 'reliability/retry-backoff', MORNING ? 1 : 2, 'money', 'S', 5,
     '## Summary\nA webhook that times out is dropped; retrying it three times with backoff would recover most of them.'],
   ['brief-o3', OPEN, 'email-password-sign-in', 'security', 'Rotate the session signing keys monthly', 'secrets/key-rotation', 2, 'secret', 'S', 5,
     '## Summary\nSession signing keys never rotate; a weekly rotation limits how long a leaked key works.'],
@@ -76,4 +79,4 @@ try {
   }
   db.exec('COMMIT');
 } catch (e) { try { db.exec('ROLLBACK'); } catch { /* none open */ } throw e; } finally { db.close(); }
-console.log(`seeded ${rows.length} decided rows, ${open.length} open proposals, 1 execute run into ${DB}`);
+console.log(`seeded ${rows.length} decided rows, ${open.length} open proposals, 1 execute run into ${DB}${MORNING ? ' (morning ranks: brief-o2 and brief-o4 tier 1)' : ''}`);

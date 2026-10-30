@@ -7,39 +7,27 @@
 //   2. a decline heard on this feature - the same idea ('withdraw') or a like one ('ask', quoted) -> do not propose;
 //   3. then look for open proposals that repeat a declined idea (inbox.list + plan.brief on each) and recommend
 //      declining them in the person's own words (decision.recommend, AUTO: it decides nothing).
-// Every call carries BP_CONVERSATION, so bp keeps the agent trail the cards slip shows.
+// Every call carries BP_CONVERSATION, so bp keeps the agent trail the cards slip and the Morning Watch's agents card show.
+// In the fused demo, scripts/morning-up.mjs runs it once at launch as the night's agent on kettle-web (--product
+// kettle-web, against its server); the morning then opens with what it heard and withdrew. The door client is shared
+// with the morning walk (scripts/lib/mcp-door.mjs).
 //   node scripts/brief-agent-demo.mjs [--url http://127.0.0.1:3412] [--product kettle-live]
-//        [--feature "card payments"] [--draft "Add retry to checkout"] [--quiet]
-import { spawn } from 'node:child_process';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createInterface } from 'node:readline';
+//        [--feature "card payments"] [--draft "Add retry to checkout"]
+import { openDoor } from './lib/mcp-door.mjs';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d; };
 const URL_ = opt('--url', 'http://127.0.0.1:3412'), PRODUCT = opt('--product', 'kettle-live');
 const PLACE = opt('--feature', 'card payments'), DRAFT = opt('--draft', 'Add retry to checkout');
 const CONVERSATION = `demo-agent-${new Date().toISOString().slice(11, 19).replace(/:/g, '')}`;
 
-const mcp = spawn(process.execPath, [path.join(ROOT, 'apps/mcp/bp-mcp.mjs')], { env: { ...process.env, BP_URL: URL_, BP_CONVERSATION: CONVERSATION }, stdio: ['pipe', 'pipe', 'inherit'] });
-const waiting = new Map();
-createInterface({ input: mcp.stdout }).on('line', (l) => { const m = JSON.parse(l); waiting.get(m.id)?.(m); waiting.delete(m.id); });
-let seq = 0;
-const rpc = (method, params) => new Promise((res) => { const id = ++seq; waiting.set(id, res); mcp.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n'); });
-async function call(name, args) {
-  const m = await rpc('tools/call', { name, arguments: args });
-  const t = m.result?.content?.[0]?.text ?? m.error?.message ?? '';
-  if (m.result?.isError || m.error) throw new Error(`${name}: ${t}`);
-  return JSON.parse(t);
-}
+const door = await openDoor({ url: URL_, conversation: CONVERSATION, name: 'brief-agent-demo' }), call = door.call;
 const say = (s = '') => console.log(s);
 const step = (s) => say(`\n> ${s}`);
 
 try {
   say(`SCRIPTED AGENT (no model is called) · conversation ${CONVERSATION} · bp at ${URL_}`);
-  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'brief-agent-demo', version: '1' } });
-  const { result: { tools } } = await rpc('tools/list', {});
+  const tools = await door.tools();
   const brief = tools.find((t) => t.name === 'plan_brief');
   say(`tools/list: ${tools.length} tools from catalog.ts; plan_brief ${brief ? 'is there' + (brief.description.includes('[needs the person]') ? ' (GATED)' : ' (AUTO: runs without asking)') : 'is MISSING'}`);
   if (!brief) process.exit(1);
@@ -81,4 +69,4 @@ try {
 } catch (e) {
   console.error(`brief-agent-demo: ${e.message}`);
   process.exitCode = 1;
-} finally { mcp.stdin.end(); }
+} finally { door.close(); }
