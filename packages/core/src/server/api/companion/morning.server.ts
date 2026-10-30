@@ -7,7 +7,7 @@
 // owner's word only, kept in the log: a deferred decision leaves the deck until tomorrow morning, a held one stays, marked.
 import fs from 'node:fs';
 import path from 'node:path';
-import { buildDeck, closeLines, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
+import { buildDeck, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
 import type { ProductEntry } from '../../../scan/types.ts';
 import { writesOff } from '../../../scan/writes.ts';
 import { findProduct, hasStore, storeDir, storeFile, warnOnce } from '../../products.server.ts';
@@ -69,7 +69,7 @@ export function morningDeck(since: string | undefined, now = Date.now()): Mornin
   const deck = buildDeck(facts, steer, from, now);
   const close = deck.cards.find((c) => c.kind === 'close');
   const logs = read.map(({ p }) => path.relative(p.root, mdFile(p)).split(path.sep).join('/'));
-  if (close) close.lines = closeLines(steer.sort((a, b) => (a.at < b.at ? -1 : 1)), from, logs.length ? `${logs[0]} in each product` : 'none');
+  if (close) close.lines = closeLines(steer.sort((a, b) => (a.at < b.at ? -1 : 1)), from, logs.length ? `${logs[0]} in each product` : 'none', decidedElsewhere(facts, steer, from, deck.until));
   return { ...deck, skipped };
 }
 

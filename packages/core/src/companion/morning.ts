@@ -174,14 +174,33 @@ export function trackWords(t: Track, where: ReadonlyMap<string, Where>): string 
   return `${head}: not measured since the release`;
 }
 
-/** The close card's lines for what was steered this morning (rows at or after `since`). */
-export function closeLines(steer: readonly SteerRow[], since: string, logWhere: string): CardLine[] {
+/** A decision taken this morning somewhere other than the deck: on the plan, in the ledger, or in Personas (which writes the
+ *  same store through its own path). The deck counts them so the morning reads as one place. */
+export interface Elsewhere { product: string; title: string; status: string; by?: string }
+
+/** Proposals decided in [since, until] with no steering row: what other surfaces decided this morning. */
+export function decidedElsewhere(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, until: string): Elsewhere[] {
+  const mine = new Set(steer.filter((r) => r.at >= since).map((r) => r.product + ' ' + r.proposal)), out: Elsewhere[] = [];
+  for (const p of products) for (const x of p.scan.proposals) {
+    if (!x.decided_at || x.decided_at < since || x.decided_at > until || mine.has(p.slug + ' ' + x.id)) continue;
+    if (x.status !== 'approved' && x.status !== 'declined') continue;
+    out.push({ product: p.name, title: x.title, status: x.status, ...(x.decided_by ? { by: x.decided_by } : {}) });
+  }
+  return out;
+}
+
+/** The close card's lines for what was steered this morning (rows at or after `since`) and what was decided elsewhere. */
+export function closeLines(steer: readonly SteerRow[], since: string, logWhere: string, elsewhere: readonly Elsewhere[] = []): CardLine[] {
   const today = steer.filter((r) => r.at >= since);
   const k = (v: Verdict) => today.filter((r) => r.verdict === v).length;
-  if (!today.length) return [{ text: 'Nothing was decided this morning. The decisions will be here tomorrow.' }];
+  const other: CardLine[] = elsewhere.length
+    ? [{ text: `Also decided this morning elsewhere (the plan, the ledger or Personas): ${elsewhere.length}.` }, ...elsewhere.slice(0, 3).map((e) => ({ text: `${e.status === 'approved' ? 'Approved' : 'Declined'} in ${e.product}${e.by ? ' by ' + e.by : ''}: ${e.title}` }))]
+    : [];
+  if (!today.length) return [{ text: 'Nothing was decided on this deck this morning. The decisions will be here tomorrow.' }, ...other];
   return [
     { text: `${k('approve')} approved, ${k('defer')} deferred to tomorrow, ${k('hold')} held.`, tone: 'good' },
     ...today.slice(-5).map((r) => ({ text: `${r.verdict === 'approve' ? 'Approved' : r.verdict === 'defer' ? 'Deferred' : 'Held'}: ${r.title}` })),
+    ...other,
     { text: `Steering log: ${logWhere}` },
   ];
 }

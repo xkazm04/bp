@@ -85,6 +85,13 @@ check('...the held one is still there, marked held, after the top three', !!held
 check('...and the morning after that the deferred one is back', morningDeck(undefined, Date.now() + 22 * 3600e3).cards.some((c) => c.decision?.proposal === d1.decision!.proposal));
 const close = d.cards[d.cards.length - 1];
 check('the close card says what was decided', /1 approved, 1 deferred to tomorrow, 1 held/.test(close.lines[0]?.text ?? ''), close.lines.map((l) => l.text).join(' | '));
+// a decision taken this morning on the plan (or by Personas through its own path) is counted on the close card
+const { decide } = await import('../packages/core/src/server/store.server.ts');
+const other = d.cards.length && (await deck()) && (() => { const x = new DatabaseSync(path.join(root('kettle-phone'), 'scan.db'), { readOnly: true }); try { return x.prepare("SELECT id FROM proposals WHERE status = 'proposed' AND id NOT LIKE 'find-%' LIMIT 1").get() as { id: string }; } finally { x.close(); } })();
+check('a second open finding to decide elsewhere', !!other);
+if (other) decide(path.join(root('kettle-phone'), 'scan.db'), other.id, { decision: 'approve' }, 'user:personas');
+const closed = (await deck()).cards.pop()!;
+check('the close card counts what was decided elsewhere this morning, and by whom', closed.lines.some((l) => /elsewhere .*: 1\./.test(l.text)) && closed.lines.some((l) => /by user:personas/.test(l.text)), closed.lines.map((l) => l.text).join(' | '));
 const md = fs.readFileSync(path.join(root(d0.product!), 'work', 'steering-log.md'), 'utf8');
 check('the daily steering log is written next to the store', /# Daily steering log - /.test(md) && /Approved: /.test(md));
 check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(path.join(root(c.product!), 'work', 'steering-log.jsonl'), 'utf8').includes(c.decision!.proposal)));
