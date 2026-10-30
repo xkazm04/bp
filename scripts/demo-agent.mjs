@@ -56,6 +56,13 @@ else {
   }
 }
 
+const cap = live.find((r) => r.kind === 'cap');
+if (cap && free) {
+  head('3b', `wave_compose { ${free.id} on opus at xhigh effort } under ${cap.id}`);
+  const wx = await call('wave_compose', { slug: SLUG, name: 'Big build (demo)', packages: [{ name: 'deep', model: 'opus', effort: 'xhigh', ids: [free.id] }] });
+  say(wx.err ? `  \x1b[33mREFUSED\x1b[0m ${wx.json?.error ?? wx.text}` : `  drafted ${wx.json?.wave?.id}${wx.json?.note ? ' - ' + wx.json.note : ''}`);
+}
+
 const order = live.find((r) => r.kind === 'hold' && r.scope.features.length);
 head('4', `scan_place { lens: design, scope: ${order ? order.scope.features[0] : '(no hold to test)'} }`);
 if (order) {
