@@ -13,8 +13,9 @@ import { sharedFocus } from '@/lib/focus/shared';
 import { useEngine, useLive } from '../hooks';
 import { postHuman } from '../crossing/follow';
 import { goToPlace } from './FollowHost';
+import { refreshProjects, useProjects } from '@/lib/scan/projects';
 
-const SINCE_KEY = 'bp:morning-since';
+const SINCE_KEY = 'bp:morning-since', VOICE_KEY = 'bp:morning-voice';
 let kept: MorningDeck | null = null;
 /** The deck's right edge in UI px (focus.css #mw: 18 + 460, and a margin): the plan frames places to its right. */
 const DECK_INSET = 500;
@@ -60,6 +61,12 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
 
   // on a phone the deck is the clicker: it leads the shared focus and the desk follows (a phone has no plan of its own to fly)
   useEffect(() => { if (phone) fx.start({ surface: 'phone', label: 'Phone' }); }, [phone, fx]);
+  // the Kettle sample's page opens the deck too when live products are registered (M stays the sample's own overlay there)
+  const projects = useProjects(), anyLive = (projects.list ?? []).some((p) => p.live);
+  useEffect(() => { if (!projects.list && !projects.loading) void refreshProjects(); }, [projects.list, projects.loading]);
+  // read aloud: this browser's own speech voice (free, offline; not the lamp's voice), off unless asked, kept for the tab
+  const [voice, setVoice] = useState(() => { try { return sessionStorage.getItem(VOICE_KEY) === '1'; } catch { return false; } });
+  useEffect(() => { try { sessionStorage.setItem(VOICE_KEY, voice ? '1' : '0'); } catch { /* this visit only */ } if (!voice) speechSynthesis?.cancel(); }, [voice]);
   // ?morning=<card id>: this page was opened by the deck (a card in this product); pick up there
   useEffect(() => { const at = new URLSearchParams(location.search).get('morning'); if (at && here) start(at); }, [here, start]);
   useEffect(() => { if (!deck || !want.current) return; const k = deck.cards.findIndex((c) => c.id === want.current); want.current = null; if (k >= 0) setI(k); }, [deck]);
@@ -86,6 +93,14 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       if (why) setSteered((s) => ({ ...s, [card.id + ':where']: { verdict: 'hold', ok: false, text: why } }));
     });
   }, [card, E, fx, load, phone]);
+
+  useEffect(() => {
+    if (!card || !voice || typeof speechSynthesis === 'undefined') return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance([card.kind === 'decision' ? card.productName : '', card.headline, ...card.lines.slice(0, card.kind === 'open' ? 3 : 0).map((l) => l.text)].filter(Boolean).join('. '));
+    u.rate = 1.04;
+    speechSynthesis.speak(u);
+  }, [card, voice]);
 
   const go = useCallback((d: number) => { if (!deck) return; setI((k) => Math.max(0, Math.min(deck.cards.length - 1, k + d))); }, [deck]);
 
@@ -118,6 +133,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       if (k === 'ArrowRight' || k === ' ' || k === 'j' || k === 'PageDown') go(1);
       else if (k === 'ArrowLeft' || k === 'k' || k === 'PageUp') go(-1);
       else if (k === 'Escape' || k === 'm') close();
+      else if (k === 'v') setVoice((x) => !x);
       else if (KEYS[k]) void steer(KEYS[k]);
       else hit = false;
       if (hit) { e.preventDefault(); e.stopImmediatePropagation(); }
@@ -127,7 +143,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   }, [open, here, E, go, close, steer, start, phone]);
 
   if (!open) {
-    return here || phone ? <button type="button" id="mw-launch" className="bt" onClick={() => start(null)} title="The Morning Watch across every live product (M)">Morning Watch <kbd>M</kbd></button> : null;
+    return here || phone || anyLive ? <button type="button" id="mw-launch" onClick={() => start(null)} title={'The Morning Watch across every live product' + (here || phone ? ' (M)' : '')}><i aria-hidden="true" />Morning Watch{here || phone ? <kbd>M</kbd> : null}</button> : null;
   }
   const n = deck?.cards.length ?? 0, k = Math.min(i, Math.max(0, n - 1));
   const others = (st.view?.readers ?? []).filter((x) => x.id !== fx.me && x.live && x.follows);
@@ -135,7 +151,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   return (
     <section id="mw" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="Morning Watch" data-keys="own">
       <div className="mw-top">
-        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}</span>
+        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}
+          <button type="button" className={'mw-voice' + (voice ? ' on' : '')} aria-pressed={voice} onClick={() => setVoice((x) => !x)} title="Read each card aloud with this browser's voice (V)">{voice ? 'Voice on' : 'Voice'}</button></span>
         <span className="who">{others.length ? <>Following you: <b>{others.map((x) => x.label).join(', ')}</b></> : 'No other screen follows'}</span>
       </div>
       <div className="bar" role="tablist" aria-label="Cards">
@@ -173,7 +190,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
             : <button type="button" className="bt go" onClick={() => go(1)}><kbd>→</kbd> Next</button>}
         </div>
       )}
-      <div className="keys"><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>Esc</b> close</div>
+      <div className="keys"><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>V</b> voice · <b>Esc</b> close</div>
     </section>
   );
 }
