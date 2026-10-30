@@ -239,6 +239,27 @@ const sec = [
   const nb = briefFor({ feature: 'lonely', title: 'x', lens: 'security' }, scanOf([], [bad]), map);
   ok(18, nb.cost.builds === 0 && !JSON.stringify(nb).includes('null') && fact(nb, 'cost')?.text === 'Cost: no build history yet', 'an unreadable run: no build history, no null, no NaN', nb.cost);
 }
+// 20. the second review's matrix: on the same feature and lens, opposite or different actions never stand (declined
+//     first, open second); real re-wordings still do (the positive controls)
+{
+  const mapY = briefMapOf({ domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', name: 'C', domain: 'd' }], features: [{ slug: 'f', name: 'Thing', capability: 'c' }], lenses: [] });
+  const pair = (a: string, b: string, std = 'none') => briefFor(subjectOf(P({ id: 'N', feature: 'f', title: b, standard: std, status: 'proposed' })), scanOf([P({ id: 'D', feature: 'f', title: a, standard: std, status: 'declined' })]), mapY).advice.say;
+  const never: [string, string][] = [
+    ['Disable caching for search results', 'Enable caching for search results'], ['Remove dark mode', 'Add dark mode'], ['Do not retry failed payments', 'Retry failed payments'],
+    ['Retry failed payments', 'Stop retrying failed payments'], ['Increase request timeout', 'Decrease request timeout'], ['Raise rate limits', 'Lower rate limits'],
+    ['Show error banner', 'Hide error banner'], ['Compress product images', 'Cache product images'], ['Cache search results', 'Paginate search results'],
+    ['Log slow queries', 'Index slow queries'], ['Validate uploaded file size', 'Limit uploaded file size'],
+  ];
+  const bad = never.filter(([a, b]) => pair(a, b) === 'withdraw' || pair(a, b, 'perf/x') === 'withdraw');
+  ok(20, bad.length === 0, `none of ${never.length} opposite or different-action pairs stands, with or without a shared standard`, bad);
+  ok(20, pair('Add an empty state to the order list', 'Show a retry on the error state of the order list', 'design/state-coverage') === 'ask', 'a broad shared standard with a different action: ask, not a stand');
+  const real: [string, string, string][] = [
+    ['Add retries to checkout payment calls', 'Retry the payment webhook on timeout', 'reliability/retry-backoff'], ['Rotate the payment keys monthly', 'Rotate the payment keys every week', 'secrets/key-rotation'],
+    ['Retry failed payments', 'Retry failed payments on timeout', 'none'], ['Add rate limits to the login endpoint', 'Rate-limit the login endpoint', 'api/rate-limits'],
+  ];
+  const missed = real.filter(([a, b, s]) => pair(a, b, s) !== 'withdraw');
+  ok(20, missed.length === 0, `each of ${real.length} real re-wordings still stands`, missed);
+}
 // 14b. one map, two reads, on a rough non-Kettle map: long ids, a capability with an unknown domain, a dangling and a
 //      self depends_on, a feature with no capability (the loader's Unplaced)
 {

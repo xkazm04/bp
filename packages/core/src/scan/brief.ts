@@ -109,25 +109,50 @@ export function briefMapOfStructure(S: Pick<Structure, 'features' | 'capabilitie
 
 // ------------------------------------------------------------------------------------------- words
 const STOP = new Set('a an and the to of in on for with by from at as is are be it its this that into over under add make use per via not no'.split(' '));
-/** Content words, crudely stemmed (retries/retry, limits/limit, caching/cache), so a re-worded idea still matches. */
+/** A crude stem (retries/retry, limits/limit, retrying/retry). It misses some pairs (caching/cache, process/processes):
+ *  a miss only loses a match, the cheap kind of mistake here. */
+const stem = (w: string) => w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '');
+const tokens = (t: string) => t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+/** Content words, stemmed, so a re-worded idea still shares them. */
 export function words(t: string): Set<string> {
   const out = new Set<string>();
-  for (let w of t.toLowerCase().split(/[^\p{L}\p{N}]+/u)) {
-    if (w.length < 3 || STOP.has(w)) continue;
-    w = w.replace(/ies$/, 'y').replace(/(ing|ed|es|s)$/, '');
-    if (w.length >= 3) out.add(w);
-  }
+  for (const w of tokens(t)) if (w.length >= 3 && !STOP.has(w)) { const s = stem(w); if (s.length >= 3) out.add(s); }
   return out;
 }
 const overlap = (a: Set<string>, b: Set<string>) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n; };
+/** Opposite directions: "Enable caching" and "Disable caching" share every other word and are opposite changes. */
+const OPPOSITES: readonly [string, string][] = ([['add', 'remove'], ['add', 'delete'], ['add', 'drop'], ['enable', 'disable'], ['show', 'hide'], ['allow', 'block'],
+  ['allow', 'deny'], ['increase', 'decrease'], ['increase', 'reduce'], ['raise', 'lower'], ['start', 'stop'], ['open', 'close'], ['include', 'exclude'],
+  ['lock', 'unlock'], ['grant', 'revoke'], ['expand', 'collapse'], ['more', 'fewer'], ['more', 'less'], ['with', 'without'], ['on', 'off'], ['keep', 'remove'],
+  ['keep', 'drop']] as const).map(([x, y]) => [stem(x), stem(y)]);
+/** A negation in a title ("Do not retry", "Never cache", "Stop retrying") turns it against the same words without one. */
+const NEGATIONS = new Set(['not', 'no', 'never', 'without', 'don', 'dont', 'stop']);
+const negated = (s: Set<string>) => { for (const w of NEGATIONS) if (s.has(w)) return true; return false; };
+/** Every word of a title, stemmed, stop words kept (the direction words are short and common). */
+export const allWords = (t: string): Set<string> => new Set(tokens(t).map(stem));
+/** Whether two titles point opposite ways: one negated and the other not, or one names a direction and the other its
+ *  opposite (and neither names both). */
+export function opposite(a: Set<string>, b: Set<string>): boolean {
+  if (negated(a) !== negated(b)) return true;
+  return OPPOSITES.some(([x, y]) => (a.has(x) && b.has(y) && !a.has(y) && !b.has(x)) || (a.has(y) && b.has(x) && !a.has(x) && !b.has(y)));
+}
+/** Words that open an imperative title without naming its action ("Add retries ..." acts by retrying). */
+const LEAD = new Set(['add', 'make', 'use', 'apply', 'introduce', 'implement', 'the', 'a', 'an', 'do', 'please', 'new', 'also', 'not', 'no', 'never', 'don', 'dont']);
+/** A title's action: its first word that is not a lead word, stemmed ("Add retries to checkout" and "Retry failed
+ *  checkout calls" both act by `retry`; "Compress product images" and "Cache product images" do not share one). */
+export const actionOf = (t: string): string => { for (const w of tokens(t)) if (!LEAD.has(w)) return stem(w); return ''; };
 
 // ------------------------------------------------------------------------------------------- facts
 /** A title's idea words: a feature's own name in a title says where, not what, so those words never make two ideas alike. */
 const ideaWords = (t: string, f: string) => { const w = words(t); for (const x of words(f.replace(/-/g, ' '))) w.delete(x); return w; };
 /** Per row object (a snapshot's rows survive its deltas), so the live feed's advice per open card does not re-read every
  *  title on every tick: 300 open x 3000 rows took 1.4 s uncached. */
-const ROW_WORDS = new WeakMap<Proposal, Set<string>>();
-const rowWords = (x: Proposal) => { let w = ROW_WORDS.get(x); if (!w) ROW_WORDS.set(x, (w = ideaWords(x.title, x.feature))); return w; };
+const ROW_WORDS = new WeakMap<Proposal, { idea: Set<string>; all: Set<string>; act: string }>();
+const rowWords = (x: Proposal) => {
+  let w = ROW_WORDS.get(x);
+  if (!w) ROW_WORDS.set(x, (w = { idea: ideaWords(x.title, x.feature), all: allWords(x.title), act: actionOf(x.title) }));
+  return w;
+};
 
 const decidedAt = (p: Proposal) => (p.decided_at ?? p.updated_at).slice(0, 10);
 export const subjectOf = (p: Proposal): BriefSubject => ({
@@ -161,20 +186,27 @@ function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = fa
     if (!x || x.id === sub.id || chain.has(x.id)) continue;
     chain.add(x.id); todo.push(x.attempt_of, x.parent_id);
   }
-  const mine = ideaWords(sub.title, sub.feature), rows: BriefDecided[] = [];
+  const mine = ideaWords(sub.title, sub.feature), mineAll = allWords(sub.title), mineAct = actionOf(sub.title), rows: BriefDecided[] = [];
   let approved = 0, declined = 0;
   for (const x of scan.proposals) {
     if (x.id === sub.id || x.status === 'proposed') continue;
-    const theirs = rowWords(x), shared = overlap(mine, theirs);
-    // "the same idea" is what flips a card to Decline, and a decline is final, so it is held to the strictest reading: the
-    // attempt chain, or the same feature (and lens) AND either the same standard or the same idea in other words - at
-    // least two shared idea words making up half of all the words of both titles ("Add rate limits to the login
-    // endpoint" and "Add CSRF protection to the login endpoint" share two of six: not the same idea). The same words or
-    // the same standard on ANOTHER feature are shown and asked about, never a stand; the same place alone is lens precedent.
-    const sameStd = !!sub.standard && sub.standard !== 'none' && x.standard === sub.standard;
-    const alike = shared >= 2 && shared * 2 >= mine.size + theirs.size - shared;
-    const samePlace = x.feature === sub.feature && (!sub.lens || x.lens === sub.lens);
-    const match: Match | null = chain.has(x.id) || (samePlace && (sameStd || alike)) ? 'same idea'
+    const rw = rowWords(x), theirs = rw.idea, shared = overlap(mine, theirs);
+    // "the same idea" is what flips a card to Decline, and a decline is final, so it is held to the strictest reading that
+    // still hears a re-worded repeat: the attempt chain, or the same feature (and lens), the same ACTION (the title's first
+    // real verb: "Add retries to checkout" and "Retry the payment webhook" both retry; "Compress product images" and
+    // "Cache product images" do not), never opposite (a negation, or enable/disable and the like), AND either the same
+    // standard or the same words (2+ shared idea words, two thirds of the shorter title's). Words or a standard shared on
+    // another feature, or without the same action, are shown and asked about, never a stand; the same place alone is
+    // lens precedent.
+    // on the same feature, two thirds of the shorter title's idea words; elsewhere (an "ask", which is noise when loose),
+    // the same action and half of all the words of both
+    const stdHit = !!sub.standard && sub.standard !== 'none' && x.standard === sub.standard;
+    const sameAction = !!mineAct && mineAct === rw.act, here = x.feature === sub.feature;
+    const close = shared >= 2 && (here ? shared * 3 >= 2 * Math.min(mine.size, theirs.size) : sameAction && shared * 2 >= mine.size + theirs.size - shared);
+    const flipped = (stdHit || close || here) && opposite(mineAll, rw.all);
+    const samePlace = here && (!sub.lens || x.lens === sub.lens);
+    const sameStd = stdHit && !flipped, alike = close && !flipped;
+    const match: Match | null = chain.has(x.id) || (samePlace && sameAction && !flipped && (sameStd || alike)) ? 'same idea'
       : sameStd ? 'same standard'
       : alike ? 'similar words'
       : sub.lens && x.lens === sub.lens && (x.feature === sub.feature || sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;

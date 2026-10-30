@@ -119,7 +119,8 @@ export function Review() {
   // live: the listed open proposals (under the lens filter) the decision brief found repeating a standing decline
   // (live-feed.ts recommends Decline on them)
   const repeats = sim.live && writes ? items.filter((d) => d.recNote) : [];
-  const armed = armRepeats ? repeats.filter((d) => armRepeats.includes(d.id)) : null;
+  // what the second click would decline: the armed ids still listed as repeats (none left = not armed, never "decline 0")
+  const stillArmed = armRepeats ? repeats.filter((d) => armRepeats.includes(d.id)) : [], armed = stillArmed.length ? stillArmed : null;
   const declineRepeats = () => {
     if (!armed) { setArmRepeats(repeats.map((d) => d.id)); return; }
     setArmRepeats(null); setSelId(null); E.setHlDec(null);
