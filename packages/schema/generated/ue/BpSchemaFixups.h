@@ -32,6 +32,19 @@ namespace BpSchema
 	inline bool FixUp(const FJsonObject& Json, FBpStructureEnvelope& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpScanWire& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpDecisionBrief& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpSharedFocus& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpFocusPlace& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpSharedView& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpSharedPlace& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpFocusAnswer& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpMorningWatch& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpMorningDeck& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpProductSummary& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpMorningCard& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpCardDecision& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpSteerRow& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpCardBrief& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpAgentDeck& Out);
 
 	/**
 	 * Why the last FromJson on this thread returned false, for a log line: the call that failed first, the path of its
@@ -228,6 +241,93 @@ namespace BpSchema
 	{
 		(void)Json; (void)Out;
 		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpSharedFocus& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpFocusPlace& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpSharedView& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpSharedPlace& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpFocusAnswer& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpMorningWatch& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpOne(Json, TEXT("deck"), Out.deck);
+		bOk &= FixUpOne(Json, TEXT("agent"), Out.agent);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpMorningDeck& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpArray(Json, TEXT("products"), Out.products);
+		bOk &= FixUpArray(Json, TEXT("cards"), Out.cards);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpProductSummary& Out)
+	{
+		bool bOk = true;
+		bOk &= CopyKey(Json, TEXT("short"), GET_MEMBER_NAME_CHECKED(FBpProductSummary, Short_), Out);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpMorningCard& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpOne(Json, TEXT("decision"), Out.decision);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpCardDecision& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpOne(Json, TEXT("brief"), Out.brief);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpSteerRow& Out)
+	{
+		(void)Json; (void)Out;
+		return true; // nothing carried
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpCardBrief& Out)
+	{
+		bool bOk = true;
+		bOk &= CopyKey(Json, TEXT("short"), GET_MEMBER_NAME_CHECKED(FBpCardBrief, Short_), Out);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpAgentDeck& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpArray(Json, TEXT("products"), Out.products);
+		return bOk;
 	}
 
 	/** The one way BpLink reads a document: FJsonObjectConverter for the mapped fields, then FixUp for the carried ones. On false, LastFailure() says where. */

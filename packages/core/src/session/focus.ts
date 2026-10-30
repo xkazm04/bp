@@ -12,10 +12,16 @@
 //   - following never blocks a writer: a crashed follower just stops being seen (LIVE_MS) and is forgotten after FORGET_MS;
 //     nothing it held can lock anyone out, because it holds nothing.
 // Pure: the server keeps the record (server/api/session/focus.server.ts), this module decides every move.
+// The wire is packages/schema/schema/shared-focus-1.schema.json (FocusPlace, SharedView, SharedPlace, FocusPost,
+// FocusAnswer); check:schema holds these hand-written types to it field by field, and the rules below to the golden
+// packages/schema/golden/shared-focus.json (check:shared-focus). docs/standard/contract-1.md says what a client may do.
 import { PLACE_KINDS, type PlaceKind, type PlaceLevel } from './place.ts';
+import { FOCUS_OPS, SURFACES as SURFACE_LIST } from '../standard/schema-vocab.ts';
 
-export type Surface = 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
-export const SURFACES: readonly Surface[] = ['web', 'phone', 'vr', 'companion', 'personas', 'standin', 'morning'];
+export type Surface = (typeof SURFACE_LIST)[number];
+export const SURFACES: readonly Surface[] = SURFACE_LIST;
+export type FocusOp = (typeof FOCUS_OPS)[number];
+export { FOCUS_OPS };
 
 export interface FocusPlace {
   product: string;
@@ -49,12 +55,19 @@ export interface FocusRecord {
   readers: Reader[];
 }
 
+/** The shared place with who put it there. */
+export interface SharedPlace { place: FocusPlace; reader: string; surface: Surface; label: string; at: string }
 /** What a client sees: the shared place with who put it there, and every reader with whether it is still around. */
 export interface SharedView {
   rev: number;
-  shared: { place: FocusPlace; reader: string; surface: Surface; label: string; at: string } | null;
+  shared: SharedPlace | null;
   readers: (Pick<Reader, 'id' | 'surface' | 'label' | 'follows' | 'seenAt'> & { live: boolean })[];
 }
+
+/** The body of POST /api/session/focus: one move on the caller's own record (the route reads it with readMove). */
+export interface FocusPost { op: FocusOp; reader: string; surface?: Surface; label?: string; place?: FocusPlace; of?: string }
+/** POST /api/session/focus's answer: whether the shared place moved, and the view after the move. */
+export interface FocusAnswer { moved: boolean; view: SharedView }
 
 /** A reader not seen for this long is shown as gone (clients say hello every 15 s while open). */
 export const LIVE_MS = 45_000;

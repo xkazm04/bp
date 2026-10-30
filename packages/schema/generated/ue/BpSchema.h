@@ -2095,3 +2095,644 @@ struct BPLINK_API FBpDecisionBrief
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FString> lines;
 };
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpFocusTarget
+{
+	GENERATED_BODY()
+
+	/** The same kinds the place baton and the companion's focus.show send. one of: feature, room, wing, site. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+};
+
+/** Where: a product, and optionally one target in it. Absent target: the product as a whole (the site). */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpFocusPlace
+{
+	GENERATED_BODY()
+
+	/** A registered product's slug (the registry's own rule), or `kettle` for the sample. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusTarget target;
+
+	/** one of: L0, L1, L2, L3, L4 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString level;
+
+	/** The publishing page's own hash ('#at=bkg-06&lens=perf'); a follower on the same product may use it. Never '' */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString hash;
+
+	/** One plain line said with the place. A Morning decision card sends its title, a newline, then its brief's short line (a lower third shows both) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString say;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpViewReader
+{
+	GENERATED_BODY()
+
+	/** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** one of: web, phone, vr, companion, personas, standin, morning. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString surface;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString label;
+
+	/** '*' (whoever moves) or one reader id; absent: not following */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString follows;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString seenAt;
+
+	/** Seen in the last 45 s (LIVE_MS); clients say hello every 15 s while open. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	bool live = false;
+};
+
+/** What a client sees: the shared place (null before anyone published) and every reader. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSharedView
+{
+	GENERATED_BODY()
+
+	/** Grows by one each time the shared place moves; an echo or a presence change keeps it. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 rev = 0;
+
+	/** A sharedPlace, or null before anyone published. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FJsonObjectWrapper shared;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpViewReader> readers;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSharedPlace
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPlace place;
+
+	/** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString reader;
+
+	/** one of: web, phone, vr, companion, personas, standin, morning. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString surface;
+
+	/** What other surfaces call the publisher: 'Web', 'Phone', 'VR table', 'Glim'. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString label;
+
+	/** ISO time of the publish that made this the shared place (an echo keeps it). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+};
+
+/** One move. hello, publish and follow name the caller (surface, label); publish carries a place, follow carries `of`. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpFocusPost
+{
+	GENERATED_BODY()
+
+	/** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing. one of: hello, publish, follow, unfollow, forget. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString op;
+
+	/** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString reader;
+
+	/** one of: web, phone, vr, companion, personas, standin, morning */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString surface;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString label;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPlace place;
+
+	/** follow: '*' or a reader id (never the caller's own) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString of;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpFocusAnswer
+{
+	GENERATED_BODY()
+
+	/** The shared place moved (201, a new rev); false for an echo or a presence-only move (200). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	bool moved = false;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSharedView view;
+};
+
+/** The shared focus ("Follow me"): the place the owner is looking at, which any surface publishes and any other follows, with no leader (packages/core/src/session/focus.ts is the source; docs/standard/contract-1.md says the rules). GET /api/session/focus answers `view`; POST /api/session/focus takes `post` and answers `answer`; the companion stream's `event: shared` carries `view` too. Ids only, never a selection. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (shared-focus-2). */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSharedFocus
+{
+	GENERATED_BODY()
+
+	/** A place, as a publish carries it and the view's shared place holds it */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPlace place;
+
+	/** GET /api/session/focus, `event: shared`, and POST's answer.view */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSharedView view;
+
+	/** view.shared when someone has published (it is null before): the shared place with who put it there */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSharedPlace shared;
+
+	/** The body of POST /api/session/focus: one move on the caller's own reader record */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPost post;
+
+	/** POST /api/session/focus's 200 or 201 answer */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusAnswer answer;
+};
+
+// carried by BpSchema::FixUp (BpSchemaFixups.h): short -> Short_
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpProductSummary
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString slug;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString name;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 built = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 failed = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 releases = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 confirmed = 0;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter. Release items whose reading fell short of what was expected. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 Short_ = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 waiting = 0;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpCardLine
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString text;
+
+	/** one of: good, warn, bad, calm */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString tone;
+};
+
+/** One row of a product's steering log (<root>/.ai/lens-scan/work/steering-log.jsonl), and POST's answer. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSteerRow
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal;
+
+	/** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). one of: approve, defer, hold, decline. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString verdict;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	/** Who decided, as bp signs a decision (user:<login>). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString by;
+
+	/** defer: when the decision comes back to the deck */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString until;
+
+	/** approve: the store moved but the log could not be written */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString warning;
+
+	/** decline: what the store's row now reads ('Repeats <id>, declined <day>: ...') */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+};
+
+/** The decline a decision card repeats (recommend: decline) or only resembles (advice ask): decision-brief-1's briefDecided, the fields a card shows. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpCardDecline
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString feature;
+
+	/** YYYY-MM-DD. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString by;
+
+	/** The owner's own words */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+
+	/** one of: same idea, same standard, similar words, same lens. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString match;
+};
+
+/** A decision card's brief (cardBrief in morning.ts over briefFor): the same facts and lines as decision-brief-1, plus the recommendation and a one-line form for small surfaces. */
+// carried by BpSchema::FixUp (BpSchemaFixups.h): short -> Short_
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpCardBrief
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpBriefFact> facts;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lines;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefAdvice advice;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpCardDecline decline;
+
+	/** Only when the same idea was declined before (advice withdraw). always "decline" */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString recommend;
+
+	/** With recommend: what a Decline writes to the store */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter. One line: the repeat or the likeness with its quote, else the brief's first line. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString Short_;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpCardDecision
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 tier = 0;
+
+	/** A verdict given this morning (the card keeps its slot), or a hold from an earlier one */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSteerRow steered;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpCardBrief brief;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpMorningCard
+{
+	GENERATED_BODY()
+
+	/** Stable across reads of the same morning ('decision:<product>:<proposal>'), so a reader keeps its card. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** one of: open, agents, built, release, quiet, decision, close. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString productName;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString headline;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpCardLine> lines;
+
+	/** one of: good, warn, bad, calm. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString tone;
+
+	/** Where the card takes every follower as it is read */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPlace place;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpCardDecision decision;
+};
+
+/** What agents did with the owner's decisions in the window (companion/trail.ts). */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpTrailTally
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 reads = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 heard = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 withdrew = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 recommended = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 conversations = 0;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSkippedProduct
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString why;
+};
+
+/** GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpMorningDeck
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString since;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString until;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpProductSummary> products;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpMorningCard> cards;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpTrailTally agents;
+
+	/** Products that could not be read, never dropped silently */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpSkippedProduct> skipped;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentPlace
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusTarget target;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentSteered
+{
+	GENERATED_BODY()
+
+	/** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). one of: approve, defer, hold, decline. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString verdict;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentBrief
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lines;
+
+	/** The brief's advice.say. one of: withdraw, ask, proceed. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString advice;
+
+	/** always "decline" */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString recommend;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString note;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentDecision
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 tier = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAgentSteered steered;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAgentBrief brief;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentCard
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString id;
+
+	/** one of: open, agents, built, release, quiet, decision, close. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString kind;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString headline;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> lines;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAgentPlace place;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAgentDecision decision;
+};
+
+/** GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpAgentDeck
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString since;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString until;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpProductSummary> products;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpTrailTally agents;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpAgentCard> cards;
+};
+
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpSteerPost
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString product;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal;
+
+	/** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). one of: approve, defer, hold, decline. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString verdict;
+};
+
+/** The Morning Watch: one standup across every live product, as cards read in order (packages/core/src/companion/morning.ts is the source; docs/standard/contract-1.md says the rules). GET /api/companion/morning answers `deck`; with `view=agent` (the morning.brief tool) it answers `agent`; POST /api/companion/morning takes `post` (the human path only) and answers the steering row `steer`. Each decision card carries its brief, built from decision-brief-1's facts. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (morning-deck-2). Absent values are omitted, never null. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpMorningWatch
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpMorningDeck deck;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpAgentDeck agent;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSteerRow steer;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpSteerPost post;
+};

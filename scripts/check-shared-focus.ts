@@ -132,6 +132,18 @@ res = await PLACE(req('POST', 'http://127.0.0.1:3313/api/session/place', { place
 check("the table's write goes live on the baton AND moves the shared focus as 'VR table'", res.status === 200 && heard.some((x) => x.shared?.reader === 'vr:quest' && x.shared.label === 'VR table' && x.shared.place.target?.id === 'dispatch'));
 res = await PLACE(req('POST', 'http://127.0.0.1:3313/api/session/place', { place: { ...place, from: 'vr' } }, { 'x-bp-device': 'other' }));
 check('another device still cannot write the baton: 403, and the shared focus does not move', res.status === 403 && heard.every((x) => x.shared?.place.target?.id !== 'stock'));
+// the wire: real payloads conform to packages/schema/schema/shared-focus-1.schema.json (the contract a port reads)
+{
+  const { wire } = await import('./lib/wire-schema.ts');
+  const asView = await wire('shared-focus-1', 'sharedView'), asAnswer = await wire('shared-focus-1', 'focusAnswer'), asPost = await wire('shared-focus-1', 'focusPost');
+  const view = (await (await GET(req('GET', URL0))).json()) as View;
+  const body = { op: 'publish', ...web, place: { ...room('billing'), level: 'L2', hash: '#at=billing', say: 'Billing\nthe brief line' } };
+  const ans = await (await POST(req('POST', URL0, body))).json();
+  const fails = [asView(view), asAnswer(ans), asPost(body), asView(viewOf(EMPTY_RECORD, T0))].filter(Boolean);
+  check('wire: GET, a POST answer, its body and an empty view conform to shared-focus-1', !fails.length && view.readers.length > 0, fails.join(' | '));
+  check('wire control: a view without rev, a place with a foreign kind, an unknown op are refused',
+    !!asView({ ...view, rev: undefined }) && !!asAnswer({ moved: true, view: { ...view, shared: { ...view.shared, place: { product: 'kettle', target: { kind: 'decision', id: 'x' } } } } }) && !!asPost({ ...body, op: 'shout' }));
+}
 off();
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (shared focus)`);

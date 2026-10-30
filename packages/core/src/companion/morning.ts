@@ -20,12 +20,15 @@ import type { Proposal, ScanSnapshot } from '../scan/types.ts';
 import { tracksOf, type Track } from '../scan/track.ts';
 import { briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap } from '../scan/brief.ts';
 import { trailSessions, trailTally, type TrailRow, type TrailTally } from './trail.ts';
+import { STEER_VERDICTS } from '../standard/schema-vocab.ts';
+// The wire is packages/schema/schema/morning-deck-1.schema.json (MorningDeck, AgentDeck, SteerRow, SteerPost);
+// check:schema holds these hand-written types to it field by field.
 
 export type CardKind = 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
 export type Tone = 'good' | 'warn' | 'bad' | 'calm';
 /** `decline` is offered on a repeat only (the card's brief recommends it); the server refuses it on any other card. */
-export type Verdict = 'approve' | 'defer' | 'hold' | 'decline';
-export const VERDICTS: readonly Verdict[] = ['approve', 'defer', 'hold', 'decline'];
+export type Verdict = (typeof STEER_VERDICTS)[number];
+export const VERDICTS: readonly Verdict[] = STEER_VERDICTS;
 
 export interface Where { room: string; roomName: string; wing: string; wingName: string; name: string }
 export interface ProductFacts {
@@ -41,6 +44,8 @@ export interface ProductFacts {
 }
 /** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
+/** The body of POST /api/companion/morning (the human path). */
+export interface SteerPost { product: string; proposal: string; verdict: Verdict }
 
 /** A decision card's brief: the decision brief (scan/brief.ts) as the deck, the phone, a follower's lower third and an agent
  *  on morning.brief all read it. `recommend` is 'decline' only when the same idea was declined before (advice 'withdraw'),
@@ -69,7 +74,8 @@ export interface MorningCard {
   decision?: { proposal: string; tier?: number; steered?: SteerRow; brief?: CardBrief };
 }
 export interface ProductSummary { slug: string; name: string; built: number; failed: number; releases: number; confirmed: number; short: number; waiting: number }
-export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally }
+/** `skipped`: products the server could not read (morning.server.ts), named, never dropped silently. */
+export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally; skipped?: { product: string; why: string }[] }
 
 export const TOP_DECISIONS = 3;
 export const HELD_SHOWN = 2;
@@ -262,7 +268,8 @@ export interface AgentCard {
   place?: { product: string; target?: FocusPlace['target'] };
   decision?: { proposal: string; tier?: number; steered?: { verdict: Verdict; at: string }; brief?: { lines: string[]; advice: Brief['advice']['say']; recommend?: 'decline'; note?: string } };
 }
-export function agentDeck(d: MorningDeck): { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[] } {
+export interface AgentDeck { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[] }
+export function agentDeck(d: MorningDeck): AgentDeck {
   return {
     since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}),
     cards: d.cards.map((c) => {

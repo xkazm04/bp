@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/morning-deck-1.schema.json",
+  "title": "Morning deck v1",
+  "description": "The Morning Watch: one standup across every live product, as cards read in order (packages/core/src/companion/morning.ts is the source; docs/standard/contract-1.md says the rules). GET /api/companion/morning answers `deck`; with `view=agent` (the morning.brief tool) it answers `agent`; POST /api/companion/morning takes `post` (the human path only) and answers the steering row `steer`. Each decision card carries its brief, built from decision-brief-1's facts. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (morning-deck-2). Absent values are omitted, never null.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "deck": { "$ref": "#/$defs/morningDeck" },
+    "agent": { "$ref": "#/$defs/agentDeck" },
+    "steer": { "$ref": "#/$defs/steerRow" },
+    "post": { "$ref": "#/$defs/steerPost" }
+  },
+  "$defs": {
+    "cardKind": { "type": "string", "enum": ["open", "agents", "built", "release", "quiet", "decision", "close"] },
+    "cardTone": { "type": "string", "enum": ["good", "warn", "bad", "calm"] },
+    "steerVerdict": { "type": "string", "enum": ["approve", "defer", "hold", "decline"], "description": "decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409)." },
+    "cardLine": {
+      "type": "object",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string" },
+        "tone": { "$ref": "#/$defs/cardTone" }
+      }
+    },
+    "steerRow": {
+      "description": "One row of a product's steering log (<root>/.ai/lens-scan/work/steering-log.jsonl), and POST's answer.",
+      "type": "object",
+      "required": ["at", "product", "proposal", "verdict", "title", "by"],
+      "additionalProperties": false,
+      "properties": {
+        "at": { "type": "string" },
+        "product": { "type": "string" },
+        "proposal": { "type": "string" },
+        "verdict": { "$ref": "#/$defs/steerVerdict" },
+        "title": { "type": "string" },
+        "by": { "type": "string", "description": "Who decided, as bp signs a decision (user:<login>)." },
+        "until": { "type": "string", "description": "defer: when the decision comes back to the deck." },
+        "warning": { "type": "string", "description": "approve: the store moved but the log could not be written." },
+        "note": { "type": "string", "description": "decline: what the store's row now reads ('Repeats <id>, declined <day>: ...')." }
+      }
+    },
+    "steerPost": {
+      "type": "object",
+      "required": ["product", "proposal", "verdict"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "type": "string" },
+        "proposal": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "verdict": { "$ref": "#/$defs/steerVerdict" }
+      }
+    },
+    "cardDecline": {
+      "description": "The decline a decision card repeats (recommend: decline) or only resembles (advice ask): decision-brief-1's briefDecided, the fields a card shows.",
+      "type": "object",
+      "required": ["id", "title", "feature", "at", "match"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "feature": { "type": "string" },
+        "at": { "type": "string", "description": "YYYY-MM-DD." },
+        "by": { "type": "string" },
+        "note": { "type": "string", "description": "The owner's own words." },
+        "match": { "$ref": "decision-brief-1.schema.json#/$defs/briefDecided/properties/match" }
+      }
+    },
+    "cardBrief": {
+      "description": "A decision card's brief (cardBrief in morning.ts over briefFor): the same facts and lines as decision-brief-1, plus the recommendation and a one-line form for small surfaces.",
+      "type": "object",
+      "required": ["facts", "lines", "advice", "short"],
+      "additionalProperties": false,
+      "properties": {
+        "facts": { "type": "array", "maxItems": 5, "items": { "$ref": "decision-brief-1.schema.json#/$defs/briefFact" } },
+        "lines": { "type": "array", "maxItems": 5, "items": { "type": "string", "maxLength": 120 } },
+        "advice": { "$ref": "decision-brief-1.schema.json#/$defs/briefAdvice" },
+        "decline": { "$ref": "#/$defs/cardDecline" },
+        "recommend": { "const": "decline", "description": "Only when the same idea was declined before (advice withdraw)." },
+        "note": { "type": "string", "description": "With recommend: what a Decline writes to the store." },
+        "short": { "type": "string", "maxLength": 160, "description": "One line: the repeat or the likeness with its quote, else the brief's first line." }
+      }
+    },
+    "cardDecision": {
+      "type": "object",
+      "required": ["proposal"],
+      "additionalProperties": false,
+      "properties": {
+        "proposal": { "type": "string" },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "steered": { "$ref": "#/$defs/steerRow", "description": "A verdict given this morning (the card keeps its slot), or a hold from an earlier one." },
+        "brief": { "$ref": "#/$defs/cardBrief" }
+      }
+    },
+    "morningCard": {
+      "type": "object",
+      "required": ["id", "kind", "headline", "lines", "tone"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "Stable across reads of the same morning ('decision:<product>:<proposal>'), so a reader keeps its card." },
+        "kind": { "$ref": "#/$defs/cardKind" },
+        "product": { "type": "string" },
+        "productName": { "type": "string" },
+        "headline": { "type": "string" },
+        "lines": { "type": "array", "items": { "$ref": "#/$defs/cardLine" } },
+        "tone": { "$ref": "#/$defs/cardTone" },
+        "place": { "$ref": "shared-focus-1.schema.json#/$defs/focusPlace", "description": "Where the card takes every follower as it is read." },
+        "decision": { "$ref": "#/$defs/cardDecision" }
+      }
+    },
+    "productSummary": {
+      "type": "object",
+      "required": ["slug", "name", "built", "failed", "releases", "confirmed", "short", "waiting"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "type": "string" },
+        "name": { "type": "string" },
+        "built": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "releases": { "type": "integer", "minimum": 0 },
+        "confirmed": { "type": "integer", "minimum": 0 },
+        "short": { "type": "integer", "minimum": 0, "description": "Release items whose reading fell short of what was expected." },
+        "waiting": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "trailTally": {
+      "description": "What agents did with the owner's decisions in the window (companion/trail.ts).",
+      "type": "object",
+      "required": ["reads", "heard", "withdrew", "recommended", "conversations"],
+      "additionalProperties": false,
+      "properties": {
+        "reads": { "type": "integer", "minimum": 0 },
+        "heard": { "type": "integer", "minimum": 0 },
+        "withdrew": { "type": "integer", "minimum": 0 },
+        "recommended": { "type": "integer", "minimum": 0 },
+        "conversations": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "skippedProduct": {
+      "type": "object",
+      "required": ["product", "why"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "type": "string" },
+        "why": { "type": "string" }
+      }
+    },
+    "morningDeck": {
+      "description": "GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order.",
+      "type": "object",
+      "required": ["since", "until", "products", "cards"],
+      "additionalProperties": false,
+      "properties": {
+        "since": { "type": "string" },
+        "until": { "type": "string" },
+        "products": { "type": "array", "items": { "$ref": "#/$defs/productSummary" } },
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/morningCard" } },
+        "agents": { "$ref": "#/$defs/trailTally" },
+        "skipped": { "type": "array", "items": { "$ref": "#/$defs/skippedProduct" }, "description": "Products that could not be read, never dropped silently." }
+      }
+    },
+    "agentPlace": {
+      "type": "object",
+      "required": ["product"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "type": "string" },
+        "target": { "$ref": "shared-focus-1.schema.json#/$defs/focusTarget" }
+      }
+    },
+    "agentSteered": {
+      "type": "object",
+      "required": ["verdict", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "verdict": { "$ref": "#/$defs/steerVerdict" },
+        "at": { "type": "string" }
+      }
+    },
+    "agentBrief": {
+      "type": "object",
+      "required": ["lines", "advice"],
+      "additionalProperties": false,
+      "properties": {
+        "lines": { "type": "array", "maxItems": 5, "items": { "type": "string", "maxLength": 120 } },
+        "advice": { "$ref": "decision-brief-1.schema.json#/$defs/briefAdvice/properties/say", "description": "The brief's advice.say." },
+        "recommend": { "const": "decline" },
+        "note": { "type": "string" }
+      }
+    },
+    "agentDecision": {
+      "type": "object",
+      "required": ["proposal"],
+      "additionalProperties": false,
+      "properties": {
+        "proposal": { "type": "string" },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "steered": { "$ref": "#/$defs/agentSteered" },
+        "brief": { "$ref": "#/$defs/agentBrief" }
+      }
+    },
+    "agentCard": {
+      "type": "object",
+      "required": ["id", "kind", "headline", "lines"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "$ref": "#/$defs/cardKind" },
+        "product": { "type": "string" },
+        "headline": { "type": "string" },
+        "lines": { "type": "array", "items": { "type": "string" } },
+        "place": { "$ref": "#/$defs/agentPlace" },
+        "decision": { "$ref": "#/$defs/agentDecision" }
+      }
+    },
+    "agentDeck": {
+      "description": "GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap.",
+      "type": "object",
+      "required": ["since", "until", "products", "cards"],
+      "additionalProperties": false,
+      "properties": {
+        "since": { "type": "string" },
+        "until": { "type": "string" },
+        "products": { "type": "array", "items": { "$ref": "#/$defs/productSummary" } },
+        "agents": { "$ref": "#/$defs/trailTally" },
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/agentCard" } }
+      }
+    }
+  }
+}
