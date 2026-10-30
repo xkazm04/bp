@@ -36,8 +36,23 @@ the same room.
   place to its right (`Engine.setInsetLeft`). `→ ←`, `A D H`, `V` (the browser's own voice), `Esc`. A card in another
   product opens it **in place** (`switchProduct`: no reload; the deck and every follower keep their state).
 
+## Decisions with memory, in the morning (the e2 + e3 fusion)
+Every decision card on the deck carries its **decision brief** (`docs/concepts/decision-brief/`), computed by one
+function, `cardBrief` in `companion/morning.ts`, over the product's store and plan: what it touches, the owner's own
+declines quoted, undo, cost. The web deck, the phone, a follower's lower third (the brief's short line under the line
+being read), `morning.brief` for agents and `plan.brief` all read the same lines (`check:morning-brief` pins it).
+- **A repeat** (the same idea filed again: the brief's advice `withdraw`): **Decline** joins Approve, Defer and Hold as
+  the recommended key; **Enter** takes it, and the store row gets the brief's note, `Repeats <id>, declined <day>: "..."`,
+  through the same `decide`. The server refuses Decline on any other card (409): the plan keeps the free Decline.
+- **A likeness** (a like idea, the same standard): the owner's words in amber, "yours to decide"; the keys stay.
+- **Agents**: the opening card says how often agents checked your decisions overnight, the declines they heard and what
+  they withdrew; an agents card (second) shows the trail's lines at the feature they stood down on. The close card
+  counts repeats declined. `morning.brief` reads a compact agent view (`view=agent`) that fits the door's 8000-char cap.
+- **The release card and its tile agree**: a tile shows its newest track, so the card flies to an item whose tile shows
+  this release's reading and names it first.
+
 ## Surfaces
-- **Web**: the deck, and the follow chip on every page ("Following Web, 2 s ago" · Stop / Follow) with the leader's line
+- **Web**: the deck, and the follow chip on every page ("Following Web, just now" / "12 s ago" · Stop / Follow) with the leader's line
   as a lower third. `?follow=1` follows on load (labelled "Web window").
 - **Phone**: the clicker. The deck runs full screen and leads; the desk follows.
 - **VR table (UE)**: BpLink follows (1 Hz poll, `vr:table`), the table enters the room with its lift and fade and says
@@ -49,8 +64,10 @@ the same room.
 - **Agents (MCP)**: `morning.brief` reads the deck; `focus.show` moves every follower. `scripts/morning-agent-walk.mjs`
   walks the deck through the real door (scripted, no model).
 - **Gates**: `check:shared-focus`, `check:morning-watch` (seeds a temp portfolio, steers it, drives the stand-in through
-  a real apps/server).
+  a real apps/server), `check:morning-brief` (the brief on the cards, Decline on a repeat only, the agent trail).
 
 ## Demo data
 `node scripts/morning-up.mjs [--port 3010] [--server]` seeds `.demo/morning/` (three copies of the Kettle map with a
-labelled synthetic night, its own registry via `BP_PRODUCTS_FILE`) and starts the web with fake `claude` and `gh`.
+labelled synthetic night, its own registry via `BP_PRODUCTS_FILE`), adds the brief's labelled decision history to Kettle
+Web (`scripts/brief-demo-seed.mjs --morning`), starts the web with fake `claude` and `gh`, and plays the night's agent
+once (`scripts/brief-agent-demo.mjs`, scripted, no model) so the morning opens with what agents heard.
