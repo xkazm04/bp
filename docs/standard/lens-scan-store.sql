@@ -1,4 +1,4 @@
--- lens-scan store v4. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
+-- lens-scan store v5. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
 -- Written by the /lens-scan skill (ai-registry skills/lens-scan/scripts/store.mjs, the owner of this DDL);
 -- read by the blueprint, which writes only proposal decisions. This file is copied name for name between
 -- ai-registry skills/lens-scan/references/store.sql and bp docs/standard/lens-scan-store.sql.
