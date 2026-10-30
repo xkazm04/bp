@@ -67,7 +67,8 @@ with sync_playwright() as p:
             for k, l in [('1', 'general')] + LENS:
                 pg.keyboard.press(k); time.sleep(0.9)
                 # the sheet may not have opened (a dead #open= link): say so as a problem instead of crashing the run
-                if not pg.evaluate("(() => { const e = document.querySelector('.evp.cur') || document.querySelector('.ev6'); if (e) e.scrollIntoView({block: 'center'}); return !!e; })()"):
+                # (the desktop sheet: a lens tab leads with its .evp.cur panel, General with its first section; .ev6 is the phone's)
+                if not pg.evaluate("(() => { const e = document.querySelector('#pg-panel .evp.cur') || document.querySelector('#pg-panel section'); if (e) e.scrollIntoView({block: 'center'}); return !!e; })()"):
                     problems.append(f'shaped-1920x1080-{theme}-sheet-{l}: the feature sheet is not open (#open=failed-payment-dunning)')
                 time.sleep(0.5)
                 pg.screenshot(path=f'{OUT}/shaped-1920x1080-{theme}-sheet-{l}.png')
