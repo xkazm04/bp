@@ -348,7 +348,12 @@ export class Engine {
   private lastFit = false;
   /** A panel docked over the plan's left edge (the Morning Watch deck), in UI px: every fit frames to its right. 0 = none. */
   private insetL = 0;
-  setInsetLeft(px: number) { if (px === this.insetL) return; this.insetL = px; this.layoutChrome(); }
+  setInsetLeft(px: number) {
+    if (px === this.insetL) return;
+    const atHome = this.cam.near(this.HOME, 0.03, 8);
+    this.insetL = px; this.layoutChrome(); this.computeHome();
+    if (atHome && !this.S.open) this.cam.flyTo(this.HOME);
+  }
   private layoutChrome() {
     const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
     this.listenForce = true;

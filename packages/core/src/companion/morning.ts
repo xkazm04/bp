@@ -65,23 +65,28 @@ const roomPlace = (product: string, w: Where | undefined, say: string): FocusPla
 const featurePlace = (product: string, feature: string, say: string): FocusPlace => ({ product, target: { kind: 'feature', id: feature }, level: 'L4', say });
 const inWindow = (iso: string | undefined, since: string, until: string) => !!iso && iso >= since && iso <= until;
 
-/** Decisions still open for the morning: proposed, not deferred past `until`. Held ones stay (marked), after the rest. */
-function openDecisions(p: ProductFacts, steer: readonly SteerRow[], until: string): { x: Proposal; s?: SteerRow }[] {
+/** A decision on the morning's table. `today`: steered in this window, so it keeps its slot (marked) and the deck does not
+ *  reshuffle as the owner decides; `held`: held on an earlier morning, still waiting. */
+interface Choice { x: Proposal; s?: SteerRow; today: boolean; held: boolean }
+
+/** Decisions for the morning: every open finding not deferred (a defer from an earlier morning hides it until its
+ *  `until`), plus every one steered this morning whatever its status now (approved ones included). */
+function openDecisions(p: ProductFacts, steer: readonly SteerRow[], since: string, until: string): Choice[] {
   const last = new Map<string, SteerRow>();
   for (const r of steer) if (r.product === p.slug) last.set(r.proposal, r);
-  const out: { x: Proposal; s?: SteerRow }[] = [];
+  const out: Choice[] = [];
   for (const x of p.scan.proposals) {
-    if (x.status !== 'proposed') continue;
-    const s = last.get(x.id);
-    if (s?.verdict === 'defer' && s.until && s.until > until) continue;
-    out.push({ x, ...(s && s.verdict !== 'defer' ? { s } : {}) });
+    const s = last.get(x.id), today = !!s && s.at >= since;
+    if (!today && x.status !== 'proposed') continue;
+    if (!today && s?.verdict === 'defer' && s.until && s.until > until) continue;
+    out.push({ x, ...(s && (today || s.verdict === 'hold') ? { s } : {}), today, held: !today && s?.verdict === 'hold' });
   }
   return out;
 }
 
 export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number): MorningDeck {
   const until = new Date(now).toISOString(), cards: MorningCard[] = [], sums: ProductSummary[] = [];
-  const decisions: { p: ProductFacts; x: Proposal; s?: SteerRow }[] = [];
+  const decisions: (Choice & { p: ProductFacts })[] = [];
   const perProduct: MorningCard[][] = [];
   for (const p of products) {
     const mine: MorningCard[] = [];
@@ -118,8 +123,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
         ...(focus ? { place: featurePlace(p.slug, focus.feature, headline) } : {}),
       });
     }
-    const open = openDecisions(p, steer, until);
-    for (const d of open) decisions.push({ p, ...d });
+    const picks = openDecisions(p, steer, since, until), open = picks.filter((d) => d.x.status === 'proposed');
+    for (const d of picks) decisions.push({ p, ...d });
     if (!mine.length) {
       const headline = `${p.name} had a quiet night: nothing built, nothing released.`;
       mine.push({ id: `quiet:${p.slug}`, kind: 'quiet', product: p.slug, productName: p.name, headline, tone: 'calm', lines: [{ text: open.length ? `${n(open.length, 'decision')} still ${open.length === 1 ? 'waits' : 'wait'} for you.` : 'Nothing waits for you here.' }], place: { product: p.slug, level: 'L0', say: headline } });
@@ -127,11 +132,11 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     perProduct.push(mine);
     sums.push({ slug: p.slug, name: p.name, built: ok.length, failed: bad.length, releases: rels.length, confirmed, short, waiting: open.length });
   }
-  // the blockers: unsteered first, by tier (stop-ship first; untiered last), then the riskiest, then the oldest
-  const rank = (d: { x: Proposal; s?: SteerRow }) => [d.s ? 1 : 0, d.x.tier ?? 4, -(d.x.risk ?? 0), d.x.created_at] as const;
-  decisions.sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[3] < y[3] ? -1 : x[3] > y[3] ? 1 : 0; });
-  // held ones stay in front of the owner, marked, after the top unsteered ones (at most HELD_SHOWN of them)
-  const top = [...decisions.filter((d) => !d.s).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.s).slice(0, HELD_SHOWN)];
+  // the blockers, by tier (stop-ship first; untiered last), then the riskiest, then the oldest. This morning's pool (open and
+  // steered today) keeps its order as the owner decides; held ones from earlier mornings follow, marked (at most HELD_SHOWN)
+  const rank = (d: Choice) => [d.x.tier ?? 4, -(d.x.risk ?? 0), d.x.created_at] as const;
+  decisions.sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < 2; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0; });
+  const top = [...decisions.filter((d) => !d.held).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.held).slice(0, HELD_SHOWN)];
   const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
   const moved = sums.filter((s) => s.built || s.failed || s.releases).length;
   const openLine = products.length
@@ -143,14 +148,14 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} ${Math.min(TOP_DECISIONS, S.waiting) === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
   });
   for (const m of perProduct) cards.push(...m);
-  top.forEach(({ p, x, s }, i) => {
+  top.forEach(({ p, x, s, held }, i) => {
     const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined;
     cards.push({
       id: `decision:${p.slug}:${x.id}`, kind: 'decision', product: p.slug, productName: p.name, headline: x.title, tone: x.tier === 0 ? 'bad' : 'warn',
       lines: [
         { text: `${i + 1} of ${top.length} · ${p.name}${w ? ' · ' + w.roomName : ''}` },
         { text: [tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Untiered', x.risk_class ? x.risk_class : null, 'raised ' + hoursAgo(x.created_at, now)].filter(Boolean).join(' · '), ...(x.tier === 0 ? { tone: 'bad' as Tone } : {}) },
-        ...(s ? [{ text: `Held since ${s.at.slice(11, 16)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
+        ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
       ],
       place: featurePlace(p.slug, x.feature, x.title),
       decision: { proposal: x.id, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(s ? { steered: s } : {}) },

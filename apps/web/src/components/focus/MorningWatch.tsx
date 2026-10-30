@@ -7,6 +7,7 @@
 // that product with `?morning=<card id>`, and the deck picks up there; the window it covers is frozen for the tab
 // (sessionStorage) so a morning read across reloads is one morning.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import type { MorningCard, MorningDeck, Verdict } from '@bp/core/companion/morning';
 import { sharedFocus } from '@/lib/focus/shared';
 import { useEngine, useLive } from '../hooks';
@@ -31,7 +32,7 @@ function setParam(id: string | null): void {
 
 export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const E = useEngine(), live = useLive(), fx = sharedFocus(), here = live?.slug ?? null;
-  const st = useSyncExternalStore(fx.subscribe, fx.get, fx.get);
+  const st = useSyncExternalStore(fx.subscribe, fx.get, fx.get), calm = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [deck, setDeck] = useState<Deck | null>(null);
   const [i, setI] = useState(0);
@@ -74,7 +75,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     setParam(card.id);
     if (card.kind === 'close') void load();
     const p = card.place;
-    if (!p) return;
+    if (!p) { if (card.kind === 'open' && !phone) E.goHome(); return; }
     void fx.publishNow(p).then(() => {
       if (phone) return;
       fx.hush(4000);
@@ -86,7 +87,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const go = useCallback((d: number) => { if (!deck) return; setI((k) => Math.max(0, Math.min(deck.cards.length - 1, k + d))); }, [deck]);
 
   const steer = useCallback(async (v: Verdict) => {
-    if (!card?.decision || !card.product || busy || steered[card.id]?.ok) return;
+    if (!card?.decision || !card.product || busy || (steered[card.id] ?? fromDeck(card, deck))?.ok) return;
     setBusy(true);
     try {
       const r = await postHuman('/api/companion/morning', { product: card.product, proposal: card.decision.proposal, verdict: v });
@@ -98,7 +99,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     } catch (e) {
       setSteered((s) => ({ ...s, [card.id]: { verdict: v, ok: false, text: (e as Error).message } }));
     } finally { setBusy(false); }
-  }, [card, busy, steered, go]);
+  }, [card, busy, steered, go, deck]);
 
   // keys: capture phase, ahead of the plan's own (M is the sample's overlay there)
   useEffect(() => {
@@ -127,7 +128,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   }
   const n = deck?.cards.length ?? 0, k = Math.min(i, Math.max(0, n - 1));
   const others = (st.view?.readers ?? []).filter((x) => x.id !== fx.me && x.live && x.follows);
-  const s = card ? steered[card.id] : undefined, where = card ? steered[card.id + ':where'] : undefined;
+  const s = card ? steered[card.id] ?? fromDeck(card, deck) : undefined, where = card ? steered[card.id + ':where'] : undefined;
   return (
     <section id="mw" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="Morning Watch" data-keys="own">
       <div className="mw-top">
@@ -137,22 +138,23 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       <div className="bar" role="tablist" aria-label="Cards">
         {deck?.cards.map((c, j) => (
           <button key={c.id} type="button" role="tab" aria-selected={j === k} aria-label={`${j + 1}: ${c.headline}`} title={c.headline} onClick={() => setI(j)}
-            className={[j === k ? 'cur' : j < k ? 'done' : '', c.kind === 'decision' ? 'd' : '', steered[c.id]?.ok ? 'ok' : ''].filter(Boolean).join(' ')} />
+            className={[j === k ? 'cur' : j < k ? 'done' : '', c.kind === 'decision' ? 'd' : '', (steered[c.id] ?? fromDeck(c, deck))?.ok ? 'ok' : ''].filter(Boolean).join(' ')} />
         ))}
       </div>
       {deck && deck.products.length > 0 && (
         <div className="prod">{deck.products.map((p) => <span key={p.slug} className={p.slug === card?.product ? 'here' : ''}>{p.name}{p.waiting ? ` · ${p.waiting}` : ''}</span>)}</div>
       )}
       {card ? (
-        <div className="card" aria-live="polite">
+        <motion.div key={card.id} className="card" aria-live="polite" initial={calm ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 34 }}>
           <span className={'tag ' + card.tone}>{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
           <h2>{card.headline}</h2>
           {card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
+          {card.kind === 'open' && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
           {deck?.skipped?.length ? card.kind === 'open' && <div className="where">Not read: {deck.skipped.map((x) => x.product + ' (' + x.why + ')').join('; ')}</div> : null}
-        </div>
+        </motion.div>
       ) : <div className="card"><h2>{deck ? 'Nothing to brief.' : 'Reading every product…'}</h2></div>}
       {card?.kind === 'decision' ? (
         <div className="act">
@@ -170,6 +172,33 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       )}
       <div className="keys"><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>Esc</b> close</div>
     </section>
+  );
+}
+
+/** A verdict given this morning, as the deck reports it after a reload (a hold from an earlier morning is still open). */
+function fromDeck(c: MorningCard, d: Deck | null): Steered | undefined {
+  const r = c.decision?.steered;
+  if (!r || !d || r.at < d.since) return undefined;
+  return { verdict: r.verdict, ok: true, text: `${VERB[r.verdict]} at ${new Date(r.at).toTimeString().slice(0, 5)}. Logged.` };
+}
+
+/** The opening card's portfolio: one row per product, what moved overnight and what waits. A row opens that product's cards. */
+function Portfolio({ deck, jump }: { deck: Deck; jump: (slug: string) => void }) {
+  return (
+    <table className="pf">
+      <thead><tr><th>Product</th><th>Built</th><th>Failed</th><th>Release</th><th>Waiting</th></tr></thead>
+      <tbody>
+        {deck.products.map((p) => (
+          <tr key={p.slug} onClick={() => jump(p.slug)} title={'Go to ' + p.name}>
+            <td><button type="button" onClick={(e) => { e.stopPropagation(); jump(p.slug); }}>{p.name}</button></td>
+            <td className={p.built ? 'good' : ''}>{p.built || '·'}</td>
+            <td className={p.failed ? 'bad' : ''}>{p.failed || '·'}</td>
+            <td className={p.short ? 'bad' : p.confirmed ? 'good' : ''}>{p.releases ? (p.short ? `${p.short} short` : `${p.confirmed} confirmed`) : '·'}</td>
+            <td className={p.waiting ? 'warn' : ''}>{p.waiting || '·'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
