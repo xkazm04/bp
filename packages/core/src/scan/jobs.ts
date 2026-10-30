@@ -18,8 +18,11 @@ export interface ScanScope {
   features: string[];
 }
 
-/** `prepare`: adjust the product repo so lens-scan can measure a lens it would refuse (scan/lens-setup.ts), e.g. write probes. */
-export type JobKind = 'measure' | 'execute' | 'release' | 'prepare';
+/** `prepare`: adjust the product repo so lens-scan can measure a lens it would refuse (scan/lens-setup.ts), e.g. write probes.
+ *  `propose`: backlog items from the latest measurements (`/lens-scan propose --lens <id|all>`). */
+export type JobKind = 'measure' | 'execute' | 'release' | 'prepare' | 'propose';
+/** The lens id of a measure or propose job over every enabled lens at once (`--lens all`): ONE job, one MAX_RUNNING slot. */
+export const ALL_LENSES = 'all';
 /** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge (`--finish`). */
 export type ReleaseStep = 'build' | 'finish';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
@@ -58,7 +61,8 @@ export function jobLabel(j: Pick<ScanJob, 'kind' | 'lens' | 'proposals' | 'versi
   if (j.kind === 'release') return 'Release ' + (j.version ?? j.release ?? '') + ' · ' + (j.step ?? 'build');
   if (j.kind === 'prepare') return 'Prepare · ' + (j.lens ?? 'lens');
   if (j.kind === 'execute') return 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's');
-  return j.lens ?? 'Scan';
+  if (j.kind === 'propose') return 'Propose · ' + (j.lens === ALL_LENSES ? 'every lens' : j.lens ?? 'lens');
+  return j.lens === ALL_LENSES ? 'Scan · every lens' : j.lens ?? 'Scan';
 }
 
 /** Lenses lens-scan can measure without a manifest `scan` block (lens-scan v1). */

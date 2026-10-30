@@ -75,6 +75,8 @@ export interface UIState {
   lv: LedgerVariant;
   /** The plan's right-click scan menu, at canvas CSS px, with what was under the pointer. */
   menu: ScanMenuState | null;
+  /** Lenses whose drawing threw under this engine (render/plan.ts lensFailed): the plan names the active one as failed. */
+  failedLenses: readonly string[];
 }
 
 export type AppPage = 'plan' | 'ledger';
@@ -96,6 +98,6 @@ export function initialState(scale: number, asOf: string): UIState {
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, scanJob: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
-    page: 'plan', lv: 'triage', menu: null,
+    page: 'plan', lv: 'triage', menu: null, failedLenses: [],
   };
 }

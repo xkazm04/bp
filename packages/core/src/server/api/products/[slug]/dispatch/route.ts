@@ -8,40 +8,39 @@
 // 409 `{ error, skipped }` when none could go; 400 for a bad body; 404 for an unknown product or a missing store;
 // 429 when 16 jobs are queued (the approvals stand); 503 when the store stayed locked; 403 while BP_WRITES=off. Localhost only.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim approves and queues, with the same answers.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, JSON body and its shape, BP_WRITES, Kettle's sim, store): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
+import { storeFile } from '@bp/core/server/products.server';
 import { SAFE_ID } from '@bp/core/scan/jobs';
 import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@bp/core/server/jobs.server';
 import { NOTHING_TO_BUILD } from '@bp/core/scan/admit';
-import { writesOff } from '@bp/core/scan/writes';
 import { triageBy } from '@bp/core/server/release.server';
 import { takeForBuild } from '@bp/core/server/waves.server';
-import { kettleSim, simAnswer } from '@bp/core/server/kettle-sim.server';
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const readOnly = writesOff();
-  if (readOnly) return Response.json({ error: readOnly }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug } = await params;
-  const k = kettleSim(slug), p = findProduct(slug);
-  if (!p && !k) return unknownProduct(slug);
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const ids = (body as { ids?: unknown } | null)?.ids;
-  if (!Array.isArray(ids) || !ids.length || ids.length > MAX_PROPOSALS || ids.some((i) => typeof i !== 'string' || !SAFE_ID.test(i))) {
-    return Response.json({ error: `body must be { ids: string[] } with 1..${MAX_PROPOSALS} proposal ids` }, { status: 400 });
-  }
-  if (k) return simAnswer(() => k.dispatch(ids as string[]), 202);
-  if (!p) return unknownProduct(slug);
-  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
-  const file = storeFile(p);
-  const { approved, go, skipped, error } = takeForBuild(file, ids as string[], busyProposals(slug), await triageBy());
-  if (error) return Response.json({ error: `dispatch failed: ${error}`, approved, skipped }, { status: 503 });
-  if (!go.length) return Response.json({ error: NOTHING_TO_BUILD, skipped }, { status: 409 });
-  const r = enqueueExecute(slug, p.root, go);
-  return r.ok ? Response.json({ job: r.job, approved, skipped }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
+/** The proposal ids, or `null` for a body that is not `{ ids }` with 1..MAX_PROPOSALS safe ids. */
+function parse(raw: unknown): string[] | null {
+  const ids = (raw as { ids?: unknown } | null)?.ids;
+  return !Array.isArray(ids) || !ids.length || ids.length > MAX_PROPOSALS || ids.some((i) => typeof i !== 'string' || !SAFE_ID.test(i)) ? null : ids as string[];
+}
+
+const dispatch = door('products/[slug]/dispatch', {
+  POST: {
+    body: (raw) => parse(raw) ?? Response.json({ error: `body must be { ids: string[] } with 1..${MAX_PROPOSALS} proposal ids` }, { status: 400 }),
+    writes: true,
+    kettle: (sim, { body }) => sim.dispatch(body),
+    kettleStatus: 202,
+    store: 'required',
+    live: async ({ slug, product: p, body: ids }) => {
+      const file = storeFile(p);
+      const { approved, go, skipped, error } = takeForBuild(file, ids, busyProposals(slug), await triageBy());
+      if (error) return Response.json({ error: `dispatch failed: ${error}`, approved, skipped }, { status: 503 });
+      if (!go.length) return Response.json({ error: NOTHING_TO_BUILD, skipped }, { status: 409 });
+      const r = enqueueExecute(slug, p.root, go);
+      return r.ok ? Response.json({ job: r.job, approved, skipped }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
+    },
+  },
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }): Promise<Response> {
+  return dispatch.POST(req, ctx);
 }

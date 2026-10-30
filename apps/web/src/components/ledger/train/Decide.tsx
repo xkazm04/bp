@@ -170,7 +170,9 @@ export function Decide({ ids, compact = false }: DecideProps) {
   const n = useMemo(() => decisionCounts(T, ids), [T, ids]);
   // Undo names the decision it reverses when that is the last one, not the targets (plan.ts undoPlan)
   const undo = useMemo(() => undoPlan(T, ui.last, ids), [T, ui.last, ids]);
-  if (!writes) return null; // BP_WRITES=off: triage is read-only
+  // BP_WRITES=off: triage is read-only, and the bar (and the compare footer) says so where the buttons sit, in the words
+  // the Agents Veto detail uses, rather than dropping them without a word
+  if (!writes) return <span className={'tr-ro' + (compact ? ' compact' : '')} role="note">Triage is read-only here (BP_WRITES=off).</span>;
   const at: NoteAsk['at'] = compact ? 'compare' : 'bar', ask = ui.note && ui.note.at === at ? ui.note : null;
   if (ask) {
     const asked = ask.ids.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p);

@@ -38,6 +38,16 @@ export function Ladder() {
   );
 }
 
+/** The active lens could not be drawn (its painter threw: render/plan.ts lensFailed). Its marks are missing, so the plan
+ *  says so where the person looks, rather than reading as a lens with nothing to show. */
+export function LensFailNotice() {
+  const E = useEngine();
+  const s = useBp((s) => ({ view: s.view, failed: s.failedLenses }), shallowEqual);
+  if (!s.failed.includes(s.view)) return null;
+  const name = E.M.P.LENS[s.view]?.name ?? s.view;
+  return <div id="lensfail" role="status">{name} could not be drawn - see the console.</div>;
+}
+
 export function ScaleBar() {
   const E = useEngine();
   const ref = useRef<HTMLDivElement>(null), txt = useRef<HTMLSpanElement>(null), bar = useRef<HTMLElement>(null), tail = useRef<HTMLSpanElement>(null);

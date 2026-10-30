@@ -19,7 +19,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
+import { ALL_LENSES, MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { ABANDONED_FROM, ABANDONED_TO, reached } from '../scan/release-steps.ts';
 import { busyIds } from '../scan/admit.ts';
@@ -290,8 +290,10 @@ export function reconcileJobs(slug: string, root: string): void {
     const ph = phaseOf(l);
     const r: Rec = { job: { ...l.job }, root, prompt: '', buf: '', lastErr: '', phase: ph, ...(l.pid !== undefined ? { pid: l.pid } : {}) };
     const gone = (why: string) => { Object.assign(r.job, { status: 'failed', error: why }); r.job.ended_at ??= now(); step(r, 'exit'); };
-    // an old pid may belong to a stranger by now: never adopted, never killed
-    const adoptable = (pid: number | undefined): pid is number => pid !== undefined && Date.now() - Date.parse(l.at) < ORPHAN_MAX_MS && pidAlive(pid);
+    // an old pid may belong to a stranger by now: never adopted, never killed. A line dated in the future (written while the
+    // clock was ahead, or edited by hand) has no trustworthy age either, and an unparseable one none at all.
+    const age = Date.now() - Date.parse(l.at);
+    const adoptable = (pid: number | undefined): pid is number => pid !== undefined && age >= 0 && age < ORPHAN_MAX_MS && pidAlive(pid);
     if (ph === 'queued') gone('the server restarted while this job was queued; it never ran');
     else if (ph === 'running') {
       if (adoptable(r.pid)) r.orphan = true;
@@ -299,7 +301,7 @@ export function reconcileJobs(slug: string, root: string): void {
         // Its process is gone, but it may have finished its work first: judge it by the store, as the orphan watch does. Found
         // 2026-10-26: a Grinex measure run ended `done` in the store while the server that started it was wedged, and the restart
         // would have failed a job whose 326 readings were there.
-        const run = r.job.kind === 'measure' || r.job.kind === 'execute' ? r.job.run_id ?? runOf(root, r.job.id) : undefined;
+        const run = r.job.kind === 'measure' || r.job.kind === 'execute' || r.job.kind === 'propose' ? r.job.run_id ?? runOf(root, r.job.id) : undefined;
         if (run) { Object.assign(r.job, { status: 'done', run_id: run }); r.job.ended_at ??= now(); step(r, 'exit'); }
         else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
       }
@@ -390,6 +392,16 @@ export function enqueueMeasure(slug: string, root: string, lens: string, scope: 
   if (scope.kind === 'selection' && (scope.id !== undefined || scope.features.length > MAX_SELECTION)) return { ok: false, status: 400, error: 'bad-scope' };
   const prompt = `/lens-scan measure --lens ${lens}` + (all ? '' : ` --scope ${scope.features.join(',')}`);
   return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, status: 'queued', queued_at: now() }, prompt);
+}
+
+/**
+ * Queue ONE measure or propose job over every enabled lens: `/lens-scan measure --lens all` / `/lens-scan propose --lens all`
+ * (lens `all`, scope everything). It holds one MAX_RUNNING slot like any job; single-lens jobs are unchanged (enqueueMeasure).
+ * lens-scan owns what `--lens all` covers (every enabled lens of the map, judged once per unit: scan-finding/1 "Coverage").
+ */
+export function enqueueAllLenses(slug: string, root: string, phase: 'measure' | 'propose'): Enqueued {
+  const prompt = `/lens-scan ${phase} --lens ${ALL_LENSES}`;
+  return enqueue(slug, root, { id: jobId(), kind: phase, lens: ALL_LENSES, scope: { kind: 'all', label: 'Every lens', features: [] }, status: 'queued', queued_at: now() }, prompt);
 }
 
 /**

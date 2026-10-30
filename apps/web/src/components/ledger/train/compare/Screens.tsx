@@ -151,7 +151,8 @@ const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; s
     <div className="tr-pair one">
       <ShotFigure cap={'Change map · ' + label + ' · after, with changed pixels marked'} aside={moved}>
         <ShotImg src={a} alt={'After, ' + label} className="dim" />
-        {map?.status === 'done' ? <ChangeMap grid={map.grid} /> : <span className="tr-computing">computing…</span>}
+        {/* the frame reads the same three-way status as its caption: a failed map is never "computing…" (the callout says why) */}
+        {map?.status === 'done' ? <ChangeMap grid={map.grid} /> : map?.status === 'error' ? <span className="tr-map-none">no change map</span> : <span className="tr-computing">computing…</span>}
       </ShotFigure>
     </div>
   );

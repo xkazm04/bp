@@ -6,6 +6,8 @@
 // that feature alone: the matrix finds where, the table reads what. J/K move between rows, Space selects the row.
 // In the In packs scope the rows are the pack items' features and a cell shows each item's state mark (StateMark, the
 // one drawing of a state; A/1's matrix), a click selecting those items; there is no Dispatch (packs are triaged).
+// v5: the cell that holds a lens's MVP (useLedger lensMvps, the strip above the views) carries a ★ before its counts; a
+// lens's reserve findings stay out of the counts while their group is collapsed (they are not ranked).
 import { matrixRows, riskBand, type Finding, type Ledger, type LensCol, type RiskBand } from '../useLedger';
 import { StateMark } from '../train/ui/Marks.tsx';
 import { LensGlyph } from './bits';
@@ -13,7 +15,7 @@ import { LensGlyph } from './bits';
 const BANDS: readonly RiskBand[] = ['high', 'medium', 'low'];
 const MARK: Record<RiskBand, string> = { high: '▲', medium: '◆', low: '▽' };
 
-function Cell({ items, lens, feat, L, act, packs }: { items: Finding[]; lens: LensCol; feat: string; L: Ledger; act: boolean; packs: boolean }) {
+function Cell({ items, lens, feat, L, act, packs, mvp }: { items: Finding[]; lens: LensCol; feat: string; L: Ledger; act: boolean; packs: boolean; mvp?: Finding }) {
   if (!items.length) return <td className="lg-mc none"><span aria-hidden="true">·</span></td>;
   const ids = items.map((f) => f.p.id), all = ids.every((id) => L.ui.sel.has(id)), some = !all && ids.some((id) => L.ui.sel.has(id));
   // the cell is a three-state toggle (the `.part` ring is the third): 'mixed' is what says so, not a false pressed
@@ -28,10 +30,13 @@ function Cell({ items, lens, feat, L, act, packs }: { items: Finding[]; lens: Le
   );
   const n = Object.fromEntries(BANDS.map((b) => [b, items.filter((f) => riskBand(f.p.risk) === b).length])) as Record<RiskBand, number>;
   const said = BANDS.filter((b) => n[b]).map((b) => n[b] + ' ' + b).join(', ');
+  // the lens's MVP sits here: a star before the counts (the MVPs strip names it)
+  const star = mvp && items.includes(mvp) ? mvp : undefined;
   return (
     <td className={'lg-mc' + (all ? ' on' : some ? ' part' : '')}>
-      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={pressed} aria-label={lens.name + ' on ' + feat + ': ' + said + ' risk'} title={items.map((f) => f.p.id + ' ' + f.p.title + ' (' + f.status + ')').join('\n')}
+      <button type="button" tabIndex={act ? 0 : -1} aria-pressed={pressed} aria-label={lens.name + ' on ' + feat + ': ' + said + ' risk' + (star ? ', the lens MVP' : '')} title={(star ? 'MVP of ' + lens.name + ': ' + star.p.title + '\n' : '') + items.map((f) => f.p.id + ' ' + f.p.title + ' (' + f.status + ')').join('\n')}
         onClick={() => L.select(ids)}>
+        {star ? <span className="lg-mvpm" aria-hidden="true">★</span> : null}
         {BANDS.map((b) => (n[b] ? <span key={b} className={'r-' + b}><b aria-hidden="true">{MARK[b]}</b>{n[b]}</span> : null))}
       </button>
     </td>
@@ -41,6 +46,7 @@ function Cell({ items, lens, feat, L, act, packs }: { items: Finding[]; lens: Le
 export function Matrix({ L }: { L: Ledger }) {
   const packs = L.ui.scope === 'packs', rows = matrixRows(L.scoped);
   const cols = L.lenses.filter((l) => l.enabled || l.n);
+  const mvpOf = new Map(L.mvps.map((m) => [m.lens, m.f]));
   const first = rows[0] ? 'feat:' + rows[0].slug : null, foc = L.ui.focus?.startsWith('feat:') && rows.some((r) => 'feat:' + r.slug === L.ui.focus) ? L.ui.focus : first;
   if (!rows.length) return <div className="lg-empty">{packs ? (L.items.length ? 'No pack item matches these filters.' : 'No packs yet: a lens execute builds them.') : L.all.length ? 'No finding matches these filters.' : 'No findings yet.'}</div>;
   return (
@@ -67,7 +73,7 @@ export function Matrix({ L }: { L: Ledger }) {
                     <b>{r.name}</b>{r.domain ? <span>{r.domain}</span> : null}
                   </button>
                 </th>
-                {cols.map((l) => <Cell key={l.id} items={r.items.filter((f) => f.p.lens === l.id)} lens={l} feat={r.name} L={L} act={act} packs={packs} />)}
+                {cols.map((l) => <Cell key={l.id} items={r.items.filter((f) => f.p.lens === l.id)} lens={l} feat={r.name} L={L} act={act} packs={packs} mvp={packs ? undefined : mvpOf.get(l.id)} />)}
                 <td className="lg-md">
                   <button type="button" className="bt lg-drill" tabIndex={act ? 0 : -1} title={'Read the ' + r.items.length + ' findings on ' + r.name + ' in the triage table (Enter)'}
                     onClick={() => L.showInTable(r.slug)}>Table</button>

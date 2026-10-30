@@ -120,7 +120,7 @@ export class ScanSim {
   snapshot(): ScanSnapshot {
     if (!this.snap || this.snapV !== this.v) {
       this.snapV = this.v;
-      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: this.train.shots.slice(), coverage: [], packs: this.train.packs.slice(), releases: this.train.releases.slice() };
+      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: this.train.shots.slice(), coverage: [], packs: this.train.packs.slice(), releases: this.train.releases.slice(), trust_events: [] };
     }
     return this.snap;
   }

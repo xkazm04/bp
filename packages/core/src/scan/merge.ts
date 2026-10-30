@@ -1,5 +1,5 @@
 // Applying a scan delta to a snapshot: the rows of each table replace those with the same key, the rest are appended.
-import type { Activity, Coverage, Measurement, Proposal, Run, ScanDelta, ScanSnapshot } from './types.ts';
+import type { Activity, Coverage, Measurement, Proposal, Run, ScanDelta, ScanSnapshot, TrustEvent } from './types.ts';
 
 const ACTIVITY_KEEP = 200;
 
@@ -25,5 +25,8 @@ export function mergeScan(s: ScanSnapshot, d: ScanDelta): ScanSnapshot {
     coverage: upsert<Coverage>(s.coverage, d.coverage, (c) => c.feature + '\u0000' + c.standard),
     packs: upsert(s.packs, d.packs, byId),
     releases: upsert(s.releases, d.releases, byId),
+    // v5, append-only; a snapshot from a pre-v5 sender has none (one shared empty, so an untouched table keeps its identity)
+    trust_events: upsert(s.trust_events ?? NO_TRUST, d.trust_events, byId),
   };
 }
+const NO_TRUST: TrustEvent[] = [];

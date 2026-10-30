@@ -11,7 +11,7 @@ import { jobLabel, type ScanJob } from '@bp/core/scan/jobs';
 import { jobProgress } from '@/lib/scan/scan-views';
 import { logBlocks, type Span } from '@/lib/scan/log-md';
 import type { ScanSnapshot } from '@bp/core/scan/types';
-import { jobLiveness } from '@bp/core/scan/liveness';
+import { ago, jobLiveness, jobSignOfLife } from '@bp/core/scan/liveness';
 import { LiveSteerButtons } from '../../LiveSteer';
 import { ScanGlyph } from '../../ScanMenu';
 import { Mark, agentMark } from '../../Symbols';
@@ -33,14 +33,20 @@ function tally(ag: readonly SimAgent[]) {
 }
 
 /** A job's figures, shared by its row and its detail. A release job names no proposals: its progress is its release's
- *  status (`rel`, when the snapshot has the row), never a count. */
+ *  status (`rel`, when the snapshot has the row), never a count. A running job silent for SILENT_MS is `stale`
+ *  (liveness.ts): its clock then counts the silence, not the run, so a dead job never reads as one still working. */
 function jobFacts(j: ScanJob, scan: ScanSnapshot | undefined, total: number, now: number) {
   const measure = j.kind === 'measure', release = j.kind === 'release', prepare = j.kind === 'prepare', pr = measure ? jobProgress(j, scan, total) : null;
   const built = j.kind === 'execute' && scan ? scan.proposals.filter((p) => j.proposals?.includes(p.id) && p.status === 'done').length : 0;
   const n = measure ? (pr && j.status === 'done' ? pr.m : pr?.n ?? 0) : built, m = measure ? pr?.m ?? 0 : j.proposals?.length ?? 0;
   const rel = release && j.release ? scan?.releases.find((r) => r.id === j.release) : undefined;
   const t0 = Date.parse(j.started_at ?? j.queued_at), t1 = j.ended_at ? Date.parse(j.ended_at) : now;
-  return { measure, release, prepare, rel, n, m, clock: j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0), open: j.status === 'queued' || j.status === 'running' };
+  const stale = jobLiveness(j, scan, now) === 'stale', silent = stale ? Math.max(0, now - jobSignOfLife(j, scan)) : 0;
+  return {
+    measure, release, prepare, rel, n, m, stale, silent,
+    clock: stale ? mmss(silent) : j.status === 'queued' ? mmss(now - Date.parse(j.queued_at)) : mmss(t1 - t0),
+    open: j.status === 'queued' || j.status === 'running',
+  };
 }
 
 export function Agents() {
@@ -92,7 +98,7 @@ export function Agents() {
           const d = j.lens ? M.P.LENS[j.lens] : undefined, x = jobFacts(j, scan, total, now), k = key('job', j.id);
           return (
             <Row key={j.id} id={k} on={cur === k} onPick={() => setSel(k)} cls={'job st-' + j.status}>
-              <span className="rk">{d?.glyph ? <ScanGlyph g={d.glyph} px={16} /> : null}<span className={'st ' + j.status}>{j.status}</span><span>{x.clock}</span></span>
+              <span className="rk">{d?.glyph ? <ScanGlyph g={d.glyph} px={16} /> : null}<span className={'st ' + j.status}>{j.status}</span>{x.stale && <span className="st stale" title="No sign of life for 10 minutes or more: it may have died">stale</span>}<span>{x.stale ? 'silent ' : ''}{x.clock}</span></span>
               <span className="rt one">{x.measure ? d?.name ?? j.lens : jobLabel(j)}</span>
               {x.release
                 ? <span className="rm"><span>{j.release}</span>{x.rel && <span>{x.rel.status}</span>}</span>
@@ -166,14 +172,14 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
   const pr = httpUrl(x.rel?.pr_url);
   return (
     <>
-      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span><span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : x.prepare ? 'Prepare' : 'Execute'}</span><span>{j.id}</span></div>
+      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span>{x.stale && <span className="st stale">stale</span>}<span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : x.prepare ? 'Prepare' : 'Execute'}</span><span>{j.id}</span></div>
       <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' || x.prepare ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
       <p className="wb-lede">{x.release ? (j.step === 'finish' ? 'Finish: tag the merged release and publish it on GitHub.' : 'Build: cherry-pick the accepted items, run the gates, open the pull request.')
         : x.prepare ? 'Make ' + lensName + ' measurable in this repo: probe scripts against a production build and the overlay’s ## Probes entries.'
         : x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>
       {x.prepare ? (
         <div className="wb-figs">
-          <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+          <Fig n={x.clock} label={x.stale ? 'since its last sign of life' : j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} tone={x.stale ? 'amber' : undefined} />
           {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
         </div>
       ) : x.release ? (
@@ -181,7 +187,7 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
           <Fig n={j.step ?? 'build'} label="step" />
           {j.version && <Fig n={j.version} label="version" />}
           {x.rel && <Fig n={x.rel.status} label="release" tone={x.rel.status === 'failed' ? 'red' : x.rel.status === 'tagged' ? 'mint' : undefined} />}
-          <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+          <Fig n={x.clock} label={x.stale ? 'since its last sign of life' : j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} tone={x.stale ? 'amber' : undefined} />
           {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
         </div>
       ) : (
@@ -189,12 +195,13 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
           <div className="wb-figs">
             <Fig n={x.n + '/' + x.m} label={x.measure ? 'features measured' : 'findings built'} tone={j.status === 'done' ? 'mint' : undefined} />
             <Fig n={pct + '%'} label="progress" />
-            <Fig n={x.clock} label={j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} />
+            <Fig n={x.clock} label={x.stale ? 'since its last sign of life' : j.status === 'queued' ? 'waiting' : x.open ? 'elapsed' : 'took'} tone={x.stale ? 'amber' : undefined} />
             {j.exit_code !== undefined && <Fig n={j.exit_code} label="exit code" tone={j.exit_code ? 'red' : undefined} />}
           </div>
           {x.m > 0 && <div className="wb-prog" role="progressbar" aria-valuemin={0} aria-valuemax={x.m} aria-valuenow={x.n} aria-label="Progress"><i style={{ width: pct + '%' }} /></div>}
         </>
       )}
+      {x.stale && <p className="wb-help" role="status">No word from this scan for {ago(x.silent).replace(' ago', '')}: the store still says running, but it may have died. Cancel it to free its slot, or wait.</p>}
       <div className="wb-inline">
         {x.open && <button ref={cancelRef} type="button" className="bt" disabled={busy} onClick={cancel} aria-label={'Cancel ' + (d?.name ?? (x.release ? 'release' : 'execute')) + ' job ' + j.id}>Cancel job</button>}
         <span className="wb-meta">queued {j.queued_at.slice(11, 19)}{j.started_at ? ' · started ' + j.started_at.slice(11, 19) : ''}{j.ended_at ? ' · ended ' + j.ended_at.slice(11, 19) : ''}{j.run_id ? ' · run ' + j.run_id : ''}{j.release ? ' · ' + j.release : ''}</span>

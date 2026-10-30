@@ -1,36 +1,23 @@
 // Pure: the companion's two orders (spark companion-upgrade, P3). The cross-product inbox ranks open decisions the way the
-// ledger does within one product (docs/blueprint-ui.md "Tier first" and "Value per effort"): tier ascending, untriaged after
-// tier 3 (derive.ts tierRank), then value per effort, highest first, then age, oldest first, then product and id. Coverage
-// gaps rank by a base per reason times the feature's tier weight; scripts/check-companion-door.ts pins both formulas.
-// The value formula is apps/web's ledger `rankValue` (useLedger.ts), restated here because core cannot import the web app;
-// a change to one must be made to the other (the check pins this one's numbers).
+// ledger does within one product (docs/blueprint-ui.md "Tier first" and "One score"): tier ascending, untriaged after tier 3
+// (derive.ts tierRank), then the finding's worth (scan/score.ts: band ranked before reserve, the STORED scan-score/1 score
+// descending, then the pre-v5 estimate for rows without one, then unscored rows), then age, oldest first, then product and
+// id. The ledger and this file share scan/score.ts, so there is one formula and no restated copy. Coverage gaps rank by a
+// base per reason times the feature's tier weight; scripts/check-companion-door.ts pins both orders.
 import { tierRank } from '../../../scan/derive.ts';
-import type { Proposal } from '../../../scan/types.ts';
+import { byWorth, estValue, type Worth } from '../../../scan/score.ts';
 import type { Gap, GapReason, InboxItem } from '../../../companion/contract.ts';
 
-const SIZE_W: Record<string, number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8 };
+/** The pre-v5 estimate per proposal id (scan/score.ts estValue; kept under its old name for the companion's callers). */
+export const rankValue = estValue;
 
-/** ev = gain x confidence / effort, per proposal id, over one product's proposals (the ledger's rankValue). */
-export function rankValue(ps: readonly Proposal[]): Map<string, number> {
-  const top = new Map<string, number>();
-  for (const p of ps) if (p.metric && p.expected_delta !== undefined) { const k = p.lens + '\u0000' + p.metric; top.set(k, Math.max(top.get(k) ?? 0, Math.abs(p.expected_delta))); }
-  const out = new Map<string, number>();
-  for (const p of ps) {
-    const t = p.metric && p.expected_delta !== undefined ? top.get(p.lens + '\u0000' + p.metric) ?? 0 : 0;
-    const gain = t > 0 ? 0.25 + (0.75 * Math.abs(p.expected_delta!)) / t : 0.5;
-    const risk = Math.min(10, Math.max(1, p.risk ?? 5));
-    out.set(p.id, (gain * (11 - risk)) / 10 / (SIZE_W[p.size ?? 'M'] ?? 3));
-  }
-  return out;
-}
-
-/** An inbox candidate before ranking: the item plus its value. */
-export type Ranked = Omit<InboxItem, 'rank'> & { value: number };
+/** An inbox candidate before ranking: the item plus its worth. */
+export type Ranked = Omit<InboxItem, 'rank'> & { worth: Worth };
 /** Sorted and numbered: `rank` is the 1-based position. */
 export function rankInbox(xs: readonly Ranked[]): InboxItem[] {
   return [...xs]
-    .sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || b.value - a.value || b.ageMs - a.ageMs || (a.product < b.product ? -1 : a.product > b.product ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    .map(({ value: _v, ...x }, i) => ({ ...x, rank: i + 1 }));
+    .sort((a, b) => tierRank(a.tier) - tierRank(b.tier) || byWorth(a.worth, b.worth) || b.ageMs - a.ageMs || (a.product < b.product ? -1 : a.product > b.product ? 1 : 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(({ worth: _w, ...x }, i) => ({ ...x, rank: i + 1 }));
 }
 
 /** A gap's base by reason. */

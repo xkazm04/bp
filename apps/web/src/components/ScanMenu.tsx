@@ -12,15 +12,17 @@
 // A live lens its repo cannot measure yet (ProductInfo.setup: the lens-scan overlay names no probes, scan/lens-setup.ts) is not
 // a dead end: its button reads "prepare" and queues a prepare job that adjusts the repo, "Scan all lenses" leaves it out, and in
 // its own lens view the scope items stay as "Scan anyway" under a "Prepare repo" item (the menu re-reads the list on opening).
+// "Scan all lenses" over Everything on a live product, with no lens left out, is ONE every-lens job (oneJobForAll): one queue
+// slot and one read of each feature, not a job per lens; narrower scopes and the Kettle sim keep one job per lens.
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import { prepareLens, refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
+import { prepareLens, refusalText, startAllLenses, startScan, startSelectionScan } from '@/lib/scan/actions';
 import { MAX_RUNNING, MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
 import { factsWords, queueRoom, scopeFacts } from '@bp/core/scan/views';
 import { refreshProjects, useProjects } from '@/lib/scan/projects';
-import { scopesAt } from '@/lib/scan/scan-views';
+import { oneJobForAll, scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
 import { useScanJobs } from './rail/panels';
 import { useLedgerSelection } from './ledger/useLedger';
@@ -60,7 +62,7 @@ export function ScanMenu() {
 const focusPlan = () => (document.querySelector('.bp-map') as HTMLElement | null)?.focus({ preventScroll: true });
 
 function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
-  const E = useEngine(), ctx = useScanCtx(), P = E.M.P, { list } = useProjects();
+  const E = useEngine(), ctx = useScanCtx(), P = E.M.P, { list, error: listError } = useProjects();
   const ref = useRef<HTMLDivElement>(null);
   const sel = useLedgerSelection().features;
   // the ledger's selection, when it has one, as a last scope (the first MAX_SELECTION features in map order)
@@ -74,6 +76,9 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const lensView = view !== GENERAL ? lenses.find((l) => l.id === view) : undefined;
   // what each live lens lacks in the repo; Kettle's sample needs nothing
   const needs = useMemo(() => new Map((ctx.slug ? list?.find((p) => p.slug === ctx.slug)?.setup ?? [] : []).map((n) => [n.lens, n])), [ctx.slug, list]);
+  // a live product before the list has ever answered: what each lens needs is not known yet (still reading, or the read
+  // failed), which is not the same as "needs nothing". The items stay usable; the footer says the setup is unknown.
+  const setupUnknown = !!ctx.slug && list === null ? (listError ? 'error' : 'checking') : null;
   const scanOk = lenses.filter((l) => l.ok && !needs.has(l.id)), off = lenses.filter((l) => !l.ok);
   const needy = lenses.filter((l) => l.ok && needs.has(l.id));
   const viewNeed = lensView ? needs.get(lensView.id) : undefined;
@@ -99,6 +104,11 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const run = (ids: string[], scope: ScanScope) => {
     close();
     const name = (id: string) => P.LENS[id]?.name ?? id;
+    if (oneJobForAll(!!ctx.slug, scope, ids, lenses.filter((l) => l.ok).map((l) => l.id))) {
+      startAllLenses(ctx, 'measure').then(() => E.toast('Scanning every lens', scope.label + ' · ' + count(scope) + ' features · one job'),
+        (e) => E.toast('Scan not started', refusalText(e), undefined, undefined, 'bad'));
+      return;
+    }
     void Promise.allSettled(ids.map((id) => (scope.kind === 'selection' ? startSelectionScan(ctx, id, scope.features) : startScan(ctx, id, scope)))).then((rs) => {
       const bad = rs.map((r, i) => (r.status === 'rejected' ? name(ids[i]) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
       const n = rs.length - bad.length;
@@ -146,7 +156,9 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     else if (e.key === 'Home') j = 0;
     else if (e.key === 'End') j = n - 1;
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
-    else if (e.key === 'Tab') { close(false); return; }
+    // Tab leaves the menu from the plan it was summoned on: focus goes back there first, so the browser's own Tab
+    // moves on from the plan, never from <body> (the focused item unmounts with the menu)
+    else if (e.key === 'Tab') { close(); return; }
     else return;
     e.preventDefault(); e.stopPropagation();
     els[j]?.focus();
@@ -201,6 +213,11 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
       ))}
       {(lensView ? !!viewNeed : needy.length > 0) && <div className="sm-f need">{lensView ? viewNeed!.why : needy.map((l) => l.name + ': ' + needs.get(l.id)!.why).join('; ')}. Prepare queues Claude Code to add it to the repo.</div>}
       {(lensView ? !lensView.ok : off.length > 0) && <div className="sm-f">No scan method: {(lensView ? [lensView] : off).map((l) => l.name).join(', ')}. Add a manifest <code>scan</code> block to scan it.</div>}
+      {setupUnknown === 'checking' && <div className="sm-f" role="status">Checking which lenses need repo setup…</div>}
+      {setupUnknown === 'error' && (
+        // no Try again item: the menu reads the list again on every opening (below), so reopening it is the retry
+        <div className="sm-f need" role="status">{listError} - setup unknown: a lens may need repo setup this menu cannot see. Reopen the menu to read the list again.</div>
+      )}
       {ctx.slug && <div className="sm-f warn">Runs Claude Code {root ? <>in <code>{root}</code></> : 'in this product’s checkout'} with permissions skipped</div>}
     </div>
   );

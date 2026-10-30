@@ -11,6 +11,7 @@
 .tr-bar .lg-bar-l { flex-wrap: wrap; }
 .tr-warn { color: var(--amber); }
 .tr-hint { color: var(--ink-2); }
+.tr-ro { color: var(--ink-2); font-size: var(--fs-13); }
 .tr-hint kbd { margin-left: 0; margin-right: var(--sp-4); }
 
 /* the release package pill */

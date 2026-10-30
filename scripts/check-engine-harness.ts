@@ -537,6 +537,28 @@ const measured: Record<string, string> = {};
   E2.destroy();
 }
 
+// ---------------------------------------------------------------------------------------------- 6b. an empty map
+// A live product registered before it declares anything (no domain, capability or feature) lays out an empty walk (layout.ts): the arrow walk and the level
+// buttons (Overlays.tsx -> goLevel) must do nothing there, not throw from the keydown handler.
+{
+  const { buildLiveModel } = await impCore('src/model/live-feed.ts');
+  const { emptyScan } = await impCore('src/scan/types.ts');
+  const fs = await import('node:fs');
+  const map: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  map.domains = []; map.capabilities = []; map.features = []; map.milestones = []; map.facets = [];
+  E.destroy(); win.innerWidth = 1280; win.innerHeight = 800; loc.hash = ''; rafQ = [];
+  const live = { slug: 'empty', decide: async () => { throw new Error('unused'); } };
+  const EE = new Engine({ canvas, ui, root, model: buildLiveModel(map, '', emptyScan(), live, 1, () => clock, null), expression, intro: false });
+  expect(EE.M.L.walk.length === 0, 'an empty map lays out an empty walk (' + EE.M.L.walk.length + ' rooms)');
+  const threw = (f: () => void) => { try { f(); return ''; } catch (e) { return String(e); } };
+  const arrows = threw(() => { key('ArrowRight'); key('ArrowLeft'); flush(); });
+  expect(arrows === '', 'ArrowRight / ArrowLeft on an empty map throw nothing' + (arrows ? ' (' + arrows + ')' : ''));
+  const levels = threw(() => { for (let d = 1; d < EE.levelNames().length - 1; d++) EE.goLevel(d); flush(); });
+  expect(levels === '', 'the level jump on an empty map throws nothing' + (levels ? ' (' + levels + ')' : ''));
+  EE.destroy(); rafQ = [];
+  E = mount();
+}
+
 // ---------------------------------------------------------------------------------------------- 7. destroy
 {
   const E3 = mount(); const before = (doc as Any).L?.size;

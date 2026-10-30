@@ -14,7 +14,8 @@
 //             product, expiry and policy.propose are honoured by policyFor (in process)
 //   gaps      the formula (base x tier weight) on every reason and tier, and GET gaps on `good` answers exactly the
 //             expected ranked list
-//   inbox     two products, `bad` named in skipped with why; `good`'s open and triage items ranked tier, value, age
+//   inbox     two products, `bad` named in skipped with why; `good`'s open and triage items ranked tier, band, stored score,
+//             pre-v5 estimate, unscored (scan/score.ts), age
 //   doc       tech-stack.md section 4 is the catalog (name, flags, class)
 // Run: node scripts/check-companion-door.ts   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -65,6 +66,12 @@ fs.writeFileSync(path.join(good, '.ai', 'lens-scan', 'app-structure.json'), JSON
   p.run('p4', 'a', 'Tier 1 open, cheap', 'proposed', 'XS', 1, 1, iso(NOW - 2 * H), iso(NOW - 2 * H)); // 0.5
   p.run('p5', 'a', 'Accepted already', 'accepted', 'M', 5, 0, iso(NOW - 10 * H), iso(NOW - 10 * H));
   p.run('p6', 'b', 'Tier 1 open, dear', 'proposed', 'XL', 9, 1, iso(NOW - 200 * H), iso(NOW - 200 * H)); // 0.0125
+  // v5 (scan-finding/1): the STORED score leads its tier (never recomputed: 40.5 is the contract's (8,medium,4,3) value), a
+  // v5 row without a score is unscored and ranks after the pre-v5 estimates, and a reserve row ranks after every ranked one
+  const v5 = db.prepare('INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, size, risk, tier, impact, confidence, effort, score, band, created_at, updated_at) VALUES (?, \'r1\', \'a\', \'dev\', ?, \'fix\', \'proposed\', \'M\', 3, 1, ?, ?, ?, ?, ?, ?, ?)');
+  v5.run('p7', 'Tier 1 open, scored', 8, 'medium', 4, 40.5, 'ranked', iso(NOW - 3 * H), iso(NOW - 3 * H));
+  v5.run('p8', 'Tier 1 open, reserve', 10, 'high', 1, 95, 'reserve', iso(NOW - 4 * H), iso(NOW - 4 * H));
+  v5.run('p9', 'Tier 1 open, unscored', 6, 'low', null, null, 'ranked', iso(NOW - 5 * H), iso(NOW - 5 * H));
   const m = db.prepare("INSERT INTO measurements (run_id, feature, lens, metric, value, measured_at) VALUES ('r1', ?, ?, 'm', 1, ?)");
   m.run('a', 'dev', iso(NOW - 1 * H));  // fresh
   m.run('b', 'dev', iso(NOW - 48 * H)); // stale
@@ -278,7 +285,8 @@ try {
   const ib = await req('GET', '/api/companion/inbox');
   const items = ib.json?.items ?? [];
   const order = items.map((x: any) => `${x.product}:${x.id}:${x.kind}:${x.rank}`).join(' ');
-  check('inbox: tier first, then value per effort, then age (accepted items left out)', order === 'good:p1:proposal:1 good:p4:proposal:2 good:p6:proposal:3 good:p3:triage:4 good:p2:proposal:5', order);
+  check('inbox: tier first, then band, the stored score, the estimate, unscored, then age (accepted items left out)',
+    order === 'good:p1:proposal:1 good:p7:proposal:2 good:p4:proposal:3 good:p6:proposal:4 good:p9:proposal:5 good:p8:proposal:6 good:p3:triage:7 good:p2:proposal:8', order);
   check('inbox: the unreadable product is skipped and named with why', (ib.json?.skipped ?? []).some((s: any) => s.product === 'bad' && /cannot read the scan store/.test(s.why)), j(ib.json?.skipped));
   check('inbox: a recommendation rides on its item', items.find((x: any) => x.id === 'p2')?.recommendation?.verdict === 'decline', j(items.find((x: any) => x.id === 'p2')));
   check('inbox: ageMs measured from created_at (p2 ~120 h)', Math.abs((items.find((x: any) => x.id === 'p2')?.ageMs ?? 0) - 120 * H) < 10 * 60000);

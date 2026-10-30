@@ -264,6 +264,11 @@ async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: 
 
 /** Queue a lens scan over a scope (202 = the job). Errors: 400 unknown-lens / no-scan-method / bad-scope, 429 queue full. */
 export const postScan = (slug: string, lens: string, scope: ScanScope): Promise<ScanJob> => send(api(slug) + '/scans', 'POST', { lens, scope });
+/** Queue ONE job over every enabled lens (`/lens-scan measure --lens all` or `propose --lens all`; one MAX_RUNNING slot). */
+export const postAllLenses = (slug: string, phase: 'measure' | 'propose'): Promise<ScanJob> =>
+  send(api(slug) + '/scans', 'POST', { lens: 'all', scope: { kind: 'all', label: 'Every lens', features: [] }, ...(phase === 'propose' ? { phase } : {}) });
+/** A person's veto of a machine decision inside its window (seam B2): the row goes back to proposed. 409 = not vetoable now. */
+export const postVeto = (slug: string, id: string, reason: string): Promise<Proposal> => send(api(slug) + '/proposals/' + encodeURIComponent(id) + '/veto', 'POST', { reason });
 /** Approve the proposed ones among `ids` and build them all in one execute job. 409 = none could go (`body.skipped`). */
 export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
 /** Cancel a queued or running job. */

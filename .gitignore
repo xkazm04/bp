@@ -21,6 +21,7 @@ bp.products.local.json
 /.claude/skills/adopt-bp
 /.claude/skills/perfect
 /.claude/skills/tiger
+/.claude/skills/lens-scan
 /.claude/rules/ai-registry-access.md
 /.claude/rules/ai-registry-software-engineering.md
 /.ai/skill-runs.local.jsonl

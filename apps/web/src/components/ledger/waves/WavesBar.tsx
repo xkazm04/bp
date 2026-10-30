@@ -4,9 +4,12 @@
 // (LedgerUi.wave) and opens its panel: each package (name, model, effort, findings, job state) with Dispatch (one package)
 // and, for the wave, Dispatch wave (a draft), Dispatch remaining (a dispatched wave with findings that can still go), Edit and
 // Delete (draft only; Delete asks twice, in place). The composer (WaveComposer.tsx) opens inline under the tabs. Below 720 px
-// of table width the tabs fold into one select. Waves load through useWaves.ts; with none, the strip says how to make one.
-// Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses.
+// of table width the tabs fold into one select. Waves load through useWaves.ts; with none, the strip says how to make one;
+// with a list that could not be read, it says so and offers Try again (never "No waves").
+// Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses. With BP_WRITES=off the strip
+// keeps its tabs, select and facts and drops every write (New wave, Dispatch, Edit, Delete), saying so once, as Triage does.
 import { useState } from 'react';
+import { useWritesOn } from '../../hooks';
 import { dayHhmmUTC } from '@bp/core/model';
 import type { Ledger } from '../useLedger';
 import type { Wave, WaveState } from '@bp/core/scan/waves';
@@ -28,13 +31,16 @@ const size = (w: Wave) => w.packages.reduce((n, p) => n + p.ids.length, 0);
 const idsOf = (w: Wave, pk?: string) => w.packages.filter((p) => !pk || p.id === pk).flatMap((p) => p.ids);
 
 export function WavesBar({ L }: { L: Ledger }) {
-  const { ui, waves } = L, sel = waves.waves.find((w) => w.id === ui.wave);
+  const { ui, waves } = L, sel = waves.waves.find((w) => w.id === ui.wave), writes = useWritesOn();
   const none = !waves.waves.length;
   const add = L.waveReady.length ? null : L.ready.length ? 'The selected findings are already in a draft wave' : 'Select findings to group into a wave';
   return (
     <section className="lg-waves" aria-label="Waves" data-wave="strip">
       <div className="wv-row">
-        {none ? (waves.loaded
+        {none ? (waves.error
+          // "could not read" is not "none" either: a failed list must not invite people to rebuild waves that exist
+          ? <span className="wv-none" role="alert" data-wave="error">The waves could not be read: {waves.error} <button type="button" className="wv-retry" onClick={waves.reload}>Try again</button></span>
+          : waves.loaded
           // "none" and "not asked yet" are different states: before the first list comes back the strip must not
           // assert the product has no waves (useWaves.ts `loaded`)
           ? <span className="wv-none">No waves. Select findings, then Add to wave.</span>
@@ -53,19 +59,24 @@ export function WavesBar({ L }: { L: Ledger }) {
               <option value="">All findings</option>
               {waves.waves.map((w) => <option key={w.id} value={w.id}>{w.name} · {waves.states.get(w.id) ?? 'draft'} · {size(w)}</option>)}
             </select>
+            {/* a failed reload over a held list keeps the tabs (they are the last list read) and says they may be out of date */}
+            {waves.error ? <span className="wv-stale" role="status" data-wave="refresh-error">Could not refresh: {waves.error} <button type="button" className="wv-retry" onClick={waves.reload}>Try again</button></span> : null}
           </>
         )}
-        <button type="button" className="bt" data-wave="new" disabled={!!add || !!ui.composer} onClick={() => L.openComposer()} title={add ?? 'A new draft wave over the selection'}>+ New wave</button>
+        {writes
+          ? <button type="button" className="bt" data-wave="new" disabled={!!add || !!ui.composer} onClick={() => L.openComposer()} title={add ?? 'A new draft wave over the selection'}>+ New wave</button>
+          : <span className="wv-ro" data-wave="read-only">Waves are read-only here (BP_WRITES=off).</span>}
       </div>
-      {ui.composer ? <WaveComposer key={ui.composer.edit ?? 'new'} L={L} ask={ui.composer} /> : sel ? <WavePanel key={sel.id} L={L} w={sel} /> : null}
+      {ui.composer && writes ? <WaveComposer key={ui.composer.edit ?? 'new'} L={L} ask={ui.composer} /> : sel ? <WavePanel key={sel.id} L={L} w={sel} writes={writes} /> : null}
     </section>
   );
 }
 
-function WavePanel({ L, w }: { L: Ledger; w: Wave }) {
+function WavePanel({ L, w, writes }: { L: Ledger; w: Wave; writes: boolean }) {
   const { waves } = L, [ask, setAsk] = useState(false);
-  const state = waves.states.get(w.id) ?? 'draft', draft = w.status === 'draft', off = L.busy || waves.busy;
-  const can = (ids: readonly string[]) => ids.reduce((n, id) => n + (L.byId.get(id)?.can ? 1 : 0), 0);
+  const state = waves.states.get(w.id) ?? 'draft', draft = w.status === 'draft' && writes, off = L.busy || waves.busy;
+  // with writes off nothing can go: no Dispatch, Edit or Delete (the strip says why)
+  const can = (ids: readonly string[]) => (writes ? ids.reduce((n, id) => n + (L.byId.get(id)?.can ? 1 : 0), 0) : 0);
   const left = can(idsOf(w));
   return (
     <div className="wv-panel" data-wave-panel={w.id}>

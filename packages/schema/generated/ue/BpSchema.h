@@ -1199,6 +1199,65 @@ struct BPLINK_API FBpMeasurement
 	FString commit_sha;
 };
 
+/** v5: the score's breakdown, shipped with the number. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpScoreParts
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double impact = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double confidence_w = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double effort_div = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double risk_factor = 0.0;
+
+	/** scan-score/1 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString formula;
+};
+
+/** v5: a built change's before/after under one method, with its control. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpProof
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString metric;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString method;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString unit;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double before = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double after = 0.0;
+
+	/** one of: better, not-better, inconclusive */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString verdict;
+
+	/** one of: red, absent */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString control;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString base_sha;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString head_sha;
+};
+
 /** A backlog item. `standard` is <subject>/<technique> (registry), house:<subject>/<technique>, or none. A propagation item has parent_id = the baseline upgrade that spawned it. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpProposal
@@ -1335,6 +1394,68 @@ struct BPLINK_API FBpProposal
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString ranked_at;
+
+	/** v5 (scan-finding/1): severity of a defect or value of an opportunity */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 impact = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString impact_why;
+
+	/** one of: low, medium, high */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString confidence;
+
+	/** v5: build effort */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 effort = 0;
+
+	/** v5: scan-score/1, stored by the skill and never recomputed by a reader; omitted = unscored */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double score = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpScoreParts score_parts;
+
+	/** v5: omitted = ranked (the store default); reserve = verified and scored, over the run's cap. one of: ranked, reserve */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString band;
+
+	/** v5: true on the top finding of its lens in its run; omitted = false (only true is sent) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	bool mvp = false;
+
+	/** one of: top-score, override */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString mvp_rule;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString mvp_why;
+
+	/** one of: technical, product */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString category;
+
+	/** v5: the model's verdict, recorded before any person decided. one of: accept, reject, defer */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString predicted_verdict;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString predicted_why;
+
+	/** v5: <skill>@<version>:<model> */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString predicted_by;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString predicted_at;
+
+	/** v5: a machine decision (decided_by machine:lens-scan) may be vetoed by a person until then */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString veto_until;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpProof proof;
 };
 
 USTRUCT(BlueprintType)
@@ -1540,6 +1661,46 @@ struct BPLINK_API FBpRelease
 	FString updated_at;
 };
 
+/** v5: one row of the append-only autonomy ledger. slice = <category>|<lens>|<risk_class>|<size>, - for an absent part; levels 0 propose .. 3 auto-merge. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpTrustEvent
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 id = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString slice;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 from_level = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 to_level = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString reason;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	double agreement = 0.0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 n = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString item_id;
+};
+
 /** Everything the UI needs, on connect; the lens-scan store's tables. `activity` is the latest 200 rows. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpScanSnapshot
@@ -1577,6 +1738,10 @@ struct BPLINK_API FBpScanSnapshot
 	/** Oldest first; empty on a v1 store. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpRelease> releases;
+
+	/** v5, oldest first; empty on a v4 store, absent from a pre-v5 sender */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpTrustEvent> trust_events;
 };
 
 USTRUCT(BlueprintType)
@@ -1642,11 +1807,11 @@ struct BPLINK_API FBpScanJob
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. one of: measure, execute, release, prepare. required */
+	/** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. one of: measure, execute, release, prepare, propose. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString kind;
 
-	/** The lens a measure job scans, or a prepare job makes measurable */
+	/** The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString lens;
 

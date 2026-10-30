@@ -3,7 +3,9 @@
 // and effort. This hook loads the product's waves (listWaves: a live product's /waves routes, or Kettle's browser store),
 // refreshes them after every mutation and whenever a wave job changes status, and wraps the four mutations so a refusal
 // becomes a toast and the caller (the composer, the strip) gets a result to react to: null means nothing changed.
-// A failing list (501 before the routes land, a product with no store) reads as "no waves": the ledger never breaks on it.
+// A list the product cannot have (501 before the routes land, 404 for a product with no store) reads as "no waves"; any
+// other failure (a 5xx, the network, a malformed answer) is `error`, so the strip says the list was not read and offers a
+// retry instead of asserting the product has none. Either way the ledger never breaks on it.
 // Derived here, once per change, for the views: each wave's state (waveState over the product's jobs), the finding ->
 // wave/package map (waveOfId) and the ids held by a DRAFT wave (a finding may sit in one draft wave only).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +30,11 @@ export interface WavesModel {
   /** The first list has come back (either way). Before it, an empty `waves` means "not asked yet", NOT "none": a
    *  surface that cannot tell the two apart asserts a product has no waves while the request is still open. */
   loaded: boolean;
+  /** The last list failed for a reason other than "this product has no waves" (a 5xx, the network): its words. Null
+   *  when the last list answered. `waves` keeps what was read before, so a failed reload never empties the strip. */
+  error: string | null;
+  /** Ask for the list again (the strip's Try again). */
+  reload(): void;
   /** What one package reads as: the wave's state over that package's jobs alone ('draft' = not dispatched). */
   packageState(w: Wave, p: WavePackage): WaveState;
   create(body: WaveBody): Promise<Wave | null>;
@@ -36,6 +43,9 @@ export interface WavesModel {
   /** Dispatch the wave (default: every package) or the named packages. A 429 midway still answers with what was queued. */
   dispatch(id: string, packages?: string[]): Promise<WaveDispatchResult | null>;
 }
+
+/** The answers that mean "this product has no waves" rather than "the list could not be read". */
+const NONE_STATUS = new Set([404, 501]);
 
 interface Refusal { status?: number; body?: { taken?: string[]; wave?: Wave; jobs?: ScanJob[] } }
 const refusal = (e: unknown) => e as Refusal;
@@ -52,6 +62,7 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   const [waves, setWaves] = useState<readonly Wave[]>(NO_WAVES);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const ctxRef = useRef(ctx);
   ctxRef.current = ctx;
   const key = ctx.slug ?? 'kettle';
@@ -61,14 +72,17 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   const load = useCallback(async (live: { on: boolean }) => {
     try {
       const w = await listWaves(ctxRef.current);
-      if (live.on) setWaves(Array.isArray(w) && w.length ? w : NO_WAVES);
-    } catch {
-      if (live.on) setWaves(NO_WAVES); // 501 / no store / offline: no waves, the ledger carries on
+      if (live.on) { setWaves(Array.isArray(w) && w.length ? w : NO_WAVES); setError(null); }
+    } catch (e) {
+      if (!live.on) return;
+      const st = refusal(e).status;
+      if (st !== undefined && NONE_STATUS.has(st)) { setWaves(NO_WAVES); setError(null); } // 501 / no store: no waves
+      else setError(refusalText(e)); // 5xx / offline: not read, and not "none"
     } finally {
       if (live.on) setLoaded(true); // asked and answered, however it answered
     }
   }, []);
-  useEffect(() => { setWaves(NO_WAVES); setLoaded(false); }, [key]);
+  useEffect(() => { setWaves(NO_WAVES); setLoaded(false); setError(null); }, [key]);
   useEffect(() => {
     const live = { on: true };
     void load(live);
@@ -91,6 +105,7 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
     }
   }, [E, load]);
 
+  const reload = useCallback(() => { void load({ on: true }); }, [load]);
   const create = useCallback((body: WaveBody) => run('Wave not created', () => createWave(ctxRef.current, body)), [run]);
   const update = useCallback((id: string, patch: Partial<WaveBody>) => run('Wave not saved', () => updateWave(ctxRef.current, id, patch)), [run]);
   const remove = useCallback(async (id: string) => (await run('Wave not deleted', () => deleteWave(ctxRef.current, id))) !== null, [run]);
@@ -111,6 +126,6 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   }, [waves]);
   const packageState = useCallback((w: Wave, p: WavePackage): WaveState => waveState({ ...w, jobs: (w.jobs ?? []).filter((j) => j.package === p.id) }, jobs), [jobs]);
 
-  return useMemo(() => ({ waves, states, waveOf, draftOf, busy, loaded, packageState, create, update, remove, dispatch }),
-    [waves, states, waveOf, draftOf, busy, loaded, packageState, create, update, remove, dispatch]);
+  return useMemo(() => ({ waves, states, waveOf, draftOf, busy, loaded, error, reload, packageState, create, update, remove, dispatch }),
+    [waves, states, waveOf, draftOf, busy, loaded, error, reload, packageState, create, update, remove, dispatch]);
 }

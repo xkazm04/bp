@@ -21,7 +21,10 @@
 //                                      same packs and numbers Kettle `/` shows): packs k-des-1, k-des-2, k-perf-1 with
 //                                      their execute runs, built items (done, failed, a rework and its rebuild), phased
 //                                      readings whose baselines end on the map's facet values, two items accepted
-//                                      and a draft release of them (`train`)
+//                                      and a draft release of them (`train`); v5 (scan-finding/1): the 7 proposals carry
+//                                      impact / confidence / effort and the stored scan-score/1 score (one MVP per lens,
+//                                      one an override, an unscored one, a reserve one, a proof), predictions, a machine
+//                                      decision inside its veto window, and three trust_events rows
 //   .ai/lens-scan/shots/...            the placeholder PNGs (the train's item shots as PNGs under shots/<run>/)
 // and registers slug `kettle-live` in bp.products.local.json (create or merge; idempotent). An existing
 // store is kept (a running blueprint stream may hold it open); --reset recreates it.
@@ -75,6 +78,21 @@ const clamp = (m, v) => { const r = m.int ? Math.round(v) : Math.round(v * 10) /
 /** A seeded move of up to 15% either way (of the value, or of 1 when it is smaller), clamped to the field's range. */
 const drift = (m, v, label) => clamp(m, v + (seeded(label)() - 0.5) * 0.3 * Math.max(Math.abs(v), 1));
 const iso = (ms) => new Date(ms).toISOString();
+
+// scan-score/1 (the contract's formula, scan-finding/1): the PRODUCER computes it and stores it; this demo stands in for the
+// producer. A reader (the blueprint) never recomputes it. The contract's reference values are checked before anything is written.
+const CONF_W = { low: 0.5, medium: 0.75, high: 0.95 };
+const round1 = (x) => Math.round(x * 10) / 10;
+function scanScore(impact, confidence, effort, risk) {
+  const confidence_w = CONF_W[confidence] ?? 0.5, effort_div = 1 + (effort - 1) / 9, risk_factor = risk === undefined ? 0.75 : 1 - (risk - 1) / 20;
+  return { score: round1((10 * impact * confidence_w) / effort_div * risk_factor), score_parts: { impact, confidence_w, effort_div: round1(effort_div * 1000) / 1000, risk_factor, formula: 'scan-score/1' } };
+}
+for (const [args, want] of [[[10, 'high', 1, 1], 95.0], [[8, 'medium', 4, 3], 40.5], [[3, 'high', 1, 1], 28.5], [[5, 'low', 10, 10], 6.9]]) {
+  const got = scanScore(...args).score;
+  if (got !== want) { console.error(`scan-score/1 reference ${JSON.stringify(args)}: got ${got}, want ${want}`); process.exit(2); }
+}
+/** A v5 finding's judgement: impact, its reason, confidence, effort, and the stored score with its breakdown. */
+const finding = (impact, confidence, effort, risk, why) => ({ impact, impact_why: why, confidence, effort, ...scanScore(impact, confidence, effort, risk) });
 
 
 // ------------------------------------------------------------------------------- a tiny valid PNG
@@ -181,33 +199,53 @@ function seed() {
     }
   }
   const P = (id, o) => insert(db, 'proposals', { id, run_id: 'run-demo-b', standard: 'none', kind: 'fix', status: 'proposed', created_at: iso(B + 30 * 60e3), updated_at: iso(B + 30 * 60e3), ...o });
+  // v5 (scan-finding/1): the judgement a v5 scan stores with each finding (the demo stands in for the producer, so it computes
+  // scan-score/1 here, as lens-scan does; the blueprint itself never does), its prediction, and a machine decision
+  const predicted = (verdict, why) => ({ predicted_verdict: verdict, predicted_why: why, predicted_by: 'lens-scan@demo:sample', predicted_at: iso(B + 30 * 60e3) });
   const body = (s) => `## Summary\n${s}\n\n## Expected impact\nSee the metric and expected delta.\n\n## Evaluation\nRe-measure after the change.`;
   const cover = (f, standard, state, evidence) => insert(db, 'coverage', { feature: f, standard, state, evidence, judged_at: iso(B + 25 * 60e3), run_id: 'run-demo-b' });
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   if (SPLIT) {
-    P('prop-demo-1', { feature: SPLIT.f, lens: 'development', metric: 'bundleKb', title: `Split the ${SPLIT.f} bundle by route`, body: body(`${SPLIT.v} KB, the largest bundle share the map reads.`), standard: 'performance/code-splitting', expected_delta: -Math.max(1, Math.round(SPLIT.v * 0.3)), size: 'S', risk: 3 });
+    P('prop-demo-1', { feature: SPLIT.f, lens: 'development', metric: 'bundleKb', title: `Split the ${SPLIT.f} bundle by route`, body: body(`${SPLIT.v} KB, the largest bundle share the map reads.`), standard: 'performance/code-splitting', expected_delta: -Math.max(1, Math.round(SPLIT.v * 0.3)), size: 'S', risk: 3,
+      ...finding(7, 'high', 2, 3, `${SPLIT.v} KB on first load of every route`), category: 'technical', risk_class: 'perf', mvp: 1, mvp_rule: 'top-score', ...predicted('accept', 'like the code-splitting fixes approved before') });
     cover(SPLIT.f, 'performance/code-splitting', 'deviation', 'one bundle for every route');
   }
   if (QUERY) {
-    P('prop-demo-2', { feature: QUERY.f, lens: 'security', metric: 'findingsHigh', title: `Parameterise the ${QUERY.f} lookup query`, body: body(`${plural(QUERY.v, 'high finding', 'high findings')}: string-built queries.`), standard: 'security/parameterised-queries', expected_delta: -QUERY.v, size: 'XS', risk: 8 });
+    P('prop-demo-2', { feature: QUERY.f, lens: 'security', metric: 'findingsHigh', title: `Parameterise the ${QUERY.f} lookup query`, body: body(`${plural(QUERY.v, 'high finding', 'high findings')}: string-built queries.`), standard: 'security/parameterised-queries', expected_delta: -QUERY.v, size: 'XS', risk: 8,
+      ...finding(9, 'high', 1, 8, 'string-built SQL on a lookup any caller reaches'), category: 'technical', risk_class: 'secret', mvp: 1, mvp_rule: 'top-score', ...predicted('accept', 'no precedent: a high finding on a main path') });
     cover(QUERY.f, 'security/parameterised-queries', 'deviation', plural(QUERY.v, 'string-built query', 'string-built queries'));
   }
   if (LABELS) {
-    P('prop-demo-3', { feature: LABELS.f, lens: 'design', metric: 'axeViolations', title: `Label the ${LABELS.f} form controls`, body: body('Inputs without labels.'), standard: 'accessibility/form-labels', expected_delta: -LABELS.v, size: 'S', risk: 2, status: 'approved', decided_by: 'blueprint', decided_at: iso(B + 35 * 60e3), updated_at: iso(B + 35 * 60e3) });
+    P('prop-demo-3', { feature: LABELS.f, lens: 'design', metric: 'axeViolations', title: `Label the ${LABELS.f} form controls`, body: body('Inputs without labels.'), standard: 'accessibility/form-labels', expected_delta: -LABELS.v, size: 'S', risk: 2, status: 'approved',
+      // decided by the machine under L1 (its slice, product|design|ux|S, is at level 1 in trust_events below): a person may veto it for 24 h
+      decided_by: 'machine:lens-scan', decided_at: iso(B + 35 * 60e3), updated_at: iso(B + 35 * 60e3), decision_note: 'auto-triage: predicted accept (L1)', veto_until: iso(B + 35 * 60e3 + 24 * 3600e3),
+      ...finding(6, 'medium', 2, 2, 'screen readers cannot name the booking inputs'), category: 'product', risk_class: 'ux',
+      mvp: 1, mvp_rule: 'override', mvp_why: 'the unlabelled inputs block screen-reader users on the booking path; the text floor scores higher but is built already',
+      ...predicted('accept', 'like the form-label fixes approved on two other features') });
     cover(LABELS.f, 'accessibility/form-labels', 'deviation', plural(LABELS.v, 'unlabelled input', 'unlabelled inputs'));
   }
   if (HELPERS) {
-    P('prop-demo-4', { feature: HELPERS.f, lens: 'development', metric: 'dupSites', title: `Fold the duplicated date helpers in ${HELPERS.f}`, standard: 'house:code/one-helper', expected_delta: -Math.ceil(HELPERS.v / 2), size: 'M', risk: 4, status: 'declined', decided_by: 'blueprint', decided_at: iso(B + 36 * 60e3), decision_note: 'Not before the release', updated_at: iso(B + 36 * 60e3) });
+    P('prop-demo-4', { feature: HELPERS.f, lens: 'development', metric: 'dupSites', title: `Fold the duplicated date helpers in ${HELPERS.f}`, standard: 'house:code/one-helper', expected_delta: -Math.ceil(HELPERS.v / 2), size: 'M', risk: 4, status: 'declined', decided_by: 'blueprint', decided_at: iso(B + 36 * 60e3), decision_note: 'Not before the release', updated_at: iso(B + 36 * 60e3),
+      ...finding(3, 'low', 4, 4, 'two copies of one helper; no defect seen'), category: 'technical', risk_class: 'debt', ...predicted('reject', 'helper folds were declined before a release') });
     cover(HELPERS.f, 'house:code/one-helper', 'not-applicable', undefined);
   }
   if (RAISED) {
-    P('prop-demo-5', { feature: RAISED.f, lens: 'design', metric: 'minTextPx', title: `Raise the text floor to ${FLOOR} px`, body: body(`House rule: no text below ${FLOOR} px.`), standard: 'house:design/text-floor', expected_delta: 1, size: 'M', risk: 5, kind: 'baseline-upgrade', status: 'done', decided_by: 'blueprint', decided_at: iso(B + 32 * 60e3), after_value: FLOOR, result_sha: 'demo0001', updated_at: iso(B + 38 * 60e3) });
+    P('prop-demo-5', { feature: RAISED.f, lens: 'design', metric: 'minTextPx', title: `Raise the text floor to ${FLOOR} px`, body: body(`House rule: no text below ${FLOOR} px.`), standard: 'house:design/text-floor', expected_delta: 1, size: 'M', risk: 5, kind: 'baseline-upgrade', status: 'done', decided_by: 'blueprint', decided_at: iso(B + 32 * 60e3), after_value: FLOOR, result_sha: 'demo0001', updated_at: iso(B + 38 * 60e3),
+      ...finding(5, 'medium', 4, 5, 'captions below the house floor on several screens'), category: 'product', risk_class: 'ux',
+      proof: { metric: 'minTextPx', method: 'judgement', unit: 'px', before: FLOOR - 1, after: FLOOR, verdict: 'better', control: 'red', base_sha: 'demo0000', head_sha: 'demo0001' } });
     cover(RAISED.f, 'house:design/text-floor', 'conformant', `min ${FLOOR} px after prop-demo-5`);
     for (const [n, x] of BELOW.entries()) {
-      P(`prop-demo-${6 + n}`, { feature: x.f, lens: 'design', metric: 'minTextPx', title: `Apply the ${FLOOR} px text floor to ${x.f}`, standard: 'house:design/text-floor', expected_delta: FLOOR - x.v, size: 'XS', risk: 2, kind: 'propagation', parent_id: 'prop-demo-5' });
+      // the first child is a v5 finding with no effort judged (unscored: never a 0), the second is over the run's cap (reserve)
+      P(`prop-demo-${6 + n}`, { feature: x.f, lens: 'design', metric: 'minTextPx', title: `Apply the ${FLOOR} px text floor to ${x.f}`, standard: 'house:design/text-floor', expected_delta: FLOOR - x.v, size: 'XS', risk: 2, kind: 'propagation', parent_id: 'prop-demo-5',
+        category: 'product', risk_class: 'ux', ...(n === 0 ? { impact: 4, impact_why: `captions at ${x.v} px`, confidence: 'low' } : { ...finding(4, 'medium', 1, 2, `captions at ${x.v} px`), band: 'reserve' }) });
       cover(x.f, 'house:design/text-floor', 'deviation', `captions at ${x.v} px`);
     }
   }
+  // v5: the autonomy ledger lens-scan keeps (the blueprint reads it, never writes it)
+  const trust = (slice, from, to, reason, agreement, n) => insert(db, 'trust_events', { at: iso(B + 20 * 60e3), slice, from_level: from, to_level: to, reason, agreement, n });
+  trust('technical|development|perf|S', 2, 3, 'promote: agreement', 0.95, 20);
+  trust('product|design|ux|S', 0, 1, 'promote: agreement', 0.9, 20);
+  trust('technical|security|secret|XS', 2, 1, 'overlay: ceiling secret');
   train(db, now);
   db.exec('COMMIT');
   db.close();

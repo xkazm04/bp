@@ -187,6 +187,7 @@
 #flyout.wide .st { font: 500 12px var(--mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); }
 #flyout.wide .st.running { color: var(--mint-2); }
 #flyout.wide .st.queued { color: var(--amber-2); }
+#flyout.wide .st.stale { color: var(--amber-2); }
 #flyout.wide .st.failed, #flyout.wide .st.cancelled { color: var(--red-2); }
 #flyout.wide .wb-kick .st { padding: 1px 7px; border: 1px solid currentColor; }
 #flyout.wide .wb-row .bar, #flyout.wide .wb-row .wstk { display: flex; height: 4px; margin-top: 3px; background: var(--ink-4); overflow: hidden; }

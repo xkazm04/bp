@@ -17,6 +17,7 @@ layers (the note, full width, the panel, the selection); the table head is 34 px
 A/1's 66 px). Exit 1 on any failure.
 """
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -47,6 +48,15 @@ STATE_JS = """() => {
 }"""
 TITLE_JS = "(id) => document.querySelector('[data-fid=\"' + id + '\"] [data-role=tr-row-title] > span')?.textContent"
 NOTE_JS = "(id) => document.querySelector('[data-fid=\"' + id + '\"] [data-role=tr-row-title] small')?.textContent ?? ''"
+
+
+def compare_modes():
+    """The compare panel's screen modes in M's order, lower-cased, read from the one list the page reads
+    (apps/web/src/components/ledger/train/keymap.ts COMPARE_MODES): a mode added there is a press more here, not a
+    drive that fails on every run."""
+    src = (Path(__file__).resolve().parents[2] / 'apps/web/src/components/ledger/train/keymap.ts').read_text(encoding='utf-8')
+    body = re.search(r'COMPARE_MODES\s*=\s*\[(.*?)\]\s*as const', src, re.S)
+    return [m.lower() for m in re.findall(r"label:\s*'([^']+)'", body.group(1))] if body else []
 
 
 def check(name, ok, detail=''):
@@ -80,8 +90,13 @@ def key(pg, k, settle=250):
 
 
 def load(pg, url):
+    """Open the ledger and switch it to the In packs scope: it opens on the Backlog (useLedger.ts's default scope), whose
+    rows are findings, not the pack items every check here drives."""
     pg.goto(url, wait_until='domcontentloaded')
-    pg.wait_for_selector('[data-role=tr-row]', timeout=120000)
+    scope = '[data-role=tr-seg][aria-label=Scope] button:has-text("In packs")'
+    pg.wait_for_selector(scope, timeout=120000)
+    pg.click(scope)
+    pg.wait_for_selector('[data-role=tr-row]', timeout=30000)
     pg.wait_for_timeout(2500)
 
 
@@ -171,11 +186,12 @@ def kettle(pg, shots):
     pg.wait_for_timeout(600)
     v0 = pg.evaluate(STATE_JS)
     seen_m = [v0['mode']]
-    for _ in range(4):
+    modes = compare_modes()
+    for _ in range(len(modes)):
         key(pg, 'm')
         seen_m.append(pg.evaluate(STATE_JS)['mode'])
     ml = [m.lower() for m in seen_m if m]
-    check('M cycles side by side, slider, blink, change map and back', ml == ['side by side', 'slider', 'blink', 'change map', 'side by side'], seen_m)
+    check('M cycles every compare mode (%s) and back' % ', '.join(modes), len(modes) >= 2 and ml == modes + modes[:1], seen_m)
 
     # the slider: dragging changes --cut on the frame and nothing else re-renders. The table, the panel and the bar are
     # snapshotted (the frame's style left out) before and after the drag and must be identical; no node is added or

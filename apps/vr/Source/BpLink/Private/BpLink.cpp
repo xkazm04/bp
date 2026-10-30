@@ -853,9 +853,12 @@ void FBpLinkModule::AddToDraft(const TArray<FString>& ProposalIds, TFunction<voi
 			if (Index == 0) Ids.Append(Fresh);
 			Packages.Add(Package(Each.name, Each.model, Each.effort, Ids));
 		}
+		// A draft with no packages: the loop added nothing, and the PATCH would replace the packages with [] and drop the
+		// findings behind a 200. They go into a first package instead, as a new wave's do.
+		if (Packages.Num() == 0) Packages.Add(Package(TEXT("Package 1"), TEXT("opus"), TEXT("high"), Fresh));
 		Verb = TEXT("PATCH");
 		Path = TEXT("/waves/") + Draft->id;
-		Note = FString::Printf(TEXT("%s added to draft %s (\"%s\") package %s"), *Adding, *Draft->id, *Draft->name, Draft->packages.Num() > 0 ? *Draft->packages[0].name : TEXT("?"));
+		Note = FString::Printf(TEXT("%s added to draft %s (\"%s\") package %s"), *Adding, *Draft->id, *Draft->name, Draft->packages.Num() > 0 ? *Draft->packages[0].name : TEXT("Package 1"));
 	}
 	Body->SetArrayField(TEXT("packages"), Packages);
 	FString Text;

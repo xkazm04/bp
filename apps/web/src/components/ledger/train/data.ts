@@ -23,6 +23,9 @@ export interface TrainData {
   jobs: readonly ScanJob[];
   /** The product's lenses (each carries its manifest: a metric's `better` direction, units, targets). */
   lenses: readonly LensDef[];
+  /** The scan snapshot has arrived. Before it, the empty arrays below mean "not answered yet", NOT "none": a surface
+   *  that cannot tell the two apart tells a person who has packs that they have none while the snapshot loads. */
+  arrived: boolean;
 }
 
 const NONE: readonly never[] = [];
@@ -32,7 +35,7 @@ export function useTrain(): TrainData {
   const { proposals, jobs, scan } = useFindings();
   const lenses = M.P.lenses;
   return useMemo(() => ({
-    slug, ctx, proposals, jobs, lenses,
+    slug, ctx, proposals, jobs, lenses, arrived: scan !== undefined,
     byId: new Map(proposals.map((p) => [p.id, p])),
     packs: scan?.packs ?? NONE,
     releases: scan?.releases ?? NONE,
