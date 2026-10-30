@@ -46,7 +46,8 @@
         "shots": { "type": "array", "items": { "$ref": "#/$defs/shot" } },
         "coverage": { "type": "array", "items": { "$ref": "#/$defs/coverage" } },
         "packs": { "type": "array", "items": { "$ref": "#/$defs/pack" }, "description": "Empty on a v1 store." },
-        "releases": { "type": "array", "items": { "$ref": "#/$defs/release" }, "description": "Oldest first; empty on a v1 store." }
+        "releases": { "type": "array", "items": { "$ref": "#/$defs/release" }, "description": "Oldest first; empty on a v1 store." },
+        "trust_events": { "type": "array", "items": { "$ref": "#/$defs/trustEvent" }, "description": "v5, oldest first; empty on a v4 store, absent from a pre-v5 sender." }
       }
     },
     "run": {
@@ -129,7 +130,69 @@
         "tier": { "type": "integer", "minimum": 0, "maximum": 3, "description": "v4: severity, 0 stop-ship, 1 before production, 2 soon after, 3 backlog; omitted = untriaged." },
         "risk_class": { "enum": ["secret", "authz", "money", "data", "llm", "perf", "reliability", "ux", "debt"] },
         "ranked_by": { "type": "string" },
-        "ranked_at": { "type": "string" }
+        "ranked_at": { "type": "string" },
+        "impact": { "type": "integer", "minimum": 1, "maximum": 10, "description": "v5 (scan-finding/1): severity of a defect or value of an opportunity." },
+        "impact_why": { "type": "string" },
+        "confidence": { "enum": ["low", "medium", "high"] },
+        "effort": { "type": "integer", "minimum": 1, "maximum": 10, "description": "v5: build effort." },
+        "score": { "type": "number", "description": "v5: scan-score/1, stored by the skill and never recomputed by a reader; omitted = unscored." },
+        "score_parts": { "$ref": "#/$defs/scoreParts" },
+        "band": { "enum": ["ranked", "reserve"], "description": "v5: omitted = ranked (the store default); reserve = verified and scored, over the run's cap." },
+        "mvp": { "type": "boolean", "description": "v5: true on the top finding of its lens in its run; omitted = false (only true is sent)." },
+        "mvp_rule": { "enum": ["top-score", "override"] },
+        "mvp_why": { "type": "string" },
+        "category": { "enum": ["technical", "product"] },
+        "predicted_verdict": { "enum": ["accept", "reject", "defer"], "description": "v5: the model's verdict, recorded before any person decided." },
+        "predicted_why": { "type": "string" },
+        "predicted_by": { "type": "string", "description": "v5: <skill>@<version>:<model>." },
+        "predicted_at": { "type": "string" },
+        "veto_until": { "type": "string", "description": "v5: a machine decision (decided_by machine:lens-scan) may be vetoed by a person until then." },
+        "proof": { "$ref": "#/$defs/proof" }
+      }
+    },
+    "scoreParts": {
+      "description": "v5: the score's breakdown, shipped with the number.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "impact": { "type": "number" },
+        "confidence_w": { "type": "number" },
+        "effort_div": { "type": "number" },
+        "risk_factor": { "type": "number" },
+        "formula": { "type": "string", "description": "scan-score/1." }
+      }
+    },
+    "proof": {
+      "description": "v5: a built change's before/after under one method, with its control.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metric": { "type": "string" },
+        "method": { "type": "string" },
+        "unit": { "type": "string" },
+        "before": { "type": "number" },
+        "after": { "type": "number" },
+        "verdict": { "enum": ["better", "not-better", "inconclusive"] },
+        "control": { "enum": ["red", "absent"] },
+        "base_sha": { "type": "string" },
+        "head_sha": { "type": "string" }
+      }
+    },
+    "trustEvent": {
+      "description": "v5: one row of the append-only autonomy ledger. slice = <category>|<lens>|<risk_class>|<size>, - for an absent part; levels 0 propose .. 3 auto-merge.",
+      "type": "object",
+      "required": ["id", "at", "slice", "from_level", "to_level", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer" },
+        "at": { "type": "string" },
+        "slice": { "type": "string" },
+        "from_level": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "to_level": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "reason": { "type": "string" },
+        "agreement": { "type": "number", "minimum": 0, "maximum": 1 },
+        "n": { "type": "integer" },
+        "item_id": { "type": "string" }
       }
     },
     "proposalStatus": { "enum": ["proposed", "approved", "declined", "executing", "done", "failed", "accepted", "rework", "descoped", "released"] },
@@ -235,8 +298,8 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "kind": { "enum": ["measure", "execute", "release", "prepare"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse." },
-        "lens": { "type": "string", "description": "The lens a measure job scans, or a prepare job makes measurable." },
+        "kind": { "enum": ["measure", "execute", "release", "prepare", "propose"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements." },
+        "lens": { "type": "string", "description": "The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable." },
         "scope": { "$ref": "#/$defs/scanScope" },
         "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
         "release": { "type": "string", "description": "A release job's release id (rel-<version>)." },

@@ -34,6 +34,11 @@
 // findings, the selected wave's packages with Dispatch wave / remaining / Edit / Delete, and the inline composer
 // (waves/WaveComposer.tsx) that "Add to wave" in the dispatch bar opens. Its controls keep their own keys (`.lg-waves`).
 //
+// v5 (scan-finding/1): the lens MVPs strip (variants/MvpStrip.tsx) tops the Backlog scope above the wave strip; the top bar
+// carries Every lens (a live product: ONE measure or propose job over every enabled lens) and Trust (TrustPanel.tsx, the
+// store's autonomy ledger, read only). The table's Score cell, predicted verdict, machine mark and reserve groups are
+// variants/Triage.tsx's; the veto of a machine decision is the Review flyout's (rail/wide/review.tsx).
+//
 // Mount: through `LedgerPageLazy` (Phone.tsx: React.lazy, its own chunk), `<LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} />` in BlueprintApp's Chrome
 // (it renders nothing unless the store's `page` is 'ledger'); the slots take the Lenses button and panel.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -48,6 +53,9 @@ import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelecti
 import { setLensesPanelOpen } from './lens/LensesPanel';
 import { DispatchBar, Triage } from './variants/Triage';
 import { WavesBar } from './waves/WavesBar';
+import { MvpStrip } from './variants/MvpStrip';
+import { TrustPanel } from './TrustPanel';
+import { refusalText, startAllLenses } from '@/lib/scan/actions';
 import { Matrix } from './variants/Matrix';
 import { PackTable } from './train/PackTable';
 import { DecisionBar } from './train/DecisionBar';
@@ -187,7 +195,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       if (k === 'Escape') { e.preventDefault(); if (ui.q) set((u) => ({ ...u, q: '' })); else root.current?.focus(); }
       return;
     }
-    if (t.closest('.lg-side, .lg-pop, .lg-waves')) return; // the Lenses panel, the lens menus and the wave strip keep their own keys
+    if (t.closest('.lg-side, .lg-pop, .lg-waves, .lg-trust')) return; // the Lenses panel, the lens menus, the wave strip and the trust panel keep their own keys
     const ctl = isControl(t), a = keyAction(cmpOpen ? ['compare', scope] : [scope], k);
     if (!a || ((a === 'select' && k === ' ') || a === 'open') && ctl) return;
     if (phone && (a === 'view1' || a === 'view2' || a === 'view3')) return;
@@ -234,6 +242,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       : packs ? <PackTable L={L} sample={!live} onLenses={() => setLensesPanelOpen(true)} /> : <Triage L={L} />;
   // the wave strip tops the Backlog scope (the table or the matrix, whose rows the selected wave filters); In packs and Release have none
   const waveStrip = lv !== 'release' && !packs ? <WavesBar L={L} /> : null;
+  // the lens MVPs (v5) top the Backlog scope's table and matrix, above the wave strip
+  const mvpStrip = lv !== 'release' && !packs ? <MvpStrip L={L} /> : null;
   // the compare panel (WP4b) docks beside the table while a pack item is open; the release tab and the backlog have none
   const cmp = cmpOpen && lv !== 'release' ? (
     <ComparePanel id={ui.open!} view={ui.cmp} wide={ui.wide} phone={phone}
@@ -263,11 +273,13 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
           </div>
         )}
         {!phone && ui.sel.size ? <SelScan L={L} /> : null}
+        {!phone && live ? <AllLenses /> : null}
+        {!phone ? <TrustPanel L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
       </header>
       {lv !== 'release' ? <Filters L={L} filter={filter} menus={!phone} /> : null}
       <div className="lg-main">
-        <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{waveStrip}{view}</div>
+        <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{mvpStrip}{waveStrip}{view}</div>
         {cmp}
         {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>
@@ -411,6 +423,33 @@ function LensMenuBody({ l, close }: { l: LensCol; close: () => void }) {
       {writes ? item('Execute backlog (' + n + ')', exBlock, () => setAsk(true), n > EXEC_BATCH ? 'in jobs of ' + EXEC_BATCH : undefined) : null}
       {item('Open in Lenses panel', null, () => { close(); setLensesPanelOpen(true, l.id); })}
     </>
+  );
+}
+
+/** "Every lens": ONE measure or propose job over every enabled lens (`/lens-scan measure|propose --lens all`; one of the
+ *  MAX_RUNNING slots). A live product only (the sample scans a lens at a time); single-lens jobs stay on the lens chips. */
+function AllLenses() {
+  const pop = usePop();
+  const E = useEngine(), ctx = useScanCtx();
+  const go = (phase: 'measure' | 'propose') => {
+    pop.close();
+    startAllLenses(ctx, phase).then(
+      (j) => E.toast(phase === 'measure' ? 'Scanning every lens' : 'Proposing for every lens', 'one job (' + j.id + '): readings fill the plan as they come'),
+      (e) => E.toast(phase === 'measure' ? 'Could not start the every-lens scan' : 'Could not start the every-lens propose', refusalText(e)),
+    );
+  };
+  return (
+    <div className="lg-selscan">
+      <button ref={pop.btn} type="button" className="bt" aria-haspopup="true" aria-expanded={pop.open} onClick={() => pop.setOpen(!pop.open)}
+        title="Measure, or propose from the latest readings, through every enabled lens in one job">Every lens</button>
+      {pop.open ? (
+        <div ref={pop.box} className="lg-pop end" role="group" aria-label="Every lens" data-keys="own" onKeyDown={pop.onKey} onBlur={pop.onBlur}>
+          <div className="lg-pop-h">One job over every enabled lens</div>
+          <button type="button" className="lg-mi" data-all="measure" onClick={() => go('measure')}><span>Measure every lens</span><small>/lens-scan measure --lens all</small></button>
+          <button type="button" className="lg-mi" data-all="propose" onClick={() => go('propose')}><span>Propose for every lens</span><small>/lens-scan propose --lens all</small></button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

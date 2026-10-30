@@ -18,6 +18,7 @@ import { FRESH_MS } from '../../../scan/live-plan.ts';
 import { PRODUCTS_FILE, hasStore, readRegistry, storeDir, storeFile } from '../../products.server.ts';
 import { readSnapshot } from '../../store.server.ts';
 import { gapScore, rankGaps, rankInbox, rankValue, type Ranked } from './rank.ts';
+import { worthOf } from '../../../scan/score.ts';
 import { readRecommendations } from './door.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('views.server.ts is server-only');
@@ -55,7 +56,7 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
       const rec = recs[`${p.slug}:${x.id}`];
       out.push({
         product: p.slug, id: x.id, kind, title: x.title, ...(x.tier !== undefined ? { tier: x.tier } : {}),
-        ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), value: ev.get(x.id) ?? 0,
+        ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), worth: worthOf(x, ev),
         ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why, ...(rec.brief ? { brief: rec.brief.lines } : {}) } } : {}),
       });
     }

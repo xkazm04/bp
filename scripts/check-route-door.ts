@@ -42,6 +42,7 @@ const SPECS: Spec[] = [
   { file: 'products/[slug]/waves/[wave]', verb: 'DELETE', params: { wave: 'w1' }, store: true, kettle: { id: 'w1' } },
   { file: 'products/[slug]/waves/[wave]/dispatch', verb: 'POST', params: { wave: 'w1' }, body: {}, store: true, kettle: { dispatched: 1 }, kettleStatus: 202 },
   { file: 'products/[slug]/proposals/[id]', verb: 'POST', params: { id: 'p1' }, body: { decision: 'approve' }, store: true },
+  { file: 'products/[slug]/proposals/[id]/veto', verb: 'POST', params: { id: 'p1' }, body: { reason: 'not this one' }, store: true },
   { file: 'products/[slug]/triage', verb: 'POST', params: {}, body: { ids: ['p1'], decision: 'accept' }, store: true },
   { file: 'products/[slug]/releases/suggest', verb: 'GET', params: {} },
   { file: 'products/[slug]/commits/[sha]', verb: 'GET', params: { sha: 'abcdef1' }, store: true },

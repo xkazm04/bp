@@ -11,7 +11,11 @@
 //     proposal/phase/commit, and a v1 store (no v2 tables or columns) reads them empty without an error;
 //   - v4: a ranked, imported row carries tier, risk_class, origin, external_ref/url, ranked_by/at; a scan row omits
 //     origin ('scan' is the absent value) and every NULL v4 column; a v3 store (no v4 columns) reads the same way;
-//     the train's wire door takes the v4 keys and refuses a bad one; the review queue orders by tier first.
+//     the train's wire door takes the v4 keys and refuses a bad one; the review queue orders by tier first;
+//   - v5 (scan-finding/1): the finding keys (score stored, never recomputed; score_parts/proof parsed; band 'ranked' and mvp 0
+//     omitted), trust_events in the snapshot and the delta, trust levels (latest to_level, else the start, capped), the veto
+//     CAS (store.server.ts veto) and its refusals, the wire door's v5 keys, one score (stored, est., unscored; never 0) and a
+//     v4 store (no v5 columns, no trust_events) reading with none of it.
 // Run: node scripts/check-scan-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
 // The store lives in the OS temp dir and is removed on exit.
 import fs from 'node:fs';
@@ -19,7 +23,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
-import { advance, close, newCursor, openRead, readDelta, readSnapshot, snapshotOf } from '../packages/core/src/server/store.server.ts';
+import { advance, close, newCursor, openRead, parseDecision, parseVeto, readDelta, readSnapshot, snapshotOf, veto } from '../packages/core/src/server/store.server.ts';
+import { byWorth, estValue, worthOf, worthText } from '../packages/core/src/scan/score.ts';
+import { ceilingOf, startOf, trustSlices, vetoable } from '../packages/core/src/scan/trust.ts';
 import { swarmFromScan } from '../apps/web/src/lib/scan/client.ts';
 import { latestReading } from '../packages/core/src/scan/derive.ts';
 import { scopeFeatures } from '../packages/core/src/scan/scope.ts';
@@ -249,6 +255,104 @@ try {
       const c3 = newCursor(); advance(c3, readSnapshot(r3!));
       check('v3 store: a delta reads too', readDelta(r3!, c3).proposals.length === 0);
     } finally { close(r3); }
+  }
+
+  // ---- v5 (scan-finding/1): the finding fields, the trust ledger, the veto CAS; a v4 store reads with none of it
+  {
+    const T5 = '2026-10-29T10:00:00Z', FUTURE = '2999-01-01T00:00:00Z', PAST = '2000-01-01T00:00:00Z';
+    const V5 = ['impact', 'impact_why', 'confidence', 'effort', 'score', 'score_parts', 'band', 'mvp', 'mvp_rule', 'mvp_why', 'category',
+      'predicted_verdict', 'predicted_why', 'predicted_by', 'predicted_at', 'veto_until', 'proof'];
+    const ins = w.prepare(`INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, created_at, updated_at, decided_by, impact, impact_why, confidence, effort, score,
+      score_parts, band, mvp, mvp_rule, mvp_why, category, predicted_verdict, predicted_why, predicted_by, predicted_at, veto_until, proof, triaged_from)
+      VALUES (?, 'r-ok', 'f1', 'dev', ?, 'fix', ?, ?, ?, ?, 8, 'a crash on the main path', 'medium', 4, 40.5, ?, ?, ?, ?, ?, 'technical', 'accept', 'like p-7', 'lens-scan@3.0:opus', ?, ?, ?, ?)`);
+    const parts = JSON.stringify({ impact: 8, confidence_w: 0.75, effort_div: 1.333, risk_factor: 0.9, formula: 'scan-score/1' });
+    const proofJ = JSON.stringify({ metric: 'bundleKb', method: 'static', unit: 'KB', before: 412, after: 300, verdict: 'better', control: 'red', base_sha: 'a1', head_sha: 'b2' });
+    ins.run('v5a', 'Scored MVP', 'proposed', T5, T5, null, parts, 'reserve', 1, 'override', 'the cheaper fix first', T5, null, proofJ, null);
+    ins.run('v5b', 'Machine approved', 'approved', T5, T5, 'machine:lens-scan', 'not json', 'ranked', 0, null, null, T5, FUTURE, '[1,2]', 'done');
+    ins.run('v5c', 'Machine, window passed', 'approved', T5, T5, 'machine:lens-scan', null, 'ranked', 0, null, null, T5, PAST, null, null);
+    ins.run('v5d', 'A person decided', 'approved', T5, T5, 'user:octocat', null, 'ranked', 0, null, null, T5, FUTURE, null, null);
+    const s5 = snapshotOf(file), a = s5.proposals.find((p) => p.id === 'v5a'), b = s5.proposals.find((p) => p.id === 'v5b'), p1 = s5.proposals.find((p) => p.id === 'p1');
+    check('v5: a scored row carries its finding keys (score stored, never recomputed)', a?.score === 40.5 && a.impact === 8 && a.confidence === 'medium' && a.effort === 4 && a.category === 'technical'
+      && a.predicted_verdict === 'accept' && a.predicted_by === 'lens-scan@3.0:opus' && a.mvp === true && a.mvp_rule === 'override' && a.mvp_why === 'the cheaper fix first', JSON.stringify(a));
+    check('v5: score_parts and proof arrive parsed objects', a?.score_parts?.formula === 'scan-score/1' && a.score_parts.effort_div === 1.333 && a.proof?.verdict === 'better' && a.proof.control === 'red' && a.proof.before === 412, JSON.stringify(a));
+    check('v5: band reserve is sent; ranked (the default) and mvp 0 are omitted', a?.band === 'reserve' && !!b && !('band' in b) && !('mvp' in b), JSON.stringify(b));
+    check('v5: malformed or non-object JSON columns are omitted, never raw text', !!b && !('score_parts' in b) && !('proof' in b), JSON.stringify(b));
+    check('v5: a pre-v5-shaped row (all v5 columns NULL or default) carries no v5 key', !!p1 && !V5.some((k) => k in p1), JSON.stringify(p1));
+    check('v5: still no null anywhere', s5.proposals.every((p) => Object.values(p).every((v) => v !== null)));
+
+    // the trust ledger: snapshot, then the delta by id
+    const te = w.prepare('INSERT INTO trust_events (at, slice, from_level, to_level, reason, agreement, n, item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    te.run(T5, 'technical|dev|perf|S', 2, 3, 'promote: agreement', 0.95, 20, null);
+    te.run(T5, 'product|design|ux|M', 1, 0, 'demote: reversal v5a', null, null, 'v5a');
+    const rt = openRead(file);
+    try {
+      const st = readSnapshot(rt!), ct = newCursor();
+      check('v5: trust_events reach the snapshot, oldest first, absent values omitted', st.trust_events?.length === 2 && st.trust_events[0].to_level === 3 && st.trust_events[0].agreement === 0.95
+        && st.trust_events[1].item_id === 'v5a' && !('agreement' in st.trust_events[1]), JSON.stringify(st.trust_events));
+      advance(ct, st);
+      check('v5: after advance the delta resends no trust event', (readDelta(rt!, ct).trust_events ?? []).length === 0);
+      te.run(T5, 'technical|dev|perf|S', 3, 2, 'demote: not-better v5a', null, null, 'v5a');
+      const dt = readDelta(rt!, ct);
+      check('v5: a new trust event arrives in the delta, once', dt.trust_events?.length === 1 && dt.trust_events[0].from_level === 3);
+    } finally { close(rt); }
+    const ts = trustSlices(snapshotOf(file).trust_events ?? [], [...s5.proposals, { ...a!, id: 'z', category: 'technical', lens: 'sec', risk_class: 'secret', size: 'XS' }]);
+    const lv = (k: string) => ts.find((x) => x.slice === k);
+    check('v5 trust: a slice\'s level is its latest event\'s to_level', lv('technical|dev|perf|S')?.level === 2 && lv('technical|dev|perf|S')?.from === 'event');
+    check('v5 trust: a slice with no event sits at its start (technical 2), capped at 1 for secret/authz/money', lv('technical|sec|secret|XS')?.level === 1 && lv('technical|sec|secret|XS')?.from === 'start' && lv('technical|sec|secret|XS')?.ceiling === 1, JSON.stringify(ts));
+    check('v5 trust: product starts at 0', startOf('product|design|-|-') === 0 && startOf('technical|dev|-|-') === 2 && startOf('technical|x|authz|S') === 1);
+    check('v5 trust: a product slice (or no category) is capped at L1; only technical reaches L3', ceilingOf('product|design|ux|S') === 1 && ceilingOf('-|dev|-|-') === 1 && ceilingOf('technical|dev|perf|S') === 3);
+    check('decide: a person\'s note may never open with `veto:` (that prefix is the veto\'s alone)', parseDecision({ decision: 'decline', note: 'veto: no' }) === null && parseDecision({ decision: 'approve', note: ' VETO:x' }) === null
+      && parseDecision({ decision: 'decline', note: 'not a veto: fine' })?.note === 'not a veto: fine');
+
+    // the veto: the CAS beside decide (status back to proposed, triaged_from kept, decision_note 'veto: <reason>')
+    const v = veto(file, 'v5b', { reason: 'wrong fix' }, 'user:octocat', T5);
+    check('veto: a machine decision inside its window goes back to proposed, signed by the person', v.ok && v.proposal.status === 'proposed' && v.proposal.decision_note === 'veto: wrong fix'
+      && v.proposal.decided_by === 'user:octocat' && v.proposal.triaged_from === 'done' && !('veto_until' in v.proposal) && v.proposal.predicted_verdict === 'accept', JSON.stringify(v));
+    const again = veto(file, 'v5b', { reason: 'twice' }, 'user:octocat', T5), late = veto(file, 'v5c', { reason: 'late' }, 'user:octocat', T5), human = veto(file, 'v5d', { reason: 'x' }, 'user:octocat', T5);
+    check('veto: refused 409 when vetoed already, the window passed, or a person decided', !again.ok && again.status === 409 && !late.ok && late.status === 409 && !human.ok && human.status === 409);
+    const none = veto(file, 'nope', { reason: 'x' }, 'user:octocat', T5);
+    check('veto: an unknown proposal is 404', !none.ok && none.status === 404);
+    check('veto: the body is { reason } (1..500 chars) and nothing else', parseVeto({ reason: ' ok ' })?.reason === 'ok' && parseVeto({}) === null && parseVeto({ reason: '' }) === null
+      && parseVeto({ reason: 'x'.repeat(501) }) === null && parseVeto({ reason: 'x', more: 1 }) === null);
+    check('veto: vetoable() is the CAS rule', vetoable({ status: 'approved', decided_by: 'machine:lens-scan', veto_until: FUTURE }, T5) && !vetoable({ status: 'approved', decided_by: 'machine:lens-scan', veto_until: PAST }, T5)
+      && !vetoable({ status: 'executing', decided_by: 'machine:lens-scan', veto_until: FUTURE }, T5) && !vetoable({ status: 'declined', decided_by: 'user:x', veto_until: FUTURE }, T5));
+
+    // the train's wire door: the v5 keys pass; store.mjs's raw mvp 0/1 and band ranked read as the stream's; a bad value is refused
+    const rel = (items: unknown[]) => parseReleaseCreated({ release: { id: 'rel', version: '1', branch: 'b', status: 'draft', created_at: T5, updated_at: T5, items }, added: [], skipped: [] });
+    const canon = (x: unknown): unknown => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([k], [l]) => (k < l ? -1 : 1)).map(([k, y]) => [k, canon(y)])) : x);
+    const sorted = (o: object) => JSON.stringify(canon(o));
+    const okv = rel([a, { ...p1, mvp: 0, band: 'ranked' }, { ...p1, mvp: 1 }]);
+    check('v5: the wire door keeps the v5 keys; mvp 0 and band ranked stay out, mvp 1 reads true', okv.ok && sorted(okv.value.release.items[0]) === sorted(a!) && !('mvp' in okv.value.release.items[1])
+      && !('band' in okv.value.release.items[1]) && okv.value.release.items[2].mvp === true, JSON.stringify(okv));
+    for (const [k, val] of [['confidence', 'sure'], ['band', 'top'], ['predicted_verdict', 'maybe'], ['mvp', 2], ['score', 'high'], ['proof', 'better']] as const) {
+      const bad = rel([{ ...a, [k]: val }]);
+      check(`v5: the wire door refuses ${k} ${JSON.stringify(val)}`, !bad.ok && bad.error.includes(k), JSON.stringify(bad));
+    }
+
+    // one score: the stored score first, the pre-v5 estimate only for rows without one ("est."), a v5 row without one "unscored"
+    const est = estValue(s5.proposals), wa = worthOf(a!, est), wp = worthOf(p1!, est), wn = worthOf({ ...a!, score: undefined, band: undefined }, est);
+    check('score: stored -> "40.5"; a pre-v5 row -> "est. ..."; a v5 row without a score -> "unscored" (never 0)', worthText(wa) === '40.5' && worthText(wp).startsWith('est. ') && worthText(wn) === 'unscored', [worthText(wa), worthText(wp), worthText(wn)].join(' | '));
+    // v5a is a reserve row; the same worth in the ranked band leads, the reserve copy trails every ranked row
+    check('score: a reserve row\'s worth carries its band', wa.band === 'reserve' && wp.band === 'ranked');
+    const order = [wn, wp, wa, { ...wa, band: 'ranked' as const, value: 28.5 }].sort(byWorth).map(worthText).join(',');
+    check('score: ranked before reserve, then scored, estimated, unscored', order === '28.5,' + worthText(wp) + ',unscored,40.5', order);
+
+    // a v4 store: the real DDL with proposals rebuilt without the v5 columns and no trust_events, user_version 4
+    const v4 = path.join(dir, 'v4.db'), w4 = new DatabaseSync(v4);
+    w4.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
+    const keep = (w4.prepare('PRAGMA table_info(proposals)').all() as { name: string }[]).map((c) => c.name).filter((c) => !V5.includes(c));
+    w4.exec(`DROP INDEX proposals_score; DROP TABLE trust_events; ALTER TABLE proposals RENAME TO p5;
+      CREATE TABLE proposals AS SELECT ${keep.join(', ')} FROM p5; DROP TABLE p5; PRAGMA user_version = 4;`);
+    w4.prepare("INSERT INTO runs (id, started_at, updated_at, phase, status, lenses) VALUES ('r4', ?, ?, 'measure', 'done', '[]')").run(T5, T5);
+    w4.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, standard, kind, status, created_at, updated_at, decided_by) VALUES ('q4', 'r4', 'f1', 'dev', 'Old', 'none', 'fix', 'approved', ?, ?, 'machine:lens-scan')").run(T5, T5);
+    w4.close();
+    let s4: ScanSnapshot | undefined, err4 = '';
+    try { s4 = snapshotOf(v4); } catch (e) { err4 = (e as Error).message; }
+    const q4 = s4?.proposals[0];
+    check('v4 store: reads without an error, no v5 key, trust_events empty', !err4 && q4?.id === 'q4' && !V5.some((k) => k in q4) && s4!.trust_events?.length === 0, err4 || JSON.stringify(q4));
+    check('v4 store: its row is worth its estimate ("est."), never 0', worthText(worthOf(q4!, estValue(s4!.proposals))).startsWith('est. '));
+    const v4veto = veto(v4, 'q4', { reason: 'x' }, 'user:octocat', T5);
+    check('v4 store: nothing to veto (no veto window): 409, no error', !v4veto.ok && v4veto.status === 409);
   }
 
   w.close();

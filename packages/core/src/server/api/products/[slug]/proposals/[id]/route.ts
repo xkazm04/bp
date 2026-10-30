@@ -11,7 +11,7 @@ import type { DecisionBody } from '@bp/core/scan/types';
 
 const proposal = door('products/[slug]/proposals/[id]', {
   POST: {
-    body: (raw) => parseDecision(raw) ?? Response.json({ error: "body must be { decision: 'approve' | 'decline', note?: string }" }, { status: 400 }),
+    body: (raw) => parseDecision(raw) ?? Response.json({ error: "body must be { decision: 'approve' | 'decline', note?: string } (a note may not start with 'veto:')" }, { status: 400 }),
     store: 'required',
     writes: true,
     live: async ({ product: p, params: { id }, body }) => {

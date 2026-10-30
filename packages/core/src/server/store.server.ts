@@ -1,4 +1,5 @@
-// The lens-scan store, read side (and the one write the blueprint makes itself: a proposal decision; triage and
+// The lens-scan store, read side (and the two writes the blueprint makes itself: a proposal decision and, v5, a person's
+// veto of a machine decision inside its window - both compare-and-set; triage and
 // releases go through lens-scan's own store.mjs, packages/core/src/server/release.server.ts). The DDL is
 // docs/standard/lens-scan-store.sql; the /lens-scan skill writes the file concurrently in WAL mode, so
 // reads go through a read-only connection and a decision opens its own short read-write connection with a
@@ -9,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot } from '../scan/types.ts';
+import { emptyScan, isEmptyScan, type Activity, type Coverage, type DecisionBody, type Measurement, type Pack, type Proposal, type Release, type Run, type ScanDelta, type ScanSnapshot, type Shot, type TrustEvent, type VetoBody } from '../scan/types.ts';
 import { isObj } from '@bp/core/scan/guards';
 
 if (typeof window !== 'undefined') throw new Error('store.server.ts is server-only');
@@ -22,18 +23,25 @@ const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is
  * program, so the text is parsed and then held to that shape: a lens list is always a string[] (`[]` when
  * the text is not one), an object column is an object or omitted. Never the raw text, never `null`.
  */
+const objOr = (v: unknown) => (isObj(v) ? v : undefined);
 const JSON_COLS: Partial<Record<Table, Record<string, (v: unknown) => unknown>>> = {
-  runs: { lenses: strings, scope: (v) => (isObj(v) ? v : undefined) },
-  shots: { report: (v) => (isObj(v) ? v : undefined) },
+  runs: { lenses: strings, scope: objOr },
+  shots: { report: objOr },
+  // v5: the score's breakdown and a built change's proof, objects or omitted
+  proposals: { score_parts: objOr, proof: objOr },
 };
 /**
  * Columns whose default is the absent value on the wire, per table: v4's `proposals.origin` is NOT NULL DEFAULT 'scan',
  * and the wire omits 'scan' (an omitted origin means the scan proposed it). A v3 store has no such column, so its rows
  * read the same way: no origin key, and every other v4 key (tier, risk_class, external_ref, ...) simply absent.
+ * v5 the same: `band` NOT NULL DEFAULT 'ranked' omits 'ranked' (the wire's band is only ever 'reserve'), `mvp` NOT NULL
+ * DEFAULT 0 omits 0 and reads 1 as `true` (BOOL_COLS). A v4 store has neither column and reads identically.
  */
 const DEFAULTS: Partial<Record<Table, Record<string, unknown>>> = {
-  proposals: { origin: 'scan' },
+  proposals: { origin: 'scan', band: 'ranked', mvp: 0 },
 };
+/** INTEGER 0/1 columns that are booleans on the wire (after DEFAULTS dropped the 0). */
+const BOOL_COLS: Partial<Record<Table, ReadonlySet<string>>> = { proposals: new Set(['mvp']) };
 const ACTIVITY_LIMIT = 200;
 const BUSY_MS = 2000;
 
@@ -54,7 +62,7 @@ export function mapRev(dir: string): string {
 }
 
 function wire<T>(table: Table, r: Row): T {
-  const o: Row = {}, js = JSON_COLS[table], dflt = DEFAULTS[table];
+  const o: Row = {}, js = JSON_COLS[table], dflt = DEFAULTS[table], bools = BOOL_COLS[table];
   for (const k in r) {
     let v = r[k];
     const shape = js?.[k];
@@ -63,7 +71,9 @@ function wire<T>(table: Table, r: Row): T {
       try { parsed = typeof v === 'string' ? JSON.parse(v) : undefined; } catch { /* malformed JSON: the shape's empty value */ }
       v = shape(parsed);
     }
+    // node:sqlite answers INTEGER as number (bigint only past 2^53): a default compares by number
     if (v === null || v === undefined || (dflt && k in dflt && dflt[k] === v)) continue;
+    if (bools?.has(k)) { if (v !== 1) continue; v = true; }
     o[k] = v;
   }
   return o as T;
@@ -122,6 +132,8 @@ export function readSnapshot(db: DatabaseSync): ScanSnapshot {
   // v2 tables: a v1 store has neither, and its snapshot carries them empty
   if (has.has('packs')) s.packs = wireAll<Pack>('packs', all(db, 'SELECT * FROM packs ORDER BY created_at, lens, n'));
   if (has.has('releases')) s.releases = wireAll<Release>('releases', all(db, 'SELECT * FROM releases ORDER BY created_at, id'));
+  // v5: the autonomy ledger, append-only (a v4 store has no such table: empty)
+  if (has.has('trust_events')) s.trust_events = wireAll<TrustEvent>('trust_events', all(db, 'SELECT * FROM trust_events ORDER BY id'));
   return s;
 }
 
@@ -131,12 +143,12 @@ export function readSnapshot(db: DatabaseSync): ScanSnapshot {
  */
 interface AtCursor { at: string; keys: Set<string> }
 export interface Cursor {
-  measurements: number; activity: number; shots: number;
+  measurements: number; activity: number; shots: number; trust_events: number;
   runs: AtCursor; proposals: AtCursor; coverage: AtCursor; packs: AtCursor; releases: AtCursor;
 }
 const atCursor = (): AtCursor => ({ at: '', keys: new Set() });
 export function newCursor(): Cursor {
-  return { measurements: 0, activity: 0, shots: 0, runs: atCursor(), proposals: atCursor(), coverage: atCursor(), packs: atCursor(), releases: atCursor() };
+  return { measurements: 0, activity: 0, shots: 0, trust_events: 0, runs: atCursor(), proposals: atCursor(), coverage: atCursor(), packs: atCursor(), releases: atCursor() };
 }
 function advanceId(rows: { id: number }[], last: number): number { for (const r of rows) if (r.id > last) last = r.id; return last; }
 function advanceAt<T>(rows: T[], c: { at: string; keys: Set<string> }, at: (r: T) => string, key: (r: T) => string) {
@@ -151,6 +163,7 @@ export function advance(c: Cursor, s: ScanSnapshot): void {
   c.measurements = advanceId(s.measurements, c.measurements);
   c.activity = advanceId(s.activity, c.activity);
   c.shots = advanceId(s.shots, c.shots);
+  c.trust_events = advanceId(s.trust_events ?? [], c.trust_events);
   advanceAt(s.runs, c.runs, (r) => r.updated_at, (r) => r.id);
   advanceAt(s.proposals, c.proposals, (r) => r.updated_at, (r) => r.id);
   advanceAt(s.coverage, c.coverage, (r) => r.judged_at, covKey);
@@ -164,6 +177,7 @@ export function readDelta(db: DatabaseSync, c: Cursor): ScanDelta {
   if (has.has('measurements')) d.measurements = wireAll<Measurement>('measurements', all(db, 'SELECT * FROM measurements WHERE id > ? ORDER BY id', c.measurements));
   if (has.has('activity')) d.activity = wireAll<Activity>('activity', all(db, 'SELECT * FROM activity WHERE id > ? ORDER BY id', c.activity));
   if (has.has('shots')) d.shots = wireAll<Shot>('shots', all(db, 'SELECT * FROM shots WHERE id > ? ORDER BY id', c.shots));
+  if (has.has('trust_events')) d.trust_events = wireAll<TrustEvent>('trust_events', all(db, 'SELECT * FROM trust_events WHERE id > ? ORDER BY id', c.trust_events));
   if (has.has('runs')) d.runs = wireAll<Run>('runs', all(db, 'SELECT * FROM runs WHERE updated_at >= ? ORDER BY updated_at, id', c.runs.at))
     .filter((r) => !(r.updated_at === c.runs.at && c.runs.keys.has(r.id)));
   if (has.has('proposals')) d.proposals = wireAll<Proposal>('proposals', all(db, 'SELECT * FROM proposals WHERE updated_at >= ? ORDER BY updated_at, id', c.proposals.at))
@@ -185,12 +199,17 @@ export function snapshotOf(file: string): ScanSnapshot {
   try { return readSnapshot(db); } finally { close(db); }
 }
 
-/** `null` = not a valid DecisionBody. */
+/** A note that reads as a veto's (`veto:`, any case, leading space ignored): refused on the ordinary decision path. */
+const VETO_NOTE = /^\s*veto:/i;
+/** `null` = not a valid DecisionBody (a note starting `veto:` included). */
 export function parseDecision(x: unknown): DecisionBody | null {
   if (!x || typeof x !== 'object' || Array.isArray(x)) return null;
   const o = x as Row;
   if (o.decision !== 'approve' && o.decision !== 'decline') return null;
   if (o.note !== undefined && typeof o.note !== 'string') return null;
+  // `veto: ` opens only a veto's note (lens-scan's trust reads that prefix as a reversal of a machine decision): a person's
+  // ordinary approve / decline note may never start with it
+  if (typeof o.note === 'string' && VETO_NOTE.test(o.note)) return null;
   if (Object.keys(o).some((k) => k !== 'decision' && k !== 'note')) return null;
   return o.note === undefined ? { decision: o.decision } : { decision: o.decision, note: o.note };
 }
@@ -206,6 +225,38 @@ export function decide(file: string, id: string, body: DecisionBody, by: string)
     const row = db.prepare(
       "UPDATE proposals SET status = ?, decided_by = ?, decided_at = ?, decision_note = ?, updated_at = ? WHERE id = ? AND status = 'proposed' RETURNING *",
     ).get(body.decision === 'approve' ? 'approved' : 'declined', by, now, body.note ?? null, now, id) as Row | undefined;
+    if (row) return { ok: true, proposal: wire<Proposal>('proposals', row) };
+    const cur = db.prepare('SELECT * FROM proposals WHERE id = ?').get(id) as Row | undefined;
+    return cur ? { ok: false, status: 409, proposal: wire<Proposal>('proposals', cur) } : { ok: false, status: 404 };
+  } finally { close(db); }
+}
+
+/** Most characters a veto reason may carry. */
+export const MAX_VETO_REASON = 500;
+/** `null` = not a valid VetoBody: `{ reason }`, a non-empty string of at most MAX_VETO_REASON characters, nothing else. */
+export function parseVeto(x: unknown): VetoBody | null {
+  if (!isObj(x)) return null;
+  const r = x.reason;
+  if (typeof r !== 'string' || !r.trim() || r.length > MAX_VETO_REASON || Object.keys(x).some((k) => k !== 'reason')) return null;
+  return { reason: r.trim() };
+}
+
+/**
+ * A person's veto of a machine decision inside its window (scan-finding/1 L1; seam B2): one compare-and-set on a short-lived
+ * read-write connection, beside `decide`. The row goes back to `proposed`, `decision_note` reads `veto: <reason>`, `decided_by`
+ * / `decided_at` name the person and the moment (the machine's verdict stays readable in `predicted_*`), `veto_until` is
+ * cleared (the window is spent), and `triaged_from` is left as it was. lens-scan's `trust` verb counts the row as a reversal
+ * of a machine decision (a disagreement and a demotion). 409 with the current row when it is not (or no longer) vetoable
+ * (scan/trust.ts `vetoable` is the same rule, for the UI); a v4 store has no veto_until column and so nothing to veto (409).
+ */
+export function veto(file: string, id: string, body: VetoBody, by: string, now = new Date().toISOString()): DecideResult {
+  const db = new DatabaseSync(file, { timeout: BUSY_MS });
+  try {
+    const cols = new Set((db.prepare('PRAGMA table_info(proposals)').all() as Row[]).map((r) => String(r.name)));
+    const row = !cols.has('veto_until') ? undefined : db.prepare(
+      "UPDATE proposals SET status = 'proposed', decided_by = ?, decided_at = ?, decision_note = ?, veto_until = NULL, updated_at = ? "
+      + "WHERE id = ? AND status IN ('approved', 'declined') AND decided_by LIKE 'machine:%' AND veto_until IS NOT NULL AND veto_until > ? RETURNING *",
+    ).get(by, now, 'veto: ' + body.reason, now, id, now) as Row | undefined;
     if (row) return { ok: true, proposal: wire<Proposal>('proposals', row) };
     const cur = db.prepare('SELECT * FROM proposals WHERE id = ?').get(id) as Row | undefined;
     return cur ? { ok: false, status: 409, proposal: wire<Proposal>('proposals', cur) } : { ok: false, status: 404 };

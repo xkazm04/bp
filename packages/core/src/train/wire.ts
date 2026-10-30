@@ -2,7 +2,7 @@
 // through these, and `JSON.parse` lives nowhere else in the train's code. A validator answers the typed value or what
 // was wrong with it (`<field>: <what>`); the fetch helpers in client.ts turn a failure into an Error. A value carries
 // only the fields its type names (an unknown extra field stays out) and omits an absent one, never null.
-import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
+import type { Band, CommitDiff, Confidence, FindingCategory, MvpRule, PredictedVerdict, Proof, ProofVerdict, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, ScoreParts, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
 import { isObj } from '../scan/guards.ts';
@@ -91,9 +91,17 @@ const PROPOSAL_KIND: Members<ProposalKind> = { fix: true, 'baseline-upgrade': tr
 const PROPOSAL_ORIGIN: Members<ProposalOrigin> = { scan: true, ado: true, sweep: true };
 const RISK_CLASS: Members<RiskClass> = { secret: true, authz: true, money: true, data: true, llm: true, perf: true, reliability: true, ux: true, debt: true };
 const PROPOSAL_SIZE: Members<ProposalSize> = { XS: true, S: true, M: true, L: true, XL: true };
+// v5 (scan-finding/1)
+const CONFIDENCE: Members<Confidence> = { low: true, medium: true, high: true };
+const BAND: Members<Band> = { ranked: true, reserve: true };
+const MVP_RULE: Members<MvpRule> = { 'top-score': true, override: true };
+const CATEGORY: Members<FindingCategory> = { technical: true, product: true };
+const VERDICT: Members<PredictedVerdict> = { accept: true, reject: true, defer: true };
+const PROOF_VERDICT: Members<ProofVerdict> = { better: true, 'not-better': true, inconclusive: true };
+const CONTROL: Members<NonNullable<Proof['control']>> = { red: true, absent: true };
 const RELEASE_STATUS: Members<ReleaseStatus> = { draft: true, building: true, 'pr-open': true, merged: true, tagged: true, failed: true };
 const TRIAGED: Members<TriageResult['decision']> = { accepted: true, rework: true, descoped: true, reopened: true };
-const JOB_KIND: Members<JobKind> = { measure: true, execute: true, release: true, prepare: true };
+const JOB_KIND: Members<JobKind> = { measure: true, execute: true, release: true, prepare: true, propose: true };
 const JOB_STATUS: Members<JobStatus> = { queued: true, running: true, done: true, failed: true, cancelled: true };
 const RELEASE_STEP: Members<ReleaseStep> = { build: true, finish: true };
 const SCOPE_KIND: Members<ScanScopeKind> = { feature: true, bay: true, room: true, wing: true, all: true, selection: true };
@@ -124,7 +132,35 @@ function proposal(x: unknown, at: string): Proposal {
   if (origin !== 'scan') put(p, 'origin', origin); // 'scan' is the absent value: kept out, like the store's serializer
   put(p, 'tier', optTier(o, 'tier', at));
   put(p, 'risk_class', optMember(RISK_CLASS, o, 'risk_class', at));
+  // v5 (scan-finding/1): absent stays absent; 'ranked' and mvp false are the absent values, kept out as the store's serializer does
+  for (const k of ['impact_why', 'mvp_why', 'predicted_why', 'predicted_by', 'predicted_at', 'veto_until'] as const) put(p, k, optStr(o, k, at));
+  for (const k of ['impact', 'effort', 'score'] as const) put(p, k, optNum(o, k, at));
+  put(p, 'confidence', optMember(CONFIDENCE, o, 'confidence', at));
+  const band = optMember(BAND, o, 'band', at);
+  if (band === 'reserve') p.band = band;
+  // lens-scan's store.mjs answers the column as stored (INTEGER 0/1); the stream sends true or nothing: both are one flag
+  if (o.mvp === 1 || o.mvp === true) p.mvp = true;
+  else if (o.mvp !== undefined && o.mvp !== 0 && o.mvp !== false) fail(join(at, 'mvp'), `expected true, false, 0 or 1 (got ${JSON.stringify(o.mvp)})`);
+  put(p, 'mvp_rule', optMember(MVP_RULE, o, 'mvp_rule', at));
+  put(p, 'category', optMember(CATEGORY, o, 'category', at));
+  put(p, 'predicted_verdict', optMember(VERDICT, o, 'predicted_verdict', at));
+  put(p, 'score_parts', o.score_parts === undefined ? undefined : scoreParts(o.score_parts, join(at, 'score_parts')));
+  put(p, 'proof', o.proof === undefined ? undefined : proof(o.proof, join(at, 'proof')));
   return p;
+}
+function scoreParts(x: unknown, at: string): ScoreParts {
+  const o = obj(x, at), s: ScoreParts = {};
+  for (const k of ['impact', 'confidence_w', 'effort_div', 'risk_factor'] as const) put(s, k, optNum(o, k, at));
+  put(s, 'formula', optStr(o, 'formula', at));
+  return s;
+}
+function proof(x: unknown, at: string): Proof {
+  const o = obj(x, at), r: Proof = {};
+  for (const k of ['metric', 'method', 'unit', 'base_sha', 'head_sha'] as const) put(r, k, optStr(o, k, at));
+  for (const k of ['before', 'after'] as const) put(r, k, optNum(o, k, at));
+  put(r, 'verdict', optMember(PROOF_VERDICT, o, 'verdict', at));
+  put(r, 'control', optMember(CONTROL, o, 'control', at));
+  return r;
 }
 
 function release(o: Obj, at: string): Release {

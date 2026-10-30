@@ -441,6 +441,8 @@ export interface ScanSnapshot {
   packs: Pack[];
   /** Oldest first; empty on a v1 store. */
   releases: Release[];
+  /** v5, oldest first; empty on a v4 store, absent from a pre-v5 sender. */
+  trust_events?: TrustEvent[];
 }
 
 export interface Run {
@@ -527,6 +529,54 @@ export interface Proposal {
   risk_class?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
   ranked_by?: string;
   ranked_at?: string;
+  /** v5 (scan-finding/1): severity of a defect or value of an opportunity. */
+  impact?: number;
+  impact_why?: string;
+  confidence?: 'low' | 'medium' | 'high';
+  /** v5: build effort. */
+  effort?: number;
+  /** v5: scan-score/1, stored by the skill and never recomputed by a reader; omitted = unscored. */
+  score?: number;
+  score_parts?: ScoreParts;
+  /** v5: omitted = ranked (the store default); reserve = verified and scored, over the run's cap. */
+  band?: 'ranked' | 'reserve';
+  /** v5: true on the top finding of its lens in its run; omitted = false (only true is sent). */
+  mvp?: boolean;
+  mvp_rule?: 'top-score' | 'override';
+  mvp_why?: string;
+  category?: 'technical' | 'product';
+  /** v5: the model's verdict, recorded before any person decided. */
+  predicted_verdict?: 'accept' | 'reject' | 'defer';
+  predicted_why?: string;
+  /** v5: <skill>@<version>:<model>. */
+  predicted_by?: string;
+  predicted_at?: string;
+  /** v5: a machine decision (decided_by machine:lens-scan) may be vetoed by a person until then. */
+  veto_until?: string;
+  proof?: Proof;
+}
+
+/** v5: the score's breakdown, shipped with the number. */
+export interface ScoreParts {
+  impact?: number;
+  confidence_w?: number;
+  effort_div?: number;
+  risk_factor?: number;
+  /** scan-score/1. */
+  formula?: string;
+}
+
+/** v5: a built change's before/after under one method, with its control. */
+export interface Proof {
+  metric?: string;
+  method?: string;
+  unit?: string;
+  before?: number;
+  after?: number;
+  verdict?: 'better' | 'not-better' | 'inconclusive';
+  control?: 'red' | 'absent';
+  base_sha?: string;
+  head_sha?: string;
 }
 
 export interface Activity {
@@ -600,6 +650,19 @@ export interface Release {
   updated_at: string;
 }
 
+/** v5: one row of the append-only autonomy ledger. slice = <category>|<lens>|<risk_class>|<size>, - for an absent part; levels 0 propose .. 3 auto-merge. */
+export interface TrustEvent {
+  id: number;
+  at: string;
+  slice: string;
+  from_level: number;
+  to_level: number;
+  reason: string;
+  agreement?: number;
+  n?: number;
+  item_id?: string;
+}
+
 export interface MapEvent {
   /** The new fingerprint, as in the structure envelope. */
   rev: string;
@@ -617,9 +680,9 @@ export interface ErrorEvent {
 /** A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started. */
 export interface ScanJob {
   id: string;
-  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. */
-  kind: 'measure' | 'execute' | 'release' | 'prepare';
-  /** The lens a measure job scans, or a prepare job makes measurable. */
+  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. */
+  kind: 'measure' | 'execute' | 'release' | 'prepare' | 'propose';
+  /** The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
   /** The proposals an execute job builds. */

@@ -4,8 +4,8 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
-import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
+import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import type { CommitDiff, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens.ts';
@@ -27,6 +27,19 @@ export async function startScan(ctx: ScanCtx, lens: string, scope: ScanScope): P
   if (ctx.slug) return postScan(ctx.slug, lens, scope);
   if (ctx.sim) return ctx.sim.startScan(lens, scope);
   throw nowhere();
+}
+
+/** ONE measure or propose job over every enabled lens (`--lens all`, one MAX_RUNNING slot). A live product only: the Kettle
+ *  sim has no every-lens job, and the ledger offers it on a live product only. */
+export async function startAllLenses(ctx: ScanCtx, phase: 'measure' | 'propose'): Promise<ScanJob> {
+  if (ctx.slug) return postAllLenses(ctx.slug, phase);
+  throw Object.assign(new Error('every-lens jobs run on a live product (the sample scans one lens at a time)'), { status: 400 });
+}
+
+/** A person's veto of a machine decision inside its window: the row goes back to proposed (live products only). */
+export async function vetoDecision(ctx: ScanCtx, id: string, reason: string): Promise<Proposal> {
+  if (ctx.slug) return postVeto(ctx.slug, id, reason);
+  throw Object.assign(new Error('the sample has no machine decisions to veto'), { status: 400 });
 }
 
 /** Approve the proposed ones among `ids` and start one execute run over all of them. */

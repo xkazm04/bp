@@ -4,7 +4,7 @@
 import type { Layout } from '../model/layout.ts';
 import type { Product } from '../model/product.ts';
 import type { ScanSnapshot } from './types.ts';
-import { isJobNote, MAX_QUEUED, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
+import { ALL_LENSES, isJobNote, MAX_QUEUED, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
 import { lastRead, measuredFeatures } from './derive.ts';
 import { ago, jobLiveness } from './liveness.ts';
 
@@ -55,10 +55,13 @@ export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total:
   const run = scan && (scan.runs.find((r) => r.id === job.run_id) ?? scan.runs.find((r) => isJobNote(r.note, job.id)));
   if (!run || !scan || !job.lens) return { done, n: 0, m };
   const want = all ? null : new Set(sc!.features);
-  for (const f of measuredFeatures(scan, run.id, job.lens)) if (!want || want.has(f)) done.add(f);
+  // an every-lens job (lens 'all', one job) counts a feature once any lens read it in the run
+  const every = job.lens === ALL_LENSES, runId = run.id;
+  const read = every ? new Set(scan.measurements.filter((x) => x.run_id === runId && !x.phase).map((x) => x.feature)) : measuredFeatures(scan, run.id, job.lens);
+  for (const f of read) if (!want || want.has(f)) done.add(f);
   let current: string | undefined;
   for (const a of scan.activity) {
-    if (a.run_id !== run.id || a.lens !== job.lens || !a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
+    if (a.run_id !== run.id || (!every && a.lens !== job.lens) || !a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
     if (a.kind === 'measured' && (!want || want.has(a.feature))) done.add(a.feature); // judged with nothing to measure (a temporary lens's "no impact")
     if (!want || want.has(a.feature)) current = a.feature;
   }
