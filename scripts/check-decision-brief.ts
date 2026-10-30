@@ -287,7 +287,8 @@ const sec = [
   ok(16, committed === now, 'docs/concepts/decision-brief/golden.json is current (node scripts/brief-golden.ts --write)');
   const g = JSON.parse(now) as { cases: { brief: Brief }[] };
   for (const c of g.cases) built.push(c.brief);
-  ok(16, g.cases.length === 5 && g.cases.some((c) => c.brief.advice.say === 'withdraw') && g.cases.some((c) => /No precedent yet/.test(c.brief.lines.join('\n'))), 'the golden covers a withdraw and a no-precedent case');
+  ok(16, g.cases.length === 6 && ['withdraw', 'ask', 'proceed'].every((say) => g.cases.some((c) => c.brief.advice.say === say)) && g.cases.some((c) => /No precedent yet/.test(c.brief.lines.join('\n'))),
+    'the golden covers withdraw, ask, proceed and a no-precedent case');
 }
 // 15. the wire
 {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The decision brief's golden file: fixed inputs (a map slice and a store of decided rows) and the exact brief
 // packages/core/src/scan/brief.ts computes for five subjects - an approve-shaped card, a repeat of a decline, an agent's
-// draft, a feature not on the plan and a lens with no decisions yet. It is the sync contract outside bp: Personas' card (or any
+// draft, a feature not on the plan, a lens with no decisions yet, and a like idea declined on another feature (ask). It is the sync contract outside bp: Personas' card (or any
 // port of brief.ts) runs the same inputs and must produce these bytes (docs/concepts/decision-brief/personas-adoption.md).
 // bp's side is held by check:decision-brief, which fails when the committed file is not what brief.ts computes now.
 //   node scripts/brief-golden.ts           print whether the committed file is current (exit 1 when not)
@@ -45,6 +45,7 @@ const subjects: [string, BriefSubject][] = [
   ["an agent's draft", { feature: 'card-payments', title: 'add retry to checkout' }],
   ['not on the plan', { feature: 'ghost', title: 'Tidy the ghost page', lens: 'security' }],
   ['no precedent under its lens', { feature: 'receipts', title: 'Show the receipt total in bold', lens: 'performance' }],
+  ['a like idea declined elsewhere (asks, never flips)', { feature: 'receipts', title: 'Retry the receipt email on failure', lens: 'development', standard: 'reliability/retry-backoff', tier: 2 }],
 ];
 
 /** The golden document, as brief.ts computes it now. */

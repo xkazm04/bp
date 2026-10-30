@@ -851,6 +851,136 @@
           "Cost: about 12 min per item, from 1 build (any lens) on sonnet"
         ]
       }
+    },
+    {
+      "name": "a like idea declined elsewhere (asks, never flips)",
+      "subject": {
+        "feature": "receipts",
+        "title": "Retry the receipt email on failure",
+        "lens": "development",
+        "standard": "reliability/retry-backoff",
+        "tier": 2
+      },
+      "brief": {
+        "v": 1,
+        "subject": {
+          "feature": "receipts",
+          "title": "Retry the receipt email on failure",
+          "lens": "development",
+          "standard": "reliability/retry-backoff",
+          "tier": 2
+        },
+        "blast": {
+          "feature": {
+            "slug": "receipts",
+            "name": "Receipts",
+            "id": "PAY-08"
+          },
+          "room": {
+            "slug": "payments.billing",
+            "name": "Billing"
+          },
+          "wing": {
+            "slug": "payments",
+            "name": "Payments",
+            "id": "PAY"
+          },
+          "dependents": [],
+          "rooms": 0,
+          "openHere": []
+        },
+        "precedent": {
+          "rows": [
+            {
+              "id": "h4",
+              "title": "Add retries to checkout payment calls",
+              "feature": "card-payments",
+              "lens": "development",
+              "verdict": "declined",
+              "at": "2026-10-10",
+              "by": "user:owner",
+              "note": "No retries until idempotency keys land.",
+              "standard": "reliability/retry-backoff",
+              "match": "same standard"
+            }
+          ],
+          "approved": 0,
+          "declined": 1,
+          "basis": "the same lens and tier, the same idea or the same words"
+        },
+        "declines": [
+          {
+            "id": "h4",
+            "title": "Add retries to checkout payment calls",
+            "feature": "card-payments",
+            "lens": "development",
+            "verdict": "declined",
+            "at": "2026-10-10",
+            "by": "user:owner",
+            "note": "No retries until idempotency keys land.",
+            "standard": "reliability/retry-backoff",
+            "match": "same standard"
+          }
+        ],
+        "reversible": {
+          "approve": "until-triage",
+          "decline": "final",
+          "afterRelease": "unknown"
+        },
+        "cost": {
+          "builds": 1,
+          "minutes": 12,
+          "model": "sonnet",
+          "basis": "any lens",
+          "runs": [
+            "e1"
+          ]
+        },
+        "advice": {
+          "say": "ask",
+          "why": "An idea under the same standard was declined on card-payments 2026-10-10 by user:owner: \"No retries until idempotency keys land.\""
+        },
+        "facts": [
+          {
+            "key": "blast",
+            "text": "Touches Receipts (PAY-08) in Billing · nothing depends on it",
+            "ids": []
+          },
+          {
+            "key": "declined",
+            "text": "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (same standard, h4)",
+            "ids": [
+              "h4"
+            ]
+          },
+          {
+            "key": "precedent",
+            "text": "You approved 0 of 1 similar decision under Development, tier 2 · declined 1",
+            "ids": [
+              "h4"
+            ]
+          },
+          {
+            "key": "undo",
+            "text": "Undo: ships only after you accept it; after release unknown (no risk class). A decline is final",
+            "ids": []
+          },
+          {
+            "key": "cost",
+            "text": "Cost: about 12 min per item, from 1 build (any lens) on sonnet",
+            "ids": [
+              "e1"
+            ]
+          }
+        ],
+        "lines": [
+          "Touches Receipts (PAY-08) in Billing · nothing depends on it",
+          "Declined 2026-10-10 by owner: \"No retries until idempotency keys land.\" (same standard, h4)",
+          "You approved 0 of 1 similar decision under Development, tier 2 · declined 1",
+          "Undo: ships only after you accept it; after release unknown (no risk class). A decline is final",
+          "Cost: about 12 min per item, from 1 build (any lens) on sonnet"
+        ]
+      }
     }
   ]
 }
