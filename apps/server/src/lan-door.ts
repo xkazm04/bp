@@ -26,7 +26,10 @@
 // 4. Scope (verb-allowlists). VERBS below is the whole remote vocabulary, a closed grammar: a method plus an anchored path
 //    pattern, no percent-escapes, no query except the baton's `claim=1`. `read`: the plan reads; `standup`: read plus the
 //    companion turn, focus and cards GETs; `place`: the three baton verbs; `focus`: the shared focus's GET and POST (a
-//    headset follows and publishes without `read`; the route pins its reader to the paired device). Never cards/<id>, human-token, dispatch, build
+//    headset follows and publishes without `read`; the route pins its reader to the paired device); `decide`: one verb, a
+//    REPEAT declined from the headset (ROADMAP F8: .../proposals/<id>/decline, which refuses any card that is not the same
+//    idea declined before). `decide` has its own ceremony: a device may ask for it, but only the owner's approve that names
+//    it (`--scope ...,decide`) grants it; a plain approve drops it. Never cards/<id>, human-token, dispatch, build
 //    or finish, and none of this server's own /lan or /athena routes.
 // 5. The rewrite. Only Content-Type and Accept are copied from the device; Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
@@ -66,7 +69,9 @@ const DEVICE = /^[A-Za-z0-9_.-]{1,40}$/;
 const TOKEN = /^Bearer ([A-Za-z0-9_-]{43})$/;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I: read off a headset, typed on a keyboard
 
-export const SCOPES = ['read', 'standup', 'place', 'focus'] as const;
+export const SCOPES = ['read', 'standup', 'place', 'focus', 'decide'] as const;
+/** Granted only when the owner's approve names it (never by a device's request alone). */
+export const NAMED_ONLY: readonly Scope[] = ['decide'];
 export type Scope = (typeof SCOPES)[number];
 const isScopes = (v: unknown): v is Scope[] =>
   Array.isArray(v) && v.length > 0 && v.length <= SCOPES.length && v.every((s) => (SCOPES as readonly string[]).includes(s)) && new Set(v).size === v.length;
@@ -103,6 +108,7 @@ export const VERBS: readonly Verb[] = [
   { scope: 'read', method: 'GET', path: products(`scans/${ID}`) },
   { scope: 'read', method: 'GET', path: products('scan') },
   { scope: 'read', method: 'GET', path: products('waves') },
+  { scope: 'read', method: 'GET', path: products(`proposals/${ID}/brief`) },
   { scope: 'standup', method: 'POST', path: /^\/api\/companion\/turn$/ },
   { scope: 'standup', method: 'GET', path: /^\/api\/companion\/focus$/ },
   { scope: 'standup', method: 'GET', path: /^\/api\/companion\/cards$/ },
@@ -111,6 +117,7 @@ export const VERBS: readonly Verb[] = [
   { scope: 'place', method: 'POST', path: /^\/api\/session\/place\/return$/ },
   { scope: 'focus', method: 'GET', path: /^\/api\/session\/focus$/ },
   { scope: 'focus', method: 'POST', path: /^\/api\/session\/focus$/ },
+  { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/decline`) },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */
@@ -468,7 +475,9 @@ export class LanDoor {
     if (!p) return { ok: false, status: 404, error: `no pending request with code ${code} (it lives ${PAIR_TTL_MS / 1000} s)` };
     if (this.live().length >= MAX_PAIRED) return { ok: false, status: 409, error: `${MAX_PAIRED} devices are paired already; pair revoke one first` };
     p.state = 'approved';
-    p.granted = scopes ?? p.requested;
+    // a named-only scope (decide) is granted when the owner's approve names it, never because the device asked
+    p.granted = scopes ?? p.requested.filter((s) => !NAMED_ONLY.includes(s));
+    if (!p.granted.length) p.granted = ['read'];
     p.days = days ?? DEFAULT_DAYS;
     p.until = this.now() + CLAIM_TTL_MS;
     this.ledger({ event: 'approve', device: p.device, peer: p.peer, requested: p.requested, granted: p.granted, days: p.days });

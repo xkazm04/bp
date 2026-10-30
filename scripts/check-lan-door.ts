@@ -5,7 +5,9 @@
 //              from a header this harness sets (the door's peerOf option; the server never passes one). It drives the whole
 //              ceremony and the place scope: pair, approve, claim once, claim again (410), the baton claimed, published and
 //              returned through the door, a second device's forged x-bp-device and x-bp-human dropped, scope refusals, a
-//              revoke, a corrupt registry (fails closed), expiry, the window closing the port and `pair open` reopening it.
+//              revoke, a corrupt registry (fails closed), expiry, the window closing the port and `pair open` reopening it;
+//              the brief as a read (F7), and the `decide` scope (F8): granted only when the owner's approve names it, and
+//              then only the repeat's decline (the free decide and the deck's steering stay unreachable).
 //              Every refusal is collected, and they must all be byte-identical bare 403s; past admission each waits
 //              REFUSAL_DELAY_MS, and the token never reaches paired.json or the ledger.
 //   opt-in     the real `apps/server/src/main.ts` as a child: without --lan no door line, no /lan route, no $BP_HOME/lan;
@@ -35,11 +37,18 @@ for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '8.8.8.8', '172.15.255.
 const all = [...SCOPES];
 for (const [m, p] of [['POST', '/api/companion/cards/c1'], ['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
   ['POST', '/api/products/kettle/releases/r1/build'], ['POST', '/api/products/kettle/releases/r1/finish'], ['POST', '/api/products/kettle/waves/w1/dispatch'],
-  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/scans']] as const)
+  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/scans'],
+  ['POST', '/api/products/kettle/proposals/kf-001'], ['POST', '/api/companion/morning'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
 check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
 check('place is only the three baton verbs', verbOf(['place'], 'GET', '/api/session/place?claim=1') !== null && verbOf(['place'], 'GET', '/api/session/place') === null
   && verbOf(['place'], 'GET', '/api/products/kettle/structure') === null);
+// F7 and F8 (docs/concepts/one-morning-brief/ROADMAP.md): the brief is a read; decide is one verb, the repeat's decline
+check("read: a proposal's brief (F7)", verbOf(['read'], 'GET', '/api/products/kettle/proposals/kf-001/brief') !== null && verbOf(['standup'], 'GET', '/api/products/kettle-web/proposals/brief-o2/brief') !== null);
+check("decide is only the repeat's decline: POST .../proposals/<id>/decline, nothing else", verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') !== null
+  && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/brief-o2/decline') === null && verbOf(['decide'], 'GET', '/api/products/kettle/structure') === null
+  && verbOf(['decide'], 'GET', '/api/products/kettle/proposals/kf-001/brief') === null && verbOf(['decide'], 'POST', '/api/products/kettle/proposals/kf-001') === null);
+check('no other scope reaches the decline', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') === null);
 for (const t of ['/api/products/kettle/../structure', '/api/products/kettle/%73tructure', '/api/products//structure', '/api/products/kettle/structure?x=1', '/api/session/place?claim=1&x=1', 'api/products/kettle/plan'])
   check(`the grammar refuses ${t}`, verbOf(all, 'GET', t) === null);
 
@@ -193,6 +202,31 @@ fs.writeFileSync(registryFile(HOME), '{ not json');
 refused('a corrupt registry admits nobody (fails closed, re-read per request)', await lan(OTHER, 'GET', '/api/session/place?claim=1', { token: tokenB }));
 fs.writeFileSync(registryFile(HOME), good);
 check('the registry restored: the device is admitted again', (await lan(OTHER, 'GET', '/api/session/place?claim=1', { token: tokenB })).status === 404);
+
+// decide (F8): its own ceremony. A device may ask for it; a plain approve drops it; only an approve that names it grants it.
+const NC = nonce();
+const codeC = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NC, device: 'quest-c', scopes: ['read', 'decide'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeC });
+check('decide: a plain approve of a device that asked for it drops it (named-only)', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NC } });
+const tokenC = String(r.json.token), idC = String(r.json.device).split(':')[1];
+check('decide: ...so its token carries read only', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+refused('decide: the decline without the scope', await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenC, body: {} }));
+r = await lan(QUEST, 'GET', '/api/products/kettle/proposals/kf-001/brief', { token: tokenC });
+check('read: the brief route through the door reaches the mount (F7)', r.status !== 403 && r.body !== '', `${r.status} ${r.body.slice(0, 120)}`);
+const NE = nonce();
+const codeE = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NE, device: 'quest-e', scopes: ['read', 'decide'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeE, scopes: ['read', 'decide'] });
+check('decide: the owner names it at approve, and it is granted', r.status === 200 && JSON.stringify(r.json.scopes) === '["read","decide"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NE } });
+const tokenE = String(r.json.token), deviceE = String(r.json.device);
+check('decide: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('decide'), r.body);
+r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
+check("decide: the decline reaches the route as the paired device (Kettle is no live store: the route's 404, not the door's 403 nor a 400 for a missing device)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
+refused("decide: never the free decide (the plan's POST .../proposals/<id>)", await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001', { token: tokenE, body: { decision: 'decline', note: 'x' } }));
+refused("decide: never the deck's steering", await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } }));
+for (const id of [idC, deviceE.split(':')[1]]) await admin('POST', '/lan/pair/revoke', { id });
+check('decide: both pairings revoked again', readRegistry(HOME).map((p) => p.device).join() === 'quest-b');
 
 // the ceremony's other ends: deny, the pending cap, the window
 const ND = nonce();
