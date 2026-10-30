@@ -33,12 +33,12 @@ for (const c of deck.cards) {
   const taken = d && (d.steered?.at >= deck.since ? VERB[d.steered.verdict] ?? d.steered.verdict : open.size && !open.has(c.product + ' ' + d.proposal) ? 'decided elsewhere' : null);
   if (taken) { console.log(`\n${c.headline}\n  · already ${taken} this morning: not shown again`); continue; }
   console.log(`\n${c.headline}`);
-  for (const l of c.lines.slice(0, 3)) console.log(`  · ${l.text}`);
+  for (const l of c.lines.slice(0, 3)) console.log(`  · ${l}`);
   if (d?.brief) {
     console.log('  brief (the lines the person reads on the card):');
     for (const l of d.brief.lines) console.log(`    ${l}`);
     if (d.brief.recommend === 'decline') console.log(`  -> the brief recommends Decline: ${d.brief.note} (the person decides; Enter on the deck)`);
-    else if (d.brief.advice.say === 'ask' && d.brief.decline) console.log(`  -> like an idea they declined (${d.brief.decline.id}): it is theirs to decide; nothing is recommended`);
+    else if (d.brief.advice === 'ask') console.log('  -> like an idea they declined: it is theirs to decide; nothing is recommended');
   }
   const t = c.place?.target;
   if (!t || !['feature', 'room', 'wing'].includes(t.kind)) continue;

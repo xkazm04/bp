@@ -254,6 +254,31 @@ function stakes(p: ProductFacts, x: Proposal): string | null {
   return parts.length ? parts.join(' · ') : null;
 }
 
+/** The deck as an agent reads it on the door (morning.brief: GET /api/companion/morning?view=agent): the same cards and the
+ *  same brief lines, without the page's styling and evidence, so a whole morning fits the door's result cap (tool-call.ts
+ *  RESULT_CAP; the full deck with every card's brief did not). */
+export interface AgentCard {
+  id: string; kind: CardKind; product?: string; headline: string; lines: string[];
+  place?: { product: string; target?: FocusPlace['target'] };
+  decision?: { proposal: string; tier?: number; steered?: { verdict: Verdict; at: string }; brief?: { lines: string[]; advice: Brief['advice']['say']; recommend?: 'decline'; note?: string } };
+}
+export function agentDeck(d: MorningDeck): { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[] } {
+  return {
+    since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}),
+    cards: d.cards.map((c) => {
+      const x = c.decision, b = x?.brief;
+      return {
+        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: c.lines.map((l) => l.text),
+        ...(c.place ? { place: { product: c.place.product, ...(c.place.target ? { target: c.place.target } : {}) } } : {}),
+        ...(x ? { decision: {
+          proposal: x.proposal, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(x.steered ? { steered: { verdict: x.steered.verdict, at: x.steered.at } } : {}),
+          ...(b ? { brief: { lines: b.lines, advice: b.advice.say, ...(b.recommend ? { recommend: b.recommend, note: b.note } : {}) } } : {}),
+        } } : {}),
+      };
+    }),
+  };
+}
+
 /** One release item in words: "Split the X bundle · Checkout: expected 41 KB, measured 44 KB after the release". */
 export function trackWords(t: Track, where: ReadonlyMap<string, Where>): string {
   const room = where.get(t.feature)?.roomName, u = t.unit ? ' ' + t.unit : '';

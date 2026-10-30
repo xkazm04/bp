@@ -1,12 +1,13 @@
 // GET /api/companion/morning?since=<iso>: the Morning Watch deck across every registered live product (companion/morning.ts):
 // `{ since, until, products: ProductSummary[], cards: MorningCard[], skipped }`. The window defaults to the last 16 hours.
+// `view=agent` (morning.brief on the MCP door): the same cards and brief lines, compact (agentDeck), within the door's cap.
 // POST /api/companion/morning, body `{ product, proposal, verdict: approve | defer | hold }`, the human path only
 // (`x-bp-human`, else 403: the agent's door can read the morning but never steer it): approve moves the finding to approved
 // in the product's store (403 while BP_WRITES=off), defer takes it off the deck until tomorrow, hold keeps it marked; each is
 // one row in the product's steering log (morning.server.ts). 200 + the row; 400 a bad body; 404 unknown; 409 already decided.
 // Localhost only.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
-import { VERDICTS, type Verdict } from '../../../../companion/morning.ts';
+import { VERDICTS, agentDeck, type Verdict } from '../../../../companion/morning.ts';
 import { isHuman, notHuman } from '../door.server.ts';
 import { morningDeck, steer } from '../morning.server.ts';
 
@@ -15,7 +16,8 @@ const NO_STORE = { 'cache-control': 'no-store' };
 export function GET(req: Request): Response {
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
-  return Response.json(morningDeck(new URL(req.url).searchParams.get('since') ?? undefined), { headers: NO_STORE });
+  const q = new URL(req.url).searchParams, deck = morningDeck(q.get('since') ?? undefined);
+  return Response.json(q.get('view') === 'agent' ? agentDeck(deck) : deck, { headers: NO_STORE });
 }
 
 export async function POST(req: Request): Promise<Response> {

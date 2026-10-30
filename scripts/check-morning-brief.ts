@@ -67,6 +67,15 @@ const rel = d.cards.find((c) => c.kind === 'release' && c.product === 'kettle-we
 const top = tracksOf(snapshotOf(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'scan.db')), Date.now()).find((t) => t.feature === rel.place?.target?.id);
 check("the release card flies to a tile whose label is this release's reading, named first on the card", !!top && top.release === 'rel-1.4.0' && /^confirmed/.test(top.label) && rel.lines[0].text.startsWith(top.title), JSON.stringify({ place: rel.place?.target, top: top && [top.id, top.label], line: rel.lines[0]?.text }));
 const mb = TOOLS.find((t) => t.name === 'morning.brief');
+// the door: morning.brief asks for the agent view, which carries the same brief lines and fits the door's cap
+const { toolRequest, RESULT_CAP } = await import('../packages/core/src/server/api/companion/tool-call.ts');
+const tr = mb ? toolRequest(mb, {}) : { error: 'no tool' };
+check('morning.brief asks for view=agent', 'path' in tr && tr.path === '/api/companion/morning?view=agent', JSON.stringify(tr));
+const av = await (await GET(new Request('http://127.0.0.1:3313/api/companion/morning?view=agent', { headers: H }))).text();
+const aj = JSON.parse(av) as { cards: { decision?: { proposal: string; brief?: { lines: string[]; recommend?: string; note?: string } } }[] };
+check(`the agent view fits the door's ${RESULT_CAP}-char cap (${av.length})`, av.length <= RESULT_CAP);
+check("...and carries every decision card's brief lines and the repeat's recommendation", dec.every((c) => JSON.stringify(aj.cards.find((x) => x.decision?.proposal === c.decision!.proposal)?.decision?.brief?.lines) === JSON.stringify(c.decision!.brief!.lines))
+  && aj.cards.find((x) => x.decision?.proposal === 'brief-o2')?.decision?.brief?.recommend === 'decline');
 check('morning.brief is the door to this deck (GET /api/companion/morning) and says it carries the brief', !!mb && mb.route.path === '/api/companion/morning' && /brief/.test(mb.description.slice(40)));
 
 // ------------------------------------------------------------------------- the morning speaks about agents
