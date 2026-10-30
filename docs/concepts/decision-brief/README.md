@@ -12,14 +12,16 @@ draft (a feature and a few words). Its four facts each carry the ids that back t
 | Fact | From | Thin evidence says |
 |---|---|---|
 | **blast** - the feature, its room and wing, the features whose `depends_on` name it | the v3 map | `which is not on the plan: blast radius unknown` |
-| **precedent** - decided rows of the same idea (the attempt/parent chain, or the same feature + lens with the same **action** - the title's first real verb, so "Add retries" and "Retry the webhook" match and "Compress" and "Cache images" do not - never opposite (a negation, enable/disable and the like), and the same standard or 2+ shared idea words making up two thirds of the shorter title's, the feature's own name excluded), the same standard or such words elsewhere, or the same lens and tier; approved vs declined | the store's proposals | `No precedent yet under <lens>` |
+| **precedent** - decided rows of the **same idea** (the attempt/parent chain, the same external item, or the same proposal filed again on the same feature: identical idea words, numbers counted, the feature's own name aside, never opposite), a **like idea** (the same action - the title's first real verb - and most of the same words), the same standard, or the same lens and tier; approved vs declined | the store's proposals | `No precedent yet under <lens>` |
 | **declined** - the matching declines (not merely same-lens), latest first, one per standard, quoted in the person's words | `decision_note` / `triage_note`, `decided_by` | (no line) |
 | **undo** - an approval builds on a pack branch and ships only after triage and a release; a decline is final; after release by `risk_class` | the process, `risk_class` | `after release unknown (no risk class)` |
 | **cost** - median minutes per item of finished execute runs under the lens, else any lens | `runs`, `packs` | `Cost: no build history yet` |
 
-`advice` is `withdraw` only when a decline of the **same idea** stands (it flips the card to Decline, and a decline is
-final); `ask` when a like idea was declined on another feature (shown in amber, never flipped) or similar decisions were
-mostly declines (3+); else `proceed`. `facts` / `lines` are the brief in plain words under a fixed budget, **5 lines of at most 120 characters**,
+`advice` is `withdraw` only when a decline of the **same idea** stands: it flips the card to Decline, and a decline is
+final, so it rests on identity, never likeness (three independent reviews showed every likeness rule also matches
+different changes: "Hash passwords with bcrypt" / "... with argon2"). `ask` when a like idea or the same standard was
+declined (shown in amber, *Like a declined idea*, Approve stays the default) or similar decisions were mostly declines
+(3+); else `proceed`. `facts` / `lines` are the brief in plain words under a fixed budget, **5 lines of at most 120 characters**,
 the one rendering every small surface shares.
 
 ## The doors
