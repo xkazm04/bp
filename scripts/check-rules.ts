@@ -45,18 +45,20 @@ const grant = rule({ id: 'G-1', kind: 'grant', minTier: 3, scope: { kind: 'all',
 const RULES = [hold, only, cap, gone, lifted, grant];
 const it = (id: string, feature: string, lens = 'design') => ({ id, feature, lens });
 {
-  const g = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('a', 'card'), it('b', 'quiz'), it('c', 'book')] }, T0);
+  const g = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('a', 'card'), it('b', 'quiz'), it('c', 'book')], model: 'sonnet', effort: 'low' }, T0);
   check('gate: a hold leaves out what it covers, cites it; the rest goes', g.held.length === 2 && g.held[0].id === 'a' && g.held[0].order.id === 'O-1' && !g.refused, j(g));
   check('gate: `only` holds another lens in its place', g.held[1]?.id === 'c' && g.held[1]?.order.id === 'O-2', j(g.held));
   check('gate: expired and revoked orders hold nothing', !g.held.some((h) => h.id === 'b'));
-  const all = R.gate(RULES, { kind: 'build', tool: 'wave.dispatch', items: [it('a', 'card'), it('r', 'refund')] }, T0);
+  const all = R.gate(RULES, { kind: 'build', tool: 'wave.dispatch', items: [it('a', 'card'), it('r', 'refund')], model: 'sonnet', effort: 'low' }, T0);
   check('gate: an act all of whose items are held is refused by the first order', all.refused?.id === 'O-1' && all.held.length === 2, j(all));
   check('gate: words cite the order id, its author, when (the local clock) and the count left out', R.gateWords(all).startsWith('held by order O-1 (user:owner, ' + R.stampOf('2026-10-20T10:00:00Z') + '): hold; 2 items left out') && /^\w{3} \d{1,2} \w{3},? \d\d:\d\d$/.test(R.stampOf('2026-10-20T10:00:00Z')), R.gateWords(all));
-  const sec = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('c', 'book', 'security')] }, T0);
+  const sec = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('c', 'book', 'security')], model: 'sonnet', effort: 'low' }, T0);
   check('gate: `only` lets its own lens through', !sec.held.length && !sec.refused, j(sec));
   const hi = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('q', 'quiz')], model: 'opus', effort: 'xhigh' }, T0);
   const lo = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('q', 'quiz')], model: 'opus', effort: 'medium' }, T0);
   const so = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('q', 'quiz')], model: 'sonnet', effort: 'xhigh' }, T0);
+  const none = R.gate(RULES, { kind: 'build', tool: 'dispatch', items: [it('q', 'quiz')] }, T0);
+  check('gate: under a cap, a build that names no effort (the CLI default) is held', none.refused?.id === 'O-3', j(none));
   check('gate: a cap holds above its effort, on its model only', hi.refused?.id === 'O-3' && !lo.held.length && !so.held.length, j([hi, lo, so]));
   const sc = R.gate(RULES, { kind: 'scan', tool: 'scan.place', lens: 'design', scope: { kind: 'feature', id: 'refund', label: 'Refund', features: ['refund'] } }, T0);
   const sc2 = R.gate(RULES, { kind: 'scan', tool: 'scan.place', lens: 'security', scope: { kind: 'room', id: 'book', label: 'Booking', features: ['book'] } }, T0);
@@ -108,6 +110,15 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
     const later = [row('l1', 'card', 'approve', 3, { at: '2026-10-16T00:00:00Z' }), row('l2', 'card', 'decline', 3, { at: '2026-10-17T00:00:00Z' }), row('l3', 'card', 'decline', 3, { at: '2026-10-18T00:00:00Z' }), row('old', 'card', 'decline', 3, { at: '2026-10-01T00:00:00Z' })];
     const s = R.sinceSet(g, later);
     check('since a grant was set: only your later decisions count; overruled 2 of 3 = drifting', s?.matched === 1 && s.differed === 2 && s.drifting && s.ids.join() === 'l3,l2' && R.sinceSet(hold, later) === null, j(s));
+  }
+  {
+    // an order that expired on the 5th and was revoked on the 20th stood until the 5th; a grant that expired likewise
+    const o = rule({ id: 'O-8', kind: 'hold', at: '2026-10-01T00:00:00Z', expiresAt: '2026-10-05T00:00:00Z', revokedAt: '2026-10-20T00:00:00Z' });
+    const after = [row('x1', 'card', 'approve', 2, { at: '2026-10-10T00:00:00Z' }), row('x0', 'card', 'approve', 2, { at: '2026-10-03T00:00:00Z' })];
+    check('breaches end when the order ended: at its expiry, even when it was revoked later', R.breachesOf(o, after).map((x) => x.id).join() === 'x0', j(R.breachesOf(o, after)));
+    const g = rule({ id: 'G-8', kind: 'grant', minTier: 3, at: '2026-10-01T00:00:00Z', expiresAt: '2026-10-02T00:00:00Z', scope: { kind: 'all', label: 'Everything', features: [] } });
+    const s = R.sinceSet(g, [row('y1', 'card', 'decline', 3, { at: '2026-10-10T00:00:00Z' }), row('y2', 'card', 'decline', 3, { at: '2026-10-11T00:00:00Z' })]);
+    check('since an expired grant was set: decisions after its expiry do not count against it', s?.differed === 0 && !s.drifting, j(s));
   }
   check('backtest: synthetic rows are counted', R.backtest(hold, [row('s', 'card', 'approve', 2, { synthetic: true })]).synthetic === 1);
 }

@@ -111,7 +111,10 @@ function holdsBuild(rules: readonly Rule[], it: ActItem, model: string | undefin
     if (!isOrder(r.kind) || !isLive(r, now) || !covers(r, it.feature)) return false;
     if (r.kind === 'hold') return true;
     if (r.kind === 'only') return !(r.lenses ?? []).includes(it.lens);
-    return effort !== undefined && effortRank(effort) > effortRank(r.maxEffort) && (!r.model || r.model === model);
+    // a build that names no effort (a plain /dispatch, a lens's execute) runs at the CLI's default, which no cap can vouch
+    // for: under a cap, a place builds only through a wave package that names its effort (and model, for a model cap)
+    if (effort === undefined) return true;
+    return effortRank(effort) > effortRank(r.maxEffort) && (!r.model || model === undefined || r.model === model);
   });
 }
 
@@ -260,9 +263,12 @@ export function backtest(r: RuleShape, decided: readonly DecidedRow[], limit = 2
 export interface Since { matched: number; differed: number; drifting: boolean; ids: string[] }
 export function sinceSet(r: Rule, decided: readonly DecidedRow[]): Since | null {
   if (r.kind !== 'grant') return null;
-  const later = decided.filter((x) => x.at > r.at && (!r.revokedAt || x.at < r.revokedAt));
-  const b = backtest(r, later, later.length || 1);
-  const ids = b.rows.filter((x) => !x.agree).map((x) => x.id);
+  // replayed over the whole record up to its end (a cautious grant's trust is earned on all of it, as it is live), then
+  // only the decisions made while it stood are counted
+  const end = endOf(r), upto = decided.filter((x) => !end || x.at < end);
+  const later = backtest(r, upto, upto.length || 1).rows.filter((x) => x.at > r.at);
+  const ids = later.filter((x) => !x.agree).map((x) => x.id);
+  const b = { matched: later.length - ids.length, differed: ids.length };
   return { matched: b.matched, differed: b.differed, drifting: b.differed >= 2 && b.differed * 5 > b.matched + b.differed, ids };
 }
 
@@ -274,9 +280,12 @@ export const trustworthy = (b: Backtest): boolean => !b.flags.some((f) => f.key 
  * refuse those, so a breach means something went around them (a CLI run, another app's runner): the order's record says
  * so. Grant-signed decisions (`rule:`) are the grants' own and never a breach of an order the gate let them through.
  */
+/** When a rule stopped standing: the earlier of its revoke and its expiry (a rule revoked after it expired ended at expiry). */
+export const endOf = (r: Pick<Rule, 'revokedAt' | 'expiresAt'>): string | undefined =>
+  r.revokedAt && r.expiresAt ? (r.revokedAt < r.expiresAt ? r.revokedAt : r.expiresAt) : r.revokedAt ?? r.expiresAt;
 export function breachesOf(r: Rule, decided: readonly DecidedRow[]): DecidedRow[] {
   if (!isOrder(r.kind)) return [];
-  const end = r.revokedAt ?? r.expiresAt;
+  const end = endOf(r);
   return decided.filter((x) => x.owner === 'approve' && x.at > r.at && (!end || x.at < end) && verdictOf(r, x) === 'hold');
 }
 
