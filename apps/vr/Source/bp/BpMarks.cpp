@@ -323,6 +323,12 @@ void ABpTable::LoadMarks()
 void ABpTable::ReceiveScanState(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid()) return;
+	// A decline written from this table bridges only until the store's read shows it: then the store's status rules.
+	for (auto It = CardDeclined.CreateIterator(); It; ++It)
+	{
+		const FBpProposal* Read = State.Scan.proposals.FindByPredicate([&It](const FBpProposal& P) { return P.id == *It; });
+		if (!Read || Read->status != TEXT("proposed")) It.RemoveCurrent();
+	}
 	BuildPins(State);
 	if (!PendingReplayScope.IsEmpty() && State.bHasScan)
 	{

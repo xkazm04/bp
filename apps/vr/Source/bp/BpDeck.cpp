@@ -494,7 +494,7 @@ void ABpTable::BuildDeckQueue()
 	for (int32 Index = 0; Index < State.Scan.proposals.Num(); ++Index)
 	{
 		const FBpProposal& Proposal = State.Scan.proposals[Index];
-		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id)) continue;
+		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id) || CardDeclined.Contains(Proposal.id)) continue;
 		const int32* Tier = State.Tiers.Find(Proposal.id);
 		Asks.Add({ Index, Tier ? FMath::Clamp(*Tier, 0, 3) : 4, Proposal.risk });
 	}
@@ -635,7 +635,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		TArray<const FBpProposal*> Out;
 		for (const FBpProposal& Proposal : State.Scan.proposals)
 		{
-			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id)) Out.Add(&Proposal);
+			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id) && !CardDeclined.Contains(Proposal.id)) Out.Add(&Proposal);
 		}
 		Out.StableSort([&State](const FBpProposal& A, const FBpProposal& B)
 		{
@@ -668,16 +668,19 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		Add(Head);
 		Add(Gap(12.f));
 		AddLines(P->title, STitle, 3);
+		const bool bBriefLines = Brief && Brief->lines.Num() > 0;
 		FString Where = Tile ? TEXT("On ") + Tile->name : TEXT("On ") + P->feature;
 		if (Bay) Where += TEXT("  ·  ") + Bay->name;
-		AddLines(Where, SLede, 2);
+		// with a brief its first line says where the change lands ("Touches <feature> in <bay>"), as on the table's card
+		if (!bBriefLines) AddLines(Where, SLede, 2);
 		// The decision brief (F1): its lines as the web's card shows them, the quoted decline in amber (row style 2).
-		if (Brief && Brief->lines.Num() > 0)
+		if (bBriefLines)
 		{
 			int32 DeclinedLine = INDEX_NONE;
 			for (int32 Index = 0; Index < Brief->facts.Num(); ++Index) if (Brief->facts[Index].key == TEXT("declined")) DeclinedLine = Index;
-			Add(Gap(14.f));
-			Add(Text(TEXT("THE BRIEF"), SHead), true);
+			// no heading, no where line: the five lines fit the first page under the title (by capture: with them, the cost line
+			// went to page 2)
+			Add(Gap(10.f));
 			for (int32 Index = 0; Index < Brief->lines.Num() && Index < 5; ++Index)
 			{
 				for (const FString& Each : Wrap(Brief->lines[Index], SBody, ContentW))
@@ -1174,7 +1177,6 @@ void ABpTable::DeckDecline()
 				return;
 			}
 			UE_LOG(LogBpTable, Log, TEXT("BpDeck: declined %s in the store as a repeat"), *Id);
-			T->DeckDeclined.Add(Id);
 			T->CardDeclined.Add(Id);
 			T->BuildDeckQueue();
 			T->ShowDeckAt(T->DeckAt, 0, 1);

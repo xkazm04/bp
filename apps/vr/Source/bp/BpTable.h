@@ -1180,7 +1180,8 @@ private:
 	FString CardShownId;
 	TSharedPtr<SWidget> CardButtons[2];
 	bool bCardFirstIsDecline = false;
-	/** Declined from this table and answered 200: skipped by the card until the store's next read shows them declined. */
+	/** Declined in the store from this table (the card or the deck) and answered 200: skipped by both until the store's read
+	 *  shows them declined (ReceiveScanState drops them then). */
 	TSet<FString> CardDeclined;
 	/** Decision screens whose brief was asked for (FetchBrief; the answer lays the screen out again). */
 	TSet<FString> DeckBriefAsked;
