@@ -25,6 +25,19 @@ shift. The symbol named beside each citation is the stable reference. Personas p
   (`plan.brief` and `morning.brief` sit side by side in `catalog.ts`). The card-level fusion was still being built. Every
   item the fusion attempts tonight is marked **verify, else do** below.
 
+## Status
+
+- **S1 closed** on branch `roadmap/web-s1-s2-s5` (2026-10-30), over the fusion's PR #9 (`51e193e`):
+  - A1-A5 were landed by the fusion and verified against S1's "Done when": `python scripts/morning-demo-walk.py` (new,
+    41 asserted steps over `morning-up --server --prod`) and `python scripts/brief-demo-rehearse.py` (17 ok) are green.
+    A6 was landed by the fusion too (BpLink's card, `38b3f9d`); its room deck, `briefs.json` and pinch stay in S4.
+  - B1, B2, B3 and B5 were fixed by the fusion (`5ac408d`, `febc405`, the chip at M, the walk's skip); the walk asserts each.
+    B4: the close card no longer repeats the opening card's portfolio table. B7: the evidence fold ("and 2 more") opens.
+    B7's count mismatch lived in e2's uncommitted DEMO.md; the rehearsal prints 17 ok.
+  - I1 is closed: a card runs on the server's own bound origin (`door.server.ts` `selfOrigin`), held by
+    `check:companion-door`'s `host:` cases.
+  - `one-morning/` and `decision-brief/` say they are the as-built records; the fused demo is in `one-morning/README.md`.
+
 ## 1. What the fused product is
 
 Every morning the owner opens one deck, the **Morning Watch**, that briefs the whole portfolio of agent-built products:

@@ -1,5 +1,9 @@
 # One morning, one place
 
+**The as-built record** of hackathon bp-sync-1029's entry e3, with e2's decision brief fused in (PR #9, `51e193e`). The
+brief itself is recorded in [`../decision-brief/`](../decision-brief/README.md). What comes next is planned in
+[`../one-morning-brief/ROADMAP.md`](../one-morning-brief/ROADMAP.md), not here.
+
 The daily steering ritual, wherever the owner stands: a **Morning Watch** that briefs the whole portfolio in one deck,
 and a **shared focus** that every surface publishes and every other follows, so as a card is read every screen is in
 the same room.
@@ -65,6 +69,28 @@ being read), `morning.brief` for agents and `plan.brief` all read the same lines
   walks the deck through the real door (scripted, no model).
 - **Gates**: `check:shared-focus`, `check:morning-watch` (seeds a temp portfolio, steers it, drives the stand-in through
   a real apps/server), `check:morning-brief` (the brief on the cards, Decline on a repeat only, the agent trail).
+
+## Run it (the fused demo)
+`node scripts/morning-up.mjs --port 3312 --server --prod` seeds the demo (below), builds the web and serves it on 3312 with
+apps/server on 3412, then prints `ready: ...`. Open the deck at `http://127.0.0.1:3312/?product=kettle-web` and a
+follower at `...&follow=1`. `python scripts/morning-demo-walk.py` walks these steps headless and asserts each one (run it
+once per fresh `morning-up`: it decides on the demo store).
+1. **M**: "Good morning." 2 of 3 products moved (6 built, 1 failed), releases 3 confirmed and 1 short, and what agents
+   heard overnight (11 checks, 2 declines heard, 1 withdrawn, 1 repeat to decline). The follower says "Following Web".
+2. **→** The agents card: the trail's lines at Card payments ("Was about to propose ... read your decline brief-h7 ...").
+3. **→** Kettle Web's night, then its 1.4.0 release: the card names Class packs & credits (190 ms) first, and the tile
+   behind it reads the same reading.
+4. Kettle Phone opens **in place** (its 2.1.0 fell short), then Kettle Front Desk's quiet night.
+5. The three decisions, each with its brief: the stop-ship API key (**A** approves it in the store); the re-filed retry
+   (REPEATS A DECLINE: **Enter** declines it, and the store row starts `Repeats brief-h7`); the webhook retry (a likeness:
+   the quote shows, Enter does nothing, **H** holds it).
+6. The close card counts the morning (1 approved, 0 deferred, 1 held, 1 declined as a repeat) and names the steering
+   log; it does not repeat the opening card's portfolio table.
+7. The phone (under 760 px) is the clicker: the follower says "Following Phone".
+8. `node scripts/morning-agent-walk.mjs --base http://127.0.0.1:3412` reads `morning.brief` on the real MCP door, prints
+   each open decision card's brief, and says which were already decided this morning.
+9. **Esc**, then **J**: the plan's decision card carries the same brief; `GET /api/companion/brief?product=kettle-web&id=brief-o2`
+   answers the same lines.
 
 ## Demo data
 `node scripts/morning-up.mjs [--port 3010] [--server]` seeds `.demo/morning/` (three copies of the Kettle map with a
