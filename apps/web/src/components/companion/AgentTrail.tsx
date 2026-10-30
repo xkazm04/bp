@@ -7,11 +7,13 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { TrailSession } from '@bp/core/companion/trail';
+import { useEngine } from '../hooks';
 
 export const TRAIL_POLL_MS = 4000;
 const ago = (iso: string) => { const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000)); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; };
 
 export function AgentTrail({ product }: { product: string }) {
+  const E = useEngine();
   const [sessions, setSessions] = useState<TrailSession[]>([]);
   const [hidden, setHidden] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -35,7 +37,11 @@ export function AgentTrail({ product }: { product: string }) {
         {shown.slice(0, 1).map((s) => (
           <motion.div key={s.conversation} className="cp-card cp-tr" layout="position" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
             <div className="tr-k"><span>Agent read your decisions</span><button type="button" aria-label="Put away" onClick={() => setHidden((h) => ({ ...h, [s.conversation]: s.at }))}>✕</button></div>
-            <ul>{s.lines.map((l, i) => <li key={i} className={'t-' + l.tone}>{l.text}</li>)}</ul>
+            <ul>{s.lines.map((l, i) => {
+              // a line naming an open decision opens its card on the plan (the brief is on it); a decided one is history
+              const open = l.id && E.M.sim.DEC[l.id]?.open;
+              return <li key={i} className={'t-' + l.tone}>{open ? <button type="button" onClick={() => E.openDecision(l.id!)} title={'Open ' + l.id + ' on the plan'}>{l.text}</button> : l.text}</li>;
+            })}</ul>
             <small>{s.conversation} · {s.reads} brief{s.reads === 1 ? '' : 's'} read · {ago(s.at)}</small>
           </motion.div>
         ))}

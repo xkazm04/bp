@@ -43,4 +43,6 @@
 .cp-tr li.t-heard { border-left-color: var(--amber); color: var(--ink-hi); }
 .cp-tr li.t-act { border-left-color: var(--accent); }
 .cp-tr li.t-quiet { color: var(--ink-2); }
+.cp-tr li button { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
+.cp-tr li button:hover { color: var(--ink-hi); }
 .cp-tr small { display: block; font: 400 12px var(--mono); color: var(--ink-2); }

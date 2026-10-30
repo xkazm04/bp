@@ -163,7 +163,7 @@ const sec = [
   const none = briefAdvice({ feature: 'lonely', title: 'y', lens: 'security' }, s);
   ok(12, none.say === 'proceed' && !none.decline, 'no stand, no flip', none);
   const src = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
-  ok(12, /briefAdvice\(/.test(src('packages/core/src/model/live-feed.ts')) && /recommended: 1, recommendedNote: repeatNote\(/.test(src('packages/core/src/model/live-feed.ts')), 'liveSwarm recommends Decline on a repeat');
+  ok(12, /briefAdvice\(/.test(src('packages/core/src/model/live-feed.ts')) && /recommended: 1, recommendedNote: repeatNote\(rep\)/.test(src('packages/core/src/model/live-feed.ts')), 'liveSwarm recommends Decline on a repeat');
   ok(12, /note \?\?= oi === d\.rec && oi === 1 \? d\.recNote/.test(src('apps/web/src/engine/Engine.ts')), 'Engine.decide carries the repeat note on the recommended Decline');
 }
 

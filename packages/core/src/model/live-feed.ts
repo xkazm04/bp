@@ -3,7 +3,7 @@
 // components (the variants index), so only the client app (BlueprintApp) imports this module.
 import { loadMap, type Swarm } from '@bp/core/data';
 import { swarmFromScan } from '@bp/core/scan/swarm';
-import { briefAdvice, repeatNote, subjectOf } from '@bp/core/scan/brief';
+import { briefAdvice, repeatNote, subjectOf, type BriefDecided } from '@bp/core/scan/brief';
 import type { Feature } from '@bp/core/data';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { AggCache, Closure } from './aggregates';
@@ -23,23 +23,29 @@ import { LIVE_DECIDER, SwarmSim } from './sim';
 export function liveSwarm(P: Product, scan: ScanSnapshot): Swarm {
   const F = P.base.features, dom = new Map(F.map((f) => [f.id, f.domain]));
   const S = swarmFromScan(scan, F), who = deciders(P);
-  // the decision brief's advice: a proposal that repeats a standing decline recommends Decline (Enter takes it), and that
-  // Decline carries a note naming the decision it repeats; anything else keeps the scan's default (Approve)
   // what a question touches is its blast radius, as the brief counts it: the feature and the features whose depends_on name
   // it, so the plan's amber outlines and the card's "touches" say what the brief's first line says
   const deps = new Map<string, string[]>();
   for (const f of F) for (const d of f.dependsOn) { const l = deps.get(d); if (l) l.push(f.id); else deps.set(d, [f.id]); }
+  // the decision brief's advice: a proposal that repeats a standing decline recommends Decline (Enter takes it), and that
+  // Decline carries a note naming the decision it repeats; anything else keeps the scan's default (Approve)
   const byId = new Map(scan.proposals.map((p) => [p.id, p]));
-  const standing = (id: string): { recommended?: number; recommendedNote?: string } => {
+  const standing = (id: string): BriefDecided | null => {
     const p = byId.get(id), a = p ? briefAdvice(subjectOf(p), scan) : null;
-    return a?.say === 'withdraw' && a.decline ? { recommended: 1, recommendedNote: repeatNote(a.decline) } : {};
+    return a?.say === 'withdraw' && a.decline ? a.decline : null;
   };
   return {
     ...S,
-    decisions: S.decisions.filter((d) => dom.has(d.feature)).map((d) => ({
-      ...d, domain: d.domain || dom.get(d.feature)!, decider: d.decider || who(d.lens, d.feature), ...standing(d.id),
-      affects: [d.feature, ...(deps.get(d.feature) ?? [])],
-    })),
+    decisions: S.decisions.filter((d) => dom.has(d.feature)).map((d) => {
+      const rep = standing(d.id);
+      return {
+        ...d, domain: d.domain || dom.get(d.feature)!, decider: d.decider || who(d.lens, d.feature), affects: [d.feature, ...(deps.get(d.feature) ?? [])],
+        ...(rep ? {
+          recommended: 1, recommendedNote: repeatNote(rep),
+          options: d.options.map((o, i) => (i === 1 ? { ...o, consequence: 'Declined again, with a note naming ' + rep.id } : o)),
+        } : {}),
+      };
+    }),
   };
 }
 
