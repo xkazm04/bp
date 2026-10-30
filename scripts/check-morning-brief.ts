@@ -59,6 +59,13 @@ for (const c of dec) {
   const j = (await r.json()) as { lines?: string[] };
   check(`plan.brief answers the card's own lines for ${c.decision!.proposal}`, r.status === 200 && JSON.stringify(j.lines) === JSON.stringify(c.decision!.brief!.lines), JSON.stringify(j.lines));
 }
+// the release card lands where the plan shows its reading: the tile's newest track is the release's (the demo pass found
+// the card on one feature and the "confirmed · measured" tile on another)
+const { tracksOf } = await import('../packages/core/src/scan/track.ts');
+const { snapshotOf } = await import('../packages/core/src/server/store.server.ts');
+const rel = d.cards.find((c) => c.kind === 'release' && c.product === 'kettle-web')!;
+const top = tracksOf(snapshotOf(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'scan.db')), Date.now()).find((t) => t.feature === rel.place?.target?.id);
+check("the release card flies to a tile whose label is this release's reading, named first on the card", !!top && top.release === 'rel-1.4.0' && /^confirmed/.test(top.label) && rel.lines[0].text.startsWith(top.title), JSON.stringify({ place: rel.place?.target, top: top && [top.id, top.label], line: rel.lines[0]?.text }));
 const mb = TOOLS.find((t) => t.name === 'morning.brief');
 check('morning.brief is the door to this deck (GET /api/companion/morning) and says it carries the brief', !!mb && mb.route.path === '/api/companion/morning' && /brief/.test(mb.description.slice(40)));
 

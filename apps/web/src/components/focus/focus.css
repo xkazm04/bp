@@ -90,3 +90,5 @@
 .bp-phone #mw .act .bt.rec { flex: 1 1 100%; }
 /* a follower's lower third: the line being read, then the brief's short line under it (a decision card's memory) */
 #fx-say .l2 { display: block; margin-top: 6px; font: 500 var(--fs-14)/1.35 var(--sans); color: var(--amber-2); }
+/* while the Morning Watch reads, its agents card says what the cards slip says: the slip steps aside off the plan */
+:root:has(#mw) .cp-trail { display: none; }

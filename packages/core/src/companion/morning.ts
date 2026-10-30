@@ -153,6 +153,12 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     // releases merged in the window, read through the answer tracks
     const rels = p.scan.releases.filter((r) => (r.status === 'merged' || r.status === 'tagged') && inWindow(r.updated_at, since, until));
     const tracks = tracksOf(p.scan, now);
+    // a tile on the plan says its NEWEST track (live-tracks.ts; tracksOf is newest first): the card flies to an item whose
+    // tile shows this release's reading, and names it first, so the card and the tile agree (the demo pass found the card
+    // on Card payments, whose tile showed a later build, while the "confirmed · measured 190" sat on Class packs)
+    const tileTop = new Map<string, string>();
+    for (const t of tracks) if (!tileTop.has(t.feature)) tileTop.set(t.feature, t.id);
+    const onTile = (t: Track) => tileTop.get(t.feature) === t.id;
     let confirmed = 0, short = 0;
     for (const r of rels) {
       const ts = tracks.filter((t) => t.release === r.id);
@@ -163,10 +169,10 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
         : fell.length ? `${p.name} ${r.version} fell short: ${fell.length} of ${ts.length} items below what was expected.`
           : unk.length ? `${p.name} ${r.version} merged; ${n(unk.length, 'item')} not measured since.`
             : `${p.name} ${r.version} moved ${list(lenses)}: ${ts.length === 1 ? 'its item' : ts.length === 2 ? 'both items' : 'all ' + ts.length + ' items'} confirmed.`;
-      const focus: Track | undefined = fell[0] ?? good[0] ?? ts[0];
+      const focus: Track | undefined = fell.find(onTile) ?? good.find(onTile) ?? fell[0] ?? good[0] ?? ts[0];
       mine.push({
         id: `release:${p.slug}:${r.id}`, kind: 'release', product: p.slug, productName: p.name, headline, tone: fell.length ? 'bad' : unk.length ? 'warn' : 'good',
-        lines: ts.map((t) => ({ text: trackWords(t, p.where), tone: t.stage === 'confirmed' ? 'good' as Tone : t.stage === 'not-confirmed' ? 'bad' as Tone : 'warn' as Tone })).slice(0, 5),
+        lines: (focus ? [focus, ...ts.filter((t) => t !== focus)] : ts).map((t) => ({ text: trackWords(t, p.where), tone: t.stage === 'confirmed' ? 'good' as Tone : t.stage === 'not-confirmed' ? 'bad' as Tone : 'warn' as Tone })).slice(0, 5),
         ...(focus ? { place: featurePlace(p.slug, focus.feature, headline) } : {}),
       });
     }
