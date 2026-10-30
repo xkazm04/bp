@@ -653,7 +653,7 @@ export class Engine {
     if (depth === this.levelNames().length - 1) { const T = this.nearestTile(); if (T) this.openFeature(T.id); return; }
     this.closeFeature(false);
     let ch = this.chainBest();
-    if (!ch.length) { const R0 = this.M.L.walk[0]; ch = this.chainAt(R0.x + R0.w / 2, R0.y + 92); }
+    if (!ch.length) { const R0 = this.M.L.walk[0]; if (!R0) return; ch = this.chainAt(R0.x + R0.w / 2, R0.y + 92); } // no room to start from: an empty map
     const c = ch[Math.min(depth, ch.length) - 1];
     if (c) this.cam.flyTo(this.fitOf(c));
   }
@@ -691,6 +691,7 @@ export class Engine {
   }
   walk(dir: number) {
     const W = this.M.L.walk;
+    if (!W.length) return; // an empty map has no room to walk to
     const cur = this.place.find((c) => c.t === 'room' || c.t === 'bay');
     let i = cur ? W.indexOf(cur.t === 'bay' ? (cur.o as BayNode).room : (cur.o as RoomNode)) : -1;
     if (i < 0) { const w = this.chainBest().find((c) => c.t === 'wing'); i = w ? W.indexOf((w.o as WingNode).rooms[0]) - (dir > 0 ? 1 : 0) : dir > 0 ? -1 : W.length; }
