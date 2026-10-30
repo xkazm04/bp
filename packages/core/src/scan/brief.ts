@@ -66,17 +66,32 @@ type Scan = Pick<ScanSnapshot, 'proposals' | 'runs' | 'packs'>;
 // ------------------------------------------------------------------------------------------- the map
 const arr = (x: unknown): Record<string, unknown>[] => (Array.isArray(x) ? x.filter((v): v is Record<string, unknown> => !!v && typeof v === 'object') : []);
 const s = (x: unknown): string | undefined => (typeof x === 'string' && x ? x : undefined);
-/** A tolerant read of an app-structure document: rows without a slug and a name are skipped, never guessed. */
+/**
+ * A read of a raw app-structure v3 document for a consumer without bp's loader. bp itself reads every map through the
+ * loader (standard/load.ts) and briefMapOfStructure - the browser and the server alike - so this one mirrors the loader's
+ * rules that reach the brief: a short code only (domain <= 6, capability <= 8, feature 12 by the loader's pattern), a
+ * capability naming an unknown domain dropped and its features (and any without a known capability) in "Unplaced", and
+ * depends_on kept to known features other than itself. Lens names fall back to the id (the loader reads built-in
+ * manifests; this does not). check:decision-brief pins it equal to the loader's read on Kettle and on a rough map.
+ */
 export function briefMapOf(raw: unknown): BriefMap {
   const j = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const node = (r: Record<string, unknown>) => ({ slug: s(r.slug)!, name: s(r.name) ?? s(r.slug)!, ...(s(r.id) ? { id: s(r.id) } : {}) });
+  const code = (r: Record<string, unknown>, ok: (id: string) => boolean) => { const id = s(r.id); return id && ok(id) ? { id } : {}; };
+  const named = (r: Record<string, unknown>) => ({ slug: s(r.slug)!, name: s(r.name) ?? s(r.slug)! });
+  const domains: BriefMap['domains'] = arr(j.domains).filter((r) => s(r.slug)).map((r) => ({ ...named(r), ...code(r, (id) => id.length <= 6) }));
+  const D = new Set(domains.map((d) => d.slug));
+  const capabilities: BriefMap['capabilities'] = arr(j.capabilities).filter((r) => s(r.slug) && D.has(s(r.domain) ?? ''))
+    .map((r) => ({ ...named(r), ...code(r, (id) => id.length <= 8), domain: s(r.domain)! }));
+  const C = new Set(capabilities.map((c) => c.slug)), rows = arr(j.features).filter((r) => s(r.slug)), slugs = new Set(rows.map((r) => s(r.slug)!));
+  let unplaced = false;
+  const features: BriefMap['features'] = rows.map((r) => {
+    const cap = s(r.capability) && C.has(s(r.capability)!) ? s(r.capability)! : ((unplaced = true), 'unplaced');
+    const deps = Array.isArray(r.depends_on) ? r.depends_on.filter((d): d is string => typeof d === 'string' && d !== r.slug && slugs.has(d)) : [];
+    return { ...named(r), ...code(r, (id) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,11}$/.test(id)), capability: cap, ...(s(r.stage) ? { stage: s(r.stage) } : {}), depends_on: deps };
+  });
+  if (unplaced) { domains.push({ slug: 'unplaced', name: 'Unplaced' }); capabilities.push({ slug: 'unplaced', name: 'Unplaced', domain: 'unplaced' }); }
   return {
-    features: arr(j.features).filter((r) => s(r.slug)).map((r) => ({
-      ...node(r), ...(s(r.capability) ? { capability: s(r.capability) } : {}), ...(s(r.stage) ? { stage: s(r.stage) } : {}),
-      ...(Array.isArray(r.depends_on) ? { depends_on: r.depends_on.filter((d): d is string => typeof d === 'string') } : {}),
-    })),
-    capabilities: arr(j.capabilities).filter((r) => s(r.slug)).map((r) => ({ ...node(r), ...(s(r.domain) ? { domain: s(r.domain) } : {}) })),
-    domains: arr(j.domains).filter((r) => s(r.slug)).map(node),
+    features, capabilities, domains,
     lenses: arr(j.lenses).filter((r) => s(r.id)).map((r) => ({ id: s(r.id)!, name: s(r.name) ?? s((r.manifest as Record<string, unknown> | undefined)?.name) ?? s(r.id)! })),
   };
 }
@@ -150,14 +165,18 @@ function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = fa
   let approved = 0, declined = 0;
   for (const x of scan.proposals) {
     if (x.id === sub.id || x.status === 'proposed') continue;
-    const shared = overlap(mine, rowWords(x));
-    // the same idea needs more than the same place: a decline of something else on this feature must never read as "this
-    // idea was declined" (it would flip the card to Decline), so the same feature (and lens) also needs a shared idea word
-    // or the same standard; without them it is precedent under the lens, not a stand against this idea
+    const theirs = rowWords(x), shared = overlap(mine, theirs);
+    // "the same idea" is what flips a card to Decline, and a decline is final, so it is held to the strictest reading: the
+    // attempt chain, or the same feature (and lens) AND either the same standard or the same idea in other words - at
+    // least two shared idea words making up half of all the words of both titles ("Add rate limits to the login
+    // endpoint" and "Add CSRF protection to the login endpoint" share two of six: not the same idea). The same words or
+    // the same standard on ANOTHER feature are shown and asked about, never a stand; the same place alone is lens precedent.
     const sameStd = !!sub.standard && sub.standard !== 'none' && x.standard === sub.standard;
-    const match: Match | null = chain.has(x.id) || (x.feature === sub.feature && (!sub.lens || x.lens === sub.lens) && (shared >= 1 || sameStd)) ? 'same idea'
+    const alike = shared >= 2 && shared * 2 >= mine.size + theirs.size - shared;
+    const samePlace = x.feature === sub.feature && (!sub.lens || x.lens === sub.lens);
+    const match: Match | null = chain.has(x.id) || (samePlace && (sameStd || alike)) ? 'same idea'
       : sameStd ? 'same standard'
-      : shared >= 2 ? 'similar words'
+      : alike ? 'similar words'
       : sub.lens && x.lens === sub.lens && (x.feature === sub.feature || sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;
     if (!match) continue;
     if (x.status === 'declined') declined++; else approved++;
@@ -169,8 +188,9 @@ function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = fa
     });
   }
   if (!lean) rows.sort((a, b) => BRIEF_MATCHES.indexOf(a.match) - BRIEF_MATCHES.indexOf(b.match) || newestFirst(a, b));
-  const seen = new Set<string>(), declines: BriefDecided[] = [];
-  for (const r of rows.filter((x) => x.verdict === 'declined' && x.match !== 'same lens').sort(newestFirst)) {
+  // the stands (same idea) first, then the declines of like ideas elsewhere; newest first within each
+  const seen = new Set<string>(), declines: BriefDecided[] = [], stand = (r: BriefDecided) => (r.match === 'same idea' ? 0 : 1);
+  for (const r of rows.filter((x) => x.verdict === 'declined' && x.match !== 'same lens').sort((a, b) => stand(a) - stand(b) || newestFirst(a, b))) {
     const k = r.standard ?? r.id;
     if (seen.has(k)) continue;
     seen.add(k); declines.push(r);
@@ -190,20 +210,24 @@ const median = (xs: number[]) => { const a = [...xs].sort((x, y) => x - y), m = 
 function costOf(sub: BriefSubject, scan: Scan): Brief['cost'] {
   const items = new Map<string, number>(), packRun = new Map(scan.packs.map((k: Pack) => [k.id, k.run_id]));
   for (const p of scan.proposals) { const r = p.pack_id ? packRun.get(p.pack_id) : undefined; if (r) items.set(r, (items.get(r) ?? 0) + 1); }
-  const done = scan.runs.filter((r: Run) => r.phase === 'execute' && r.status === 'done' && r.ended_at && Number.isFinite(Date.parse(r.ended_at)));
+  // a run whose times do not read (or end before they start) says nothing about duration: left out, never NaN on the wire
+  const span = (r: Run) => (r.ended_at ? Date.parse(r.ended_at) - Date.parse(r.started_at) : NaN);
+  const done = scan.runs.filter((r: Run) => r.phase === 'execute' && r.status === 'done' && Number.isFinite(span(r)) && span(r) >= 0);
   const pick = (rs: Run[], basis: 'lens' | 'any lens'): Brief['cost'] | null => {
     if (!rs.length) return null;
-    const per = rs.map((r) => (Date.parse(r.ended_at!) - Date.parse(r.started_at)) / 60000 / Math.max(1, items.get(r.id) ?? 1));
+    const per = rs.map((r) => span(r) / 60000 / Math.max(1, items.get(r.id) ?? 1));
     const models = [...new Set(rs.map((r) => r.model).filter((m): m is string => !!m))];
     return { builds: rs.length, minutes: Math.max(1, Math.round(median(per))), ...(models.length === 1 ? { model: models[0] } : {}), basis, runs: rs.map((r) => r.id) };
   };
   return (sub.lens ? pick(done.filter((r) => r.lenses.includes(sub.lens!)), 'lens') : null) ?? pick(done, 'any lens') ?? { builds: 0, basis: 'none', runs: [] };
 }
 
+/** withdraw: a decline of this same idea stands (the card flips to Decline). ask: a like idea was declined elsewhere, or
+ *  similar decisions were mostly declines (shown, never flipped). proceed: neither. */
 function adviceOf(declines: BriefDecided[], p: Brief['precedent']): Brief['advice'] {
-  const d = declines[0];
-  const who = { 'same idea': 'This idea', 'same standard': 'An idea under the same standard', 'similar words': 'A similarly worded idea', 'same lens': 'An idea under this lens' }[d?.match ?? 'same lens'];
-  if (d) return { say: 'withdraw', why: `${who} was declined ${d.at}${d.by ? ' by ' + d.by : ''}${d.note ? ': "' + d.note + '"' : ' (no note)'}` };
+  const d = declines[0], said = (x: BriefDecided) => `${x.at}${x.by ? ' by ' + x.by : ''}${x.note ? ': "' + x.note + '"' : ' (no note)'}`;
+  if (d?.match === 'same idea') return { say: 'withdraw', why: `This idea was declined ${said(d)}` };
+  if (d) return { say: 'ask', why: `${d.match === 'same standard' ? 'An idea under the same standard' : 'A similarly worded idea'} was declined on ${d.feature} ${said(d)}` };
   if (p.declined >= 3 && p.declined > p.approved) return { say: 'ask', why: `${p.declined} of ${p.declined + p.approved} similar decisions were declines` };
   const n = p.approved + p.declined;
   return { say: 'proceed', why: !n ? 'no precedent yet' : p.approved >= p.declined ? `${p.approved} of ${n} similar decisions were approvals`

@@ -150,8 +150,12 @@ const sec = [
   const card = src('apps/web/src/components/Overlays.tsx'), review = src('apps/web/src/components/rail/wide/review.tsx');
   ok(11, /useBrief\(/.test(card) && /<BriefFacts /.test(card), 'the plan decision card renders the brief');
   ok(11, /useBrief\(/.test(review) && /<BriefFacts /.test(review), 'the Review detail renders the brief');
-  ok(11, /all\.filter\(\(d\) => d\.recNote\)/.test(review) && /if \(!armRepeats\) \{ setArmRepeats\(true\); return; \}/.test(review) && /E\.decide\(d\.id, 1, d\.recNote\)/.test(review),
-    'Review declines the repeats on a second click, each with its repeat note');
+  ok(11, /items\.filter\(\(d\) => d\.recNote\)/.test(review) && /if \(!armed\) \{ setArmRepeats\(repeats\.map\(\(d\) => d\.id\)\); return; \}/.test(review) && /for \(const d of armed\) E\.decide\(d\.id, 1, d\.recNote\)/.test(review),
+    'Review declines the repeats it armed (the listed ones) on a second click, each with its repeat note');
+  // 19. the person's own decline form never gets the repeat note: it sends '' for "no note", which Engine.decide keeps
+  const phone = src('apps/web/src/components/Phone.tsx');
+  ok(11, !/note\.trim\(\) \|\| undefined/.test(review) && !/note\.trim\(\) \|\| undefined/.test(phone) && /decide\(d, 1, note\.trim\(\)\)/.test(review) && /E\.decide\(d\.id, 1, note\.trim\(\)\)/.test(phone),
+    "19. the decline note forms send '' for no note, so a repeat note is never added to the person's own decline");
 }
 
 // 12. the recommendation
@@ -213,6 +217,48 @@ const sec = [
   const same = P({ id: 'U3', feature: 'card-payments', lens: 'security', title: 'Rotate the payment keys every week', standard: 'secrets/key-rotation', status: 'proposed' });
   const c = briefFor(subjectOf(same), scanOf([other, same]), map);
   ok(17, c.advice.say === 'withdraw' && c.declines[0]?.id === 'U1' && c.declines[0]?.match === 'same idea', 'the same idea on the same place still stands', c.declines.map((r) => r.id + ':' + r.match));
+}
+// 18. only the same idea stands (a decline is final, so the flip is held to the strictest reading)
+{
+  const mapX = briefMapOf({ domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', name: 'C', domain: 'd' }],
+    features: [{ slug: 'auth', name: 'Auth', capability: 'c' }, { slug: 'search', name: 'Search', capability: 'c' }, { slug: 'checkout', name: 'Checkout', capability: 'c' }], lenses: [] });
+  const dec = (x: Partial<Proposal> & { id: string }) => P({ status: 'declined', decision_note: 'Not now.', ...x });
+  const open = (x: Partial<Proposal> & { id: string }) => P({ status: 'proposed', ...x });
+  const say = (o: Proposal, rows: Proposal[]) => briefFor(subjectOf(o), scanOf([...rows, o]), mapX);
+  const a = say(open({ id: 'A2', feature: 'auth', title: 'Add CSRF protection to the login endpoint' }), [dec({ id: 'A1', feature: 'auth', title: 'Add rate limits to the login endpoint' })]);
+  ok(18, a.advice.say !== 'withdraw' && !a.declines.length, 'same place, 2 of 6 words shared: not the same idea', a.declines.map((r) => r.id + ':' + r.match));
+  const u = say(open({ id: 'U2', feature: 'checkout', title: 'Add unit tests for payment retry' }), [dec({ id: 'U1', feature: 'search', title: 'Add unit tests for search ranking' })]);
+  ok(18, u.advice.say === 'proceed' && !u.declines.length, 'another feature, 2 of 6 words shared: nothing', u.advice);
+  const w = say(open({ id: 'W2', feature: 'checkout', title: 'Describe the checkout images', standard: 'wcag/alt-text' }), [dec({ id: 'W1', feature: 'search', title: 'Describe the search thumbnails', standard: 'wcag/alt-text' })]);
+  ok(18, w.advice.say === 'ask' && w.declines[0]?.id === 'W1' && !!fact(w, 'declined') && !briefAdvice(subjectOf(P({ id: 'W2', feature: 'checkout', title: 'Describe the checkout images', standard: 'wcag/alt-text', status: 'proposed' })), scanOf([dec({ id: 'W1', feature: 'search', title: 'Describe the search thumbnails', standard: 'wcag/alt-text' })])).say.startsWith('withdraw'),
+    'the same standard on another feature: shown and asked about, never a stand', w.advice);
+  const r = say(open({ id: 'R2', feature: 'checkout', title: 'Retry the checkout payment call on timeout' }), [dec({ id: 'R1', feature: 'checkout', title: 'Add retries to the checkout payment call' })]);
+  ok(18, r.advice.say === 'withdraw' && r.declines[0]?.match === 'same idea', 'same place, the same idea in other words: a stand', r.declines.map((x) => x.id + ':' + x.match));
+  // a run whose times do not read is left out of the cost, never NaN (the wire omits, never nulls)
+  const bad: Run = { id: 'B1', started_at: 'not a time', updated_at: day(1), ended_at: day(1), phase: 'execute', status: 'done', lenses: ['security'] };
+  const nb = briefFor({ feature: 'lonely', title: 'x', lens: 'security' }, scanOf([], [bad]), map);
+  ok(18, nb.cost.builds === 0 && !JSON.stringify(nb).includes('null') && fact(nb, 'cost')?.text === 'Cost: no build history yet', 'an unreadable run: no build history, no null, no NaN', nb.cost);
+}
+// 14b. one map, two reads, on a rough non-Kettle map: long ids, a capability with an unknown domain, a dangling and a
+//      self depends_on, a feature with no capability (the loader's Unplaced)
+{
+  const rough = { $schema: 'app-structure/3', version: 3, project: { slug: 'rough', name: 'Rough' },
+    domains: [{ slug: 'shop', id: 'SHOP-DOMAIN-LONG', name: 'Shop' }, { slug: 'ops', id: 'OPS', name: 'Ops' }],
+    capabilities: [{ slug: 'shop.cart', id: 'CART-CAPABILITY', name: 'Cart', domain: 'shop' }, { slug: 'ghost.cap', id: 'GH', name: 'Ghost', domain: 'nowhere' }, { slug: 'ops.run', id: 'RUN', name: 'Run', domain: 'ops' }],
+    features: [
+      { slug: 'checkout', id: 'feature-checkout-flow', name: 'Checkout', capability: 'shop.cart' },
+      { slug: 'basket', id: 'B-1', name: 'Basket', capability: 'shop.cart', depends_on: ['checkout', 'missing', 'basket'] },
+      { slug: 'haunted', id: 'H-1', name: 'Haunted', capability: 'ghost.cap', depends_on: ['checkout'] },
+      { slug: 'loose', name: 'Loose', depends_on: ['checkout'] },
+      { slug: 'deploy', id: 'D-1', name: 'Deploy', capability: 'ops.run' },
+    ] };
+  type M = ReturnType<typeof briefMapOf>;
+  const norm = (m: M) => JSON.stringify({ f: m.features.map((f) => [f.slug, f.id ?? '', f.name, f.capability, f.stage ?? '', (f.depends_on ?? []).join()]).sort(), c: m.capabilities.map((c) => [c.slug, c.id ?? '', c.name, c.domain]).sort(), d: m.domains.map((d) => [d.slug, d.id ?? '', d.name]).sort() });
+  const a = briefMapOf(rough), b = briefMapOfStructure(loadMap(rough, ''));
+  ok(14, norm(a) === norm(b), 'briefMapOf and the loader agree on a rough map', [norm(a), norm(b)]);
+  const sub = { feature: 'checkout', title: 'x' };
+  ok(14, JSON.stringify(briefFor(sub, scanOf([]), a).facts) === JSON.stringify(briefFor(sub, scanOf([]), b).facts) && /Touches Checkout in Cart · 3 features depend on it, in 2 rooms/.test(briefFor(sub, scanOf([]), b).lines[0]),
+    'the same blast line from either read (no long code; Unplaced counted as a room)', briefFor(sub, scanOf([]), b).lines[0]);
 }
 // 16. the golden file (before the wire, so its briefs are validated with the rest)
 {

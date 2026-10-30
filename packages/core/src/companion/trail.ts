@@ -53,8 +53,9 @@ export function trailSessions(rows: readonly TrailRow[], now: number, max = 3, p
         const pushed = rs.slice(i + 1).some((x) => (x.kind === 'recommend' && x.verdict === 'approve' && featureOf.get(x.id) === r.feature) || (x.kind === 'card' && x.product === r.product));
         if (!pushed) lines.push({ tone: 'quiet', text: 'Withdrew it: nothing for it came through the door after' });
       } else if (r.kind === 'recommend') {
-        // a reason that quotes a decline already shown says so by its id, not by the same words twice
-        const t = titles.get(r.id), seen = [...heard].find(([words]) => r.why.includes(words));
+        // a reason that quotes a decline already shown says so by its id, not by the same words twice (a quote of a few
+        // characters, "no", would match any reason: only one long enough to be a quote counts)
+        const t = titles.get(r.id), seen = [...heard].find(([words]) => words.length >= 12 && r.why.includes(words));
         lines.push({ tone: 'act', id: r.id, text: `Then recommended you ${r.verdict} ${r.id}${t ? ` "${q(t, 50)}"` : ''}: ${seen ? 'it repeats your decline ' + seen[1] : q(r.why, 120)}` });
       } else lines.push({ tone: 'act', text: `Then filed a card: ${r.tool}` });
     }

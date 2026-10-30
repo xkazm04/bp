@@ -74,10 +74,10 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
       {sum && <div className="psum">{sum}</div>}
       {mv && <div className="mv">{mv}</div>}
       <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))}{sim.live ? '' : ' · holds ' + sim.blocksNow(d) + ' agent' + (sim.blocksNow(d) === 1 ? '' : 's')}</div>
-      {brief && <BriefFacts b={brief} compact />}
+      {brief && <BriefFacts b={brief} d={d} compact />}
       {sim.live ? (
         !writes ? null : declining ? (
-          <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
+          <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim()); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} />
             <button type="submit" className="bt">Decline</button>
             <button type="button" className="bt" onClick={() => { drafts.delete(d.base); setNote(''); setDeclining(false); }}>Cancel</button>

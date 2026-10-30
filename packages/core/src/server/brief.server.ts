@@ -2,14 +2,16 @@
 // pure (scan/brief.ts); this reads a product's store and map the way the other routes do and hands them over.
 //   Kettle: the hosted ScanSim's snapshot (apps/server) and the sample map, read-only. A process without the sim (apps/web)
 //           answers unknownProduct's 405, as Kettle's scan routes do: the browser's own sim computes the brief there.
-//   live:   the product's scan.db (read-only connection) and its .ai/lens-scan/app-structure.json.
+//   live:   the product's scan.db (read-only connection) and its .ai/lens-scan/app-structure.json (+ events.jsonl).
+// Either map goes through the loader the browser uses (loadMap -> briefMapOfStructure), so both count the same blast radius.
 // The trail: an agent's call that names its conversation (x-bp-conversation, as the MCP door sends it) is appended to
 // companionHome()/agent-trail.jsonl - a brief it read (what, and the advice) and what it filed after (a recommendation, a
 // card) - so the cards slip can show "an agent read your decline and then did this". A call without a conversation (the
 // person's own page) leaves no trail. The newest TRAIL_KEEP rows are read back.
 import fs from 'node:fs';
 import path from 'node:path';
-import { briefMapOf, type Brief, type BriefMap } from '../scan/brief.ts';
+import { briefMapOf, briefMapOfStructure, type Brief, type BriefMap } from '../scan/brief.ts';
+import { loadMap } from '../data/index.ts';
 import type { TrailRow } from '../companion/trail.ts';
 import type { ScanSnapshot } from '../scan/types.ts';
 import { companionHome } from './companion/home.server.ts';
@@ -21,21 +23,26 @@ if (typeof window !== 'undefined') throw new Error('brief.server.ts is server-on
 
 export interface BriefSource { scan: ScanSnapshot; map: BriefMap }
 
+/** The map through the loader the browser uses (standard/load.ts), so the routes and the card count the same places, codes
+ *  and dependents; a map the loader refuses gives no places (the brief says 'not on the plan', never refuses). */
+const mapOf = (raw: string, events = ''): BriefMap => { try { return briefMapOfStructure(loadMap(JSON.parse(raw), events)); } catch { return briefMapOf({}); } };
+
 /** A product's store and map for the brief, or the Response that refuses it. */
 export function briefSource(slug: string): BriefSource | Response {
   const sim = kettleSim(slug), k = kettleSample(slug);
   if (sim && k) {
-    try { return { scan: sim.snapshot(), map: briefMapOf(JSON.parse(kettleRead(k).raw)) }; } catch (e) {
+    try { const { raw, events } = kettleRead(k); return { scan: sim.snapshot(), map: mapOf(raw, events) }; } catch (e) {
       return Response.json({ error: `kettle sample unreadable: ${(e as Error).message}` }, { status: 500 });
     }
   }
   const p = findProduct(slug);
   if (!p) return unknownProduct(slug);
   if (!hasStore(p)) return Response.json({ error: `${slug} has no scan store yet` }, { status: 404 });
-  let map: BriefMap;
-  try { map = briefMapOf(JSON.parse(fs.readFileSync(path.join(storeDir(p), 'app-structure.json'), 'utf8'))); } catch {
-    map = briefMapOf({}); // no map: the brief says 'not on the plan' rather than refusing the precedent it can still give
-  }
+  let raw = '';
+  try { raw = fs.readFileSync(path.join(storeDir(p), 'app-structure.json'), 'utf8'); } catch { /* no map: 'not on the plan', the precedent still answers */ }
+  let events = '';
+  try { events = fs.readFileSync(path.join(storeDir(p), 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
+  const map = raw ? mapOf(raw, events) : briefMapOf({});
   try { return { scan: snapshotOf(storeFile(p)), map }; } catch (e) {
     return Response.json({ error: `cannot read the scan store: ${(e as Error).message}` }, { status: 503 });
   }

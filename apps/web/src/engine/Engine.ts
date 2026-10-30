@@ -873,7 +873,8 @@ export class Engine {
     if (this.S.hlOpt) this.store.set({ hlOpt: null });
     this.scheduleSimSync(true); this.forceStatic();
     if (!live || !sim.live || !d || !open) return;
-    // a Decline taken on the brief's recommendation names the decision it repeats, unless the person wrote their own note
+    // a Decline taken on the brief's recommendation (its option, Enter, its digit) names the decision it repeats. `note`
+    // undefined = the caller chose an option and said nothing; '' = the person's own note form, sent empty: never filled in
     note ??= oi === d.rec && oi === 1 ? d.recNote : undefined;
     const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };
     // the tile's track takes over from the question at once: saving, then the store's row (a 409: the decision it holds)

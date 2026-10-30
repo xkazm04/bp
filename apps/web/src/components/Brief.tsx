@@ -37,7 +37,8 @@ export function useBrief(d: SimDecision | null | undefined): Brief | null {
   return useMemo(() => (d ? briefOfDecision(M, d, scan, map) : null), [d, M, scan, map, simV]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-const ADVICE: Record<Brief['advice']['say'], string | null> = { withdraw: 'Repeats a decline', ask: 'Mostly declined before', proceed: null };
+/** The card's chip: a repeat; a like idea declined elsewhere; a lens mostly declined; nothing when it may proceed. */
+const adviceChip = (b: Brief): string | null => (b.advice.say === 'withdraw' ? 'Repeats a decline' : b.advice.say === 'ask' ? (b.declines.length ? 'Like a declined idea' : 'Mostly declined before') : null);
 
 function Decided({ r }: { r: BriefDecided }) {
   return (
@@ -49,7 +50,7 @@ function Decided({ r }: { r: BriefDecided }) {
   );
 }
 
-function Evidence({ b, f, max }: { b: Brief; f: BriefFact; max: number }) {
+function Evidence({ b, f, max, line }: { b: Brief; f: BriefFact; max: number; line: string }) {
   const E = useEngine();
   const more = (n: number) => (n > max ? <li className="more">and {n - max} more</li> : null);
   if (f.key === 'precedent' || f.key === 'declined') {
@@ -60,7 +61,7 @@ function Evidence({ b, f, max }: { b: Brief; f: BriefFact; max: number }) {
     return (
       <ol className="bf-ev bf-deps">
         {b.blast.dependents.slice(0, max).map((x) => (
-          <li key={x.slug}><button type="button" onClick={() => E.flyToFeature(x.slug)} title="Fly to it on the plan">{x.name}</button>{x.id && <small>{x.id}</small>}</li>
+          <li key={x.slug}><button type="button" onClick={() => E.flyToFeature(x.slug + line)} title="Fly to it on the plan">{x.name}</button>{x.id && <small>{x.id}</small>}</li>
         ))}{more(b.blast.dependents.length)}
       </ol>
     );
@@ -69,10 +70,12 @@ function Evidence({ b, f, max }: { b: Brief; f: BriefFact; max: number }) {
   return null;
 }
 
-/** The brief's facts, each opening its evidence. */
-export function BriefFacts({ b, compact = false }: { b: Brief; compact?: boolean }) {
+/** The brief's facts, each opening its evidence. `d`: the decision it is for, so a dependent flies to the tile on the same
+ *  product line (at ?scale > 1 every tile id carries its line's suffix; the brief names base slugs). */
+export function BriefFacts({ b, d, compact = false }: { b: Brief; d: SimDecision; compact?: boolean }) {
+  const line = d.f.slice(baseId(d.f).length);
   const [open, setOpen] = useState<string | null>(null);
-  const advice = ADVICE[b.advice.say];
+  const advice = adviceChip(b);
   return (
     <div className={'brief' + (compact ? ' compact' : '')} aria-label="Decision brief">
       {advice && <div className={'bf-adv a-' + b.advice.say} title={b.advice.why}>{advice}</div>}
@@ -86,7 +89,7 @@ export function BriefFacts({ b, compact = false }: { b: Brief; compact?: boolean
                   <span>{f.text}</span><i aria-hidden="true">{n} {on ? '▴' : '▾'}</i>
                 </button>
               ) : <span>{f.text}</span>}
-              {on && <Evidence b={b} f={f} max={compact ? 4 : 12} />}
+              {on && <Evidence b={b} f={f} max={compact ? 4 : 12} line={line} />}
             </li>
           );
         })}

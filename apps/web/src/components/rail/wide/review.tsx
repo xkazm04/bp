@@ -36,9 +36,12 @@ export function Review() {
   const proposals = live?.product.scan?.proposals;
   const [lens, setLens] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
-  // "Decline the repeats" asks twice: a live decision is final (no route reopens it); the arm lapses after REARM_MS
-  const [armRepeats, setArmRepeats] = useState(false), writes = useWritesOn();
-  useEffect(() => { if (!armRepeats) return; const t = setTimeout(() => setArmRepeats(false), REARM_MS); return () => clearTimeout(t); }, [armRepeats]);
+  // "Decline the repeats" asks twice: a live decision is final (no route reopens it). The first click takes the ids it
+  // names, and the second declines only those (a scan delta in between adds nothing unseen); the arm lapses after
+  // REARM_MS and drops when the lens filter or the reader changes
+  const [armRepeats, setArmRepeats] = useState<string[] | null>(null), writes = useWritesOn();
+  useEffect(() => { if (!armRepeats) return; const t = setTimeout(() => setArmRepeats(null), REARM_MS); return () => clearTimeout(t); }, [armRepeats]);
+  useEffect(() => setArmRepeats(null), [lens, s.who]);
   const listRef = useListRef();
 
   // a decline draft lives until its proposal is decided (as in the classic list)
@@ -113,12 +116,14 @@ export function Review() {
     );
 
   const batches = sim.batchGroups();
-  // live: the open proposals the decision brief found repeating a standing decline (live-feed.ts recommends Decline on them)
-  const repeats = sim.live && writes ? all.filter((d) => d.recNote) : [];
+  // live: the listed open proposals (under the lens filter) the decision brief found repeating a standing decline
+  // (live-feed.ts recommends Decline on them)
+  const repeats = sim.live && writes ? items.filter((d) => d.recNote) : [];
+  const armed = armRepeats ? repeats.filter((d) => armRepeats.includes(d.id)) : null;
   const declineRepeats = () => {
-    if (!armRepeats) { setArmRepeats(true); return; }
-    setArmRepeats(false); setSelId(null); E.setHlDec(null);
-    for (const d of repeats) E.decide(d.id, 1, d.recNote);
+    if (!armed) { setArmRepeats(repeats.map((d) => d.id)); return; }
+    setArmRepeats(null); setSelId(null); E.setHlDec(null);
+    for (const d of armed) E.decide(d.id, 1, d.recNote);
   };
   const strip = (
     <>
@@ -126,9 +131,9 @@ export function Review() {
       <div className="wb-count t-amber"><b>{urgent}</b><span>urgent</span></div>
       {repeats.length > 0 && (
         <div className="wb-filter wb-repeats" role="group" aria-label="Decline the repeats">
-          <button type="button" aria-pressed={armRepeats} onClick={declineRepeats}
-            title={'Each repeats an idea you declined: ' + repeats.map((d) => d.base).join(', ') + '. Each is declined with a note naming the decision it repeats. Final: no route reopens a decision.'}>
-            <i aria-hidden="true" />{armRepeats ? `Click again: decline ${repeats.length}, each naming its decline` : `Decline ${repeats.length} repeat${repeats.length === 1 ? '' : 's'}`}
+          <button type="button" aria-pressed={!!armed} onClick={declineRepeats}
+            title={'Each repeats an idea you declined: ' + (armed ?? repeats).map((d) => d.base).join(', ') + '. Each is declined with a note naming the decision it repeats. Final: no route reopens a decision.'}>
+            <i aria-hidden="true" />{armed ? `Click again: decline ${armed.length}, each naming its decline` : `Decline ${repeats.length} repeat${repeats.length === 1 ? '' : 's'}`}
           </button>
         </div>
       )}
@@ -212,7 +217,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>
-        {brief && <BriefFacts b={brief} />}
+        {brief && <BriefFacts b={brief} d={d} />}
         {mv && (
           <div className="wb-move" aria-label={`${mv.name}: ${mv.before ?? 'not measured'}${mv.after ? ' to ' + mv.after : ''} ${mv.unit}`}>
             <span className="nm">{mv.name}{mv.name !== mv.key && <small>{mv.key}</small>}</span>
@@ -259,7 +264,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
       </div>
       <div className="wb-act">
         {declining ? (
-          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim() || undefined); }}>
+          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim()); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
               onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); if (e.key === 'Escape') { e.preventDefault(); cancel(); } }} />
             <button type="submit" className="bt">Decline</button>
@@ -299,7 +304,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <div className="wb-fig"><b className="wd">{pname(M.P, d.decider)}</b><span>decides</span></div>
           <div className="wb-fig"><b className="wd">{pname(M.P, d.by)}</b><span>asked</span></div>
         </div>
-        {brief && <BriefFacts b={brief} />}
+        {brief && <BriefFacts b={brief} d={d} />}
         {note && <div className="wb-note">{note}</div>}
         <Sec head="Answers" aside={d.opts.length + ' options · 1–' + d.opts.length + ' on the plan'}>
           <ol className="wb-opts">
