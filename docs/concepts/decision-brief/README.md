@@ -67,10 +67,17 @@ table's target pose in PIE over the editor MCP):
    `POST /api/products/<slug>/proposals/<id>/decline {}` with `x-bp-device`. That route is the Morning Watch's own Decline
    (`steer`): the server takes it only when the card brief says the same idea was declined before, and writes `declined`
    with the brief's `Repeats <id>, declined <day>: "..."` through `decide`, plus a steering-log row. The card then moves on
-   to the next open finding. Decline on any other card, and **Approve, write nothing** (logged): an approval starts work,
-   so it stays at the desk (the room deck's Approve still composes a draft). Over the LAN the verb is the door's `decide`
-   scope, granted only when the owner's approve names it. Held by `check:vr-decline` (through the real door) and
-   `check:lan-door`. Captures: `../one-morning/vr-decline-card-before.jpg`, `vr-decline-card-after.jpg`.
+   to the next open finding. Decline on any other card writes nothing (logged: the plan's free Decline, with the owner's
+   own note, stays at the desk). Over the LAN the verb is the door's `decide` scope, granted only when the owner's
+   approve names it. Held by `check:vr-decline` (through the real door) and `check:lan-door`. Captures:
+   `../one-morning/vr-decline-card-before.jpg`, `vr-decline-card-after.jpg`.
+   **A pinch on Approve approves it in the store** (ROADMAP D12, the owner's call on 2026-10-31: "Pinching approve in VR
+   should approve the target decisions", superseding "Approve writes nothing"; built on `roadmap/vr-f3-approve`).
+   `CardTap` calls `FBpLinkModule::ApproveDecision`: `POST /api/products/<slug>/proposals/<id>/approve {}` with
+   `x-bp-device`, the Morning Watch's own Approve (`steer`): `approved` through `decide`, signed and noted `Morning Watch`
+   as the web deck's, one steering-log row, and no job queued. The card moves on when the server answers 200, as after
+   the decline; a 409 (decided elsewhere) leaves it. The room deck's Approve writes the same approve and still adds the
+   finding to the draft wave. Same `decide` scope on the door. Held by `check:vr-approve` (through the real door).
 5. **The room deck's decision screens carry the brief too** (F1): the five lines under the title, the quoted decline in
    amber; a repeat leads with DECLINE · REPEAT, which writes the store the same way (a plain Decline stays memory-only).
    Captures: `../one-morning/vr-deck-brief-repeat.jpg`, `vr-deck-brief-repeat-close.jpg`, `vr-deck-decline-after-close.jpg`.

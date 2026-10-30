@@ -64,7 +64,8 @@ being read), `morning.brief` for agents and `plan.brief` all read the same lines
   on|off`, `BpLink.Goto <id>`. Captures from the target pose: `vr-*.jpg` here. The table's decision card and the room
   deck's decision screens carry the brief; a pinch on DECLINE · REPEAT declines the repeat in the store through the same
   `steer` the deck's Decline uses (`POST /api/products/<slug>/proposals/<id>/decline`, ROADMAP F8;
-  `vr-decline-card-*.jpg`, `vr-deck-*.jpg`). Approve on the table writes nothing.
+  `vr-decline-card-*.jpg`, `vr-deck-*.jpg`). A pinch on Approve approves the card's decision through the same `steer`
+  the deck's Approve uses (`POST /api/products/<slug>/proposals/<id>/approve`, ROADMAP D12); no build is queued.
 - **VR table, headless stand-in**: `scripts/focus-standin.ts` follows over the real stream and frames each place on the
   product's own plan (room, bay's room, wing, feature's room). `--lead` publishes the next room (the table leads).
   `--personas` plays Personas' Monitor (1 Hz poll, prints its Blueprint-sheet call): see `personas-adoption.md`.
