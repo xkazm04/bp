@@ -12,15 +12,17 @@
 // A live lens its repo cannot measure yet (ProductInfo.setup: the lens-scan overlay names no probes, scan/lens-setup.ts) is not
 // a dead end: its button reads "prepare" and queues a prepare job that adjusts the repo, "Scan all lenses" leaves it out, and in
 // its own lens view the scope items stay as "Scan anyway" under a "Prepare repo" item (the menu re-reads the list on opening).
+// "Scan all lenses" over Everything on a live product, with no lens left out, is ONE every-lens job (oneJobForAll): one queue
+// slot and one read of each feature, not a job per lens; narrower scopes and the Kettle sim keep one job per lens.
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
-import { prepareLens, refusalText, startScan, startSelectionScan } from '@/lib/scan/actions';
+import { prepareLens, refusalText, startAllLenses, startScan, startSelectionScan } from '@/lib/scan/actions';
 import { MAX_RUNNING, MAX_SELECTION, scannable, type ScanScope } from '@bp/core/scan/jobs';
 import { factsWords, queueRoom, scopeFacts } from '@bp/core/scan/views';
 import { refreshProjects, useProjects } from '@/lib/scan/projects';
-import { scopesAt } from '@/lib/scan/scan-views';
+import { oneJobForAll, scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
 import { useScanJobs } from './rail/panels';
 import { useLedgerSelection } from './ledger/useLedger';
@@ -99,6 +101,11 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   const run = (ids: string[], scope: ScanScope) => {
     close();
     const name = (id: string) => P.LENS[id]?.name ?? id;
+    if (oneJobForAll(!!ctx.slug, scope, ids, lenses.filter((l) => l.ok).map((l) => l.id))) {
+      startAllLenses(ctx, 'measure').then(() => E.toast('Scanning every lens', scope.label + ' · ' + count(scope) + ' features · one job'),
+        (e) => E.toast('Scan not started', refusalText(e), undefined, undefined, 'bad'));
+      return;
+    }
     void Promise.allSettled(ids.map((id) => (scope.kind === 'selection' ? startSelectionScan(ctx, id, scope.features) : startScan(ctx, id, scope)))).then((rs) => {
       const bad = rs.map((r, i) => (r.status === 'rejected' ? name(ids[i]) + ': ' + refusalText(r.reason) : null)).filter((x): x is string => !!x);
       const n = rs.length - bad.length;

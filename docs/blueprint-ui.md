@@ -715,7 +715,7 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
   with the same features as a narrower one is dropped, so a live product's one-room wing is not offered twice).
   Scope ids are base ids (feature slug, capability, domain, wing key): a `?scale` clone scans its base feature. In a
   lens view each scope is one item, "Scan <lens> · <scope>"; in General each scope has "Scan all lenses" (one job per
-  scannable lens) and a row of lens buttons (glyph + short). A lens that is not `scannable` (live: no built-in and no
+  scannable lens; over Everything on a live product with no lens left out, one every-lens job, `oneJobForAll`) and a row of lens buttons (glyph + short). A lens that is not `scannable` (live: no built-in and no
   manifest `scan` block) is disabled and named under "No scan method". Live products add the footer "Runs Claude
   Code in <root> with permissions skipped". It is placed at the pointer, flipped and clamped into the safe area
   clear of an open flyout; keys are its own (arrows, Home, End, Enter, Esc, Tab: ProjectSwitcher's roving focus);

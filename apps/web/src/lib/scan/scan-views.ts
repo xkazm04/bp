@@ -82,3 +82,14 @@ function placeOf(M: Geo, sc: ScanScope, b: number, sf: string): ScanView['place'
     default: return P.scale > 1 && L.blds[b] ? { t: 'bld', id: L.blds[b].id } : null;
   }
 }
+
+/**
+ * Whether "Scan all lenses" queues ONE every-lens job (`/lens-scan measure --lens all`: one queue slot, each feature read
+ * once) instead of one job per lens. Only on a live product (the Kettle sim has no every-lens job), over the whole product
+ * (the every-lens route takes no feature list), and only when the chosen lenses are every lens the product can scan:
+ * `--lens all` runs every enabled lens with a scan method, so a choice that leaves one out (it needs repo setup first)
+ * keeps one job per lens. A single lens is one job either way.
+ */
+export function oneJobForAll(live: boolean, scope: ScanScope, ids: readonly string[], scannable: readonly string[]): boolean {
+  return live && scope.kind === 'all' && ids.length > 1 && ids.length === scannable.length && scannable.every((id) => ids.includes(id));
+}

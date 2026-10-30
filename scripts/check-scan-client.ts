@@ -404,5 +404,24 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   } finally { ps.dispose(); }
 }
 
+// --------------------------------------------- 10. "Scan all lenses" over everything is one every-lens job
+// The menu started one job per lens: five lenses took five of the 3 running + 16 queued slots (and could be refused part
+// way) and each re-read every feature, while the every-lens job (postAllLenses, one slot, one read) went unused here.
+// oneJobForAll decides; the route takes no feature list, so a narrower scope, the Kettle sim and a choice that leaves a
+// scannable lens out (it needs setup) keep one job per lens.
+{
+  const { oneJobForAll } = await import('../apps/web/src/lib/scan/scan-views.ts') as { oneJobForAll?: (live: boolean, scope: ScanScope, ids: readonly string[], ok: readonly string[]) => boolean };
+  const all = { kind: 'all', label: 'Everything', features: [] } as ScanScope, room = { kind: 'room', id: 'r', label: 'R', features: ['a'] } as ScanScope;
+  const ok = ['biz', 'dev', 'sec'];
+  const f = oneJobForAll ?? (() => false);
+  expect(typeof oneJobForAll === 'function' && f(true, all, ['sec', 'biz', 'dev'], ok), 'Scan all lenses over Everything on a live product is not one every-lens job');
+  expect(!f(false, all, ok, ok) && !f(true, room, ok, ok) && !f(true, all, ['biz', 'dev'], ok) && !f(true, all, ['dev'], ['dev']),
+    'oneJobForAll takes the every-lens job on the Kettle sim, a narrower scope, a choice that leaves a lens out, or a single lens');
+  const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+  const run = sm.slice(sm.indexOf('const run = ('), sm.indexOf('const prepare = ('));
+  expect(/if \(oneJobForAll\(!!ctx\.slug, scope, ids, .*\)\) \{\s*startAllLenses\(ctx, 'measure'\)/.test(run) && run.indexOf('oneJobForAll(') < run.indexOf('Promise.allSettled('),
+    'ScanMenu run() does not queue startAllLenses when oneJobForAll says so, before the per-lens jobs');
+}
+
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }
 console.log(`check-scan-client: ${held} expectations held (${SHAPES.length} rejection shapes, ${DEV_WORDS.length} developer strings forbidden, ${HELPERS.length} request helpers bounded)`);
