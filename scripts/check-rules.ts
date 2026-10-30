@@ -51,7 +51,7 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
   check('gate: expired and revoked orders hold nothing', !g.held.some((h) => h.id === 'b'));
   const all = R.gate(RULES, { kind: 'build', tool: 'wave.dispatch', items: [it('a', 'card'), it('r', 'refund')] }, T0);
   check('gate: an act all of whose items are held is refused by the first order', all.refused?.id === 'O-1' && all.held.length === 2, j(all));
-  check('gate: words cite the order id, its author and the count left out', /held by order O-1 \(user:owner, 2026-10-20 10:00\).*2 items left out/.test(R.gateWords(all)), R.gateWords(all));
+  check('gate: words cite the order id, its author, when (the local clock) and the count left out', R.gateWords(all).startsWith('held by order O-1 (user:owner, ' + R.stampOf('2026-10-20T10:00:00Z') + '): hold; 2 items left out') && /^\w{3} \d{1,2} \w{3},? \d\d:\d\d$/.test(R.stampOf('2026-10-20T10:00:00Z')), R.gateWords(all));
   const sec = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('c', 'book', 'security')] }, T0);
   check('gate: `only` lets its own lens through', !sec.held.length && !sec.refused, j(sec));
   const hi = R.gate(RULES, { kind: 'build', tool: 'wave.compose', items: [it('q', 'quiz')], model: 'opus', effort: 'xhigh' }, T0);

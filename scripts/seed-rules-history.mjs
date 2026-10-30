@@ -11,6 +11,7 @@
 //   - payments (plans + billing): declined unless it is a security or stop-ship finding: a hold there mostly agrees
 //   - stop-ship (tier 0) findings: always approved, after a look; a grant without a tier floor would have taken them alone
 //   - urgent and normal (tier 1-2): approved about 3 times in 4
+// Also 4 OPEN (proposed) findings in payments, booking and scheduling, so a rule acts on something the moment it is set.
 // Idempotent: it deletes its own rows (run_id LIKE 'syn-%') and writes them again; the same --now writes the same rows.
 // Needs the store scripts/scan-demo.mjs seeds (run it first).
 import fs from 'node:fs';
@@ -52,6 +53,13 @@ function verdict(f, lens, tier) {
   if (tier === 3) return lens === 'design' && rnd() < 0.3 ? 'decline' : rnd() < 0.96 ? 'approve' : 'decline';
   return rnd() < 0.75 ? 'approve' : 'decline';
 }
+/** The open findings (id, feature, lens, title, tier, risk_class). */
+const OPEN = [
+  ['syn-open-1', 'card-payments', 'security', 'Stop logging card fingerprints in Card payments', 2, 'secret'],
+  ['syn-open-2', 'book-a-class', 'design', 'Give Book a class a visible focus ring', 3, 'ux'],
+  ['syn-open-3', 'waitlist-with-auto-promote', 'quality', 'Fix the double-promote race in the waitlist', 0, 'reliability'],
+  ['syn-open-4', 'recurring-class-schedule', 'performance', 'Drop the N+1 query behind Recurring class schedule', 2, 'perf'],
+];
 const DECLINE_WHY = ['not now: the redesign replaces it', 'too risky for the payments path this month', 'the gain is not worth the churn', 'duplicate of an item already built'];
 
 const db = new DatabaseSync(DB);
@@ -82,7 +90,13 @@ try {
   const ins = db.prepare(`INSERT INTO proposals (id, run_id, feature, lens, title, standard, kind, status, decided_by, decided_at, decision_note, created_at, updated_at, origin, tier, risk_class)
     VALUES (?, ?, ?, ?, ?, 'none', 'fix', ?, ?, ?, ?, ?, ?, 'scan', ?, ?)`);
   for (const r of rows) ins.run(r.id, RUN, r.feature, r.lens, r.title, r.status, BY, r.decided_at, r.note, r.created_at, r.decided_at, r.tier, r.risk_class);
+  // OPEN findings (proposed, undecided), so the rules have something to act on now: one in each kind of place a demo rule
+  // governs (payments, booking, scheduling), a backlog one and a stop-ship among them. Same run, so labelled the same way.
+  const open = db.prepare(`INSERT INTO proposals (id, run_id, feature, lens, title, standard, kind, status, created_at, updated_at, origin, tier, risk_class)
+    VALUES (?, ?, ?, ?, ?, 'none', 'fix', 'proposed', ?, ?, 'scan', ?, ?)`);
+  const at = iso(NOW - 3600000);
+  for (const [id, feature, lens, title, tier, risk] of OPEN) if (map.features.some((f) => f.slug === feature)) open.run(id, RUN, feature, lens, title, at, at, tier, risk);
   db.exec('COMMIT');
 } catch (e) { db.exec('ROLLBACK'); throw e; } finally { db.close(); }
 const dec = rows.filter((r) => r.status === 'declined').length;
-console.log(`seeded ${rows.length} SYNTHETIC decisions (${rows.length - dec} approved, ${dec} declined; ${rows.filter((r) => r.tier === 0).length} stop-ship) into ${DB} under run ${RUN}`);
+console.log(`seeded ${rows.length} SYNTHETIC decisions (${rows.length - dec} approved, ${dec} declined; ${rows.filter((r) => r.tier === 0).length} stop-ship) and ${OPEN.length} open findings into ${DB} under run ${RUN}`);

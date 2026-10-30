@@ -82,8 +82,10 @@ const effortRank = (e: string | undefined): number => WAVE_EFFORTS.indexOf(e as 
 /** How a refusal cites a rule: its id, its author and when, and its words (the companion and MCP clients quote it). */
 export interface RuleCite { id: string; kind: RuleKind; by: string; at: string; text: string; place: string }
 export const citeOf = (r: Rule): RuleCite => ({ id: r.id, kind: r.kind, by: r.by, at: r.at, text: r.text, place: r.scope.label });
-/** "held by order O-3 (user:ana, 2026-10-30 14:02)". */
-export const citeWords = (c: RuleCite): string => `${c.kind === 'grant' ? 'grant' : 'order'} ${c.id} (${c.by}, ${c.at.slice(0, 16).replace('T', ' ')}): ${c.text}`;
+/** When a rule was set, in the clock of the machine bp runs on (the owner's): "Fri 30 Oct, 14:02". */
+export const stampOf = (iso: string): string => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
+/** "order O-3 (user:ana, Fri 30 Oct, 14:02): Hold: ...". */
+export const citeWords = (c: RuleCite): string => `${c.kind === 'grant' ? 'grant' : 'order'} ${c.id} (${c.by}, ${stampOf(c.at)}): ${c.text}`;
 
 // ------------------------------------------------------------------------------------------------ the gate
 /** One finding an act would build. */
