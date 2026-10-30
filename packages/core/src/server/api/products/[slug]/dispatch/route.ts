@@ -41,7 +41,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
   if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
   const file = storeFile(p);
   // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited; all of it held = 403
-  const g = gateBuild(p, 'dispatch', ids as string[]), held = new Set(g.held.map((h) => h.id));
+  let g: ReturnType<typeof gateBuild>;
+  try { g = gateBuild(p, 'dispatch', ids as string[]); } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
+  const held = new Set(g.held.map((h) => h.id));
   if (g.refused) return refusedBy(g);
   const { approved, go, skipped, error } = takeForBuild(file, (ids as string[]).filter((x) => !held.has(x)), busyProposals(slug), await triageBy());
   skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));

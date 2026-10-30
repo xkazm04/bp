@@ -157,6 +157,14 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
   check('control: the same case with the expiry and the revoke stripped would hold (the table would catch a gate that ignored them)', mg.held.length === 1);
 }
 
+// ------------------------------------------------------------------------------------------------ live trust
+{
+  const S = await import('../packages/core/src/server/rules.server.ts');
+  const cg = { kind: 'grant' as const, minTier: 3, cautious: true, scope: { kind: 'all' as const, label: 'Everything', features: [] } };
+  const mk = (i: number, synthetic: boolean): Row => ({ id: 's' + i, title: 't', feature: 'card', lens: 'security', owner: 'approve', by: 'user:owner', at: '2026-10-0' + i + 'T00:00:00Z', tier: 3, ...(synthetic ? { synthetic } : {}) });
+  check('a cautious grant earns live trust on real decisions only: five synthetic approvals earn nothing at a door', S.trustedLenses(cg, [1, 2, 3, 4, 5].map((i) => mk(i, true))).size === 0 && S.trustedLenses(cg, [1, 2, 3].map((i) => mk(i, false))).has('security'));
+}
+
 // ------------------------------------------------------------------------------------------------ the doors
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-check-rules-'));
 const KL = path.join(tmp, 'kl'), NOW = '2026-10-20T12:00:00.000Z';
@@ -255,6 +263,10 @@ try {
   const it0 = (id: string) => ib.json?.items?.find((x: { id: string }) => x.id === id);
   check('MCP inbox.list marks what an order holds (q-pay heldBy O-1) and leaves the rest unmarked', it0('q-pay')?.heldBy === 'O-1' && !it0('q-book')?.heldBy, j([it0('q-pay'), it0('q-book')]));
   check('MCP rules.list names the order, its author and place', !rl.isError && rl.json?.rules?.[0]?.id === 'O-1' && rl.json.rules[0].scope?.label === 'Billing', rl.text);
+  const pp = await req('POST', '/api/products/kl/lenses/design/prepare', {}, {});
+  check('a lens prepare job (it edits the repo across the product) is refused while a hold stands, cited', pp.status === 403 && pp.json?.order?.id === 'O-1', j(pp.json));
+  const forged = await req('POST', '/api/products/kl/proposals/q-pay', { 'x-bp-rule': 'G-1', 'x-bp-rule-token': 'f'.repeat(64) }, { decision: 'decline', note: 'forged' });
+  check("a forged x-bp-rule header without the server's token signs nothing: the decision is the person's", forged.status === 200 && /^user:/.test(forged.json?.decided_by ?? ''), j(forged.json));
 
   {
     const db = new DatabaseSync(path.join(KL, '.ai', 'lens-scan', 'scan.db'));
@@ -286,7 +298,11 @@ try {
   const pr = await call('rule_propose', { slug: 'kl', kind: 'hold', scope: { kind: 'feature', id: 'invoices-receipts', label: 'Invoices', features: ['invoices-receipts'] }, text: 'Hold invoices' });
   check('MCP rule.propose files a pending card (the agent cannot set a rule), its summary the rule in words', !pr.isError && pr.json?.state === 'pending', pr.text);
   const card = (await req('GET', '/api/companion/cards')).json?.find?.((c: { id: string }) => c.id === pr.json?.card) ?? (await req('GET', '/api/companion/cards')).json?.cards?.find?.((c: { id: string }) => c.id === pr.json?.card);
-  check('the card reads "Proposes a standing rule ... over Invoices"', /Proposes a standing rule for kl: "Hold invoices" over Invoices/.test(card?.summary ?? ''), j(card));
+  check('the card says what approving sets: "Proposes an ORDER (hold) ... over Invoices (1 feature)"', /Proposes an ORDER \(hold\) for kl: "Hold invoices" over Invoices \(1 feature\), until you lift it/.test(card?.summary ?? ''), j(card));
+  const pg = await call('rule_propose', { slug: 'kl', kind: 'grant', hours: 24, scope: { kind: 'all', label: 'Everything', features: [] }, text: 'Approve anything' });
+  const cardG = ((await req('GET', '/api/companion/cards')).json ?? []).find?.((c: { id: string }) => c.id === pg.json?.card);
+  check('a proposed grant with no tier floor says so on its card ("any tier: it covers stop-ship findings")', /GRANT \(any tier: it covers stop-ship findings\)/.test(cardG?.summary ?? ''), j(cardG));
+  await req('POST', '/api/companion/cards/' + pg.json?.card, H, { decision: 'decline' });
   const ap = await req('POST', '/api/companion/cards/' + pr.json?.card, H, { decision: 'approve' });
   const set2 = (await req('GET', API)).json?.rules?.find((r: { text: string }) => r.text === 'Hold invoices');
   check('the person approves the card: the rule is set with the person as its author', ap.status === 200 && ap.json?.state === 'done' && /^O-\d+$/.test(set2?.id ?? '') && /^user:/.test(set2?.by ?? ''), j([ap.json, set2]));
@@ -300,6 +316,8 @@ try {
 
   fs.writeFileSync(FILE, '{ not json');
   const gc = await req('GET', API);
+  const wcc = await call('wave_compose', { slug: 'kl', name: 'While broken', packages: [{ name: 'p', model: 'sonnet', effort: 'low', ids: ['q-book0'] }] });
+  check('while bp-rules.json is corrupt the gate fails closed: agent work is refused, citing the file', wcc.isError && /bp-rules\.json.*cannot be read/.test(wcc.text), wcc.text);
   const w = await req('POST', API, H, { kind: 'hold', scope: BILLING });
   check('a corrupt file reads as no rules; the next write moves it aside first', gc.status === 200 && gc.json?.rules?.length === 0 && w.status === 201 && fs.existsSync(FILE.replace(/\.json$/, '.corrupt.json')), j([gc.json, w.json]));
 } catch (e) {

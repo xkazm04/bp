@@ -41,15 +41,28 @@ export function isHuman(req: Request): boolean {
   const got = Buffer.from(req.headers.get(HUMAN_HEADER) ?? ''), want = Buffer.from(humanToken());
   return got.length === want.length && timingSafeEqual(got, want);
 }
-/** A card a standing grant ran (bp-rules.json G-n) carries `x-bp-rule: <id>` and this per-process token, so the route it
- *  calls signs the decision `rule:<id>` instead of the person's name: the store says who decided, and the replay of a rule
- *  reads only the owner's own decisions (rules.server.ts RULE_SIGN). Minted like the human token; never handed out. */
+/** A card the owner's standing permission ran (a rule grant G-n in bp-rules.json, or a companion policy pol_..) carries
+ *  `x-bp-rule: <id>`, `x-bp-rule-tool: <tool>` and this per-process token, so the route it calls signs the decision
+ *  `rule:G-n` / `policy:pol_..` instead of the person's name: the store says who decided, and the record a rule is
+ *  replayed over is the owner's alone (rules.server.ts AGENT_SIGNS). Minted like the human token; never handed out.
+ *  Known exposure (shared with the human token): the card's request goes to the origin the filing request named, and a
+ *  local process that can set a Host header can name its own port; the server is loopback-only (a guard against the
+ *  agent, not against an attacker already on this machine). */
 const ruleToken = (): string => ((g as { __bpRuleToken?: string }).__bpRuleToken ??= randomBytes(32).toString('hex'));
-export const RULE_HEADER = 'x-bp-rule', RULE_TOKEN_HEADER = 'x-bp-rule-token';
-/** `rule:<id>` when the request is this server's own call under a standing grant, else null. */
-export function ruleSigner(req: Request): string | null {
+export const RULE_HEADER = 'x-bp-rule', RULE_TOOL_HEADER = 'x-bp-rule-tool', RULE_TOKEN_HEADER = 'x-bp-rule-token';
+const PERMIT_ID = /^(G-\d{1,6}|pol_[0-9a-z]{6,40})$/;
+/**
+ * Who signs a decision this request makes: `{ by: 'rule:G-n' | 'policy:pol_..' }` when it is this server's own call under
+ * a standing permission THAT STILL COVERS IT (re-checked here, at the moment it lands: a wave changed since the card was
+ * filed, or a grant revoked meanwhile, is refused 403); null for any other request (the route signs as the person).
+ */
+export function agentSigner(req: Request, args: Record<string, unknown>): { by: string } | { refuse: Response } | null {
   const id = req.headers.get(RULE_HEADER), got = Buffer.from(req.headers.get(RULE_TOKEN_HEADER) ?? ''), want = Buffer.from(ruleToken());
-  return id && /^G-\d{1,6}$/.test(id) && got.length === want.length && timingSafeEqual(got, want) ? 'rule:' + id : null;
+  if (!id || got.length !== want.length || !timingSafeEqual(got, want) || !PERMIT_ID.test(id)) return null;
+  const t = toolOf(req.headers.get(RULE_TOOL_HEADER));
+  const still = t ? (id.startsWith('G-') ? ruleGrantFor(t, args)?.id : policyFor(t, args)?.id) : undefined;
+  if (still !== id) return { refuse: Response.json({ error: `${id} no longer covers this call (${t?.name ?? 'unknown tool'}): it waits for the person` }, { status: 403 }) };
+  return { by: (id.startsWith('G-') ? 'rule:' : 'policy:') + id };
 }
 /** Only a browser on bp's own page sends both; neither can be set by a page on another origin. */
 export const fromOwnPage = (req: Request): boolean => req.headers.get('sec-fetch-site') === 'same-origin' && req.headers.get('sec-fetch-mode') === 'cors';
@@ -189,9 +202,13 @@ export const listCards = (): Card[] => [...current().values()].sort((a, b) => (a
 export const getCard = (id: string): Card | undefined => current().get(id);
 
 const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
-  if (t.name === 'rule.propose') { // the rule in its own words, its place and how long: the catalog's description is for the agent
-    const sc = args.scope as { label?: unknown } | undefined, text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : `a ${String(args.kind)} rule`;
-    return bounded(`Proposes a standing rule for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'}${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
+  if (t.name === 'rule.propose') { // what approving it would set, in words: the agent's own text and label are quoted, never trusted alone
+    const sc = args.scope as { kind?: unknown; label?: unknown; features?: unknown } | undefined, text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : `a ${String(args.kind)} rule`;
+    const n = sc?.kind === 'all' ? 'every feature' : Array.isArray(sc?.features) ? `${sc.features.length} feature${sc.features.length === 1 ? '' : 's'}` : 'its features';
+    const what = args.kind === 'grant'
+      ? `a GRANT (${args.minTier === undefined || args.minTier === 0 ? 'any tier: it covers stop-ship findings' : `tier ${String(args.minTier)}+`}${args.cautious === true ? ', cautious' : ''})`
+      : `an ORDER (${String(args.kind)})`;
+    return bounded(`Proposes ${what} for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'} (${n})${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
   }
   const shown = Object.entries(args).filter(([k]) => k !== 'slug' && k !== 'product').map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
   const product = productOf(args);
@@ -216,7 +233,7 @@ async function execute(c: Card, t: ToolSpec, o: Origin, human: boolean): Promise
       method: r.method,
       headers: {
         'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}),
-        ...(!human && c.policy && /^G-\d+$/.test(c.policy) ? { [RULE_HEADER]: c.policy, [RULE_TOKEN_HEADER]: ruleToken() } : {}),
+        ...(!human && c.policy && PERMIT_ID.test(c.policy) ? { [RULE_HEADER]: c.policy, [RULE_TOOL_HEADER]: t.name, [RULE_TOKEN_HEADER]: ruleToken() } : {}),
       },
       ...(r.body ? { body: JSON.stringify(r.body) } : {}),
       redirect: 'manual',

@@ -121,7 +121,7 @@ export function Evidence({ bt, busy, error, onLeaveOut }: { bt: Backtest | null 
               ))}
             </div>
           ) : <p className="none">It has no decisions of yours to earn trust on yet: it will send everything to you.</p>}
-          <p className="wb-meta">Replayed walk-forward: on each past decision it knew only the ones before it.</p>
+          <p className="wb-meta">Replayed walk-forward: on each past decision it knew only the ones before it.{bt.synthetic ? ' Live, it earns trust on your real decisions only: the synthetic history here lets no agent act at a door.' : ''}</p>
         </Sec>
       )}
       {bt.synthetic > 0 && <p className="wb-meta rl-syn">{bt.synthetic} of these {bt.decided} decisions are <b>SYNTHETIC</b> seeded history (scripts/seed-rules-history.mjs), marked in every row; the rest are this store’s real decisions.</p>}

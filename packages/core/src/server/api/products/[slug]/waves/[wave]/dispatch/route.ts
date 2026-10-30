@@ -12,7 +12,7 @@ import { SAFE_ID } from '@bp/core/scan/jobs';
 import { dispatchWave } from '@bp/core/server/waves.server';
 import { triageBy } from '@bp/core/server/release.server';
 import { gateBuild } from '@bp/core/server/rules.server';
-import { ruleSigner } from '../../../../../companion/door.server.ts';
+import { agentSigner } from '../../../../../companion/door.server.ts';
 
 /** The package ids asked for (undefined = every package), or the 400. */
 function packagesOf(body: unknown): string[] | undefined | Response {
@@ -32,8 +32,11 @@ const dispatch = door('products/[slug]/waves/[wave]/dispatch', {
     kettle: (k, { params, body }) => k.dispatchWave(params.wave, body as string[] | undefined),
     kettleStatus: 202,
     live: async ({ req, slug, product: p, params, body }) => {
+      // a dispatch a standing permission runs: signed as it, and refused if it no longer covers the wave as it is now
+      const as = agentSigner(req, { slug, wave: params.wave, ...(body ? { packages: body } : {}) });
+      if (as && 'refuse' in as) return as.refuse;
       try {
-        const r = dispatchWave(slug, p, params.wave, body as string[] | undefined, ruleSigner(req) ?? await triageBy(), (pk) => gateBuild(p, 'wave.dispatch', pk.ids, pk.model, pk.effort));
+        const r = dispatchWave(slug, p, params.wave, body as string[] | undefined, as?.by ?? await triageBy(), (pk) => gateBuild(p, 'wave.dispatch', pk.ids, pk.model, pk.effort));
         return Response.json(r.body, { status: r.status });
       } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
     },

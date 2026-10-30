@@ -1,8 +1,10 @@
 // The owner's standing rules of a product, server half (scan/rules.ts is the pure half): `<root>/.ai/lens-scan/work/
 // bp-rules.json` = { version: 1, rules }, beside bp-waves.json and scan.db, so Personas (which opens that directory
-// already) reads them with no new IPC (docs/standard/rules-1.md). Read on every call, written through writeAtomic; a
-// file that cannot be read is said once and read as no rules, and the next write moves it to bp-rules.corrupt.json
-// first, as waves.server.ts does. Also here: the decided record a rule is replayed over (the store's decided findings,
+// already) reads them with no new IPC (docs/standard/rules-1.md). Read on every call, written through writeAtomic.
+// A file that cannot be parsed is said once; the panel reads it as no rules, but the GATE FAILS CLOSED: no agent work
+// starts while the owner's orders cannot be read. The owner's next write moves it to bp-rules.corrupt.json first, as
+// waves.server.ts does. A file that cannot be read at all (busy, permissions) refuses writes (503), so a transient
+// error never overwrites the rules; entries this version does not know are kept as they are on every write. Also here: the decided record a rule is replayed over (the store's decided findings,
 // with the model and effort a wave built each with), and `gateBuild` / `gateScan`, the one call every agent door makes
 // before it builds or scans (wave compose and dispatch, /dispatch, a lens's execute, scan.place).
 import fs from 'node:fs';
@@ -24,52 +26,68 @@ const isRule = (x: unknown): x is Rule => {
     && !!r.scope && typeof r.scope === 'object' && Array.isArray(r.scope.features);
 };
 
-/** The product's rules, newest last as written; no file = none; a broken file = none, said once. Never writes. */
-export function listRules(root: string): Rule[] {
+/** What reading the file came to: `raw` keeps every entry (known rules and ones this version does not know); `broken`
+ *  = it exists but is not a rules file; `error` = it could not be read at all. A missing file is no rules. */
+export type RulesRead = { raw: unknown[]; rules: Rule[]; broken?: string; error?: string };
+export function readRules(root: string): RulesRead {
   const file = rulesFile(root);
   let text: string;
   try { text = fs.readFileSync(file, 'utf8'); } catch (e) {
-    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warnOnce(file, e);
-    return [];
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { raw: [], rules: [] };
+    warnOnce(file, e);
+    return { raw: [], rules: [], error: (e as Error).message };
   }
   try {
     const xs = (JSON.parse(text) as Partial<RulesFile> | null)?.rules;
     if (!Array.isArray(xs)) throw new Error('no "rules" array');
     recovered(file);
-    return xs.filter(isRule);
-  } catch (e) { warnOnce(file, e); return []; }
+    return { raw: xs, rules: xs.filter(isRule) };
+  } catch (e) { warnOnce(file, e); return { raw: [], rules: [], broken: (e as Error).message }; }
 }
+/** The product's rules, as written (revoked and expired ones included); none when the file is missing or broken. */
+export const listRules = (root: string): Rule[] => readRules(root).rules;
 
-function save(root: string, rules: Rule[]): void {
+/** Thrown when the file cannot be read, so a write never replaces rules it could not see (the routes answer 503). */
+export class RulesUnreadable extends Error {}
+function save(root: string, read: RulesRead, raw: unknown[]): void {
   const file = rulesFile(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  let broken = false;
-  try { broken = !Array.isArray((JSON.parse(fs.readFileSync(file, 'utf8')) as Partial<RulesFile>)?.rules); } catch (e) { broken = (e as NodeJS.ErrnoException).code !== 'ENOENT'; }
-  if (broken) {
+  if (read.broken) {
     const aside = file.replace(/\.json$/, '.corrupt.json');
     fs.renameSync(file, aside);
-    console.warn(`[bp] ${file} could not be read as rules and was moved to ${aside}; a new file was written in its place`);
+    console.warn(`[bp] ${file} could not be read as rules (${read.broken}) and was moved to ${aside}; a new file was written in its place`);
   }
-  const doc: RulesFile = { version: 1, rules };
-  writeAtomic(file, JSON.stringify(doc, null, 2) + '\n');
+  writeAtomic(file, JSON.stringify({ version: 1, rules: raw }, null, 2) + '\n');
 }
+const readForWrite = (root: string): RulesRead => {
+  const r = readRules(root);
+  if (r.error) throw new RulesUnreadable(`the standing rules cannot be read (${r.error}); nothing was written`);
+  return r;
+};
 
 export function addRule(root: string, make: (rules: readonly Rule[]) => Rule): Rule {
-  const rules = listRules(root), r = make(rules);
-  save(root, [...rules, r]);
+  const read = readForWrite(root), r = make(read.rules);
+  save(root, read, [...read.raw, r]);
   return r;
 }
 /** Revoke a live rule (it stays in the file as the record). 404 unknown, 409 already revoked. */
 export function revokeRule(root: string, id: string, by: string, now = Date.now()): { ok: true; rule: Rule } | { ok: false; status: 404 | 409; error: string } {
-  const rules = listRules(root), r = rules.find((x) => x.id === id);
+  const read = readForWrite(root), r = read.rules.find((x) => x.id === id);
   if (!r) return { ok: false, status: 404, error: `no rule ${id}` };
   if (r.revokedAt) return { ok: false, status: 409, error: `rule ${id} was revoked ${r.revokedAt}` };
   const next: Rule = { ...r, revokedAt: new Date(now).toISOString(), revokedBy: by };
-  save(root, rules.map((x) => (x.id === id ? next : x)));
+  let done = false; // the first entry with that id only: a duplicate id (two processes writing at once) keeps its own entry
+  save(root, read, read.raw.map((x) => (!done && isRule(x) && x.id === id ? ((done = true), next) : x)));
   return { ok: true, rule: next };
 }
 
 // ------------------------------------------------------------------------------------------------ the record
+/** Decisions an agent made under the owner's standing permission are signed `rule:G-n` (a rule grant) or `policy:pol_..`
+ *  (a companion policy) by the routes (door.server.ts agentSigner): never the person's. The record a rule is replayed over,
+ *  earns trust on and finds breaches in is the OWNER's, so those rows are left out of it. */
+export const AGENT_SIGNS = ['rule:', 'policy:'] as const;
+const byAgent = (by: string | undefined): boolean => !!by && AGENT_SIGNS.some((p) => by.startsWith(p));
+
 /** Seeded history (scripts/seed-rules-history.mjs) runs under this run-id prefix, so it is labelled wherever it shows. */
 export const SYNTHETIC_RUN = 'syn-';
 
@@ -81,7 +99,7 @@ export function decidedRows(p: ProductEntry): DecidedRow[] {
   for (const w of listWaves(p.root)) for (const k of w.packages) for (const id of k.ids) built.set(id, { model: k.model, effort: k.effort });
   const out: DecidedRow[] = [];
   for (const x of snapshotOf(storeFile(p)).proposals) {
-    if (x.status === 'proposed' || !x.decided_at || x.decided_by?.startsWith(RULE_SIGN)) continue;
+    if (x.status === 'proposed' || !x.decided_at || byAgent(x.decided_by)) continue;
     const b = built.get(x.id);
     out.push({
       id: x.id, title: x.title, feature: x.feature, lens: x.lens,
@@ -92,10 +110,6 @@ export function decidedRows(p: ProductEntry): DecidedRow[] {
   }
   return out.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
-
-/** Decisions made under a grant are signed `rule:<id>` (door.server.ts): the record a rule is replayed over is the
- *  owner's, so they are left out of it. */
-export const RULE_SIGN = 'rule:';
 
 /** The open findings (proposed or approved), what a rule acts on the moment it is set. */
 export function openRows(p: ProductEntry): OpenRow[] {
@@ -115,8 +129,10 @@ export function roomsOf(p: ProductEntry): Room[] {
   } catch { return []; }
 }
 
-/** The lenses a cautious grant has earned over this record (scan/rules.ts lensTrust): where it may act alone. */
-export const trustedLenses = (r: RuleShape, decided: readonly DecidedRow[]): Set<string> => new Set(lensTrust(r, decided).filter((t) => t.trusted).map((t) => t.lens));
+/** The lenses a cautious grant has earned (scan/rules.ts lensTrust): where it may act alone. Earned on the owner's REAL
+ *  decisions only: seeded synthetic history shows in the replay, labelled, but never lets an agent act at a door. */
+export const trustedLenses = (r: RuleShape, decided: readonly DecidedRow[]): Set<string> =>
+  new Set(lensTrust(r, decided.filter((x) => !x.synthetic)).filter((t) => t.trusted).map((t) => t.lens));
 
 /** The finding ids as gate items (feature, lens, tier); ids the store lacks are left out (the door refuses them itself). */
 export function itemsOf(p: ProductEntry, ids: readonly string[]): { id: string; feature: string; lens: string; tier?: number }[] {
@@ -153,9 +169,19 @@ export function readHeld(root: string): HeldEntry[] {
 /** The gate's answer for an act on this product, with the words a door answers in. */
 export interface Gated extends GateAnswer { words: string }
 const answer = (g: GateAnswer): Gated => ({ ...g, words: g.held.length || g.refused ? gateWords(g) : '' });
+/** The gate FAILS CLOSED: while bp-rules.json exists but cannot be read, no agent work starts (the owner's next write, or
+ *  fixing the file, lifts it). The refusal cites the file, as an order would. */
+function unreadable(read: RulesRead, items: readonly { id: string; feature: string }[]): Gated | null {
+  const why = read.broken ?? read.error;
+  if (!why) return null;
+  const cite = { id: 'bp-rules.json', kind: 'hold' as const, by: 'bp', at: new Date().toISOString(), text: `bp-rules.json (the owner's standing rules) cannot be read (${why}): no agent work starts until it can`, place: 'everything' };
+  return { held: items.map((it) => ({ id: it.id, feature: it.feature, order: cite })), refused: cite, words: `refused: ${cite.text}` };
+}
 
 export function gateBuild(p: ProductEntry, tool: string, ids: readonly string[], model?: string, effort?: string): Gated {
-  const rules = listRules(p.root);
+  const read = readRules(p.root), rules = read.rules;
+  const bad = unreadable(read, ids.map((id) => ({ id, feature: '' })));
+  if (bad) return bad;
   if (!rules.length) return { held: [], words: '' };
   const act: Act = { kind: 'build', tool, items: itemsOf(p, ids), ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
   const g = gate(rules, act);
@@ -163,7 +189,8 @@ export function gateBuild(p: ProductEntry, tool: string, ids: readonly string[],
   return answer(g);
 }
 export function gateScan(p: ProductEntry, tool: string, lens: string, scope: ScanScope): Gated {
-  const rules = listRules(p.root);
+  const read = readRules(p.root), rules = read.rules, bad = unreadable(read, []);
+  if (bad) return bad;
   if (!rules.length) return { held: [], words: '' };
   const g = gate(rules, { kind: 'scan', tool, lens, scope });
   if (g.refused) logHeld(p.root, g, tool);

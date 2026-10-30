@@ -17,7 +17,7 @@
 import { door } from '@bp/core/server/route-door.server';
 import { backtest, breachesOf, checkRuleBody, impact, ruleOf, sinceSet, tallyHeld } from '@bp/core/scan/rules';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
-import { addRule, decidedRows, listRules, openRows, readHeld, roomsOf, trustedLenses } from '@bp/core/server/rules.server';
+import { RulesUnreadable, addRule, decidedRows, listRules, openRows, readHeld, roomsOf, trustedLenses } from '@bp/core/server/rules.server';
 import { suggestRules } from '@bp/core/scan/rules-suggest';
 import { triageBy } from '@bp/core/server/release.server';
 import { isHuman, notHuman } from '../../../companion/door.server.ts';
@@ -49,7 +49,11 @@ const rules = door('products/[slug]/rules', {
       if (preview) return Response.json({ rule: { ...draft, id: null }, backtest: bt, now: impact(draft, read(() => openRows(p)), map.features.size, draft.cautious ? trustedLenses(draft, rows) : undefined) });
       if (!isHuman(req)) return notHuman();
       const by = await triageBy(), at = new Date().toISOString();
-      const rule = addRule(p.root, (all) => ({ ...ruleOf(draft, all, by), evidence: { decided: bt.decided, matched: bt.matched, differed: bt.differed, abstained: bt.abstained, at } }));
+      let rule;
+      try { rule = addRule(p.root, (all) => ({ ...ruleOf(draft, all, by), evidence: { decided: bt.decided, matched: bt.matched, differed: bt.differed, abstained: bt.abstained, at } })); } catch (e) {
+        if (e instanceof RulesUnreadable) return Response.json({ error: e.message }, { status: 503 });
+        throw e;
+      }
       return Response.json({ rule, backtest: bt }, { status: 201 });
     },
   },

@@ -51,14 +51,15 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
   const { read, skipped } = snapshots(), recs = readRecommendations(), out: Ranked[] = [];
   for (const { p, scan } of read) {
     const ev = rankValue(scan.proposals), rules = listRules(p.root).filter((r) => isLive(r, now));
-    let rows: ReturnType<typeof decidedRows> | null = null; // read only when a cautious grant asks
+    let rows: ReturnType<typeof decidedRows> | null = null; // read only when a cautious grant asks; unreadable = no trust
+    const record = () => (rows ??= (() => { try { return decidedRows(p); } catch { return []; } })());
     for (const x of scan.proposals) {
       const kind = x.status === 'proposed' ? 'proposal' : x.status === 'done' || x.status === 'failed' ? 'triage' : null;
       if (!kind) continue;
       const rec = recs[`${p.slug}:${x.id}`];
       // the owner's standing rules mark what no door will build (an order) and what an agent may approve alone (a grant)
       const held = kind === 'proposal' && rules.length ? gate(rules, { kind: 'build', tool: 'inbox.list', items: [{ id: x.id, feature: x.feature, lens: x.lens }] }, now).held[0]?.order.id : undefined;
-      const grant = kind === 'proposal' && rules.length && !held ? grantFor(rules, 'decision.answer', [{ feature: x.feature, lens: x.lens, ...(x.tier !== undefined ? { tier: x.tier } : {}) }], now, (r) => trustedLenses(r, (rows ??= decidedRows(p))))?.id : undefined;
+      const grant = kind === 'proposal' && rules.length && !held ? grantFor(rules, 'decision.answer', [{ feature: x.feature, lens: x.lens, ...(x.tier !== undefined ? { tier: x.tier } : {}) }], now, (r) => trustedLenses(r, record()))?.id : undefined;
       out.push({
         product: p.slug, id: x.id, kind, title: x.title, ...(x.tier !== undefined ? { tier: x.tier } : {}),
         ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), value: ev.get(x.id) ?? 0,

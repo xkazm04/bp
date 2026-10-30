@@ -46,7 +46,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 });
   }
   // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited
-  const g = gateBuild(p, 'lens.execute', open), held = new Set(g.held.map((h) => h.id));
+  let g: ReturnType<typeof gateBuild>;
+  try { g = gateBuild(p, 'lens.execute', open); } catch (e) { return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 }); }
+  const held = new Set(g.held.map((h) => h.id));
   if (g.refused) return refusedBy(g);
   const { approved, go, skipped, error } = takeForBuild(file, ids.filter((x) => !held.has(x)), busyProposals(slug), await triageBy());
   skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));

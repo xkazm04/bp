@@ -89,18 +89,22 @@ A rule covers a feature when its scope is `all` or the feature is in `scope.feat
 ## 6. What the gate holds
 
 Every agent door calls one gate before it builds or scans (`gate`, through `gateBuild` / `gateScan`): wave compose
-(`wave.compose`) and dispatch (`wave.dispatch`), `/dispatch` (`dispatch`), a lens's execute (`lens.execute`) and a
-place scan (`scan.place`). The gate reads only live orders. Grants never refuse.
+(`wave.compose`) and dispatch (`wave.dispatch`), `/dispatch` (`dispatch`), a lens's execute (`lens.execute`), a
+place scan (`scan.place`) and a lens's prepare job (`lens.prepare`, gated as that lens's scan of everything: it edits the
+repo across the product). The gate reads only live orders. Grants never refuse.
+
+The gate **fails closed**: while `bp-rules.json` exists but cannot be read or parsed, every build and scan is refused,
+citing `bp-rules.json`, until it can (the owner's next write moves a corrupt file aside, section 9).
 
 | Kind | A build item (finding: feature, lens) is held when | A scan (lens, scope) is refused when |
 |---|---|---|
 | `hold` | the order covers the item's feature | the order's place and the scan's place share a feature, or either is `all` |
 | `only` | the order covers the feature and the item's lens is not in `lenses` | the places touch as above and the scan's lens is not in `lenses` |
-| `cap` | the order covers the feature, the act names an effort above `maxEffort` (order `low` < `medium` < `high` < `xhigh`), and `model` is absent or equals the act's model | never |
+| `cap` | the order covers the feature and either the act names no effort (it would run at the CLI's default, which no cap can vouch for), or names one above `maxEffort` (order `low` < `medium` < `high` < `xhigh`) while `model` is absent, equals the act's model, or the act names no model | never |
 
 For a build, the first live order that holds an item is cited for it. The act keeps the items no order holds; when
 every item is held, the first holding order refuses the whole act and the door answers 403
-`{ error, order, held }`. A build that names no effort is never held by a `cap`. A refusal cites the rule as
+`{ error, order, held }`. Under a `cap`, a place builds only through a wave package that names its effort. A refusal cites the rule as
 `{ id, kind, by, at, text, place }`, where `place` is `scope.label`.
 
 The gate's behaviour is also kept as data: [`rules-1.cases.json`](rules-1.cases.json) lists rules, acts and what the gate
@@ -125,18 +129,24 @@ ended (`revokedAt`, else `expiresAt`), inside its place, that the order would ha
 refuse those, so a breach means something went around them. They are read from `scan.db` decided rows (a `cap` breach
 also needs the model and effort from the `bp-waves.json` package that built the finding).
 
-## 8. Grants and the `rule:G-n` signature
+## 8. Grants and the `rule:G-n` / `policy:pol_..` signatures
 
 A live grant lets the companion run a card on its own when the tool is in the grant's `tools`, and every finding the
 call names is inside the grant's place and, when `minTier` is set, carries a tier that is `>= minTier` (`grantFor`).
 A finding with no tier is never covered by a tier-bound grant, and an id the store lacks is never covered. A `cautious`
 grant also needs the finding's lens to be one it has earned over the owner's decided rows (the same record the replay
-reads); a reader that cannot read that record must treat a cautious grant as covering nothing.
+reads), earned on the owner's real decisions only (rows of a `syn-` run never earn it); a reader that cannot read that
+record must treat a cautious grant as covering nothing.
 
 The call a grant runs is signed with the grant: the route it reaches writes `decided_by = 'rule:G-n'` in `scan.db`'s
 `proposals` (proposal decisions and wave dispatch). The owner's own decisions stay `user:<login>`. The replay a new
 rule is tested against reads only the owner's decisions, so rows signed `rule:` are left out of it and never count as
-an order's breach.
+an order's breach. A card a companion policy runs (bp's older global grants, `policies.json`) is signed `policy:pol_..`
+the same way and is left out the same way. The signature is accepted only with a per-process token bp never hands out,
+and only while the permission still covers the call as it is when it lands (a wave changed since the card was filed, or
+a grant revoked meanwhile, is refused 403). Known exposure, shared with the human token: the card's request goes to the
+origin the filing request named, and a local process that can set a `Host` header could name its own port; bp is
+loopback-only, so this guards against the agent, not against an attacker already on the machine.
 
 ## 9. Writing
 
@@ -146,7 +156,9 @@ holds. An agent may propose a rule (`rule.propose`) and preview its replay; only
 
 A write is whole-file and atomic: bp writes `bp-rules.json.<pid>.<ms>.tmp` and renames it over the file. Before
 writing, bp reads the current file. If the file exists but is not JSON with a `rules` array, bp renames it to
-`bp-rules.corrupt.json` and writes a new file in its place. A reader never sees a half-written file.
+`bp-rules.corrupt.json` and writes a new file in its place. If it cannot be read at all (busy, permissions), the write is
+refused (503) rather than risk replacing rules it could not see. Entries bp does not recognise are written back as they
+were. A reader never sees a half-written file.
 
 bp also writes `bp-rules-log.jsonl`, by appending (section 7). No other app writes either file.
 
@@ -154,8 +166,8 @@ bp also writes `bp-rules-log.jsonl`, by appending (section 7). No other app writ
 
 | Reader | How |
 |---|---|
-| bp's doors | `listRules` on every call (no cache): no file = no rules; unreadable = no rules, warned once |
-| HTTP | `GET /api/products/<slug>/rules` answers `{ rules, record, held, breaches }` |
+| bp's doors | `readRules` on every call (no cache): no file = no rules; unreadable or corrupt = every build and scan refused (fails closed), warned once |
+| HTTP | `GET /api/products/<slug>/rules` answers `{ rules, record, held, breaches, since, suggestions }` (a corrupt file reads as no rules here) |
 | MCP | `rules.list` (the same GET) |
 | Personas | the files themselves, from the lens-scan directory it already opens (proposal: `docs/concepts/rules-personas-adoption.md`) |
 
