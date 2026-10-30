@@ -39,6 +39,7 @@ import { FeatureSheet } from './FeatureSheet';
 import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
+import { EmptyPlan } from './EmptyPlan';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
 import { GENERAL } from '@bp/core/data/types';
 import './blueprint.css';
@@ -67,6 +68,7 @@ const Chrome = memo(function Chrome() {
       <Ticker />
       <SelBar />
       <Callout />
+      <EmptyPlan />
       <HoverCard />
       <DecisionCard />
       <Toast />
