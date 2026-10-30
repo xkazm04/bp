@@ -92,6 +92,8 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
   const say = st.view?.shared && st.view.shared.reader !== fx.me ? st.view.shared.place.say : undefined;
   if (!st.view && !st.follows) return null;
   return (
+    <>
+    {st.follows && say && <div id="fx-say" key={st.view?.rev} role="status" aria-live="polite"><small>{st.view?.shared?.label}</small>{say}</div>}
     <div id="fx-chip" className={st.follows ? 'on' : ''} role="status" aria-live="polite" data-keys="own">
       {st.follows ? (
         <>
@@ -106,7 +108,7 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
         </>
       )}
       {!st.online && <span className="w muted" title="The shared focus is not reachable right now">offline</span>}
-      {st.follows && say && <span key={st.view?.rev} className="say">{say}</span>}
     </div>
+    </>
   );
 }
