@@ -3,13 +3,15 @@
 // its sticky pack row over its shown items. The rows are memoised (ItemRow, PackRow) and skip layout off screen
 // (`content-visibility: auto`), so a decision repaints one row. The focused row is the ledger's `focus` when it is
 // shown, else the first; clicking a row opens it in the compare panel. Below ~760 px of width (the phone, a split
-// screen, a docked compare) a row folds into a two-line card, A/1's container breakpoints.
+// screen, a docked compare) a row folds into a two-line card, A/1's container breakpoints. Until the scan snapshot
+// arrives (useTrain's `arrived`) the table says it is loading: an empty list then is "not answered yet", not "no packs".
 import { useCallback, useMemo } from 'react';
 import type { Ledger } from '../useLedger';
 import { useDecide } from './Decide';
 import { ItemRow, useItemFacts } from './ItemRow';
 import { PackRow } from './PackRow';
 import { Callout } from './ui/Controls';
+import { useTrain } from './data';
 import './PackTable.css';
 
 export interface PackTableProps {
@@ -21,7 +23,7 @@ export interface PackTableProps {
 }
 
 export function PackTable({ L, sample, onLenses }: PackTableProps) {
-  const facts = useItemFacts(), { pending } = useDecide();
+  const facts = useItemFacts(), { pending } = useDecide(), { arrived } = useTrain();
   const { ui, set } = L;
   const first = L.scoped[0]?.p.id, foc = ui.focus && L.scoped.some((f) => f.p.id === ui.focus) ? ui.focus : first;
   const onOpen = useCallback((id: string) => set((u) => (u.open === id && u.focus === id ? u : { ...u, focus: id, open: id })), [set]);
@@ -33,6 +35,11 @@ export function PackTable({ L, sample, onLenses }: PackTableProps) {
   }, [packs, select]);
   const progress = useMemo(() => new Map(L.packs.map((k) => [k.pack.id, k.items.map((f) => ({ id: f.p.id, status: f.status }))])), [L.packs]);
 
+  if (!L.packs.length && !arrived) return (
+    <div className="tr-pt-empty" role="status" data-role="tr-pt-loading">
+      <Callout tone="note"><span aria-hidden="true">…</span><span>Loading the packs…</span></Callout>
+    </div>
+  );
   if (!L.packs.length) return (
     <div className="tr-pt-empty">
       <Callout tone="empty">
