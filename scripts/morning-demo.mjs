@@ -59,6 +59,13 @@ const FINDING_TITLES = {
   perf: (n) => `${n} takes 2.4 s to open on a mid-range phone`,
   debt: (n) => `${n} still runs on the retired date library`,
 };
+// each overnight finding reads the metric its words are about, at a value the night's measure run records
+const FINDING_METRIC = {
+  secret: { lens: 'security', metric: 'secretHits', value: 1, delta: -1, unit: 'hits' },
+  ux: { lens: 'design', metric: 'undesignedStates', value: 3, delta: -2, unit: 'states' },
+  perf: { lens: 'performance', metric: 'startupMs', value: 2400, delta: -1100, unit: 'ms' },
+  debt: { lens: 'development', metric: 'depCount', value: 17, delta: -2, unit: 'packages' },
+};
 const titleOf = (metric, f) => (TITLES[metric] ?? ((n) => `Improve ${metric} on ${n}`))(NAMES.get(f) ?? f);
 
 function insert(db, table, row) {
@@ -118,10 +125,11 @@ function night(db, spec) {
   }
   // findings raised overnight, waiting for a person
   spec.findings.forEach((f, i) => {
-    const [r] = take(1), id = `find-${spec.slug}-${i + 1}`, at = NOW - (2.2 - i * 0.3) * H;
-    insert(db, 'proposals', { id, run_id: measure, feature: r.feature, lens: r.lens, metric: r.metric, title: FINDING_TITLES[f.risk_class](NAMES.get(r.feature) ?? r.feature), body: `## Summary\n${NOTE}.`, expected_delta: delta(r), size: 'S', risk: f.tier === 0 ? 8 : 4, kind: 'fix',
+    const [r] = take(1), id = `find-${spec.slug}-${i + 1}`, at = NOW - (2.2 - i * 0.3) * H, fm = FINDING_METRIC[f.risk_class];
+    insert(db, 'measurements', { run_id: measure, feature: r.feature, lens: fm.lens, metric: fm.metric, value: fm.value, unit: fm.unit, method: 'static', evidence: NOTE, measured_at: iso(at - 60e3) });
+    insert(db, 'proposals', { id, run_id: measure, feature: r.feature, lens: fm.lens, metric: fm.metric, title: FINDING_TITLES[f.risk_class](NAMES.get(r.feature) ?? r.feature), body: `## Summary\n${NOTE}.`, expected_delta: fm.delta, size: 'S', risk: f.tier === 0 ? 8 : 4, kind: 'fix',
       status: 'proposed', tier: f.tier, risk_class: f.risk_class, ranked_by: 'agent:night', ranked_at: iso(at), created_at: iso(at), updated_at: iso(at) });
-    insert(db, 'activity', { run_id: measure, at: iso(at), feature: r.feature, lens: r.lens, kind: 'proposed', text: `raised: ${FINDING_TITLES[f.risk_class](NAMES.get(r.feature) ?? r.feature)}` });
+    insert(db, 'activity', { run_id: measure, at: iso(at), feature: r.feature, lens: fm.lens, kind: 'proposed', text: `raised: ${FINDING_TITLES[f.risk_class](NAMES.get(r.feature) ?? r.feature)}` });
   });
   db.exec('COMMIT');
 }

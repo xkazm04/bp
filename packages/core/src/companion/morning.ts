@@ -26,6 +26,8 @@ export interface ProductFacts {
   scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases'>;
   /** feature slug -> where it sits on the product's plan. */
   where: ReadonlyMap<string, Where>;
+  /** `lens|metric` -> the manifest's label ('Secrets in code'), when the map has one. */
+  labels?: ReadonlyMap<string, string>;
 }
 /** One row of a product's steering log (work/steering-log.jsonl). */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string }
@@ -155,6 +157,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       lines: [
         { text: `${i + 1} of ${top.length} · ${p.name}${w ? ' · ' + w.roomName : ''}` },
         { text: [tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Untiered', x.risk_class ? x.risk_class : null, 'raised ' + hoursAgo(x.created_at, now)].filter(Boolean).join(' · '), ...(x.tier === 0 ? { tone: 'bad' as Tone } : {}) },
+        ...(stakes(p, x) ? [{ text: stakes(p, x)! }] : []),
         ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
       ],
       place: featurePlace(p.slug, x.feature, x.title),
@@ -163,6 +166,23 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   });
   cards.push({ id: 'close', kind: 'close', headline: 'That is the morning.', tone: 'calm', lines: [] });
   return { since, until, products: sums, cards };
+}
+
+/** What deciding buys, in one line: "Now 9.3 literals, expected 7 · size S · change risk 3 of 10" (the number only when the
+ *  product has a current reading of the finding's metric). */
+function stakes(p: ProductFacts, x: Proposal): string | null {
+  let cur: { value: number; unit?: string; at: string } | undefined;
+  if (x.metric) for (const m of p.scan.measurements) {
+    if (m.feature !== x.feature || m.lens !== x.lens || m.metric !== x.metric || m.phase === 'after' || m.proposal_id) continue;
+    if (!cur || m.measured_at > cur.at) cur = { value: m.value, ...(m.unit ? { unit: m.unit } : {}), at: m.measured_at };
+  }
+  const u = cur?.unit ? ' ' + cur.unit : '';
+  const parts = [
+    cur && x.metric ? `${p.labels?.get(x.lens + '|' + x.metric) ?? x.metric} now ${fmt(cur.value)}${u}${x.expected_delta ? `, expected ${fmt(cur.value + x.expected_delta)}${u}` : ''}` : null,
+    x.size ? 'size ' + x.size : null,
+    x.risk !== undefined ? `change risk ${x.risk} of 10` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
 }
 
 /** One release item in words: "Split the X bundle · Checkout: expected 41 KB, measured 44 KB after the release". */

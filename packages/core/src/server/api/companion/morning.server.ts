@@ -26,24 +26,28 @@ export const DEFER_MS = 20 * 3600e3;
 const logFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'steering-log.jsonl');
 const mdFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'steering-log.md');
 
-/** feature -> its room and wing on the product's plan, cached per map rev. */
-const g = globalThis as unknown as { __bpMorningWhere?: Map<string, { rev: string; where: Map<string, Where> }> };
-function whereOf(p: ProductEntry): Map<string, Where> {
-  const cache = (g.__bpMorningWhere ??= new Map()), dir = storeDir(p), rev = mapRev(dir), hit = cache.get(p.root);
-  if (hit && hit.rev === rev) return hit.where;
-  const where = new Map<string, Where>();
+/** feature -> its room and wing on the product's plan, and the lens manifests' metric labels, cached per map rev. */
+interface MapFacts { where: Map<string, Where>; labels: Map<string, string> }
+const g = globalThis as unknown as { __bpMorningMaps?: Map<string, { rev: string; facts: MapFacts }> };
+function whereOf(p: ProductEntry): MapFacts {
+  const cache = (g.__bpMorningMaps ??= new Map()), dir = storeDir(p), rev = mapRev(dir), hit = cache.get(p.root);
+  if (hit && hit.rev === rev) return hit.facts;
+  const where = new Map<string, Where>(), labels = new Map<string, string>();
   try {
     let events = '';
     try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-    const plan = projectPlan(JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')), events, rev);
+    const map = JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')) as { lenses?: { id?: string; manifest?: { fields?: { key?: string; label?: string }[] } }[] };
+    for (const l of map.lenses ?? []) for (const f of l.manifest?.fields ?? []) if (l.id && f.key && f.label) labels.set(l.id + '|' + f.key, f.label);
+    const plan = projectPlan(map, events, rev);
     const wings = new Map(plan.wings.map((w) => [w.id, w])), rooms = new Map(plan.rooms.map((r) => [r.id, r])), bays = new Map(plan.bays.map((b) => [b.id, b]));
     for (const t of plan.tiles) {
       const room = rooms.get(bays.get(t.parentId)?.parentId ?? ''), wing = room ? wings.get(room.parentId) : undefined;
       if (room && wing) where.set(t.id, { room: room.id, roomName: room.name, wing: wing.id, wingName: wing.name, name: t.name });
     }
   } catch (e) { warnOnce('morning plan ' + p.slug, e); }
-  cache.set(p.root, { rev, where });
-  return where;
+  const facts = { where, labels };
+  cache.set(p.root, { rev, facts });
+  return facts;
 }
 
 export function readSteer(p: ProductEntry): SteerRow[] {
@@ -63,7 +67,7 @@ export function morningDeck(since: string | undefined, now = Date.now()): Mornin
   const { read, skipped } = snapshots();
   const facts: ProductFacts[] = [], steer: SteerRow[] = [];
   for (const { p, scan } of read) {
-    facts.push({ slug: p.slug, name: p.name, scan, where: whereOf(p) });
+    facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p) });
     steer.push(...readSteer(p));
   }
   const deck = buildDeck(facts, steer, from, now);
