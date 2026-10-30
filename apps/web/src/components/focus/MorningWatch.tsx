@@ -85,7 +85,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     setParam(card.id);
     if (card.kind === 'close') void load();
     const p = card.place;
-    if (!p) { if (card.kind === 'open' && !phone) E.goHome(); return; }
+    if (!p) { if ((card.kind === 'open' || card.kind === 'close') && !phone) E.goHome(); return; }
     void fx.publishNow(p).then(() => {
       if (phone) return;
       fx.hush(4000);
@@ -151,9 +151,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   return (
     <section id="mw" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="Morning Watch" data-keys="own">
       <div className="mw-top">
-        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}
-          <button type="button" className={'mw-voice' + (voice ? ' on' : '')} aria-pressed={voice} onClick={() => setVoice((x) => !x)} title="Read each card aloud with this browser's voice (V)">{voice ? 'Voice on' : 'Voice'}</button></span>
-        <span className="who">{others.length ? <>Following you: <b>{others.map((x) => x.label).join(', ')}</b></> : 'No other screen follows'}</span>
+        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}</span>
+        <span className="who">{others.length ? <>Following: <b>{others.map((x) => x.label).join(', ')}</b></> : 'No other screen follows'}</span>
       </div>
       <div className="bar" role="tablist" aria-label="Cards">
         {deck?.cards.map((c, j) => (
@@ -172,7 +171,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
-          {card.kind === 'open' && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
+          {(card.kind === 'open' || card.kind === 'close') && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
           {deck?.skipped?.length ? card.kind === 'open' && <div className="where">Not read: {deck.skipped.map((x) => x.product + ' (' + x.why + ')').join('; ')}</div> : null}
         </motion.div>
       ) : <div className="card"><h2>{deck ? 'Nothing to brief.' : 'Reading every product…'}</h2></div>}
@@ -190,7 +189,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
             : <button type="button" className="bt go" onClick={() => go(1)}><kbd>→</kbd> Next</button>}
         </div>
       )}
-      <div className="keys"><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>V</b> voice · <b>Esc</b> close</div>
+      <div className="keys"><span><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>Esc</b> close</span>
+        <button type="button" className={'mw-voice' + (voice ? ' on' : '')} aria-pressed={voice} onClick={() => setVoice((x) => !x)} title="Read each card aloud with this browser's own voice (V)">{voice ? 'Voice on' : 'Voice'} <b>V</b></button></div>
     </section>
   );
 }

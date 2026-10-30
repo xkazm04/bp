@@ -22,7 +22,7 @@
 #mw:focus { outline: none; }
 #mw .mw-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-8); padding: var(--sp-14) var(--sp-18) var(--sp-8); border-bottom: 1px solid var(--ink-4); }
 #mw .kk { font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
-#mw .mw-voice { margin-left: var(--sp-10); padding: 2px 8px; border: 1px solid var(--ink-3); border-radius: 999px; background: none; font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+#mw .mw-voice { flex: none; padding: 2px 8px; border: 1px solid var(--ink-3); border-radius: 999px; background: none; font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
 #mw .mw-voice.on { border-color: var(--mint); color: var(--mint); }
 #mw .who { font: 500 var(--fs-12)/1.2 var(--mono); color: var(--ink-2); text-align: right; }
 #mw .who b { color: var(--mint); font-weight: 500; }
@@ -59,7 +59,8 @@
 #mw .act .bt kbd { font: 600 var(--fs-12)/1 var(--mono); padding: 3px 6px; border: 1px solid var(--ink-3); border-radius: 3px; color: var(--ink-2); }
 #mw .act .bt.go { border-color: var(--mint); }
 #mw .act .bt[disabled] { opacity: 0.45; cursor: default; }
-#mw .keys { padding: 0 var(--sp-18) var(--sp-12); font: 500 var(--fs-12)/1.4 var(--mono); color: var(--ink-2); }
+#mw .keys { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-10); padding: 0 var(--sp-18) var(--sp-12); font: 500 var(--fs-12)/1.4 var(--mono); color: var(--ink-2); }
+#mw .act .bt.go kbd { color: var(--on-mint); border-color: color-mix(in srgb, var(--on-mint) 45%, transparent); }
 #mw .keys b { color: var(--ink); font-weight: 600; }
 #mw-launch { position: absolute; left: 18px; bottom: 140px; z-index: 30; display: flex; align-items: center; gap: var(--sp-8); height: var(--h-ctl-sm); padding: 0 var(--sp-8) 0 var(--sp-10);
   border: 1px solid var(--ink-3); background: var(--panel-solid); font: 500 var(--fs-13)/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
