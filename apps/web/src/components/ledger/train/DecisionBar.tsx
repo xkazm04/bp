@@ -13,6 +13,7 @@ import { Decide } from './Decide';
 import { decisionCounts } from './plan';
 import { LensTag } from './ui/Marks.tsx';
 import { Btn } from './ui/Controls';
+import { openRelease } from './release/releaseState';
 import './DecisionBar.css';
 
 export interface DecisionBarProps {
@@ -26,9 +27,6 @@ export interface DecisionBarProps {
   phone?: boolean;
 }
 
-/** The release a package goes into: the newest one not yet tagged or failed. */
-const OPEN_REL = new Set(['draft', 'building', 'pr-open', 'merged']);
-
 export function DecisionBar({ L, targets, onRelease, hint, phone = false }: DecisionBarProps) {
   const T = useTrain(), n = L.ui.sel.size;
   const ps = useMemo(() => targets.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [targets, T]);
@@ -36,8 +34,9 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   // the planner's numbers (plan.ts), the same ones the buttons and the note editor read
   const { flagged, locked } = useMemo(() => decisionCounts(T, targets), [T, targets]);
 
-  // the package: accepted items no release holds, plus those of the open release
-  const rel = useMemo(() => [...T.releases].reverse().find((r) => OPEN_REL.has(r.status)), [T.releases]);
+  // the package: accepted items no release holds, plus those of the open release - the Release tab's (openRelease), a
+  // failed one included, so the bar and the tab never name different releases or count different packages
+  const rel = useMemo(() => openRelease(T.releases), [T.releases]);
   const pkg = useMemo(() => T.proposals.filter((p) => p.status === 'accepted' && (!p.release_id || p.release_id === rel?.id)).length, [T.proposals, rel]);
   // the version the package would take. A refused suggestion is NOT the same state as "not asked yet": it reads `v?`
   // and says so, because the version is part of the decision this bar is for.
