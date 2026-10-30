@@ -15,27 +15,30 @@ if (typeof window !== 'undefined') throw new Error('focus.server.ts is server-on
 
 export const focusFile = (): string => path.join(process.env.BP_HOME ? path.resolve(process.env.BP_HOME) : path.join(repoRoot(), '.bp'), 'session', 'focus.json');
 
-const g = globalThis as unknown as { __bpSharedFocus?: { file: string; record: FocusRecord } };
+const g = globalThis as unknown as { __bpSharedFocus?: { file: string; mtime: number; record: FocusRecord } };
+const mtimeOf = (file: string): number => { try { return fs.statSync(file).mtimeMs; } catch { return 0; } };
 
+/** The record: the cached one while the file is the one this process last read or wrote (another process sharing BP_HOME,
+ *  the web beside apps/server, may have written it since: then it is read again). */
 export function readFocus(): FocusRecord {
-  const file = focusFile();
-  if (g.__bpSharedFocus?.file === file) return g.__bpSharedFocus.record;
+  const file = focusFile(), mtime = mtimeOf(file);
+  if (g.__bpSharedFocus?.file === file && g.__bpSharedFocus.mtime === mtime) return g.__bpSharedFocus.record;
   let record = EMPTY_RECORD;
   try {
     const j = JSON.parse(fs.readFileSync(file, 'utf8')) as FocusRecord;
     if (j && typeof j.rev === 'number' && Array.isArray(j.readers)) record = j;
   } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warnOnce(file, e); }
-  g.__bpSharedFocus = { file, record };
+  g.__bpSharedFocus = { file, mtime, record };
   return record;
 }
 
 function writeFocus(record: FocusRecord): void {
   const file = focusFile();
-  g.__bpSharedFocus = { file, record };
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     writeAtomic(file, JSON.stringify(record, null, 1) + '\n');
   } catch (e) { warnOnce(file, e); } // the record still holds in memory; the next write tries the disk again
+  g.__bpSharedFocus = { file, mtime: mtimeOf(file), record };
 }
 
 /** Whether a client would see a difference: who is there, who is live, and whom each follows. */
