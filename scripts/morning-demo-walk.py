@@ -7,7 +7,8 @@
 # (A approves the stop-ship, Enter declines the repeat and the store row reads "Repeats brief-h7", a likeness ignores
 # Enter and H holds it); 6 the close card counts them and does not repeat the opening tallies; 7 the phone leads;
 # 8 the agent walk prints the brief and marks the approved card; 9 the plan's own card and the brief's GET.
-# Throwaway data only (.demo/morning). It decides on the demo's store, so run it once per morning-up. Exit 0 green, 1 red.
+# 10 (S5) a finding lands while the deck is open: "1 new", nothing reshuffles; 11 (S5) back twice and forward once on the
+# follower, one rev each, and a second follower goes with it. Throwaway data only (.demo/morning). It decides on the demo's store, so run it once per morning-up. Exit 0 green, 1 red.
 import argparse, json, os, sqlite3, subprocess, sys, time, urllib.request
 from playwright.sync_api import sync_playwright
 
@@ -175,6 +176,45 @@ with sync_playwright() as p:
     log = os.path.join(WT, '.demo', 'morning', 'kettle-web', '.ai', 'lens-scan', 'work', 'steering-log.md')
     ok(os.path.exists(log) and 'Repeats brief-h7' in open(log, encoding='utf8').read(), '6 steering-log.md carries the repeat note')
     deck.screenshot(path=os.path.join(A.shots, '6-close.png'))
+    # 10. news during the standup (roadmap S5 C1): a finding lands while the deck is open
+    bar = lambda: [x for x in deck.locator('#mw .bar button').evaluate_all('(bs) => bs.map((b) => (b.getAttribute("title") || "") + (b.classList.contains("new") ? " NEW" : ""))')]
+    before = bar()
+    seeded = subprocess.run(['node', 'scripts/morning-demo.mjs', '--news', 'kettle-phone'], cwd=WT, capture_output=True, text=True, timeout=60)
+    badge = ''
+    for _ in range(30):
+        badge = text(deck.locator('#mw .mw-new'))
+        if badge:
+            break
+        time.sleep(0.5)
+    after = bar()
+    ok(seeded.returncode == 0 and '1 new' in badge, '10 the open deck says "1 new" within its next read (' + badge.strip() + ')')
+    ok(after[:len(before) - 1] == before[:-1] and after[-1] == before[-1] and len(after) == len(before) + 1 and after[-2].endswith(' NEW'),
+       '10 ...without reshuffling: every card read keeps its place, the new one comes before the close card (' + ' | '.join(after[-3:]) + ')')
+    ok(card(deck)['h'] == 'That is the morning.', '10 ...and the card on screen stays the one being read')
+    deck.screenshot(path=os.path.join(A.shots, '10-news.png'))
+    # 11. follow history (roadmap S5 C2): back twice and forward once on the follower; a second follower goes with it
+    fol2 = b.new_page(viewport={'width': 1280, 'height': 800})
+    fol2.on('pageerror', lambda e: errs.append(str(e)[:200]))
+    fol2.goto(A.web + '/?product=kettle-web&follow=1', wait_until='networkidle')
+    time.sleep(3)
+    view = lambda: json.load(urllib.request.urlopen(A.server + '/api/session/focus'))
+    v0 = view()
+    revs, ats, says = [v0['rev']], [v0.get('historyAt')], []
+    for i, which in enumerate([0, 0, 1]):
+        fol.locator('#fx-chip .fx-step').nth(which).click()
+        time.sleep(0.8)
+        v = view()
+        revs.append(v['rev']); ats.append(v.get('historyAt'))
+        time.sleep(2.2)
+        says.append((text(fol2.locator('#fx-say')).strip(), (v['shared']['place'].get('say') or '').split('\n')[0]))
+    ok(len(v0.get('history') or []) >= 3, '11 the record remembers the shared places (' + str(len(v0.get('history') or [])) + ')')
+    ok(revs[1] == revs[0] + 1 and revs[2] == revs[1] + 1 and revs[3] == revs[2] + 1, '11 back, back, forward: exactly one rev each (' + ' -> '.join(map(str, revs)) + ')')
+    ok(ats[0] is not None and ats[1] == ats[0] - 1 and ats[2] == ats[0] - 2 and ats[3] == ats[0] - 1, '11 ...through the history: ' + ' -> '.join(map(str, ats)))
+    ok(any(sh for _, sh in says) and all((not sh) or sh in got for got, sh in says), '11 the second follower goes back with it (it reads each step\'s line: ' + ' | '.join(g[:40] for g, _ in says) + ')')
+    ok('Following' in text(fol2.locator('#fx-chip .w')), '11 ...and still follows')
+    ok('Shared from this screen' in text(fol.locator('#fx-chip .w')), '11 the stepping window says it shared the place itself')
+    fol.screenshot(path=os.path.join(A.shots, '11-history.png'))
+    fol2.close()
     deck.keyboard.press('Escape')
     time.sleep(1)
     # 7. the phone leads
