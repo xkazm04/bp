@@ -103,6 +103,12 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
     const taken = S.suggestRules(rec3, rooms, [rule({ id: 'G-3', kind: 'grant', minTier: 3, scope: { kind: 'room', id: 'a', label: 'A', features: ['fa'] } })]);
     check('suggest: a room a live rule of that kind already covers is not suggested again', !taken.some((x) => x.scope.id === 'a') && taken.some((x) => x.scope.id === 'b'), j(taken));
   }
+  {
+    const g = rule({ id: 'G-2', kind: 'grant', minTier: 3, at: '2026-10-15T00:00:00Z', scope: { kind: 'all', label: 'Everything', features: [] } });
+    const later = [row('l1', 'card', 'approve', 3, { at: '2026-10-16T00:00:00Z' }), row('l2', 'card', 'decline', 3, { at: '2026-10-17T00:00:00Z' }), row('l3', 'card', 'decline', 3, { at: '2026-10-18T00:00:00Z' }), row('old', 'card', 'decline', 3, { at: '2026-10-01T00:00:00Z' })];
+    const s = R.sinceSet(g, later);
+    check('since a grant was set: only your later decisions count; overruled 2 of 3 = drifting', s?.matched === 1 && s.differed === 2 && s.drifting && s.ids.join() === 'l3,l2' && R.sinceSet(hold, later) === null, j(s));
+  }
   check('backtest: synthetic rows are counted', R.backtest(hold, [row('s', 'card', 'approve', 2, { synthetic: true })]).synthetic === 1);
 }
 {

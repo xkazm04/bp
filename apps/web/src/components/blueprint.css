@@ -385,6 +385,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .rulechip em { font-style: normal; color: var(--ink-2); }
 .rulechip.grant { border-color: var(--mint); color: var(--mint-2); }
 .rulechip.more { border-color: var(--ink-3); color: var(--ink-2); }
+.rulechip.warn { border-color: var(--red); box-shadow: inset 0 -2px 0 var(--red); }
 .rulechip:hover { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
 .rulechip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @keyframes bp-blink { 50% { opacity: 0.3; } }

@@ -10,7 +10,7 @@
 // every tier) asks for a second, explicit tap.
 // The rules live in <root>/.ai/lens-scan/work/bp-rules.json: every agent door honours them, and Personas reads the file.
 import { useEffect, useMemo, useState } from 'react';
-import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind } from '@bp/core/scan/rules';
+import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind, type Since } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
 import { WRITE_ROW, pickDraft, revokeRule, setRule, usePickedDraft, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
@@ -64,10 +64,10 @@ export function LiveRules({ slug }: { slug: string }) {
   useEffect(() => () => E.setOrdHi(null), [E]);
 
   const row = (r: Rule) => (
-    <Row key={r.id} id={r.id} on={cur === r.id} onPick={() => setSel(r.id)} cls={'rl-k-' + r.kind + (isLive(r, now) ? '' : ' rl-ended') + (v.breaches[r.id]?.length ? ' u-high' : '')} label={r.id + ': ' + r.text}>
+    <Row key={r.id} id={r.id} on={cur === r.id} onPick={() => setSel(r.id)} cls={'rl-k-' + r.kind + (isLive(r, now) ? '' : ' rl-ended') + (v.breaches[r.id]?.length ? ' u-high' : v.since[r.id]?.drifting ? ' u-medium' : '')} label={r.id + ': ' + r.text}>
       <span className="rk"><span>{r.id}</span><span>{kindWord(r)}</span></span>
       <span className="rt">{r.text}</span>
-      <span className="rm"><span>{r.scope.label}{v.held[r.id] ? ' · held ' + v.held[r.id].items + (v.held[r.id].refused ? ', refused ' + v.held[r.id].refused : '') : ''}{v.breaches[r.id]?.length ? ' · ' + v.breaches[r.id].length + ' breach' + (v.breaches[r.id].length === 1 ? '' : 'es') : ''}</span><span>{leftOf(r, now)}</span></span>
+      <span className="rm"><span>{r.scope.label}{v.held[r.id] ? ' · held ' + v.held[r.id].items + (v.held[r.id].refused ? ', refused ' + v.held[r.id].refused : '') : ''}{v.breaches[r.id]?.length ? ' · ' + v.breaches[r.id].length + ' breach' + (v.breaches[r.id].length === 1 ? '' : 'es') : ''}{v.since[r.id]?.drifting ? ' · you overruled it ' + v.since[r.id].differed + '×' : ''}</span><span>{leftOf(r, now)}</span></span>
     </Row>
   );
   const list = (
@@ -107,11 +107,11 @@ export function LiveRules({ slug }: { slug: string }) {
           <span className="wb-src" title="<root>/.ai/lens-scan/work/bp-rules.json: every agent door reads it, and so can Personas">bp-rules.json · every agent door</span>
         </>
       )}
-      detail={r ? <RuleDetail slug={slug} r={r} now={now} held={v.held[r.id]} breaches={v.breaches[r.id] ?? []} all={v.rules} onSet={setSel} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
+      detail={r ? <RuleDetail slug={slug} r={r} now={now} held={v.held[r.id]} breaches={v.breaches[r.id] ?? []} since={v.since[r.id]} all={v.rules} onSet={setSel} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
   );
 }
 
-function RuleDetail({ slug, r, now, held, breaches, all, onSet }: { slug: string; r: Rule; now: number; held?: HeldTally; breaches: DecidedRow[]; all: Rule[]; onSet: (id: string) => void }) {
+function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug: string; r: Rule; now: number; held?: HeldTally; breaches: DecidedRow[]; since?: Since; all: Rule[]; onSet: (id: string) => void }) {
   const E = useEngine(), P = E.M.P;
   const draft = useMemo(() => draftOf(r), [r]);
   const rp = useReplay(slug, draft);
@@ -133,7 +133,7 @@ function RuleDetail({ slug, r, now, held, breaches, all, onSet }: { slug: string
         <h3 className="wb-title">{r.text}</h3>
         <p className="wb-lede">
           {isOrder(r.kind) ? 'Governs ' : 'Covers '}<b>{r.scope.label}</b> ({n} feature{n === 1 ? '' : 's'}). Set by {r.by}, {when(r.at)}{r.revokedBy ? '; ended by ' + r.revokedBy : ''}.
-          {r.kind === 'grant' ? ' Agents may run ' + (r.tools ?? GRANT_TOOLS).join(' and ') + ' there without asking you' + (r.minTier !== undefined ? ', on ' + TIER_WORD[r.minTier] + ' findings or milder' : '') + '; their decisions are signed ' + r.id + ', never your name.' : ' Every agent door (wave compose and dispatch, build, scan) refuses what it holds and cites it.'}
+          {r.kind === 'grant' ? ' Agents may run ' + (r.tools ?? GRANT_TOOLS).join(' and ') + ' there without asking you' + (r.minTier !== undefined ? ', on ' + TIER_WORD[r.minTier] + ' findings or milder' : '') + '; their decisions are signed rule:' + r.id + ', never your name.' : ' Every agent door (wave compose and dispatch, build, scan) refuses what it holds and cites it.'}
         </p>
         {r.evidence && <p className="wb-meta">Set on the evidence of {r.evidence.decided} decisions: it agreed on {r.evidence.matched}, differed on {r.evidence.differed}.</p>}
         <div className="wb-inline">
@@ -159,6 +159,17 @@ function RuleDetail({ slug, r, now, held, breaches, all, onSet }: { slug: string
                 ))}
               </ul>
             ) : <p className="none">No finding has been approved in its place against it since it was set.</p>}
+          </Sec>
+        )}
+        {since && (
+          <Sec head="Since you set it" aside={since.matched + since.differed ? 'your own decisions in its place' : 'no decision of yours yet'}>
+            <div className="wb-figs">
+              <Fig n={since.matched} label="you decided as it would" tone={since.matched ? 'mint' : undefined} />
+              <Fig n={since.differed} label="you overruled it" tone={since.drifting ? 'red' : since.differed ? 'amber' : undefined} />
+            </div>
+            {since.drifting ? <p className="wb-err">You keep deciding against it: it is drifting from how you decide. Revoke it, or narrow it on today's replay.</p>
+              : since.differed ? <p className="wb-note">You overruled it once since you set it: one more against it and it reads as drifting.</p>
+              : <p className="wb-meta">Every decision you make in its place keeps testing it; overrule it twice, more than one time in five, and it reads as drifting.</p>}
           </Sec>
         )}
         {on && <Sec head={r.kind === 'grant' ? 'What agents may decide alone now' : 'What it holds now'} aside="the open backlog"><Now now={rp.r?.now} kind={r.kind} busy={rp.busy} live /></Sec>}

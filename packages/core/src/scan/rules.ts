@@ -252,6 +252,20 @@ export function backtest(r: RuleShape, decided: readonly DecidedRow[], limit = 2
   return out;
 }
 
+/**
+ * Since a grant was set: the owner's own later decisions inside it, compared with what it would have said. A grant that
+ * keeps agreeing earns its keep; one the owner keeps overruling is drifting (twice or more, and more than one in five), and the
+ * panel and the header say so. Orders have their breaches instead (breachesOf).
+ */
+export interface Since { matched: number; differed: number; drifting: boolean; ids: string[] }
+export function sinceSet(r: Rule, decided: readonly DecidedRow[]): Since | null {
+  if (r.kind !== 'grant') return null;
+  const later = decided.filter((x) => x.at > r.at && (!r.revokedAt || x.at < r.revokedAt));
+  const b = backtest(r, later, later.length || 1);
+  const ids = b.rows.filter((x) => !x.agree).map((x) => x.id);
+  return { matched: b.matched, differed: b.differed, drifting: b.differed >= 2 && b.differed * 5 > b.matched + b.differed, ids };
+}
+
 /** Whether the evidence lets a person grant it as it is: no stop-ship row, no open tier, and it spoke at least once. */
 export const trustworthy = (b: Backtest): boolean => !b.flags.some((f) => f.key === 'stop-ship' || f.key === 'any-tier' || f.key === 'silent');
 

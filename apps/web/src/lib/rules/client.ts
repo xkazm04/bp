@@ -4,7 +4,7 @@
 // and again after every write. Setting and revoking a rule is a person's act: those carry the human token
 // (components/companion/stream.ts humanToken), which only bp's own page can fetch.
 import { useEffect, useSyncExternalStore } from 'react';
-import type { Backtest, DecidedRow, HeldTally, Impact, Rule, RuleKind } from '@bp/core/scan/rules';
+import type { Backtest, DecidedRow, HeldTally, Impact, Rule, RuleKind, Since } from '@bp/core/scan/rules';
 import type { Suggestion } from '@bp/core/scan/rules-suggest';
 import type { ScanScope } from '@bp/core/scan/jobs';
 import { humanToken } from '@/components/companion/stream';
@@ -18,11 +18,13 @@ export interface RulesView {
   held: Record<string, HeldTally>;
   /** Per order: findings approved in its place against it since it was set (something went around bp's doors). */
   breaches: Record<string, DecidedRow[]>;
+  /** Per grant: the owner's own decisions in its place since it was set, against it (drifting when they overrule it). */
+  since: Record<string, Since>;
   /** Rules the owner's own record suggests (scan/rules-suggest.ts): drafts, never rules. */
   suggestions: Suggestion[];
   loaded: boolean; error?: string;
 }
-const EMPTY: RulesView = { rules: [], record: { decided: 0, synthetic: 0 }, held: {}, breaches: {}, suggestions: [], loaded: false };
+const EMPTY: RulesView = { rules: [], record: { decided: 0, synthetic: 0 }, held: {}, breaches: {}, since: {}, suggestions: [], loaded: false };
 
 /** A draft the writer sends: preview it, then set it. */
 export interface DraftBody { kind: RuleKind; scope: ScanScope; lenses?: string[]; maxEffort?: string; model?: string; minTier?: number; cautious?: boolean; hours?: number; text?: string }
@@ -44,7 +46,7 @@ export async function refreshRules(slug: string): Promise<void> {
   try {
     const r = await fetch(api(slug), { signal: AbortSignal.timeout(15000) });
     const j = (await r.json().catch(() => null)) as Partial<RulesView> | null;
-    s.view = r.ok && j?.rules ? { rules: j.rules, record: j.record ?? EMPTY.record, held: j.held ?? {}, breaches: j.breaches ?? {}, suggestions: j.suggestions ?? [], loaded: true } : { ...s.view, loaded: true, error: j?.error ?? 'rules unavailable (' + r.status + ')' };
+    s.view = r.ok && j?.rules ? { rules: j.rules, record: j.record ?? EMPTY.record, held: j.held ?? {}, breaches: j.breaches ?? {}, since: j.since ?? {}, suggestions: j.suggestions ?? [], loaded: true } : { ...s.view, loaded: true, error: j?.error ?? 'rules unavailable (' + r.status + ')' };
   } catch (e) { s.view = { ...s.view, loaded: true, error: (e as Error).message }; }
   finally { s.inflight = false; }
   for (const fn of s.subs) fn();

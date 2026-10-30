@@ -31,7 +31,7 @@ function Chips({ slug }: { slug: string }) {
   return (
     <span className="rulechips" role="group" aria-label={'Standing rules: ' + on.length + ' live'}>
       {on.slice(0, MAX).map((r) => (
-        <button key={r.id} type="button" className={'rulechip ' + (isOrder(r.kind) ? 'ord' : 'grant')} onClick={() => open(r.id)}
+        <button key={r.id} type="button" className={'rulechip ' + (isOrder(r.kind) ? 'ord' : 'grant') + (v.since[r.id]?.drifting || v.breaches[r.id]?.length ? ' warn' : '')} onClick={() => open(r.id)}
           title={r.id + ' · ' + r.text + ' · ' + r.scope.label + (r.expiresAt ? ' · until ' + new Date(r.expiresAt).toLocaleString() : ' · until lifted') + ' (set by ' + r.by + ')'}>
           <b>{r.id}</b><em>{short(r, now)}</em>
         </button>
