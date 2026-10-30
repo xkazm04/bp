@@ -4,7 +4,8 @@
 // (LedgerUi.wave) and opens its panel: each package (name, model, effort, findings, job state) with Dispatch (one package)
 // and, for the wave, Dispatch wave (a draft), Dispatch remaining (a dispatched wave with findings that can still go), Edit and
 // Delete (draft only; Delete asks twice, in place). The composer (WaveComposer.tsx) opens inline under the tabs. Below 720 px
-// of table width the tabs fold into one select. Waves load through useWaves.ts; with none, the strip says how to make one.
+// of table width the tabs fold into one select. Waves load through useWaves.ts; with none, the strip says how to make one;
+// with a list that could not be read, it says so and offers Try again (never "No waves").
 // Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses.
 import { useState } from 'react';
 import { dayHhmmUTC } from '@bp/core/model';
@@ -34,7 +35,10 @@ export function WavesBar({ L }: { L: Ledger }) {
   return (
     <section className="lg-waves" aria-label="Waves" data-wave="strip">
       <div className="wv-row">
-        {none ? (waves.loaded
+        {none ? (waves.error
+          // "could not read" is not "none" either: a failed list must not invite people to rebuild waves that exist
+          ? <span className="wv-none" role="alert" data-wave="error">The waves could not be read: {waves.error} <button type="button" className="wv-retry" onClick={waves.reload}>Try again</button></span>
+          : waves.loaded
           // "none" and "not asked yet" are different states: before the first list comes back the strip must not
           // assert the product has no waves (useWaves.ts `loaded`)
           ? <span className="wv-none">No waves. Select findings, then Add to wave.</span>
