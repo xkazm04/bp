@@ -153,7 +153,9 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     else if (e.key === 'Home') j = 0;
     else if (e.key === 'End') j = n - 1;
     else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
-    else if (e.key === 'Tab') { close(false); return; }
+    // Tab leaves the menu from the plan it was summoned on: focus goes back there first, so the browser's own Tab
+    // moves on from the plan, never from <body> (the focused item unmounts with the menu)
+    else if (e.key === 'Tab') { close(); return; }
     else return;
     e.preventDefault(); e.stopPropagation();
     els[j]?.focus();
