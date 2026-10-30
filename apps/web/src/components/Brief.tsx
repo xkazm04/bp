@@ -70,6 +70,13 @@ function Evidence({ b, f, max, line }: { b: Brief; f: BriefFact; max: number; li
   return null;
 }
 
+/** One line, where a full brief would crowd (the feature sheet's list of decisions): the decline it repeats or resembles,
+ *  in amber, else nothing. The plan's card and the Review carry the whole brief. */
+export function BriefStand({ d }: { d: SimDecision }) {
+  const b = useBrief(d), f = b?.facts.find((x) => x.key === 'declined'), chip = b ? adviceChip(b) : null;
+  return f && chip ? <div className="brief stand"><span className="bf-adv">{chip}</span><span className="bf-declined">{f.text}</span></div> : null;
+}
+
 /** The brief's facts, each opening its evidence. `d`: the decision it is for, so a dependent flies to the tile on the same
  *  product line (at ?scale > 1 every tile id carries its line's suffix; the brief names base slugs). */
 export function BriefFacts({ b, d, compact = false }: { b: Brief; d: SimDecision; compact?: boolean }) {

@@ -21,6 +21,7 @@ import { ScreensStrip } from './Screens';
 import { plainLine, revLabel } from './words';
 import { Mark, PatternDefs, StageSym, agentMark } from '../Symbols';
 import { useBp, useDensity, useEngine, useLive, useVariant, useWritesOn } from '../hooks';
+import { BriefStand } from '../Brief';
 
 /** The latest moment the scan changed: the newest run update, measurement or activity row. */
 function scanUpdated(s: ScanSnapshot | undefined): string | null {
@@ -87,6 +88,7 @@ export function SwarmSection({ f, lens }: { f: Feature; lens?: string }) {
         <div key={d.id} className="dq">
           <b>{d.base} · {d.q}</b>
           <div style={{ fontSize: 13, color: 'var(--ink-2)', margin: '2px 0 4px' }}>{sim.live && d.decider === LIVE_DECIDER ? 'For whoever reviews' : pname(M.P, d.decider) + ' decides'} · waiting {fmtWait(sim.waitMin(d))} · holds {sim.blocksNow(d)} agent{sim.blocksNow(d) === 1 ? '' : 's'}</div>
+          <BriefStand d={d} />
           {(writes || !sim.live) && d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recNote ? 'you declined this before' : 'agent suggests'}</em>}</b><span>{o.consequence}</span></button>)}
         </div>
       ))}

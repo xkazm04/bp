@@ -19,3 +19,6 @@
 .brief .bf-deps button { padding: 0; background: none; border: 0; font: inherit; color: inherit; text-align: left; text-decoration: underline; text-decoration-color: var(--ink-3); text-underline-offset: 3px; cursor: pointer; }
 .brief.compact { margin: 8px 0 2px; padding: 6px 8px; }
 .brief.compact .bf-facts > li { font-size: 13px; }
+.brief.stand { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 4px 0 6px; padding: 5px 8px; }
+.brief.stand .bf-adv { margin: 0; }
+.brief.stand .bf-declined { font-size: 13px; line-height: 1.4; color: var(--amber-2); font-weight: 500; }
