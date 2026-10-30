@@ -133,8 +133,12 @@ TS-side check could be bypassed by any other caller of the command. The act it b
   proposals rows.
 - `execute` without ids is a build act over every `approved` proposal of the lens, which is what drive will take.
 - `measure` (`cover`) is a scan act `{ lens, scope }`: scope `selection` over `features`, else `all`.
-- **Personas starts carry no model or effort, so a `cap` never holds them.** The gate holds a build for a cap only
-  when the act names an effort (bp `rules.ts:108`), and that is the same in bp. The rail should say so under a cap.
+- **Personas starts carry no model or effort, so a live `cap` over the place HOLDS them**: a build that names no
+  effort runs at the CLI default, which no cap can vouch for (rules-1 section 6, the same in bp since the review fix).
+  The rail should say "capped: build it from bp as a wave with an effort".
+- **Fail closed**, as bp does: while `bp-rules.json` exists but cannot be parsed, refuse every start, citing the file.
+- **A cautious grant** earns trust on the owner's real decisions only; Personas never acts on grants (it only shows
+  them), so this matters only for the rail's wording.
 - A refusal is an `AppError` that carries bp's citation words (`order O-3 (user:ana, 2026-10-30 14:02): ...`, from a
   port of `citeWords`). The Build queue shows it the way it shows a store `skipped[]` reason. A partial hold starts
   drive with the remaining ids and lists the held ones.
