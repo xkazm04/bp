@@ -249,9 +249,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </form>
         ) : (
           <>
-            {writes && d.recNote ? <button type="button" className="bt go" title={'Decline, noting: ' + d.recNote} onClick={() => decide(d, 1, d.recNote)}>✓ Decline · repeats a decline</button> : null}
+            {writes && d.recNote ? <button type="button" className="bt go" title={'Decline, noting: ' + d.recNote} onClick={() => decide(d, 1, d.recNote)}>✓ Decline · a repeat</button> : null}
             {writes ? <button type="button" className={'bt' + (d.recNote ? '' : ' go')} title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>{d.recNote ? 'Approve anyway' : '✓ Approve'}</button> : null}
-            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>{d.recNote ? 'Decline with my note…' : 'Decline…'}</button> : null}
+            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>{d.recNote ? 'My own note…' : 'Decline…'}</button> : null}
             <span className="sp" />
             <PlaceActions d={d} />
           </>
