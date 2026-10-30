@@ -18,6 +18,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostKettleSims } from './kettle-sim.ts';
 import { listener, loadRoutes } from './mount.ts';
+import { setSelfOrigin } from '@bp/core/server/api/companion/door.server';
 
 // `pair ...` is the owner's command line for the LAN door, not a server start
 if (process.argv[2] === 'pair') { await import('./lan-pair.ts'); process.exit(0); }
@@ -69,6 +70,8 @@ server.listen(PORT, HOST, () => {
   // A wildcard bind address is not an address anyone can open: print the loopback URL, and say separately what was bound.
   const wildcard = HOST === '0.0.0.0' || HOST === '::';
   const dial = wildcard ? '127.0.0.1' : HOST.includes(':') ? `[${HOST}]` : HOST;
+  // a card's request runs against this origin, never the Host a client sent (door.server.ts, roadmap I1)
+  setSelfOrigin(`http://${dial}:${port}`);
   console.log(`bp server listening on http://${dial}:${port}${wildcard ? ` (bound to ${HOST}, every interface; peers off this machine get 403)` : ''}`);
   if (ATHENA) void attachAthena(ATHENA, port);
   if (door) void attachDoor(port);

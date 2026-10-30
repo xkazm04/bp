@@ -12,7 +12,7 @@
 // A grant (policies.json, written only by the human path) covers a card when its product matches (or `*`), the tool is in
 // its tools, it has not expired and, with minTier, every finding the args name that carries a tier has tier >= minTier (that severe or milder); a
 // covered card runs at once and records `decidedBy: 'policy'` and the grant's id. No grant may cover policy.propose.
-// Execution: one fetch to this server's own origin, the request tool-call.ts builds; the human token rides along only on a
+// Execution: one fetch to this server's own BOUND origin (selfOrigin, never the request's Host), the request tool-call.ts builds; the human token rides along only on a
 // human approval (so policy.propose can reach POST /policies when, and only when, a person approved it). Every card state
 // change is published to the bus. One server process serves the companion (apps/server canonical): two processes writing
 // the same cards.jsonl could each move one card, and that is not guarded here.
@@ -162,13 +162,35 @@ const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
   return bounded(`${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`).slice(0, 300);
 };
 
+// ------------------------------------------------------------------------------------------------ where a card runs
+// A card's request goes to THIS server's own bound origin, never to the origin the incoming request names. The request's
+// URL is built from its Host header, which any local client sets: a process that filed or answered a card with
+// `Host: 127.0.0.1:<its own port>` used to receive the card's request there, and on a human approval that request carries
+// the per-process human token (roadmap I1, documented by e1's rules-1.md section 8). apps/server names its origin once it
+// listens (main.ts -> setSelfOrigin); `next start` / `next dev` put the port they bound in process.env.PORT
+// (next/dist/server/lib/start-server.js) before any route runs. Only a process that knows neither (a harness calling a
+// handler in process) falls back to the request's own origin, and check:companion-door holds that the servers never do.
+const self = globalThis as unknown as { __bpSelfOrigin?: string };
+/** apps/server: the loopback origin it bound (`http://127.0.0.1:<port>`). */
+export function setSelfOrigin(origin: string): void { self.__bpSelfOrigin = new URL(origin).origin; }
+/** This server's own origin: what apps/server named, else Next's bound port on 127.0.0.1, else null. */
+export function selfOrigin(env: Record<string, string | undefined> = process.env): string | null {
+  if (self.__bpSelfOrigin) return self.__bpSelfOrigin;
+  const port = env.PORT?.trim() ?? '';
+  return /^\d{1,5}$/.test(port) && Number(port) > 0 && Number(port) <= 65535 ? `http://127.0.0.1:${Number(port)}` : null;
+}
+
 export interface Origin { origin: string; conversation?: string }
-/** Where to send a card's request: this server, as the incoming request reached it. */
+/** Where to send a card's request: this server's own bound origin (selfOrigin), whatever Host the request carried. */
 export const originOf = (req: Request): Origin => {
-  const u = new URL(req.url);
-  if (u.hostname === 'localhost') u.hostname = '127.0.0.1'; // the servers bind 127.0.0.1; `localhost` may resolve to ::1 first
   const conversation = req.headers.get('x-bp-conversation');
-  return { origin: u.origin, ...(conversation ? { conversation } : {}) };
+  let origin = selfOrigin();
+  if (!origin) {
+    const u = new URL(req.url);
+    if (u.hostname === 'localhost') u.hostname = '127.0.0.1'; // the servers bind 127.0.0.1; `localhost` may resolve to ::1 first
+    origin = u.origin;
+  }
+  return { origin, ...(conversation ? { conversation } : {}) };
 };
 
 /** Run the card's tool once against this server and record done or failed. */

@@ -207,6 +207,18 @@ try {
   check('human: decline runs nothing (card declined, no job)', dec.status === 200 && dec.json?.state === 'declined' && (await jobsOf(w2)) === 0, j(dec));
   check('mcp: the MCP process never wrote anything but JSON-RPC on stdout', mcpStdoutJunk === '', mcpStdoutJunk.slice(0, 200));
 
+  // -------------------------------------------------------------------------------------------- host (roadmap I1)
+  // Another local process listens on its own port and answers a card with `Host: 127.0.0.1:<that port>`: the card's request
+  // must still run against apps/server's own bound origin, so the listener receives nothing and never sees the human token.
+  const thief: { path: string; token: string }[] = [];
+  const trap = http.createServer((q, s) => { thief.push({ path: q.url ?? '', token: String(q.headers['x-bp-human'] ?? '') }); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}'); });
+  const trapPort: number = await new Promise((resolve) => trap.listen(0, '127.0.0.1', () => resolve((trap.address() as { port: number }).port)));
+  const cH = await compose(), wH: string = cH.json?.wave?.id;
+  const gH = await call('wave_dispatch', { slug: 'kettle', wave: wH });
+  const foreign = await req('POST', `/api/companion/cards/${gH.json?.card}`, { host: `127.0.0.1:${trapPort}`, 'x-bp-human': TOKEN }, { decision: 'approve' });
+  check('host: a card answered with a foreign Host port runs on this server (done, its job made here)', foreign.status === 200 && foreign.json?.state === 'done' && (await jobsOf(wH)) === 1, j(foreign));
+  check('host: ... and the foreign port received no request and no human token', thief.length === 0, j(thief));
+
   // -------------------------------------------------------------------------------------------- policy
   const grantBody = { product: 'kettle', tools: ['wave_dispatch'], hours: 1 };
   const pNo = await req('POST', '/api/companion/policies', {}, grantBody);
@@ -219,6 +231,10 @@ try {
   const c3 = await compose(), w3: string = c3.json?.wave?.id;
   const g3 = await call('wave_dispatch', { slug: 'kettle', wave: w3 });
   check('policy: a covered GATED call runs at once, decidedBy policy with the grant id', !g3.isError && g3.json?.state === 'done' && g3.json?.decidedBy === 'policy' && g3.json?.policy === grant.json?.id && (await jobsOf(w3)) === 1, g3.text);
+  const cP = await compose(), wP: string = cP.json?.wave?.id;
+  const fP = await req('POST', '/api/companion/cards', { host: `127.0.0.1:${trapPort}` }, { tool: 'wave_dispatch', args: { slug: 'kettle', wave: wP } });
+  check('host: a card FILED with a foreign Host port under a grant runs here, and that port hears nothing', fP.status === 200 && fP.json?.decidedBy === 'policy' && fP.json?.state === 'done' && (await jobsOf(wP)) === 1 && thief.length === 0, j({ fP, thief }));
+  trap.close();
   const del = await req('DELETE', `/api/companion/policies/${grant.json?.id}`, {});
   const delTok = await req('DELETE', `/api/companion/policies/${grant.json?.id}`, { 'x-bp-human': TOKEN });
   const c4 = await compose(), w4: string = c4.json?.wave?.id;
@@ -230,6 +246,10 @@ try {
   process.env.BP_HOME = HOME2;
   const door = await import('../packages/core/src/server/api/companion/door.server.ts');
   const { toolOf } = await import('../packages/core/src/server/api/companion/tool-call.ts');
+  check('host: selfOrigin is the bound Next port on 127.0.0.1 (process.env.PORT), else nothing to guess from', door.selfOrigin({ PORT: '3312' }) === 'http://127.0.0.1:3312' && door.selfOrigin({}) === null && door.selfOrigin({ PORT: '33x' }) === null);
+  const hostile = new Request('http://127.0.0.1:5555/api/companion/cards', { headers: { host: '127.0.0.1:5555' } });
+  door.setSelfOrigin('http://127.0.0.1:4999');
+  check('host: once bound, originOf sends a card to the bound origin whatever Host the request named', door.originOf(hostile).origin === 'http://127.0.0.1:4999' && door.selfOrigin({ PORT: '3312' }) === 'http://127.0.0.1:4999');
   const wd = toolOf('wave.dispatch')!;
   const tiered = door.addPolicy({ product: 'good', tools: ['wave.dispatch'], minTier: 1, hours: 1 });
   check('policy: minTier 1 does not cover a wave holding a tier 0 (stop-ship) finding', door.policyFor(wd, { slug: 'good', wave: 'w-t0' }) === null);
