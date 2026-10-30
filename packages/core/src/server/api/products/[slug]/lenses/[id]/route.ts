@@ -2,33 +2,33 @@
 // lens, temporary or permanent. DELETE: remove its entry from the map; its facets stay (spec 8.1). 200 + the entry
 // (PATCH) or `{ id }` (DELETE); 403 for a built-in lens (`source: 'builtin'`: the blueprint never changes one); 404
 // for an unknown product, map or lens; 400 for a bad body; 409 when the map does not parse. Localhost only.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, JSON body and its shape): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
 import { deleteLens, setLensEnabled, type LensWrite } from '@bp/core/server/lens-write.server';
 
 const answer = <T,>(r: LensWrite<T>): Response => (r.ok ? Response.json(r.value) : Response.json({ error: r.error }, { status: r.status }));
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug, id } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const o = body as Record<string, unknown> | null;
-  if (!o || typeof o !== 'object' || typeof o.enabled !== 'boolean' || Object.keys(o).length !== 1) return Response.json({ error: 'body must be { enabled: boolean }' }, { status: 400 });
-  return answer(setLensEnabled(p, id, o.enabled));
+/** `enabled`, or the 400 for any body but `{ enabled: boolean }`. */
+function parse(raw: unknown): boolean | Response {
+  const o = raw as Record<string, unknown> | null;
+  return !o || typeof o !== 'object' || typeof o.enabled !== 'boolean' || Object.keys(o).length !== 1
+    ? Response.json({ error: 'body must be { enabled: boolean }' }, { status: 400 }) : o.enabled;
 }
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const { slug, id } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  return answer(deleteLens(p, id));
+const lens = door('products/[slug]/lenses/[id]', {
+  PATCH: {
+    body: parse,
+    live: ({ product: p, params: { id }, body: enabled }) => answer(setLensEnabled(p, id, enabled)),
+  },
+  DELETE: {
+    live: ({ product: p, params: { id } }) => answer(deleteLens(p, id)),
+  },
+});
+
+export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
+  return lens.PATCH(req, ctx);
+}
+
+export async function DELETE(req: Request, ctx: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
+  return lens.DELETE(req, ctx);
 }

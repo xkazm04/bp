@@ -46,6 +46,13 @@ const SPECS: Spec[] = [
   { file: 'products/[slug]/triage', verb: 'POST', params: {}, body: { ids: ['p1'], decision: 'accept' }, store: true },
   { file: 'products/[slug]/releases/suggest', verb: 'GET', params: {} },
   { file: 'products/[slug]/commits/[sha]', verb: 'GET', params: { sha: 'abcdef1' }, store: true },
+  { file: 'products/[slug]/dispatch', verb: 'POST', params: {}, body: { ids: ['p1'] }, store: true, kettle: { job: { id: 'j1' }, approved: ['p1'], skipped: [] }, kettleStatus: 202 },
+  { file: 'products/[slug]/lenses', verb: 'POST', params: {}, body: { manifest: { id: 'com.example.x' } } },
+  { file: 'products/[slug]/lenses/[id]', verb: 'PATCH', params: { id: 'com.example.x' }, body: { enabled: false } },
+  { file: 'products/[slug]/lenses/[id]', verb: 'DELETE', params: { id: 'com.example.x' } },
+  { file: 'products/[slug]/lenses/[id]/execute', verb: 'POST', params: { id: 'development' }, body: {} },
+  { file: 'products/[slug]/releases', verb: 'POST', params: {}, body: { version: '1.0.0' }, store: true },
+  { file: 'products/[slug]/releases/[id]/finish', verb: 'POST', params: { id: 'rel-1.0.0' }, body: {}, store: true },
 ];
 const FILES = [...new Set(SPECS.map((s) => s.file))];
 // what each file exported before the migration (5: mount parity)
@@ -123,6 +130,7 @@ const stub = {
   cancel: answer('products/[slug]/scans/[job]', 'DELETE'), listWaves: answer('products/[slug]/waves', 'GET', 'waves'),
   createWave: answer('products/[slug]/waves', 'POST', 'wave'), updateWave: answer('products/[slug]/waves/[wave]', 'PATCH', 'wave'),
   deleteWave: answer('products/[slug]/waves/[wave]', 'DELETE'), dispatchWave: answer('products/[slug]/waves/[wave]/dispatch', 'POST'),
+  dispatch: answer('products/[slug]/dispatch', 'POST'),
 };
 const { hostKettle } = await import('@bp/core/server/kettle-sim.server') as typeof import('../packages/core/src/server/kettle-sim.server.ts');
 hostKettle({ scan: stub, swarm: {} } as unknown as Parameters<typeof hostKettle>[0]);
@@ -151,7 +159,7 @@ check('4 check-route-guards counts >= 13 door handlers', doors >= SPECS.length, 
 const red = (what: string, mut: unknown[]) => { const r = guards(mut); check(`4 control: ${what} fails the gate`, r.status === 1, (r.stdout + r.stderr).slice(-300)); };
 red('a statement before the door return', [['products/[slug]/scan/route.ts', 'return scan.GET(req, ctx);', 'const t0 = Date.now(); return scan.GET(req, ctx);']]);
 red('a write verb answered by the door\'s read verb', [['products/[slug]/scans/route.ts', 'return scans.POST(req, ctx);', 'return scans.GET(req, ctx);']]);
-red('a raw handler without localOnly', [['products/[slug]/lenses/route.ts', 'localOnly(req)', 'null']]);
+red('a raw handler without localOnly', [['products/route.ts', 'localOnly(req)', 'null']]);
 
 // 5 mount parity
 for (const f of FILES) {
