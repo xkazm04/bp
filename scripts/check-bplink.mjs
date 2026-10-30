@@ -270,6 +270,25 @@ export function structureDiagProblems(cppText) {
   return out;
 }
 
+/**
+ * What is wrong with how BpLink.cpp's AddToDraft builds the PATCH for an existing draft ([] when nothing). The packages are
+ * sent whole and the new ids are appended inside the loop over the draft's packages, so a draft with none sent [] and
+ * dropped the findings behind a 200. After that loop the body must add a package holding `Fresh` when the loop added none.
+ */
+export function addToDraftProblems(cppText) {
+  const code = stripCxx(cppText);
+  const head = /\bvoid\s+FBpLinkModule::AddToDraft\s*\(/.exec(code);
+  const span = head && braceSpan(code, head.index + head[0].length);
+  if (!span) return ['no FBpLinkModule::AddToDraft body'];
+  const body = code.slice(span[0], span[1]);
+  const loop = /for\s*\([^;]*;[^;]*Draft->packages\.Num\(\)[^)]*\)/.exec(body);
+  if (!loop) return ['no loop over Draft->packages'];
+  const after = braceSpan(body, loop.index + loop[0].length);
+  const rest = after ? body.slice(after[1]) : '';
+  return /^\s*if\s*\(\s*Packages\.Num\(\)\s*==\s*0\s*\)\s*\{?\s*Packages\.Add\(\s*Package\([^;]*\bFresh\s*\)\s*\)\s*;/.test(rest)
+    ? [] : ['an empty draft gets no package holding the new ids after the loop (the PATCH would send packages: [])'];
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -472,6 +491,15 @@ async function main() {
         + '\t\t{ UE_LOG(LogBpLink, Error, TEXT("BpLink: the %s/structure answer did not parse into FBpAppStructure"), *Root); }\n';
       check('source: the /structure diagnosis rule refuses the one-condition shape reading 10 ran',
         structureDiagProblems(`MakeGet(Root + TEXT("/structure"), x);\n${oneLine}MakeGet(Root + TEXT("/plan"), y);`).length === 5);
+
+      // AddToDraft into a draft with no packages: the PATCH body must still carry the new ids (a package of its own).
+      const draftBad = addToDraftProblems(cppText);
+      check('source: AddToDraft into a draft with no packages sends the new ids in a first package, not packages: []', draftBad.length === 0, draftBad.join(' | '));
+      // permanent control: the rule refuses the shape that dropped them (the guard gone, or only in a comment)
+      const guard = /\n[ \t]*if \(Packages\.Num\(\) == 0\) Packages\.Add\(Package\([^\n]*\bFresh\)\);/;
+      check('source: the empty-draft rule refuses an AddToDraft without the guard, and one whose guard is only a comment',
+        guard.test(cppText) && addToDraftProblems(cppText.replace(guard, '')).length > 0
+        && addToDraftProblems(cppText.replace(guard, (m) => m.replace('if (', '// if ('))).length > 0);
 
       // One path to the generated USTRUCT headers (2026-10-23, R1 closed): the junction Source/BpLink/Public/Schema ->
       // packages/schema/generated/ue that apps/vr/tools/link-schema.ps1 makes; Public/ is on the module's include path,
