@@ -2,18 +2,22 @@
 // The Morning Watch on the page: the portfolio standup (GET /api/companion/morning, packages/core/src/companion/morning.ts)
 // as a deck over the plan, read one card at a time. Every card about a place publishes it to the shared focus as it is
 // shown and flies this page there, so every following surface (a second window, the phone, the VR table) is where the
-// owner is reading. Keyboard first: → / Space next, ← back, A approve, D defer, H hold, Esc back to the plan; M opens it
+// owner is reading. Every decision card carries its brief (companion/morning.ts cardBrief: what it touches, the owner's
+// declines quoted, undo, cost); when it repeats a declined idea, Decline joins the keys as the recommendation and Enter
+// takes it (the store row gets the brief's "Repeats <id> ..." note). A likeness only shows the quote: the keys stay.
+// Keyboard first: → / Space next, ← back, A approve, D defer, H hold, X / Enter decline a repeat, Esc back to the plan; M opens it
 // wherever live products are registered (the sample's simulated "While you were away" keeps M only when none are). A card in another product opens
 // that product with `?morning=<card id>`, and the deck picks up there; the window it covers is frozen for the tab
 // (sessionStorage) so a morning read across reloads is one morning.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import type { MorningCard, MorningDeck, Verdict } from '@bp/core/companion/morning';
+import type { CardBrief, MorningCard, MorningDeck, Verdict } from '@bp/core/companion/morning';
 import { sharedFocus } from '@/lib/focus/shared';
 import { useEngine, useLive } from '../hooks';
 import { postHuman } from '../crossing/follow';
 import { goToPlace } from './FollowHost';
 import { refreshProjects, useProjects } from '@/lib/scan/projects';
+import '../decision-brief.css';
 
 const SINCE_KEY = 'bp:morning-since', VOICE_KEY = 'bp:morning-voice';
 let kept: MorningDeck | null = null;
@@ -21,8 +25,8 @@ let kept: MorningDeck | null = null;
 const DECK_INSET = 500;
 type Deck = MorningDeck & { skipped?: { product: string; why: string }[] };
 type Steered = { verdict: Verdict; ok: boolean; text: string };
-const VERB: Record<Verdict, string> = { approve: 'Approved', defer: 'Deferred to tomorrow', hold: 'Held' };
-const KEYS: Record<string, Verdict> = { a: 'approve', y: 'approve', d: 'defer', n: 'defer', h: 'hold', b: 'hold' };
+const VERB: Record<Verdict, string> = { approve: 'Approved', defer: 'Deferred to tomorrow', hold: 'Held', decline: 'Declined as a repeat' };
+const KEYS: Record<string, Verdict> = { a: 'approve', y: 'approve', d: 'defer', n: 'defer', h: 'hold', b: 'hold', x: 'decline' };
 
 function readSince(): string | undefined { try { return sessionStorage.getItem(SINCE_KEY) ?? undefined; } catch { return undefined; } }
 function keepSince(s: string | null): void { try { if (s) sessionStorage.setItem(SINCE_KEY, s); else sessionStorage.removeItem(SINCE_KEY); } catch { /* this visit only */ } }
@@ -94,8 +98,10 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     shown.current = card.id;
     setParam(card.id);
     if (card.kind === 'close') void load();
-    const p = card.place;
-    if (!p) { if ((card.kind === 'open' || card.kind === 'close') && !phone) E.goHome(); return; }
+    // the opening and closing cards are the whole site: published too, so every follower says whom it follows from the
+    // first card on (it said "Following whoever moves" until the first arrow) and comes back to the site at the close
+    const p = card.place ?? (card.kind === 'open' || card.kind === 'close' ? { product: here ?? 'kettle', level: 'L0' as const, say: card.headline } : undefined);
+    if (!p) return;
     void fx.publishNow(p).then(() => {
       // only the card still shown, on the page still mounted, moves anything (two fast presses answer out of order)
       if (phone || shown.current !== card.id || !alive.current) return;
@@ -103,7 +109,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       const why = goToPlace(E, p, { morning: card.id });
       if (why) setSteered((s) => ({ ...s, [card.id + ':where']: { verdict: 'hold', ok: false, text: why } }));
     });
-  }, [card, E, fx, load, phone]);
+  }, [card, E, fx, load, phone, here]);
 
   useEffect(() => {
     if (!card || !voice || typeof speechSynthesis === 'undefined') return;
@@ -117,12 +123,13 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
 
   const steer = useCallback(async (v: Verdict) => {
     if (!card?.decision || !card.product || busyNow.current || (steered[card.id] ?? fromDeck(card, deck))?.ok) return;
+    if (v === 'decline' && card.decision.brief?.recommend !== 'decline') return; // Decline is a repeat's recommendation only
     busyNow.current = true; setBusy(true);
     try {
       const r = await postHuman('/api/companion/morning', { product: card.product, proposal: card.decision.proposal, verdict: v });
       const j = (await r.json().catch(() => ({}))) as { error?: string; warning?: string };
       const ok = r.ok;
-      const text = ok && j.warning ? j.warning : ok ? `${VERB[v]}${v === 'approve' ? `: moved to approved in ${card.productName ?? card.product}'s store` : ''}. Logged.` : j.error ?? `HTTP ${r.status}`;
+      const text = ok && j.warning ? j.warning : ok ? `${VERB[v]}${v === 'approve' ? `: moved to approved in ${card.productName ?? card.product}'s store` : v === 'decline' ? `. The store's row reads: ${card.decision.brief?.note ?? ''}` : ''}. Logged.` : j.error ?? `HTTP ${r.status}`;
       setSteered((s) => ({ ...s, [card.id]: { verdict: v, ok, text } }));
       if (ok) setTimeout(() => go(1), 900);
     } catch (e) {
@@ -145,13 +152,14 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       else if (k === 'ArrowLeft' || k === 'k' || k === 'PageUp') go(-1);
       else if (k === 'Escape' || k === 'm') close();
       else if (k === 'v') setVoice((x) => !x);
-      else if (KEYS[k]) void steer(KEYS[k]);
+      else if (k === 'Enter' && card?.decision?.brief?.recommend) void steer(card.decision.brief.recommend);
+      else if (KEYS[k] && (KEYS[k] !== 'decline' || card?.decision?.brief?.recommend === 'decline')) void steer(KEYS[k]);
       else hit = false;
       if (hit) { e.preventDefault(); e.stopImmediatePropagation(); }
     };
     addEventListener('keydown', on, true);
     return () => removeEventListener('keydown', on, true);
-  }, [open, here, E, go, close, steer, start, phone, anyLive]);
+  }, [open, here, E, go, close, steer, start, phone, anyLive, card]);
 
   if (!open) {
     return here || phone || anyLive ? <button type="button" id="mw-launch" onClick={() => start(null)} title="The Morning Watch across every live product (M)"><i aria-hidden="true" />Morning Watch<kbd>M</kbd></button> : null;
@@ -179,6 +187,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
           <span className={'tag ' + card.tone}>{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
           <h2>{card.headline}</h2>
           {card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
+          {card.decision?.brief && <DeckBrief b={card.decision.brief} />}
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
@@ -188,7 +197,10 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       ) : <div className="card"><h2>{deck ? 'Nothing to brief.' : 'Reading every product…'}</h2></div>}
       {card?.kind === 'decision' ? (
         <div className="act">
-          <button type="button" className="bt go" disabled={busy || !!s?.ok} onClick={() => void steer('approve')}><kbd>A</kbd> Approve</button>
+          {card.decision?.brief?.recommend === 'decline' && (
+            <button type="button" className="bt go rec" disabled={busy || !!s?.ok} onClick={() => void steer('decline')} title={'Recommended: ' + card.decision.brief.note}><kbd>Enter</kbd> Decline · repeat</button>
+          )}
+          <button type="button" className={'bt' + (card.decision?.brief?.recommend ? '' : ' go')} disabled={busy || !!s?.ok} onClick={() => void steer('approve')}><kbd>A</kbd> Approve</button>
           <button type="button" className="bt" disabled={busy || !!s?.ok} onClick={() => void steer('defer')}><kbd>D</kbd> Defer</button>
           <button type="button" className="bt" disabled={busy || !!s?.ok} onClick={() => void steer('hold')}><kbd>H</kbd> Hold</button>
         </div>
@@ -200,7 +212,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
             : <button type="button" className="bt go" onClick={() => go(1)}><kbd>→</kbd> Next</button>}
         </div>
       )}
-      <div className="keys"><span><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold · <b>Esc</b> close</span>
+      <div className="keys"><span><b>→</b> next · <b>←</b> back · <b>A</b> approve · <b>D</b> defer · <b>H</b> hold{card?.decision?.brief?.recommend ? <> · <b>Enter</b> decline the repeat</> : null} · <b>Esc</b> close</span>
         <button type="button" className={'mw-voice' + (voice ? ' on' : '')} aria-pressed={voice} onClick={() => setVoice((x) => !x)} title="Read each card aloud with this browser's own voice (V)">{voice ? 'Voice on' : 'Voice'} <b>V</b></button></div>
     </section>
   );
@@ -233,4 +245,15 @@ function Portfolio({ deck, jump }: { deck: Deck; jump: (slug: string) => void })
   );
 }
 
-const TAG: Record<MorningCard['kind'], string> = { open: 'This morning', built: 'Built overnight', release: 'Release', quiet: 'Quiet night', decision: 'Decision', close: 'Done' };
+/** The card's brief: the chip (a repeat; a like idea, which only asks), then one line per fact, the declined one in amber. */
+function DeckBrief({ b }: { b: CardBrief }) {
+  const chip = b.recommend === 'decline' ? 'Repeats a decline · Decline recommended' : b.advice.say === 'ask' && b.decline ? 'Like a declined idea · yours to decide' : null;
+  return (
+    <div className="brief compact mw-brief" aria-label="Decision brief">
+      {chip && <div className={'bf-adv a-' + b.advice.say} title={b.advice.why}>{chip}</div>}
+      <ul className="bf-facts">{b.facts.map((f) => <li key={f.key} className={'bf-' + f.key}><span>{f.text}</span></li>)}</ul>
+    </div>
+  );
+}
+
+const TAG: Record<MorningCard['kind'], string> = { open: 'This morning', agents: 'Agents overnight', built: 'Built overnight', release: 'Release', quiet: 'Quiet night', decision: 'Decision', close: 'Done' };

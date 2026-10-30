@@ -50,6 +50,9 @@ export function placeHere(E: Engine): FocusPlace {
 }
 
 const SETTLE_MS = 1200;
+/** A place's words: the line being read, then (a Morning decision card) the brief's short line after a newline. */
+const sayHead = (s: string) => s.split('\n')[0];
+const sayMore = (s: string) => { const k = s.indexOf('\n'); return k < 0 ? '' : s.slice(k + 1); };
 
 export function FollowHost({ phone = false }: { phone?: boolean }) {
   const E = useEngine(), fx = sharedFocus();
@@ -94,7 +97,7 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
   if (!st.view && !st.follows) return null;
   return (
     <div id="fx">
-    {st.follows && say && <div id="fx-say" key={st.view?.rev} role="status" aria-live="polite"><small>{st.view?.shared?.label}</small>{say}</div>}
+    {st.follows && say && <div id="fx-say" key={st.view?.rev} role="status" aria-live="polite"><small>{st.view?.shared?.label}</small>{sayHead(say)}{sayMore(say) && <span className="l2">{sayMore(say)}</span>}</div>}
     <div id="fx-chip" className={st.follows ? 'on' : ''} role="status" aria-live="polite" data-keys="own">
       {st.follows ? (
         <>

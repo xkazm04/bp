@@ -79,3 +79,14 @@
 .bp-phone #mw .act .bt { height: var(--h-touch); font-size: var(--fs-16); }
 .bp-phone #mw .keys { display: none; }
 .bp-phone #mw-launch { position: fixed; left: 12px; right: 12px; bottom: 12px; height: var(--h-touch); z-index: 50; font-size: var(--fs-16); background: var(--panel-solid); border: 1px solid var(--mint); }
+
+/* ---------- the decision card's brief (decision-brief.css), inside the deck: plain lines, no deck bullets */
+#mw .card .mw-brief { margin: var(--sp-12) 0 0; }
+#mw .card .mw-brief li { padding: 0; border-top: 0; font-size: var(--fs-13); line-height: 1.4; }
+#mw .card .mw-brief li:before { content: none; }
+#mw .act .bt.rec { flex: 1.4; border-color: var(--amber-2); background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--ink-hi); }
+#mw .act .bt.rec kbd { color: var(--amber-2); border-color: var(--amber-2); }
+.bp-phone #mw .act { flex-wrap: wrap; }
+.bp-phone #mw .act .bt.rec { flex: 1 1 100%; }
+/* a follower's lower third: the line being read, then the brief's short line under it (a decision card's memory) */
+#fx-say .l2 { display: block; margin-top: 6px; font: 500 var(--fs-14)/1.35 var(--sans); color: var(--amber-2); }
