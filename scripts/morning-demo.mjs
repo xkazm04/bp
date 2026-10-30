@@ -8,6 +8,9 @@
 // .demo/morning/products.json, which the server reads when started with BP_PRODUCTS_FILE pointing at it.
 //
 //   node scripts/morning-demo.mjs [--root .demo/morning] [--now <iso>]
+//   node scripts/morning-demo.mjs --news <slug> [--root .demo/morning]
+//       NEWS DURING THE STANDUP (roadmap C1): append one finding, raised now, to that demo product's store and change
+//       nothing else (no reset), so an open deck says "1 new". Labelled like the night ("morning-demo: ...").
 //
 // Re-running it resets the three stores (their files are deleted and seeded again), so the morning starts fresh.
 import fs from 'node:fs';
@@ -31,6 +34,23 @@ const PRODUCTS = [
   { slug: 'kettle-phone', name: 'Kettle Phone', pick: 7, built: 2, failed: 0, release: { version: '2.1.0', confirm: false }, findings: [{ tier: 1, risk_class: 'perf' }] },
   { slug: 'kettle-desk', name: 'Kettle Front Desk', pick: 13, built: 0, failed: 0, release: null, findings: [{ tier: 2, risk_class: 'debt' }] },
 ];
+
+// --news: one finding raised now on a seeded product, then stop
+const NEWS = opt('--news');
+if (NEWS !== undefined) {
+  const db = path.join(BASE, NEWS, '.ai', 'lens-scan', 'scan.db');
+  if (!/^[a-z0-9-]+$/.test(NEWS) || !fs.existsSync(db)) { console.error(`--news: no seeded demo product ${NEWS} under ${BASE}`); process.exit(2); }
+  const d = new DatabaseSync(db);
+  try {
+    const near = d.prepare("SELECT feature, run_id FROM proposals WHERE id LIKE 'find-%' ORDER BY created_at LIMIT 1").get();
+    const k = d.prepare("SELECT COUNT(*) AS n FROM proposals WHERE id LIKE 'news-%'").get().n + 1, at = new Date(NOW).toISOString();
+    const id = `news-${NEWS}-${k}`, title = `The morning sync times out on ${near?.feature ?? 'the plan'} (raised during the standup)`;
+    d.prepare(`INSERT INTO proposals (id, run_id, feature, lens, title, body, size, risk, kind, status, tier, risk_class, ranked_by, ranked_at, created_at, updated_at)
+      VALUES (?, ?, ?, 'performance', ?, ?, 'S', 5, 'fix', 'proposed', 1, 'reliability', 'agent:night', ?, ?, ?)`).run(id, near?.run_id ?? 'run-night-measure', near?.feature ?? 'kettle-boil', title, '## Summary\nmorning-demo: synthetic news during the standup.', at, at, at);
+    console.log(`news: ${NEWS} gained ${id} "${title}" at ${at}`);
+  } finally { d.close(); }
+  process.exit(0);
+}
 
 const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
 const NAMES = new Map(map.features.map((f) => [f.slug, f.name]));

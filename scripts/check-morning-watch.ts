@@ -96,6 +96,47 @@ const md = fs.readFileSync(path.join(root(d0.product!), 'work', 'steering-log.md
 check('the daily steering log is written next to the store', /# Daily steering log - /.test(md) && /Approved: /.test(md));
 check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(path.join(root(c.product!), 'work', 'steering-log.jsonl'), 'utf8').includes(c.decision!.proposal)));
 
+// ------------------------------------------------------------------------- news during the standup (roadmap C1)
+{
+  const q = (x: Deck, extra = '') => GET(new Request(`${U}?since=${encodeURIComponent(x.since)}${extra}`, { headers: { host: '127.0.0.1:3313' } }));
+  const first = (await (await q(d)).json()) as Deck, opened = first.until;
+  const ranked = (x: Deck) => x.cards.filter((c) => c.kind === 'decision' && !c.news).map((c) => c.id).join(' ');
+  // a stop-ship finding raised after the deck was opened: it would rank first, so it is the hardest case for "no reshuffle"
+  const w = new DatabaseSync(path.join(root('kettle-desk'), 'scan.db'));
+  const feature = (w.prepare("SELECT feature FROM proposals WHERE id LIKE 'find-%' LIMIT 1").get() as { feature: string }).feature;
+  w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, tier, risk, created_at, updated_at) VALUES ('news-1', 'run-night-measure', ?, 'security', 'A token leaks into the desk logs', 'fix', 'proposed', 0, 9, ?, ?)")
+    .run(feature, new Date(Date.parse(opened) + 1).toISOString(), new Date(Date.parse(opened) + 1).toISOString());
+  w.close();
+  await new Promise((r) => setTimeout(r, 15));
+  const later = (await (await q(d, '&opened=' + encodeURIComponent(opened))).json()) as Deck;
+  const cards = later.cards, nw = cards.filter((c) => c.news);
+  check('a finding raised mid-morning: the deck says 1 new', later.news?.count === 1 && later.news.since === opened, JSON.stringify(later.news));
+  check('...without reshuffling the decided slots (the ranked decisions are the same cards in the same order)', ranked(later) === ranked(first) && ranked(first).length > 0, ranked(later) + ' / ' + ranked(first));
+  check('...the new one comes at the end, before the close card, marked new', nw.length === 1 && nw[0].id === 'decision:kettle-desk:news-1' && cards[cards.length - 2].id === nw[0].id && /^New since you opened the deck/.test(nw[0].lines[0]?.text ?? ''));
+  check('...and every card read before keeps its place', first.cards.slice(0, -1).every((c, i) => cards[i]?.id === c.id));
+  const plain = (await (await q(d)).json()) as Deck;
+  check('without `opened` there is no news: the deck is read as a new morning (the finding ranks)', !plain.news && plain.cards.some((c) => c.id === 'decision:kettle-desk:news-1' && !c.news));
+  const seeded = spawnSync(process.execPath, [path.join(ROOT, 'scripts/morning-demo.mjs'), '--root', TMP, '--news', 'kettle-phone'], { encoding: 'utf8' });
+  const again = (await (await q(d, '&opened=' + encodeURIComponent(opened))).json()) as Deck;
+  check("the seeder's --news adds one finding to a seeded product: 2 new", seeded.status === 0 && again.news?.count === 2 && again.cards.filter((c) => c.news).length === 2 && ranked(again) === ranked(first), seeded.stderr || JSON.stringify(again.news));
+  const { agentDeck } = await import('../packages/core/src/companion/morning.ts');
+  check('the agent view says the same news', agentDeck(again).news?.count === 2 && agentDeck(again).cards.filter((c) => c.news).length === 2);
+  const { wire } = await import('./lib/wire-schema.ts');
+  const bad = [(await wire('morning-deck-1', 'morningDeck'))(again), (await wire('morning-deck-1', 'agentDeck'))(agentDeck(again))].filter(Boolean);
+  check('a deck with news, and its agent view, are morning-deck-1', !bad.length, bad.join(' | '));
+}
+
+// ------------------------------------------------------------------------- the steering log, read from the store (roadmap C3)
+{
+  const log = path.join(root('kettle-desk'), 'work', 'steering-log.jsonl');
+  fs.mkdirSync(path.dirname(log), { recursive: true });
+  fs.appendFileSync(log, JSON.stringify({ at: new Date().toISOString(), product: 'kettle-desk', proposal: 'news-1', verdict: 'hold', title: 'A token leaks into the desk logs', by: 'user:personas' }) + '\n');
+  const after = await deck();
+  const md = fs.readFileSync(path.join(root('kettle-desk'), 'work', 'steering-log.md'), 'utf8');
+  check('steering-log.md shows a row another writer appended, with no bp steer (rendered on read)', /Held: A token leaks into the desk logs \(`news-1`, user:personas\)/.test(md), md);
+  check('...and the close card counts it', /1 approved, 1 deferred to tomorrow, 2 held/.test(after.cards[after.cards.length - 1].lines[0]?.text ?? ''), after.cards[after.cards.length - 1].lines[0]?.text);
+}
+
 // ------------------------------------------------------------------------- the shared focus through a real apps/server
 const port = await new Promise<number>((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => r(p)); }); });
 const base = `http://127.0.0.1:${port}`;

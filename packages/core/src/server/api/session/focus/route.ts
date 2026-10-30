@@ -6,6 +6,8 @@
 //   follow   { of: '*' | id }    take the shared place from whoever moves (or from one reader) from now on
 //   unfollow {}                  stop following (one tap; it never needs anyone else's leave)
 //   forget   {}                  I am closing
+//   back     {}                  publish the shared place before this one (the record's history): 201, or 409 at the start
+//   forward  {}                  publish the one after it again: 201, or 409 at the end
 // Every visible change goes out on the companion stream as `event: shared` (focus.server.ts). Ids only, never a selection,
 // so no human token: any loopback surface may publish where it is looking. Localhost only; a paired headset reaches it
 // through the LAN door's `focus` scope, and a call carrying `x-bp-device` speaks as reader `vr:<device>` whatever its body says.
@@ -33,7 +35,7 @@ export function readMove(b: Record<string, unknown>): FocusMove | string {
   if (!SURFACES.includes(b.surface as Surface)) return `surface must be one of ${SURFACES.join(', ')}`;
   if (typeof b.label !== 'string' || !b.label.trim() || b.label.length > 40) return 'label must be 1..40 characters';
   const who = { reader, surface: b.surface as Surface, label: b.label.trim() };
-  if (op === 'hello') return { kind: 'hello', ...who };
+  if (op === 'hello' || op === 'back' || op === 'forward') return { kind: op, ...who };
   if (op === 'follow') return b.of === '*' || isReaderId(b.of) ? { kind: 'follow', ...who, of: b.of as string } : "of must be '*' or a reader id";
   const place = readFocusPlace(b.place);
   return typeof place === 'string' ? place : { kind: 'publish', ...who, place };

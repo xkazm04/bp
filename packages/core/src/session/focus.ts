@@ -11,6 +11,10 @@
 //   - a reader follows `*` (whoever moved last) or one named reader; following yourself is refused;
 //   - following never blocks a writer: a crashed follower just stops being seen (LIVE_MS) and is forgotten after FORGET_MS;
 //     nothing it held can lock anyone out, because it holds nothing.
+// History (roadmap C2): the record keeps the last HISTORY_MAX shared places and where in them the shared place is. Any
+// reader may step back or forward through them: a step IS a publish (one new rev, the stepping reader leads, every
+// follower flies), it only does not add to the history. A publish after a step back drops the places ahead, as a
+// browser does. The history lives in the record, not per device, so the web, the phone and the table agree on "back".
 // Pure: the server keeps the record (server/api/session/focus.server.ts), this module decides every move.
 // The wire is packages/schema/schema/shared-focus-1.schema.json (FocusPlace, SharedView, SharedPlace, FocusPost,
 // FocusAnswer); check:schema holds these hand-written types to it field by field, and the rules below to the golden
@@ -48,11 +52,17 @@ export interface Reader {
   seenAt: string;
 }
 
+/** One shared place in the history: where, who put it there and when (the publish that made it shared). */
+export interface HistoryEntry { place: FocusPlace; reader: string; label: string; at: string }
+
 export interface FocusRecord {
   rev: number;
   /** The reader whose publish is the shared focus (its `place`), or absent before anyone published. */
   lead?: string;
   readers: Reader[];
+  /** The last HISTORY_MAX shared places, oldest first, and the index of the one that is shared now. */
+  history?: HistoryEntry[];
+  historyAt?: number;
 }
 
 /** The shared place with who put it there. */
@@ -62,6 +72,9 @@ export interface SharedView {
   rev: number;
   shared: SharedPlace | null;
   readers: (Pick<Reader, 'id' | 'surface' | 'label' | 'follows' | 'seenAt'> & { live: boolean })[];
+  /** The last shared places, oldest first, and the index of the shared one: back is historyAt - 1. Absent before the first publish. */
+  history?: HistoryEntry[];
+  historyAt?: number;
 }
 
 /** The body of POST /api/session/focus: one move on the caller's own record (the route reads it with readMove). */
@@ -74,6 +87,8 @@ export const LIVE_MS = 45_000;
 /** A reader not seen for this long is dropped from the record. */
 export const FORGET_MS = 24 * 3600_000;
 export const MAX_READERS = 32;
+/** The shared places the record remembers for back and forward. */
+export const HISTORY_MAX = 10;
 export const EMPTY_RECORD: FocusRecord = { rev: 0, readers: [] };
 
 const ID = /^[\w.:-]{1,80}$/, SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/; // SLUG: the registry's own rule (registry.server.ts)
@@ -117,6 +132,7 @@ export type FocusMove =
   | { kind: 'publish'; reader: string; surface: Surface; label: string; place: FocusPlace }
   | { kind: 'follow'; reader: string; surface: Surface; label: string; of: string }
   | { kind: 'unfollow'; reader: string }
+  | { kind: 'back' | 'forward'; reader: string; surface: Surface; label: string }
   | { kind: 'forget'; reader: string };
 
 export interface FocusStep {
@@ -152,8 +168,17 @@ export function focusStep(r0: FocusRecord, m: FocusMove, now: number): FocusStep
         const me = { ...seen(m.surface, m.label), ...(m.reader === r.lead ? { place: m.place } : {}) };
         return { record: put(me), status: 200, moved: false };
       }
+      const rev = r.rev + 1, kept = (r.history ?? []).slice(0, (r.historyAt ?? -1) + 1);
+      const history = [...kept, { place: m.place, reader: m.reader, label: m.label, at }].slice(-HISTORY_MAX);
+      return { record: put({ ...seen(m.surface, m.label), place: m.place, rev, at }, { rev, lead: m.reader, history, historyAt: history.length - 1 }), status: 201, moved: true };
+    }
+    case 'back':
+    case 'forward': {
+      // a step is a publish of a remembered place: one rev, this reader leads, the history itself is unchanged
+      const h = r.history ?? [], to = (r.historyAt ?? h.length - 1) + (m.kind === 'back' ? -1 : 1);
+      if (to < 0 || to >= h.length) return no(409, m.kind === 'back' ? 'no earlier shared place' : 'no later shared place');
       const rev = r.rev + 1;
-      return { record: put({ ...seen(m.surface, m.label), place: m.place, rev, at }, { rev, lead: m.reader }), status: 201, moved: true };
+      return { record: put({ ...seen(m.surface, m.label), place: h[to].place, rev, at }, { rev, lead: m.reader, historyAt: to }), status: 201, moved: true };
     }
     case 'follow':
       if (m.of === m.reader) return no(400, 'a reader cannot follow itself');
@@ -179,6 +204,7 @@ export function viewOf(r: FocusRecord, now: number): SharedView {
     rev: r.rev,
     shared: lead?.place ? { place: lead.place, reader: lead.id, surface: lead.surface, label: lead.label, at: lead.at ?? lead.seenAt } : null,
     readers: r.readers.map((x) => ({ id: x.id, surface: x.surface, label: x.label, ...(x.follows ? { follows: x.follows } : {}), seenAt: x.seenAt, live: now - Date.parse(x.seenAt) < LIVE_MS })),
+    ...(r.history?.length ? { history: r.history, historyAt: r.historyAt ?? r.history.length - 1 } : {}),
   };
 }
 

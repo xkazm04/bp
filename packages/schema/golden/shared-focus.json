@@ -461,7 +461,24 @@
             "seenAt": "2026-10-30T07:00:01.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -509,7 +526,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -564,7 +598,24 @@
             "seenAt": "2026-10-30T07:00:03.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -620,7 +671,24 @@
             "seenAt": "2026-10-30T07:00:04.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -669,7 +737,24 @@
             "seenAt": "2026-10-30T07:00:04.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -718,7 +803,24 @@
             "seenAt": "2026-10-30T07:00:04.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       }
     },
     {
@@ -779,7 +881,37 @@
             "seenAt": "2026-10-30T07:00:06.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          }
+        ],
+        "historyAt": 1
       }
     },
     {
@@ -834,7 +966,37 @@
             "seenAt": "2026-10-30T07:00:07.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          }
+        ],
+        "historyAt": 1
       }
     },
     {
@@ -894,7 +1056,634 @@
             "seenAt": "2026-10-30T07:00:08.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 2
+      }
+    },
+    {
+      "name": "the phone steps back: a publish of the feature before (rev 4), the phone leads, the history is unchanged",
+      "at": "2026-10-30T07:00:08.200Z",
+      "move": {
+        "kind": "back",
+        "reader": "phone-1",
+        "surface": "phone",
+        "label": "Phone"
+      },
+      "status": 201,
+      "moved": true,
+      "view": {
+        "rev": 4,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "feature",
+              "id": "kettle-boil"
+            },
+            "say": "Boil"
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.200Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.200Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 1
+      }
+    },
+    {
+      "name": "back again: the first room (rev 5)",
+      "at": "2026-10-30T07:00:08.400Z",
+      "move": {
+        "kind": "back",
+        "reader": "phone-1",
+        "surface": "phone",
+        "label": "Phone"
+      },
+      "status": 201,
+      "moved": true,
+      "view": {
+        "rev": 5,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "room",
+              "id": "billing"
+            },
+            "level": "L2",
+            "say": "Billing is where the failures are"
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.400Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.400Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 0
+      }
+    },
+    {
+      "name": "back at the start of the history is refused",
+      "at": "2026-10-30T07:00:08.500Z",
+      "move": {
+        "kind": "back",
+        "reader": "phone-1",
+        "surface": "phone",
+        "label": "Phone"
+      },
+      "status": 409,
+      "error": "no earlier shared place",
+      "moved": false,
+      "view": {
+        "rev": 5,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "room",
+              "id": "billing"
+            },
+            "level": "L2",
+            "say": "Billing is where the failures are"
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.400Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.400Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 0
+      }
+    },
+    {
+      "name": "forward: the feature again (rev 6)",
+      "at": "2026-10-30T07:00:08.600Z",
+      "move": {
+        "kind": "forward",
+        "reader": "phone-1",
+        "surface": "phone",
+        "label": "Phone"
+      },
+      "status": 201,
+      "moved": true,
+      "view": {
+        "rev": 6,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "feature",
+              "id": "kettle-boil"
+            },
+            "say": "Boil"
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.600Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.600Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 1
+      }
+    },
+    {
+      "name": "a publish after stepping back drops the places ahead (the wing)",
+      "at": "2026-10-30T07:00:08.800Z",
+      "move": {
+        "kind": "publish",
+        "reader": "phone-1",
+        "surface": "phone",
+        "label": "Phone",
+        "place": {
+          "product": "kettle",
+          "target": {
+            "kind": "room",
+            "id": "stock"
+          }
+        }
+      },
+      "status": 201,
+      "moved": true,
+      "view": {
+        "rev": 7,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "room",
+              "id": "stock"
+            }
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.800Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.800Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "stock"
+              }
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:08.800Z"
+          }
+        ],
+        "historyAt": 2
+      }
+    },
+    {
+      "name": "forward at the end of the history is refused",
+      "at": "2026-10-30T07:00:08.900Z",
+      "move": {
+        "kind": "forward",
+        "reader": "vr:table",
+        "surface": "vr",
+        "label": "VR table"
+      },
+      "status": 409,
+      "error": "no later shared place",
+      "moved": false,
+      "view": {
+        "rev": 7,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "room",
+              "id": "stock"
+            }
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.800Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.800Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "stock"
+              }
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:08.800Z"
+          }
+        ],
+        "historyAt": 2
       }
     },
     {
@@ -907,28 +1696,113 @@
       "status": 200,
       "moved": false,
       "view": {
-        "rev": 3,
+        "rev": 7,
         "shared": {
           "place": {
             "product": "kettle",
             "target": {
-              "kind": "wing",
-              "id": "ops"
+              "kind": "room",
+              "id": "stock"
             }
           },
-          "reader": "vr:table",
-          "surface": "vr",
-          "label": "VR table",
-          "at": "2026-10-30T07:00:08.000Z"
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.800Z"
         },
         "readers": [
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
           {
             "id": "phone-1",
             "surface": "phone",
             "label": "Phone",
-            "seenAt": "2026-10-30T07:00:06.000Z",
+            "seenAt": "2026-10-30T07:00:08.800Z",
             "live": true
           },
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "seenAt": "2026-10-30T07:00:09.000Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "stock"
+              }
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:08.800Z"
+          }
+        ],
+        "historyAt": 2
+      }
+    },
+    {
+      "name": "the lead (the phone) forgets: it stays as the place author, unseen",
+      "at": "2026-10-30T07:00:10.000Z",
+      "move": {
+        "kind": "forget",
+        "reader": "phone-1"
+      },
+      "status": 200,
+      "moved": false,
+      "view": {
+        "rev": 7,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "room",
+              "id": "stock"
+            }
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.800Z"
+        },
+        "readers": [
           {
             "id": "vr:table",
             "surface": "vr",
@@ -943,85 +1817,84 @@
             "label": "Web",
             "seenAt": "2026-10-30T07:00:09.000Z",
             "live": true
-          }
-        ]
-      }
-    },
-    {
-      "name": "the lead forgets: it stays as the place author, unseen",
-      "at": "2026-10-30T07:00:10.000Z",
-      "move": {
-        "kind": "forget",
-        "reader": "vr:table"
-      },
-      "status": 200,
-      "moved": false,
-      "view": {
-        "rev": 3,
-        "shared": {
-          "place": {
-            "product": "kettle",
-            "target": {
-              "kind": "wing",
-              "id": "ops"
-            }
           },
-          "reader": "vr:table",
-          "surface": "vr",
-          "label": "VR table",
-          "at": "2026-10-30T07:00:08.000Z"
-        },
-        "readers": [
           {
             "id": "phone-1",
             "surface": "phone",
             "label": "Phone",
-            "seenAt": "2026-10-30T07:00:06.000Z",
-            "live": true
-          },
-          {
-            "id": "web-1",
-            "surface": "web",
-            "label": "Web",
-            "seenAt": "2026-10-30T07:00:09.000Z",
-            "live": true
-          },
-          {
-            "id": "vr:table",
-            "surface": "vr",
-            "label": "VR table",
-            "follows": "*",
             "seenAt": "1970-01-01T00:00:00.000Z",
             "live": false
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "stock"
+              }
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:08.800Z"
+          }
+        ],
+        "historyAt": 2
       }
     },
     {
-      "name": "the phone is still a reader 50 s later; web is gone from live",
+      "name": "the table says hello 50 s later: it is live, web is gone from live",
       "at": "2026-10-30T07:01:00.000Z",
       "move": {
         "kind": "hello",
-        "reader": "phone-1",
-        "surface": "phone",
-        "label": "Phone"
+        "reader": "vr:table",
+        "surface": "vr",
+        "label": "VR table"
       },
       "status": 200,
       "moved": false,
       "view": {
-        "rev": 3,
+        "rev": 7,
         "shared": {
           "place": {
             "product": "kettle",
             "target": {
-              "kind": "wing",
-              "id": "ops"
+              "kind": "room",
+              "id": "stock"
             }
           },
-          "reader": "vr:table",
-          "surface": "vr",
-          "label": "VR table",
-          "at": "2026-10-30T07:00:08.000Z"
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.800Z"
         },
         "readers": [
           {
@@ -1032,21 +1905,63 @@
             "live": false
           },
           {
-            "id": "vr:table",
-            "surface": "vr",
-            "label": "VR table",
-            "follows": "*",
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
             "seenAt": "1970-01-01T00:00:00.000Z",
             "live": false
           },
           {
-            "id": "phone-1",
-            "surface": "phone",
-            "label": "Phone",
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
             "seenAt": "2026-10-30T07:01:00.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "stock"
+              }
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:08.800Z"
+          }
+        ],
+        "historyAt": 2
       }
     }
   ],
@@ -1078,7 +1993,24 @@
             "seenAt": "2026-10-30T07:00:01.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "me": "vr:table",
       "follows": "*",
@@ -1128,7 +2060,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "me": "vr:table",
       "follows": "*",
@@ -1162,7 +2111,24 @@
             "seenAt": "2026-10-30T07:00:01.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "me": "web-1",
       "follows": "*",
@@ -1196,7 +2162,24 @@
             "seenAt": "2026-10-30T07:00:01.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "me": "phone-1",
       "follows": null,
@@ -1245,7 +2228,37 @@
             "seenAt": "2026-10-30T07:00:07.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          }
+        ],
+        "historyAt": 1
       },
       "me": "web-1",
       "follows": "phone-1",
@@ -1300,12 +2313,152 @@
             "seenAt": "2026-10-30T07:00:08.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 2
       },
       "me": "web-1",
       "follows": "phone-1",
       "appliedRev": 2,
       "place": null
+    },
+    {
+      "name": "the table, following *, after the phone stepped back",
+      "view": {
+        "rev": 4,
+        "shared": {
+          "place": {
+            "product": "kettle",
+            "target": {
+              "kind": "feature",
+              "id": "kettle-boil"
+            },
+            "say": "Boil"
+          },
+          "reader": "phone-1",
+          "surface": "phone",
+          "label": "Phone",
+          "at": "2026-10-30T07:00:08.200Z"
+        },
+        "readers": [
+          {
+            "id": "web-1",
+            "surface": "web",
+            "label": "Web",
+            "follows": "phone-1",
+            "seenAt": "2026-10-30T07:00:07.000Z",
+            "live": true
+          },
+          {
+            "id": "vr:table",
+            "surface": "vr",
+            "label": "VR table",
+            "follows": "*",
+            "seenAt": "2026-10-30T07:00:08.000Z",
+            "live": true
+          },
+          {
+            "id": "phone-1",
+            "surface": "phone",
+            "label": "Phone",
+            "seenAt": "2026-10-30T07:00:08.200Z",
+            "live": true
+          }
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 1
+      },
+      "me": "vr:table",
+      "follows": "*",
+      "appliedRev": 3,
+      "place": {
+        "product": "kettle",
+        "target": {
+          "kind": "feature",
+          "id": "kettle-boil"
+        },
+        "say": "Boil"
+      }
     },
     {
       "name": "before anyone published",
@@ -1364,7 +2517,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "follows": "*",
       "now": "2026-10-30T07:00:03.000Z",
@@ -1405,7 +2575,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "follows": "*",
       "now": "2026-10-30T07:00:13.000Z",
@@ -1446,7 +2633,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "follows": "*",
       "now": "2026-10-30T07:03:01.000Z",
@@ -1493,7 +2697,49 @@
             "seenAt": "2026-10-30T07:00:08.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "feature",
+                "id": "kettle-boil"
+              },
+              "say": "Boil"
+            },
+            "reader": "phone-1",
+            "label": "Phone",
+            "at": "2026-10-30T07:00:06.000Z"
+          },
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "wing",
+                "id": "ops"
+              }
+            },
+            "reader": "vr:table",
+            "label": "VR table",
+            "at": "2026-10-30T07:00:08.000Z"
+          }
+        ],
+        "historyAt": 2
       },
       "follows": "phone-1",
       "now": "2026-10-30T07:00:08.500Z",
@@ -1553,7 +2799,24 @@
             "seenAt": "2026-10-30T07:00:02.000Z",
             "live": true
           }
-        ]
+        ],
+        "history": [
+          {
+            "place": {
+              "product": "kettle",
+              "target": {
+                "kind": "room",
+                "id": "billing"
+              },
+              "level": "L2",
+              "say": "Billing is where the failures are"
+            },
+            "reader": "web-1",
+            "label": "Web",
+            "at": "2026-10-30T07:00:01.000Z"
+          }
+        ],
+        "historyAt": 0
       },
       "follows": null,
       "now": "2026-10-30T07:00:03.000Z",

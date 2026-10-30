@@ -105,7 +105,8 @@
         "lines": { "type": "array", "items": { "$ref": "#/$defs/cardLine" } },
         "tone": { "$ref": "#/$defs/cardTone" },
         "place": { "$ref": "shared-focus-1.schema.json#/$defs/focusPlace", "description": "Where the card takes every follower as it is read." },
-        "decision": { "$ref": "#/$defs/cardDecision" }
+        "decision": { "$ref": "#/$defs/cardDecision" },
+        "news": { "const": true, "description": "Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional)." }
       }
     },
     "productSummary": {
@@ -145,6 +146,16 @@
         "why": { "type": "string" }
       }
     },
+    "deckNews": {
+      "description": "What landed after the reader opened the deck (GET ...&opened=<iso>): findings raised and items built, shown at the end, never in the part already read (added 2026-10-30, roadmap C1, optional).",
+      "type": "object",
+      "required": ["since", "count"],
+      "additionalProperties": false,
+      "properties": {
+        "since": { "type": "string", "description": "The `opened` instant the news is counted from." },
+        "count": { "type": "integer", "minimum": 0 }
+      }
+    },
     "morningDeck": {
       "description": "GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order.",
       "type": "object",
@@ -156,7 +167,8 @@
         "products": { "type": "array", "items": { "$ref": "#/$defs/productSummary" } },
         "cards": { "type": "array", "items": { "$ref": "#/$defs/morningCard" } },
         "agents": { "$ref": "#/$defs/trailTally" },
-        "skipped": { "type": "array", "items": { "$ref": "#/$defs/skippedProduct" }, "description": "Products that could not be read, never dropped silently." }
+        "skipped": { "type": "array", "items": { "$ref": "#/$defs/skippedProduct" }, "description": "Products that could not be read, never dropped silently." },
+        "news": { "$ref": "#/$defs/deckNews" }
       }
     },
     "agentPlace": {
@@ -210,7 +222,8 @@
         "headline": { "type": "string" },
         "lines": { "type": "array", "items": { "type": "string" } },
         "place": { "$ref": "#/$defs/agentPlace" },
-        "decision": { "$ref": "#/$defs/agentDecision" }
+        "decision": { "$ref": "#/$defs/agentDecision" },
+        "news": { "const": true, "description": "Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional)." }
       }
     },
     "agentDeck": {
@@ -223,7 +236,8 @@
         "until": { "type": "string" },
         "products": { "type": "array", "items": { "$ref": "#/$defs/productSummary" } },
         "agents": { "$ref": "#/$defs/trailTally" },
-        "cards": { "type": "array", "items": { "$ref": "#/$defs/agentCard" } }
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/agentCard" } },
+        "news": { "$ref": "#/$defs/deckNews" }
       }
     }
   }

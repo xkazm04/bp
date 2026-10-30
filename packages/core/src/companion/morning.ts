@@ -13,12 +13,18 @@
 //             when the brief says the same idea was declined before (advice 'withdraw') does Decline join the keys, as
 //             the recommendation, with the "Repeats <id> ..." note; a likeness only shows the quote (never flips)
 //   close     what was decided this morning (repeats declined counted), and where the steering log is
+// News during the standup (roadmap C1): a reader that opened the deck at `opened` asks again with it. What landed after it
+// - a finding raised, an item built - never enters the part already read: the built and release cards and the ranked
+// decisions are read over [since, opened], and the news goes to the end, before the close card, marked `news`, with
+// `deck.news` counting it ("1 new"). A decision filed after `opened` never takes a ranked slot, so nothing reshuffles.
 // Headlines are one plain line. Honesty: a release item counts as confirmed only on a reading taken after the release
 // that meets its expected value (scan/track.ts); anything else is "not measured since", never good.
 import type { FocusPlace } from '../session/focus.ts';
 import type { Proposal, ScanSnapshot } from '../scan/types.ts';
 import { tracksOf, type Track } from '../scan/track.ts';
-import { briefFor, briefMapOf, repeatNote, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap } from '../scan/brief.ts';
+import type { Brief, BriefMap } from '../scan/brief.ts';
+import { cardBrief, clip, type CardBrief } from './card-brief.ts';
+export { cardBrief, type CardBrief };
 import { trailSessions, trailTally, type TrailRow, type TrailTally } from './trail.ts';
 import { STEER_VERDICTS } from '../standard/schema-vocab.ts';
 // The wire is packages/schema/schema/morning-deck-1.schema.json (MorningDeck, AgentDeck, SteerRow, SteerPost);
@@ -47,20 +53,6 @@ export interface SteerRow { at: string; product: string; proposal: string; verdi
 /** The body of POST /api/companion/morning (the human path). */
 export interface SteerPost { product: string; proposal: string; verdict: Verdict }
 
-/** A decision card's brief: the decision brief (scan/brief.ts) as the deck, the phone, a follower's lower third and an agent
- *  on morning.brief all read it. `recommend` is 'decline' only when the same idea was declined before (advice 'withdraw'),
- *  and `note` is then what a Decline writes to the store ("Repeats <id>, declined <day>: ..."). `decline` is the decline the
- *  card repeats, or (advice 'ask') the like one it only quotes. `short` is the one-line form for small surfaces. */
-export interface CardBrief {
-  facts: BriefFact[];
-  lines: string[];
-  advice: Brief['advice'];
-  decline?: Pick<BriefDecided, 'id' | 'title' | 'feature' | 'at' | 'by' | 'note' | 'match'>;
-  recommend?: 'decline';
-  note?: string;
-  short: string;
-}
-
 export interface CardLine { text: string; tone?: Tone }
 export interface MorningCard {
   id: string;
@@ -72,38 +64,23 @@ export interface MorningCard {
   tone: Tone;
   place?: FocusPlace;
   decision?: { proposal: string; tier?: number; steered?: SteerRow; brief?: CardBrief };
+  /** Landed after the reader opened the deck: appended at the end, never into the read part. */
+  news?: true;
 }
 export interface ProductSummary { slug: string; name: string; built: number; failed: number; releases: number; confirmed: number; short: number; waiting: number }
 /** `skipped`: products the server could not read (morning.server.ts), named, never dropped silently. */
-export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally; skipped?: { product: string; why: string }[] }
+/** `news`: what landed after `opened` (the instant the reader opened this deck), counted: findings raised and items built. */
+export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally; skipped?: { product: string; why: string }[]; news?: { since: string; count: number } }
 
 export const TOP_DECISIONS = 3;
 export const HELD_SHOWN = 2;
+/** At most this many decisions that arrived during the standup are shown at the end. */
+export const NEWS_SHOWN = 3;
 const TIER_WORDS = ['stop-ship', 'high', 'medium', 'backlog'];
 const n = (k: number, one: string, many = one + 's') => `${k} ${k === 1 ? one : many}`;
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]);
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
 const hoursAgo = (iso: string, now: number) => { const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3600e3)); return h < 1 ? 'just now' : h + ' h ago'; };
-
-const EMPTY_MAP = briefMapOf({});
-const clip = (t: string, k: number) => (t.length <= k ? t : t.slice(0, k - 1).trimEnd() + '…');
-
-/** The brief of one decision on the morning's table: THE function every surface's card brief comes from (the deck, the
- *  phone, a follower's lower third through the place's `say`, morning.brief for agents, the server's Decline). */
-export function cardBrief(p: Pick<ProductFacts, 'scan' | 'map'>, x: Proposal): CardBrief {
-  const b = briefFor(subjectOf(x), p.scan, p.map ?? EMPTY_MAP), d = b.declines[0];
-  const repeat = b.advice.say === 'withdraw' && !!d;
-  const who = d?.by ? ' by ' + d.by.replace(/^user:/, '') : '';
-  const short = d && repeat ? `Repeats your decline ${d.id} (${d.at}${who})${d.note ? `: "${d.note}"` : ''}`
-    : d && b.advice.say === 'ask' ? `Like an idea you declined (${d.id})${d.note ? `: "${d.note}"` : ''}; yours to decide`
-      : b.lines[0] ?? '';
-  return {
-    facts: b.facts, lines: b.lines, advice: b.advice,
-    ...(d ? { decline: { id: d.id, title: d.title, feature: d.feature, at: d.at, match: d.match, ...(d.by ? { by: d.by } : {}), ...(d.note ? { note: d.note } : {}) } } : {}),
-    ...(d && repeat ? { recommend: 'decline' as const, note: repeatNote(d) } : {}),
-    short: clip(short, 160),
-  };
-}
 
 /** The room most of these features sit in (ties: the first met), or undefined. */
 function busiestRoom(fs: readonly string[], where: ReadonlyMap<string, Where>): Where | undefined {
@@ -136,14 +113,20 @@ function openDecisions(p: ProductFacts, steer: readonly SteerRow[], since: strin
   return out;
 }
 
-/** `trail`: the agent trail's rows (brief.server.ts readTrail); the ones in the window make the agents card. */
-export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number, trail: readonly TrailRow[] = []): MorningDeck {
+/** `trail`: the agent trail's rows (brief.server.ts readTrail); the ones in the window make the agents card. `opened`: when
+ *  the reader first read this morning's deck; what landed after it is news (see the header). */
+export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number, trail: readonly TrailRow[] = [], opened?: string): MorningDeck {
   const until = new Date(now).toISOString(), cards: MorningCard[] = [], sums: ProductSummary[] = [];
-  const decisions: (Choice & { p: ProductFacts })[] = [];
+  // the read part covers [since, cut]; (cut, until] is news. Without `opened` there is no news: cut is now
+  const cut = opened && opened > since && opened < until ? opened : until;
+  const decisions: (Choice & { p: ProductFacts })[] = [], fresh: (Choice & { p: ProductFacts })[] = [], newsCards: MorningCard[] = [];
+  let newsCount = 0;
   const perProduct: MorningCard[][] = [];
   for (const p of products) {
     const mine: MorningCard[] = [];
-    const built = p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && inWindow(x.updated_at, since, until));
+    const built = p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && inWindow(x.updated_at, since, cut));
+    const builtLate = cut === until ? [] : p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && !!x.updated_at && x.updated_at > cut && x.updated_at <= until);
+    if (builtLate.length) { newsCards.push(lateBuilt(p, builtLate)); newsCount += builtLate.length; }
     const ok = built.filter((x) => x.status === 'done'), bad = built.filter((x) => x.status === 'failed');
     if (built.length) {
       const w = busiestRoom(ok.length ? ok.map((x) => x.feature) : bad.map((x) => x.feature), p.where);
@@ -157,7 +140,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       });
     }
     // releases merged in the window, read through the answer tracks
-    const rels = p.scan.releases.filter((r) => (r.status === 'merged' || r.status === 'tagged') && inWindow(r.updated_at, since, until));
+    const rels = p.scan.releases.filter((r) => (r.status === 'merged' || r.status === 'tagged') && inWindow(r.updated_at, since, cut));
     const tracks = tracksOf(p.scan, now);
     // a tile on the plan says its NEWEST track (live-tracks.ts; tracksOf is newest first): the card flies to an item whose
     // tile shows this release's reading, and names it first, so the card and the tile agree (the demo pass found the card
@@ -182,8 +165,10 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
         ...(focus ? { place: featurePlace(p.slug, focus.feature, headline) } : {}),
       });
     }
-    const picks = openDecisions(p, steer, since, until), open = picks.filter((d) => d.x.status === 'proposed');
+    const all = openDecisions(p, steer, since, until), late = (d: Choice) => !d.today && d.x.created_at > cut;
+    const picks = all.filter((d) => !late(d)), open = picks.filter((d) => d.x.status === 'proposed');
     for (const d of picks) decisions.push({ p, ...d });
+    for (const d of all) if (late(d)) fresh.push({ p, ...d });
     if (!mine.length) {
       const headline = `${p.name} had a quiet night: nothing built, nothing released.`;
       mine.push({ id: `quiet:${p.slug}`, kind: 'quiet', product: p.slug, productName: p.name, headline, tone: 'calm', lines: [{ text: open.length ? `${n(open.length, 'decision')} still ${open.length === 1 ? 'waits' : 'wait'} for you.` : 'Nothing waits for you here.' }], place: { product: p.slug, level: 'L0', say: headline } });
@@ -194,7 +179,10 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   // the blockers, by tier (stop-ship first; untiered last), then the riskiest, then the oldest. This morning's pool (open and
   // steered today) keeps its order as the owner decides; held ones from earlier mornings follow, marked (at most HELD_SHOWN)
   const rank = (d: Choice) => [d.x.tier ?? 4, -(d.x.risk ?? 0), d.x.created_at] as const;
-  decisions.sort((a, b) => { const x = rank(a), y = rank(b); for (let i = 0; i < 2; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0; });
+  const byRank = (a: Choice, b: Choice) => { const x = rank(a), y = rank(b); for (let i = 0; i < 2; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0; };
+  decisions.sort(byRank);
+  fresh.sort(byRank);
+  newsCount += fresh.length;
   const top = [...decisions.filter((d) => !d.held).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.held).slice(0, HELD_SHOWN)];
   const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
   const moved = sums.filter((s) => s.built || s.failed || s.releases).length;
@@ -224,12 +212,13 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     });
   }
   for (const m of perProduct) cards.push(...m);
-  top.forEach(({ p, x, s, held }, i) => {
+  // a decision card; `head` is its first line ("2 of 3" for a ranked one), `news` marks one filed after the deck was opened
+  const card = ({ p, x, s, held }: Choice & { p: ProductFacts }, head: string, news: boolean): MorningCard => {
     const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined, brief = cardBrief(p, x);
-    cards.push({
+    return {
       id: `decision:${p.slug}:${x.id}`, kind: 'decision', product: p.slug, productName: p.name, headline: x.title, tone: x.tier === 0 ? 'bad' : 'warn',
       lines: [
-        { text: `${i + 1} of ${top.length} · ${p.name}${w ? ' · ' + w.roomName : ''}` },
+        { text: `${head} · ${p.name}${w ? ' · ' + w.roomName : ''}`, ...(news ? { tone: 'warn' as Tone } : {}) },
         { text: [tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Untiered', x.risk_class ? x.risk_class : null, 'raised ' + hoursAgo(x.created_at, now)].filter(Boolean).join(' · '), ...(x.tier === 0 ? { tone: 'bad' as Tone } : {}) },
         ...(stakes(p, x) ? [{ text: stakes(p, x)! }] : []),
         ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
@@ -237,10 +226,26 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       // a follower's lower third reads the place's words: the title, then the brief's short line (<= 280 on the wire)
       place: featurePlace(p.slug, x.feature, clip(x.title, 118) + (brief.short ? '\n' + brief.short : '')),
       decision: { proposal: x.id, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(s ? { steered: s } : {}), brief },
-    });
-  });
+      ...(news ? { news: true as const } : {}),
+    };
+  };
+  top.forEach((d, i) => cards.push(card(d, `${i + 1} of ${top.length}`, false)));
+  for (const d of fresh.slice(0, NEWS_SHOWN)) cards.push(card(d, `New since you opened the deck (${d.x.created_at.slice(11, 16)} UTC)`, true));
+  cards.push(...newsCards);
   cards.push({ id: 'close', kind: 'close', headline: 'That is the morning.', tone: 'calm', lines: [] });
-  return { since, until, products: sums, cards, ...(agents ? { agents } : {}) };
+  return { since, until, products: sums, cards, ...(agents ? { agents } : {}), ...(cut !== until ? { news: { since: cut, count: newsCount } } : {}) };
+}
+
+/** Items built after the deck was opened, in one card at the end (the built card above stays as it was read). */
+function lateBuilt(p: ProductFacts, xs: readonly Proposal[]): MorningCard {
+  const ok = xs.filter((x) => x.status === 'done'), bad = xs.filter((x) => x.status === 'failed');
+  const headline = `${p.name}, since you opened the deck: ${ok.length ? `agents built ${n(ok.length, 'item')}` : 'nothing landed'}${bad.length ? `; ${n(bad.length, 'build')} failed` : ''}.`;
+  const place = roomPlace(p.slug, busiestRoom((ok.length ? ok : bad).map((x) => x.feature), p.where), headline);
+  return {
+    id: `news-built:${p.slug}`, kind: 'built', product: p.slug, productName: p.name, headline, tone: bad.length ? 'warn' : 'good', news: true,
+    lines: [...ok.map((x) => ({ text: x.title, tone: 'good' as Tone })), ...bad.map((x) => ({ text: `Failed: ${x.title}`, tone: 'bad' as Tone }))].slice(0, 6),
+    ...(place ? { place } : {}),
+  };
 }
 
 /** What deciding buys, in one line: "Now 9.3 literals, expected 7 · size S · change risk 3 of 10" (the number only when the
@@ -264,18 +269,18 @@ function stakes(p: ProductFacts, x: Proposal): string | null {
  *  same brief lines, without the page's styling and evidence, so a whole morning fits the door's result cap (tool-call.ts
  *  RESULT_CAP; the full deck with every card's brief did not). */
 export interface AgentCard {
-  id: string; kind: CardKind; product?: string; headline: string; lines: string[];
+  id: string; kind: CardKind; product?: string; headline: string; lines: string[]; news?: true;
   place?: { product: string; target?: FocusPlace['target'] };
   decision?: { proposal: string; tier?: number; steered?: { verdict: Verdict; at: string }; brief?: { lines: string[]; advice: Brief['advice']['say']; recommend?: 'decline'; note?: string } };
 }
-export interface AgentDeck { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[] }
+export interface AgentDeck { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[]; news?: { since: string; count: number } }
 export function agentDeck(d: MorningDeck): AgentDeck {
   return {
-    since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}),
+    since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}), ...(d.news ? { news: d.news } : {}),
     cards: d.cards.map((c) => {
       const x = c.decision, b = x?.brief;
       return {
-        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: c.lines.map((l) => l.text),
+        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: c.lines.map((l) => l.text), ...(c.news ? { news: true as const } : {}),
         ...(c.place ? { place: { product: c.place.product, ...(c.place.target ? { target: c.place.target } : {}) } } : {}),
         ...(x ? { decision: {
           proposal: x.proposal, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(x.steered ? { steered: { verdict: x.steered.verdict, at: x.steered.at } } : {}),

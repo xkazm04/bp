@@ -2166,6 +2166,28 @@ struct BPLINK_API FBpViewReader
 	bool live = false;
 };
 
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpHistoryEntry
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpFocusPlace place;
+
+	/** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString reader;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString label;
+
+	/** The publish that made it the shared place. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString at;
+};
+
 /** What a client sees: the shared place (null before anyone published) and every reader. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpSharedView
@@ -2183,6 +2205,14 @@ struct BPLINK_API FBpSharedView
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpViewReader> readers;
+
+	/** The last shared places, oldest first (added 2026-10-30, roadmap C2, optional: absent before the first publish) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpHistoryEntry> history;
+
+	/** The index in history of the place shared now: back goes to historyAt - 1 */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 historyAt = 0;
 };
 
 USTRUCT(BlueprintType)
@@ -2217,7 +2247,7 @@ struct BPLINK_API FBpFocusPost
 {
 	GENERATED_BODY()
 
-	/** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing. one of: hello, publish, follow, unfollow, forget. required */
+	/** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400). one of: hello, publish, follow, unfollow, forget, back, forward. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString op;
 
@@ -2503,6 +2533,10 @@ struct BPLINK_API FBpMorningCard
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FBpCardDecision decision;
+
+	/** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	bool news = false;
 };
 
 /** What agents did with the owner's decisions in the window (companion/trail.ts). */
@@ -2546,6 +2580,21 @@ struct BPLINK_API FBpSkippedProduct
 	FString why;
 };
 
+/** What landed after the reader opened the deck (GET ...&opened=<iso>): findings raised and items built, shown at the end, never in the part already read (added 2026-10-30, roadmap C1, optional). */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpDeckNews
+{
+	GENERATED_BODY()
+
+	/** The `opened` instant the news is counted from. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString since;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 count = 0;
+};
+
 /** GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpMorningDeck
@@ -2574,6 +2623,9 @@ struct BPLINK_API FBpMorningDeck
 	/** Products that could not be read, never dropped silently */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpSkippedProduct> skipped;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpDeckNews news;
 };
 
 USTRUCT(BlueprintType)
@@ -2672,6 +2724,10 @@ struct BPLINK_API FBpAgentCard
 
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FBpAgentDecision decision;
+
+	/** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	bool news = false;
 };
 
 /** GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap. */
@@ -2698,6 +2754,9 @@ struct BPLINK_API FBpAgentDeck
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpAgentCard> cards;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpDeckNews news;
 };
 
 USTRUCT(BlueprintType)

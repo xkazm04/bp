@@ -11,7 +11,7 @@ import path from 'node:path';
 const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-shared-focus-'));
 process.env.BP_HOME = HOME;
 
-const { EMPTY_RECORD, FORGET_MS, LIVE_MS, MAX_READERS, focusStep, followingWords, readFocusPlace, toApply, viewOf } = await import('../packages/core/src/session/focus.ts');
+const { EMPTY_RECORD, FORGET_MS, HISTORY_MAX, LIVE_MS, MAX_READERS, focusStep, followingWords, readFocusPlace, toApply, viewOf } = await import('../packages/core/src/session/focus.ts');
 const { GET, POST } = await import('../packages/core/src/server/api/session/focus/route.ts');
 const { POST: FOCUS_SHOW } = await import('../packages/core/src/server/api/companion/focus/route.ts');
 const { POST: PLACE, GET: PLACE_GET } = await import('../packages/core/src/server/api/session/place/route.ts');
@@ -95,6 +95,38 @@ res = await POST(req('POST', URL0, { op: 'publish', ...web, place: { product: 'k
 check('a bad place: 400', res.status === 400);
 res = await POST(req('POST', URL0, { op: 'teleport', ...web }));
 check('an unknown op: 400', res.status === 400);
+
+// ------------------------------------------------------------------------------------------------ history (roadmap C2)
+{
+  // pure: the record keeps the last HISTORY_MAX shared places, the newest shared
+  let r = EMPTY_RECORD;
+  for (let i = 0; i < HISTORY_MAX + 2; i++) r = focusStep(r, { kind: 'publish', ...web, place: room('r' + i) }, T0 + i * 1000).record;
+  const hv = viewOf(r, T0 + 20000);
+  check(`history keeps the last ${HISTORY_MAX} shared places, oldest first, the newest shared`, hv.history?.length === HISTORY_MAX && hv.history[0].place.target?.id === 'r2' && hv.historyAt === HISTORY_MAX - 1 && hv.shared?.place.target?.id === 'r11');
+  const echo = focusStep(r, { kind: 'publish', ...vr, place: room('r11') }, T0 + 21000);
+  check('an echo adds nothing to the history', viewOf(echo.record, T0 + 21000).history?.length === HISTORY_MAX && echo.record.historyAt === HISTORY_MAX - 1 && !echo.moved);
+  // over the route: back is a publish (exactly one rev), every follower is told to go back, and forward returns
+  heard.length = 0;
+  const before = ((await (await GET(req('GET', URL0))).json()) as View);
+  res = await POST(req('POST', URL0, { op: 'publish', ...web, place: room('stock') }));
+  res = await POST(req('POST', URL0, { op: 'publish', ...web, place: room('dispatch') }));
+  const two = ((await res.json()) as { view: View }).view;
+  heard.length = 0;
+  res = await POST(req('POST', URL0, { op: 'back', ...vr }));
+  const back1 = ((await res.json()) as { moved: boolean; view: View });
+  check('back over the route: 201, exactly one rev, the stepping reader leads at the place before', res.status === 201 && back1.moved && back1.view.rev === two.rev + 1 && back1.view.shared?.place.target?.id === 'stock' && back1.view.shared.reader === 'standin' && heard.length === 1, JSON.stringify(back1.view.shared));
+  check('...and a follower of whoever moves is told to go back there', toApply(back1.view, 'web-1', '*', two.rev)?.target?.id === 'stock');
+  res = await POST(req('POST', URL0, { op: 'back', ...vr }));
+  const back2 = ((await res.json()) as { view: View }).view;
+  check('back twice: one rev more, the place before that, the history unchanged', res.status === 201 && back2.rev === two.rev + 2 && back2.shared?.place.target?.id === before.shared?.place.target?.id && back2.history?.length === two.history?.length);
+  res = await POST(req('POST', URL0, { op: 'forward', ...vr }));
+  const fwd = ((await res.json()) as { view: View }).view;
+  check('forward once: one rev more, back at stock', res.status === 201 && fwd.rev === two.rev + 3 && fwd.shared?.place.target?.id === 'stock' && fwd.historyAt === (two.historyAt ?? 0) - 1);
+  let e = focusStep({ rev: 1, readers: [], history: [{ place: room('a'), reader: 'x', label: 'X', at: new Date(T0).toISOString() }], historyAt: 0 }, { kind: 'back', ...web }, T0);
+  check('back with nowhere to go: 409, nothing moves', e.status === 409 && !e.moved && e.record.rev === 1);
+  e = focusStep(e.record, { kind: 'forward', ...web }, T0);
+  check('forward at the end: 409', e.status === 409 && !e.moved);
+}
 res = await POST(req('POST', URL0, { op: 'hello', reader: 'a b', surface: 'web', label: 'x' }));
 check('a reader that is no id: 400', res.status === 400);
 res = await POST(new Request(URL0, { method: 'POST', headers: { host: '127.0.0.1:3313', 'content-type': 'text/plain' }, body: JSON.stringify({ op: 'hello', ...web }) }));
@@ -149,8 +181,8 @@ check('another device still cannot write the baton: 403, and the shared focus do
   check('golden: packages/schema/golden/shared-focus.json is what focus.ts computes now (node scripts/focus-golden.ts --write)', committed === now);
   const gd = JSON.parse(now) as { focusStep: { view: View; moved: boolean }[]; sameSpot: unknown[]; toApply: unknown[]; followingWords: unknown[]; readFocusPlace: unknown[] };
   const badViews = gd.focusStep.map((x) => asView(x.view)).filter(Boolean);
-  check('golden: it covers every rule (13 moves, 11 pairs, 7 applies, 6 chips, 12 bodies) and each view in it is shared-focus-1',
-    gd.focusStep.length === 13 && gd.sameSpot.length === 11 && gd.toApply.length === 7 && gd.followingWords.length === 6 && gd.readFocusPlace.length === 12 && gd.focusStep.filter((x) => x.moved).length === 3 && !badViews.length, badViews.join(' | '));
+  check('golden: it covers every rule (19 moves with back and forward, 11 pairs, 8 applies, 6 chips, 12 bodies) and each view in it is shared-focus-1',
+    gd.focusStep.length === 19 && gd.sameSpot.length === 11 && gd.toApply.length === 8 && gd.followingWords.length === 6 && gd.readFocusPlace.length === 12 && gd.focusStep.filter((x) => x.moved).length === 7 && !badViews.length, badViews.join(' | '));
 }
 off();
 fs.rmSync(HOME, { recursive: true, force: true });

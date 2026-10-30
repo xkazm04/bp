@@ -4,7 +4,8 @@
 // published, with the same Engine paths a click takes (a feature: flyToFeature; a room, wing or bay: the hash route
 // restoreHash animates; the site: goHome). A place in another product opens that product (the reader id lives in the tab,
 // the follow in the record, so the new page picks the place up and flies in from the site). The chip says it plainly:
-// "Following Web, 2 s ago" with one-tap Stop, or a quiet Follow, and who follows this page.
+// "Following Web, 2 s ago" with one-tap Stop, or a quiet Follow, and who follows this page. ‹ and › step back and forward
+// through the record's last shared places (session/focus.ts history): a step is a publish, so every follower goes too.
 // `?follow=1` starts following on load (the second window, the phone).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { FocusPlace } from '@bp/core/session/focus';
@@ -92,6 +93,15 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
   }, [s.open, s.place, E, fx]);
 
   const words = fx.words(), followers = fx.followers();
+  const h = st.view?.history, at = st.view?.historyAt ?? -1;
+  const step = (dir: 'back' | 'forward') => void fx.step(dir).then((p) => { if (p) { goToPlace(E, p); setArrive((n) => n + 1); } });
+  const named = (k: number) => { const p = h?.[k]?.place; return p ? (p.say ? sayHead(p.say) : p.target?.id ?? p.product) : ''; };
+  const steps = h && h.length > 1 ? (
+    <>
+      <button type="button" className="fx-bt fx-step" disabled={at <= 0} onClick={() => step('back')} aria-label="Back to the previous shared place" title={at > 0 ? 'Back: ' + named(at - 1) : 'No earlier shared place'}>‹</button>
+      <button type="button" className="fx-bt fx-step" disabled={at >= h.length - 1} onClick={() => step('forward')} aria-label="Forward to the next shared place" title={at < h.length - 1 ? 'Forward: ' + named(at + 1) : 'No later shared place'}>›</button>
+    </>
+  ) : null;
   // what the leader said with the place (a Morning card's headline): every following screen shows the line being read
   const say = st.view?.shared && st.view.shared.reader !== fx.me ? st.view.shared.place.say : undefined;
   if (!st.view && !st.follows) return null;
@@ -103,6 +113,7 @@ export function FollowHost({ phone = false }: { phone?: boolean }) {
         <>
           <i key={arrive} className="dot" aria-hidden="true" />
           <span className="w">{words}</span>
+          {steps}
           <button type="button" className="fx-bt" onClick={() => void fx.unfollow()} title="Stop following: this screen stays where it is">Stop</button>
         </>
       ) : (

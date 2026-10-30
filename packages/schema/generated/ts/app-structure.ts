@@ -830,6 +830,10 @@ export interface SharedView {
   /** A sharedPlace, or null before anyone published. */
   shared: Record<string, unknown>;
   readers: ViewReader[];
+  /** The last shared places, oldest first (added 2026-10-30, roadmap C2, optional: absent before the first publish). */
+  history?: HistoryEntry[];
+  /** The index in history of the place shared now: back goes to historyAt - 1. */
+  historyAt?: number;
 }
 
 export interface ViewReader {
@@ -842,6 +846,15 @@ export interface ViewReader {
   seenAt: string;
   /** Seen in the last 45 s (LIVE_MS); clients say hello every 15 s while open. */
   live: boolean;
+}
+
+export interface HistoryEntry {
+  place: FocusPlace;
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  label: string;
+  /** The publish that made it the shared place. */
+  at: string;
 }
 
 export interface SharedPlace {
@@ -857,8 +870,8 @@ export interface SharedPlace {
 
 /** One move. hello, publish and follow name the caller (surface, label); publish carries a place, follow carries `of`. */
 export interface FocusPost {
-  /** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing. */
-  op: 'hello' | 'publish' | 'follow' | 'unfollow' | 'forget';
+  /** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400). */
+  op: 'hello' | 'publish' | 'follow' | 'unfollow' | 'forget' | 'back' | 'forward';
   /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
   reader: string;
   surface?: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
@@ -891,6 +904,7 @@ export interface MorningDeck {
   agents?: TrailTally;
   /** Products that could not be read, never dropped silently. */
   skipped?: SkippedProduct[];
+  news?: DeckNews;
 }
 
 export interface ProductSummary {
@@ -917,6 +931,8 @@ export interface MorningCard {
   /** Where the card takes every follower as it is read. */
   place?: FocusPlace;
   decision?: CardDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
 }
 
 export interface CardLine {
@@ -991,6 +1007,13 @@ export interface SkippedProduct {
   why: string;
 }
 
+/** What landed after the reader opened the deck (GET ...&opened=<iso>): findings raised and items built, shown at the end, never in the part already read (added 2026-10-30, roadmap C1, optional). */
+export interface DeckNews {
+  /** The `opened` instant the news is counted from. */
+  since: string;
+  count: number;
+}
+
 /** GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap. */
 export interface AgentDeck {
   since: string;
@@ -998,6 +1021,7 @@ export interface AgentDeck {
   products: ProductSummary[];
   agents?: TrailTally;
   cards: AgentCard[];
+  news?: DeckNews;
 }
 
 export interface AgentCard {
@@ -1008,6 +1032,8 @@ export interface AgentCard {
   lines: string[];
   place?: AgentPlace;
   decision?: AgentDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
 }
 
 export interface AgentPlace {

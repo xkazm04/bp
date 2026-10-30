@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The shared focus's golden file: fixed inputs and the exact answers packages/core/src/session/focus.ts gives for the
 // rules a port must follow (readFocusPlace, sameSpot, toApply, levelOf, followingWords, and a run of focusStep moves
-// from an empty record with the view after each). It is the sync contract outside bp: Personas' follower (or any port
+// from an empty record with the view after each, history and back / forward included). It is the sync contract outside bp: Personas' follower (or any port
 // of focus.ts) runs the same inputs and must produce these bytes (docs/standard/contract-1.md). bp's side is held by
 // check:shared-focus, which fails when the committed file is not what focus.ts computes now; check:contract holds its
 // hash in packages/schema/contract.json.
@@ -46,7 +46,7 @@ const pairs: [string, FocusPlace | undefined, FocusPlace | undefined][] = [
 ];
 
 // a morning in moves: web publishes, the table follows whoever moves, an echo, a presence move, a second publisher, a
-// follow of one reader, an unfollow, a forget of the lead
+// follow of one reader, back and forward through the history, an unfollow, a forget of the lead
 const web = { reader: 'web-1', surface: 'web' as const, label: 'Web' }, vr = { reader: 'vr:table', surface: 'vr' as const, label: 'VR table' }, phone = { reader: 'phone-1', surface: 'phone' as const, label: 'Phone' };
 const moves: [string, number, FocusMove][] = [
   ['web says hello', 0, { kind: 'hello', ...web }],
@@ -59,9 +59,15 @@ const moves: [string, number, FocusMove][] = [
   ['the phone publishes a feature: rev 2, the phone leads', 6000, { kind: 'publish', ...phone, place: kettle('feature', 'kettle-boil', { say: 'Boil' }) }],
   ['web follows the phone only', 7000, { kind: 'follow', ...web, of: 'phone-1' }],
   ['the table publishes a wing: rev 3', 8000, { kind: 'publish', ...vr, place: kettle('wing', 'ops') }],
+  ['the phone steps back: a publish of the feature before (rev 4), the phone leads, the history is unchanged', 8200, { kind: 'back', ...phone }],
+  ['back again: the first room (rev 5)', 8400, { kind: 'back', ...phone }],
+  ['back at the start of the history is refused', 8500, { kind: 'back', ...phone }],
+  ['forward: the feature again (rev 6)', 8600, { kind: 'forward', ...phone }],
+  ['a publish after stepping back drops the places ahead (the wing)', 8800, { kind: 'publish', ...phone, place: kettle('room', 'stock') }],
+  ['forward at the end of the history is refused', 8900, { kind: 'forward', ...vr }],
   ['web stops following', 9000, { kind: 'unfollow', reader: 'web-1' }],
-  ['the lead forgets: it stays as the place author, unseen', 10000, { kind: 'forget', reader: 'vr:table' }],
-  ['the phone is still a reader 50 s later; web is gone from live', 60000, { kind: 'hello', ...phone }],
+  ['the lead (the phone) forgets: it stays as the place author, unseen', 10000, { kind: 'forget', reader: 'phone-1' }],
+  ['the table says hello 50 s later: it is live, web is gone from live', 60000, { kind: 'hello', ...vr }],
 ];
 
 /** The golden document, as focus.ts computes it now. */
@@ -84,6 +90,7 @@ export function focusGolden(): string {
     ['a reader that follows nobody', v(1), 'phone-1', undefined, 0],
     ['web following the phone, when the phone leads', v(8), 'web-1', 'phone-1', 1],
     ['web following the phone, when the table leads', v(9), 'web-1', 'phone-1', 2],
+    ['the table, following *, after the phone stepped back', v(10), 'vr:table', '*', 3],
     ['before anyone published', v(0), 'vr:table', '*', 0],
   ].map(([name, view, me, follows, applied]) => ({ name, view, me, follows: follows ?? null, appliedRev: applied, place: toApply(view as SharedView, me as string, follows as string | undefined, applied as number) }));
   const words = [

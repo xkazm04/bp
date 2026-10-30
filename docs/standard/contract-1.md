@@ -49,7 +49,10 @@ The place the owner is looking at, which any surface publishes and any other fol
   - `publish { place }`;
   - `follow { of: '*' | <reader id> }`;
   - `unfollow`;
-  - `forget` (on close).
+  - `forget` (on close);
+  - `back` and `forward` (rev 2): publish the previous or next place of the record's history. A step is a publish: one
+    new rev, the stepping reader leads, every follower flies; 409 when there is no place that way. A server before
+    rev 2 answers 400.
   Every visible change also goes out as `event: shared`, `data: {"type":"shared","shared":<SharedView>}`, on
   `GET /api/companion/stream`.
 - **Ids only.** A place is `{ product, target?: { kind: feature | room | wing | site, id }, level?, hash?, say? }`, never a
@@ -67,6 +70,9 @@ The place the owner is looking at, which any surface publishes and any other fol
   - A reader is shown gone after 45 s unseen and forgotten after 24 h; at most 32 are kept. A lead that forgets stays
     the place's author.
   - A place with no level reads as feature L4, room L2, wing L1, site L0 (`levelOf`).
+  - **History** (rev 2): the view carries `history`, the last 10 shared places oldest first, and `historyAt`, the index
+    of the one shared now. A step back or forward does not add to it; a publish after a step back drops the places
+    ahead, as a browser does. It lives in the record, so every surface agrees on "back". An echo adds nothing.
 - **What a client must not do.**
   - It must not publish a place it was only sent. A follower that lands somewhere reports nothing until it rests, and
     an echo is harmless.
@@ -87,9 +93,14 @@ The place the owner is looking at, which any surface publishes and any other fol
   (`morning.brief` on the MCP door), which fits the door's 8000-character result cap. A card's `id` is stable across
   reads of one morning, so a reader keeps its card by id, never by index. Today's steered decisions keep their slots,
   marked `steered`. A product that cannot be read is named in `skipped`.
+- **News during the standup** (rev 2). A reader keeps the deck's first `until` as `opened` for the morning and asks
+  with `&opened=<iso>`. What landed after it (findings raised, items built) is never put into the part already read:
+  it comes at the end, before the close card, each card marked `news`, and `deck.news.count` says how many ("1 new").
+  The ranked decisions are read as of `opened`, so a stop-ship finding raised mid-standup never takes a ranked slot.
 - **Steer.** `POST /api/companion/morning` with `{ product, proposal, verdict }` is the **human path only**: it needs the
   `x-bp-human` token, which bp hands only to its own same-origin page. `approve` writes the store through bp's
-  `decide`. `defer` and `hold` are steering-log rows only. `decline` is taken only when the card's brief recommends it
+  `decide`. `defer` and `hold` are steering-log rows only. The readable `steering-log.md` is rendered from the
+  `.jsonl` on every read of the deck, so a row another writer appends shows there and on the close card. `decline` is taken only when the card's brief recommends it
   (a repeat of a declined idea), else 409.
 - **A client decides through its own path.** Personas approves or declines through its own store path
   (`lens_scan_decide`), never through this route, and bp's next read shows the result. bp counts those decisions on the
