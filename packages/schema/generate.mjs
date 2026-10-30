@@ -64,6 +64,7 @@ const ROOTS = [
   ['plan-1.schema.json', 'Plan'],
   ['structure-envelope-1.schema.json', 'StructureEnvelope'],
   ['scan-wire-1.schema.json', 'ScanWire'],
+  ['decision-brief-1.schema.json', 'DecisionBrief'],
 ];
 const CPP_KEYWORDS = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq'
   + ' check verify ensure TEXT').split(' ')); // the last four are Unreal macros
@@ -196,6 +197,7 @@ const VOCAB_ROWS = [
   ['WAVE_NAME_MAX_LENGTH', 'scan-wire-1.schema.json', '/$defs/waveName/maxLength', 'number'],
   ['WAVE_PACKAGES_MAX_ITEMS', 'scan-wire-1.schema.json', '/$defs/wave/properties/packages/maxItems', 'number'],
   ['PROPOSAL_ID_PATTERN', 'scan-wire-1.schema.json', '/$defs/proposalId/pattern', 'pattern'],
+  ['BRIEF_MATCHES', 'decision-brief-1.schema.json', '/$defs/briefDecided/properties/match/enum', 'list'],
 ];
 const constCase = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
 const plural = (s) => (/(S|X|SH|CH)$/.test(s) ? s + 'ES' : /[^AEIOU]Y$/.test(s) ? s.slice(0, -1) + 'IES' : s + 'S');

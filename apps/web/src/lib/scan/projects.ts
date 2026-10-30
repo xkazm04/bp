@@ -90,10 +90,21 @@ export const patchProject = (slug: string, p: { name?: string; root?: string }) 
 /** Unregisters only: the repo and its `.ai/lens-scan/` stay on disk. */
 export const removeProject = (slug: string) => write(one(slug), 'DELETE');
 
+/** Open another product in place, without a reload: the page pushes the URL (projectHref's, plus `params`) and BlueprintApp
+ *  swaps the product, so the engine rebuilds while the tab, its stream connections and its shared-focus reader stay. */
+export const SWITCH_EVENT = 'bp:switch-product';
+export function switchProduct(slug: string | null, params: Record<string, string> = {}): void {
+  const u = new URL(projectHref(slug), location.origin);
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+  try { history.pushState(null, '', u.pathname + u.search); } catch { location.assign(u.pathname + u.search); return; }
+  dispatchEvent(new CustomEvent(SWITCH_EVENT, { detail: { slug } }));
+}
+
 /** The current URL with `?product` set to `slug` (null = the Kettle sample), keeping the route and every other parameter. */
 export function projectHref(slug: string | null): string {
   const u = new URL(location.href);
   if (slug) u.searchParams.set('product', slug); else u.searchParams.delete('product');
   u.hash = ''; // the hash names places in the previous product's plan
+  u.searchParams.delete('morning'); // the deck's card belongs to the page that showed it (switchProduct sets its own)
   return u.pathname + u.search;
 }

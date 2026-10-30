@@ -10,7 +10,11 @@ import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant, useWritesOn } from '../../hooks';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { BriefFacts, useBrief } from '../../Brief';
 
+
+/** How long "Decline the repeats" stays armed after its first click. */
+const REARM_MS = 5000;
 
 /** The metric move as parts for the big figure; null when the proposal names no metric. */
 function moveParts(p: Proposal, unit: string | undefined, label: string | undefined, scan: ScanSnapshot | undefined) {
@@ -32,6 +36,12 @@ export function Review() {
   const proposals = live?.product.scan?.proposals;
   const [lens, setLens] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
+  // "Decline the repeats" asks twice: a live decision is final (no route reopens it). The first click takes the ids it
+  // names, and the second declines only those (a scan delta in between adds nothing unseen); the arm lapses after
+  // REARM_MS and drops when the lens filter or the reader changes
+  const [armRepeats, setArmRepeats] = useState<string[] | null>(null), writes = useWritesOn();
+  useEffect(() => { if (!armRepeats) return; const t = setTimeout(() => setArmRepeats(null), REARM_MS); return () => clearTimeout(t); }, [armRepeats]);
+  useEffect(() => setArmRepeats(null), [lens, s.who]);
   const listRef = useListRef();
 
   // a decline draft lives until its proposal is decided (as in the classic list)
@@ -58,9 +68,6 @@ export function Review() {
   const ids = useMemo(() => items.map((d) => d.id), [items]);
   // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
   const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
-  // the open proposals whose idea (same feature + lens, or an attempt they follow) was declined before: a row mark
-  const scan = live?.product.scan;
-  const declinedBefore = useMemo(() => new Set(scan ? scan.proposals.filter((p) => p.status === 'proposed' && priorRecord(scan, p).same.some((e) => e.stage === 'declined')).map((p) => p.id) : []), [scan]);
   const cur = items.find((d) => d.id === selId) ?? items[0] ?? null;
   const onKey = useWalk(ids, cur?.id ?? null, setSelId as (id: string | null) => void, listRef);
 
@@ -91,7 +98,7 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && declinedBefore.has(p.id) && <span className="db" title="This idea was declined before: see Before you decide">declined before</span>}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && d.recNote && <span className="db" title={'The decision brief: ' + d.recNote}>declined before</span>}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
@@ -109,10 +116,28 @@ export function Review() {
     );
 
   const batches = sim.batchGroups();
+  // live: the listed open proposals (under the lens filter) the decision brief found repeating a standing decline
+  // (live-feed.ts recommends Decline on them)
+  const repeats = sim.live && writes ? items.filter((d) => d.recNote) : [];
+  // what the second click would decline: the armed ids still listed as repeats (none left = not armed, never "decline 0")
+  const stillArmed = armRepeats ? repeats.filter((d) => armRepeats.includes(d.id)) : [], armed = stillArmed.length ? stillArmed : null;
+  const declineRepeats = () => {
+    if (!armed) { setArmRepeats(repeats.map((d) => d.id)); return; }
+    setArmRepeats(null); setSelId(null); E.setHlDec(null);
+    for (const d of armed) E.decide(d.id, 1, d.recNote);
+  };
   const strip = (
     <>
       <div className="wb-count"><b>{all.length}</b><span>{sim.live ? 'open proposals' : 'open questions'}</span></div>
       <div className="wb-count t-amber"><b>{urgent}</b><span>urgent</span></div>
+      {repeats.length > 0 && (
+        <div className="wb-filter wb-repeats" role="group" aria-label="Decline the repeats">
+          <button type="button" aria-pressed={!!armed} onClick={declineRepeats}
+            title={'Each repeats an idea you declined: ' + (armed ?? repeats).map((d) => d.base).join(', ') + '. Each is declined with a note naming the decision it repeats. Final: no route reopens a decision.'}>
+            <i aria-hidden="true" />{armed ? `Click again: decline ${armed.length}, each naming its decline` : `Decline ${repeats.length} repeat${repeats.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
       {batches.length > 0 && (
         <div className="wb-filter" role="group" aria-label="Batch-decide like questions">
           {batches.map((g) => (
@@ -169,6 +194,7 @@ function PlaceActions({ d }: { d: SimDecision }) {
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
+  const brief = useBrief(d);
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
   useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
@@ -192,6 +218,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>
+        {brief && <BriefFacts b={brief} d={d} />}
         {mv && (
           <div className="wb-move" aria-label={`${mv.name}: ${mv.before ?? 'not measured'}${mv.after ? ' to ' + mv.after : ''} ${mv.unit}`}>
             <span className="nm">{mv.name}{mv.name !== mv.key && <small>{mv.key}</small>}</span>
@@ -238,7 +265,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
       </div>
       <div className="wb-act">
         {declining ? (
-          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim() || undefined); }}>
+          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim()); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
               onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); if (e.key === 'Escape') { e.preventDefault(); cancel(); } }} />
             <button type="submit" className="bt">Decline</button>
@@ -246,8 +273,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </form>
         ) : (
           <>
-            {writes ? <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>✓ Approve</button> : null}
-            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>Decline…</button> : null}
+            {writes && d.recNote ? <button type="button" className="bt go" title={'Decline, noting: ' + d.recNote} onClick={() => decide(d, 1, d.recNote)}>✓ Decline · a repeat</button> : null}
+            {writes ? <button type="button" className={'bt' + (d.recNote ? '' : ' go')} title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>{d.recNote ? 'Approve anyway' : '✓ Approve'}</button> : null}
+            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>{d.recNote ? 'My own note…' : 'Decline…'}</button> : null}
             <span className="sp" />
             <PlaceActions d={d} />
           </>
@@ -264,6 +292,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
   const f = M.P.F[d.f], bn = sim.blocksNow(d);
   const note = V.ui?.queueNote?.(d, view, M) ?? null, hn = useAnswerNote(d.id);
   const affects = d.affects.filter((id) => id !== d.f && M.P.F[id]).slice(0, 8);
+  const brief = useBrief(d);
   return (
     <>
       <div className="wb-scroll">
@@ -276,6 +305,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <div className="wb-fig"><b className="wd">{pname(M.P, d.decider)}</b><span>decides</span></div>
           <div className="wb-fig"><b className="wd">{pname(M.P, d.by)}</b><span>asked</span></div>
         </div>
+        {brief && <BriefFacts b={brief} d={d} />}
         {note && <div className="wb-note">{note}</div>}
         <Sec head="Answers" aside={d.opts.length + ' options · 1–' + d.opts.length + ' on the plan'}>
           <ol className="wb-opts">

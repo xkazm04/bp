@@ -13,6 +13,7 @@ import { livenessWords, scanLiveness } from '@bp/core/scan/liveness';
 import { SheetBody } from './FeatureSheet';
 import { Toast } from './Overlays';
 import { URG, metricMove, oncePerProposal, proposalSummary } from './Queue';
+import { BriefFacts, useBrief } from './Brief';
 import { LiveFoot } from './sheet/SheetBody';
 import { PatternDefs, StageSym } from './Symbols';
 import { ThemeToggle } from './ThemeToggle';
@@ -65,6 +66,7 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
   const [declining, setDeclining] = useState(() => drafts.has(d.base)), [note, setNote] = useState(() => drafts.get(d.base) ?? '');
   const scan = live?.product.scan, prop = sim.live ? scan?.proposals.find((x) => x.id === d.base) : undefined;
   const sum = prop ? proposalSummary(prop) : null, mv = prop ? metricMove(prop, (l, k) => P.LENS[l]?.F[k]?.unit, scan) : null;
+  const brief = useBrief(d);
   return (
     <motion.div layout={!rm} className={'ph-q u-' + d.urg} exit={rm ? { opacity: 0 } : { opacity: 0, height: 0, marginBottom: 0 }} transition={rm ? { duration: 0 } : undefined}>
       <div className="k">{d.base} · {URG[d.urg]}{sim.live && d.decider === LIVE_DECIDER ? '' : ' · ' + pname(P, d.decider)}</div>
@@ -72,17 +74,19 @@ function Question({ d, rm }: { d: SimDecision; rm: boolean }) {
       {sum && <div className="psum">{sum}</div>}
       {mv && <div className="mv">{mv}</div>}
       <div className="mt">{P.F[d.f].name} · waiting {fmtWait(sim.waitMin(d))}{sim.live ? '' : ' · holds ' + sim.blocksNow(d) + ' agent' + (sim.blocksNow(d) === 1 ? '' : 's')}</div>
+      {brief && <BriefFacts b={brief} d={d} compact />}
       {sim.live ? (
         !writes ? null : declining ? (
-          <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim() || undefined); }}>
+          <form className="dn" onSubmit={(e) => { e.preventDefault(); drafts.set(d.base, note.trim()); E.decide(d.id, 1, note.trim()); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} />
             <button type="submit" className="bt">Decline</button>
             <button type="button" className="bt" onClick={() => { drafts.delete(d.base); setNote(''); setDeclining(false); }}>Cancel</button>
           </form>
         ) : (
           <div className="row">
-            <button type="button" className="bt go" onClick={() => E.decide(d.id, 0)}>✓ Approve</button>
-            <button type="button" className="bt" onClick={() => setDeclining(true)}>Decline…</button>
+            {d.recNote ? <button type="button" className="bt go" title={'Decline, noting: ' + d.recNote} onClick={() => E.decide(d.id, 1, d.recNote)}>✓ Decline · a repeat</button> : null}
+            <button type="button" className={'bt' + (d.recNote ? '' : ' go')} onClick={() => E.decide(d.id, 0)}>{d.recNote ? 'Approve anyway' : '✓ Approve'}</button>
+            <button type="button" className="bt" onClick={() => setDeclining(true)}>{d.recNote ? 'My own note…' : 'Decline…'}</button>
           </div>
         )
       ) : d.opts.map((o, i) => <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => E.decide(d.id, i)}><i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>suggested</em>}</b><span>{o.consequence}</span></button>)}

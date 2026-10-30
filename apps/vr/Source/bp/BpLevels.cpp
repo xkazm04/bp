@@ -174,6 +174,8 @@ bool ABpTable::EnterWing(const FString& InWingId)
 	LogStep(EBpLevel::L0, EBpLevel::L1);
 	UpdateBreadcrumb();
 	KickLevels();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
 	return true;
 }
 
@@ -217,6 +219,8 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 	LogStep(EBpLevel::L1, EBpLevel::L2);
 	UpdateBreadcrumb();
 	KickLevels();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
 	return true;
 }
 
@@ -247,6 +251,7 @@ void ABpTable::Back()
 	}
 	UpdateBreadcrumb();
 	KickLevels();
+	NotePlaceMoved();
 }
 
 void ABpTable::Home()

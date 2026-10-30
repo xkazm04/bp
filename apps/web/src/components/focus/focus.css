@@ -1,0 +1,95 @@
+/* The shared focus's chip and the Morning Watch deck. Tokens only; nothing readable under 12 px. */
+
+/* ---------- the follow block: a lower third over the plan, above the base bar - the line the leader is reading (when
+   following) over the quiet chip (Following Web, 2 s ago · Stop, or Follow). The top of the plan stays the plan's. */
+#fx { position: absolute; left: 50%; bottom: calc(var(--bb) + 22px); transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: var(--sp-8); z-index: 30; pointer-events: none; }
+#fx > * { pointer-events: auto; }
+#fx-chip { display: flex; align-items: center; gap: var(--sp-8); height: var(--h-ctl-sm);
+  padding: 0 var(--sp-6) 0 var(--sp-10); border: 1px solid var(--ink-3); border-radius: 999px; background: color-mix(in srgb, var(--panel-solid) 88%, transparent);
+  font: 500 var(--fs-13)/1 var(--mono); color: var(--ink-2); letter-spacing: 0.02em; white-space: nowrap; }
+#fx-chip.on { border-color: color-mix(in srgb, var(--mint) 60%, var(--ink-3)); color: var(--ink-hi); }
+#fx-chip .w.muted { color: var(--ink-2); }
+/* the line the leader is reading (a Morning card's headline), as a lower third over the plan on every following screen */
+#fx-say { width: max-content; max-width: min(760px, 62vw); pointer-events: none;
+  padding: var(--sp-10) var(--sp-18) var(--sp-12); background: var(--panel-solid); border: 1px solid var(--ink-3); border-left: 3px solid var(--mint); box-shadow: 0 18px 50px var(--shadow);
+  font: 600 var(--fs-20)/1.3 var(--sans); color: var(--ink-hi); animation: fx-say 0.5s ease-out 1; }
+#fx-say small { display: block; margin-bottom: 4px; font: 500 var(--fs-12)/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--mint); }
+@keyframes fx-say { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+#fx-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint) 60%, transparent); animation: fx-arrive 1.2s ease-out 1; }
+#fx-chip .fx-bt { height: calc(var(--h-ctl-sm) - 8px); padding: 0 var(--sp-10); border: 1px solid var(--ink-3); border-radius: 999px; background: transparent; font: 500 var(--fs-12)/1 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink); }
+#fx-chip .fx-bt:hover { border-color: var(--accent); color: var(--ink-hi); }
+@keyframes fx-arrive { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--mint) 70%, transparent); } 100% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) { #fx-chip .dot, #fx-say { animation: none; } }
+
+/* ---------- the Morning Watch deck: a card on the left, the plan flies behind it */
+#mw { position: absolute; left: 18px; top: 92px; bottom: 132px; width: min(460px, calc(100% - 140px)); display: flex; flex-direction: column; z-index: 35;
+  background: var(--panel-solid); border: 1px solid var(--ink-3); box-shadow: 0 24px 80px var(--shadow); }
+#mw:focus { outline: none; }
+#mw .mw-top { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-8); padding: var(--sp-14) var(--sp-18) var(--sp-8); border-bottom: 1px solid var(--ink-4); }
+#mw .kk { font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
+#mw .mw-voice { flex: none; padding: 2px 8px; border: 1px solid var(--ink-3); border-radius: 999px; background: none; font: 500 var(--fs-12)/1.2 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+#mw .mw-voice.on { border-color: var(--mint); color: var(--mint); }
+#mw .who { font: 500 var(--fs-12)/1.2 var(--mono); color: var(--ink-2); text-align: right; }
+#mw .who b { color: var(--mint); font-weight: 500; }
+#mw .bar { display: flex; gap: 3px; padding: var(--sp-8) var(--sp-18) 0; }
+#mw .bar button { flex: 1; height: 6px; min-width: 6px; padding: 0; border: 0; background: var(--ink-4); }
+#mw .bar button.done { background: var(--ink-3); }
+#mw .bar button.cur { background: var(--accent); }
+#mw .bar button.d { background: color-mix(in srgb, var(--amber) 55%, var(--ink-4)); }
+#mw .bar button.d.cur { background: var(--amber-2); }
+#mw .bar button.ok { background: var(--mint); }
+#mw .prod { display: flex; gap: var(--sp-10); padding: var(--sp-6) var(--sp-18) 0; font: 500 var(--fs-12)/1.3 var(--mono); color: var(--ink-2); flex-wrap: wrap; }
+#mw .prod span.here { color: var(--ink-hi); }
+#mw .card { flex: 1; overflow: auto; padding: var(--sp-16) var(--sp-18) var(--sp-10); }
+#mw .card .tag { display: inline-block; font: 500 var(--fs-12)/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 8px; border: 1px solid var(--ink-3); color: var(--ink-2); }
+#mw .card .tag.good { color: var(--mint); border-color: var(--mint); } #mw .card .tag.warn { color: var(--amber-2); border-color: var(--amber-2); } #mw .card .tag.bad { color: var(--red-2); border-color: var(--red-2); }
+#mw .card h2 { margin: var(--sp-10) 0 var(--sp-12); font: 600 var(--fs-26)/1.15 var(--sans); color: var(--ink-hi); }
+#mw .card ul { list-style: none; margin: 0; padding: 0; }
+#mw .card li { padding: var(--sp-6) 0 var(--sp-6) var(--sp-14); border-top: 1px solid var(--ink-4); font-size: var(--fs-14); line-height: var(--lh-read); color: var(--ink); position: relative; }
+#mw .card li:before { content: ''; position: absolute; left: 0; top: 13px; width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
+#mw .card li.good:before { background: var(--mint); } #mw .card li.warn:before { background: var(--amber); } #mw .card li.bad:before { background: var(--red); }
+#mw .pf { width: 100%; margin-top: var(--sp-14); border-collapse: collapse; font: 500 var(--fs-13)/1.3 var(--mono); }
+#mw .pf th { text-align: right; font-weight: 500; font-size: var(--fs-12); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); padding: 0 0 var(--sp-6) var(--sp-8); border-bottom: 1px solid var(--ink-3); }
+#mw .pf th:first-child, #mw .pf td:first-child { text-align: left; padding-left: 0; }
+#mw .pf td { text-align: right; padding: var(--sp-8) 0 var(--sp-8) var(--sp-8); border-bottom: 1px solid var(--ink-4); color: var(--ink-2); }
+#mw .pf tr { cursor: pointer; }
+#mw .pf tr:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#mw .pf td button { padding: 0; border: 0; background: none; font: 600 var(--fs-14)/1.3 var(--sans); color: var(--ink-hi); text-align: left; }
+#mw .pf td.good { color: var(--mint); } #mw .pf td.bad { color: var(--red-2); } #mw .pf td.warn { color: var(--amber-2); }
+#mw .card .where { margin-top: var(--sp-12); font: 500 var(--fs-12)/1.3 var(--mono); color: var(--ink-2); }
+#mw .card .steered { margin-top: var(--sp-12); padding: var(--sp-8) var(--sp-10); border-left: 3px solid var(--mint); font-size: var(--fs-14); color: var(--ink-hi); background: color-mix(in srgb, var(--mint) 10%, transparent); }
+#mw .card .steered.err { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); }
+#mw .act { display: flex; gap: var(--sp-8); padding: var(--sp-10) var(--sp-18); border-top: 1px solid var(--ink-4); }
+#mw .act .bt { flex: 1; height: var(--h-ctl); display: flex; align-items: center; justify-content: center; gap: var(--sp-8); font-size: var(--fs-14); }
+#mw .act .bt kbd { font: 600 var(--fs-12)/1 var(--mono); padding: 3px 6px; border: 1px solid var(--ink-3); border-radius: 3px; color: var(--ink-2); }
+#mw .act .bt.go { border-color: var(--mint); }
+#mw .act .bt[disabled] { opacity: 0.45; cursor: default; }
+#mw .keys { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-10); padding: 0 var(--sp-18) var(--sp-12); font: 500 var(--fs-12)/1.4 var(--mono); color: var(--ink-2); }
+#mw .act .bt.go kbd { color: var(--on-mint); border-color: color-mix(in srgb, var(--on-mint) 45%, transparent); }
+#mw .keys b { color: var(--ink); font-weight: 600; }
+#mw-launch { position: absolute; left: 18px; bottom: 140px; z-index: 30; display: flex; align-items: center; gap: var(--sp-8); height: var(--h-ctl-sm); padding: 0 var(--sp-8) 0 var(--sp-10);
+  border: 1px solid var(--ink-3); background: var(--panel-solid); font: 500 var(--fs-13)/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+#mw-launch:hover { border-color: var(--amber-2); color: var(--ink-hi); }
+#mw-launch i { width: 10px; height: 10px; border-radius: 50%; background: var(--amber-2); box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 70%, transparent); }
+#mw-launch kbd { font: 600 var(--fs-12)/1 var(--mono); padding: 3px 6px; border: 1px solid var(--ink-3); border-radius: 3px; color: var(--ink-2); }
+
+/* ---------- the phone: the deck is the clicker, full screen; big touch targets */
+.bp-phone #mw { position: fixed; inset: 0; width: auto; top: 0; bottom: 0; left: 0; border: 0; box-shadow: none; z-index: 60; }
+.bp-phone #mw .card h2 { font-size: var(--fs-24); }
+.bp-phone #mw .act .bt { height: var(--h-touch); font-size: var(--fs-16); }
+.bp-phone #mw .keys { display: none; }
+.bp-phone #mw-launch { position: fixed; left: 12px; right: 12px; bottom: 12px; height: var(--h-touch); z-index: 50; font-size: var(--fs-16); background: var(--panel-solid); border: 1px solid var(--mint); }
+
+/* ---------- the decision card's brief (decision-brief.css), inside the deck: plain lines, no deck bullets */
+#mw .card .mw-brief { margin: var(--sp-12) 0 0; }
+#mw .card .mw-brief li { padding: 0; border-top: 0; font-size: var(--fs-13); line-height: 1.4; }
+#mw .card .mw-brief li:before { content: none; }
+#mw .act .bt.rec { flex: 1.4; border-color: var(--amber-2); background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--ink-hi); }
+#mw .act .bt.rec kbd { color: var(--amber-2); border-color: var(--amber-2); }
+.bp-phone #mw .act { flex-wrap: wrap; }
+.bp-phone #mw .act .bt.rec { flex: 1 1 100%; }
+/* a follower's lower third: the line being read, then the brief's short line under it (a decision card's memory) */
+#fx-say .l2 { display: block; margin-top: 6px; font: 500 var(--fs-14)/1.35 var(--sans); color: var(--amber-2); }
+/* while the Morning Watch reads (or a follower shows its line), its agents card says what the cards slip says: the slip
+   steps aside off the plan and the lower third */
+:root:has(#mw) .cp-trail, :root:has(#fx-say) .cp-trail { display: none; }

@@ -10,7 +10,8 @@
 // engine really flies to the next place behind this overlay, and stays there if you close after the headset came off).
 // The mock parts: the room, the studio and the lamp are sketches; the baton is simulated in this page.
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useEngine } from '../hooks';
+import { useEngine, useLive } from '../hooks';
+import { briefOfDecision } from '../Brief';
 import { GENERAL } from '@bp/core/data/types';
 import { STAGE_WORD } from '@bp/core/model';
 import { END, FOCUSED, STATES, designClock, sceneAt, smooth, stateAt, stateIndex, tOf, xOf } from './timeline';
@@ -30,7 +31,7 @@ interface Prep {
   /** Unpaired, the APK opens its bundled Kettle at home: the site plan, whatever the page's place. */
   tableHome: string; risesHome: Rise[]; lightsHome: Light[];
   /** A decision waiting in this room (else the queue's first): the lamp holds it in VR; it is answered on the desk. */
-  card: { q: string; feature: string; lens: string; urg: string } | null;
+  card: { q: string; feature: string; lens: string; urg: string; brief: string[] } | null;
 }
 
 const MARK_LABEL: Record<Mark, string> = { real: 'real', measured: 'measured', documented: 'documented', unverified: '[unverified]', new: 'NEW', mock: 'mock' };
@@ -49,7 +50,7 @@ const sub = (p: CrossPlace) => ['L' + p.level, p.level === 4 ? 'feature sheet' :
 const jpeg = (c: HTMLCanvasElement) => c.toDataURL('image/jpeg', 0.9);
 
 export default function Crossing({ onClose }: { onClose: (left?: string) => void }) {
-  const E = useEngine();
+  const E = useEngine(), liveScan = useRef(useLive()?.product.scan);
   const [prep, setPrep] = useState<Prep | null>(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -95,7 +96,8 @@ export default function Crossing({ onClose }: { onClose: (left?: string) => void
       }
       const sim = E.M.sim, open = sim.has ? sim.queueFor(null, GENERAL).all : [];
       const d = open.find((x) => a.room?.feats.some((f) => f.id === x.f)) ?? open[0];
-      const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg } : null;
+      // the decision brief the desk card shows, at the line budget the VR card shares (scan/brief.ts BRIEF_LINES)
+      const card = d ? { q: d.q, feature: E.M.P.F[d.f]?.name ?? d.f, lens: E.M.P.LENS[d.lens]?.name ?? d.lens, urg: d.urg, brief: briefOfDecision(E.M, d, liveScan.current)?.lines ?? [] } : null;
       const TH = drawTable(E, { ...a, level: 0, wing: null, room: null, bay: null, tile: null, crumbs: [a.crumbs[0]], name: a.crumbs[0] + ' · home' }, null);
       const out: Prep = { a, next, pageA, pageB, tableA: jpeg(TA.canvas), tableB, rises: TA.rises, risesB, lights: TA.lights,
         tableHome: jpeg(TH.canvas), risesHome: TH.rises, lightsHome: TH.lights, card };
@@ -369,6 +371,7 @@ function Stage({ prep, t, k, paired, cere, onCere }: { prep: Prep; t: number; k:
             <span className="cx-card-k">Decision · {prep.card.lens} · {prep.card.urg}</span>
             <b>{prep.card.q}</b>
             <span className="cx-card-f">on {prep.card.feature}</span>
+            {prep.card.brief.length > 0 && <ul className="cx-card-brief" aria-label="Decision brief">{prep.card.brief.map((l) => <li key={l}>{l}</li>)}<li className="cx-card-mock">the desk card's brief, as BpLink would draw it · [mock] BpLink's card is not built</li></ul>}
             <span className="cx-card-desk">Answer it on your desk: only bp’s page holds the x-bp-human token. Peek, and click it there.</span>
           </div>
         )}

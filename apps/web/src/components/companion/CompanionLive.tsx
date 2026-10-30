@@ -19,8 +19,10 @@ import { lampFor, type LampProps, type LampSkin } from './lamps';
 import { activeTurn, createStore, deriveLamp, nextDeadline, PENDING, pendingCards, runningLocal } from './store';
 import { answerCard, connect, loadCards, sendTurn, stopTurn } from './stream';
 import { PLACE_EVENT } from '../crossing/follow';
+import { SHARED_EVENT } from '@/lib/focus/shared';
 import { planFocus, runFocus, targetRect, type Rect } from './focus';
 import { Cards, Notice } from './Cards';
+import { AgentTrail } from './AgentTrail';
 import { hush, speak } from './voice';
 import { VoiceToggle } from './VoiceToggle';
 import './companion.css';
@@ -82,7 +84,7 @@ function LiveLamp({ skin, product }: { skin: LampSkin; product: string }) {
   const [ticks, tick] = useState(0);
 
   // the place baton rides the same stream; the crossing's host (main chunk) follows it, so it is handed on as a window event
-  useEffect(() => connect(store, { onOpen: () => void loadCards(store), onPlace: (baton) => window.dispatchEvent(new CustomEvent(PLACE_EVENT, { detail: baton })) }), []);
+  useEffect(() => connect(store, { onOpen: () => void loadCards(store), onPlace: (baton) => window.dispatchEvent(new CustomEvent(PLACE_EVENT, { detail: baton })), onShared: (v) => window.dispatchEvent(new CustomEvent(SHARED_EVENT, { detail: v })) }), []);
   // the derived state moves on its own when a pointing window ends or a card or notice expires
   useEffect(() => {
     const d = nextDeadline(s, Date.now()); if (d === null) return;
@@ -160,6 +162,7 @@ function LiveLamp({ skin, product }: { skin: LampSkin; product: string }) {
       <skin.Component {...props} />
       <div className="cp-side">
         <AnimatePresence>{away && <Notice key={away.n} text={away.text} href={away.href} onClose={() => setAway(null)} />}</AnimatePresence>
+        <AgentTrail product={product} />
         {!skin.ownsCards && <Cards cards={s.cards} onCard={onCard} />}
         {!skin.ownsVoice && <VoiceToggle />}
       </div>

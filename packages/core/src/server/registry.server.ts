@@ -6,7 +6,7 @@
 // Server-only: the route handlers under packages/core/src/server/api/products import it.
 import fs from 'node:fs';
 import path from 'node:path';
-import { PRODUCTS_FILE, writeAtomic } from './products.server';
+import { PRODUCTS_FILE, productsPath, writeAtomic } from './products.server';
 import { RESERVED_SLUGS, SLUG_RE } from '../scan/readiness';
 import { isObj } from '@bp/core/scan/guards';
 
@@ -17,7 +17,7 @@ type Entry = Record<string, unknown> & { slug?: unknown; name?: unknown; root?: 
 type Doc = Record<string, unknown> & { products: Entry[] };
 
 const fail = (status: 400 | 403 | 404 | 409 | 500, error: string): { ok: false; status: typeof status; error: string } => ({ ok: false, status, error });
-const file = (): string => path.join(/* turbopackIgnore: true */ process.cwd(), PRODUCTS_FILE);
+const file = (): string => productsPath();
 
 function readDoc(): RegistryResult<Doc> {
   let text: string;

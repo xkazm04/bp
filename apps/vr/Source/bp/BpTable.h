@@ -532,6 +532,8 @@ public:
 	/** The decision card: shows the open finding it asks about (the lifted room's first, else the first in store order),
 	 *  or hides. */
 	void ShowCard(bool bShow);
+	/** The card asks about this open finding (BpCard.Ask <id>), ahead of the room rule; empty goes back to the rule. */
+	void AskCard(const FString& ProposalId);
 	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
 	void StartScan(const FString& Id, const FString& Lens);
 
@@ -660,6 +662,47 @@ public:
 	static constexpr float TextCardWidthCm = 46.f;
 	static constexpr float TextCardHeightCm = 46.f;
 	static constexpr float TextCardPxPerCm = 21.f;
+
+	// ---- The shared focus, followed (BpFollow.cpp; the "one place" morning) ----------------------------------------------
+	/** Goes where another surface says the owner is looking (BpLink's OnFollow), the way the table's own routes go: a room
+	 *  (or a bay's room, or a feature's) in room mode, a wing by its lift, the site plan home. The view never moves. Each
+	 *  target id is looked up as a room, a bay, a wing, then a feature (a demo product's room is a Kettle bay); an id that
+	 *  is none of them keeps the table where it is and only the caption changes. */
+	void Follow(const struct FBpFollowPlace& Place);
+	/** A follow's pace (an ease, never a jump): from the site plan the room's column rises over LevelEaseS, holds
+	 *  FollowLiftHoldS and the paper cross-fades to the room's map over FollowFadeS (about a second in all); from another
+	 *  room's map each half of the fade takes FollowSwitchFadeS. */
+	static constexpr float FollowFadeS = 0.5f;
+	static constexpr float FollowLiftHoldS = 0.15f;
+	static constexpr float FollowSwitchFadeS = 0.35f;
+	/** The quiet caption ("Following Web", then the place): a small glass plate FollowCaptionWidthCm x FollowCaptionHeightCm
+	 *  standing on the frame's near rim, a little right of centre (FollowCaptionXCm, FollowCaptionYCm, its centre
+	 *  FollowCaptionAboveTopCm over the top; the table's axes), square to the target view so it reads level: under the
+	 *  breadcrumb and off the paper, where a drafting table keeps its name plate. Its two lines' caps are FollowCaptionCapCm
+	 *  and FollowCaptionPlaceCapCm (both over the 12 px floor from the target eye), drawn at FollowCaptionPxPerCm, faded in
+	 *  over FollowCaptionFadeS. */
+	static constexpr float FollowCaptionWidthCm = 24.f;
+	static constexpr float FollowCaptionHeightCm = 4.8f;
+	static constexpr float FollowCaptionXCm = -46.f;
+	static constexpr float FollowCaptionYCm = 16.f;
+	static constexpr float FollowCaptionAboveTopCm = 2.5f;
+	static constexpr float FollowCaptionCapCm = 1.0f;
+	static constexpr float FollowCaptionPlaceCapCm = 0.9f;
+	static constexpr float FollowCaptionPxPerCm = 24.f;
+	static constexpr float FollowCaptionFadeS = 0.4f;
+	/** The caption's lines as shown (empty while nothing was followed). */
+	FString GetFollowLine() const { return FollowLine; }
+
+	// ---- The shared focus, published (BpFollow.cpp): the owner moves the table, the web flies there ------------------------
+	/** Every move of the table's place by the owner (a room or wing entered, back, home: by hand, wrist, lamp, deck or
+	 *  console) ends in the navigation primitives (EnterWing, EnterRoom, Back, EnterRoomMode, ExitRoomMode), which call
+	 *  NotePlaceMoved. Once the table has rested PublishSettleS on one place, it goes to BpLink.PublishPlace: a room
+	 *  (room mode, or a room lifted at L2) at L2, a wing at L1, the site at L0, with the room's or wing's name to say.
+	 *  Never while a followed place is being applied (Follow), and a follow cancels a move still settling. */
+	static constexpr float PublishSettleS = 0.4f;
+	/** BpLink.Goto <room id|wing id|site>: the table goes there the way a person sends it (a room by the wrist's switch, a
+	 *  wing by its lift, the site home), so the move is published. False for an id the plan does not hold. */
+	bool Goto(const FString& Id);
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -1107,6 +1150,19 @@ private:
 	void SetScanPlace(const TArray<FString>& Features, bool bAll);
 	bool bCardShown = false;
 	FString CardProposal;
+	/** BpCard.Ask <proposal id>: the open finding the card asks about, ahead of the room rule (empty: the rule). */
+	FString CardAskId;
+	/** The card's decision brief (BpLink FetchBrief -> the generated FBpDecisionBrief), as the card draws it: the finding it
+	 *  is for, its lines (at most 5 of 120), which line is the quoted decline (INDEX_NONE: none), whether it repeats a
+	 *  declined idea (advice withdraw: Decline is the recommended answer) and the note that Decline carries
+	 *  ("Repeats <id>, declined <at>: ..."; core's repeatNote). A likeness (advice ask) is drawn but recommends nothing. */
+	FString BriefFor;
+	bool bBriefRead = false;
+	TArray<FString> BriefLines;
+	int32 BriefDeclinedLine = INDEX_NONE;
+	bool bBriefRepeat = false;
+	FString BriefRepeatNote;
+	void RequestCardBrief(const FString& ProposalId);
 
 	// ---- Room mode state (BpRoom.cpp) ---------------------------------------------------------------------------------
 	/** The room asked for (empty: the site plan), the room whose map is drawn, and the fade between them (0 the site plan,
@@ -1365,6 +1421,40 @@ private:
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
 	FDelegateHandle ScanHandle;
+
+	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
+	FDelegateHandle FollowHandle;
+	void InitFollow();
+	/** Sends the owner's settled move (PublishSettleS), then TickFollowCaption; true while either still has to run. */
+	bool TickFollow(float DeltaSeconds);
+	/** The caption's fade and a followed feature's deck focus; true while the caption fades. */
+	bool TickFollowCaption(float DeltaSeconds);
+	/** A follow that came before the plan: ApplyPlan takes BpLink's last place when it lands. */
+	bool bFollowPending = false;
+	/** EnterRoomMode is running for a follow (it then takes the lift entry and the follow's pace). */
+	bool bFollowEntering = false;
+	/** The pace of the room-mode change under way: the fade and the lift's hold in seconds (0 and -1: the cvars'). */
+	float RoomFadeNowS = 0.f;
+	float RoomHoldNowS = -1.f;
+	/** The feature (or the bay, by its first feature in the deck) whose screen comes to the front once its room's map has
+	 *  settled. */
+	FString FollowFeature;
+	FString FollowBay;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> FollowCaption;
+	FString FollowLine;
+	float FollowCaptionAlpha = 0.f;
+	void ShowFollowCaption(const FString& Who, const FString& Where);
+	/** The caption's two lines (ShowFollowCaption's "Following <who>", or a publish's "Shared from this table"). */
+	void ShowCaption(const FString& Line1, const FString& Where);
+	void ApplyFollowCaption();
+	/** Follow is applying a place: the navigation it calls is not the owner's, so nothing is published. */
+	bool bFollowApplying = false;
+	/** The owner's move waits to settle until this real time (seconds); negative while none waits. */
+	double PublishAtS = -1.0;
+	void NotePlaceMoved();
+	/** Sends the place the table rests on now (BpLink.PublishPlace) and, when it went, says so on the caption. */
+	void PublishRestingPlace();
 
 	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
 	UPROPERTY(Transient)

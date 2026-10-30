@@ -87,6 +87,29 @@ struct BPLINK_API FBpScanState
 /** Fired on the game thread when a poll brought back something new. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
 
+/** The shared focus ("one place"): the place the owner is looking at, as another surface published it (GET /api/session/focus,
+ *  packages/core/src/session/focus.ts SharedView.shared). Ids only, never a selection. */
+struct BPLINK_API FBpFollowPlace
+{
+	/** The product it was published on (place.product). A demo product is a copy of Kettle's map, so its ids are the plan's. */
+	FString Product;
+	/** place.target: feature, room, wing or site; empty when the place is the product as a whole. */
+	FString Kind;
+	FString Id;
+	/** place.level (L0..L4) and place.say (one plain line), when the publisher sent them. */
+	FString Level;
+	FString Say;
+	/** Who put it there: the reader's id, its surface (web, phone, morning...) and its label ("Web"). */
+	FString Reader;
+	FString Surface;
+	FString Label;
+	/** The record's rev that made it the shared place. */
+	int32 Rev = 0;
+};
+
+/** Fired on the game thread when the shared focus moved to a place another reader published, while BpLink follows. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpFollow, const FBpFollowPlace&);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -165,10 +188,75 @@ public:
 	/** The same for several findings in one write (WP3's lasso): the ones no draft holds yet go in together, so a second write
 	 *  never patches packages the waves have not read back. */
 	void AddToDraft(const TArray<FString>& ProposalIds, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone);
+	/** GET .../proposals/<id>/brief: the decision brief of one finding (packages/core/src/scan/brief.ts, the decision-brief-1
+	 *  wire), read with BpSchema::FromJson into the generated FBpDecisionBrief - the same lines the web's decision card, the
+	 *  Morning Watch and an agent's plan.brief read. OnDone(false) offline (the bundle has no briefs) or on any failure. A
+	 *  read only: the table writes no decision. Game thread. */
+	void FetchBrief(const FString& ProposalId, TFunction<void(bool bOk, const FBpDecisionBrief& Brief)> OnDone);
+
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
 
+	/** The shared focus, followed (packages/core/src/session/focus.ts): BpLink is the reader FollowReader on surface `vr`,
+	 *  says `follow *` once (and again whenever the record no longer shows it following), `hello` every FollowHelloS,
+	 *  and reads GET /api/session/focus every FollowPollS. A new rev whose place another reader published fires OnFollow;
+	 *  a rev the table published itself never does (and the server makes no rev for a place that is already the shared
+	 *  one). Off with no server to ask (the bundle). */
+	static constexpr float FollowPollS = 1.f;
+	static constexpr float FollowHelloS = 15.f;
+	static const TCHAR* const FollowReader;
+	FOnBpFollow& OnFollow() { return FollowDelegate; }
+	/** The last place followed, or null while none has been: a table that begins play later goes there at once. */
+	const FBpFollowPlace* GetFollowPlace() const { return bHasFollowPlace ? &FollowPlace : nullptr; }
+	bool IsFollowing() const { return bFollowing; }
+	/** BpLink.Follow on|off: off says `unfollow` and stops applying; on says `follow *` and applies the shared place as it
+	 *  stands, if another reader published it. */
+	void SetFollowing(bool bOn);
+
+	/** The table's own place, published (the other half of "one place": the owner moves on the table, the web flies
+	 *  there). POST /api/session/focus { op: publish, reader FollowReader, surface vr, label, place: { product, target?,
+	 *  level, say? } } with Place's Product (empty: GetProductSlug()), Kind and Id (empty or `site`: no target), Level and
+	 *  Say. The caller (the table) settles first and never calls it for a place it is following. Skipped, and false, when
+	 *  publishing is off, BpLink reads the bundle, or the place is the shared focus already (the last rev read, or our own
+	 *  publish in flight): so a followed place never goes back as news. True when the place is sent (or queued behind a
+	 *  publish still out: the newest wins). */
+	bool PublishPlace(const FBpFollowPlace& Place);
+	bool IsPublishing() const { return bPublishing; }
+	/** BpLink.Publish on|off: whether the table's own moves become the shared focus. */
+	void SetPublishing(bool bOn);
+
 private:
+	void SendPublish(const FBpFollowPlace& Place);
+	/** The shared focus as last read or published (product, kind, id): the echo rule's "already the shared one". */
+	FBpFollowPlace SharedSpot;
+	bool bHasSharedSpot = false;
+	bool bPublishing = true;
+	bool bPublishOut = false;
+	/** A publish that came while one was out: sent when it answers. */
+	FBpFollowPlace NextPublish;
+	bool bHasNextPublish = false;
+
+	bool TickFollow(float DeltaSeconds);
+	/** POST /api/session/focus { op, reader, surface, label[, of] } as FollowReader. */
+	void SendFollowOp(const TCHAR* Op);
+	void ReceiveFollowView(const FString& Body);
+
+	FOnBpFollow FollowDelegate;
+	FTSTicker::FDelegateHandle FollowTicker;
+	FBpFollowPlace FollowPlace;
+	bool bHasFollowPlace = false;
+	bool bFollowing = true;
+	/** The server has our `follow *` (it answered 200), so the poll only reads. */
+	bool bFollowSaid = false;
+	bool bFollowPollOut = false;
+	bool bFollowOpOut = false;
+	/** The rev last read; -1 before the first read, so the place standing when VR starts is followed too. */
+	int32 FollowRev = -1;
+	double NextFollowPollS = 0.0;
+	double NextFollowHelloS = 0.0;
+	/** The poll's "no server" is logged once per outage, not every second. */
+	bool bFollowUnreachableLogged = false;
+
 	/** The one door for wave writes: POST .../waves or PATCH .../waves/<id>, nothing else. A dispatch, a DELETE or any other
 	 *  route is refused and logged, on every product (the owner's ruling: no dispatch from VR). */
 	void SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32 Status, const FString& Body)> OnDone);

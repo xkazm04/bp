@@ -27,14 +27,15 @@ import ts from 'typescript';
 /** The pairs compared: [generated interface, hand-written type]. */
 export const PAIRS = [['AppStructure', 'AppStructure'], ['AppStructureEvent', 'StructureEvent'], ['LensManifest', 'LensManifest']];
 /** The pairs read out of packages/core/src (see wireSource): ScanDelta is the snapshot's type under another name. */
-export const WIRE_PAIRS = [['ScanSnapshot', 'ScanSnapshot'], ['ScanSnapshot', 'ScanDelta'], ['ScanJob', 'ScanJob'], ['Proposal', 'Proposal'], ['Wave', 'Wave'], ['Plan', 'Plan']];
+export const WIRE_PAIRS = [['ScanSnapshot', 'ScanSnapshot'], ['ScanSnapshot', 'ScanDelta'], ['ScanJob', 'ScanJob'], ['Proposal', 'Proposal'], ['Wave', 'Wave'], ['Plan', 'Plan'], ['DecisionBrief', 'Brief']];
 
 /** A module that re-exports the hand-written scan wire types from their files; `root` is the repo root. */
 export function wireSource(root) {
   const at = (f) => `${root.replace(/\\/g, '/')}/packages/core/src/scan/${f}`;
   return [`export type { ScanSnapshot, ScanDelta, Proposal } from '${at('types.ts')}';`,
     `export type { ScanJob } from '${at('jobs.ts')}';`, `export type { Wave } from '${at('waves.ts')}';`,
-    `export type { Plan } from '${root.replace(/\\/g, '/')}/packages/core/src/server/plan-projection.ts';`, ''].join('\n');
+    `export type { Plan } from '${root.replace(/\\/g, '/')}/packages/core/src/server/plan-projection.ts';`,
+    `export type { Brief } from '${at('brief.ts')}';`, ''].join('\n');
 }
 
 /**

@@ -346,12 +346,20 @@ export class Engine {
     this.placeKey = ''; this.cache.invalidate(); this.dirty();
   }
   private lastFit = false;
+  /** A panel docked over the plan's left edge (the Morning Watch deck), in UI px: every fit frames to its right. 0 = none. */
+  private insetL = 0;
+  setInsetLeft(px: number) {
+    if (px === this.insetL) return;
+    const atHome = this.cam.near(this.HOME, 0.03, 8);
+    this.insetL = px; this.layoutChrome(); this.computeHome();
+    if (atHome && !this.S.open) this.cam.flyTo(this.HOME);
+  }
   private layoutChrome() {
     const w = this.FW, h = this.FH, U = this.U, bb = baseHeight(this.S);
     this.listenForce = true;
     this.ui.style.setProperty('--bb', bb + 'px');
     this.ui.style.setProperty('--rw', railWidth(this.S) + 'px');
-    this.SAFE = { l: 12 * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
+    this.SAFE = { l: Math.max(12, this.insetL) * U, t: 74 * U, b: h - (bb - 2) * U, r: w - railWidth(this.S) * U };
     this.ui.style.setProperty('--cx', (this.SAFE.l + this.SAFE.r) / 2 / U + 'px');
     this.ui.style.setProperty('--sw', Math.max(300, (this.SAFE.r - this.SAFE.l) / U - 20) + 'px');
   }
@@ -873,6 +881,9 @@ export class Engine {
     if (this.S.hlOpt) this.store.set({ hlOpt: null });
     this.scheduleSimSync(true); this.forceStatic();
     if (!live || !sim.live || !d || !open) return;
+    // a Decline taken on the brief's recommendation (its option, Enter, its digit) names the decision it repeats. `note`
+    // undefined = the caller chose an option and said nothing; '' = the person's own note form, sent empty: never filled in
+    note ??= oi === d.rec && oi === 1 ? d.recNote : undefined;
     const pid = d.base, body = { decision: oi === 0 ? 'approve' as const : 'decline' as const, ...(note ? { note } : {}) };
     // the tile's track takes over from the question at once: saving, then the store's row (a 409: the decision it holds)
     const tracks = this.M.tracks, sent = tracks ? tracks.decide(pid, body, (i, b) => live.decide(i, b)) : live.decide(pid, body);

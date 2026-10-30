@@ -29,6 +29,10 @@
 #flyout.wide .wb-filter button i { width: 9px; height: 9px; background: var(--lens); }
 #flyout.wide .wb-filter button:hover { color: var(--ink-hi); border-color: var(--ink); }
 #flyout.wide .wb-filter button[aria-pressed='true'] { color: var(--ink-hi); border-color: var(--ink); background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: inset 0 -2px 0 var(--accent); }
+/* the decision brief's repeats (review.tsx): amber, as the brief's declined line; armed = the second click declines them */
+#flyout.wide .wb-repeats button { color: var(--amber-2); border-color: var(--amber); }
+#flyout.wide .wb-repeats button i { background: var(--amber); }
+#flyout.wide .wb-repeats button[aria-pressed='true'] { color: var(--ink-hi); border-color: var(--amber); background: color-mix(in srgb, var(--amber) 22%, transparent); box-shadow: inset 0 -2px 0 var(--amber); }
 #flyout.wide .wb-strip .bt { height: 32px; }
 
 /* ---------- panes */

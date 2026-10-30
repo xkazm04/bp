@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/decision-brief-1.schema.json",
+  "title": "Decision brief v1",
+  "description": "GET /api/products/{slug}/proposals/{id}/brief and GET /api/companion/brief (the plan.brief tool): the context of one decision, computed once in core (packages/core/src/scan/brief.ts) for every reader - the web decision card, the VR decision card (BpLink), Personas' card and agents. Four facts, each with the ids that back it: blast radius from the plan, precedent from decided rows (the owner's declines quoted), reversibility, cost from finished builds. Thin evidence is said in the words, never filled in. `lines` is the brief in plain words under a fixed budget (at most 5 lines of at most 120 characters): a small card shows exactly these. Absent values are omitted, never null.",
+  "type": "object",
+  "required": ["v", "subject", "blast", "precedent", "declines", "reversible", "cost", "advice", "facts", "lines"],
+  "additionalProperties": false,
+  "properties": {
+    "v": { "const": 1 },
+    "subject": { "$ref": "#/$defs/briefSubject" },
+    "blast": { "$ref": "#/$defs/briefBlast" },
+    "precedent": { "$ref": "#/$defs/briefPrecedent" },
+    "declines": { "type": "array", "items": { "$ref": "#/$defs/briefDecided" }, "description": "The declines that match the idea (not merely its lens), latest first, one per standard, with the owner's note." },
+    "reversible": { "$ref": "#/$defs/briefReversible" },
+    "cost": { "$ref": "#/$defs/briefCost" },
+    "advice": { "$ref": "#/$defs/briefAdvice" },
+    "facts": { "type": "array", "maxItems": 5, "items": { "$ref": "#/$defs/briefFact" } },
+    "lines": { "type": "array", "maxItems": 5, "items": { "type": "string", "maxLength": 120 }, "description": "facts[].text: the one rendering every small surface shares." }
+  },
+  "$defs": {
+    "briefRef": {
+      "type": "object",
+      "required": ["slug", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": { "type": "string" },
+        "id": { "type": "string", "description": "The map's short code (BKG-01), when it has one." },
+        "name": { "type": "string" }
+      }
+    },
+    "briefSubject": {
+      "description": "What is decided: an open proposal (id set) or an agent's draft (a feature and its words).",
+      "type": "object",
+      "required": ["feature", "title"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "feature": { "type": "string" },
+        "title": { "type": "string" },
+        "lens": { "type": "string" },
+        "standard": { "type": "string" },
+        "tier": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "risk_class": { "type": "string", "enum": ["secret", "authz", "money", "data", "llm", "perf", "reliability", "ux", "debt"] },
+        "size": { "type": "string", "enum": ["XS", "S", "M", "L", "XL"] }
+      }
+    },
+    "briefBlast": {
+      "description": "The feature on the plan and the features whose depends_on name it. feature, room and wing are omitted when the feature is not on the plan.",
+      "type": "object",
+      "required": ["dependents", "rooms", "openHere"],
+      "additionalProperties": false,
+      "properties": {
+        "feature": { "$ref": "#/$defs/briefRef" },
+        "room": { "$ref": "#/$defs/briefRef" },
+        "wing": { "$ref": "#/$defs/briefRef" },
+        "stage": { "type": "string" },
+        "dependents": { "type": "array", "items": { "$ref": "#/$defs/briefRef" } },
+        "rooms": { "type": "integer", "description": "The rooms the dependents sit in." },
+        "openHere": { "type": "array", "items": { "type": "string" }, "description": "Other open proposals on the same feature." }
+      }
+    },
+    "briefDecided": {
+      "type": "object",
+      "required": ["id", "title", "feature", "lens", "verdict", "at", "match"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "feature": { "type": "string" },
+        "lens": { "type": "string" },
+        "verdict": { "type": "string", "enum": ["approved", "declined"] },
+        "at": { "type": "string", "description": "The day it was decided, YYYY-MM-DD." },
+        "by": { "type": "string" },
+        "note": { "type": "string", "description": "The decline note (or the triage note): the owner's own words." },
+        "standard": { "type": "string" },
+        "match": { "type": "string", "enum": ["same idea", "same standard", "similar words", "same lens"] }
+      }
+    },
+    "briefPrecedent": {
+      "type": "object",
+      "required": ["rows", "approved", "declined", "basis"],
+      "additionalProperties": false,
+      "properties": {
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/briefDecided" } },
+        "approved": { "type": "integer" },
+        "declined": { "type": "integer" },
+        "basis": { "type": "string" }
+      }
+    },
+    "briefReversible": {
+      "type": "object",
+      "required": ["approve", "decline", "afterRelease"],
+      "additionalProperties": false,
+      "properties": {
+        "approve": { "const": "until-triage", "description": "An approval builds on a pack branch and ships only through triage and a release." },
+        "decline": { "const": "final", "description": "No route reopens a decided proposal." },
+        "afterRelease": { "type": "string", "enum": ["revert", "care", "unknown"] },
+        "riskClass": { "type": "string", "enum": ["secret", "authz", "money", "data", "llm", "perf", "reliability", "ux", "debt"] }
+      }
+    },
+    "briefCost": {
+      "type": "object",
+      "required": ["builds", "basis", "runs"],
+      "additionalProperties": false,
+      "properties": {
+        "builds": { "type": "integer" },
+        "minutes": { "type": "integer", "description": "Median minutes per item of the finished execute runs." },
+        "model": { "type": "string" },
+        "basis": { "type": "string", "enum": ["lens", "any lens", "none"] },
+        "runs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "briefAdvice": {
+      "type": "object",
+      "required": ["say", "why"],
+      "additionalProperties": false,
+      "properties": {
+        "say": { "type": "string", "enum": ["withdraw", "ask", "proceed"] },
+        "why": { "type": "string" }
+      }
+    },
+    "briefFact": {
+      "type": "object",
+      "required": ["key", "text", "ids"],
+      "additionalProperties": false,
+      "properties": {
+        "key": { "type": "string", "enum": ["blast", "declined", "precedent", "undo", "cost"] },
+        "text": { "type": "string", "maxLength": 120 },
+        "ids": { "type": "array", "items": { "type": "string" }, "description": "What the fact's number opens: dependents, decided rows, or execute runs." }
+      }
+    }
+  }
+}

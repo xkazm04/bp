@@ -51,6 +51,9 @@ namespace
 	const FLinearColor CardGlow(FColor(0xFF, 0xB8, 0x60));
 	/** The card's layout is in pixels at this density; SDPIScaler draws it at bp.CardPxPerCm. */
 	constexpr float CardLayoutPxPerCm = 40.f;
+	/** What a card carrying the decision brief adds to its size (cm). */
+	constexpr float CardBriefExtraWCm = 7.f;
+	constexpr float CardBriefExtraHCm = 2.5f;
 	/** The card's render density (FM, element 10: the judge's "blurry" card). The widget's target has no mips, so a density
 	 *  far above what the eye resolves there is minified with aliasing, read as blur; FE and FK's 24 and 32 px/cm were four
 	 *  times the target capture's. */
@@ -236,6 +239,16 @@ namespace
 		{
 			const bool bShow = Args.Num() == 0 || Args[0] != TEXT("0");
 			WithPlannedTables(World, TEXT("BpCard.Show ") + FString(bShow ? TEXT("1") : TEXT("0")), [bShow](ABpTable& Table) { Table.ShowCard(bShow); });
+		}));
+
+	/** BpCard.Ask <proposal id>: the card asks about this open finding (the Morning Watch's decision, a repeat). */
+	FAutoConsoleCommandWithWorldAndArgs CmdCardAsk(
+		TEXT("BpCard.Ask"),
+		TEXT("BpCard.Ask <proposal id>: the decision card asks about this open finding, with its brief; no id goes back to the room rule."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const FString Id = Args.Num() ? Args[0] : FString();
+			WithPlannedTables(World, TEXT("BpCard.Ask ") + Id, [&Id](ABpTable& Table) { Table.AskCard(Id); });
 		}));
 }
 
@@ -991,6 +1004,44 @@ void ABpTable::ShowCard(bool bShow)
 	if (bShow && CardProposal.IsEmpty()) UE_LOG(LogBpTable, Log, TEXT("BpTable: card none (no open finding to ask about)"));
 }
 
+void ABpTable::AskCard(const FString& ProposalId)
+{
+	CardAskId = ProposalId;
+	CardProposal.Reset();
+	if (bCardShown) RefreshCard();
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: card asks %s"), CardAskId.IsEmpty() ? TEXT("by the room rule") : *CardAskId);
+}
+
+void ABpTable::RequestCardBrief(const FString& ProposalId)
+{
+	// One read per finding (docs/concepts/decision-brief/README.md, VR): the answer redraws the card when it is still the
+	// finding asked about; a stale answer (the card moved on) is dropped.
+	BriefFor = ProposalId;
+	bBriefRead = false;
+	BriefLines.Reset();
+	BriefDeclinedLine = INDEX_NONE;
+	bBriefRepeat = false;
+	BriefRepeatNote.Reset();
+	TWeakObjectPtr<ABpTable> Self(this);
+	FBpLinkModule::Get().FetchBrief(ProposalId, [Self, ProposalId](bool bOk, const FBpDecisionBrief& Brief)
+	{
+		ABpTable* T = Self.Get();
+		if (!T || !bOk || T->BriefFor != ProposalId) return;
+		T->bBriefRead = true;
+		for (int32 Index = 0; Index < Brief.lines.Num() && Index < 5; ++Index) T->BriefLines.Add(Brief.lines[Index]);
+		for (int32 Index = 0; Index < Brief.facts.Num() && Index < 5; ++Index) if (Brief.facts[Index].key == TEXT("declined")) T->BriefDeclinedLine = Index;
+		// advice withdraw = the same idea was declined before: Decline is the recommendation, with core's repeatNote
+		T->bBriefRepeat = Brief.advice.say == TEXT("withdraw") && Brief.declines.Num() > 0;
+		if (T->bBriefRepeat)
+		{
+			const FBpBriefDecided& D = Brief.declines[0];
+			T->BriefRepeatNote = (FString::Printf(TEXT("Repeats %s, declined %s"), *D.id, *D.at) + (D.note.IsEmpty() ? FString() : TEXT(": \"") + D.note + TEXT("\""))).Left(500);
+		}
+		T->CardProposal.Reset();
+		if (T->bCardShown) T->RefreshCard();
+	});
+}
+
 void ABpTable::RefreshCard()
 {
 	if (!Card || !SheetPlan.IsValid()) return;
@@ -1009,6 +1060,11 @@ void ABpTable::RefreshCard()
 		if (!Ask) Ask = &Proposal;
 		if (Lifted != INDEX_NONE && TileRoom.IsValidIndex(*Tile) && TileRoom[*Tile] == Lifted) { Ask = &Proposal; break; }
 	}
+	// BpCard.Ask: the finding named, while it is open and on the plan
+	if (!CardAskId.IsEmpty())
+	{
+		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature)) { Ask = &Proposal; break; }
+	}
 	if (!Ask)
 	{
 		CardProposal.Reset();
@@ -1016,7 +1072,8 @@ void ABpTable::RefreshCard()
 		return;
 	}
 	const float PxPerCm = FMath::Clamp(CVarCardPxPerCm.GetValueOnGameThread(), 4.f, 64.f);
-	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm);
+	if (BriefFor != Ask->id) RequestCardBrief(Ask->id);
+	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm) + (bBriefRead ? TEXT("+brief") : TEXT(""));
 	if (Key == CardProposal && Card->GetSlateWidget().IsValid())
 	{
 		ApplyCardVisibility();
@@ -1064,10 +1121,12 @@ void ABpTable::RefreshCard()
 	// FO: Decline an outlined button (the judge: it "does not read as a button"), a full-ink rule and a faint fill.
 	static const FSlateRoundedBoxBrush Decline(CardInk.CopyWithNewOpacity(0.06f), 12.f, CardInk.CopyWithNewOpacity(0.9f), 4.5f);
 	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
-	const auto Button = [](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
+	// with a brief the buttons are a little lower, so its five lines fit the card (BriefLines is read before the card builds)
+	const bool bTight = bBriefRead && BriefFor == Ask->id && BriefLines.Num() > 0;
+	const auto Button = [bTight](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
 	{
 		// FP: larger (the judge: "enlarge the header line and the buttons").
-		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(32.f, 22.f)).HAlign(HAlign_Center)
+		return SNew(SBorder).BorderImage(Brush).Padding(bTight ? FMargin(28.f, 10.f) : FMargin(32.f, 22.f)).HAlign(HAlign_Center)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)
@@ -1076,10 +1135,38 @@ void ABpTable::RefreshCard()
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), bTight ? 46.f : 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 				]
 			];
 	};
+	// The decision brief (docs/concepts/decision-brief/README.md, VR): its lines under the header, at most 5 of 120
+	// characters, the quoted decline in the card's amber ink; with it the body's Impact steps aside (the brief says what the
+	// change touches). A repeat of a declined idea makes Decline the first, filled answer ("DECLINE · REPEAT"); a likeness
+	// only shows the quote. Until the brief is read (or offline) the card is as it was.
+	static const FLinearColor DeclinedInk(FColor(0x9A, 0x5B, 0x00));
+	TSharedRef<SVerticalBox> BriefBox = SNew(SVerticalBox);
+	for (int32 Index = 0; Index < BriefLines.Num(); ++Index)
+	{
+		const bool bDeclined = Index == BriefDeclinedLine;
+		BriefBox->AddSlot().AutoHeight().Padding(0.f, Index ? 6.f : 0.f, 0.f, 0.f)
+		[
+			SNew(STextBlock).Text(FText::FromString(BriefLines[Index])).AutoWrapText(true)
+				.Font(CanvasFont(bDeclined ? TEXT("Bold") : TEXT("Regular"), 37.f)).ColorAndOpacity(FSlateColor(bDeclined ? DeclinedInk : CardInk.CopyWithNewOpacity(0.9f)))
+		];
+	}
+	const bool bBrief = bBriefRead && BriefFor == Ask->id && BriefLines.Num() > 0, bRepeat = bBrief && bBriefRepeat;
+	TSharedRef<SHorizontalBox> Buttons = SNew(SHorizontalBox);
+	if (bRepeat)
+	{
+		Buttons->AddSlot().FillWidth(1.25f).Padding(0.f, 0.f, 14.f, 0.f)[Button(&Approve, TEXT("✕"), TEXT("DECLINE · REPEAT"))];
+		Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Button(&Decline, TEXT("✓"), TEXT("APPROVE"))];
+	}
+	else
+	{
+		Buttons->AddSlot().FillWidth(1.f).Padding(0.f, 0.f, 14.f, 0.f)[Button(&Approve, TEXT("✓"), TEXT("APPROVE"))];
+		Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Button(&Decline, TEXT("✕"), TEXT("DECLINE"))];
+	}
+	if (bRepeat) Header = FString::Printf(TEXT("REPEATS A DECLINE  ·  %s LENS"), *BpWords::Lens(Ask->lens).ToUpper());
 	Card->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(PxPerCm / CardLayoutPxPerCm)
 		[
@@ -1102,7 +1189,7 @@ void ABpTable::RefreshCard()
 					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 42.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 				]
 			]
-			+ SVerticalBox::Slot().FillHeight(1.f).Padding(0.f, 16.f, 0.f, 0.f)
+			+ SVerticalBox::Slot().FillContentHeight(bBrief ? 0.f : 1.f, bBrief ? 0.f : 1.f).Padding(0.f, 16.f, 0.f, 0.f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0.f, 0.f, 20.f, 0.f)
@@ -1110,42 +1197,43 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 60.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 60.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, bBrief ? 0.f : 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(bBrief ? TEXT("Bold") : TEXT("Regular"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 46.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.92f)))
+						SNew(STextBlock).Text(FText::FromString(bBrief ? FString() : Impact)).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 46.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.92f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
 				[
-					SNew(SBox).WidthOverride(300.f).HeightOverride(230.f)
+					// with the brief the sketch steps aside: its first line says where the change lands
+					SNew(SBox).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).WidthOverride(300.f).HeightOverride(230.f)
 					[
 						Sketch
 					]
 				]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 18.f, 0.f, 0.f)
+			+ SVerticalBox::Slot().FillContentHeight(bBrief ? 1.f : 0.f, 1.f).Padding(0.f, bBrief ? 14.f : 0.f, 0.f, 0.f)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0.f, 0.f, 14.f, 0.f)
+				SNew(SBox).Visibility(bBrief ? EVisibility::Visible : EVisibility::Collapsed).Clipping(EWidgetClipping::ClipToBounds)
 				[
-					Button(&Approve, TEXT("✓"), TEXT("APPROVE"))
+					BriefBox
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)
-				[
-					Button(&Decline, TEXT("✕"), TEXT("DECLINE"))
-				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, bTight ? 10.f : 18.f, 0.f, 0.f)
+			[
+				Buttons
 			]
 		]
 		]
 		]
 		]);
-	Card->SetDrawSize(FVector2D(CardWidthCm * PxPerCm, CardHeightCm * PxPerCm));
+	// a card with a brief is a little wider and taller (by capture: its five lines wrapped and the last was cut), about its centre
+	Card->SetDrawSize(FVector2D((CardWidthCm + (bBrief ? CardBriefExtraWCm : 0.f)) * PxPerCm, (CardHeightCm + (bBrief ? CardBriefExtraHCm : 0.f)) * PxPerCm));
 	Card->RequestRedraw();
 	ApplyCardVisibility();
 	// Near the lamp agent at the far edge, right of it and above the rim. Upright (FM, element 10: the judge's "upright
@@ -1157,7 +1245,7 @@ void ABpTable::RefreshCard()
 	const float FaceYaw = FMath::RadiansToDegrees(FMath::Atan2(Eye.Y - Place.Y, Eye.X - Place.X));
 	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, FaceYaw, 0.f));
 	Card->SetRelativeScale3D(FVector(CardScale / PxPerCm));
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s"), *Ask->id, *Target, *Ask->status);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s brief=%d lines%s"), *Ask->id, *Target, *Ask->status, bBrief ? BriefLines.Num() : 0, bRepeat ? TEXT(" (repeat: Decline recommended)") : TEXT(""));
 }
 
 void ABpTable::ApplyCardVisibility()

@@ -27,3 +27,5 @@ export const WAVE_NAME_MAX_LENGTH = 60;
 export const WAVE_PACKAGES_MAX_ITEMS = 12;
 /** scan-wire-1 $defs.proposalId.pattern */
 export const PROPOSAL_ID_PATTERN = new RegExp("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$");
+/** decision-brief-1 $defs.briefDecided.properties.match.enum */
+export const BRIEF_MATCHES = ['same idea', 'same standard', 'similar words', 'same lens'] as const;
