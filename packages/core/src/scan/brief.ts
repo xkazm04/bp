@@ -4,7 +4,8 @@
 // Four facts over data bp already holds, every one with the ids that back it (a number on a card opens its list):
 //   blast      - the feature on the plan (room, wing) and the features whose depends_on name it, from the v3 map;
 //   precedent  - decided rows under the same lens (and tier, when the subject has one), plus every row that is the same
-//                idea (same feature + lens, or on its attempt_of / parent_id chain), the same standard, or a title with
+//                idea (on its attempt_of / parent_id chain, or the same feature + lens with a shared idea word or the same
+//                standard - the same place alone is not the same idea), the same standard, or a title with
 //                the same words; counted approved vs declined. Declines that match the idea are quoted, latest first,
 //                one per standard, so an agent hears the owner's own words back;
 //   reversible - approving builds on a pack branch and ships only through triage and a release; declining is final (no
@@ -150,10 +151,14 @@ function precedentOf(sub: BriefSubject, scan: Pick<Scan, 'proposals'>, lean = fa
   for (const x of scan.proposals) {
     if (x.id === sub.id || x.status === 'proposed') continue;
     const shared = overlap(mine, rowWords(x));
-    const match: Match | null = chain.has(x.id) || (x.feature === sub.feature && (!sub.lens || x.lens === sub.lens) && (!!sub.lens || shared >= 1)) ? 'same idea'
-      : sub.standard && sub.standard !== 'none' && x.standard === sub.standard ? 'same standard'
+    // the same idea needs more than the same place: a decline of something else on this feature must never read as "this
+    // idea was declined" (it would flip the card to Decline), so the same feature (and lens) also needs a shared idea word
+    // or the same standard; without them it is precedent under the lens, not a stand against this idea
+    const sameStd = !!sub.standard && sub.standard !== 'none' && x.standard === sub.standard;
+    const match: Match | null = chain.has(x.id) || (x.feature === sub.feature && (!sub.lens || x.lens === sub.lens) && (shared >= 1 || sameStd)) ? 'same idea'
+      : sameStd ? 'same standard'
       : shared >= 2 ? 'similar words'
-      : sub.lens && x.lens === sub.lens && (sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;
+      : sub.lens && x.lens === sub.lens && (x.feature === sub.feature || sub.tier === undefined || x.tier === sub.tier) ? 'same lens' : null;
     if (!match) continue;
     if (x.status === 'declined') declined++; else approved++;
     if (lean && match === 'same lens') continue;

@@ -13,6 +13,9 @@ import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 import { BriefFacts, useBrief } from '../../Brief';
 
 
+/** How long "Decline the repeats" stays armed after its first click. */
+const REARM_MS = 5000;
+
 /** The metric move as parts for the big figure; null when the proposal names no metric. */
 function moveParts(p: Proposal, unit: string | undefined, label: string | undefined, scan: ScanSnapshot | undefined) {
   if (!p.metric) return null;
@@ -33,6 +36,9 @@ export function Review() {
   const proposals = live?.product.scan?.proposals;
   const [lens, setLens] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
+  // "Decline the repeats" asks twice: a live decision is final (no route reopens it); the arm lapses after REARM_MS
+  const [armRepeats, setArmRepeats] = useState(false), writes = useWritesOn();
+  useEffect(() => { if (!armRepeats) return; const t = setTimeout(() => setArmRepeats(false), REARM_MS); return () => clearTimeout(t); }, [armRepeats]);
   const listRef = useListRef();
 
   // a decline draft lives until its proposal is decided (as in the classic list)
@@ -110,10 +116,25 @@ export function Review() {
     );
 
   const batches = sim.batchGroups();
+  // live: the open proposals the decision brief found repeating a standing decline (live-feed.ts recommends Decline on them)
+  const repeats = sim.live && writes ? all.filter((d) => d.recNote) : [];
+  const declineRepeats = () => {
+    if (!armRepeats) { setArmRepeats(true); return; }
+    setArmRepeats(false); setSelId(null); E.setHlDec(null);
+    for (const d of repeats) E.decide(d.id, 1, d.recNote);
+  };
   const strip = (
     <>
       <div className="wb-count"><b>{all.length}</b><span>{sim.live ? 'open proposals' : 'open questions'}</span></div>
       <div className="wb-count t-amber"><b>{urgent}</b><span>urgent</span></div>
+      {repeats.length > 0 && (
+        <div className="wb-filter wb-repeats" role="group" aria-label="Decline the repeats">
+          <button type="button" aria-pressed={armRepeats} onClick={declineRepeats}
+            title={'Each repeats an idea you declined: ' + repeats.map((d) => d.base).join(', ') + '. Each is declined with a note naming the decision it repeats. Final: no route reopens a decision.'}>
+            <i aria-hidden="true" />{armRepeats ? `Click again: decline ${repeats.length}, each naming its decline` : `Decline ${repeats.length} repeat${repeats.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
       {batches.length > 0 && (
         <div className="wb-filter" role="group" aria-label="Batch-decide like questions">
           {batches.map((g) => (

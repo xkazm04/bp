@@ -12,7 +12,7 @@ draft (a feature and a few words). Its four facts each carry the ids that back t
 | Fact | From | Thin evidence says |
 |---|---|---|
 | **blast** - the feature, its room and wing, the features whose `depends_on` name it | the v3 map | `which is not on the plan: blast radius unknown` |
-| **precedent** - decided rows of the same idea (feature + lens, or the attempt/parent chain), the same standard, the same words (2+ shared idea words, the feature's own name excluded), or the same lens and tier; approved vs declined | the store's proposals | `No precedent yet under <lens>` |
+| **precedent** - decided rows of the same idea (the attempt/parent chain, or the same feature + lens with a shared idea word or the same standard: the same place alone never reads as the same idea), the same standard, the same words (2+ shared idea words, the feature's own name excluded), or the same lens and tier; approved vs declined | the store's proposals | `No precedent yet under <lens>` |
 | **declined** - the matching declines (not merely same-lens), latest first, one per standard, quoted in the person's words | `decision_note` / `triage_note`, `decided_by` | (no line) |
 | **undo** - an approval builds on a pack branch and ships only after triage and a release; a decline is final; after release by `risk_class` | the process, `risk_class` | `after release unknown (no risk class)` |
 | **cost** - median minutes per item of finished execute runs under the lens, else any lens | `runs`, `packs` | `Cost: no build history yet` |

@@ -150,6 +150,8 @@ const sec = [
   const card = src('apps/web/src/components/Overlays.tsx'), review = src('apps/web/src/components/rail/wide/review.tsx');
   ok(11, /useBrief\(/.test(card) && /<BriefFacts /.test(card), 'the plan decision card renders the brief');
   ok(11, /useBrief\(/.test(review) && /<BriefFacts /.test(review), 'the Review detail renders the brief');
+  ok(11, /all\.filter\(\(d\) => d\.recNote\)/.test(review) && /if \(!armRepeats\) \{ setArmRepeats\(true\); return; \}/.test(review) && /E\.decide\(d\.id, 1, d\.recNote\)/.test(review),
+    'Review declines the repeats on a second click, each with its repeat note');
 }
 
 // 12. the recommendation
@@ -202,6 +204,16 @@ const sec = [
   ok(14, a.features.length === 133 && norm(a) === norm(b), 'briefMapOf and briefMapOfStructure agree on Kettle', [a.features.length, b.features.length]);
 }
 
+// 17. the same place is not the same idea: an unrelated decline on the same feature and lens is precedent, never a stand
+{
+  const other = P({ id: 'U1', feature: 'card-payments', lens: 'security', title: 'Rotate the payment keys monthly', standard: 'secrets/key-rotation', status: 'declined', decision_note: 'Not while the auth rewrite is open.' });
+  const o = P({ id: 'U2', feature: 'card-payments', lens: 'security', title: 'Add CSRF tokens to the checkout form', standard: 'web/csrf', status: 'proposed' });
+  const b = briefFor(subjectOf(o), scanOf([other, o]), map);
+  ok(17, !fact(b, 'declined') && b.advice.say === 'proceed' && b.precedent.declined === 1 && b.precedent.rows[0]?.match === 'same lens', 'an unrelated decline on the same feature + lens: counted, not quoted, no flip', { advice: b.advice, rows: b.precedent.rows.map((r) => r.id + ':' + r.match) });
+  const same = P({ id: 'U3', feature: 'card-payments', lens: 'security', title: 'Rotate the payment keys every week', standard: 'secrets/key-rotation', status: 'proposed' });
+  const c = briefFor(subjectOf(same), scanOf([other, same]), map);
+  ok(17, c.advice.say === 'withdraw' && c.declines[0]?.id === 'U1' && c.declines[0]?.match === 'same idea', 'the same idea on the same place still stands', c.declines.map((r) => r.id + ':' + r.match));
+}
 // 16. the golden file (before the wire, so its briefs are validated with the rest)
 {
   const now = golden(), committed = fs.existsSync(GOLDEN) ? fs.readFileSync(GOLDEN, 'utf8').replace(/\r\n/g, '\n') : '';

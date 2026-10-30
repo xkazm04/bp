@@ -6,8 +6,8 @@
 //     with a note, and one finished security execute run with its pack (two items in 24 minutes);
 //   - two declines of retry ideas under one standard, the latest with the owner's words ("No retries until idempotency
 //     keys land"), so an agent's draft "add retry to checkout" hears them back;
-//   - two OPEN proposals: "Add rate limits to the booking API" (the A9 card) and "Retry the payment webhook on timeout"
-//     (an agent re-proposing a declined idea).
+//   - three OPEN proposals: "Add rate limits to the booking API" (the A9 card), and two that repeat a declined idea -
+//     "Retry the payment webhook on timeout" and "Rotate the session keys every week" (Review: Decline 2 repeats).
 // Every row id starts `brief-`; a rerun replaces them (idempotent). It writes the store directly, as scan-demo does: this
 // is a seed, not a product path (lens-scan's store.mjs owns transitions on a real store).
 //   node scripts/brief-demo-seed.mjs [--dir .demo/kettle-live] [--now <iso>]
@@ -49,6 +49,8 @@ const open = [
     '## Summary\nThe booking API accepts unlimited requests per member, so one script can hold every class.\n\n## Expected impact\nBursts above 20 requests a minute per member are refused with 429.'],
   ['brief-o2', OPEN, 'card-payments', 'development', 'Retry the payment webhook on timeout', 'reliability/retry-backoff', 2, 'money', 'S', 6,
     '## Summary\nA webhook that times out is dropped; retrying it three times with backoff would recover most of them.'],
+  ['brief-o3', OPEN, 'email-password-sign-in', 'security', 'Rotate the session keys every week', 'secrets/key-rotation', 2, 'secret', 'S', 5,
+    '## Summary\nSession signing keys never rotate; a weekly rotation limits how long a leaked key works.'],
 ];
 
 const db = new DatabaseSync(DB, { timeout: 5000 });
@@ -65,7 +67,8 @@ try {
     p.run(id, run, f, lens, title, std, status, tier, rc, owner, ago(days), note, pack, 'S', 4, null, ago(16), ago(days));
   }
   for (const [id, run, f, lens, title, std, tier, rc, size, risk, body] of open) {
-    p.run(id, run, f, lens, title, std, 'proposed', tier, rc, null, null, null, null, size, risk, body, ago(0, 2), ago(0, 2));
+    const at = id === 'brief-o3' ? ago(0, 1) : ago(0, 2); // newest last, so J walks o1, o2, then o3
+    p.run(id, run, f, lens, title, std, 'proposed', tier, rc, null, null, null, null, size, risk, body, at, at);
   }
   db.exec('COMMIT');
 } catch (e) { try { db.exec('ROLLBACK'); } catch { /* none open */ } throw e; } finally { db.close(); }
