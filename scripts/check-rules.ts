@@ -272,13 +272,20 @@ try {
   const d0 = await call('decision_answer', { slug: 'kl', id: 'q-book0', decision: 'approve' });
   check('MCP decision.answer on a stop-ship in the same place still waits for the person', d0.json?.state === 'pending', d0.text);
 
+  const pr = await call('rule_propose', { slug: 'kl', kind: 'hold', scope: { kind: 'feature', id: 'invoices-receipts', label: 'Invoices', features: ['invoices-receipts'] }, text: 'Hold invoices' });
+  check('MCP rule.propose files a pending card (the agent cannot set a rule), its summary the rule in words', !pr.isError && pr.json?.state === 'pending', pr.text);
+  const card = (await req('GET', '/api/companion/cards')).json?.find?.((c: { id: string }) => c.id === pr.json?.card) ?? (await req('GET', '/api/companion/cards')).json?.cards?.find?.((c: { id: string }) => c.id === pr.json?.card);
+  check('the card reads "Proposes a standing rule ... over Invoices"', /Proposes a standing rule for kl: "Hold invoices" over Invoices/.test(card?.summary ?? ''), j(card));
+  const ap = await req('POST', '/api/companion/cards/' + pr.json?.card, H, { decision: 'approve' });
+  const set2 = (await req('GET', API)).json?.rules?.find((r: { text: string }) => r.text === 'Hold invoices');
+  check('the person approves the card: the rule is set with the person as its author', ap.status === 200 && ap.json?.state === 'done' && /^O-\d+$/.test(set2?.id ?? '') && /^user:/.test(set2?.by ?? ''), j([ap.json, set2]));
   const rv = await req('DELETE', API + '/O-1', H);
   const rv2 = await req('DELETE', API + '/O-1', H);
   check('revoke: 200 with revokedAt and revokedBy; again: 409', rv.status === 200 && !!rv.json?.rule?.revokedAt && /^user:/.test(rv.json.rule.revokedBy) && rv2.status === 409, j([rv.json, rv2.json]));
   const wc2 = await call('wave_compose', { slug: 'kl', name: 'Pay wave 2', packages: [{ name: 'pay', model: 'sonnet', effort: 'medium', ids: ['q-pay'] }] });
   check('after the lift, wave.compose takes the payments item', !wc2.isError && !wc2.json?.held, wc2.text);
   const g1 = await req('GET', API);
-  check('GET rules keeps the revoked order as the record', g1.json?.rules?.length === 2 && g1.json.rules[0].revokedAt, j(g1.json?.rules));
+  check('GET rules keeps the revoked order as the record', g1.json?.rules?.length === 3 && g1.json.rules.find((r: { id: string }) => r.id === 'O-1')?.revokedAt, j(g1.json?.rules));
 
   fs.writeFileSync(FILE, '{ not json');
   const gc = await req('GET', API);
