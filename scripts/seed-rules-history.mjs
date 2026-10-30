@@ -4,7 +4,9 @@
 // its run is `syn-history` (rules.server.ts SYNTHETIC_RUN = 'syn-'), the run's note says SYNTHETIC, each decision note
 // starts "[synthetic]", and the Rules panel counts and marks them. Nothing here is a real decision.
 //
-//   node scripts/seed-rules-history.mjs [--dir .demo/kettle-live] [--n 96] [--now <iso>]
+//   node scripts/seed-rules-history.mjs [--dir .demo/kettle-live] [--n 96] [--now <iso>] [--clear-rules]
+// --clear-rules also deletes the product's work/bp-rules.json, its log and the demo's draft waves file, so a demo starts
+// with no standing rules (the throwaway product only: it refuses a --dir outside this repo's .demo/).
 //
 // The owner it simulates is consistent, so a rule can earn (or lose) trust against it:
 //   - backlog (tier 3) findings outside payments: approved 9 times in 10; the declines are design polish they did not want
@@ -27,6 +29,11 @@ const DIR = opt('--dir') ? path.resolve(opt('--dir')) : path.join(ROOT, '.demo',
 const N = Number(opt('--n') ?? 96), NOW = Date.parse(opt('--now') ?? new Date().toISOString());
 if (!(N > 0 && N <= 1000) || !Number.isFinite(NOW)) { console.error('usage: seed-rules-history.mjs [--dir d] [--n 1..1000] [--now iso]'); process.exit(2); }
 const DB = path.join(DIR, '.ai', 'lens-scan', 'scan.db');
+if (argv.includes('--clear-rules')) {
+  if (!path.resolve(DIR).startsWith(path.join(ROOT, '.demo') + path.sep)) { console.error(`--clear-rules only clears a throwaway product under ${path.join(ROOT, '.demo')}`); process.exit(2); }
+  for (const f of ['bp-rules.json', 'bp-rules-log.jsonl', 'bp-rules.corrupt.json', 'bp-waves.json']) fs.rmSync(path.join(DIR, '.ai', 'lens-scan', 'work', f), { force: true });
+  console.log(`cleared the standing rules, their log and the draft waves of ${DIR}`);
+}
 if (!fs.existsSync(DB)) { console.error(`no store at ${DB}: run node scripts/scan-demo.mjs first`); process.exit(1); }
 const map = JSON.parse(fs.readFileSync(path.join(DIR, '.ai', 'lens-scan', 'app-structure.json'), 'utf8'));
 

@@ -95,11 +95,11 @@ export function LiveRules({ slug }: { slug: string }) {
           <span className="wb-src" title="<root>/.ai/lens-scan/work/bp-rules.json: every agent door reads it, and so can Personas">bp-rules.json · every agent door</span>
         </>
       )}
-      detail={r ? <RuleDetail slug={slug} r={r} now={now} held={v.held[r.id]} breaches={v.breaches[r.id] ?? []} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
+      detail={r ? <RuleDetail slug={slug} r={r} now={now} held={v.held[r.id]} breaches={v.breaches[r.id] ?? []} all={v.rules} onSet={setSel} /> : <Writer slug={slug} all={v.rules} onSet={setSel} />} />
   );
 }
 
-function RuleDetail({ slug, r, now, held, breaches }: { slug: string; r: Rule; now: number; held?: HeldTally; breaches: DecidedRow[] }) {
+function RuleDetail({ slug, r, now, held, breaches, all, onSet }: { slug: string; r: Rule; now: number; held?: HeldTally; breaches: DecidedRow[]; all: Rule[]; onSet: (id: string) => void }) {
   const E = useEngine(), P = E.M.P;
   const draft = useMemo(() => draftOf(r), [r]);
   const rp = useReplay(slug, draft);
@@ -110,6 +110,9 @@ function RuleDetail({ slug, r, now, held, breaches }: { slug: string; r: Rule; n
     const ids = r.scope.kind === 'all' ? P.features.map((f) => f.id) : r.scope.features.filter((f) => P.F[f]);
     if (ids.length) { E.setTarget(Object.fromEntries(ids.map((id) => [id, 1])) as Record<string, 1>, r.scope.label); E.lookAtTarget(); }
   };
+  // an ended rule is set again as a new one (a new id, a fresh author line and the evidence as it reads today)
+  const renew = () => setRule(slug, { ...draft, text: r.text, ...(r.kind === 'grant' || r.expiresAt ? { hours: 24 } : {}) })
+    .then((x) => { E.toast((isOrder(x.kind) ? 'Order ' : 'Grant ') + x.id + ' set again', x.text + ' · ' + x.scope.label + ' (was ' + r.id + ')'); onSet(x.id); }, (e: Error) => setErr(e.message));
   const revoke = () => revokeRule(slug, r.id).then((x) => E.toast((isOrder(x.kind) ? 'Lifted ' : 'Ended ') + x.id, x.text + ' · ' + x.scope.label), (e: Error) => setErr(e.message));
   return (
     <>
@@ -151,13 +154,12 @@ function RuleDetail({ slug, r, now, held, breaches }: { slug: string; r: Rule; n
           <Evidence bt={rp.r?.backtest} busy={rp.busy} error={rp.error} />
         </Sec>
       </div>
-      {on && (
-        <div className="wb-act rl-act">
-          <Verdict bt={rp.r?.backtest} />
-          <span className="sp" />
-          <button type="button" className="bt rl-revoke" onClick={revoke}>{isOrder(r.kind) ? 'Lift ' + r.id : 'Revoke ' + r.id}</button>
-        </div>
-      )}
+      <div className="wb-act rl-act">
+        <Verdict bt={rp.r?.backtest} />
+        <span className="sp" />
+        {on ? <button type="button" className="bt rl-revoke" onClick={revoke}>{isOrder(r.kind) ? 'Lift ' + r.id : 'Revoke ' + r.id}</button>
+          : <button type="button" className="bt go" onClick={renew} disabled={!rp.r}>{'Set it again as ' + nextRuleId(all, r.kind) + (r.kind === 'grant' || r.expiresAt ? ' for 24 h' : '')}</button>}
+      </div>
     </>
   );
 }
