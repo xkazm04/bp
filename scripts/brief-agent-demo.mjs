@@ -71,6 +71,8 @@ try {
       n++;
     }
     if (!n) say('none repeats it: nothing to recommend.');
+  } else if (b.advice.say === 'ask') {
+    step(`Rule 2: ${b.advice.why}. Not a stand against "${DRAFT}", but close: I would ask the person first; this script stops here.`);
   } else {
     step(`Rule 2: no decline stands against "${DRAFT}" (${b.advice.why}). I would propose it now; this script stops here.`);
   }
