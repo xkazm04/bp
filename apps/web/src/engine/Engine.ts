@@ -604,7 +604,9 @@ export class Engine {
   setView(v: ViewId, quiet = false) {
     if (v === this.S.view || !isView(this.M.P, v)) return;
     this.set({ view: v });
-    this.mix.to(v, quiet || this.cam.reduced);
+    // under an open feature sheet the plan is covered and dimmed: snap its lens (one re-raster) instead of paying the
+    // ~0.5 s, ~30 fps spring for a change nobody sees (docs/perf.md); everywhere else the switch keeps its spring
+    this.mix.to(v, quiet || this.cam.reduced || !!this.S.open);
     this.syncRootView();
     this.writeHashSoon();
   }
