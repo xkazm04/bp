@@ -89,7 +89,11 @@ once per fresh `morning-up`: it decides on the demo store).
 7. The phone (under 760 px) is the clicker: the follower says "Following Phone".
 8. `node scripts/morning-agent-walk.mjs --base http://127.0.0.1:3412` reads `morning.brief` on the real MCP door, prints
    each open decision card's brief, and says which were already decided this morning.
-9. **Esc**, then **J**: the plan's decision card carries the same brief; `GET /api/companion/brief?product=kettle-web&id=brief-o2`
+9. **News and history** (roadmap S5): with the deck open, `node scripts/morning-demo.mjs --news kettle-phone` adds a
+   finding; within 6 s the deck says "1 new" and shows it before the close card, every card already read in place. On
+   the follower, ‹ and › step back and forward through the last 10 shared places; each step is a publish, so every
+   other follower goes too.
+10. **Esc**, then **J**: the plan's decision card carries the same brief; `GET /api/companion/brief?product=kettle-web&id=brief-o2`
    answers the same lines.
 
 ## Demo data

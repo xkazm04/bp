@@ -37,6 +37,16 @@ shift. The symbol named beside each citation is the stable reference. Personas p
   - I1 is closed: a card runs on the server's own bound origin (`door.server.ts` `selfOrigin`), held by
     `check:companion-door`'s `host:` cases.
   - `one-morning/` and `decision-brief/` say they are the as-built records; the fused demo is in `one-morning/README.md`.
+- **S2 bp half closed** on the same branch: `shared-focus-1` and `morning-deck-1` with generated TS and UE structs
+  (`FBpFocusPlace`, `FBpSharedView`, `FBpMorningDeck` and the rest readable on their own through `FromJson`), parity
+  with `focus.ts` and `morning.ts`, the goldens in `packages/schema/golden/` (the brief golden's old path stays a
+  byte-identical mirror), `packages/schema/contract.json` held by `check:contract`, the text `docs/standard/contract-1.md`
+  (E7 and C4 in it), and `scripts/personas-drift.mjs` (not in `npm run check`). Not done: C5 (a bay-aware place), and
+  E6's LAN door slug alignment (`lan-door.ts` is the VR session's file; the contract text records the gap). No card
+  reference was added to the place: the brief's short line rides on `say`.
+- **S5 closed** on the same branch: C1 news (`&opened=`, news at the end, "1 new", `morning-demo.mjs --news`), C2
+  history (`back` / `forward` ops, 10 places in the record, the chip's ‹ ›), C3 (`steering-log.md` rendered on read).
+  `python scripts/morning-demo-walk.py` covers both (steps 10 and 11).
 
 ## 1. What the fused product is
 
