@@ -3,7 +3,7 @@
 // so the headset can ask but only a person here can say yes.
 //   pair list                                   pending requests and pairings (never a token or a fingerprint)
 //   pair open                                   open a 2-minute pairing window
-//   pair approve <code> [--scope read,place] [--days 30]
+//   pair approve <code> [--scope read,place] [--days 30]   (decide, a repeat declined from the headset, only when named here)
 //                                               the one mint gate: type the code the headset shows; narrow the scopes
 //                                               (read, standup, place; default: what the device asked for) and the days
 //   pair deny <code>                            refuse a request
@@ -61,7 +61,7 @@ switch (cmd) {
     break;
   }
   case 'approve': {
-    if (!subject) die('usage: pair approve <code> [--scope read,standup,place] [--days 1-30]');
+    if (!subject) die('usage: pair approve <code> [--scope read,standup,place,focus,decide] [--days 1-30]');
     const scopeText = flag('--scope'), daysText = flag('--days');
     const scopes = scopeText?.split(',').map((s) => s.trim()).filter(Boolean);
     if (scopes && !scopes.every((s) => (SCOPES as readonly string[]).includes(s))) die(`--scope takes ${SCOPES.join(', ')}`);

@@ -193,6 +193,20 @@ public:
 	 *  Morning Watch and an agent's plan.brief read. OnDone(false) offline (the bundle has no briefs) or on any failure. A
 	 *  read only: the table writes no decision. Game thread. */
 	void FetchBrief(const FString& ProposalId, TFunction<void(bool bOk, const FBpDecisionBrief& Brief)> OnDone);
+	/** A brief already read (a fetch, or the bundle's briefs.json), or null. The room deck lays its decision screens out
+	 *  from it. */
+	const FBpDecisionBrief* FindBrief(const FString& ProposalId) const { return Briefs.Find(ProposalId); }
+	/** Whether a brief says the same idea was declined before (advice withdraw, with the decline it repeats): the one case
+	 *  where the table recommends, and may write, Decline. */
+	static bool IsRepeat(const FBpDecisionBrief& Brief) { return Brief.advice.say == TEXT("withdraw") && Brief.declines.Num() > 0; }
+	/** The device id BpLink names itself with on a write (`x-bp-device`; through the LAN door the door sets it instead). */
+	static const TCHAR* const DeviceId;
+	/** POST .../proposals/<id>/decline {} (ROADMAP F8, owner 2026-10-30: "pinching decline should decline"): the server
+	 *  declines the finding only when its card brief says the same idea was declined before, through bp's decide with the
+	 *  brief's note ("Repeats <id>, declined <day>: ..."), as the web deck's Decline on a repeat does; any other card is 409.
+	 *  The table's one decision write, and only ever a decline. Refused (status 0, nothing sent) while BpLink reads the
+	 *  bundle. OnDone gets the HTTP status and body; on 200 the scan side is read again at once. Game thread. */
+	void DeclineRepeat(const FString& ProposalId, TFunction<void(int32 Status, const FString& Body)> OnDone);
 
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
@@ -287,6 +301,11 @@ private:
 	TMap<FString, FString> FieldLabels;
 	TMap<FString, FString> FieldUnits;
 	FString FocusWaveId;
+	/** Briefs by proposal id: fetched ones, and the bundle's briefs.json (read once, offline). */
+	TMap<FString, FBpDecisionBrief> Briefs;
+	bool bBriefsBundled = false;
+	/** Decline writes out, by proposal: a second pinch on the same card waits for the first. */
+	TSet<FString> DeclinesOut;
 	/** A draft write is out: a second waits for it, so two Approves never compose two waves. */
 	bool bWaveWriteOut = false;
 	FOnBpPlan PlanDelegate;

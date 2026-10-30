@@ -682,6 +682,9 @@ void ABpTable::RedrawSheet()
 
 void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 {
+	// A hand on the decision card keeps the plan's highlight: the card asks about the pointed room's finding, and pointing
+	// at its buttons must not change which finding that is.
+	if (Kind.Equals(TEXT("card"), ESearchCase::IgnoreCase) && !Id.IsEmpty()) return;
 	HighlightKind = Id.IsEmpty() ? FString() : Kind.ToLower();
 	HighlightId = Id;
 	UE_LOG(LogBpTable, Log, TEXT("BpLevel: highlight %s"), HighlightId.IsEmpty() ? TEXT("cleared") : *FString::Printf(TEXT("%s=%s"), *HighlightKind, *HighlightId));
@@ -772,6 +775,12 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		}
 		return OnPlane(PlacedHeightCm - GlassRecessCm, Point) && RoomModeHit(LocalToPaperCm(Point), OutKind, OutId);
 	}
+	// The decision card first (it stands above the far edge, between the eye and whatever lies behind it): its buttons (F8).
+	if (CardHit(WorldOrigin, WorldDir, OutId))
+	{
+		OutKind = TEXT("card");
+		return true;
+	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
 	const FTransform WingT = WingGroupTransform(Ew);
 
@@ -851,6 +860,7 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
 	// The screen deck's controls, and a feature's glyph on the room's map (BpDeck.cpp's taps).
 	if (Id.StartsWith(TEXT("deck:"))) return DeckAim(Id, OutWorld);
+	if (Id.StartsWith(TEXT("card:"))) return CardAim(Id, OutWorld);
 	// WP3: the lamp's head, a key plan room, the room map's middle.
 	if (Id == TEXT("lamp")) return !RoomModeId.IsEmpty() && LampHead(OutWorld);
 	if (Id.StartsWith(TEXT("minimap:")))

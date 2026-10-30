@@ -323,6 +323,12 @@ void ABpTable::LoadMarks()
 void ABpTable::ReceiveScanState(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid()) return;
+	// A decline written from this table bridges only until the store's read shows it: then the store's status rules.
+	for (auto It = CardDeclined.CreateIterator(); It; ++It)
+	{
+		const FBpProposal* Read = State.Scan.proposals.FindByPredicate([&It](const FBpProposal& P) { return P.id == *It; });
+		if (!Read || Read->status != TEXT("proposed")) It.RemoveCurrent();
+	}
 	BuildPins(State);
 	if (!PendingReplayScope.IsEmpty() && State.bHasScan)
 	{
@@ -1056,22 +1062,24 @@ void ABpTable::RefreshCard()
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
 		const int32* Tile = TileOf.Find(Proposal.feature);
-		if (!IsOpen(Proposal) || !Tile) continue;
+		if (!IsOpen(Proposal) || !Tile || CardDeclined.Contains(Proposal.id)) continue;
 		if (!Ask) Ask = &Proposal;
 		if (Lifted != INDEX_NONE && TileRoom.IsValidIndex(*Tile) && TileRoom[*Tile] == Lifted) { Ask = &Proposal; break; }
 	}
 	// BpCard.Ask: the finding named, while it is open and on the plan
 	if (!CardAskId.IsEmpty())
 	{
-		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature)) { Ask = &Proposal; break; }
+		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature) && !CardDeclined.Contains(Proposal.id)) { Ask = &Proposal; break; }
 	}
 	if (!Ask)
 	{
+		CardShownId.Reset();
 		CardProposal.Reset();
 		Card->SetVisibility(false);
 		return;
 	}
 	const float PxPerCm = FMath::Clamp(CVarCardPxPerCm.GetValueOnGameThread(), 4.f, 64.f);
+	CardShownId = Ask->id;
 	if (BriefFor != Ask->id) RequestCardBrief(Ask->id);
 	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm) + (bBriefRead ? TEXT("+brief") : TEXT(""));
 	if (Key == CardProposal && Card->GetSlateWidget().IsValid())
@@ -1156,16 +1164,14 @@ void ABpTable::RefreshCard()
 	}
 	const bool bBrief = bBriefRead && BriefFor == Ask->id && BriefLines.Num() > 0, bRepeat = bBrief && bBriefRepeat;
 	TSharedRef<SHorizontalBox> Buttons = SNew(SHorizontalBox);
-	if (bRepeat)
-	{
-		Buttons->AddSlot().FillWidth(1.25f).Padding(0.f, 0.f, 14.f, 0.f)[Button(&Approve, TEXT("✕"), TEXT("DECLINE · REPEAT"))];
-		Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Button(&Decline, TEXT("✓"), TEXT("APPROVE"))];
-	}
-	else
-	{
-		Buttons->AddSlot().FillWidth(1.f).Padding(0.f, 0.f, 14.f, 0.f)[Button(&Approve, TEXT("✓"), TEXT("APPROVE"))];
-		Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Button(&Decline, TEXT("✕"), TEXT("DECLINE"))];
-	}
+	// The two buttons are kept so the hands can find them on the card (CardHit, CardAim: their painted boxes).
+	const TSharedRef<SBorder> First = bRepeat ? Button(&Approve, TEXT("✕"), TEXT("DECLINE · REPEAT")) : Button(&Approve, TEXT("✓"), TEXT("APPROVE"));
+	const TSharedRef<SBorder> Second = bRepeat ? Button(&Decline, TEXT("✓"), TEXT("APPROVE")) : Button(&Decline, TEXT("✕"), TEXT("DECLINE"));
+	Buttons->AddSlot().FillWidth(bRepeat ? 1.25f : 1.f).Padding(0.f, 0.f, 14.f, 0.f)[First];
+	Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Second];
+	CardButtons[0] = First;
+	CardButtons[1] = Second;
+	bCardFirstIsDecline = bRepeat;
 	if (bRepeat) Header = FString::Printf(TEXT("REPEATS A DECLINE  ·  %s LENS"), *BpWords::Lens(Ask->lens).ToUpper());
 	Card->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(PxPerCm / CardLayoutPxPerCm)
@@ -1246,6 +1252,105 @@ void ABpTable::RefreshCard()
 	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, FaceYaw, 0.f));
 	Card->SetRelativeScale3D(FVector(CardScale / PxPerCm));
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s brief=%d lines%s"), *Ask->id, *Target, *Ask->status, bBrief ? BriefLines.Num() : 0, bRepeat ? TEXT(" (repeat: Decline recommended)") : TEXT(""));
+}
+
+// ---- The card's buttons under the hands (ROADMAP F8) -------------------------------------------------------------------
+
+namespace
+{
+	/** A button's painted box in the card's draw px (a widget component's window is laid out at its draw size, so a painted
+	 *  widget's absolute box is in draw px); invalid before the first paint. */
+	FSlateRect PaintedBox(const TSharedPtr<SWidget>& Widget)
+	{
+		if (!Widget.IsValid()) return FSlateRect(0.f, 0.f, -1.f, -1.f);
+		const FGeometry& G = Widget->GetPaintSpaceGeometry();
+		const FVector2D Size = G.GetAbsoluteSize();
+		if (Size.X < 1.0 || Size.Y < 1.0) return FSlateRect(0.f, 0.f, -1.f, -1.f);
+		const FVector2D At = G.GetAbsolutePosition();
+		return FSlateRect(At.X, At.Y, At.X + Size.X, At.Y + Size.Y);
+	}
+}
+
+bool ABpTable::CardHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const
+{
+	if (!Card || !Card->IsVisible() || CardShownId.IsEmpty() || !RoomModeId.IsEmpty()) return false;
+	const FTransform& T = Card->GetComponentTransform();
+	const FVector Normal = T.GetUnitAxis(EAxis::X);
+	const double Denom = FVector::DotProduct(WorldDir, Normal);
+	if (FMath::IsNearlyZero(Denom)) return false;
+	const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
+	if (Along < 0.0) return false;
+	// UWidgetComponent's own mapping (as DeckHit): widget x = -local Y, y = -local Z, from its centre pivot, in draw px.
+	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
+	const FVector2D Draw = Card->GetDrawSize();
+	const FVector2D Px(-Local.Y + Draw.X * 0.5, -Local.Z + Draw.Y * 0.5);
+	if (Px.X < 0.0 || Px.Y < 0.0 || Px.X > Draw.X || Px.Y > Draw.Y) return false;
+	OutId = TEXT("card:panel");
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const FSlateRect Box = PaintedBox(CardButtons[Index]);
+		if (Box.IsValid() && Box.ContainsPoint(Px)) OutId = (Index == 0) == bCardFirstIsDecline ? TEXT("card:decline") : TEXT("card:approve");
+	}
+	return true;
+}
+
+bool ABpTable::CardAim(const FString& Id, FVector& OutWorld) const
+{
+	if (!Card || CardShownId.IsEmpty() || (Id != TEXT("card:decline") && Id != TEXT("card:approve"))) return false;
+	const int32 Index = (Id == TEXT("card:decline")) == bCardFirstIsDecline ? 0 : 1;
+	const FSlateRect Box = PaintedBox(CardButtons[Index]);
+	if (!Box.IsValid()) return false;
+	const FVector2D Draw = Card->GetDrawSize(), Centre = Box.GetCenter();
+	OutWorld = Card->GetComponentTransform().TransformPosition(FVector(0.0, Draw.X * 0.5 - Centre.X, Draw.Y * 0.5 - Centre.Y));
+	return true;
+}
+
+FString ABpTable::GetCardLine() const
+{
+	if (CardShownId.IsEmpty() || !Card || !Card->IsVisible()) return FString();
+	return CardShownId + (bBriefRead && BriefFor == CardShownId && bBriefRepeat ? TEXT(" repeat") : TEXT(""));
+}
+
+void ABpTable::CardTap(const FString& Id)
+{
+	const FString Shown = CardShownId;
+	if (Shown.IsEmpty() || !Card || !Card->IsVisible())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: tap %s refused: no card is shown"), *Id);
+		return;
+	}
+	const bool bRepeat = bBriefRead && BriefFor == Shown && bBriefRepeat;
+	if (Id == TEXT("card:approve"))
+	{
+		// The owner's ruling on F8 is a decline; an approval starts work, so the table takes none (the desk, or the room
+		// deck's draft wave).
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: approve %s not written: the table takes no approval (approve it at the desk; the room deck's Approve composes a draft)"), *Shown);
+		return;
+	}
+	if (Id != TEXT("card:decline")) return;
+	if (!bRepeat)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s not written: it repeats no declined idea (the plan's Decline, with your own note, is the desk's)"), *Shown);
+		return;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s as a repeat -> the store (%s)"), *Shown, *BriefRepeatNote);
+	TWeakObjectPtr<ABpTable> Self(this);
+	FBpLinkModule::Get().DeclineRepeat(Shown, [Self, Shown](int32 Status, const FString& Body)
+	{
+		ABpTable* T = Self.Get();
+		if (!T) return;
+		if (Status != 200)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpCard: decline %s not written (HTTP %d) %.200s"), *Shown, Status, *Body);
+			return;
+		}
+		// The card leaves: the next open finding (the room rule) comes forward, or the card hides.
+		T->CardDeclined.Add(Shown);
+		if (T->CardAskId == Shown) T->CardAskId.Reset();
+		T->CardProposal.Reset();
+		if (T->bCardShown) T->RefreshCard();
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: declined %s in the store as a repeat; the card now shows %s"), *Shown, T->CardShownId.IsEmpty() ? TEXT("nothing") : *T->CardShownId);
+	});
 }
 
 void ABpTable::ApplyCardVisibility()

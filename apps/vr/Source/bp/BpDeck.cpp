@@ -4,7 +4,9 @@
 // feature in plan order (paper: warm off-white, dark ink, as the card's), then the room's summary. Next and previous tabs,
 // a tap on a feature's glyph on the map, and resolving a decision swap them with a short slide; the view never moves.
 // Approve puts the finding into the product's draft wave through BpLink (compose or PATCH, never dispatch); Decline drops
-// it from this session's queue. What a screen says is the plan's and the store's, read the way the web's Review item and
+// it from this session's queue. A decision screen carries the finding's decision brief (ROADMAP F1: BpLink FetchBrief, the
+// lines the web's card shows, the quoted decline in amber); on a repeat of a declined idea (advice withdraw) DECLINE · REPEAT
+// is the first, filled control, and it declines the finding in the store (BpLink DeclineRepeat, F8), as the table's card does. What a screen says is the plan's and the store's, read the way the web's Review item and
 // feature page read them (blueprint-ui.md, "Chrome and the feature page"); a field the data lacks is left out.
 #include "BpTable.h"
 
@@ -52,6 +54,9 @@ namespace
 	const FBox2f PrevBox(FVector2f(LW - PadX - 500.f, BarY), FVector2f(LW - PadX - 345.f, BarY + BarH));
 	const FBox2f CountBox(FVector2f(LW - PadX - 345.f, BarY), FVector2f(LW - PadX - 155.f, BarY + BarH));
 	const FBox2f NextBox(FVector2f(LW - PadX - 155.f, BarY), FVector2f(LW - PadX, BarY + BarH));
+	/** A repeat (F1, F8): DECLINE · REPEAT first and wider, APPROVE after it, before the tabs. */
+	const FBox2f RepeatDeclineBox(FVector2f(PadX, BarY), FVector2f(PadX + 400.f, BarY + BarH));
+	const FBox2f RepeatApproveBox(FVector2f(PadX + 420.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** The summary's NEXT ROOM button at the queue's end (WP3), where a decision's Approve and Decline stand. */
 	const FBox2f NextRoomBox(FVector2f(PadX, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** A spine (FAI): the next screens' edges right of the front, laid out on SW x SH px at the same density. */
@@ -489,7 +494,7 @@ void ABpTable::BuildDeckQueue()
 	for (int32 Index = 0; Index < State.Scan.proposals.Num(); ++Index)
 	{
 		const FBpProposal& Proposal = State.Scan.proposals[Index];
-		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id)) continue;
+		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id) || CardDeclined.Contains(Proposal.id)) continue;
 		const int32* Tier = State.Tiers.Find(Proposal.id);
 		Asks.Add({ Index, Tier ? FMath::Clamp(*Tier, 0, 3) : 4, Proposal.risk });
 	}
@@ -516,6 +521,17 @@ void ABpTable::BuildDeckQueue()
 	Summary.Key = TEXT("s:") + Room->id;
 	DeckScreens.Add(Summary);
 	for (FDeckScreen& Screen : DeckScreens) LayoutDeckScreen(Screen);
+	// Each decision's brief, asked once per room visit; its answer lays the screens out again (F1).
+	TWeakObjectPtr<ABpTable> Self(this);
+	for (const FDeckScreen& Screen : DeckScreens)
+	{
+		if (Screen.Kind != KDecision || DeckBriefAsked.Contains(Screen.Proposal)) continue;
+		DeckBriefAsked.Add(Screen.Proposal);
+		FBpLinkModule::Get().FetchBrief(Screen.Proposal, [Self](bool bOk, const FBpDecisionBrief&)
+		{
+			if (bOk && Self.IsValid()) Self->RefreshDeck();
+		});
+	}
 
 	// The current screen stays in front when it is still in the queue; else the one now at its place. Until a swap the
 	// front is the queue's first (FAH's CSV run: the room was entered before the first /scan read, so the sheets came
@@ -619,7 +635,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		TArray<const FBpProposal*> Out;
 		for (const FBpProposal& Proposal : State.Scan.proposals)
 		{
-			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id)) Out.Add(&Proposal);
+			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id) && !CardDeclined.Contains(Proposal.id)) Out.Add(&Proposal);
 		}
 		Out.StableSort([&State](const FBpProposal& A, const FBpProposal& B)
 		{
@@ -645,13 +661,36 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		if (Tier) Items.Emplace(FString::Printf(TEXT("T%d  %s"), *Tier, *TierWord(*Tier)), *Tier <= PinTagTierMax ? CAmber : COutline);
 		if (!P->kind.IsEmpty() && P->kind != TEXT("fix")) Items.Emplace(P->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), COutline);
 		if (InDraft(P->id)) Items.Emplace(TEXT("IN DRAFT WAVE"), CCyan);
+		const FBpDecisionBrief* Brief = DeckBrief(P->id);
+		const bool bRepeat = Brief && FBpLinkModule::IsRepeat(*Brief);
+		if (bRepeat) Items.Insert(TPair<FString, uint8>(TEXT("REPEATS A DECLINE  ·  DECLINE RECOMMENDED"), CAmber), 0);
 		const FDeckRow Head = Chips(Items, P->id.ToUpper());
 		Add(Head);
 		Add(Gap(12.f));
 		AddLines(P->title, STitle, 3);
+		const bool bBriefLines = Brief && Brief->lines.Num() > 0;
 		FString Where = Tile ? TEXT("On ") + Tile->name : TEXT("On ") + P->feature;
 		if (Bay) Where += TEXT("  ·  ") + Bay->name;
-		AddLines(Where, SLede, 2);
+		// with a brief its first line says where the change lands ("Touches <feature> in <bay>"), as on the table's card
+		if (!bBriefLines) AddLines(Where, SLede, 2);
+		// The decision brief (F1): its lines as the web's card shows them, the quoted decline in amber (row style 2).
+		if (bBriefLines)
+		{
+			int32 DeclinedLine = INDEX_NONE;
+			for (int32 Index = 0; Index < Brief->facts.Num(); ++Index) if (Brief->facts[Index].key == TEXT("declined")) DeclinedLine = Index;
+			// no heading, no where line: the five lines fit the first page under the title (by capture: with them, the cost line
+			// went to page 2)
+			Add(Gap(10.f));
+			for (int32 Index = 0; Index < Brief->lines.Num() && Index < 5; ++Index)
+			{
+				for (const FString& Each : Wrap(Brief->lines[Index], SBody, ContentW))
+				{
+					FDeckRow Row = Text(Each, SBody);
+					if (Index == DeclinedLine) Row.Styles.Add(2);
+					Add(Row);
+				}
+			}
+		}
 		// The metric move (the web's Review figure): the latest reading of the proposal's metric on its feature and lens,
 		// then that plus expected_delta. Only what the store has: no reading is "—", no delta leaves the after out.
 		if (!P->metric.IsEmpty())
@@ -1122,11 +1161,45 @@ void ABpTable::DeckDecline()
 		return;
 	}
 	const FString Id = DeckScreens[DeckAt].Proposal;
+	if (DeckRepeat(DeckAt))
+	{
+		// A repeat of a declined idea (F8): declined in the store, as the table's card does; the queue moves on when the
+		// server has taken it (a refusal leaves the screen where it is).
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: decline %s as a repeat -> the store"), *Id);
+		TWeakObjectPtr<ABpTable> Self(this);
+		FBpLinkModule::Get().DeclineRepeat(Id, [Self, Id](int32 Status, const FString& Body)
+		{
+			ABpTable* T = Self.Get();
+			if (!T) return;
+			if (Status != 200)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpDeck: decline %s not written (HTTP %d) %.200s"), *Id, Status, *Body);
+				return;
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpDeck: declined %s in the store as a repeat"), *Id);
+			T->CardDeclined.Add(Id);
+			T->BuildDeckQueue();
+			T->ShowDeckAt(T->DeckAt, 0, 1);
+		});
+		return;
+	}
 	DeckDeclined.Add(Id);
-	UE_LOG(LogBpTable, Log, TEXT("BpDeck: decline %s: off this session's queue (memory only; the store is not written)"), *Id);
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: decline %s: off this session's queue (memory only; the store is not written: it repeats no declined idea)"), *Id);
 	// The queue without it; the screen that was next comes forward.
 	BuildDeckQueue();
 	ShowDeckAt(DeckAt, 0, 1);
+}
+
+const FBpDecisionBrief* ABpTable::DeckBrief(const FString& ProposalId) const
+{
+	return FBpLinkModule::Get().FindBrief(ProposalId);
+}
+
+bool ABpTable::DeckRepeat(int32 ScreenIndex) const
+{
+	if (!DeckScreens.IsValidIndex(ScreenIndex) || DeckScreens[ScreenIndex].Kind != KDecision) return false;
+	const FBpDecisionBrief* Brief = DeckBrief(DeckScreens[ScreenIndex].Proposal);
+	return Brief && FBpLinkModule::IsRepeat(*Brief);
 }
 
 void ABpTable::DeckTap(const FString& Id)
@@ -1240,8 +1313,10 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
 	FString Why;
 	if (bEnd && NextRoomBox.IsInside(Px) && !NextRoom(Why).IsEmpty()) OutId = TEXT("deck:nextroom");
-	else if (bDecision && ApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
-	else if (bDecision && DeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
+	else if (bDecision && DeckRepeat(DeckAt) && RepeatDeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
+	else if (bDecision && DeckRepeat(DeckAt) && RepeatApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
+	else if (bDecision && !DeckRepeat(DeckAt) && ApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
+	else if (bDecision && !DeckRepeat(DeckAt) && DeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
 	else if (PrevBox.IsInside(Px)) OutId = TEXT("deck:prev");
 	else if (NextBox.IsInside(Px)) OutId = TEXT("deck:next");
 	else OutId = TEXT("deck:screen");
@@ -1251,7 +1326,8 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 {
 	if (DeckRoom.IsEmpty() || DeckCards.Num() < 4) return false;
-	const FBox2f* Box = Id == TEXT("deck:approve") ? &ApproveBox : Id == TEXT("deck:decline") ? &DeclineBox : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox
+	const bool bRepeat = DeckRepeat(DeckAt);
+	const FBox2f* Box = Id == TEXT("deck:approve") ? (bRepeat ? &RepeatApproveBox : &ApproveBox) : Id == TEXT("deck:decline") ? (bRepeat ? &RepeatDeclineBox : &DeclineBox) : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox
 		: Id == TEXT("deck:nextroom") ? &NextRoomBox : nullptr;
 	if (!Box) return false;
 	const FVector2f Centre = Box->GetCenter();
@@ -1303,9 +1379,10 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 		switch (Row.Kind)
 		{
 		case RText:
-			Content = SNew(SBox).VAlign(VAlign_Center).Padding(FMargin(Row.Styles.Num() > 0 ? BulletIndentPx : 0.f, 0.f, 0.f, 0.f))
+			// row style 1: a bullet's indent; 2: the brief's quoted decline, in amber
+			Content = SNew(SBox).VAlign(VAlign_Center).Padding(FMargin(Row.Styles.Contains(1) ? BulletIndentPx : 0.f, 0.f, 0.f, 0.f))
 				[
-					Label(Row.Texts[0], Row.Style, TextColor(Row.Style, bPaper))
+					Label(Row.Texts[0], Row.Style, Row.Styles.Contains(2) ? Amber : TextColor(Row.Style, bPaper))
 				];
 			break;
 		case RChips:
@@ -1423,7 +1500,12 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	Place(PrevBox, Button(bPrev ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("‹  PREV"), bPrev ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
 	Place(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Counter]);
 	Place(NextBox, Button(bNext ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("NEXT  ›"), bNext ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
-	if (bDecision)
+	if (bDecision && DeckRepeat(ScreenIndex))
+	{
+		Place(RepeatDeclineBox, Button(&ApproveBrush, TEXT("✕"), TEXT("DECLINE · REPEAT"), Ink));
+		Place(RepeatApproveBox, Button(&DeclineBrush, TEXT("✓"), TEXT("APPROVE"), FLinearColor::White));
+	}
+	else if (bDecision)
 	{
 		Place(ApproveBox, Button(&ApproveBrush, TEXT("✓"), TEXT("APPROVE"), Ink));
 		Place(DeclineBox, Button(&DeclineBrush, TEXT("✕"), TEXT("DECLINE"), FLinearColor::White));

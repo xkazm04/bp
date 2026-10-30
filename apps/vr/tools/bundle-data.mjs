@@ -2,11 +2,15 @@
 // Save one product's server answers into the VR build (docs/concepts/vr-light-table/standalone-plan.md): the headset with no
 // PC reads them through BpLink's bundle path (FBpLinkClient::ReadBundle) instead of asking apps/server.
 //
-//   node apps/vr/tools/bundle-data.mjs [--product <slug>] [--url http://127.0.0.1:3100]
+//   node apps/vr/tools/bundle-data.mjs [--product <slug>] [--url http://127.0.0.1:3100] [--briefs]
 //
 // Without --url it starts apps/server itself (`--port 0` in an empty cwd, as run-bplink does) and stops it afterwards. It
 // writes apps/vr/Content/BpData/<slug>/: structure.json, plan.json (the islands layout the table draws), scans.json,
 // scan.json, waves.json (the scan side: pins, the scan line, the wrist's waves) and bundle.json (when and from where).
+// --briefs (ROADMAP F2) adds briefs.json: { <proposal id>: <the brief route's body> } for every open proposal in scan.json,
+// so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
+// bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
+// an existing briefs.json is left as it is.
 // Each file is the route's body exactly as the server answered. Config/DefaultGame.ini stages the BpData directory into
 // the pak as UFS files. Only Kettle (the sample) is committed; a live product's bundle stays local (.gitignore).
 // Exit 0 written, 1 a route failed, 2 refused.
@@ -61,6 +65,20 @@ for (const [file, route] of PARTS) {
   fs.writeFileSync(path.join(dir, file), body);
   if (file === 'structure.json') rev = JSON.parse(body).rev ?? null;
   console.log(`ok    ${route} -> ${path.relative(REPO, path.join(dir, file)).replace(/\\/g, '/')} (${(body.length / 1024).toFixed(1)} KB)`);
+}
+if (args.includes('--briefs') && !failed) {
+  const open = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).proposals ?? []).filter((p) => p.status === 'proposed').map((p) => p.id);
+  const briefs = {};
+  for (const id of open) {
+    const res = await fetch(`${url}/api/products/${slug}/proposals/${encodeURIComponent(id)}/brief`).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
+    const body = await res.text();
+    if (!res.ok) { failed++; console.log(`FAIL  brief ${id}: ${res.status} ${body.slice(0, 200)}`); continue; }
+    briefs[id] = JSON.parse(body);
+  }
+  const text = JSON.stringify(briefs);
+  fs.writeFileSync(path.join(dir, 'briefs.json'), text);
+  const repeats = Object.values(briefs).filter((b) => b.advice?.say === 'withdraw').length;
+  console.log(`ok    ${open.length} briefs -> ${path.relative(REPO, path.join(dir, 'briefs.json')).replace(/\\/g, '/')} (${(text.length / 1024).toFixed(1)} KB, ${repeats} repeat${repeats === 1 ? '' : 's'})`);
 }
 stop();
 fs.writeFileSync(path.join(dir, 'bundle.json'), JSON.stringify({ product: slug, savedAt: new Date().toISOString(), rev, from: server ? 'apps/server (started by bundle-data.mjs)' : url }, null, 2) + '\n');
