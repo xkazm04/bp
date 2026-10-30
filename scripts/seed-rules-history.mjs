@@ -56,7 +56,7 @@ const tierOf = () => { const x = rnd(); return x < 0.07 ? 0 : x < 0.22 ? 1 : x <
 /** The simulated owner's verdict (see the header). */
 function verdict(f, lens, tier) {
   if (tier === 0) return 'approve';
-  if (PAYMENTS.has(f.capability)) return lens === 'security' ? 'approve' : rnd() < 0.85 ? 'decline' : 'approve';
+  if (PAYMENTS.has(f.capability)) return lens === 'security' ? 'approve' : rnd() < 0.95 ? 'decline' : 'approve';
   if (tier === 3) return lens === 'design' && rnd() < 0.3 ? 'decline' : rnd() < 0.96 ? 'approve' : 'decline';
   return rnd() < 0.75 ? 'approve' : 'decline';
 }
@@ -77,9 +77,11 @@ const iso = (ms) => new Date(ms).toISOString();
 const rows = [];
 const feats = map.features.filter((f) => typeof f.slug === 'string');
 // payments carries a quarter of the record, so a rule over it has evidence to stand on
-const payFeats = feats.filter((f) => PAYMENTS.has(f.capability)), restFeats = feats.filter((f) => !PAYMENTS.has(f.capability));
+// and booking a fifth, so the rooms where the owner's habit is clearest carry enough decisions for a rule to rest on
+const BOOKING = 'booking.booking';
+const payFeats = feats.filter((f) => PAYMENTS.has(f.capability)), bookFeats = feats.filter((f) => f.capability === BOOKING), restFeats = feats.filter((f) => !PAYMENTS.has(f.capability) && f.capability !== BOOKING);
 for (let i = 0; i < N; i++) {
-  const f = rnd() < 0.25 ? pick(payFeats) : pick(restFeats), lens = pick(LENSES), tier = tierOf();
+  const x = rnd(), f = x < 0.25 ? pick(payFeats) : x < 0.45 && bookFeats.length ? pick(bookFeats) : pick(restFeats), lens = pick(LENSES), tier = tierOf();
   const v = verdict(f, lens, tier), at = NOW - Math.floor((i + 1) * (42 * 86400000) / (N + 1)) - Math.floor(rnd() * 3600000);
   rows.push({
     id: `syn-${(i + 1).toString().padStart(3, '0')}`, feature: f.slug, lens, title: pick(TITLES[lens] ?? TITLES.development).replace('{f}', f.name),

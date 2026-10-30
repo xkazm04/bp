@@ -93,6 +93,16 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
     check('grantFor: a cautious grant covers only an earned lens, and nothing without the trust table', R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'security' }], T0, () => trust)?.id === 'G-9'
       && !R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'design' }], T0, () => trust) && !R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'security' }], T0));
   }
+  {
+    const S = await import('../packages/core/src/scan/rules-suggest.ts');
+    const rooms = [{ id: 'a', label: 'A', features: ['fa'] }, { id: 'b', label: 'B', features: ['fb'] }, { id: 'c', label: 'C', features: ['fc'] }];
+    const r3 = (id: string, f: string, owner: 'approve' | 'decline', tier = 3) => row(id, f, owner, tier, { at: '2026-10-0' + (id.length % 9 + 1) + 'T00:00:00Z' });
+    const rec3 = [...'123456'].map((i) => r3('a' + i, 'fa', 'approve')).concat([...'12345'].map((i) => r3('b' + i, 'fb', 'decline', 2)), [r3('b6', 'fb', 'approve', 2)], [...'1234'].map((i) => r3('c' + i, 'fc', 'approve')));
+    const sg = S.suggestRules(rec3, rooms, []);
+    check('suggest: a room whose backlog you always approved suggests a grant; one you mostly declined, a hold; too few decisions, nothing', sg.length === 2 && sg.some((x) => x.kind === 'grant' && x.scope.id === 'a' && x.minTier === 3 && /6 of 6/.test(x.why)) && sg.some((x) => x.kind === 'hold' && x.scope.id === 'b' && /5 of 6/.test(x.why)) && !sg.some((x) => x.scope.id === 'c'), j(sg));
+    const taken = S.suggestRules(rec3, rooms, [rule({ id: 'G-3', kind: 'grant', minTier: 3, scope: { kind: 'room', id: 'a', label: 'A', features: ['fa'] } })]);
+    check('suggest: a room a live rule of that kind already covers is not suggested again', !taken.some((x) => x.scope.id === 'a') && taken.some((x) => x.scope.id === 'b'), j(taken));
+  }
   check('backtest: synthetic rows are counted', R.backtest(hold, [row('s', 'card', 'approve', 2, { synthetic: true })]).synthetic === 1);
 }
 {

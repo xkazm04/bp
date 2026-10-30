@@ -10,7 +10,8 @@ import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
 import type { ScanScope } from '../scan/jobs.ts';
 import { gate, gateWords, lensTrust, type Act, type DecidedRow, type GateAnswer, type HeldEntry, type OpenRow, type Rule, type RuleShape, type RulesFile } from '../scan/rules.ts';
-import { hasStore, recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
+import { hasStore, recovered, storeDir, storeFile, warnOnce, writeAtomic } from './products.server.ts';
+import type { Room } from '../scan/rules-suggest.ts';
 import { snapshotOf } from './store.server.ts';
 import { listWaves } from './waves.server.ts';
 
@@ -101,6 +102,17 @@ export function openRows(p: ProductEntry): OpenRow[] {
   if (!hasStore(p)) return [];
   return snapshotOf(storeFile(p)).proposals.filter((x) => x.status === 'proposed' || x.status === 'approved')
     .map((x) => ({ id: x.id, title: x.title, feature: x.feature, lens: x.lens, ...(x.tier !== undefined && x.tier !== null ? { tier: x.tier } : {}) }));
+}
+
+/** The map's rooms (capabilities) with their features, for suggestions; [] when the map cannot be read. */
+export function roomsOf(p: ProductEntry): Room[] {
+  try {
+    const j = JSON.parse(fs.readFileSync(path.join(storeDir(p), 'app-structure.json'), 'utf8')) as { capabilities?: { slug?: unknown; name?: unknown }[]; features?: { slug?: unknown; capability?: unknown }[] };
+    const by = new Map<string, string[]>();
+    for (const f of j.features ?? []) if (typeof f?.slug === 'string' && typeof f.capability === 'string') by.set(f.capability, [...(by.get(f.capability) ?? []), f.slug]);
+    return (j.capabilities ?? []).filter((c) => typeof c?.slug === 'string' && by.has(c.slug as string))
+      .map((c) => ({ id: c.slug as string, label: typeof c.name === 'string' ? c.name : (c.slug as string), features: by.get(c.slug as string)! }));
+  } catch { return []; }
 }
 
 /** The lenses a cautious grant has earned over this record (scan/rules.ts lensTrust): where it may act alone. */

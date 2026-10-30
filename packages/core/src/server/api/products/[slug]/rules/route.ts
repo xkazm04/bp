@@ -1,7 +1,9 @@
 // GET /api/products/[slug]/rules: the product's standing rules (`{ rules, record, held, breaches }`: every rule, revoked
 // and expired ones included as the record; the size of the decided record a rule is replayed over; per rule, what the
 // doors held or refused under it (work/bp-rules-log.jsonl, scan/rules.ts tallyHeld) and the findings approved in its
-// place against it since it was set (breachesOf: something went around bp's doors). Any client; agents read it as rules.list.
+// place against it since it was set (breachesOf: something went around bp's doors); and the rules the owner's own record
+// suggests (scan/rules-suggest.ts: rooms where their decisions already follow a grant or a hold). Any client; agents read
+// it as rules.list.
 // POST /api/products/[slug]/rules, body a rule draft `{ kind: hold|only|cap|grant, scope: { kind, id?, label, features },
 // lenses?, maxEffort?, model?, minTier?, tools?, hours?, text?, preview? }` (scan/rules.ts checkRuleBody):
 //   preview: true   the backtest of the draft over the owner's decided findings, and what it would do to the open
@@ -14,7 +16,8 @@
 import { door } from '@bp/core/server/route-door.server';
 import { backtest, breachesOf, checkRuleBody, impact, ruleOf, tallyHeld } from '@bp/core/scan/rules';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
-import { addRule, decidedRows, listRules, openRows, readHeld, trustedLenses } from '@bp/core/server/rules.server';
+import { addRule, decidedRows, listRules, openRows, readHeld, roomsOf, trustedLenses } from '@bp/core/server/rules.server';
+import { suggestRules } from '@bp/core/scan/rules-suggest';
 import { triageBy } from '@bp/core/server/release.server';
 import { isHuman, notHuman } from '../../../companion/door.server.ts';
 import { isGated, toolOf } from '../../../companion/tool-call.ts';
@@ -24,7 +27,7 @@ const rules = door('products/[slug]/rules', {
     live: ({ product: p, read }) => {
       const rows = read(() => decidedRows(p)), rules = listRules(p.root);
       const breaches = Object.fromEntries(rules.map((r) => [r.id, breachesOf(r, rows)]).filter(([, b]) => b.length));
-      return Response.json({ rules, record: { decided: rows.length, synthetic: rows.filter((r) => r.synthetic).length }, held: tallyHeld(readHeld(p.root)), breaches });
+      return Response.json({ rules, record: { decided: rows.length, synthetic: rows.filter((r) => r.synthetic).length }, held: tallyHeld(readHeld(p.root)), breaches, suggestions: suggestRules(rows, roomsOf(p), rules) });
     },
   },
   POST: {

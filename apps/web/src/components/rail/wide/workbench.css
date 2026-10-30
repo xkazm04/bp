@@ -390,3 +390,5 @@
 #flyout.wide .rl-trust small { font: 500 13px var(--mono); color: var(--ink-2); }
 #flyout.wide .rl-trust em { font: normal 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 #flyout.wide .rl-trust .ok em { color: var(--mint-2); } #flyout.wide .rl-trust .no em { color: var(--amber-2); }
+#flyout.wide .wb-row.rl-sug .rk > span:first-child { color: var(--accent); }
+#flyout.wide .wb-row.rl-sug .rt { font-weight: 400; }

@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { GRANT_TOOLS, TIER_WORD, isLive, isOrder, nextRuleId, ruleText, trustworthy, type DecidedRow, type HeldTally, type Rule, type RuleKind } from '@bp/core/scan/rules';
 import type { ScanScope } from '@bp/core/scan/jobs';
-import { WRITE_ROW, revokeRule, setRule, usePickedDraft, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
+import { WRITE_ROW, pickDraft, revokeRule, setRule, usePickedDraft, usePickedRule, useRules, type DraftBody } from '@/lib/rules/client';
 import { shallowEqual, useBp, useEngine } from '../../hooks';
 import { Evidence, Now, Verdict, useReplay } from './rules-evidence';
 import { Fig, Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
@@ -80,6 +80,18 @@ export function LiveRules({ slug }: { slug: string }) {
       </ul>
       {orders.length > 0 && <Group head="Orders · agents may not" n={orders.length} label="Live orders">{orders.map(row)}</Group>}
       {grants.length > 0 && <Group head="Grants · agents may decide" n={grants.length} label="Live grants">{grants.map(row)}</Group>}
+      {v.suggestions.length > 0 && (
+        <Group head="Suggested by your record" n={v.suggestions.length} label="Rules your decisions already follow">
+          {v.suggestions.map((x) => (
+            <Row key={'sg:' + x.kind + ':' + x.scope.id} id={null} on={false} cls={'rl-sug rl-k-' + x.kind} label={'Suggested: ' + x.kind + ' ' + x.scope.label}
+              onPick={() => pickDraft({ kind: x.kind, scope: x.scope, ...(x.minTier !== undefined ? { minTier: x.minTier } : {}), ...(x.hours ? { hours: x.hours } : {}) })}>
+              <span className="rk"><span>suggested</span><span>{x.kind === 'grant' ? 'grant' : 'order · ' + x.kind}</span></span>
+              <span className="rt">{x.kind === 'grant' ? 'Let agents approve backlog in ' : 'Hold '}{x.scope.label}</span>
+              <span className="rm"><span>{x.why}</span><span>{Math.round((100 * x.follow) / x.n)}%</span></span>
+            </Row>
+          ))}
+        </Group>
+      )}
       {ended.length > 0 && <Group head="Ended" n={ended.length} label="Revoked and expired rules">{ended.map(row)}</Group>}
       {!v.rules.length && <p className="wb-none">{v.loaded ? 'No standing rules yet: every agent door is open.' : 'Reading the rules…'}</p>}
     </>
