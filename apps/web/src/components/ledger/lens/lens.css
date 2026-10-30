@@ -71,6 +71,8 @@
 .tl-m p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
 .tl-m .who { display: block; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 2px; }
 .tl-m.you { align-self: flex-end; max-width: 88%; padding: 7px 9px; background: color-mix(in srgb, var(--accent) 12%, transparent); border: 1px solid var(--ink-4); }
+.tl-m.you.queued { border-style: dashed; background: none; }
+.tl-m.queued .tl-bt { margin-top: 4px; }
 .tl-m.claude { padding: 7px 9px; border-left: 2px solid var(--accent); }
 .tl-m.note { font-size: 13px; color: var(--ink-2); padding: 4px 9px; }
 .tl-m.note.err { color: var(--red-2); border-left: 3px solid var(--red); }
