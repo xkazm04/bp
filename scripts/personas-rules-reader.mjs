@@ -100,7 +100,8 @@ function readLog(file) {
 }
 
 const isLive = (r, now) => !r.revokedAt && (!r.expiresAt || Date.parse(r.expiresAt) > now);
-const stamp = (iso) => iso.slice(0, 16).replace('T', ' ');
+// the clock of the machine it runs on, worded as bp words it (scan/rules.ts stampOf), so both apps show the same time
+const stamp = (iso) => new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false });
 function timeLeft(r, now) {
   if (!r.expiresAt) return 'until revoked';
   const m = Math.max(0, Math.round((Date.parse(r.expiresAt) - now) / 60000));
@@ -130,7 +131,7 @@ const log = readLog(logPath);
 const now = o.now, rules = read.rules;
 console.log(`file     ${read.absent ? `${rulesPath} (absent: no rules)` : `${rulesPath} (version 1, ${rules.length} rule${rules.length === 1 ? '' : 's'})`}`);
 console.log(`log      ${log.absent ? 'absent (nothing held yet)' : `${log.lines} entr${log.lines === 1 ? 'y' : 'ies'}${log.skipped ? `, ${log.skipped} torn or foreign line${log.skipped === 1 ? '' : 's'} skipped` : ''}`}`);
-console.log(`as of    ${new Date(now).toISOString()}`);
+console.log(`as of    ${stamp(new Date(now).toISOString())}`);
 
 const live = rules.filter((r) => isLive(r, now));
 const orders = live.filter((r) => r.kind !== 'grant'), grants = live.filter((r) => r.kind === 'grant');
