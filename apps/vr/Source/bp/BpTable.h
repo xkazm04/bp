@@ -45,6 +45,7 @@ class UStaticMeshComponent;
 class UTexture2D;
 class UWidgetComponent;
 class SWidget;
+struct FBpDecisionBrief;
 struct FBpPlan;
 
 UCLASS()
@@ -534,6 +535,17 @@ public:
 	void ShowCard(bool bShow);
 	/** The card asks about this open finding (BpCard.Ask <id>), ahead of the room rule; empty goes back to the rule. */
 	void AskCard(const FString& ProposalId);
+	/** A hand's tap on the card (HitTest's "card:decline", "card:approve"; ROADMAP F8, owner 2026-10-30). Decline on a
+	 *  repeat (the brief's advice withdraw) declines it in the store through BpLink DeclineRepeat, and the card moves on to
+	 *  the next open finding; Decline on any other card and Approve write nothing (the desk decides those). */
+	void CardTap(const FString& Id);
+	/** The card's buttons, for the hands: a world ray on the shown card (OutId "card:<button>" or "card:panel"), and the
+	 *  world point at a button's centre (BpHands.Pinch card:decline). */
+	bool CardHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	bool CardAim(const FString& Id, FVector& OutWorld) const;
+	/** For checks: "<finding id>[ repeat]" for the finding the card shows, "" when it shows none. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Card")
+	FString GetCardLine() const;
 	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
 	void StartScan(const FString& Id, const FString& Lens);
 
@@ -1163,6 +1175,18 @@ private:
 	bool bBriefRepeat = false;
 	FString BriefRepeatNote;
 	void RequestCardBrief(const FString& ProposalId);
+	/** The finding the card shows now (CardProposal is its redraw key), and its buttons' boxes in the card's draw px, from
+	 *  the last paint (the first: Decline on a repeat, else Approve). */
+	FString CardShownId;
+	TSharedPtr<SWidget> CardButtons[2];
+	bool bCardFirstIsDecline = false;
+	/** Declined from this table and answered 200: skipped by the card until the store's next read shows them declined. */
+	TSet<FString> CardDeclined;
+	/** Decision screens whose brief was asked for (FetchBrief; the answer lays the screen out again). */
+	TSet<FString> DeckBriefAsked;
+	/** The deck's decision screen's brief from BpLink's cache, and whether it makes the screen a repeat. */
+	const FBpDecisionBrief* DeckBrief(const FString& ProposalId) const;
+	bool DeckRepeat(int32 ScreenIndex) const;
 
 	// ---- Room mode state (BpRoom.cpp) ---------------------------------------------------------------------------------
 	/** The room asked for (empty: the site plan), the room whose map is drawn, and the fade between them (0 the site plan,
