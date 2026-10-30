@@ -651,39 +651,48 @@ void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, c
 	Request->ProcessRequest();
 }
 
-void FBpLinkModule::DeclineRepeat(const FString& ProposalId, TFunction<void(int32, const FString&)> OnDone)
+void FBpLinkModule::SendDecision(const TCHAR* Verb, const FString& ProposalId, TFunction<void(int32, const FString&)> OnDone)
 {
-	// The table's one decision write (F8): only ever the decline of a repeat, and the server judges that, not the table.
-	if (GFromBundle)
+	// The table's decision writes: the decline of a repeat (F8) and the approve of the card's decision (D12), each a device
+	// route the server judges (a decline that is no repeat is 409 there). Nothing else is sent through here.
+	const FString What = Verb;
+	if (What != TEXT("decline") && What != TEXT("approve"))
 	{
-		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused decline %s/%s: the table reads the build's bundled snapshot, and no server keeps a decision"), *GetProductSlug(), *ProposalId);
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused decision %s on %s: the table only declines a repeat or approves"), *What, *ProposalId);
 		if (OnDone) OnDone(0, FString());
 		return;
 	}
-	if (ProposalId.IsEmpty() || DeclinesOut.Contains(ProposalId))
+	if (GFromBundle)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused %s %s/%s: the table reads the build's bundled snapshot, and no server keeps a decision"), *What, *GetProductSlug(), *ProposalId);
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
+	if (ProposalId.IsEmpty() || DecisionsOut.Contains(ProposalId))
 	{
 		if (OnDone) OnDone(0, FString());
 		return;
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-	DeclinesOut.Add(ProposalId);
+	DecisionsOut.Add(ProposalId);
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	Request->SetVerb(TEXT("POST"));
-	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/decline"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/") + What);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	Request->SetHeader(TEXT("x-bp-device"), DeviceId);
 	Request->SetContentAsString(TEXT("{}"));
 	const FString Slug = GetProductSlug();
-	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST %s/proposals/%s/decline (a repeat; the server writes it only if the brief says so)"), *Slug, *ProposalId);
-	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST %s/proposals/%s/%s (%s)"), *Slug, *ProposalId, *What,
+		What == TEXT("decline") ? TEXT("a repeat; the server writes it only if the brief says so") : TEXT("the Morning Watch's Approve; no build is queued"));
+	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug, What](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
 		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: decline %s/%s answered %d %.300s"), *Slug, *ProposalId, Status, *Body);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: %s %s/%s answered %d %.300s"), *What, *Slug, *ProposalId, Status, *Body);
 		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
 		{
-			Module->DeclinesOut.Remove(ProposalId);
+			Module->DecisionsOut.Remove(ProposalId);
 			// the store moved: its brief and the scan side are read again
 			if (Status == 200) { Module->Briefs.Remove(ProposalId); Module->NextScanPollS = 0.0; }
 		}
@@ -739,7 +748,7 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 }
 
 // ---- The draft wave (spark vr-room-layers WP2): the screen deck's Approve -----------------------------------------------
-// The only write the table makes. A draft queues nothing (blueprint-ui.md, Ledger waves: "prepared as a draft and
+// The table's one wave write (its decisions are SendDecision's). A draft queues nothing (blueprint-ui.md, Ledger waves: "prepared as a draft and
 // dispatched as a whole later"), so it is allowed on a live product too; a dispatch never leaves VR (the owner's ruling,
 // 2026-10-25: "No dispatch from VR on any product"). SendWave is the door that holds that rule.
 
@@ -942,6 +951,75 @@ namespace
 	{
 		return P.Product + TEXT(" ") + (IsSiteKind(P.Kind, P.Id) ? FString(TEXT("site")) : P.Kind + TEXT(":") + P.Id);
 	}
+
+	// The wire is shared-focus-1 (packages/schema; focus.ts is the source): read and written through the generated
+	// FBpSharedView, FBpSharedPlace, FBpFocusPlace and FBpFocusPost (ROADMAP F3). FBpFollowPlace stays BpLink's in-engine
+	// type, filled from the generated one.
+
+	/** BpLink's place from the view's shared place (a sharedPlace) and the record's rev. */
+	FBpFollowPlace FollowPlaceOf(const FBpSharedPlace& Shared, int32 Rev)
+	{
+		FBpFollowPlace Place;
+		Place.Rev = Rev;
+		Place.Reader = Shared.reader;
+		Place.Surface = Shared.surface;
+		Place.Label = Shared.label;
+		Place.Product = Shared.place.product;
+		Place.Kind = Shared.place.target.kind;
+		Place.Id = Shared.place.target.id;
+		Place.Level = Shared.place.level;
+		Place.Say = Shared.place.say;
+		return Place;
+	}
+
+	/** The generated place a publish carries, from BpLink's own (the site: no target). */
+	FBpFocusPlace FocusPlaceOf(const FBpFollowPlace& Place)
+	{
+		FBpFocusPlace Out;
+		Out.product = Place.Product;
+		if (!IsSiteKind(Place.Kind, Place.Id))
+		{
+			Out.target.kind = Place.Kind;
+			Out.target.id = Place.Id;
+		}
+		Out.level = Place.Level;
+		Out.say = Place.Say.Left(280);
+		return Out;
+	}
+
+	/** Drops what a struct left empty (an empty string; an object that is empty once its own are dropped), so the
+	 *  converter's output carries only what was set: the schema's optionals are absent on the wire, never '' (place.hash
+	 *  says so outright, and the server refuses an empty one). */
+	void DropEmpty(FJsonObject& Json)
+	{
+		TArray<FString> Gone;
+		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Json.Values)
+		{
+			const TSharedPtr<FJsonValue>& Value = Pair.Value;
+			if (!Value.IsValid() || Value->IsNull() || (Value->Type == EJson::String && Value->AsString().IsEmpty()))
+			{
+				Gone.Add(Pair.Key);
+			}
+			else if (Value->Type == EJson::Object)
+			{
+				const TSharedPtr<FJsonObject> Inner = Value->AsObject();
+				if (Inner.IsValid()) DropEmpty(*Inner);
+				if (!Inner.IsValid() || Inner->Values.Num() == 0) Gone.Add(Pair.Key);
+			}
+		}
+		for (const FString& Key : Gone) Json.RemoveField(Key);
+	}
+
+	/** A focus POST body as the condensed JSON it sends: FJsonObjectConverter over the generated FBpFocusPost (its
+	 *  UPROPERTYs are named as the schema's keys), then DropEmpty. */
+	bool FocusWireText(const FBpFocusPost& Post, FString& Out)
+	{
+		const TSharedPtr<FJsonObject> Json = FJsonObjectConverter::UStructToJsonObject(Post);
+		if (!Json.IsValid()) return false;
+		DropEmpty(*Json);
+		Out.Reset();
+		return FJsonSerializer::Serialize(Json.ToSharedRef(), TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Out));
+	}
 }
 
 void FBpLinkModule::SetPublishing(bool bOn)
@@ -985,25 +1063,19 @@ bool FBpLinkModule::PublishPlace(const FBpFollowPlace& In)
 void FBpLinkModule::SendPublish(const FBpFollowPlace& Place)
 {
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-	TSharedRef<FJsonObject> PlaceJson = MakeShared<FJsonObject>();
-	PlaceJson->SetStringField(TEXT("product"), Place.Product);
-	if (!Place.Kind.IsEmpty())
-	{
-		TSharedRef<FJsonObject> Target = MakeShared<FJsonObject>();
-		Target->SetStringField(TEXT("kind"), Place.Kind);
-		Target->SetStringField(TEXT("id"), Place.Id);
-		PlaceJson->SetObjectField(TEXT("target"), Target);
-	}
-	if (!Place.Level.IsEmpty()) PlaceJson->SetStringField(TEXT("level"), Place.Level);
-	if (!Place.Say.IsEmpty()) PlaceJson->SetStringField(TEXT("say"), Place.Say.Left(280));
-	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
-	Body->SetStringField(TEXT("op"), TEXT("publish"));
-	Body->SetStringField(TEXT("reader"), FollowReader);
-	Body->SetStringField(TEXT("surface"), FollowSurface);
-	Body->SetStringField(TEXT("label"), FollowLabel);
-	Body->SetObjectField(TEXT("place"), PlaceJson);
+	// The body is the generated FBpFocusPost: op publish, the table's reader record, the place.
+	FBpFocusPost Post;
+	Post.op = TEXT("publish");
+	Post.reader = FollowReader;
+	Post.surface = FollowSurface;
+	Post.label = FollowLabel;
+	Post.place = FocusPlaceOf(Place);
 	FString Text;
-	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	if (!FocusWireText(Post, Text))
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: publish %s not sent: the post did not write"), *SpotWords(Place));
+		return;
+	}
 
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	Request->SetVerb(TEXT("POST"));
@@ -1109,15 +1181,19 @@ bool FBpLinkModule::TickFollow(float)
 void FBpLinkModule::SendFollowOp(const TCHAR* Op)
 {
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
-	Body->SetStringField(TEXT("op"), Op);
-	Body->SetStringField(TEXT("reader"), FollowReader);
-	Body->SetStringField(TEXT("surface"), FollowSurface);
-	Body->SetStringField(TEXT("label"), FollowLabel);
+	FBpFocusPost Post;
+	Post.op = Op;
+	Post.reader = FollowReader;
+	Post.surface = FollowSurface;
+	Post.label = FollowLabel;
 	const bool bFollow = FCString::Strcmp(Op, TEXT("follow")) == 0;
-	if (bFollow) Body->SetStringField(TEXT("of"), TEXT("*"));
+	if (bFollow) Post.of = TEXT("*");
 	FString Text;
-	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	if (!FocusWireText(Post, Text))
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: %s not sent: the post did not write"), Op);
+		return;
+	}
 
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
 	Request->SetVerb(TEXT("POST"));
@@ -1152,58 +1228,46 @@ void FBpLinkModule::SendFollowOp(const TCHAR* Op)
 
 void FBpLinkModule::ReceiveFollowView(const FString& Body)
 {
-	// SharedView: { rev, shared: { place: { product, target?: { kind, id }, level?, say? }, reader, surface, label } | null,
-	// readers: [{ id, follows? }] }. Read by hand: the record is small and has no generated type yet.
-	TSharedPtr<FJsonObject> View;
-	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), View) || !View.IsValid())
+	// The view is the generated FBpSharedView, read with BpSchema::FromJson; its `shared` (a sharedPlace, or null before
+	// anyone published: the converter leaves the wrapper empty) is read the same way into FBpSharedPlace. A view that does
+	// not read is logged and skipped: the table keeps its place until the next poll.
+	TSharedPtr<FJsonObject> Json;
+	FBpSharedView View;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) || !Json.IsValid() || !BpSchema::FromJson(Json.ToSharedRef(), View))
 	{
-		UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not parse: %.120s"), FocusRoute, *Body);
+		const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s did not read as a shared view (%s %s): %.120s"), FocusRoute, *Failure.Call, *Failure.Path, *Body);
 		return;
 	}
 	// The record no longer shows us following (a fresh record, or one that forgot us): say it again.
-	const TArray<TSharedPtr<FJsonValue>>* Readers = nullptr;
 	bool bListed = false;
-	if (View->TryGetArrayField(TEXT("readers"), Readers))
+	for (const FBpViewReader& Reader : View.readers)
 	{
-		for (const TSharedPtr<FJsonValue>& Value : *Readers)
-		{
-			const TSharedPtr<FJsonObject>* Reader = nullptr;
-			FString Id, Follows;
-			if (!Value.IsValid() || !Value->TryGetObject(Reader) || !(*Reader)->TryGetStringField(TEXT("id"), Id) || Id != FollowReader) continue;
-			(*Reader)->TryGetStringField(TEXT("follows"), Follows);
-			bListed = Follows == TEXT("*");
-		}
+		if (Reader.id == FollowReader) bListed = Reader.follows == TEXT("*");
 	}
 	if (bFollowing && bFollowSaid && !bListed && !bFollowOpOut) bFollowSaid = false;
 
-	int32 Rev = 0;
-	View->TryGetNumberField(TEXT("rev"), Rev);
+	const int32 Rev = View.rev;
 	if (Rev == FollowRev) return;
 	const bool bFirst = FollowRev < 0;
 	FollowRev = Rev;
-	const TSharedPtr<FJsonObject>* Shared = nullptr;
-	const TSharedPtr<FJsonObject>* PlaceJson = nullptr;
-	if (!View->TryGetObjectField(TEXT("shared"), Shared) || !(*Shared)->TryGetObjectField(TEXT("place"), PlaceJson))
+	FBpSharedPlace Shared;
+	const TSharedPtr<FJsonObject>& SharedJson = View.shared.JsonObject;
+	const bool bHasShared = SharedJson.IsValid() && SharedJson->Values.Num() > 0;
+	if (!bHasShared || !BpSchema::FromJson(SharedJson.ToSharedRef(), Shared) || Shared.place.product.IsEmpty())
 	{
-		// No shared place (a fresh record): nothing to go to, and the last one is no longer the owner's.
+		// No shared place (a fresh record), or one that does not read: nothing to go to, and the last one is no longer
+		// the owner's.
+		if (bHasShared)
+		{
+			const BpSchema::FFromJsonFailure& Failure = BpSchema::LastFailure();
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: shared focus rev %d: the shared place did not read (%s %s)"), Rev, *Failure.Call, *Failure.Path);
+		}
 		bHasFollowPlace = false;
 		bHasSharedSpot = false;
 		return;
 	}
-	FBpFollowPlace Place;
-	Place.Rev = Rev;
-	(*Shared)->TryGetStringField(TEXT("reader"), Place.Reader);
-	(*Shared)->TryGetStringField(TEXT("surface"), Place.Surface);
-	(*Shared)->TryGetStringField(TEXT("label"), Place.Label);
-	(*PlaceJson)->TryGetStringField(TEXT("product"), Place.Product);
-	(*PlaceJson)->TryGetStringField(TEXT("level"), Place.Level);
-	(*PlaceJson)->TryGetStringField(TEXT("say"), Place.Say);
-	const TSharedPtr<FJsonObject>* Target = nullptr;
-	if ((*PlaceJson)->TryGetObjectField(TEXT("target"), Target))
-	{
-		(*Target)->TryGetStringField(TEXT("kind"), Place.Kind);
-		(*Target)->TryGetStringField(TEXT("id"), Place.Id);
-	}
+	const FBpFollowPlace Place = FollowPlaceOf(Shared, Rev);
 	// The shared focus as it stands now, whoever put it there: the echo rule's reference (PublishPlace).
 	SharedSpot = Place;
 	bHasSharedSpot = true;

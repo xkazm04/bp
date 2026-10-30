@@ -191,7 +191,7 @@ public:
 	/** GET .../proposals/<id>/brief: the decision brief of one finding (packages/core/src/scan/brief.ts, the decision-brief-1
 	 *  wire), read with BpSchema::FromJson into the generated FBpDecisionBrief - the same lines the web's decision card, the
 	 *  Morning Watch and an agent's plan.brief read. OnDone(false) offline (the bundle has no briefs) or on any failure. A
-	 *  read only: the table writes no decision. Game thread. */
+	 *  read only (the table's decisions are DeclineRepeat and ApproveDecision). Game thread. */
 	void FetchBrief(const FString& ProposalId, TFunction<void(bool bOk, const FBpDecisionBrief& Brief)> OnDone);
 	/** A brief already read (a fetch, or the bundle's briefs.json), or null. The room deck lays its decision screens out
 	 *  from it. */
@@ -204,9 +204,20 @@ public:
 	/** POST .../proposals/<id>/decline {} (ROADMAP F8, owner 2026-10-30: "pinching decline should decline"): the server
 	 *  declines the finding only when its card brief says the same idea was declined before, through bp's decide with the
 	 *  brief's note ("Repeats <id>, declined <day>: ..."), as the web deck's Decline on a repeat does; any other card is 409.
-	 *  The table's one decision write, and only ever a decline. Refused (status 0, nothing sent) while BpLink reads the
-	 *  bundle. OnDone gets the HTTP status and body; on 200 the scan side is read again at once. Game thread. */
-	void DeclineRepeat(const FString& ProposalId, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	 *  Refused (status 0, nothing sent) while BpLink reads the bundle. OnDone gets the HTTP status and body; on 200 the
+	 *  scan side is read again at once. Game thread. */
+	void DeclineRepeat(const FString& ProposalId, TFunction<void(int32 Status, const FString& Body)> OnDone)
+	{
+		SendDecision(TEXT("decline"), ProposalId, MoveTemp(OnDone));
+	}
+	/** POST .../proposals/<id>/approve {} (ROADMAP D12, owner 2026-10-31: "Pinching approve in VR should approve the target
+	 *  decisions"): the server approves the finding through bp's decide, as the web Morning Watch's Approve does
+	 *  (proposed -> approved, signed, one steering-log row); it queues no build. 409 once it is not open (decided
+	 *  elsewhere first). Refused (status 0, nothing sent) while BpLink reads the bundle. OnDone as DeclineRepeat's. */
+	void ApproveDecision(const FString& ProposalId, TFunction<void(int32 Status, const FString& Body)> OnDone)
+	{
+		SendDecision(TEXT("approve"), ProposalId, MoveTemp(OnDone));
+	}
 
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
@@ -274,6 +285,9 @@ private:
 	/** The one door for wave writes: POST .../waves or PATCH .../waves/<id>, nothing else. A dispatch, a DELETE or any other
 	 *  route is refused and logged, on every product (the owner's ruling: no dispatch from VR). */
 	void SendWave(const FString& Verb, const FString& Path, const FString& Body, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	/** The one door for the table's decision writes: POST .../proposals/<id>/<Verb> {} with x-bp-device, Verb `decline` or
+	 *  `approve` only (the device routes; never the plan's free decide). The server judges, not the table. */
+	void SendDecision(const TCHAR* Verb, const FString& ProposalId, TFunction<void(int32 Status, const FString& Body)> OnDone);
 	void PollScan();
 	bool TickScanPoll(float DeltaSeconds);
 	void TakeScanBody(int32 Part, FString Body);
@@ -304,8 +318,8 @@ private:
 	/** Briefs by proposal id: fetched ones, and the bundle's briefs.json (read once, offline). */
 	TMap<FString, FBpDecisionBrief> Briefs;
 	bool bBriefsBundled = false;
-	/** Decline writes out, by proposal: a second pinch on the same card waits for the first. */
-	TSet<FString> DeclinesOut;
+	/** Decision writes out (a decline or an approve), by proposal: a second pinch on the same card waits for the first. */
+	TSet<FString> DecisionsOut;
 	/** A draft write is out: a second waits for it, so two Approves never compose two waves. */
 	bool bWaveWriteOut = false;
 	FOnBpPlan PlanDelegate;

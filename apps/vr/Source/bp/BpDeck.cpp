@@ -3,8 +3,9 @@
 // room's open findings as decision screens (glass: dark, edge-lit, light type), most urgent first, then a feature sheet per
 // feature in plan order (paper: warm off-white, dark ink, as the card's), then the room's summary. Next and previous tabs,
 // a tap on a feature's glyph on the map, and resolving a decision swap them with a short slide; the view never moves.
-// Approve puts the finding into the product's draft wave through BpLink (compose or PATCH, never dispatch); Decline drops
-// it from this session's queue. A decision screen carries the finding's decision brief (ROADMAP F1: BpLink FetchBrief, the
+// Approve approves the finding in the store (BpLink ApproveDecision, ROADMAP D12: the Morning Watch's Approve, no build
+// queued) and puts it into the product's draft wave (compose or PATCH, never dispatch); Decline drops it from this
+// session's queue. A decision screen carries the finding's decision brief (ROADMAP F1: BpLink FetchBrief, the
 // lines the web's card shows, the quoted decline in amber); on a repeat of a declined idea (advice withdraw) DECLINE · REPEAT
 // is the first, filled control, and it declines the finding in the store (BpLink DeclineRepeat, F8), as the table's card does. What a screen says is the plan's and the store's, read the way the web's Review item and
 // feature page read them (blueprint-ui.md, "Chrome and the feature page"); a field the data lacks is left out.
@@ -494,7 +495,7 @@ void ABpTable::BuildDeckQueue()
 	for (int32 Index = 0; Index < State.Scan.proposals.Num(); ++Index)
 	{
 		const FBpProposal& Proposal = State.Scan.proposals[Index];
-		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id) || CardDeclined.Contains(Proposal.id)) continue;
+		if (Proposal.status != TEXT("proposed") || !InRoom.Contains(Proposal.feature) || DeckDeclined.Contains(Proposal.id) || CardDecided.Contains(Proposal.id)) continue;
 		const int32* Tier = State.Tiers.Find(Proposal.id);
 		Asks.Add({ Index, Tier ? FMath::Clamp(*Tier, 0, 3) : 4, Proposal.risk });
 	}
@@ -635,7 +636,7 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		TArray<const FBpProposal*> Out;
 		for (const FBpProposal& Proposal : State.Scan.proposals)
 		{
-			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id) && !CardDeclined.Contains(Proposal.id)) Out.Add(&Proposal);
+			if (Proposal.status == TEXT("proposed") && Proposal.feature == Feature && !DeckDeclined.Contains(Proposal.id) && !CardDecided.Contains(Proposal.id)) Out.Add(&Proposal);
 		}
 		Out.StableSort([&State](const FBpProposal& A, const FBpProposal& B)
 		{
@@ -1139,9 +1140,28 @@ void ABpTable::DeckApprove()
 		return;
 	}
 	const FString Id = DeckScreens[DeckAt].Proposal;
-	// The guard (as FAD's for scans): Approve only ever writes a draft; BpLink's SendWave refuses a dispatch route.
-	UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve %s -> %s's draft wave (compose or PATCH; the table never dispatches a wave, on any product)"), *Id, *FBpLinkModule::Get().GetProductSlug());
+	// The decision (D12, owner 2026-10-31: "Pinching approve in VR should approve the target decisions"): approved in the
+	// store, as the table's card does. On the server's 200 the screen leaves the queue (optimistic until the store's read
+	// shows it approved); a refusal (Kettle's sample keeps no decision: 404; decided elsewhere: 409) is logged and the
+	// draft below still stands.
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve %s -> the store (the Morning Watch's Approve; no build is queued)"), *Id);
 	TWeakObjectPtr<ABpTable> Self(this);
+	FBpLinkModule::Get().ApproveDecision(Id, [Self, Id](int32 Status, const FString& Body)
+	{
+		ABpTable* T = Self.Get();
+		if (!T) return;
+		if (Status != 200)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpDeck: approve %s not written to the store (HTTP %d) %.200s"), *Id, Status, *Body);
+			return;
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: approved %s in the store"), *Id);
+		T->CardDecided.Add(Id);
+		// The queue without it; the screen in front stays in front (BuildDeckQueue keeps it by key).
+		T->RefreshDeck();
+	});
+	// The guard (as FAD's for scans): the deck's wave write is only ever a draft; BpLink's SendWave refuses a dispatch route.
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve %s -> %s's draft wave (compose or PATCH; the table never dispatches a wave, on any product)"), *Id, *FBpLinkModule::Get().GetProductSlug());
 	FBpLinkModule::Get().AddToDraft(Id, [Self, Id](bool bOk, const FString& Wave, const FString& Note)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve %s %s"), *Id, bOk ? *FString::Printf(TEXT("in draft %s"), *Wave) : TEXT("not written"));
@@ -1177,7 +1197,7 @@ void ABpTable::DeckDecline()
 				return;
 			}
 			UE_LOG(LogBpTable, Log, TEXT("BpDeck: declined %s in the store as a repeat"), *Id);
-			T->CardDeclined.Add(Id);
+			T->CardDecided.Add(Id);
 			T->BuildDeckQueue();
 			T->ShowDeckAt(T->DeckAt, 0, 1);
 		});

@@ -323,8 +323,9 @@ void ABpTable::LoadMarks()
 void ABpTable::ReceiveScanState(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid()) return;
-	// A decline written from this table bridges only until the store's read shows it: then the store's status rules.
-	for (auto It = CardDeclined.CreateIterator(); It; ++It)
+	// A decision written from this table (a repeat declined, an approve) bridges only until the store's read shows it: then
+	// the store's status rules.
+	for (auto It = CardDecided.CreateIterator(); It; ++It)
 	{
 		const FBpProposal* Read = State.Scan.proposals.FindByPredicate([&It](const FBpProposal& P) { return P.id == *It; });
 		if (!Read || Read->status != TEXT("proposed")) It.RemoveCurrent();
@@ -1062,14 +1063,14 @@ void ABpTable::RefreshCard()
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
 		const int32* Tile = TileOf.Find(Proposal.feature);
-		if (!IsOpen(Proposal) || !Tile || CardDeclined.Contains(Proposal.id)) continue;
+		if (!IsOpen(Proposal) || !Tile || CardDecided.Contains(Proposal.id)) continue;
 		if (!Ask) Ask = &Proposal;
 		if (Lifted != INDEX_NONE && TileRoom.IsValidIndex(*Tile) && TileRoom[*Tile] == Lifted) { Ask = &Proposal; break; }
 	}
 	// BpCard.Ask: the finding named, while it is open and on the plan
 	if (!CardAskId.IsEmpty())
 	{
-		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature) && !CardDeclined.Contains(Proposal.id)) { Ask = &Proposal; break; }
+		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature) && !CardDecided.Contains(Proposal.id)) { Ask = &Proposal; break; }
 	}
 	if (!Ask)
 	{
@@ -1320,37 +1321,43 @@ void ABpTable::CardTap(const FString& Id)
 		return;
 	}
 	const bool bRepeat = bBriefRead && BriefFor == Shown && bBriefRepeat;
-	if (Id == TEXT("card:approve"))
-	{
-		// The owner's ruling on F8 is a decline; an approval starts work, so the table takes none (the desk, or the room
-		// deck's draft wave).
-		UE_LOG(LogBpTable, Log, TEXT("BpCard: approve %s not written: the table takes no approval (approve it at the desk; the room deck's Approve composes a draft)"), *Shown);
-		return;
-	}
-	if (Id != TEXT("card:decline")) return;
-	if (!bRepeat)
+	const bool bApprove = Id == TEXT("card:approve");
+	if (!bApprove && Id != TEXT("card:decline")) return;
+	if (!bApprove && !bRepeat)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s not written: it repeats no declined idea (the plan's Decline, with your own note, is the desk's)"), *Shown);
 		return;
 	}
-	UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s as a repeat -> the store (%s)"), *Shown, *BriefRepeatNote);
+	if (bApprove)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: approve %s -> the store (the Morning Watch's Approve; no build is queued)"), *Shown);
+	}
+	else
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s as a repeat -> the store (%s)"), *Shown, *BriefRepeatNote);
+	}
 	TWeakObjectPtr<ABpTable> Self(this);
-	FBpLinkModule::Get().DeclineRepeat(Shown, [Self, Shown](int32 Status, const FString& Body)
+	const auto Answered = [Self, Shown, bApprove](int32 Status, const FString& Body)
 	{
 		ABpTable* T = Self.Get();
 		if (!T) return;
+		const TCHAR* Verb = bApprove ? TEXT("approve") : TEXT("decline");
 		if (Status != 200)
 		{
-			UE_LOG(LogBpTable, Warning, TEXT("BpCard: decline %s not written (HTTP %d) %.200s"), *Shown, Status, *Body);
+			UE_LOG(LogBpTable, Warning, TEXT("BpCard: %s %s not written (HTTP %d) %.200s"), Verb, *Shown, Status, *Body);
 			return;
 		}
-		// The card leaves: the next open finding (the room rule) comes forward, or the card hides.
-		T->CardDeclined.Add(Shown);
+		// The card leaves (optimistic until the store's read shows it decided): the next open finding (the room rule)
+		// comes forward, or the card hides.
+		T->CardDecided.Add(Shown);
 		if (T->CardAskId == Shown) T->CardAskId.Reset();
 		T->CardProposal.Reset();
 		if (T->bCardShown) T->RefreshCard();
-		UE_LOG(LogBpTable, Log, TEXT("BpCard: declined %s in the store as a repeat; the card now shows %s"), *Shown, T->CardShownId.IsEmpty() ? TEXT("nothing") : *T->CardShownId);
-	});
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: %s %s in the store%s; the card now shows %s"), bApprove ? TEXT("approved") : TEXT("declined"), *Shown,
+			bApprove ? TEXT("") : TEXT(" as a repeat"), T->CardShownId.IsEmpty() ? TEXT("nothing") : *T->CardShownId);
+	};
+	if (bApprove) FBpLinkModule::Get().ApproveDecision(Shown, Answered);
+	else FBpLinkModule::Get().DeclineRepeat(Shown, Answered);
 }
 
 void ABpTable::ApplyCardVisibility()
