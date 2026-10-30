@@ -194,8 +194,8 @@ public:
 	/** The shared focus, followed (packages/core/src/session/focus.ts): BpLink is the reader FollowReader on surface `vr`,
 	 *  says `follow *` once (and again whenever the record no longer shows it following), `hello` every FollowHelloS,
 	 *  and reads GET /api/session/focus every FollowPollS. A new rev whose place another reader published fires OnFollow;
-	 *  BpLink never publishes, so nothing it does can come back to it as news (and the server makes no rev for a place that
-	 *  is already the shared one). Off with no server to ask (the bundle). */
+	 *  a rev the table published itself never does (and the server makes no rev for a place that is already the shared
+	 *  one). Off with no server to ask (the bundle). */
 	static constexpr float FollowPollS = 1.f;
 	static constexpr float FollowHelloS = 15.f;
 	static const TCHAR* const FollowReader;
@@ -207,7 +207,29 @@ public:
 	 *  stands, if another reader published it. */
 	void SetFollowing(bool bOn);
 
+	/** The table's own place, published (the other half of "one place": the owner moves on the table, the web flies
+	 *  there). POST /api/session/focus { op: publish, reader FollowReader, surface vr, label, place: { product, target?,
+	 *  level, say? } } with Place's Product (empty: GetProductSlug()), Kind and Id (empty or `site`: no target), Level and
+	 *  Say. The caller (the table) settles first and never calls it for a place it is following. Skipped, and false, when
+	 *  publishing is off, BpLink reads the bundle, or the place is the shared focus already (the last rev read, or our own
+	 *  publish in flight): so a followed place never goes back as news. True when the place is sent (or queued behind a
+	 *  publish still out: the newest wins). */
+	bool PublishPlace(const FBpFollowPlace& Place);
+	bool IsPublishing() const { return bPublishing; }
+	/** BpLink.Publish on|off: whether the table's own moves become the shared focus. */
+	void SetPublishing(bool bOn);
+
 private:
+	void SendPublish(const FBpFollowPlace& Place);
+	/** The shared focus as last read or published (product, kind, id): the echo rule's "already the shared one". */
+	FBpFollowPlace SharedSpot;
+	bool bHasSharedSpot = false;
+	bool bPublishing = true;
+	bool bPublishOut = false;
+	/** A publish that came while one was out: sent when it answers. */
+	FBpFollowPlace NextPublish;
+	bool bHasNextPublish = false;
+
 	bool TickFollow(float DeltaSeconds);
 	/** POST /api/session/focus { op, reader, surface, label[, of] } as FollowReader. */
 	void SendFollowOp(const TCHAR* Op);

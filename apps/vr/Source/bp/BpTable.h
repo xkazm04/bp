@@ -691,6 +691,17 @@ public:
 	/** The caption's lines as shown (empty while nothing was followed). */
 	FString GetFollowLine() const { return FollowLine; }
 
+	// ---- The shared focus, published (BpFollow.cpp): the owner moves the table, the web flies there ------------------------
+	/** Every move of the table's place by the owner (a room or wing entered, back, home: by hand, wrist, lamp, deck or
+	 *  console) ends in the navigation primitives (EnterWing, EnterRoom, Back, EnterRoomMode, ExitRoomMode), which call
+	 *  NotePlaceMoved. Once the table has rested PublishSettleS on one place, it goes to BpLink.PublishPlace: a room
+	 *  (room mode, or a room lifted at L2) at L2, a wing at L1, the site at L0, with the room's or wing's name to say.
+	 *  Never while a followed place is being applied (Follow), and a follow cancels a move still settling. */
+	static constexpr float PublishSettleS = 0.4f;
+	/** BpLink.Goto <room id|wing id|site>: the table goes there the way a person sends it (a room by the wrist's switch, a
+	 *  wing by its lift, the site home), so the move is published. False for an id the plan does not hold. */
+	bool Goto(const FString& Id);
+
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
@@ -1399,8 +1410,10 @@ private:
 	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
 	FDelegateHandle FollowHandle;
 	void InitFollow();
-	/** Steps the caption's fade and a feature's deck focus; true while the caption fades. */
+	/** Sends the owner's settled move (PublishSettleS), then TickFollowCaption; true while either still has to run. */
 	bool TickFollow(float DeltaSeconds);
+	/** The caption's fade and a followed feature's deck focus; true while the caption fades. */
+	bool TickFollowCaption(float DeltaSeconds);
 	/** A follow that came before the plan: ApplyPlan takes BpLink's last place when it lands. */
 	bool bFollowPending = false;
 	/** EnterRoomMode is running for a follow (it then takes the lift entry and the follow's pace). */
@@ -1417,7 +1430,16 @@ private:
 	FString FollowLine;
 	float FollowCaptionAlpha = 0.f;
 	void ShowFollowCaption(const FString& Who, const FString& Where);
+	/** The caption's two lines (ShowFollowCaption's "Following <who>", or a publish's "Shared from this table"). */
+	void ShowCaption(const FString& Line1, const FString& Where);
 	void ApplyFollowCaption();
+	/** Follow is applying a place: the navigation it calls is not the owner's, so nothing is published. */
+	bool bFollowApplying = false;
+	/** The owner's move waits to settle until this real time (seconds); negative while none waits. */
+	double PublishAtS = -1.0;
+	void NotePlaceMoved();
+	/** Sends the place the table rests on now (BpLink.PublishPlace) and, when it went, says so on the caption. */
+	void PublishRestingPlace();
 
 	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
 	UPROPERTY(Transient)

@@ -376,6 +376,8 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	SetActorTickInterval(0.f);
 	AdvanceRoomMode(0.f);
 	ApplyRoomVisuals();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
 	return true;
 }
 
@@ -400,6 +402,8 @@ void ABpTable::ExitRoomMode()
 	SetActorTickInterval(0.f);
 	AdvanceRoomMode(0.f);
 	ApplyRoomVisuals();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
 }
 
 bool ABpTable::IsRoomModeMoving() const

@@ -5,6 +5,9 @@
 // another room's map), a wing by its lift, the site plan home. The person sits still and the view never moves (the VR
 // comfort rule, docs/concepts/vr-light-table/companion-lamp-plan.md U3); every step eases, none jumps. A quiet caption on
 // the frame's near rim says whom the table follows (and on which product, when it is not the one on the table) and where.
+// And the other way: when the owner moves the table by hand (a room, a wing, back, home), the place it rests on after
+// PublishSettleS is published as the shared focus (BpLink.PublishPlace), so the web's plan flies there. Never a place being
+// followed, never one that is already shared; the caption then says "Shared from this table".
 #include "BpTable.h"
 
 #include "BpGameMode.h"
@@ -12,6 +15,7 @@
 #include "BpType.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/WidgetComponent.h"
+#include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -59,6 +63,10 @@ void ABpTable::InitFollow()
 
 void ABpTable::Follow(const FBpFollowPlace& Place)
 {
+	// The table is told where to go: no move it makes now is the owner's to publish, and a move of the owner's still
+	// settling is no longer where the table rests.
+	TGuardValue<bool> Applying(bFollowApplying, true);
+	PublishAtS = -1.0;
 	if (!SheetPlan.IsValid())
 	{
 		// ApplyPlan takes BpLink's last place when the plan lands.
@@ -128,6 +136,26 @@ void ABpTable::Follow(const FBpFollowPlace& Place)
 
 bool ABpTable::TickFollow(float DeltaSeconds)
 {
+	// The owner's move, once the table has rested on it PublishSettleS (a burst of moves sends only the last place).
+	bool bPublishWaiting = false;
+	if (PublishAtS >= 0.0)
+	{
+		const UWorld* World = GetWorld();
+		if (World && World->GetRealTimeSeconds() >= PublishAtS)
+		{
+			PublishAtS = -1.0;
+			PublishRestingPlace();
+		}
+		else
+		{
+			bPublishWaiting = true;
+		}
+	}
+	return TickFollowCaption(DeltaSeconds) || bPublishWaiting;
+}
+
+bool ABpTable::TickFollowCaption(float DeltaSeconds)
+{
 	// A followed feature's screen (or a followed bay's first in the deck) comes to the front once its room's map has settled.
 	if ((!FollowFeature.IsEmpty() || !FollowBay.IsEmpty()) && !RoomModeId.IsEmpty() && ShownRoomMode == RoomModeId && RoomFade >= 1.f)
 	{
@@ -150,9 +178,106 @@ bool ABpTable::TickFollow(float DeltaSeconds)
 	return FollowCaptionAlpha != Want;
 }
 
+void ABpTable::NotePlaceMoved()
+{
+	// Follow's own steps are not the owner's.
+	if (bFollowApplying) return;
+	const UWorld* World = GetWorld();
+	if (!World || !World->IsGameWorld()) return;
+	PublishAtS = World->GetRealTimeSeconds() + PublishSettleS;
+	SetActorTickInterval(0.f);
+}
+
+void ABpTable::PublishRestingPlace()
+{
+	// Where the table rests: a room's map (room mode) or a room lifted at L2, a wing lifted at L1, else the site plan.
+	FBpFollowPlace Place;
+	FString Where;
+	const FString Room = !RoomModeId.IsEmpty() ? RoomModeId : Level == EBpLevel::L2 ? RoomId : FString();
+	if (!Room.IsEmpty())
+	{
+		const FBpPlanRoom* Found = FindRoom(Room);
+		Place.Kind = TEXT("room");
+		Place.Id = Room;
+		Place.Level = TEXT("L2");
+		Place.Say = Found ? Found->name : Room;
+		Where = Place.Say;
+	}
+	else if (Level == EBpLevel::L1 && !WingId.IsEmpty())
+	{
+		const FBpPlanWing* Found = FindWing(WingId);
+		Place.Kind = TEXT("wing");
+		Place.Id = WingId;
+		Place.Level = TEXT("L1");
+		Place.Say = Found ? Found->name : WingId;
+		Where = Found ? Found->letter + TEXT(" ") + Found->name : WingId;
+	}
+	else
+	{
+		Place.Level = TEXT("L0");
+		Where = TEXT("Site plan");
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpFollow: the owner rests on %s %s; publishing"), Place.Kind.IsEmpty() ? TEXT("the site") : *Place.Kind, *Place.Id);
+	// BpLink skips it when it is the shared focus already (the echo rule) or publishing is off.
+	if (FBpLinkModule::Get().PublishPlace(Place)) ShowCaption(TEXT("Shared from this table"), Where);
+}
+
+bool ABpTable::Goto(const FString& Id)
+{
+	if (Id == TEXT("site") || Id == TEXT("home"))
+	{
+		Home();
+		return true;
+	}
+	// A room as the wrist's room list sends it; a wing as the hands lift it (out of a room's map first).
+	if (FindRoom(Id)) return RoomModeId == Id || SwitchRoom(Id, TEXT("console"));
+	if (FindWing(Id))
+	{
+		if (!RoomModeId.IsEmpty()) ExitRoomMode();
+		return EnterWing(Id);
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpFollow: refused goto %s: no room or wing of this plan"), *Id);
+	return false;
+}
+
+namespace
+{
+	FAutoConsoleCommandWithWorldAndArgs CmdGoto(
+		TEXT("BpLink.Goto"),
+		TEXT("BpLink.Goto <room id|wing id|site>: the table goes there as the owner would send it (the wrist's room switch, a wing's lift, home), so the move is published as the shared focus once it settles."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpFollow: usage BpLink.Goto <room id|wing id|site>"));
+				return;
+			}
+			bool bAny = false;
+			if (World)
+			{
+				for (TActorIterator<ABpTable> It(World); It; ++It)
+				{
+					if (!It->HasPlan()) continue;
+					bAny = true;
+					It->Goto(Args[0]);
+				}
+			}
+			if (!bAny)
+			{
+				ABpTable::PendingLevelCommands().Add(TEXT("BpLink.Goto ") + Args[0]);
+				UE_LOG(LogBpTable, Log, TEXT("BpFollow: deferred \"BpLink.Goto %s\" until the plan arrives"), *Args[0]);
+			}
+		}));
+}
+
 void ABpTable::ShowFollowCaption(const FString& Who, const FString& Where)
 {
-	FollowLine = TEXT("Following ") + (Who.IsEmpty() ? FString(TEXT("the shared focus")) : Who) + TEXT("\n") + Where;
+	ShowCaption(TEXT("Following ") + (Who.IsEmpty() ? FString(TEXT("the shared focus")) : Who), Where);
+}
+
+void ABpTable::ShowCaption(const FString& Line1In, const FString& Where)
+{
+	FollowLine = Line1In + TEXT("\n") + Where;
 	UE_LOG(LogBpTable, Log, TEXT("BpFollow: caption \"%s\""), *FollowLine.Replace(TEXT("\n"), TEXT(" / ")));
 	if (!FollowCaption) return;
 	static const FSlateRoundedBoxBrush Plate(FollowGlass.CopyWithNewOpacity(0.9f), 14.f, FollowCyan.CopyWithNewOpacity(0.45f), 2.f);
