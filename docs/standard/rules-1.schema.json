@@ -30,6 +30,7 @@
         "maxEffort": { "enum": ["low", "medium", "high", "xhigh"], "description": "cap: the highest effort a build in the place may run at." },
         "model": { "enum": ["sonnet", "opus"], "description": "cap: only builds on this model are capped; absent = every model." },
         "minTier": { "enum": [0, 1, 2, 3], "description": "grant: findings of this tier or milder (0 stop-ship .. 3 backlog); absent = any tier." },
+        "cautious": { "const": true, "description": "grant: act only on a lens it has earned (90%+ agreement over 3+ of the owner's decisions in its place); absent = not cautious." },
         "tools": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "grant: the agent tools it lets run without a card; absent = decision.answer and wave.dispatch." },
         "expiresAt": { "$ref": "#/$defs/datetime", "description": "Absent = until revoked." },
         "revokedAt": { "$ref": "#/$defs/datetime" },

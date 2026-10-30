@@ -79,6 +79,20 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
   const capB = R.backtest(cap, [row('x', 'card', 'approve', 2, { model: 'opus', effort: 'xhigh' }), row('y', 'card', 'approve', 2, { model: 'opus', effort: 'low' }), row('z', 'card', 'approve', 2)]);
   check('backtest: a cap speaks only on builds above its effort', capB.differed === 1 && capB.abstained === 2, j(capB));
   check('backtest: a rule that never spoke is flagged silent', R.backtest({ kind: 'hold', scope: { kind: 'feature', id: 'zz', label: 'Z', features: ['zz'] } }, rec).flags.some((f) => f.key === 'silent'));
+  {
+    // a cautious grant, walk-forward: security approved 5 times running (trust earned after 3), design 2 of 4 (never)
+    const at = (d: number) => `2026-10-${String(d).padStart(2, '0')}T00:00:00Z`;
+    const rec2: Row[] = [1, 2, 3, 4, 5].map((d) => row('s' + d, 'card', 'approve', 3, { lens: 'security', at: at(d) }))
+      .concat([6, 7, 8, 9].map((d, i) => row('d' + d, 'card', i % 2 ? 'decline' : 'approve', 3, { lens: 'design', at: at(d) })));
+    const cg = { kind: 'grant' as const, minTier: 3, cautious: true, scope: { kind: 'all' as const, label: 'Everything', features: [] } };
+    const cb = R.backtest(cg, rec2);
+    check('cautious grant, walk-forward: abstains until a lens has earned it (3 security first), then approves; never on design', cb.matched === 2 && cb.differed === 0 && cb.abstained === 7 && cb.rows.every((r) => r.lens === 'security' && r.id >= 's4'), j(cb));
+    check('cautious grant: the trust table says security is earned and design is not', cb.trust?.find((t) => t.lens === 'security')?.trusted === true && cb.trust?.find((t) => t.lens === 'design')?.trusted === false, j(cb.trust));
+    const live = { ...cg, id: 'G-9', text: 'g', by: 'user:owner', at: '2026-10-01T00:00:00Z', hours: undefined } as Rule;
+    const trust = new Set(R.lensTrust(cg, rec2).filter((t) => t.trusted).map((t) => t.lens));
+    check('grantFor: a cautious grant covers only an earned lens, and nothing without the trust table', R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'security' }], T0, () => trust)?.id === 'G-9'
+      && !R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'design' }], T0, () => trust) && !R.grantFor([live], 'decision.answer', [{ feature: 'card', tier: 3, lens: 'security' }], T0));
+  }
   check('backtest: synthetic rows are counted', R.backtest(hold, [row('s', 'card', 'approve', 2, { synthetic: true })]).synthetic === 1);
 }
 {

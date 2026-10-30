@@ -43,7 +43,7 @@ export function useNow(ms = 30000): number {
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), ms); return () => clearInterval(t); }, [ms]);
   return now;
 }
-const draftOf = (r: Rule): DraftBody => ({ kind: r.kind, scope: r.scope, ...(r.lenses ? { lenses: r.lenses } : {}), ...(r.maxEffort ? { maxEffort: r.maxEffort } : {}), ...(r.model ? { model: r.model } : {}), ...(r.minTier !== undefined ? { minTier: r.minTier } : {}) });
+const draftOf = (r: Rule): DraftBody => ({ kind: r.kind, scope: r.scope, ...(r.lenses ? { lenses: r.lenses } : {}), ...(r.maxEffort ? { maxEffort: r.maxEffort } : {}), ...(r.model ? { model: r.model } : {}), ...(r.minTier !== undefined ? { minTier: r.minTier } : {}), ...(r.cautious ? { cautious: true } : {}) });
 const kindWord = (r: Pick<Rule, 'kind'>) => (isOrder(r.kind) ? 'order · ' + r.kind : 'grant');
 
 export function LiveRules({ slug }: { slug: string }) {
@@ -188,6 +188,7 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
   const [effort, setEffort] = useState('medium');
   const [model, setModel] = useState('');
   const [tier, setTier] = useState(3);
+  const [cautious, setCautious] = useState(false);
   const [hours, setHours] = useState(0);
   const [armed, setArmed] = useState(false);
   const [err, setErr] = useState<string>();
@@ -204,6 +205,7 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
     if (d.maxEffort) setEffort(d.maxEffort);
     setModel(d.model ?? '');
     setTier(d.minTier ?? -1);
+    setCautious(!!d.cautious);
     setHours(d.hours ?? 0);
   }, [pd, E, P]);
   const base = useMemo<ScanScope | null>(() => (everything ? { kind: 'all', label: 'Everything', features: [] } : s.tgt.n ? scopeOf(P, s.tgt.ids, s.tgt.label) : null), [P, everything, s.tgt]);
@@ -215,10 +217,10 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
     const d: DraftBody = { kind, scope };
     if (kind === 'only') d.lenses = lenses;
     if (kind === 'cap') { d.maxEffort = effort; if (model) d.model = model; }
-    if (kind === 'grant') { if (tier >= 0) d.minTier = tier; d.hours = hours || 24; } else if (hours) d.hours = hours;
-    d.text = ruleText({ kind, lenses: d.lenses, maxEffort: d.maxEffort as Rule['maxEffort'], model: d.model as Rule['model'], minTier: d.minTier }, (id) => P.LENS[id]?.name ?? id);
+    if (kind === 'grant') { if (tier >= 0) d.minTier = tier; if (cautious) d.cautious = true; d.hours = hours || 24; } else if (hours) d.hours = hours;
+    d.text = ruleText({ kind, lenses: d.lenses, maxEffort: d.maxEffort as Rule['maxEffort'], model: d.model as Rule['model'], minTier: d.minTier, cautious: d.cautious }, (id) => P.LENS[id]?.name ?? id);
     return d;
-  }, [scope, kind, lenses, effort, model, tier, hours, P]);
+  }, [scope, kind, lenses, effort, model, tier, cautious, hours, P]);
   const rp = useReplay(slug, draft), bt = rp.r?.backtest;
   useEffect(() => setArmed(false), [draft]);
   const risky = kind === 'grant' && !!bt && !trustworthy(bt);
@@ -250,6 +252,7 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
           {kind === 'only' && <div className="wb-filter rl-opts" aria-label="Lenses allowed">{lensIds.map((id) => pill(lenses.includes(id), P.LENS[id]?.name ?? id, () => setLenses(lenses.includes(id) ? lenses.filter((x) => x !== id) : [...lenses, id]), id))}</div>}
           {kind === 'cap' && <div className="wb-filter rl-opts" aria-label="Highest effort">{['low', 'medium', 'high'].map((e) => pill(effort === e, 'up to ' + e, () => setEffort(e), e))}{pill(model === '', 'any model', () => setModel(''))}{pill(model === 'opus', 'opus only', () => setModel('opus'))}</div>}
           {kind === 'grant' && <div className="wb-filter rl-opts" aria-label="Tier floor">{[3, 2, 1].map((t) => pill(tier === t, TIER_WORD[t] + (t < 3 ? ' or milder' : ' only'), () => setTier(t), 't' + t))}{pill(tier === -1, 'any tier', () => setTier(-1))}</div>}
+          {kind === 'grant' && <div className="wb-filter rl-opts" aria-label="Caution">{pill(cautious, 'only where it has agreed with me (90%+)', () => setCautious(!cautious))}</div>}
           {kind && <div className="wb-filter rl-opts" aria-label="How long">{HOURS.filter((x) => kind !== 'grant' || x.h).map((x) => pill((hours || (kind === 'grant' ? 24 : 0)) === x.h, x.w, () => setHours(x.h), 'h' + x.h))}</div>}
         </Sec>
         {draft && <Sec head="What it does now" aside="the open backlog"><Now now={rp.r?.now} kind={draft.kind} busy={rp.busy} /></Sec>}

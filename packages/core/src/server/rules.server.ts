@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
 import type { ScanScope } from '../scan/jobs.ts';
-import { gate, gateWords, type Act, type DecidedRow, type GateAnswer, type HeldEntry, type OpenRow, type Rule, type RulesFile } from '../scan/rules.ts';
+import { gate, gateWords, lensTrust, type Act, type DecidedRow, type GateAnswer, type HeldEntry, type OpenRow, type Rule, type RuleShape, type RulesFile } from '../scan/rules.ts';
 import { hasStore, recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { snapshotOf } from './store.server.ts';
 import { listWaves } from './waves.server.ts';
@@ -102,6 +102,9 @@ export function openRows(p: ProductEntry): OpenRow[] {
   return snapshotOf(storeFile(p)).proposals.filter((x) => x.status === 'proposed' || x.status === 'approved')
     .map((x) => ({ id: x.id, title: x.title, feature: x.feature, lens: x.lens, ...(x.tier !== undefined && x.tier !== null ? { tier: x.tier } : {}) }));
 }
+
+/** The lenses a cautious grant has earned over this record (scan/rules.ts lensTrust): where it may act alone. */
+export const trustedLenses = (r: RuleShape, decided: readonly DecidedRow[]): Set<string> => new Set(lensTrust(r, decided).filter((t) => t.trusted).map((t) => t.lens));
 
 /** The finding ids as gate items (feature, lens, tier); ids the store lacks are left out (the door refuses them itself). */
 export function itemsOf(p: ProductEntry, ids: readonly string[]): { id: string; feature: string; lens: string; tier?: number }[] {

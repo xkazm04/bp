@@ -14,7 +14,7 @@
 import { door } from '@bp/core/server/route-door.server';
 import { backtest, breachesOf, checkRuleBody, impact, ruleOf, tallyHeld } from '@bp/core/scan/rules';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
-import { addRule, decidedRows, listRules, openRows, readHeld } from '@bp/core/server/rules.server';
+import { addRule, decidedRows, listRules, openRows, readHeld, trustedLenses } from '@bp/core/server/rules.server';
 import { triageBy } from '@bp/core/server/release.server';
 import { isHuman, notHuman } from '../../../companion/door.server.ts';
 import { isGated, toolOf } from '../../../companion/tool-call.ts';
@@ -41,7 +41,7 @@ const rules = door('products/[slug]/rules', {
       if (draft.tools) draft.tools = draft.tools.map((t) => toolOf(t)!.name);
       const rows = read(() => decidedRows(p)), bt = backtest(draft, rows);
       const preview = (body as { preview?: unknown }).preview === true;
-      if (preview) return Response.json({ rule: { ...draft, id: null }, backtest: bt, now: impact(draft, read(() => openRows(p)), map.features.size) });
+      if (preview) return Response.json({ rule: { ...draft, id: null }, backtest: bt, now: impact(draft, read(() => openRows(p)), map.features.size, draft.cautious ? trustedLenses(draft, rows) : undefined) });
       if (!isHuman(req)) return notHuman();
       const by = await triageBy(), at = new Date().toISOString();
       const rule = addRule(p.root, (all) => ({ ...ruleOf(draft, all, by), evidence: { decided: bt.decided, matched: bt.matched, differed: bt.differed, abstained: bt.abstained, at } }));

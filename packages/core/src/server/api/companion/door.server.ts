@@ -27,7 +27,7 @@ import { bounded, isGated, productOf, toolOf, toolRequest } from './tool-call.ts
 import { findProduct, hasStore, storeFile, writeAtomic } from '../../products.server.ts';
 import { snapshotOf } from '../../store.server.ts';
 import { listWaves } from '../../waves.server.ts';
-import { itemsOf, listRules } from '../../rules.server.ts';
+import { decidedRows, itemsOf, listRules, trustedLenses } from '../../rules.server.ts';
 import { grantFor, type Rule } from '../../../scan/rules.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
@@ -150,7 +150,9 @@ export function ruleGrantFor(t: ToolSpec, args: Record<string, unknown>, now = D
   try {
     const rules = listRules(p.root), items = itemsOf(p, ids);
     if (items.length !== new Set(ids).size) return null; // an id the store lacks is never covered
-    return grantFor(rules, t.name, items, now) ?? null;
+    // a cautious grant acts only in the lenses its replay over the owner's own decisions has earned
+    let rows: ReturnType<typeof decidedRows> | null = null;
+    return grantFor(rules, t.name, items, now, (r) => trustedLenses(r, (rows ??= decidedRows(p)))) ?? null;
   } catch { return null; }
 }
 

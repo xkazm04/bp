@@ -41,6 +41,9 @@ export interface Rule {
   model?: WaveModel;
   /** grant: findings of this tier or milder (0 stop-ship .. 3 backlog); absent = any tier, which the backtest flags. */
   minTier?: number;
+  /** grant, cautious: it acts only on a lens where its approvals agreed with the owner's own decisions inside its place at
+   *  least CAUTION_RATE of the time over at least CAUTION_MIN of them (lensTrust); elsewhere the finding goes to the person. */
+  cautious?: boolean;
   /** grant: the agent tools it lets run without a card (catalog names). */
   tools?: string[];
   /** ISO; absent = until revoked. */
@@ -57,7 +60,7 @@ export const RULE_TEMPLATES: Record<RuleKind, string> = {
   hold: 'Hold: no builds or scans start here until I lift it',
   only: 'Only {lenses} work here',
   cap: 'No {model}builds here above {effort} effort',
-  grant: 'Agents may approve {tier}findings here on their own',
+  grant: 'Agents may approve {tier}findings here on their own{cautious}',
 };
 /** The tools a grant covers by default: answering a finding, and dispatching a wave of them. */
 export const GRANT_TOOLS: readonly string[] = ['decision.answer', 'wave.dispatch'];
@@ -65,12 +68,13 @@ export const TIER_WORD = ['stop-ship', 'urgent', 'normal', 'backlog'] as const;
 export const RULE_MAX_HOURS = 24 * 30;
 
 /** The sentence a draft reads as, from its kind and parameters. */
-export function ruleText(r: Pick<Rule, 'kind' | 'lenses' | 'maxEffort' | 'model' | 'minTier'>, lensName: (id: string) => string = (x) => x): string {
+export function ruleText(r: Pick<Rule, 'kind' | 'lenses' | 'maxEffort' | 'model' | 'minTier' | 'cautious'>, lensName: (id: string) => string = (x) => x): string {
   return RULE_TEMPLATES[r.kind]
     .replace('{lenses}', (r.lenses ?? []).map(lensName).join(' and ') || 'no')
     .replace('{effort}', r.maxEffort ?? 'medium')
     .replace('{model}', r.model ? r.model[0].toUpperCase() + r.model.slice(1) + ' ' : '')
-    .replace('{tier}', r.minTier === undefined ? '' : r.minTier >= 3 ? 'backlog ' : `tier ${r.minTier}+ (${TIER_WORD[r.minTier]} or milder) `);
+    .replace('{tier}', r.minTier === undefined ? '' : r.minTier >= 3 ? 'backlog ' : `tier ${r.minTier}+ (${TIER_WORD[r.minTier]} or milder) `)
+    .replace('{cautious}', r.cautious ? ', where they have agreed with me' : '');
 }
 
 /** Live now: not revoked, not expired. */
@@ -139,11 +143,30 @@ export function gateWords(g: GateAnswer): string {
 }
 
 /** The live grant that lets an agent run `tool` on these findings alone (every one in its place, tiered and mild
- *  enough when it names a tier), or undefined. Untiered findings are never covered by a tier-bound grant. */
-export function grantFor(rules: readonly Rule[], tool: string, items: readonly { feature: string; tier?: number }[], now: number = Date.now()): Rule | undefined {
+ *  enough when it names a tier, and, for a cautious grant, of a lens `trusted` says it has earned), or undefined.
+ *  Untiered findings are never covered by a tier-bound grant; without `trusted`, a cautious grant covers nothing. */
+export function grantFor(rules: readonly Rule[], tool: string, items: readonly { feature: string; tier?: number; lens?: string }[], now: number = Date.now(), trusted?: (r: Rule) => ReadonlySet<string>): Rule | undefined {
   if (!items.length) return undefined;
   return rules.find((r) => r.kind === 'grant' && isLive(r, now) && (r.tools ?? GRANT_TOOLS).includes(tool)
-    && items.every((it) => covers(r, it.feature) && (r.minTier === undefined || (it.tier !== undefined && it.tier >= r.minTier))));
+    && items.every((it) => covers(r, it.feature) && (r.minTier === undefined || (it.tier !== undefined && it.tier >= r.minTier))
+      && (!r.cautious || (it.lens !== undefined && !!trusted?.(r).has(it.lens)))));
+}
+
+/** A cautious grant's bar: this share of agreement over at least this many of the owner's decisions in one lens. */
+export const CAUTION_RATE = 0.9, CAUTION_MIN = 3;
+export interface LensTally { lens: string; spoke: number; matched: number; trusted: boolean }
+const trustedBy = (t: { spoke: number; matched: number }): boolean => t.spoke >= CAUTION_MIN && t.matched >= CAUTION_RATE * t.spoke;
+/** Per lens, how the grant's approvals compare with the owner's decisions in its place (its base verdict, the caution
+ *  aside): the lenses a cautious grant has earned. */
+export function lensTrust(r: RuleShape, decided: readonly DecidedRow[]): LensTally[] {
+  const m = new Map<string, LensTally>();
+  for (const row of decided) {
+    if (verdictOf({ ...r, cautious: false }, row) !== 'approve') continue;
+    const t = m.get(row.lens) ?? { lens: row.lens, spoke: 0, matched: 0, trusted: false };
+    t.spoke++; if (row.owner === 'approve') t.matched++;
+    m.set(row.lens, t);
+  }
+  return [...m.values()].map((t) => ({ ...t, trusted: trustedBy(t) })).sort((a, b) => b.spoke - a.spoke);
 }
 
 // ------------------------------------------------------------------------------------------------ the backtest
@@ -161,6 +184,8 @@ export interface DecidedRow {
 }
 export type RuleVerdict = 'approve' | 'hold';
 export interface BacktestRow extends DecidedRow { rule: RuleVerdict | null; agree: boolean | null; stopShip?: boolean }
+/** The fields a rule is replayed on. */
+export type RuleShape = Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort' | 'model' | 'minTier' | 'cautious'>;
 export interface Backtest {
   /** Rows replayed (the newest `limit` decided ones). */
   decided: number;
@@ -175,10 +200,12 @@ export interface Backtest {
   rows: BacktestRow[];
   /** What should stop a grant: it would approve a stop-ship, it covers any tier, it never once spoke. */
   flags: { key: 'stop-ship' | 'any-tier' | 'silent' | 'disagrees'; text: string; ids?: string[] }[];
+  /** A cautious grant: per lens, its agreement with the owner over the whole record, and whether it acts there now. */
+  trust?: LensTally[];
 }
 
 /** What the rule says about one decided row, or null to abstain. */
-export function verdictOf(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort' | 'model' | 'minTier'>, row: DecidedRow): RuleVerdict | null {
+export function verdictOf(r: RuleShape, row: DecidedRow): RuleVerdict | null {
   if (!(r.scope.kind === 'all' || r.scope.features.includes(row.feature))) return null;
   switch (r.kind) {
     case 'hold': return 'hold';
@@ -188,14 +215,28 @@ export function verdictOf(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort
   }
 }
 
-/** Replay a rule over decided rows (newest first, at most `limit`): pure, deterministic, no model call. */
-export function backtest(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort' | 'model' | 'minTier'>, decided: readonly DecidedRow[], limit = 200): Backtest {
+/**
+ * Replay a rule over decided rows (the newest `limit`): pure, deterministic, no model call. A cautious grant is replayed
+ * WALK-FORWARD, oldest first: on each decision it knows only the decisions before it, and approves only in a lens where
+ * those had already earned its trust (lensTrust's bar), so its figures are what it would really have done, not a
+ * hindsight fit to the record it is judged on.
+ */
+export function backtest(r: RuleShape, decided: readonly DecidedRow[], limit = 200): Backtest {
   const rows = decided.slice().sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0)).slice(0, limit);
   const out: Backtest = { decided: rows.length, matched: 0, differed: 0, abstained: 0, synthetic: 0, rows: [], flags: [] };
   const diff: BacktestRow[] = [], same: BacktestRow[] = [], stop: string[] = [];
+  const caution = r.kind === 'grant' && !!r.cautious, seen = new Map<string, { spoke: number; matched: number }>(), say = new Map<string, RuleVerdict | null>();
+  if (caution) {
+    for (const row of rows.slice().reverse()) {
+      const base = verdictOf({ ...r, cautious: false }, row), t = seen.get(row.lens) ?? { spoke: 0, matched: 0 };
+      say.set(row.id, base === 'approve' && trustedBy(t) ? 'approve' : null);
+      if (base === 'approve') { t.spoke++; if (row.owner === 'approve') t.matched++; seen.set(row.lens, t); }
+    }
+    out.trust = lensTrust(r, rows);
+  }
   for (const row of rows) {
     if (row.synthetic) out.synthetic++;
-    const v = verdictOf(r, row);
+    const v = caution ? say.get(row.id) ?? null : verdictOf(r, row);
     if (!v) { out.abstained++; continue; }
     const agree = (v === 'approve') === (row.owner === 'approve');
     const stopShip = v === 'approve' && row.tier === 0;
@@ -252,11 +293,11 @@ export interface Impact {
   features: number;
 }
 /** What the rule would do to the open backlog right now: the steer, before the replay says whether to trust it. */
-export function impact(r: Pick<Rule, 'kind' | 'scope' | 'lenses' | 'maxEffort' | 'model' | 'minTier'>, open: readonly OpenRow[], total: number): Impact {
+export function impact(r: RuleShape, open: readonly OpenRow[], total: number, trusted?: ReadonlySet<string>): Impact {
   const hits: Impact['hits'] = [];
   for (const o of open) {
     if (!(r.scope.kind === 'all' || r.scope.features.includes(o.feature))) continue;
-    const v: RuleVerdict | null = r.kind === 'cap' ? 'hold' : verdictOf(r, { ...o, owner: 'approve', by: '', at: '' });
+    const v: RuleVerdict | null = r.kind === 'cap' ? 'hold' : r.cautious && r.kind === 'grant' && !trusted?.has(o.lens) ? null : verdictOf(r, { ...o, owner: 'approve', by: '', at: '' });
     if (v) hits.push({ ...o, verdict: v });
   }
   return { open: open.length, hits, features: r.scope.kind === 'all' ? total : r.scope.features.length };
@@ -290,6 +331,7 @@ export function checkRuleBody(b: unknown, known: { feature(f: string): boolean; 
   }
   if (kind === 'grant') {
     if (b.minTier !== undefined) { if (![0, 1, 2, 3].includes(b.minTier as number)) return 'grant: minTier must be 0..3'; d.minTier = b.minTier as number; }
+    if (b.cautious !== undefined) { if (typeof b.cautious !== 'boolean') return 'grant: cautious must be true or false'; if (b.cautious) d.cautious = true; }
     if (b.tools !== undefined) {
       if (!Array.isArray(b.tools) || !b.tools.length || b.tools.some((t) => typeof t !== 'string' || !known.tool(t))) return 'grant: tools must be GATED catalog tools';
       d.tools = [...new Set(b.tools as string[])];

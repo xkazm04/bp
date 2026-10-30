@@ -22,7 +22,7 @@ export interface RulesView {
 const EMPTY: RulesView = { rules: [], record: { decided: 0, synthetic: 0 }, held: {}, breaches: {}, loaded: false };
 
 /** A draft the writer sends: preview it, then set it. */
-export interface DraftBody { kind: RuleKind; scope: ScanScope; lenses?: string[]; maxEffort?: string; model?: string; minTier?: number; hours?: number; text?: string }
+export interface DraftBody { kind: RuleKind; scope: ScanScope; lenses?: string[]; maxEffort?: string; model?: string; minTier?: number; cautious?: boolean; hours?: number; text?: string }
 
 interface Slot { view: RulesView; subs: Set<() => void>; timer: ReturnType<typeof setInterval> | null; inflight: boolean }
 const slots = new Map<string, Slot>();

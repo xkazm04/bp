@@ -9,7 +9,7 @@
 //              marked SYNTHETIC wherever it shows.
 // useReplay asks the server for both, 250 ms after the draft last changed.
 import { useEffect, useMemo, useState } from 'react';
-import { TIER_WORD, type Backtest, type BacktestRow, type Impact, type RuleKind } from '@bp/core/scan/rules';
+import { CAUTION_MIN, CAUTION_RATE, TIER_WORD, type Backtest, type BacktestRow, type Impact, type RuleKind } from '@bp/core/scan/rules';
 import { previewRule, type DraftBody, type Replay } from '@/lib/rules/client';
 import { useEngine } from '../../hooks';
 import { Fig, Sec } from './shell';
@@ -110,6 +110,20 @@ export function Evidence({ bt, busy, error, onLeaveOut }: { bt: Backtest | null 
         <Fig n={bt.abstained} label="not its business" />
         <Fig n={pct === null ? '–' : pct + '%'} label={'agreement, where it spoke (' + spoke + ')'} tone={pct === null ? undefined : pct >= 90 ? 'mint' : pct >= 75 ? 'amber' : 'red'} />
       </div>
+      {bt.trust && (
+        <Sec head="Where it has earned your trust" aside={'acts at ' + Math.round(CAUTION_RATE * 100) + '%+ over ' + CAUTION_MIN + '+ decisions'}>
+          {bt.trust.length ? (
+            <div className="rl-trust" aria-label="Agreement by lens">
+              {bt.trust.map((t) => (
+                <span key={t.lens} className={t.trusted ? 'ok' : 'no'} title={t.matched + ' of ' + t.spoke + ' of your decisions in this lens agreed with it'}>
+                  <b>{P.LENS[t.lens]?.name ?? t.lens}</b><small>{t.matched}/{t.spoke}</small><em>{t.trusted ? 'acts alone' : 'goes to you'}</em>
+                </span>
+              ))}
+            </div>
+          ) : <p className="none">It has no decisions of yours to earn trust on yet: it will send everything to you.</p>}
+          <p className="wb-meta">Replayed walk-forward: on each past decision it knew only the ones before it.</p>
+        </Sec>
+      )}
       {bt.synthetic > 0 && <p className="wb-meta rl-syn">{bt.synthetic} of these {bt.decided} decisions are <b>SYNTHETIC</b> seeded history (scripts/seed-rules-history.mjs), marked in every row; the rest are this store’s real decisions.</p>}
       <Sec head="Where it would have disagreed with you" aside={diff.length || 'nowhere'}>
         {rooms.length > 0 && (

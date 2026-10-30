@@ -44,6 +44,7 @@ without checking `version`. Other readers treat any other version as unreadable.
 | `maxEffort` | `low` \| `medium` \| `high` \| `xhigh` | for `cap` | `cap` | the highest effort a build in the place may run at |
 | `model` | `sonnet` \| `opus` | no | `cap` | only builds on this model are capped; absent = every model |
 | `minTier` | 0 \| 1 \| 2 \| 3 | no | `grant` | the tier floor: findings of this tier or milder (0 stop-ship, 1 urgent, 2 normal, 3 backlog); absent = any tier |
+| `cautious` | true | no | `grant` | act only on a lens where the grant's approvals agreed with the owner's decisions inside its place at least 90% of the time over at least 3 of them (`lensTrust`, `CAUTION_RATE`, `CAUTION_MIN`); elsewhere the finding goes to the person. Absent = not cautious |
 | `tools` | string[], at least 1 | no | `grant` | the agent tools it lets run without a card (catalog names); absent = `decision.answer` and `wave.dispatch` |
 | `expiresAt` | ISO date-time | for `grant` | all | when it ends by itself; absent = until revoked |
 | `revokedAt` | ISO date-time | no | all | when a person revoked it |
@@ -124,7 +125,9 @@ also needs the model and effort from the `bp-waves.json` package that built the 
 
 A live grant lets the companion run a card on its own when the tool is in the grant's `tools`, and every finding the
 call names is inside the grant's place and, when `minTier` is set, carries a tier that is `>= minTier` (`grantFor`).
-A finding with no tier is never covered by a tier-bound grant, and an id the store lacks is never covered.
+A finding with no tier is never covered by a tier-bound grant, and an id the store lacks is never covered. A `cautious`
+grant also needs the finding's lens to be one it has earned over the owner's decided rows (the same record the replay
+reads); a reader that cannot read that record must treat a cautious grant as covering nothing.
 
 The call a grant runs is signed with the grant: the route it reaches writes `decided_by = 'rule:G-n'` in `scan.db`'s
 `proposals` (proposal decisions and wave dispatch). The owner's own decisions stay `user:<login>`. The replay a new
