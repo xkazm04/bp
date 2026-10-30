@@ -26,10 +26,12 @@
 // 4. Scope (verb-allowlists). VERBS below is the whole remote vocabulary, a closed grammar: a method plus an anchored path
 //    pattern, no percent-escapes, no query except the baton's `claim=1`. `read`: the plan reads; `standup`: read plus the
 //    companion turn, focus and cards GETs; `place`: the three baton verbs; `focus`: the shared focus's GET and POST (a
-//    headset follows and publishes without `read`; the route pins its reader to the paired device); `decide`: one verb, a
-//    REPEAT declined from the headset (ROADMAP F8: .../proposals/<id>/decline, which refuses any card that is not the same
-//    idea declined before). `decide` has its own ceremony: a device may ask for it, but only the owner's approve that names
-//    it (`--scope ...,decide`) grants it; a plain approve drops it. Never cards/<id>, human-token, dispatch, build
+//    headset follows and publishes without `read`; the route pins its reader to the paired device); `decide`: two verbs, the
+//    headset's pinch on a card: a REPEAT declined (ROADMAP F8: .../proposals/<id>/decline, which refuses any card that is
+//    not the same idea declined before) and the card's decision approved (D12: .../proposals/<id>/approve, the Morning
+//    Watch's Approve: proposed -> approved, no job queued). `decide` has its own ceremony: a device may ask for it, but
+//    only the owner's approve that names it (`--scope ...,decide`) grants it; a plain approve drops it. Never the plan's
+//    free decide (proposals/<id>), cards/<id>, human-token, dispatch, build
 //    or finish, and none of this server's own /lan or /athena routes.
 // 5. The rewrite. Only Content-Type and Accept are copied from the device; Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
@@ -98,7 +100,8 @@ export function lanAddress(): string | null {
 
 // ------------------------------------------------------------------------------------------------ the verbs
 interface Verb { scope: Scope; method: 'GET' | 'POST'; path: RegExp; query?: string }
-const SLUG = '[a-z0-9][a-z0-9-]{0,63}', ID = '[A-Za-z0-9_.-]{1,80}';
+// SLUG: the registry's own rule (registry.server.ts SLUG_RE, focus.ts), so the door never forwards a slug no product can have (E6, D3)
+const SLUG = '[a-z0-9][a-z0-9-]{0,62}', ID = '[A-Za-z0-9_.-]{1,80}';
 const products = (rest: string) => new RegExp(`^/api/products/${SLUG}/${rest}$`);
 /** The whole remote vocabulary. A request that matches no row is refused; nothing else is reachable through the door. */
 export const VERBS: readonly Verb[] = [
@@ -118,6 +121,7 @@ export const VERBS: readonly Verb[] = [
   { scope: 'focus', method: 'GET', path: /^\/api\/session\/focus$/ },
   { scope: 'focus', method: 'POST', path: /^\/api\/session\/focus$/ },
   { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/decline`) },
+  { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/approve`) },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */

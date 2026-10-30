@@ -3,7 +3,7 @@
 // so the headset can ask but only a person here can say yes.
 //   pair list                                   pending requests and pairings (never a token or a fingerprint)
 //   pair open                                   open a 2-minute pairing window
-//   pair approve <code> [--scope read,place] [--days 30]   (decide, a repeat declined from the headset, only when named here)
+//   pair approve <code> [--scope read,place] [--days 30]   (decide, the headset's pinch: a repeat declined or the card approved, only when named here)
 //                                               the one mint gate: type the code the headset shows; narrow the scopes
 //                                               (read, standup, place; default: what the device asked for) and the days
 //   pair deny <code>                            refuse a request

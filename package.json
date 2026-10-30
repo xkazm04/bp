@@ -56,6 +56,7 @@
     "check:crossing": "node --import @bp/core/register scripts/check-crossing.ts",
     "check:lan-door": "node --import @bp/core/register scripts/check-lan-door.ts",
     "check:vr-decline": "node --import @bp/core/register scripts/check-vr-decline.ts",
+    "check:vr-approve": "node --import @bp/core/register scripts/check-vr-approve.ts",
     "check:route-guards": "node scripts/check-route-guards.mjs",
     "check:core-purity": "node scripts/check-core-purity.mjs",
     "check:server": "node scripts/check-server.mjs",
