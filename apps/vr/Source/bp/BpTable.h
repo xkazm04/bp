@@ -532,6 +532,8 @@ public:
 	/** The decision card: shows the open finding it asks about (the lifted room's first, else the first in store order),
 	 *  or hides. */
 	void ShowCard(bool bShow);
+	/** The card asks about this open finding (BpCard.Ask <id>), ahead of the room rule; empty goes back to the rule. */
+	void AskCard(const FString& ProposalId);
 	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
 	void StartScan(const FString& Id, const FString& Lens);
 
@@ -1148,6 +1150,19 @@ private:
 	void SetScanPlace(const TArray<FString>& Features, bool bAll);
 	bool bCardShown = false;
 	FString CardProposal;
+	/** BpCard.Ask <proposal id>: the open finding the card asks about, ahead of the room rule (empty: the rule). */
+	FString CardAskId;
+	/** The card's decision brief (BpLink FetchBrief -> the generated FBpDecisionBrief), as the card draws it: the finding it
+	 *  is for, its lines (at most 5 of 120), which line is the quoted decline (INDEX_NONE: none), whether it repeats a
+	 *  declined idea (advice withdraw: Decline is the recommended answer) and the note that Decline carries
+	 *  ("Repeats <id>, declined <at>: ..."; core's repeatNote). A likeness (advice ask) is drawn but recommends nothing. */
+	FString BriefFor;
+	bool bBriefRead = false;
+	TArray<FString> BriefLines;
+	int32 BriefDeclinedLine = INDEX_NONE;
+	bool bBriefRepeat = false;
+	FString BriefRepeatNote;
+	void RequestCardBrief(const FString& ProposalId);
 
 	// ---- Room mode state (BpRoom.cpp) ---------------------------------------------------------------------------------
 	/** The room asked for (empty: the site plan), the room whose map is drawn, and the fade between them (0 the site plan,

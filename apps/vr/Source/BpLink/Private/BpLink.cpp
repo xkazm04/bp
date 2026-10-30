@@ -7,6 +7,7 @@
 
 #include "Schema/BpSchemaFixups.h"
 #include "HAL/IConsoleManager.h"
+#include "GenericPlatform/GenericPlatformHttp.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -575,6 +576,33 @@ void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TM
 			ScanState.Jobs.Num(), ScanState.Scan.proposals.Num(), ScanState.Tiers.Num(), ScanState.Scan.activity.Num(), ScanState.Waves.Num());
 	}
 	ScanStateDelegate.Broadcast(ScanState);
+}
+
+void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, const FBpDecisionBrief&)> OnDone)
+{
+	if (GFromBundle || ProposalId.IsEmpty())
+	{
+		if (OnDone) OnDone(false, FBpDecisionBrief());
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("GET"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/brief"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	const FString Slug = GetProductSlug();
+	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpDecisionBrief Brief;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		TSharedPtr<FJsonObject> Json;
+		const bool bOk = Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid()
+			&& BpSchema::FromJson(Json.ToSharedRef(), Brief);
+		if (bOk) { UE_LOG(LogBpLink, Log, TEXT("BpLink: brief %s/%s: %d lines, advice %s"), *Slug, *ProposalId, Brief.lines.Num(), *Brief.advice.say); }
+		else { UE_LOG(LogBpLink, Warning, TEXT("BpLink: brief %s/%s unread (HTTP %d)"), *Slug, *ProposalId, Status); }
+		if (OnDone) OnDone(bOk, Brief);
+	});
+	Request->ProcessRequest();
 }
 
 void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,

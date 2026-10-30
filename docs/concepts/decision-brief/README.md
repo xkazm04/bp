@@ -43,18 +43,22 @@ the one rendering every small surface shares.
 - One golden: [golden.json](golden.json) holds fixed inputs and the exact briefs for five cases. bp's check fails when
   `brief.ts` stops producing it; a port (Personas) runs the same inputs and must reproduce it byte for byte.
 
-## VR (the BpLink decision card) - not built tonight
+## VR (the BpLink decision card) - built in the fusion (2026-10-30)
 
-The data side is ready; the C++ is not written (this worktree has no UE build turn). What BpLink would do:
+The plan below was e2's; the fused branch builds it (`docs/concepts/one-morning/vr-brief-*.jpg`, rendered from the
+table's target pose in PIE over the editor MCP):
 
-1. `ABpTable::RefreshCard` (BpMarks.cpp) picks `Ask`, then fetches `/api/products/<slug>/proposals/<Ask->id>/brief`
-   once per `Key` (the card already caches by id + status) and parses it with the generated
-   `BpSchema::FromJson(Json, FBpDecisionBrief&)`.
-2. Draw `lines` under the header, at most 5 rows: they are already cut to 120 characters. Draw the `declined` fact
-   (`facts[i].key == "declined"`) in the amber the card's approve button uses.
-3. When `advice.say == "withdraw"`, the pinch on Decline is the primary answer, and it posts `{ decision: "decline",
-   note: <the repeat note> }`. The note is `Repeats <id>, declined <at>: "<note>"`, built from `declines[0]`.
-4. Offline (the bundle): `apps/vr/tools/bundle-data.mjs` would add `briefs.json` (id → brief) for the open proposals.
+1. `ABpTable::RefreshCard` (BpMarks.cpp) picks `Ask` (or `BpCard.Ask <id>`, the morning's decision), then
+   `RequestCardBrief` fetches `/api/products/<slug>/proposals/<Ask->id>/brief` once per finding through
+   `FBpLinkModule::FetchBrief`, parsed with the generated `BpSchema::FromJson(Json, FBpDecisionBrief&)`; a stale answer is
+   dropped, and the card redraws when the brief lands.
+2. The card draws `lines` under the header, at most 5 rows, the `declined` fact bold in a dark amber; the room's sketch and
+   the body's Impact step aside, and the card grows 7 x 2.5 cm (by capture: the fifth line was cut).
+3. When `advice.say == "withdraw"`, the header says REPEATS A DECLINE and **DECLINE · REPEAT** is the first, filled button
+   (Approve outlined). The note it stands for is built from `declines[0]` exactly as core's `repeatNote`. A likeness
+   (`ask`) shows the quote and keeps Approve first.
+4. Not built: a pinch on the card's buttons writes nothing (the site card's buttons have no hit handler, and the table's
+   only write is a draft wave, the owner's VR rule). Offline (the bundle) has no `briefs.json`: the card is as before.
 
 ## Run it
 

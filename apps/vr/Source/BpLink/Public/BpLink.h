@@ -188,6 +188,12 @@ public:
 	/** The same for several findings in one write (WP3's lasso): the ones no draft holds yet go in together, so a second write
 	 *  never patches packages the waves have not read back. */
 	void AddToDraft(const TArray<FString>& ProposalIds, TFunction<void(bool bOk, const FString& WaveId, const FString& Note)> OnDone);
+	/** GET .../proposals/<id>/brief: the decision brief of one finding (packages/core/src/scan/brief.ts, the decision-brief-1
+	 *  wire), read with BpSchema::FromJson into the generated FBpDecisionBrief - the same lines the web's decision card, the
+	 *  Morning Watch and an agent's plan.brief read. OnDone(false) offline (the bundle has no briefs) or on any failure. A
+	 *  read only: the table writes no decision. Game thread. */
+	void FetchBrief(const FString& ProposalId, TFunction<void(bool bOk, const FBpDecisionBrief& Brief)> OnDone);
+
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
 
