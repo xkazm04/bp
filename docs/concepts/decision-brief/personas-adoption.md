@@ -30,7 +30,12 @@ exactly `briefFor(subject, scan, briefMapOf(structure))`. No IPC, no server, no 
   A fact with `ids` opens its list: precedent rows (verdict, date, the note in quotes), dependents, execute runs.
 - When `brief.advice.say === 'withdraw'`, make **Decline** the primary `OptionRow` with the tag "you declined this
   before". Pass `repeatNote(brief.declines[0])` as the decline reason, so `ReasonDialog` opens pre-filled and the new
-  row's `decision_note` names the decision it repeats. Keep Approve, marked "approve anyway".
+  row's `decision_note` names the decision it repeats. Keep Approve, marked "approve anyway". Only `withdraw` flips
+  the primary: it means the same idea (bp's rule: the attempt chain, or the same feature, action and standard or words,
+  never opposite).
+- When `brief.advice.say === 'ask'` and `brief.declines` is not empty (a like idea declined on another feature, or a
+  broad shared standard), show the declined line in amber with the chip "Like a declined idea" and keep Approve the
+  primary: the person reads their own words and decides.
 - Keys: Personas' accept key stays **a** (approve) and **x** (decline). The recommended option is the one `Enter` takes,
   as in bp.
 
