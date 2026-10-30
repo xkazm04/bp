@@ -560,6 +560,21 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | **Signatures shown on shared cards** | Personas signs `user:personas`, and the brief shows "by personas" | e2's open question 3 for Personas' owner |
 | **Where the Personas golden test lives** | Next to `PARITY.md`, or in a cross-repo job | e2's open question 1. This plan proposes both: a copy and test in Personas, and the report in bp |
 
+### Owner decisions, 2026-10-30 (triage after S1, S2 and S5)
+
+| # | Question | Decision |
+|---|---|---|
+| D1 | How `roadmap/web-s1-s2-s5` lands | A PR now, merged, the branch deleted (before the VR branch: the VR session rebases over it) |
+| D2 | Is the bound-origin rule enough for I1? | Yes. Card execution stays an HTTP hop to the server's own bound origin; no in-process move |
+| D3 | The LAN door's slug `{0,63}` (E6) | The VR session aligns it to `{0,62}` in its LAN-door change |
+| D4 | The bay-aware place (C5) | S7, with following across products in the headset |
+| D5 | Compiling the generated UE structs (no clang on Lynx) | The VR session's F3 build in the main checkout is the compile |
+| D6 | Personas next | S3 continues: its golden test reads `packages/schema/golden/decision-brief.json` (the old path stays a mirror) |
+| D7 | Does `personas-drift.mjs` gate anything? | No. A report run by hand, never in `npm run check` |
+| D8 | Does a VR decline write the store (F8)? | Yes, on a repeat only (the brief's `withdraw`, 409 otherwise), from a paired headset only, with the brief's note: the same rule as the deck's Decline |
+| D9 | The next session | S4, the table's card carries the brief (before the 2026-11-18 deadline) |
+| D10 | Spend | A budget per session, set now. The amount is the owner's to write here before the first paid run; until then demos and gates stay on fake `claude` and fake `gh` |
+
 ## 7. Parked: e1, "Rules you set once" (branch `hackathon/bp-sync-1029/e1`)
 
 - **What e1 built.** Standing orders (hold, only, cap) and grants live in `bp-rules.json` beside `scan.db`, and one
