@@ -790,3 +790,281 @@ export interface BriefFact {
   /** What the fact's number opens: dependents, decided rows, or execute runs. */
   ids: string[];
 }
+
+/** The shared focus ("Follow me"): the place the owner is looking at, which any surface publishes and any other follows, with no leader (packages/core/src/session/focus.ts is the source; docs/standard/contract-1.md says the rules). GET /api/session/focus answers `view`; POST /api/session/focus takes `post` and answers `answer`; the companion stream's `event: shared` carries `view` too. Ids only, never a selection. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (shared-focus-2). */
+export interface SharedFocus {
+  /** A place, as a publish carries it and the view's shared place holds it. */
+  place?: FocusPlace;
+  /** GET /api/session/focus, `event: shared`, and POST's answer.view. */
+  view?: SharedView;
+  /** view.shared when someone has published (it is null before): the shared place with who put it there. */
+  shared?: SharedPlace;
+  /** The body of POST /api/session/focus: one move on the caller's own reader record. */
+  post?: FocusPost;
+  /** POST /api/session/focus's 200 or 201 answer. */
+  answer?: FocusAnswer;
+}
+
+/** Where: a product, and optionally one target in it. Absent target: the product as a whole (the site). */
+export interface FocusPlace {
+  /** A registered product's slug (the registry's own rule), or `kettle` for the sample. */
+  product: string;
+  target?: FocusTarget;
+  level?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+  /** The publishing page's own hash ('#at=bkg-06&lens=perf'); a follower on the same product may use it. Never ''. */
+  hash?: string;
+  /** One plain line said with the place. A Morning decision card sends its title, a newline, then its brief's short line (a lower third shows both). */
+  say?: string;
+}
+
+export interface FocusTarget {
+  /** The same kinds the place baton and the companion's focus.show send. */
+  kind: 'feature' | 'room' | 'wing' | 'site';
+  id: string;
+}
+
+/** What a client sees: the shared place (null before anyone published) and every reader. */
+export interface SharedView {
+  /** Grows by one each time the shared place moves; an echo or a presence change keeps it. */
+  rev: number;
+  /** A sharedPlace, or null before anyone published. */
+  shared: Record<string, unknown>;
+  readers: ViewReader[];
+  /** The last shared places, oldest first (added 2026-10-30, roadmap C2, optional: absent before the first publish). */
+  history?: HistoryEntry[];
+  /** The index in history of the place shared now: back goes to historyAt - 1. */
+  historyAt?: number;
+}
+
+export interface ViewReader {
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  id: string;
+  surface: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  label: string;
+  /** '*' (whoever moves) or one reader id; absent: not following. */
+  follows?: string;
+  seenAt: string;
+  /** Seen in the last 45 s (LIVE_MS); clients say hello every 15 s while open. */
+  live: boolean;
+}
+
+export interface HistoryEntry {
+  place: FocusPlace;
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  label: string;
+  /** The publish that made it the shared place. */
+  at: string;
+}
+
+export interface SharedPlace {
+  place: FocusPlace;
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  surface: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  /** What other surfaces call the publisher: 'Web', 'Phone', 'VR table', 'Glim'. */
+  label: string;
+  /** ISO time of the publish that made this the shared place (an echo keeps it). */
+  at: string;
+}
+
+/** One move. hello, publish and follow name the caller (surface, label); publish carries a place, follow carries `of`. */
+export interface FocusPost {
+  /** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400). */
+  op: 'hello' | 'publish' | 'follow' | 'unfollow' | 'forget' | 'back' | 'forward';
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  surface?: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  label?: string;
+  place?: FocusPlace;
+  /** follow: '*' or a reader id (never the caller's own). */
+  of?: string;
+}
+
+export interface FocusAnswer {
+  /** The shared place moved (201, a new rev); false for an echo or a presence-only move (200). */
+  moved: boolean;
+  view: SharedView;
+}
+
+/** The Morning Watch: one standup across every live product, as cards read in order (packages/core/src/companion/morning.ts is the source; docs/standard/contract-1.md says the rules). GET /api/companion/morning answers `deck`; with `view=agent` (the morning.brief tool) it answers `agent`; POST /api/companion/morning takes `post` (the human path only) and answers the steering row `steer`. Each decision card carries its brief, built from decision-brief-1's facts. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (morning-deck-2). Absent values are omitted, never null. */
+export interface MorningWatch {
+  deck?: MorningDeck;
+  agent?: AgentDeck;
+  steer?: SteerRow;
+  post?: SteerPost;
+}
+
+/** GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order. */
+export interface MorningDeck {
+  since: string;
+  until: string;
+  products: ProductSummary[];
+  cards: MorningCard[];
+  agents?: TrailTally;
+  /** Products that could not be read, never dropped silently. */
+  skipped?: SkippedProduct[];
+  news?: DeckNews;
+}
+
+export interface ProductSummary {
+  slug: string;
+  name: string;
+  built: number;
+  failed: number;
+  releases: number;
+  confirmed: number;
+  /** Release items whose reading fell short of what was expected. */
+  short: number;
+  waiting: number;
+}
+
+export interface MorningCard {
+  /** Stable across reads of the same morning ('decision:<product>:<proposal>'), so a reader keeps its card. */
+  id: string;
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+  product?: string;
+  productName?: string;
+  headline: string;
+  lines: CardLine[];
+  tone: 'good' | 'warn' | 'bad' | 'calm';
+  /** Where the card takes every follower as it is read. */
+  place?: FocusPlace;
+  decision?: CardDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
+}
+
+export interface CardLine {
+  text: string;
+  tone?: 'good' | 'warn' | 'bad' | 'calm';
+}
+
+export interface CardDecision {
+  proposal: string;
+  tier?: number;
+  /** A verdict given this morning (the card keeps its slot), or a hold from an earlier one. */
+  steered?: SteerRow;
+  brief?: CardBrief;
+}
+
+/** One row of a product's steering log (<root>/.ai/lens-scan/work/steering-log.jsonl), and POST's answer. */
+export interface SteerRow {
+  at: string;
+  product: string;
+  proposal: string;
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
+  title: string;
+  /** Who decided, as bp signs a decision (user:<login>). */
+  by: string;
+  /** defer: when the decision comes back to the deck. */
+  until?: string;
+  /** approve: the store moved but the log could not be written. */
+  warning?: string;
+  /** decline: what the store's row now reads ('Repeats <id>, declined <day>: ...'). */
+  note?: string;
+}
+
+/** A decision card's brief (cardBrief in morning.ts over briefFor): the same facts and lines as decision-brief-1, plus the recommendation and a one-line form for small surfaces. */
+export interface CardBrief {
+  facts: BriefFact[];
+  lines: string[];
+  advice: BriefAdvice;
+  decline?: CardDecline;
+  /** Only when the same idea was declined before (advice withdraw). */
+  recommend?: 'decline';
+  /** With recommend: what a Decline writes to the store. */
+  note?: string;
+  /** One line: the repeat or the likeness with its quote, else the brief's first line. */
+  short: string;
+}
+
+/** The decline a decision card repeats (recommend: decline) or only resembles (advice ask): decision-brief-1's briefDecided, the fields a card shows. */
+export interface CardDecline {
+  id: string;
+  title: string;
+  feature: string;
+  /** YYYY-MM-DD. */
+  at: string;
+  by?: string;
+  /** The owner's own words. */
+  note?: string;
+  match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
+}
+
+/** What agents did with the owner's decisions in the window (companion/trail.ts). */
+export interface TrailTally {
+  reads: number;
+  heard: number;
+  withdrew: number;
+  recommended: number;
+  conversations: number;
+}
+
+export interface SkippedProduct {
+  product: string;
+  why: string;
+}
+
+/** What landed after the reader opened the deck (GET ...&opened=<iso>): findings raised and items built, shown at the end, never in the part already read (added 2026-10-30, roadmap C1, optional). */
+export interface DeckNews {
+  /** The `opened` instant the news is counted from. */
+  since: string;
+  count: number;
+}
+
+/** GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap. */
+export interface AgentDeck {
+  since: string;
+  until: string;
+  products: ProductSummary[];
+  agents?: TrailTally;
+  cards: AgentCard[];
+  news?: DeckNews;
+}
+
+export interface AgentCard {
+  id: string;
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+  product?: string;
+  headline: string;
+  lines: string[];
+  place?: AgentPlace;
+  decision?: AgentDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
+}
+
+export interface AgentPlace {
+  product: string;
+  target?: FocusTarget;
+}
+
+export interface AgentDecision {
+  proposal: string;
+  tier?: number;
+  steered?: AgentSteered;
+  brief?: AgentBrief;
+}
+
+export interface AgentSteered {
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
+  at: string;
+}
+
+export interface AgentBrief {
+  lines: string[];
+  /** The brief's advice.say. */
+  advice: 'withdraw' | 'ask' | 'proceed';
+  recommend?: 'decline';
+  note?: string;
+}
+
+export interface SteerPost {
+  product: string;
+  proposal: string;
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
+}

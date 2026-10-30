@@ -23,7 +23,8 @@
 //      agree on Kettle's 133 features, rooms, wings and lenses, so the card and the routes count the same blast radius;
 //  15. the wire: every brief built above validates against packages/schema decision-brief-1 (the schema BpLink's
 //      FBpDecisionBrief and Personas' adoption read), and a brief with a sixth line or a null feature does not;
-//  16. the golden file (docs/concepts/decision-brief/golden.json, the contract a port reproduces) is what brief.ts
+//  16. the golden file (packages/schema/golden/decision-brief.json and its mirror at the old path
+//      docs/concepts/decision-brief/golden.json, the contract a port reproduces) is what brief.ts
 //      computes now, and its briefs validate too.
 // Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
@@ -31,7 +32,7 @@ import path from 'node:path';
 import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, briefMapOfStructure, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
 import { loadMap } from '../packages/core/src/data/index.ts';
-import { GOLDEN, golden } from './brief-golden.ts';
+import { GOLDEN, MIRRORS, golden } from './brief-golden.ts';
 import { TRAIL_WINDOW_MS, trailSessions, type TrailRow } from '../packages/core/src/companion/trail.ts';
 import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
 
@@ -292,7 +293,8 @@ const sec = [
 // 16. the golden file (before the wire, so its briefs are validated with the rest)
 {
   const now = golden(), committed = fs.existsSync(GOLDEN) ? fs.readFileSync(GOLDEN, 'utf8').replace(/\r\n/g, '\n') : '';
-  ok(16, committed === now, 'docs/concepts/decision-brief/golden.json is current (node scripts/brief-golden.ts --write)');
+  ok(16, committed === now, 'packages/schema/golden/decision-brief.json is current (node scripts/brief-golden.ts --write)');
+  ok(16, MIRRORS.every((f) => fs.existsSync(f) && fs.readFileSync(f, 'utf8').replace(/\r\n/g, '\n') === now), 'docs/concepts/decision-brief/golden.json, the old path ports pin, is the same bytes');
   const g = JSON.parse(now) as { cases: { brief: Brief }[] };
   for (const c of g.cases) built.push(c.brief);
   ok(16, g.cases.length === 6 && ['withdraw', 'ask', 'proceed'].every((say) => g.cases.some((c) => c.brief.advice.say === say)) && g.cases.some((c) => /No precedent yet/.test(c.brief.lines.join('\n'))),

@@ -1,5 +1,6 @@
 // GET /api/companion/morning?since=<iso>: the Morning Watch deck across every registered live product (companion/morning.ts):
 // `{ since, until, products: ProductSummary[], cards: MorningCard[], skipped }`. The window defaults to the last 16 hours.
+// `&opened=<iso>` (the reader's first read): what landed after it is news, appended at the end and counted in `news`.
 // `view=agent` (morning.brief on the MCP door): the same cards and brief lines, compact (agentDeck), within the door's cap.
 // POST /api/companion/morning, body `{ product, proposal, verdict: approve | defer | hold }`, the human path only
 // (`x-bp-human`, else 403: the agent's door can read the morning but never steer it): approve moves the finding to approved
@@ -16,7 +17,7 @@ const NO_STORE = { 'cache-control': 'no-store' };
 export function GET(req: Request): Response {
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
-  const q = new URL(req.url).searchParams, deck = morningDeck(q.get('since') ?? undefined);
+  const q = new URL(req.url).searchParams, deck = morningDeck(q.get('since') ?? undefined, Date.now(), q.get('opened') ?? undefined);
   return Response.json(q.get('view') === 'agent' ? agentDeck(deck) : deck, { headers: NO_STORE });
 }
 

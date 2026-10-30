@@ -130,9 +130,23 @@ class SharedFocus {
   }
   /** Publish at once (a deck card: no burst to wait out). */
   publishNow(p: FocusPlace): Promise<Response | null> { clearTimeout(this.timer); this.pending = null; return this.post({ op: 'publish', place: p }); }
+  /** Back or forward through the record's history: a publish of a remembered place (one rev; every follower flies). The
+   *  place, for this page to go to itself (a reader never applies its own write), or null when there is none that way. */
+  async step(dir: 'back' | 'forward'): Promise<FocusPlace | null> {
+    const r = await this.post({ op: dir });
+    if (!r?.ok) return null;
+    const p = this.state.view?.shared?.reader === this.me ? this.state.view.shared.place : null;
+    if (p) { this.hushUntil = Date.now() + APPLY_HUSH_MS; this.lastApplied = p; }
+    return p;
+  }
   follow(of = '*'): Promise<Response | null> { this.set({ follows: of }); return this.post({ op: 'follow', of }); }
   unfollow(): Promise<Response | null> { this.set({ follows: undefined }); return this.post({ op: 'unfollow' }); }
-  words(now = Date.now()): string | null { return this.state.view ? followingWords(this.state.view, this.state.follows, now) : this.state.follows ? 'Following' : null; }
+  words(now = Date.now()): string | null {
+    const v = this.state.view;
+    // this screen put the shared place there itself (a step back or forward): it leads until someone else moves
+    if (v?.shared?.reader === this.me && this.state.follows) return 'Shared from this screen';
+    return v ? followingWords(v, this.state.follows, now) : this.state.follows ? 'Following' : null;
+  }
   /** The other live readers that follow (whoever moves, or this reader). */
   followers(): { id: string; label: string; surface: Surface }[] {
     const v = this.state.view;

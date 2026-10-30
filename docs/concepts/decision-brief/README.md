@@ -1,5 +1,9 @@
 # Decisions with memory: the decision brief
 
+**The as-built record** of hackathon bp-sync-1029's entry e2, fused into the Morning Watch (PR #9, `51e193e`; the
+morning side is [`../one-morning/`](../one-morning/README.md)). What comes next is planned in
+[`../one-morning-brief/ROADMAP.md`](../one-morning-brief/ROADMAP.md), not here.
+
 Every decision in the Blueprint carries a computed brief, and every past decision keeps speaking. The person reads the
 brief on the decision card and decides in one keystroke. Agents read the **same** brief through the `plan.brief` tool
 before they propose, so a declined idea is not proposed again.
@@ -31,7 +35,7 @@ the one rendering every small surface shares.
 | The person, web | the plan's decision card and the Review detail (`apps/web/src/components/Brief.tsx`), computed in the browser over the map and stream the page already holds (`briefMapOfStructure`) | Each fact opens its evidence. A repeat of a standing decline recommends **Decline** ("you declined this before"): Enter takes it, and the decline's note names the decision it repeats (`repeatNote`). A question's `affects` is its blast radius, so the plan's amber outlines match the brief. |
 | Agents | `plan.brief` in `packages/core/src/companion/catalog.ts` (AUTO) → `GET /api/companion/brief?product&feature&title[&lens]` or `&id=` | Read before proposing; `withdraw` means do not propose it. `decision.recommend` answers with the proposal's brief and a `conflict` when an approval contradicts a standing decline. |
 | The person, watching agents | the cards slip (`AgentTrail.tsx`) ← `GET /api/companion/trail` | "Was about to propose X; read your decline Y: '...' / Withdrew it / Then recommended you decline Z". |
-| VR (BpLink) | `GET /api/products/<slug>/proposals/<id>/brief` → `FBpDecisionBrief`, generated from `packages/schema/schema/decision-brief-1.schema.json` | See "VR" below: **not built tonight**. |
+| VR (BpLink) | `GET /api/products/<slug>/proposals/<id>/brief` → `FBpDecisionBrief`, generated from `packages/schema/schema/decision-brief-1.schema.json` | See "VR" below: the table's card is built (the fusion); the room deck (BpDeck) and the offline `briefs.json` are not. |
 | Personas | the same function over its own `BlueprintData` | See [personas-adoption.md](personas-adoption.md): **not built** (Personas is read-only tonight). |
 
 ## Sync: why the readers cannot drift
@@ -40,7 +44,7 @@ the one rendering every small surface shares.
   server's raw read are pinned equal on Kettle (`check:decision-brief` case 14).
 - One wire: `decision-brief-1.schema.json` is normative. `generate.mjs` makes BpLink's `FBpDecisionBrief` from it, and
   `parity.mjs` fails `check:schema` when the hand-written `Brief` and the schema disagree on a field.
-- One golden: [golden.json](golden.json) holds fixed inputs and the exact briefs for five cases. bp's check fails when
+- One golden: [golden.json](golden.json) holds fixed inputs and the exact briefs for six cases. bp's check fails when
   `brief.ts` stops producing it; a port (Personas) runs the same inputs and must reproduce it byte for byte.
 
 ## VR (the BpLink decision card) - built in the fusion (2026-10-30)
@@ -62,7 +66,8 @@ table's target pose in PIE over the editor MCP):
 
 ## Run it
 
-See `.hackathon/DEMO.md` in the entry worktree, or: `node scripts/scan-demo.mjs --reset`,
+The fused demo (the brief on the Morning Watch) is in [`../one-morning/README.md`](../one-morning/README.md) "Run it".
+e2's own demo, on one product: `node scripts/scan-demo.mjs --reset`,
 `node scripts/brief-demo-seed.mjs`, apps/server and the web on throwaway `BP_HOME`, then
 `node scripts/brief-agent-demo.mjs` (a scripted agent, no model). `python scripts/brief-demo-rehearse.py` walks the
 whole path headless and asserts it.

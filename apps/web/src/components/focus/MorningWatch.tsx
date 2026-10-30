@@ -8,7 +8,9 @@
 // Keyboard first: → / Space next, ← back, A approve, D defer, H hold, X / Enter decline a repeat, Esc back to the plan; M opens it
 // wherever live products are registered (the sample's simulated "While you were away" keeps M only when none are). A card in another product opens
 // that product with `?morning=<card id>`, and the deck picks up there; the window it covers is frozen for the tab
-// (sessionStorage) so a morning read across reloads is one morning.
+// (sessionStorage) so a morning read across reloads is one morning. News during the standup: the deck is read again every
+// few seconds with the instant it was first opened (`opened`, frozen for the tab too); what landed since comes at the end,
+// before the close card, marked new, and the top bar says "1 new". The cards already read never move.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import type { CardBrief, MorningCard, MorningDeck, Verdict } from '@bp/core/companion/morning';
@@ -19,7 +21,9 @@ import { goToPlace } from './FollowHost';
 import { refreshProjects, useProjects } from '@/lib/scan/projects';
 import '../decision-brief.css';
 
-const SINCE_KEY = 'bp:morning-since', VOICE_KEY = 'bp:morning-voice';
+const SINCE_KEY = 'bp:morning-since', OPENED_KEY = 'bp:morning-opened', VOICE_KEY = 'bp:morning-voice';
+/** How often an open deck asks for news. */
+const NEWS_POLL_MS = 6000;
 let kept: MorningDeck | null = null;
 /** The deck's right edge in UI px (focus.css #mw: 18 + 460, and a margin): the plan frames places to its right. */
 const DECK_INSET = 500;
@@ -28,8 +32,9 @@ type Steered = { verdict: Verdict; ok: boolean; text: string };
 const VERB: Record<Verdict, string> = { approve: 'Approved', defer: 'Deferred to tomorrow', hold: 'Held', decline: 'Declined as a repeat' };
 const KEYS: Record<string, Verdict> = { a: 'approve', y: 'approve', d: 'defer', n: 'defer', h: 'hold', b: 'hold', x: 'decline' };
 
-function readSince(): string | undefined { try { return sessionStorage.getItem(SINCE_KEY) ?? undefined; } catch { return undefined; } }
-function keepSince(s: string | null): void { try { if (s) sessionStorage.setItem(SINCE_KEY, s); else sessionStorage.removeItem(SINCE_KEY); } catch { /* this visit only */ } }
+function readKey(k: string): string | undefined { try { return sessionStorage.getItem(k) ?? undefined; } catch { return undefined; } }
+function keepKey(k: string, s: string | null): void { try { if (s) sessionStorage.setItem(k, s); else sessionStorage.removeItem(k); } catch { /* this visit only */ } }
+const readSince = () => readKey(SINCE_KEY), keepSince = (s: string | null) => { keepKey(SINCE_KEY, s); if (!s) keepKey(OPENED_KEY, null); };
 function setParam(id: string | null): void {
   const u = new URL(location.href);
   if (id) u.searchParams.set('morning', id); else u.searchParams.delete('morning');
@@ -50,14 +55,19 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   const want = useRef<string | null>(null), ref = useRef<HTMLElement>(null), shown = useRef<string | null>(null);
 
   const load = useCallback(async (): Promise<Deck | null> => {
-    const since = readSince();
+    const since = readSince(), opened = readKey(OPENED_KEY);
+    const q = [since ? 'since=' + encodeURIComponent(since) : '', opened ? 'opened=' + encodeURIComponent(opened) : ''].filter(Boolean).join('&');
     try {
-      const r = await fetch('/api/companion/morning' + (since ? '?since=' + encodeURIComponent(since) : ''), { cache: 'no-store' });
+      const r = await fetch('/api/companion/morning' + (q ? '?' + q : ''), { cache: 'no-store' });
       if (!r.ok) return null;
       const d = (await r.json()) as Deck;
       if (!since) keepSince(d.since);
+      if (!opened) keepKey(OPENED_KEY, d.until);
       kept = d;
+      // a read again (news) keeps the card on screen by its id, in the same render, so no other card is ever shown
+      const at = shown.current ? d.cards.findIndex((c) => c.id === shown.current) : -1;
       setDeck(d);
+      if (at >= 0 && !want.current) setI(at);
       return d;
     } catch { return null; }
   }, []);
@@ -84,6 +94,12 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     const k = id ? deck.cards.findIndex((c) => c.id === id) : -1;
     if (k >= 0) setI(k);
   }, [deck]);
+  // news during the standup: read the deck again while it is open (the card on screen is kept by its id)
+  useEffect(() => {
+    if (!open) return;
+    const t = setInterval(() => { if (!document.hidden) void load(); }, NEWS_POLL_MS);
+    return () => clearInterval(t);
+  }, [open, load]);
   useEffect(() => {
     fx.pause(open);
     if (!phone) E.setInsetLeft(open ? DECK_INSET : 0);
@@ -170,13 +186,13 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
   return (
     <section id="mw" ref={ref} tabIndex={-1} role="dialog" aria-modal="false" aria-label="Morning Watch" data-keys="own">
       <div className="mw-top">
-        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}</span>
+        <span className="kk">Morning Watch · {deck ? `${k + 1} of ${n}` : 'reading the stores…'}{deck?.news?.count ? <b className="mw-new" role="status"> · {deck.news.count} new</b> : null}</span>
         <span className="who">{others.length ? <>Following: <b>{others.map((x) => x.label).join(', ')}</b></> : 'No other screen follows'}</span>
       </div>
       <div className="bar" role="tablist" aria-label="Cards">
         {deck?.cards.map((c, j) => (
           <button key={c.id} type="button" role="tab" aria-selected={j === k} aria-label={`${j + 1}: ${c.headline}`} title={c.headline} onClick={() => setI(j)}
-            className={[j === k ? 'cur' : j < k ? 'done' : '', c.kind === 'decision' ? 'd' : '', (steered[c.id] ?? fromDeck(c, deck))?.ok ? 'ok' : ''].filter(Boolean).join(' ')} />
+            className={[j === k ? 'cur' : j < k ? 'done' : '', c.kind === 'decision' ? 'd' : '', c.news ? 'new' : '', (steered[c.id] ?? fromDeck(c, deck))?.ok ? 'ok' : ''].filter(Boolean).join(' ')} />
         ))}
       </div>
       {deck && deck.products.length > 0 && (
@@ -184,14 +200,14 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       )}
       {card ? (
         <motion.div key={card.id} className="card" aria-live="polite" initial={calm ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 34 }}>
-          <span className={'tag ' + card.tone}>{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
+          <span className={'tag ' + card.tone}>{card.news ? 'New · ' : ''}{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
           <h2>{card.headline}</h2>
           {card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
           {card.decision?.brief && <DeckBrief b={card.decision.brief} />}
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
           {s && <div className={'steered' + (s.ok ? '' : ' err')}>{s.text}</div>}
-          {(card.kind === 'open' || card.kind === 'close') && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
+          {card.kind === 'open' && deck && deck.products.length > 0 && <Portfolio deck={deck} jump={(slug) => { const j = deck.cards.findIndex((c) => c.product === slug); if (j >= 0) setI(j); }} />}
           {deck?.skipped?.length ? card.kind === 'open' && <div className="where">Not read: {deck.skipped.map((x) => x.product + ' (' + x.why + ')').join('; ')}</div> : null}
         </motion.div>
       ) : <div className="card"><h2>{deck ? 'Nothing to brief.' : 'Reading every product…'}</h2></div>}

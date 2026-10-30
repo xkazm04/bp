@@ -2,7 +2,8 @@
 // companion's own read-only snapshots (views.server.ts), handed to the pure deck (companion/morning.ts); and the owner's
 // steering, one row per decision in the product's own steering log (<root>/.ai/lens-scan/work/steering-log.jsonl, beside
 // bp-waves.json), with the day's log rendered next to it as steering-log.md - the "Daily Steering Log" a person can read
-// or export. Approve is the only verdict that writes the product's store: it is the same `decide` the plan's Approve
+// or export; the .md is rendered again on every read of the deck, so rows another writer appends show up there too.
+// Approve is the only verdict that writes the product's store: it is the same `decide` the plan's Approve
 // calls (proposed -> approved, signed like every bp decision), refused while BP_WRITES=off. Defer and Hold are the
 // owner's word only, kept in the log: a deferred decision leaves the deck until tomorrow morning, a held one stays, marked.
 import fs from 'node:fs';
@@ -67,16 +68,20 @@ export function readSteer(p: ProductEntry): SteerRow[] {
   return out;
 }
 
-/** The deck for the window [since, now]; products that cannot be read are named in `skipped`, never dropped silently. */
-export function morningDeck(since: string | undefined, now = Date.now()): MorningDeck & { skipped: { product: string; why: string }[] } {
+/** The deck for the window [since, now]; products that cannot be read are named in `skipped`, never dropped silently.
+ *  `opened`: when the reader first read this morning's deck; what landed after it comes as news, at the end. */
+export function morningDeck(since: string | undefined, now = Date.now(), opened?: string): MorningDeck & { skipped: { product: string; why: string }[] } {
   const from = since && Number.isFinite(Date.parse(since)) ? new Date(Date.parse(since)).toISOString() : new Date(now - WINDOW_MS).toISOString();
+  const cut = opened && Number.isFinite(Date.parse(opened)) ? new Date(Date.parse(opened)).toISOString() : undefined;
   const { read, skipped } = snapshots();
   const facts: ProductFacts[] = [], steer: SteerRow[] = [];
   for (const { p, scan } of read) {
     facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p) });
-    steer.push(...readSteer(p));
+    const rows = readSteer(p);
+    steer.push(...rows);
+    renderOnRead(p, rows, now);
   }
-  const deck = buildDeck(facts, steer, from, now, readTrail());
+  const deck = buildDeck(facts, steer, from, now, readTrail(), cut);
   const close = deck.cards.find((c) => c.kind === 'close');
   const logs = read.map(({ p }) => path.relative(p.root, mdFile(p)).split(path.sep).join('/'));
   if (close) close.lines = closeLines(steer.sort((a, b) => (a.at < b.at ? -1 : 1)), from, logs.length ? `${logs[0]} in each product` : 'none', decidedElsewhere(facts, steer, from, deck.until));
@@ -123,6 +128,16 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
   }
   try { fs.writeFileSync(mdFile(p), renderLog(p, readSteer(p), now)); } catch { /* the .md renders the jsonl; the next verdict writes it again */ }
   return { status: 200, row };
+}
+
+/** The .md is a rendering of the .jsonl, so it is rendered on every read of the deck too: a row another writer appended
+ *  (Personas, a script, a second bp) reaches the readable log without a bp steer (roadmap C3). Written only when it
+ *  differs; a log nobody steered into stays absent. */
+function renderOnRead(p: ProductEntry, rows: readonly SteerRow[], now: number): void {
+  if (!rows.length) return;
+  const md = renderLog(p, rows, now);
+  try { if (fs.readFileSync(mdFile(p), 'utf8') === md) return; } catch { /* not rendered yet */ }
+  try { fs.writeFileSync(mdFile(p), md); } catch (e) { warnOnce('steering log ' + p.slug, e); }
 }
 
 /** The day's steering log as Markdown: what was decided this morning, newest last. */

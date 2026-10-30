@@ -115,6 +115,19 @@ check('the deck keeps the repeat in its slot, marked declined', d.cards.filter((
 const md = fs.readFileSync(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'work', 'steering-log.md'), 'utf8');
 check('the steering log says it, with the note', /Declined as a repeat: Add retry to the checkout payment calls .* - Repeats brief-h7/.test(md), md);
 
+// the wire: the deck (with a steered repeat and every card's brief), its agent view and a steering row conform to
+// packages/schema/schema/morning-deck-1.schema.json, which references decision-brief-1 and shared-focus-1
+{
+  const { wire } = await import('./lib/wire-schema.ts');
+  const { agentDeck } = await import('../packages/core/src/companion/morning.ts');
+  const asDeck = await wire('morning-deck-1', 'morningDeck'), asAgent = await wire('morning-deck-1', 'agentDeck'), asRow = await wire('morning-deck-1', 'steerRow');
+  const fails = [asDeck(d), asAgent(agentDeck(d)), asRow(row)].filter(Boolean);
+  check('wire: the deck, its agent view and the steering row conform to morning-deck-1', !fails.length && d.cards.some((c) => c.decision?.brief?.recommend === 'decline'), fails.join(' | '));
+  const dc = d.cards.find((c) => c.decision?.brief)!;
+  check('wire control: a card of an unknown kind, a brief of six lines and a verdict of veto are refused',
+    !!asDeck({ ...d, cards: [{ ...dc, kind: 'news' }] }) && !!asDeck({ ...d, cards: [{ ...dc, decision: { ...dc.decision, brief: { ...dc.decision!.brief, lines: ['1', '2', '3', '4', '5', '6'] } } }] }) && !!asRow({ ...row, verdict: 'veto' }));
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
 process.exit(failed ? 1 : 0);

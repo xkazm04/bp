@@ -7,8 +7,11 @@
 // Pure: the server keeps the record (server/api/session/place), this module decides every move.
 
 export type PlaceLevel = 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
-export type PlaceKind = 'feature' | 'room' | 'wing' | 'site';
-export const PLACE_KINDS: readonly PlaceKind[] = ['feature', 'room', 'wing', 'site'];
+import { PLACE_KINDS as KINDS } from '../standard/schema-vocab.ts';
+
+/** shared-focus-1's placeKind: the schema is the one authority (schema-vocab.ts is generated from it). */
+export type PlaceKind = (typeof KINDS)[number];
+export const PLACE_KINDS: readonly PlaceKind[] = KINDS;
 
 export interface Place {
   product: string;

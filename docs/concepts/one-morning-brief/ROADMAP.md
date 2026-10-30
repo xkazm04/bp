@@ -25,6 +25,29 @@ shift. The symbol named beside each citation is the stable reference. Personas p
   (`plan.brief` and `morning.brief` sit side by side in `catalog.ts`). The card-level fusion was still being built. Every
   item the fusion attempts tonight is marked **verify, else do** below.
 
+## Status
+
+- **S1 closed** on branch `roadmap/web-s1-s2-s5` (2026-10-30), over the fusion's PR #9 (`51e193e`):
+  - A1-A5 were landed by the fusion and verified against S1's "Done when": `python scripts/morning-demo-walk.py` (new,
+    41 asserted steps over `morning-up --server --prod`) and `python scripts/brief-demo-rehearse.py` (17 ok) are green.
+    A6 was landed by the fusion too (BpLink's card, `38b3f9d`); its room deck, `briefs.json` and pinch stay in S4.
+  - B1, B2, B3 and B5 were fixed by the fusion (`5ac408d`, `febc405`, the chip at M, the walk's skip); the walk asserts each.
+    B4: the close card no longer repeats the opening card's portfolio table. B7: the evidence fold ("and 2 more") opens.
+    B7's count mismatch lived in e2's uncommitted DEMO.md; the rehearsal prints 17 ok.
+  - I1 is closed: a card runs on the server's own bound origin (`door.server.ts` `selfOrigin`), held by
+    `check:companion-door`'s `host:` cases.
+  - `one-morning/` and `decision-brief/` say they are the as-built records; the fused demo is in `one-morning/README.md`.
+- **S2 bp half closed** on the same branch: `shared-focus-1` and `morning-deck-1` with generated TS and UE structs
+  (`FBpFocusPlace`, `FBpSharedView`, `FBpMorningDeck` and the rest readable on their own through `FromJson`), parity
+  with `focus.ts` and `morning.ts`, the goldens in `packages/schema/golden/` (the brief golden's old path stays a
+  byte-identical mirror), `packages/schema/contract.json` held by `check:contract`, the text `docs/standard/contract-1.md`
+  (E7 and C4 in it), and `scripts/personas-drift.mjs` (not in `npm run check`). Not done: C5 (a bay-aware place), and
+  E6's LAN door slug alignment (`lan-door.ts` is the VR session's file; the contract text records the gap). No card
+  reference was added to the place: the brief's short line rides on `say`.
+- **S5 closed** on the same branch: C1 news (`&opened=`, news at the end, "1 new", `morning-demo.mjs --news`), C2
+  history (`back` / `forward` ops, 10 places in the record, the chip's ‹ ›), C3 (`steering-log.md` rendered on read).
+  `python scripts/morning-demo-walk.py` covers both (steps 10 and 11).
+
 ## 1. What the fused product is
 
 Every morning the owner opens one deck, the **Morning Watch**, that briefs the whole portfolio of agent-built products:

@@ -17,6 +17,20 @@ export const PROPOSAL_STATUSES = ['proposed', 'approved', 'declined', 'executing
 export const WAVE_MODELS = ['sonnet', 'opus'] as const;
 /** scan-wire-1 $defs.waveEffort.enum */
 export const WAVE_EFFORTS = ['low', 'medium', 'high', 'xhigh'] as const;
+/** shared-focus-1 $defs.surface.enum */
+export const SURFACES = ['web', 'phone', 'vr', 'companion', 'personas', 'standin', 'morning'] as const;
+/** shared-focus-1 $defs.placeKind.enum: The same kinds the place baton and the companion's focus.show send. */
+export const PLACE_KINDS = ['feature', 'room', 'wing', 'site'] as const;
+/** shared-focus-1 $defs.focusOp.enum: hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400). */
+export const FOCUS_OPS = ['hello', 'publish', 'follow', 'unfollow', 'forget', 'back', 'forward'] as const;
+/** shared-focus-1 $defs.placeLevel.enum */
+export const PLACE_LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4'] as const;
+/** morning-deck-1 $defs.cardKind.enum */
+export const CARD_KINDS = ['open', 'agents', 'built', 'release', 'quiet', 'decision', 'close'] as const;
+/** morning-deck-1 $defs.cardTone.enum */
+export const CARD_TONES = ['good', 'warn', 'bad', 'calm'] as const;
+/** morning-deck-1 $defs.steerVerdict.enum: decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+export const STEER_VERDICTS = ['approve', 'defer', 'hold', 'decline'] as const;
 /** scan-wire-1 $defs.scanScope.properties.kind.enum */
 export const SCAN_SCOPE_KINDS = ['feature', 'bay', 'room', 'wing', 'all', 'selection'] as const;
 /** lens-manifest-1 properties (its keys) */
