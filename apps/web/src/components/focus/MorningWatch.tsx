@@ -3,7 +3,7 @@
 // as a deck over the plan, read one card at a time. Every card about a place publishes it to the shared focus as it is
 // shown and flies this page there, so every following surface (a second window, the phone, the VR table) is where the
 // owner is reading. Keyboard first: → / Space next, ← back, A approve, D defer, H hold, Esc back to the plan; M opens it
-// on a live product (the Kettle sample keeps its own simulated "While you were away"). A card in another product opens
+// wherever live products are registered (the sample's simulated "While you were away" keeps M only when none are). A card in another product opens
 // that product with `?morning=<card id>`, and the deck picks up there; the window it covers is frozen for the tab
 // (sessionStorage) so a morning read across reloads is one morning.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
@@ -126,7 +126,7 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
       if (tag === 'input' || tag === 'textarea' || t?.isContentEditable || e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (!open) {
-        if (k === 'm' && (here || phone) && !E.S.open && E.S.page === 'plan') { e.preventDefault(); e.stopImmediatePropagation(); start(null); }
+        if (k === 'm' && (here || phone || anyLive) && !E.S.open && E.S.page === 'plan') { e.preventDefault(); e.stopImmediatePropagation(); start(null); }
         return;
       }
       let hit = true;
@@ -140,10 +140,10 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
     };
     addEventListener('keydown', on, true);
     return () => removeEventListener('keydown', on, true);
-  }, [open, here, E, go, close, steer, start, phone]);
+  }, [open, here, E, go, close, steer, start, phone, anyLive]);
 
   if (!open) {
-    return here || phone || anyLive ? <button type="button" id="mw-launch" onClick={() => start(null)} title={'The Morning Watch across every live product' + (here || phone ? ' (M)' : '')}><i aria-hidden="true" />Morning Watch{here || phone ? <kbd>M</kbd> : null}</button> : null;
+    return here || phone || anyLive ? <button type="button" id="mw-launch" onClick={() => start(null)} title="The Morning Watch across every live product (M)"><i aria-hidden="true" />Morning Watch<kbd>M</kbd></button> : null;
   }
   const n = deck?.cards.length ?? 0, k = Math.min(i, Math.max(0, n - 1));
   const others = (st.view?.readers ?? []).filter((x) => x.id !== fx.me && x.live && x.follows);
