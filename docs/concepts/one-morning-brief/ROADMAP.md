@@ -328,6 +328,17 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
   - The Meta VR Start competition closes **2026-11-18**. A card change destabilising the judged build is the larger cost.
     Gate it as the desk-to-table phase was gated (that plan's decision 1).
   - UE turn contention with other sessions.
+- **Status 2026-10-30** (branch `roadmap/vr-s4-table-brief`, the host-wired worktree; the owner decided F8: "pinching
+  decline should decline").
+  - F8 done: `POST /api/products/<slug>/proposals/<id>/decline` (a device call, the deck's own `steer` decline, so only a
+    repeat is taken), the door's `decide` scope (named-only: granted only when the owner's approve names it), the card's hit
+    handler and BpLink `DeclineRepeat`. Approve on the table writes nothing (chosen: an approval starts work). Checks:
+    `check:vr-decline`, `check:lan-door`. Captures before and after: `../one-morning/vr-decline-card-*.jpg`.
+  - F1 done (the room deck), F2 done as opt-in (`bundle-data.mjs --briefs`; the committed Kettle bundle is unchanged),
+    F7 done (the brief is a `read` verb on the door), B6 done for Kettle Web (a morning-demo product).
+    `run-bplink.mjs --mode editor` printed the Kettle line. L0's unpaired line held.
+  - F3 waits for `shared-focus-1` (S2). F9 belongs to the main checkout's first build after the merge. Not run:
+    BuildCookRun and the staged exe.
 
 ### S5. The morning while it happens (bp web and core)
 
