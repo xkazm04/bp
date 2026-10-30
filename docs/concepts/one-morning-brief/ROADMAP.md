@@ -351,6 +351,17 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
   - The Meta VR Start competition closes **2026-11-18**. A card change destabilising the judged build is the larger cost.
     Gate it as the desk-to-table phase was gated (that plan's decision 1).
   - UE turn contention with other sessions.
+- **Status 2026-10-30** (branch `roadmap/vr-s4-table-brief`, the host-wired worktree; the owner decided F8: "pinching
+  decline should decline").
+  - F8 done: `POST /api/products/<slug>/proposals/<id>/decline` (a device call, the deck's own `steer` decline, so only a
+    repeat is taken), the door's `decide` scope (named-only: granted only when the owner's approve names it), the card's hit
+    handler and BpLink `DeclineRepeat`. Approve on the table writes nothing (chosen: an approval starts work). Checks:
+    `check:vr-decline`, `check:lan-door`. Captures before and after: `../one-morning/vr-decline-card-*.jpg`.
+  - F1 done (the room deck), F2 done as opt-in (`bundle-data.mjs --briefs`; the committed Kettle bundle is unchanged),
+    F7 done (the brief is a `read` verb on the door), B6 done for Kettle Web (a morning-demo product).
+    `run-bplink.mjs --mode editor` printed the Kettle line. L0's unpaired line held.
+  - F3 waits for `shared-focus-1` (S2). F9 belongs to the main checkout's first build after the merge. Not run:
+    BuildCookRun and the staged exe.
 
 ### S5. The morning while it happens (bp web and core)
 
@@ -419,14 +430,14 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
   - D2.
   - D3, with one paid verification run.
   - D4 in Personas, if S3 is done.
-  - H1 and H2 only under an owner budget.
+  - H1 and H2 (paid; no per-session cap for now, D11).
 - **Non-goals.** Any likeness rule that flips a card. e2's three reviews say no; a change needs the D1 numbers first.
 - **Needs.** S1. The owner's answers to section 6's spend and real-store questions.
 - **Done when.**
   - `scripts/brief-backtest.ts` reports flips that were wrong, true repeats that were missed, and the ask rate, over a
     named store. Only the aggregate numbers are committed; decline notes stay local.
   - The card shows precision once there is enough data. The threshold is the owner's to set.
-  - One paid lens-scan propose run, under a stated budget, on a product with a standing decline, does not re-propose the
+  - One paid lens-scan propose run (no cap for now, D11), on a product with a standing decline, does not re-propose the
     declined idea, and its `plan.brief` read is on the agent trail.
 - **Risk.**
   - Spend.
@@ -548,6 +559,22 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | **Two bp processes** | The record now re-reads on mtime (`a2a1596`), but the event bus is per process | Name apps/server as the focus host, with the web proxying (`BP_COMPANION_URL`). Personas uses the same base URL as the open bp page |
 | **Signatures shown on shared cards** | Personas signs `user:personas`, and the brief shows "by personas" | e2's open question 3 for Personas' owner |
 | **Where the Personas golden test lives** | Next to `PARITY.md`, or in a cross-repo job | e2's open question 1. This plan proposes both: a copy and test in Personas, and the report in bp |
+
+### Owner decisions, 2026-10-30 (triage after S1, S2 and S5)
+
+| # | Question | Decision |
+|---|---|---|
+| D1 | How `roadmap/web-s1-s2-s5` lands | A PR now, merged, the branch deleted (before the VR branch: the VR session rebases over it) |
+| D2 | Is the bound-origin rule enough for I1? | Yes. Card execution stays an HTTP hop to the server's own bound origin; no in-process move |
+| D3 | The LAN door's slug `{0,63}` (E6) | The VR session aligns it to `{0,62}` in its LAN-door change |
+| D4 | The bay-aware place (C5) | S7, with following across products in the headset |
+| D5 | Compiling the generated UE structs (no clang on Lynx) | The VR session's F3 build in the main checkout is the compile |
+| D6 | Personas next | S3 continues: its golden test reads `packages/schema/golden/decision-brief.json` (the old path stays a mirror) |
+| D7 | Does `personas-drift.mjs` gate anything? | No. A report run by hand, never in `npm run check` |
+| D8 | Does a VR decline write the store (F8)? | Yes, on a repeat only (the brief's `withdraw`, 409 otherwise), from a paired headset only, with the brief's note: the same rule as the deck's Decline |
+| D9 | The next session | S4, the table's card carries the brief (before the 2026-11-18 deadline) |
+| D10 | Spend | A budget per session, set now. The amount is the owner's to write here before the first paid run; until then demos and gates stay on fake `claude` and fake `gh` |
+| D11 | Spend, the amount (2026-10-30, replaces D10's per-session amount) | No cap for now. Paid runs a session needs (S8's propose run, H1, H2, real overnight runs) go ahead without a per-session limit; each session still reports what it spent. Gates and demos stay on fake `claude` and fake `gh` |
 
 ## 7. Parked: e1, "Rules you set once" (branch `hackathon/bp-sync-1029/e1`)
 

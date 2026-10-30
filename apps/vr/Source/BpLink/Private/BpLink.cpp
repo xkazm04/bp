@@ -578,9 +578,51 @@ void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TM
 	ScanStateDelegate.Broadcast(ScanState);
 }
 
+const TCHAR* const FBpLinkModule::DeviceId = TEXT("vr-table");
+
 void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, const FBpDecisionBrief&)> OnDone)
 {
-	if (GFromBundle || ProposalId.IsEmpty())
+	if (ProposalId.IsEmpty())
+	{
+		if (OnDone) OnDone(false, FBpDecisionBrief());
+		return;
+	}
+	// Offline: the bundle's briefs.json (apps/vr/tools/bundle-data.mjs, F2), read once into the cache, the same lines.
+	if (GFromBundle && !bBriefsBundled)
+	{
+		bBriefsBundled = true;
+		FString Text;
+		TSharedPtr<FJsonObject> Json;
+		if (ReadBundleFile(GetProductSlug(), TEXT("briefs.json"), Text) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json) && Json.IsValid())
+		{
+			int32 Read = 0, Bad = 0;
+			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Json->Values)
+			{
+				const TSharedPtr<FJsonObject>* One = nullptr;
+				FBpDecisionBrief Brief;
+				if (Pair.Value.IsValid() && Pair.Value->TryGetObject(One) && BpSchema::FromJson(One->ToSharedRef(), Brief)) { Briefs.Add(Pair.Key, MoveTemp(Brief)); ++Read; }
+				else ++Bad;
+			}
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: %d briefs from the bundle's briefs.json%s"), Read, Bad ? *FString::Printf(TEXT(" (%d did not parse)"), Bad) : TEXT(""));
+		}
+		else
+		{
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: the bundle has no briefs.json for %s: the cards are drawn without a brief"), *GetProductSlug());
+		}
+	}
+	// Offline, the bundle's brief, answered on a later tick as a request is. Online every fetch asks again (a decision taken
+	// elsewhere changes a brief); the answer refreshes the cache FindBrief reads.
+	if (const FBpDecisionBrief* Known = GFromBundle ? Briefs.Find(ProposalId) : nullptr)
+	{
+		const FBpDecisionBrief Copy = *Known;
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([OnDone, Copy](float)
+		{
+			if (OnDone) OnDone(true, Copy);
+			return false;
+		}));
+		return;
+	}
+	if (GFromBundle)
 	{
 		if (OnDone) OnDone(false, FBpDecisionBrief());
 		return;
@@ -598,9 +640,54 @@ void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, c
 		TSharedPtr<FJsonObject> Json;
 		const bool bOk = Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid()
 			&& BpSchema::FromJson(Json.ToSharedRef(), Brief);
-		if (bOk) { UE_LOG(LogBpLink, Log, TEXT("BpLink: brief %s/%s: %d lines, advice %s"), *Slug, *ProposalId, Brief.lines.Num(), *Brief.advice.say); }
+		if (bOk)
+		{
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: brief %s/%s: %d lines, advice %s"), *Slug, *ProposalId, Brief.lines.Num(), *Brief.advice.say);
+			if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->Briefs.Add(ProposalId, Brief);
+		}
 		else { UE_LOG(LogBpLink, Warning, TEXT("BpLink: brief %s/%s unread (HTTP %d)"), *Slug, *ProposalId, Status); }
 		if (OnDone) OnDone(bOk, Brief);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::DeclineRepeat(const FString& ProposalId, TFunction<void(int32, const FString&)> OnDone)
+{
+	// The table's one decision write (F8): only ever the decline of a repeat, and the server judges that, not the table.
+	if (GFromBundle)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused decline %s/%s: the table reads the build's bundled snapshot, and no server keeps a decision"), *GetProductSlug(), *ProposalId);
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
+	if (ProposalId.IsEmpty() || DeclinesOut.Contains(ProposalId))
+	{
+		if (OnDone) OnDone(0, FString());
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	DeclinesOut.Add(ProposalId);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/decline"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetHeader(TEXT("x-bp-device"), DeviceId);
+	Request->SetContentAsString(TEXT("{}"));
+	const FString Slug = GetProductSlug();
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST %s/proposals/%s/decline (a repeat; the server writes it only if the brief says so)"), *Slug, *ProposalId);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: decline %s/%s answered %d %.300s"), *Slug, *ProposalId, Status, *Body);
+		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
+		{
+			Module->DeclinesOut.Remove(ProposalId);
+			// the store moved: its brief and the scan side are read again
+			if (Status == 200) { Module->Briefs.Remove(ProposalId); Module->NextScanPollS = 0.0; }
+		}
+		if (OnDone) OnDone(Status, Body);
 	});
 	Request->ProcessRequest();
 }

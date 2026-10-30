@@ -26,7 +26,7 @@ namespace
 {
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPinch(
 		TEXT("BpHands.Pinch"),
-		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:decline|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck control or a feature it taps: released where it closed), through the same judging as real hands."),
+		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:decline|card:decline|card:approve|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck or card control or a feature it taps: released where it closed), through the same judging as real hands."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
 		{
 			if (Args.Num() == 0)
@@ -93,7 +93,7 @@ namespace
 	 *  key plan room, the wrist's tabs and rows (ABpTable's hands' rule). */
 	bool IsTap(const FString& Id)
 	{
-		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
+		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("card:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
 	}
 
 	/** What a hold acts on (ABpTable's hands' rule): the lamp's head, a feature's glyph, a key plan room. */
@@ -407,6 +407,13 @@ void UBpHands::PinchEnded(FSlot& S)
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
 		T->SwitchRoom(S.HoverId.Mid(8), TEXT("keyplan"));
+		return;
+	}
+	// Released on the decision card's buttons (ROADMAP F8): a tap; Decline on a repeat declines it in the store.
+	if (!S.bFired && T && S.HoverKind == TEXT("card"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		T->CardTap(S.HoverId);
 		return;
 	}
 	// Released on the screen deck or on a feature of the room's map (spark vr-room-layers WP2): a tap.

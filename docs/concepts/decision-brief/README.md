@@ -61,8 +61,22 @@ table's target pose in PIE over the editor MCP):
 3. When `advice.say == "withdraw"`, the header says REPEATS A DECLINE and **DECLINE · REPEAT** is the first, filled button
    (Approve outlined). The note it stands for is built from `declines[0]` exactly as core's `repeatNote`. A likeness
    (`ask`) shows the quote and keeps Approve first.
-4. Not built: a pinch on the card's buttons writes nothing (the site card's buttons have no hit handler, and the table's
-   only write is a draft wave, the owner's VR rule). Offline (the bundle) has no `briefs.json`: the card is as before.
+4. **A pinch on DECLINE · REPEAT declines it in the store** (ROADMAP F8, the owner's call on 2026-10-30: "pinching decline
+   should decline"; built 2026-10-30 on `roadmap/vr-s4-table-brief`). The hands find the card's two buttons by their painted
+   boxes (`ABpTable::CardHit`, `CardAim`; `BpHands.Pinch card:decline`), and `CardTap` calls `FBpLinkModule::DeclineRepeat`:
+   `POST /api/products/<slug>/proposals/<id>/decline {}` with `x-bp-device`. That route is the Morning Watch's own Decline
+   (`steer`): the server takes it only when the card brief says the same idea was declined before, and writes `declined`
+   with the brief's `Repeats <id>, declined <day>: "..."` through `decide`, plus a steering-log row. The card then moves on
+   to the next open finding. Decline on any other card, and **Approve, write nothing** (logged): an approval starts work,
+   so it stays at the desk (the room deck's Approve still composes a draft). Over the LAN the verb is the door's `decide`
+   scope, granted only when the owner's approve names it. Held by `check:vr-decline` (through the real door) and
+   `check:lan-door`. Captures: `../one-morning/vr-decline-card-before.jpg`, `vr-decline-card-after.jpg`.
+5. **The room deck's decision screens carry the brief too** (F1): the five lines under the title, the quoted decline in
+   amber; a repeat leads with DECLINE · REPEAT, which writes the store the same way (a plain Decline stays memory-only).
+   Captures: `../one-morning/vr-deck-brief-repeat.jpg`, `vr-deck-brief-repeat-close.jpg`, `vr-deck-decline-after-close.jpg`.
+6. **Offline** (F2): `apps/vr/tools/bundle-data.mjs --briefs` writes `Content/BpData/<slug>/briefs.json` (id -> the route's
+   body), and BpLink's bundle path reads it, so the card draws the same lines with no server (Decline is refused there:
+   no server keeps a decision). Opt-in: the committed Kettle bundle, which rides in the competition APK, is unchanged.
 
 ## Run it
 
