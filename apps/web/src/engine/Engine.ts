@@ -16,7 +16,7 @@ import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
-import { DEEP_LINK_KEYS, deepLinkHash, withoutDeepLink } from './deep-link';
+import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
 import { saveFailWords } from './copy';
 import { lineSiblings } from './lines';
@@ -790,6 +790,8 @@ export class Engine {
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
   /** A live product's standing rules (lib/rules/client.ts), drawn on the plan by drawRuleZones. */
   liveRules: readonly Rule[] = [];
+  /** A rule a deep link named (`?dock=orders&rule=O-3`), until the Orders panel takes it. */
+  linkedRule: string | null = null;
   setLiveRules(rules: readonly Rule[]) { if (this.liveRules !== rules) { this.liveRules = rules; this.dirty(); } }
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
@@ -1423,6 +1425,9 @@ export class Engine {
     // the hash written next carries the page from here on
     const deep = deepLinkHash(location.search);
     if (deep.page && !h.page) { h.page = deep.page; if (deep.lv) h.lv = deep.lv; }
+    // ?dock=orders[&rule=O-3]: the standing rules, opened on a rule (rules.tsx takes linkedRule once)
+    const dock = deepLinkDock(location.search);
+    if (dock.dock) { this.store.set({ dtab: dock.dock }); this.linkedRule = dock.rule ?? null; }
     const q = new URLSearchParams(location.search);
     if (DEEP_LINK_KEYS.some((k) => q.has(k))) {
       try { history.replaceState(history.state, '', location.pathname + withoutDeepLink(location.search) + location.hash); } catch { /* ignore */ }

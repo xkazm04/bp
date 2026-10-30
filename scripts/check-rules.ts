@@ -89,6 +89,7 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
     { kind: 'grant', scope: sc }, { kind: 'grant', scope: sc, hours: 24, minTier: 7 }, { kind: 'hold', scope: { ...sc, features: [] } }, { kind: 'hold', scope: sc, hours: 9999 }];
   const refused = bad.map((b) => typeof R.checkRuleBody(b, known) === 'string');
   check('draft: bad kind, unknown feature or lens, bad effort, an unexpiring grant, a bad tier, an empty place, too long: all refused', refused.every(Boolean), j(refused));
+  check('draft: a grant replayed (preview) needs no expiry; set, it does', typeof R.checkRuleBody({ kind: 'grant', scope: sc, preview: true }, known) !== 'string' && typeof R.checkRuleBody({ kind: 'grant', scope: sc }, known) === 'string');
   check('ids: O-n and G-n count apart and are never reused', R.nextRuleId(RULES, 'hold') === 'O-6' && R.nextRuleId(RULES, 'grant') === 'G-2');
 }
 

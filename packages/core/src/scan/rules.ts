@@ -294,7 +294,7 @@ export function checkRuleBody(b: unknown, known: { feature(f: string): boolean; 
     }
   }
   if (b.hours !== undefined) { if (typeof b.hours !== 'number' || !(b.hours > 0 && b.hours <= RULE_MAX_HOURS)) return `hours must be 0 < h <= ${RULE_MAX_HOURS}`; d.hours = b.hours; }
-  if (kind === 'grant' && d.hours === undefined) return 'a grant must expire: hours is required';
+  if (kind === 'grant' && d.hours === undefined && b.preview !== true) return 'a grant must expire: hours is required'; // a replay needs no expiry
   if (b.text !== undefined && (typeof b.text !== 'string' || b.text.length > 200)) return 'text must be at most 200 characters';
   d.text = typeof b.text === 'string' && b.text.trim() ? b.text.trim() : ruleText(d);
   return d;

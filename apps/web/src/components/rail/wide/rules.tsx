@@ -48,7 +48,8 @@ const kindWord = (r: Pick<Rule, 'kind'>) => (isOrder(r.kind) ? 'order · ' + r.k
 
 export function LiveRules({ slug }: { slug: string }) {
   const E = useEngine(), v = useRules(slug), now = useNow();
-  const [sel, setSel] = useState<string | null>(null);
+  // a deep link's rule (?dock=orders&rule=O-3, engine/deep-link.ts), taken once
+  const [sel, setSel] = useState<string | null>(() => { const r = E.linkedRule; E.linkedRule = null; return r; });
   const picked = usePickedRule();
   useEffect(() => { if (picked) setSel(picked.id); }, [picked]);
   const listRef = useListRef();
