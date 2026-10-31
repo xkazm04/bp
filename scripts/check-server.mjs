@@ -190,5 +190,15 @@ try {
   check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks, ${tally?.[3] ?? '?'} skipped)`, m.status === 0 && !!tally && total >= MOUNT_FLOOR && tally[2] === '0' && Number(tally[3]) === skipLines.length,
     fails || (tally && total < MOUNT_FLOOR ? `${total} checks accounted for, floor ${MOUNT_FLOOR}` : '') || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
 }
+// a start-up failure after argv: a Kettle sim that cannot be built ends with one `bp server:` line and exit 1, never an
+// uncaught stack. Seeded by a preload that pins globalThis.localStorage, which hostKettleSims must hide and then cannot.
+{
+  const pin = "data:text/javascript,Object.defineProperty(globalThis,'localStorage',{value:1,configurable:false})";
+  const r = spawnSync(process.execPath, ['--import', pin, '--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
+    { cwd: os.tmpdir(), encoding: 'utf8', timeout: 30000 });
+  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  check('a Kettle sim that cannot be built: exits 1 with one `bp server: cannot build the Kettle sims: ...` line, no stack',
+    r.status === 1 && /^bp server: cannot build the Kettle sims: /m.test(out) && !/\n\s+at /.test(out) && !/listening on/.test(out), `${r.status} ${out.trim().slice(-200)}`);
+}
 console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

@@ -60,7 +60,9 @@ export async function loadRoutes(apiDir: string): Promise<Route[]> {
   const routes: Route[] = [];
   for (const file of walk(apiDir)) {
     const segments = ['api', ...path.relative(apiDir, path.dirname(file)).split(path.sep).filter(Boolean)];
-    const mod = (await import(pathToFileURL(file).href)) as Partial<Record<Method, Handler>>;
+    let mod: Partial<Record<Method, Handler>>;
+    // a module that fails to import is named, so the server's one line says which handler broke
+    try { mod = (await import(pathToFileURL(file).href)) as Partial<Record<Method, Handler>>; } catch (e) { throw new Error(`${path.relative(apiDir, file)}: ${(e as Error).message}`); }
     const methods = METHODS.filter((m) => typeof mod[m] === 'function');
     const handlers: Partial<Record<Method, Handler>> = {};
     for (const m of methods) handlers[m] = mod[m];

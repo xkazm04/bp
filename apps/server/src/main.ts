@@ -58,8 +58,9 @@ if (door && LAN_HOST === '0.0.0.0') die('--lan-host 0.0.0.0 is every interface; 
 // the handler tree, found through the package (any module in it resolves; its directory's parent is api/)
 const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/core/server/api/products/route'))), '..');
 
-hostKettleSims();
-const routes = await loadRoutes(API);
+// a sim that cannot be built or a handler module that cannot be imported ends with one line too, not an uncaught stack
+try { hostKettleSims(); } catch (e) { die(`cannot build the Kettle sims: ${(e as Error).message}`); }
+const routes = await loadRoutes(API).catch((e: unknown) => die(`cannot load the routes: ${(e as Error).message}`));
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
 const server = http.createServer(listener(routes));
 // listen failures (EADDRINUSE, an unresolvable --host) end with one line and exit 1, not an uncaught throw
