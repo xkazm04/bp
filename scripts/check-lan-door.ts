@@ -293,6 +293,12 @@ if (p.match) {
 p.kill();
 p = await run(['--port', '0', '--lan-port', '3101'], plainHome, null);
 check('--lan-port without --lan is refused, not ignored', p.code === 1 && /need --lan/.test(p.out), p.out);
+// a door that cannot start ($BP_HOME/lan is a file, so its mkdir fails) ends the server with one bp server: line, no stack
+const blockedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-blocked-'));
+fs.writeFileSync(path.join(blockedHome, 'lan'), 'not a directory');
+p = await run(['--port', '0', '--lan', '--lan-host', '127.0.0.1', '--lan-port', '0'], blockedHome, null);
+check('a LAN door that cannot start ends with exit 1 and one bp server: line, no stack',
+  p.code === 1 && /^bp server: cannot open the LAN door: .+$/m.test(p.out) && !/^\s+at /m.test(p.out) && !/Unhandled|unhandledRejection/i.test(p.out), p.out.slice(-600));
 
 console.log(`lan door: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

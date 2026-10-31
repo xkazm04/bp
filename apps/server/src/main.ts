@@ -75,7 +75,8 @@ server.listen(PORT, HOST, () => {
   setSelfOrigin(`http://${dial}:${port}`);
   console.log(`bp server listening on http://${dial}:${port}${wildcard ? ` (bound to ${HOST}, every interface; peers off this machine get 403)` : ''}`);
   if (ATHENA) void attachAthena(ATHENA, port);
-  if (door) void attachDoor(port);
+  // a door that cannot start (an unwritable or occupied $BP_HOME/lan) ends with one line too, not an unhandled rejection
+  if (door) attachDoor(port).catch((e: unknown) => die(`cannot open the LAN door: ${(e as Error).message}`));
 });
 
 let lanDoor: import('./lan-door.ts').LanDoor | null = null;
