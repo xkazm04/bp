@@ -301,6 +301,23 @@ try {
     + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
   process.env.BP_GH_BIN = ghFake;
   delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+  {
+    // a gh login after the server started reaches the next decision: the user:blueprint fallback is asked again after its window
+    const RS0 = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/release.server.ts')).href) as typeof import('../packages/core/src/server/release.server.ts');
+    RS0.resetTriageBy();
+    process.env.FAKE_GH_OUT = '1';
+    const out = await RS0.triageBy();
+    delete process.env.FAKE_GH_OUT;
+    const soon = await RS0.triageBy();
+    const now0 = Date.now;
+    Date.now = () => now0() + RS0.FALLBACK_RETRY_MS;
+    let late = '';
+    try { late = await RS0.triageBy(); } finally { Date.now = now0; }
+    const kept = await RS0.triageBy();
+    check('triageBy: signed out -> user:blueprint, kept inside its window, then a late gh login is asked again (no resetTriageBy) and kept',
+      out === 'user:blueprint' && soon === 'user:blueprint' && late === 'user:octocat' && kept === 'user:octocat', [out, soon, late, kept].join());
+    RS0.resetTriageBy();
+  }
   const scans = await route('products/[slug]/scans/route.ts');
   const room = { kind: 'room', id: 'r1', label: 'Room', features: ['a'] };
   const s202 = await call(scans.POST, '/api/products/prod/scans', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });

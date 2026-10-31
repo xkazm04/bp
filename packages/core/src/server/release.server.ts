@@ -184,18 +184,24 @@ function ghCmd(args: string[]): { file: string; args: string[] } {
   const bin = process.env.BP_GH_BIN || 'gh';
   return /\.(mjs|cjs|js)$/i.test(bin) ? { file: process.execPath, args: [bin, ...args] } : { file: bin, args };
 }
-const G = globalThis as typeof globalThis & { __bpGhBy?: Promise<string> };
-/** Who triages from this blueprint: `user:<gh login>`, asked once per server process; `user:blueprint` when gh is missing or signed out. */
+/** How long a `user:blueprint` answer is kept before gh is asked again: a `gh auth login` after the server started reaches the next decision. */
+export const FALLBACK_RETRY_MS = 60000;
+const G = globalThis as typeof globalThis & { __bpGhBy?: Promise<string>; __bpGhByAt?: number };
+/** Who triages from this blueprint: `user:<gh login>`, asked once per server process; `user:blueprint` when gh is missing or signed out, asked again after FALLBACK_RETRY_MS. */
 export function triageBy(): Promise<string> {
+  if (G.__bpGhByAt !== undefined && Date.now() - G.__bpGhByAt >= FALLBACK_RETRY_MS) G.__bpGhBy = undefined;
   return (G.__bpGhBy ??= (async () => {
+    G.__bpGhByAt = undefined;
     const c = ghCmd(['api', 'user', '--jq', '.login']);
     const r = await run(c.file, c.args, { timeout: GH_MS });
     const login = r.code === 0 ? r.stdout.trim() : '';
-    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login) ? 'user:' + login : FALLBACK_BY;
+    if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) return 'user:' + login;
+    G.__bpGhByAt = Date.now();
+    return FALLBACK_BY;
   })());
 }
 /** Forget the cached login (the checks switch fakes). */
-export const resetTriageBy = (): void => { G.__bpGhBy = undefined; };
+export const resetTriageBy = (): void => { G.__bpGhBy = undefined; G.__bpGhByAt = undefined; };
 
 /** Whether `gh auth status` exits 0 (a release job pushes and opens a PR with the user's own gh login). */
 export async function ghAuthed(): Promise<boolean> {
