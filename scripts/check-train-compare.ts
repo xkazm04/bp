@@ -16,7 +16,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareOf, verdictOf, type Comparison, type LensFields } from '../packages/core/src/scan/compare.ts';
 import { atTarget, beyondNoise, isOutlier, perfFigures, rangeScale, signed } from '../packages/core/src/train/perf.ts';
-import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords } from '../packages/core/src/train/pixels.ts';
+import { GRID_H, GRID_W, NOISE, bboxCells, diffPixels, pixWords, withSizes } from '../packages/core/src/train/pixels.ts';
 import type { Measurement, Proposal, Shot } from '../packages/core/src/scan/types.ts';
 import { stripComments } from './lib/source.ts';
 import { canDecide } from '../packages/core/src/train/rules.ts';
@@ -126,6 +126,13 @@ const base = img((x, y) => [(x * 3) % 256, (y * 5) % 256, 120]);
   const g = diffPixels(new Uint8ClampedArray(7 * 5 * 4), new Uint8ClampedArray(7 * 5 * 4).fill(200), 7, 5);
   ok(g.moved === 100 && g.cells.filter(Boolean).length <= GRID_W * GRID_H && g.bbox?.join() === '0,0,6,4', 'odd size: every pixel moved, bbox the whole image', g.bbox);
   ok(GRID_H === 18 && GRID_W === 32, 'the grid is 32 x 18');
+}
+{ // a pair of different sizes: the after is scaled into the before's box, and the words say so instead of a bare "differ"
+  const g = diffPixels(new Uint8ClampedArray(7 * 5 * 4), new Uint8ClampedArray(7 * 5 * 4).fill(200), 7, 5);
+  const w = pixWords(withSizes(g, [1600, 800], [1280, 800]));
+  ok(!w.same && w.text.startsWith('Sizes differ (1600x800 -> 1280x800): the after was scaled, so most pixels read as changed'), 'different sizes: the words name both sizes and the scaling', w);
+  const same = pixWords(withSizes(g, [7, 5], [7, 5]));
+  ok(same.text === pixWords(g).text, 'equal sizes: the words are the plain change words', same);
 }
 
 // ------------------------------------------------------------------------------------------- the panel's own modules

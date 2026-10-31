@@ -19,7 +19,9 @@ type Doc = Record<string, unknown> & { products: Entry[] };
 const fail = (status: 400 | 403 | 404 | 409 | 500, error: string): { ok: false; status: typeof status; error: string } => ({ ok: false, status, error });
 const file = (): string => productsPath();
 
-function readDoc(): RegistryResult<Doc> {
+/** The registry as a document (exported for scripts/scan-demo.mjs, the other writer): ENOENT is an empty one, anything
+ *  that is not a registry is refused (409), an unreadable file is 500. */
+export function readDoc(): RegistryResult<Doc> {
   let text: string;
   try { text = fs.readFileSync(file(), 'utf8'); } catch (e) {
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true, value: { products: [] } };
@@ -34,7 +36,7 @@ function readDoc(): RegistryResult<Doc> {
   return { ok: true, value: doc as Doc };
 }
 
-function writeDoc(doc: Doc): void {
+export function writeDoc(doc: Doc): void {
   writeAtomic(file(), JSON.stringify(doc, null, 2) + '\n');
 }
 

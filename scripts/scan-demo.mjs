@@ -36,9 +36,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { seeded } from './lib/prng.ts';
+import { registerSrcHooks } from './lib/src-hooks.mjs';
 import { SAMPLE_ITEMS, TrainSim } from '../packages/core/src/model/train-sim.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -153,7 +154,7 @@ const SHOT_FEATURES = [...new Set([SPLIT, LABELS, ...PAIRS].filter(Boolean).map(
 if (RESET) for (const f of [DB, DB + '-wal', DB + '-shm']) fs.rmSync(f, { force: true });
 const fresh = !fs.existsSync(DB);
 if (fresh) seed();
-if (REGISTER) register();
+if (REGISTER) await register();
 console.log(`${fresh ? 'seeded' : 'kept'} ${DB}\n${REGISTER ? `registered ${SLUG} -> ${DIR} in bp.products.local.json` : 'not registered (--no-register)'}`);
 if (LIVE) live();
 
@@ -291,28 +292,19 @@ function train(db, now) {
 // state an interrupted write leaves - lost every product in it, silently, under a message saying "registered".
 // Measured 2026-10-21 with a seeded truncated file holding two live products and a defaultSlug: 2 of 2 products
 // and the defaultSlug gone, exit 0. The file is git-ignored machine state, so there is nothing to restore from.
-function register() {
-  const file = path.join(ROOT, 'bp.products.local.json');
-  const refuse = (why) => { console.error(`bp.products.local.json ${why}; fix it by hand first - ${SLUG} was NOT registered`); process.exit(1); };
-  let doc = { products: [] };
-  let text = null;
-  try { text = fs.readFileSync(file, 'utf8'); }
-  catch (e) { if (e.code !== 'ENOENT') refuse(`cannot be read: ${e.message}`); }
-  if (text !== null) {
-    try { doc = JSON.parse(text); } catch (e) { refuse(`is not valid JSON (${e.message})`); }
-    if (!doc || typeof doc !== 'object' || Array.isArray(doc)) refuse('is not a JSON object');
-    if (doc.products === undefined) doc.products = [];
-    if (!Array.isArray(doc.products)) refuse(': "products" is not an array');
-  }
+// So it reads and writes through the registry's own readDoc / writeDoc (one reader, one atomic writer), at the
+// registry's own path: productsPath() honours BP_PRODUCTS_FILE, and otherwise this script's repo root.
+async function register() {
+  process.env.BP_PRODUCTS_FILE ||= path.join(ROOT, 'bp.products.local.json');
+  registerSrcHooks(ROOT); // registry.server.ts imports extensionless siblings
+  const { readDoc, writeDoc } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/registry.server.ts')).href);
+  const d = readDoc();
+  if (!d.ok) { console.error(`${d.error}${d.status === 500 ? '; fix it by hand first' : ''} - ${SLUG} was NOT registered`); process.exit(1); }
+  const doc = d.value;
   const entry = { slug: SLUG, name: NAME, root: DIR };
   const i = doc.products.findIndex((p) => p && p.slug === SLUG);
   if (i >= 0) doc.products[i] = { ...doc.products[i], ...entry }; else doc.products.push(entry);
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + '\n');
-  for (let k = 1; ; k++) {
-    try { fs.renameSync(tmp, file); break; } // Windows can answer EPERM/EBUSY while a reader holds the old file
-    catch (e) { if (k >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) { fs.rmSync(tmp, { force: true }); throw e; } }
-  }
+  writeDoc(doc);
 }
 
 function live() {

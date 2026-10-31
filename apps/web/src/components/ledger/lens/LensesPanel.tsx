@@ -161,7 +161,7 @@ export function LensesPanel() {
 
 function Panel() {
   const { slug, rows } = useLensRows(), want = usePanel().lens, sel = useLedgerSelection().features;
-  const started = useChatStarted();
+  const started = useChatStarted(slug ?? 'kettle');
   const [chat, setChat] = useState(started);
   const box = useRef<HTMLElement>(null), input = useRef<HTMLTextAreaElement>(null);
   // first focus: the panel itself (Tab walks from there); a lens asked for (a chip's "Open in Lenses panel"): its row

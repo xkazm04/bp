@@ -58,8 +58,9 @@ if (door && LAN_HOST === '0.0.0.0') die('--lan-host 0.0.0.0 is every interface; 
 // the handler tree, found through the package (any module in it resolves; its directory's parent is api/)
 const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/core/server/api/products/route'))), '..');
 
-hostKettleSims();
-const routes = await loadRoutes(API);
+// a sim that cannot be built or a handler module that cannot be imported ends with one line too, not an uncaught stack
+try { hostKettleSims(); } catch (e) { die(`cannot build the Kettle sims: ${(e as Error).message}`); }
+const routes = await loadRoutes(API).catch((e: unknown) => die(`cannot load the routes: ${(e as Error).message}`));
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
 const server = http.createServer(listener(routes));
 // listen failures (EADDRINUSE, an unresolvable --host) end with one line and exit 1, not an uncaught throw
@@ -74,7 +75,8 @@ server.listen(PORT, HOST, () => {
   setSelfOrigin(`http://${dial}:${port}`);
   console.log(`bp server listening on http://${dial}:${port}${wildcard ? ` (bound to ${HOST}, every interface; peers off this machine get 403)` : ''}`);
   if (ATHENA) void attachAthena(ATHENA, port);
-  if (door) void attachDoor(port);
+  // a door that cannot start (an unwritable or occupied $BP_HOME/lan) ends with one line too, not an unhandled rejection
+  if (door) attachDoor(port).catch((e: unknown) => die(`cannot open the LAN door: ${(e as Error).message}`));
 });
 
 let lanDoor: import('./lan-door.ts').LanDoor | null = null;

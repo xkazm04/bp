@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { advance, close, newCursor, openRead, parseDecision, parseVeto, readDelta, readSnapshot, snapshotOf, veto } from '../packages/core/src/server/store.server.ts';
 import { byWorth, estValue, worthOf, worthText } from '../packages/core/src/scan/score.ts';
-import { ceilingOf, startOf, trustSlices, vetoable } from '../packages/core/src/scan/trust.ts';
+import { ceilingOf, nextVetoLapse, startOf, trustSlices, vetoable } from '../packages/core/src/scan/trust.ts';
 import { swarmFromScan } from '../apps/web/src/lib/scan/client.ts';
 import { latestReading } from '../packages/core/src/scan/derive.ts';
 import { scopeFeatures } from '../packages/core/src/scan/scope.ts';
@@ -316,6 +316,13 @@ try {
       && parseVeto({ reason: 'x'.repeat(501) }) === null && parseVeto({ reason: 'x', more: 1 }) === null);
     check('veto: vetoable() is the CAS rule', vetoable({ status: 'approved', decided_by: 'machine:lens-scan', veto_until: FUTURE }, T5) && !vetoable({ status: 'approved', decided_by: 'machine:lens-scan', veto_until: PAST }, T5)
       && !vetoable({ status: 'executing', decided_by: 'machine:lens-scan', veto_until: FUTURE }, T5) && !vetoable({ status: 'declined', decided_by: 'user:x', veto_until: FUTURE }, T5));
+    { // the Review rail's veto list re-reads when its first window closes: a row past its veto_until then is not listed
+      const t0 = Date.parse('2026-10-31T12:00:00.000Z'), at = (ms: number) => new Date(t0 + ms).toISOString();
+      const rows = [{ status: 'approved', decided_by: 'machine:lens-scan', veto_until: at(60000) }, { status: 'declined', decided_by: 'machine:lens-scan', veto_until: at(5000) }] as const;
+      const ms = nextVetoLapse(rows, t0), after = rows.filter((p) => vetoable(p, at(ms! + 1)));
+      check('veto list: the first window closes in 5000 ms, and read then only the row still inside its window is listed', ms === 5000 && after.length === 1 && after[0].veto_until === at(60000)
+        && nextVetoLapse([], t0) === null && nextVetoLapse([{ veto_until: undefined }], t0) === null && nextVetoLapse(rows, t0 + 10000) === 0, JSON.stringify({ ms, after }));
+    }
 
     // the train's wire door: the v5 keys pass; store.mjs's raw mvp 0/1 and band ranked read as the stream's; a bad value is refused
     const rel = (items: unknown[]) => parseReleaseCreated({ release: { id: 'rel', version: '1', branch: 'b', status: 'draft', created_at: T5, updated_at: T5, items }, added: [], skipped: [] });

@@ -212,6 +212,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
         </div>
       ))}
       {(lensView ? !!viewNeed : needy.length > 0) && <div className="sm-f need">{lensView ? viewNeed!.why : needy.map((l) => l.name + ': ' + needs.get(l.id)!.why).join('; ')}. Prepare queues Claude Code to add it to the repo.</div>}
+      {!lensView && !lenses.length && <div className="sm-f">This product has no lenses yet. Add one from the ledger’s Lenses panel.</div>}
       {(lensView ? !lensView.ok : off.length > 0) && <div className="sm-f">No scan method: {(lensView ? [lensView] : off).map((l) => l.name).join(', ')}. Add a manifest <code>scan</code> block to scan it.</div>}
       {setupUnknown === 'checking' && <div className="sm-f" role="status">Checking which lenses need repo setup…</div>}
       {setupUnknown === 'error' && (

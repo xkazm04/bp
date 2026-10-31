@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -158,6 +159,19 @@ try {
   bad.forEach((a, i) => check(`argv: ${a.join(' ')} exits 1 with a message and binds nothing`, refused[i].code === 1 && /^bp server: /m.test(refused[i].out) && !/listening on/.test(refused[i].out), `${refused[i].code} ${refused[i].out.trim().slice(-120)}`));
   check('argv: BP_SERVER_PORT=8o80 exits 1 naming the value', envBad.code === 1 && envBad.out.includes('8o80') && !/listening on/.test(envBad.out), `${envBad.code} ${envBad.out.trim().slice(-120)}`);
   check('argv: --host 0.0.0.0 prints a dialable URL (127.0.0.1) and names the bind', /listening on http:\/\/127\.0\.0\.1:[1-9]\d*\b.*bound to 0\.0\.0\.0/.test(wild.out), wild.out.trim().split('\n').slice(-2).join(' | '));
+  // the refusals after argv: a port another listener holds ends with the one `cannot listen` line and exit 1 (main.ts's
+  // server 'error' handler), and --lan-host is refused for every interface (0.0.0.0) and for anything that is no IPv4
+  const held = net.createServer();
+  await new Promise((resolve) => held.listen(0, '127.0.0.1', resolve));
+  const heldPort = held.address().port;
+  try {
+    const [busy, lanAll, lanJunk] = await Promise.all([spawnMain(['--port', String(heldPort)]),
+      spawnMain(['--port', '0', '--lan', '--lan-host', '0.0.0.0']), spawnMain(['--port', '0', '--lan', '--lan-host', 'nonsense'])]);
+    check('a held port: exits 1 with one `bp server: cannot listen on 127.0.0.1:<port>: EADDRINUSE` line, no stack',
+      busy.code === 1 && new RegExp(`^bp server: cannot listen on 127\\.0\\.0\\.1:${heldPort}: EADDRINUSE`, 'm').test(busy.out) && !/listening on|\n\s+at /.test(busy.out), `${busy.code} ${busy.out.trim().slice(-160)}`);
+    check('--lan --lan-host 0.0.0.0: exits 1 naming every interface, binds nothing', lanAll.code === 1 && /^bp server: --lan-host 0\.0\.0\.0 is every interface/m.test(lanAll.out) && !/listening on/.test(lanAll.out), `${lanAll.code} ${lanAll.out.trim().slice(-160)}`);
+    check('--lan --lan-host nonsense: exits 1 asking for an IPv4 address, binds nothing', lanJunk.code === 1 && /^bp server: --lan-host takes an IPv4 address, not "nonsense"/m.test(lanJunk.out) && !/listening on/.test(lanJunk.out), `${lanJunk.code} ${lanJunk.out.trim().slice(-160)}`);
+  } finally { held.close(); }
 }
 {
   const m = spawnSync(process.execPath, [path.join(ROOT, 'apps/server/src/check-mount.ts')], { cwd: ROOT, encoding: 'utf8', timeout: 60000 });
@@ -175,6 +189,36 @@ try {
   const total = tally ? Number(tally[1]) + Number(tally[3]) : 0;
   check(`mount: apps/server/src/check-mount.ts passes (${tally?.[1] ?? '?'} checks, ${tally?.[3] ?? '?'} skipped)`, m.status === 0 && !!tally && total >= MOUNT_FLOOR && tally[2] === '0' && Number(tally[3]) === skipLines.length,
     fails || (tally && total < MOUNT_FLOOR ? `${total} checks accounted for, floor ${MOUNT_FLOOR}` : '') || `exit ${m.status} ${(m.stderr ?? '').slice(-200)}`);
+}
+// a start-up failure after argv: a Kettle sim that cannot be built ends with one `bp server:` line and exit 1, never an
+// uncaught stack. Seeded by a preload that pins globalThis.localStorage, which hostKettleSims must hide and then cannot.
+{
+  const pin = "data:text/javascript,Object.defineProperty(globalThis,'localStorage',{value:1,configurable:false})";
+  const r = spawnSync(process.execPath, ['--import', pin, '--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
+    { cwd: os.tmpdir(), encoding: 'utf8', timeout: 30000 });
+  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  check('a Kettle sim that cannot be built: exits 1 with one `bp server: cannot build the Kettle sims: ...` line, no stack',
+    r.status === 1 && /^bp server: cannot build the Kettle sims: /m.test(out) && !/\n\s+at /.test(out) && !/listening on/.test(out), `${r.status} ${out.trim().slice(-200)}`);
+}
+// a handler module that fails to import ends with one `bp server: cannot load the routes: <module>: ...` line and exit 1
+// (main.ts's .catch over loadRoutes, mount.ts naming the module), never an uncaught stack. Seeded by a preload, loaded after
+// core's register so its load hook runs first: the shots handler's source becomes a module that throws as it is evaluated.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-server-broken-'));
+  const hooks = path.join(tmp, 'hooks.mjs'), preload = path.join(tmp, 'preload.mjs');
+  fs.writeFileSync(hooks, "export async function load(url, ctx, next) {\n"
+    + "  if (/\\/api\\/products\\/(\\[slug\\]|%5Bslug%5D)\\/shots\\/(\\[\\.\\.\\.path\\]|%5B\\.\\.\\.path%5D)\\/route\\.ts$/.test(url)) return { format: 'module', source: \"throw new Error('seeded import failure')\", shortCircuit: true };\n"
+    + "  return next(url, ctx);\n}\n");
+  fs.writeFileSync(preload, `import { register } from 'node:module';\nregister(${JSON.stringify(pathToFileURL(hooks).href)});\n`);
+  try {
+    const r = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, '--import', pathToFileURL(preload).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
+      { cwd: os.tmpdir(), encoding: 'utf8', timeout: 30000 });
+    const out = (r.stdout ?? '') + (r.stderr ?? '');
+    const lines = out.split(/\r?\n/).filter((l) => /^bp server: cannot load the routes: /.test(l));
+    check('a route module that fails to import: exits 1 with one `bp server: cannot load the routes: <module>` line naming it, no stack',
+      r.status === 1 && lines.length === 1 && /^bp server: cannot load the routes: products[\\/]\[slug\][\\/]shots[\\/]\[\.\.\.path\][\\/]route\.ts: seeded import failure$/.test(lines[0])
+      && !/\n\s+at /.test(out) && !/listening on|^route /m.test(out), `${r.status} ${out.trim().slice(-300)}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

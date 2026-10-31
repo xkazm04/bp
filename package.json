@@ -46,6 +46,7 @@
     "check:train-reasons": "node scripts/check-train-reasons.ts",
     "check:release-words": "node scripts/check-release-words.ts",
     "check:lens-manifest": "node scripts/check-lens-manifest.ts",
+    "check:lens-chat-keep": "node scripts/check-lens-chat-keep.ts",
     "check:live-health": "node scripts/check-live-health.ts",
     "check:local-only": "node scripts/check-local-only.ts",
     "check:deep-link": "node scripts/check-deep-link.ts",

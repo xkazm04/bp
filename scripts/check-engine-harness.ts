@@ -521,6 +521,9 @@ const measured: Record<string, string> = {};
   expect(E.S.delta === 14, 'a mangled %-escape skips that pair; the valid ones still apply');
   loc.hash = '#lens=no-such-lens&who=nobody&open=nothing&t=garbage'; win.dispatch('popstate', {});
   expect(E.S.view === 'general' && E.S.who === null && E.S.open === null, 'an unknown lens, person and feature in a hash are ignored, not adopted');
+  expect(E.S.toast?.tone === 'warn' && E.S.toast.strong === 'No feature nothing on this map:', 'an unknown feature in a hash says so once in a warn toast (got ' + JSON.stringify(E.S.toast) + ')');
+  { const n0 = E.S.toast?.n; E.openFeature('nothing-either'); (E as Any).cam.stopFly(); advance(600); // the restore's flight home runs on motion, not this fake clock: land it, then pass the restore window
+    expect(E.S.open === null && E.S.toast?.n === (n0 ?? 0) + 1 && E.S.toast?.strong === 'No feature nothing-either on this map:' && !loc.hash.includes('open='), 'openFeature of an unknown id toasts once, leaves open null and writes no open= (' + loc.hash + ')'); }
   // our own write must not be read back as a navigation
   E.setDelta(14); advance(300); const hs = E.S.delta; win.dispatch('hashchange', {});
   expect(E.S.delta === hs, 'the engine\'s own hash write is not restored as a navigation');

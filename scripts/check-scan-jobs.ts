@@ -301,6 +301,23 @@ try {
     + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
   process.env.BP_GH_BIN = ghFake;
   delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+  {
+    // a gh login after the server started reaches the next decision: the user:blueprint fallback is asked again after its window
+    const RS0 = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/release.server.ts')).href) as typeof import('../packages/core/src/server/release.server.ts');
+    RS0.resetTriageBy();
+    process.env.FAKE_GH_OUT = '1';
+    const out = await RS0.triageBy();
+    delete process.env.FAKE_GH_OUT;
+    const soon = await RS0.triageBy();
+    const now0 = Date.now;
+    Date.now = () => now0() + RS0.FALLBACK_RETRY_MS;
+    let late = '';
+    try { late = await RS0.triageBy(); } finally { Date.now = now0; }
+    const kept = await RS0.triageBy();
+    check('triageBy: signed out -> user:blueprint, kept inside its window, then a late gh login is asked again (no resetTriageBy) and kept',
+      out === 'user:blueprint' && soon === 'user:blueprint' && late === 'user:octocat' && kept === 'user:octocat', [out, soon, late, kept].join());
+    RS0.resetTriageBy();
+  }
   const scans = await route('products/[slug]/scans/route.ts');
   const room = { kind: 'room', id: 'r1', label: 'Room', features: ['a'] };
   const s202 = await call(scans.POST, '/api/products/prod/scans', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
@@ -317,6 +334,61 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  // ------------------------------------------------------------------ the shots route: one shot served, every way out of shots/ refused 403
+  {
+    const shotsR = await route('products/[slug]/shots/[...path]/route.ts');
+    const shotsDir = path.join(store, 'shots'), outside = path.join(store, 'outside');
+    fs.mkdirSync(path.join(shotsDir, 'r0'), { recursive: true }); fs.mkdirSync(outside, { recursive: true });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    fs.writeFileSync(path.join(shotsDir, 'r0', 'a-light-md.png'), png);
+    fs.writeFileSync(path.join(store, 'secret.png'), png); fs.writeFileSync(path.join(outside, 'x.png'), png);
+    // the segments as Next hands them over: decoded, so an encoded `..%2F..` arrives as one segment holding a separator
+    const shot = async (segs: string[]) => {
+      const res = await shotsR.GET(new Request('http://localhost:3000/api/products/prod/shots/' + segs.map(encodeURIComponent).join('/'), { headers: H }), { params: Promise.resolve({ slug: 'prod', path: segs }) });
+      return { status: res.status, type: res.headers.get('content-type') ?? '', bytes: res.status === 200 ? Buffer.from(await res.arrayBuffer()) : null };
+    };
+    const okShot = await shot(['shots', 'r0', 'a-light-md.png']);
+    check('GET shots/<run>/<file>.png -> 200 image/png with the file\'s bytes', okShot.status === 200 && okShot.type === 'image/png' && !!okShot.bytes?.equals(png), okShot.status + ' ' + okShot.type);
+    const outs = await Promise.all([['..', 'secret.png'], ['../../secret.png'], ['a', '..', '..', 'secret.png'], ['shots', 'r0', '..', '..', 'secret.png'],
+      [path.join(store, 'secret.png')], ['/etc/passwd'], ['C:', 'Windows', 'win.ini']].map(shot));
+    check('GET shots with `..`, an encoded `..%2F..`, a nested a/../../x, an absolute or drive segment -> 403 each', outs.every((o) => o.status === 403), outs.map((o) => o.status).join());
+    // a link inside shots/ to a directory outside it: a junction needs no privilege on Windows (elsewhere the type is ignored)
+    let linked = '';
+    try { fs.symlinkSync(outside, path.join(shotsDir, 'esc'), 'junction'); } catch (e) { linked = (e as Error).message; }
+    if (linked) { skipped++; console.log('SKIP shots symlink leg: the OS refused to create a link inside shots/ (' + linked + ')'); }
+    else {
+      const esc = await shot(['esc', 'x.png']);
+      check('GET shots through a link that points out of shots/ -> 403 (the realpath check)', esc.status === 403, String(esc.status));
+    }
+  }
+  // ------------------------------------------------------------------ every lens in one job: `lens: 'all'` (its own validation, scans/route.ts:50-59)
+  {
+    const everything = { kind: 'all', label: 'Everything', features: [] };
+    // a product whose map has no enabled lens with a scan method: a plain project lens, and a disabled one that has a method
+    const bare = repo('bare'), bs = path.join(bare, '.ai', 'lens-scan');
+    fs.mkdirSync(bs, { recursive: true });
+    fs.writeFileSync(path.join(bs, 'app-structure.json'), JSON.stringify({ $schema: 'app-structure/3', version: 3, project: { slug: 'bare', name: 'Bare' }, features: [{ slug: 'a', name: 'A' }],
+      lenses: [lensE('com.x.plain', 'project'), lensE('com.x.off', 'project', { method: 'judgement', instructions: 'x' }, { enabled: false })] }));
+    const regFile = path.join(dir, 'bp.products.local.json'), reg0 = fs.readFileSync(regFile, 'utf8');
+    fs.writeFileSync(regFile, JSON.stringify({ products: [...JSON.parse(reg0).products, { slug: 'bare', name: 'Bare', root: bare }] }));
+    try {
+      const n0 = J.list('prod').length;
+      const allBad = await Promise.all([
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything, phase: 'execute' }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: { ...everything, features: ['zz'] } }),
+        call(scans.POST, '/x', 'POST', { slug: 'bare' }, { lens: 'all', scope: everything }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room, phase: 'measure' }),
+      ]);
+      check('POST scans lens all refusals: an execute phase, an unknown scope slug, a map with no scannable lens, a phase on a single-lens body',
+        allBad.map((c) => c.status + ':' + c.body.error).join() === '400:bad-phase,400:bad-scope,400:no-scan-method,400:bad-phase', allBad.map((c) => c.status + ':' + c.body.error).join());
+      check('POST scans lens all refusals queue nothing', J.list('prod').length === n0 && J.list('bare').length === 0, `${J.list('prod').length - n0} prod, ${J.list('bare').length} bare`);
+      const a202 = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything });
+      check('POST scans lens all -> 202, one measure job over every lens', a202.status === 202 && a202.body.kind === 'measure' && a202.body.lens === 'all' && a202.body.scope?.kind === 'all'
+        && J.list('prod').length === n0 + 1, JSON.stringify(a202).slice(0, 300));
+      check('lens all: the prompt is `/lens-scan measure --lens all`', await until(() => /^stdin \/lens-scan measure --lens all$/m.test(job('prod', a202.body.id)?.log_tail ?? '')), job('prod', a202.body.id)?.log_tail);
+      await until(() => !['queued', 'running'].includes(job('prod', a202.body.id)?.status ?? ''));
+    } finally { fs.writeFileSync(regFile, reg0); }
+  }
   // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
   {
     const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
@@ -1058,6 +1130,28 @@ try {
       const none = await call(prods.GET, '/api/products', 'GET', {});
       check('a registry with no products key is an empty list, not an error (200 [])', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, JSON.stringify(none));
     } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
+  }
+
+  // ------------------------------------------------------------------ one product's write verbs: PATCH renames or re-roots, DELETE unregisters
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const one = await route('products/[slug]/route.ts');
+    const reg = () => (JSON.parse(fs.readFileSync(pf, 'utf8')).products as { slug: string; name: string; root: string }[]);
+    try {
+      const root2 = fs.mkdtempSync(path.join(dir, 're-root-'));
+      const p1 = await call(one.PATCH, '/api/products/prod', 'PATCH', { slug: 'prod' }, { name: '  Renamed ', root: root2 });
+      const e1 = reg().find((p) => p.slug === 'prod');
+      check('PATCH /api/products/prod renames and re-roots -> 200, the registry file holds the new name and root',
+        p1.status === 200 && p1.body.slug === 'prod' && p1.body.name === 'Renamed' && p1.body.root === root2 && e1?.name === 'Renamed' && e1?.root === root2, JSON.stringify({ p1, e1 }));
+      const p404 = await call(one.PATCH, '/api/products/nope', 'PATCH', { slug: 'nope' }, { name: 'X' });
+      const text = await one.PATCH(new Request('http://localhost:3000/api/products/prod', { method: 'PATCH', headers: { host: 'localhost:3000', 'content-type': 'text/plain' }, body: 'name=x' }), { params: Promise.resolve({ slug: 'prod' }) });
+      check('PATCH an unknown slug -> 404, a non-JSON body -> 415, and neither writes', p404.status === 404 && text.status === 415 && reg().find((p) => p.slug === 'prod')?.name === 'Renamed',
+        `${p404.status}:${p404.body.error} / ${text.status}`);
+      const d1 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      const gone = !reg().some((p) => p.slug === 'prod');
+      const d2 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      check('DELETE /api/products/prod -> 200 and gone from the file; DELETE again -> 404', d1.status === 200 && d1.body.slug === 'prod' && gone && d2.status === 404, JSON.stringify({ d1, d2 }));
+    } finally { fs.writeFileSync(pf, keep); }
   }
 
   // ------------------------------------------------------------------ the standard accepts the entry

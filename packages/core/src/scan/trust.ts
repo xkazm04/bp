@@ -68,6 +68,13 @@ export const latestEvents = (events: readonly TrustEvent[], n = 6): TrustEvent[]
 export function vetoable(p: Pick<Proposal, 'status' | 'decided_by' | 'veto_until'>, now: string): boolean {
   return (p.status === 'approved' || p.status === 'declined') && !!p.decided_by?.startsWith('machine:') && !!p.veto_until && p.veto_until > now;
 }
+/** Milliseconds from `now` (epoch ms) until the first of these rows' veto windows closes, 0 when one already has; null
+ *  when no row has a window. A list of vetoable rows re-reads itself then, so a lapsed row leaves without a store delta. */
+export function nextVetoLapse(rows: readonly Pick<Proposal, 'veto_until'>[], now: number): number | null {
+  let at = Infinity;
+  for (const r of rows) { const t = r.veto_until ? Date.parse(r.veto_until) : NaN; if (t < at) at = t; }
+  return at === Infinity ? null : Math.min(Math.max(0, at - now), 2 ** 31 - 1);
+}
 /** Whether a machine recorded the row's decision (decided_by or triaged_by `machine:*`). */
 export const machineDecided = (p: Pick<Proposal, 'decided_by' | 'triaged_by'>): boolean =>
   !!p.decided_by?.startsWith('machine:') || !!p.triaged_by?.startsWith('machine:');

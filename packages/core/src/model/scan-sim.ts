@@ -13,6 +13,7 @@ import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX,
 import { NOTHING_TO_BUILD, admitForBuild, buildChunks, busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
+import type { Model } from './index.ts';
 import { NUMERIC } from '../standard/present.ts';
 import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
 import { PREPARABLE } from '../scan/lens-setup.ts';
@@ -488,4 +489,19 @@ function fresh(f: LensField, feature: string, lens: string): number {
   if (!(hi > lo)) hi = lo + 10;
   const v = lo + rand01(feature + '|' + lens + '|' + f.key) * (hi - lo);
   return f.type === 'integer' ? Math.round(v) : round(v);
+}
+
+/** What the Kettle scan sim needs of the model, bound the same way by the web app's Kettle and the headless server's
+ *  (apps/server/src/kettle-sim.ts), so the server's sample scans see what the browser shows: base slugs in layout order,
+ *  the enabled lenses, the facet values now, and every lens the model knows. */
+export function bindKettleScan(sim: ScanSim, M: Model): void {
+  const P = M.P, base = new Map(P.base.features.map((f) => [f.id, f])), on = new Set(P.lenses.map((l) => l.id));
+  const order = [...new Set(M.L.tiles.filter((T) => T.wing.bld.i === 0).map((T) => T.f.slug))];
+  sim.bind({
+    order,
+    manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
+    value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
+    // every lens the model knows, enabled or not: the ids and looks a new Kettle lens may not repeat
+    lenses: () => Object.values(P.LENS).map((d) => ({ id: d.id, version: d.manifest.version, source: d.source, enabled: d.i >= 0, manifest: d.manifest, ...(d.temporary ? { temporary: true as const } : {}) })),
+  });
 }

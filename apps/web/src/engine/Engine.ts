@@ -18,7 +18,7 @@ import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { DEEP_LINK_KEYS, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
-import { saveFailWords } from './copy';
+import { saveFailWords, unknownFeatureWords } from './copy';
 import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -33,7 +33,7 @@ import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
 import { HitList, TOUCH, type Hit, type HitKind } from './render/hits';
 import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
-import { rs, smooth, type SRect, type View } from './render/view';
+import { rs, smooth, union, type SRect, type View } from './render/view';
 import { GENERAL } from '@bp/core/data/types';
 
 export interface EngineOptions {
@@ -734,7 +734,14 @@ export class Engine {
    * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
    */
   openFeature(id: string) {
-    const F = this.M.P.F[id], T = this.M.L.TILE[id]; if (!F || !T) return;
+    const F = this.M.P.F[id], T = this.M.L.TILE[id];
+    if (!F) { // a shared link or a back/forward to a feature this map does not have: say so once, and stop pointing at it
+      const w = unknownFeatureWords(id); this.toast(w.strong, w.text, undefined, undefined, 'warn');
+      if (this.S.open === id) this.set({ open: null });
+      if (this.S.phone) return;
+      this.writeHashSoon(); return;
+    }
+    if (!T) return;
     const r = this.tileRect(id)!, U = this.U, S = this.SAFE;
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
       this.cam.set(this.fitCam({ x: T.x - T.w * 1.6, y: T.y - T.h * 1.6, w: T.w * 4.2, h: T.h * 4.2 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
@@ -762,11 +769,8 @@ export class Engine {
     this.set(patch);
     const S = this.S;
     const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === GA_MILESTONE).map((f) => f.id) : null;
-    if (ids && (m.blast || m.ga)) {
-      let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-      for (const i of ids) { const T = this.M.L.TILE[i]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
-      this.cam.flyTo(this.fitCam({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, { t: 40, r: CALLOUT_PAD, b: 56, l: 30 }));
-    }
+    const b = ids && (m.blast || m.ga) ? this.tilesBox(ids) : null;
+    if (b) this.cam.flyTo(this.fitCam(b, { t: 40, r: CALLOUT_PAD, b: 56, l: 30 }));
     this.placeKey = ''; this.writeHashSoon();
   }
   /** The GA readiness mode needs the sample's GA milestone in the map (a live product's map may not have it: then the mode, its key and its overlay do not exist). */
@@ -936,9 +940,14 @@ export class Engine {
   setTarget(ids: Record<string, 1>, label: string) { this.set({ tgt: { ids, n: Object.keys(ids).length, label }, prev: null, lprev: null }); }
   clearTarget() { this.set({ tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, ordMenu: false }); }
   lookAtTarget() {
-    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-    for (const id in this.S.tgt.ids) { const T = this.M.L.TILE[id]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
-    if (x1 > x0) this.cam.flyTo(this.fitCam({ x: x0 - 40, y: y0 - 40, w: x1 - x0 + 80, h: y1 - y0 + 80 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
+    const b = this.tilesBox(Object.keys(this.S.tgt.ids));
+    if (b && b.w > 0) this.cam.flyTo(this.fitCam({ x: b.x - 40, y: b.y - 40, w: b.w + 80, h: b.h + 80 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
+  }
+  /** The box around the tiles of these features (one without a tile is left out); null when none has one. */
+  private tilesBox(ids: Iterable<string>): Box | null {
+    const bs: Box[] = [];
+    for (const id of ids) { const T = this.M.L.TILE[id]; if (T) bs.push(T); }
+    return union(bs);
   }
   private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.', undefined, undefined, 'warn'); }
   /** A sample steer's preview. Refused on a live product (its verbs are measure, build and stop: `previewLive`). */
@@ -1122,10 +1131,9 @@ export class Engine {
    */
   private flagClick(F: Flag) {
     const fids = [...new Set(F.fids)];
-    if (fids.length > 1) {
-      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-      for (const id of fids) { const T = this.M.L.TILE[id]; if (!T) continue; x0 = Math.min(x0, T.x); y0 = Math.min(y0, T.y); x1 = Math.max(x1, T.x + T.w); y1 = Math.max(y1, T.y + T.h); }
-      const c = this.fitCam({ x: x0 - 40, y: y0 - 60, w: x1 - x0 + 80, h: y1 - y0 + 100 }, { t: 60, r: 40, b: 60, l: 40 }, 1);
+    const b = fids.length > 1 ? this.tilesBox(fids) : null;
+    if (b) {
+      const c = this.fitCam({ x: b.x - 40, y: b.y - 60, w: b.w + 80, h: b.h + 100 }, { t: 60, r: 40, b: 60, l: 40 }, 1);
       if (c.k > this.cam.k * 1.15) { this.flagHot = null; this.cam.flyTo(c); return; }
     }
     this.flagHot = null;
@@ -1453,7 +1461,7 @@ export class Engine {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
-    if (h.open && this.M.P.F[h.open]) this.openFeature(h.open);
+    if (h.open) this.openFeature(h.open); // an unknown id toasts and leaves open null
     } finally { this.hashLock = false; }
   }
   /** Back / forward / a hash pasted into the same tab: bring lens, time, modes, place and the open feature to what the hash says (absent = the default). Writes are held until the camera arrives, then adopt. */
@@ -1476,6 +1484,7 @@ export class Engine {
       if (blast !== this.S.blast || ga !== this.S.ga) this.setMode({ blast, ga });
       if (h.page === 'ledger') this.setPage('ledger', ledgerVariant(h.lv)); else this.setPage('plan');
       if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
+      if (h.open) this.openFeature(h.open); // not on this map: toasts once, then the plan as if it were absent
       if (this.S.open) this.closeFeature(false);
       if (this.S.phone || moded) return; // a mode frames its own features
       const t = h.at ? (this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null) : null;

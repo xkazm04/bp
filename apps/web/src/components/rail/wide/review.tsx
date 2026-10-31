@@ -5,14 +5,14 @@
 // v5 (scan-finding/1): a live detail carries what the scan stored (FindingFacts: the score and its breakdown, impact_why, the
 // predicted verdict and its precedent, a built change's proof); machine decisions still inside their veto window are listed
 // after the open items ("Decided by the machine · veto open") and their detail offers the person's Veto (VetoDetail).
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { dayHhmmUTC, fmtWait, hhmmUTC, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import { priorRecord, recordWords } from '@bp/core/scan/record';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
 import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useScanCtx, useVariant, useWritesOn } from '../../hooks';
-import { vetoable } from '@bp/core/scan/trust';
+import { nextVetoLapse, vetoable } from '@bp/core/scan/trust';
 import { vetoDecision } from '@/lib/scan/actions';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 import { BriefFacts, useBrief } from '../../Brief';
@@ -76,7 +76,16 @@ export function Review() {
   // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
   const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
   // v5: machine decisions a person may still veto (decided_by machine:*, inside veto_until), listed after the open items
-  const vetos = useMemo(() => { const now = new Date().toISOString(); return sim.live ? (proposals ?? []).filter((p) => vetoable(p, now)) : []; }, [proposals, sim.live]);
+  // the list re-reads when the first listed window closes (lapse), not only when the proposals change: a lapsed row would
+  // keep a Veto button that can only answer 409
+  const [lapse, bumpLapse] = useReducer((x: number) => x + 1, 0);
+  const vetos = useMemo(() => { const now = new Date().toISOString(); return sim.live ? (proposals ?? []).filter((p) => vetoable(p, now)) : []; }, [proposals, sim.live, lapse]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const ms = nextVetoLapse(vetos, Date.now());
+    if (ms === null) return;
+    const t = setTimeout(bumpLapse, ms + 1);
+    return () => clearTimeout(t);
+  }, [vetos]);
   const curVeto = selId?.startsWith(VETO) ? vetos.find((p) => VETO + p.id === selId) ?? null : null;
   const walkIds = useMemo(() => [...ids, ...vetos.map((p) => VETO + p.id)], [ids, vetos]);
   const cur = curVeto ? null : items.find((d) => d.id === selId) ?? items[0] ?? null;

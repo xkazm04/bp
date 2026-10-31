@@ -24,6 +24,13 @@ export interface PixGrid {
   /** The largest channel change anywhere, 0..255. */
   maxd: number;
   bbox?: [number, number, number, number];
+  /** The two images' natural sizes, [w, h] each, when the caller knew them: a pair of different sizes was scaled, not compared. */
+  sizes?: { before: [number, number]; after: [number, number] };
+}
+
+/** The grid with the pair's natural sizes, so its words can say when the after was scaled into the before's box. */
+export function withSizes(g: PixGrid, before: [number, number], after: [number, number]): PixGrid {
+  return { ...g, sizes: { before, after } };
 }
 
 /**
@@ -63,6 +70,11 @@ export function diffPixels(a: ArrayLike<number>, b: ArrayLike<number>, w: number
 /** The pair in words, as the winner's pixWords: `same` when a person would see no designed difference (nothing moved,
  *  or under 0.2 % of pixels visibly differ). */
 export function pixWords(g: PixGrid): { same: boolean; text: string } {
+  const s = g.sizes;
+  if (s && (s.before[0] !== s.after[0] || s.before[1] !== s.after[1])) {
+    // a resize is not a designed change: the after was drawn into the before's box, so nearly every pixel reads as moved
+    return { same: false, text: `Sizes differ (${s.before[0]}x${s.before[1]} -> ${s.after[0]}x${s.after[1]}): the after was scaled, so most pixels read as changed; ${g.pct.toFixed(2)}% differ.` };
+  }
   if (g.moved === 0) return { same: true, text: `Identical: no pixel differs by more than ${Math.max(1, g.maxd)} of 255 levels.` };
   if (g.pct < 0.2) return { same: true, text: `Visually identical: ${g.moved.toFixed(2)}% of pixels shift by at most ${g.maxd} of 255 levels.` };
   const at = g.bbox ? `, inside x ${g.bbox[0]}–${g.bbox[2]}, y ${g.bbox[1]}–${g.bbox[3]}` : '';

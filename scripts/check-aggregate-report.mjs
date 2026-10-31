@@ -10,6 +10,8 @@
 //     anything runs, never a green run over 0 checks;
 //   - a red run's last line names the red checks and `npm run check -- --failed`; a --failed run that turns green says
 //     so AND says the full gate still has to run before pushing.
+//   - the argument refusals exit 1 with their line before any check runs: --failed with BP_CHECK_ONLY, a BP_CHECK_ONLY term
+//     matching no check, BP_CHECK_ONLY selecting 0 checks, and a BP_CHECK_TIMEOUT_MS that is not a positive number.
 // The --failed cases run a child check-all with BP_CHECK_RECORD in a throwaway dir, selecting only check:standard or
 // check:overlays (never this check), so there is no recursion and the real record is never touched. The seeded red
 // case reuses check:overlays' own BP_OVERLAYS_MUTATE control (GUARD: a red child still makes the aggregate exit 1).
@@ -100,6 +102,30 @@ for (const [label, record] of [['no record', undefined], ['an empty record', '[]
 const st = all('["check:standard","check:gone-away"]');
 check('--failed with a stale name exits 1', st.code === 1, `exit ${st.code}`);
 check('--failed with a stale name names it before anything runs', st.out.includes('check:gone-away') && !st.ran.length, st.out.slice(0, 300));
+
+// The argument refusals that keep a mistyped filter from turning into a green "0 passed" run (check-all.mjs:40, :50-53,
+// :58-60): each is a child check-all with BP_CHECK_ONLY KEPT (the helper above deletes it) and must exit non-zero with its
+// line before any check runs. The timeout legs also narrow to check:standard, so a refusal that fell through would run
+// one check rather than the whole suite (this check among it).
+const refusal = (args, env) => {
+  fs.writeFileSync(rec, '["check:standard"]');
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/check-all.mjs'), ...args], { cwd: ROOT, env: { ...process.env, BP_CHECK_RECORD: rec, ...env }, encoding: 'utf8', timeout: 120000 });
+  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  return { code: r.status, out, ran: out.split(/\r?\n/).filter((l) => /^(PASS|FAIL)  \S/.test(l) && !/BP_CHECK|--failed|record/.test(l)) };
+};
+const nAll = every.length;
+const amb = refusal(['--failed'], { BP_CHECK_ONLY: 'check:standard' });
+check('--failed with BP_CHECK_ONLY: exits 1, names the ambiguity, runs nothing', amb.code === 1 && /^FAIL  --failed and BP_CHECK_ONLY='check:standard' together are ambiguous; use one$/m.test(amb.out) && !amb.ran.length, `exit ${amb.code} ${amb.out.slice(0, 300)}`);
+const dead = refusal([], { BP_CHECK_ONLY: 'check:standard,overlys' });
+check('a BP_CHECK_ONLY term matching no check: exits 1, names the term, runs nothing (even with a live term beside it)', dead.code === 1 && /^FAIL  BP_CHECK_ONLY term 'overlys' matches none of the \d+ checks$/m.test(dead.out)
+  && !/selected 0 of/.test(dead.out) && !dead.ran.length && /^0 passed, 1 failed, 0 skipped of \d+$/m.test(dead.out), `exit ${dead.code} ${dead.out.slice(0, 300)}`);
+const zero = refusal([], { BP_CHECK_ONLY: 'overlys' });
+check('BP_CHECK_ONLY selecting 0 checks: exits 1 saying nothing was run, runs nothing', zero.code === 1 && new RegExp(`^FAIL  BP_CHECK_ONLY='overlys' selected 0 of ${nAll} checks: nothing was run$`, 'm').test(zero.out)
+  && !zero.ran.length && !/^0 passed, 0 failed/m.test(zero.out), `exit ${zero.code} ${zero.out.slice(0, 300)}`);
+for (const v of ['abc', '0', '-5']) {
+  const t = refusal([], { BP_CHECK_ONLY: 'check:standard', BP_CHECK_TIMEOUT_MS: v });
+  check(`BP_CHECK_TIMEOUT_MS=${v}: exits 1 naming the value, runs nothing`, t.code === 1 && t.out.includes(`FAIL  BP_CHECK_TIMEOUT_MS='${v}' is not a positive number of milliseconds`) && !t.ran.length, `exit ${t.code} ${t.out.slice(0, 300)}`);
+}
 
 // GUARD: a seeded red child still makes the aggregate exit 1, is recorded, and the report shows its FAIL text + rerun.
 const sr = all('["check:overlays"]', { BP_OVERLAYS_MUTATE: '[["Phone.tsx","height: 44","height: 40"]]' });

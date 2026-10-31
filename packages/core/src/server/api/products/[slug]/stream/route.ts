@@ -15,6 +15,8 @@
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): snapshot, jobs, delta and ping over the sim, in memory.
+// At most MAX_STREAMS open streams per product: each holds a read connection and a 1 s interval, so a runaway client (a
+// reload loop, a leaked EventSource) answers 429 with one line past the cap instead of piling them up.
 import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@bp/core/server/products.server';
@@ -26,6 +28,9 @@ import { attachRun, list as listJobs, subscribe as onJobs } from '@bp/core/serve
 import { kettleSim, kettleStream } from '@bp/core/server/kettle-sim.server';
 
 const TICK_MS = 1000, PING_MS = 15000;
+/** The most streams one product may hold open at once (per server process). */
+export const MAX_STREAMS = 16;
+const OPEN = ((globalThis as typeof globalThis & { __bpOpenStreams?: Map<string, number> }).__bpOpenStreams ??= new Map<string, number>());
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
   const denied = localHost(req);
@@ -35,6 +40,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (k) return kettleStream(k, req);
   const p = findProduct(slug);
   if (!p) return unknownProduct(slug);
+  const open = OPEN.get(slug) ?? 0;
+  if (open >= MAX_STREAMS) return Response.json({ error: `${open} streams are already open for ${slug} (at most ${MAX_STREAMS}); close one first` }, { status: 429 });
+  OPEN.set(slug, open + 1);
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
   const dir = storeDir(p);
@@ -45,6 +53,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const stop = () => {
     if (done) return;
     done = true;
+    OPEN.set(slug, Math.max(0, (OPEN.get(slug) ?? 1) - 1));
     if (tick) clearInterval(tick);
     unsubscribe?.(); unsubscribe = null;
     close(db); db = null;

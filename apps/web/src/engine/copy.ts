@@ -36,3 +36,8 @@ export function saveFailWords(e: SaveFailure): SaveWords {
 
 /** Developer-facing strings a reader must never be shown, whatever the browser calls them. */
 export const DEV_WORDS: readonly string[] = ['Failed to fetch', 'Load failed', 'NetworkError', 'TypeError', 'ERR_', 'undefined', 'NaN'];
+
+/** What a reader sees when a link or a back/forward names a feature this map does not have (renamed, or removed by a refresh). */
+export function unknownFeatureWords(id: string): { strong: string; text: string } {
+  return { strong: `No feature ${id} on this map:`, text: 'it may have been renamed or removed.' };
+}
