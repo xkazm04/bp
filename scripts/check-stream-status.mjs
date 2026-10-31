@@ -76,6 +76,24 @@ try {
   const sj = await (await STRUCT(new Request('http://x/api/products/mapped/structure', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'mapped' }) })).json();
   check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
 
+  // a runaway client (a reload loop, a leaked EventSource): MAX_STREAMS open streams for one product, the next answers 429
+  // with one line instead of another read connection and interval; closing one frees its slot
+  const { MAX_STREAMS } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/api/products/[slug]/stream/route.ts')).href);
+  const openOne = async () => { const ac = new AbortController(); return { ac, res: await GET(new Request('http://x/api/products/good/stream', { signal: ac.signal, headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'good' }) }) }; };
+  const shut = async (h) => { h.ac.abort(); await h.res.body?.cancel().catch(() => {}); };
+  const held = [];
+  try {
+    for (let i = 0; i < MAX_STREAMS; i++) held.push(await openOne());
+    const over = await openOne(), overBody = over.res.status === 429 ? await over.res.json() : null;
+    if (over.res.status !== 429) held.push(over); // served past the cap: it holds the store open, close it with the rest
+    check(`stream cap: ${MAX_STREAMS} open streams for one product are served, the next answers 429 with one line`,
+      MAX_STREAMS > 0 && held.every((h) => h.res.status === 200) && over.res.status === 429 && typeof overBody?.error === 'string' && overBody.error.includes(`at most ${MAX_STREAMS}`) && !overBody.error.includes('\n'),
+      `${held.map((h) => h.res.status).join(',')} then ${over.res.status} ${JSON.stringify(overBody)}`);
+    await shut(held.shift());
+    const again = await openOne(); held.push(again);
+    check('stream cap: closing one stream frees its slot (200 again)', again.res.status === 200, String(again.res.status));
+  } finally { for (const h of held) await shut(h); }
+
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
   const types = code('packages/core/src/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
   check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
