@@ -219,6 +219,10 @@ expect(!/\?\.root \?\? ctx\.slug/.test(menu), 'ScanMenu falls back to the slug f
 expect(/\{ctx\.slug && <div className="sm-f warn">/.test(menu), 'the permissions warning is conditioned on something other than there being a live product, so it can disappear while the project list loads');
 expect(/with permissions skipped/.test(menu), 'the permissions warning lost its words');
 expect(/checkout/.test(menu), 'the permissions warning has nothing to say when the root is not known yet');
+// a product with no lenses at all: 'Scan all lenses' is disabled and no other footer fires (off and needy are empty), so the
+// menu says why and where to go, on the lens list itself rather than on a derived list that could be empty for other reasons
+expect(/\{!lensView && !lenses\.length && <div className="sm-f">This product has no lenses yet\. Add one from the ledger’s Lenses panel\.<\/div>\}/.test(menu),
+  'the scan menu says nothing when the product has no lenses (only a disabled Scan all lenses)');
 
 // --------------------------------------------- 4. no request waits for an answer forever
 // A server that accepted the connection and never answers (it died mid-write, or it is wedged on a locked
