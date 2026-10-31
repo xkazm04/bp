@@ -18,7 +18,7 @@ import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
 import { DEEP_LINK_KEYS, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
-import { saveFailWords } from './copy';
+import { saveFailWords, unknownFeatureWords } from './copy';
 import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -734,7 +734,14 @@ export class Engine {
    * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
    */
   openFeature(id: string) {
-    const F = this.M.P.F[id], T = this.M.L.TILE[id]; if (!F || !T) return;
+    const F = this.M.P.F[id], T = this.M.L.TILE[id];
+    if (!F) { // a shared link or a back/forward to a feature this map does not have: say so once, and stop pointing at it
+      const w = unknownFeatureWords(id); this.toast(w.strong, w.text, undefined, undefined, 'warn');
+      if (this.S.open === id) this.set({ open: null });
+      if (this.S.phone) return;
+      this.writeHashSoon(); return;
+    }
+    if (!T) return;
     const r = this.tileRect(id)!, U = this.U, S = this.SAFE;
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
       this.cam.set(this.fitCam({ x: T.x - T.w * 1.6, y: T.y - T.h * 1.6, w: T.w * 4.2, h: T.h * 4.2 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
@@ -1454,7 +1461,7 @@ export class Engine {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
-    if (h.open && this.M.P.F[h.open]) this.openFeature(h.open);
+    if (h.open) this.openFeature(h.open); // an unknown id toasts and leaves open null
     } finally { this.hashLock = false; }
   }
   /** Back / forward / a hash pasted into the same tab: bring lens, time, modes, place and the open feature to what the hash says (absent = the default). Writes are held until the camera arrives, then adopt. */
@@ -1477,6 +1484,7 @@ export class Engine {
       if (blast !== this.S.blast || ga !== this.S.ga) this.setMode({ blast, ga });
       if (h.page === 'ledger') this.setPage('ledger', ledgerVariant(h.lv)); else this.setPage('plan');
       if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
+      if (h.open) this.openFeature(h.open); // not on this map: toasts once, then the plan as if it were absent
       if (this.S.open) this.closeFeature(false);
       if (this.S.phone || moded) return; // a mode frames its own features
       const t = h.at ? (this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null) : null;
