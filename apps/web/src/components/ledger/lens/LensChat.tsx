@@ -8,12 +8,14 @@
 // brings the new lens to every client), the Kettle sample into this browser. Messages are plain text, never markup.
 //
 // The chat lives in a module store, not in the component: closing the panel mid-turn neither loses the
-// conversation nor cancels Claude (only Cancel does), and reopening shows the answer when it came.
+// conversation nor cancels Claude (only Cancel does), and reopening shows the answer when it came. The store is kept per
+// product in this tab's sessionStorage (chat-keep.ts), so a reload gives back the conversation, its session and the draft;
+// a turn that was in flight comes back as its message in the box. New chat forgets it.
 //
 // A message sent while Claude answers is never dropped (chat-transcript/composer-turn-queue): it becomes a queued row
 // at once and is sent when the turn settles; a second one joins it (one follow-up turn, not two). Edit takes it back
 // into the box. A turn that fails or is cancelled does not send it: it goes back into the box with the failed text.
-import { useEffect, useMemo, useReducer, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import type { LensManifest } from '@bp/core/standard/types';
 import { postLensDraft } from '@/lib/scan/client';
 import { checkLensManifest, type TakenLook } from '@bp/core/scan/manifest-check';
@@ -22,6 +24,7 @@ import { takenLooks } from '@bp/core/scan/jobs';
 import { useEngine, useScanCtx } from '../../hooks';
 import { DraftCard, type DraftState } from './DraftCard';
 import { scanNow } from './lens-ops';
+import { forgetKept, readKept, tabStore, writeKept } from './chat-keep';
 
 const MAX = 4000;
 /** Permanent: a project lens kept with the product. Temporary: one refactor, migration or project, then retired. */
@@ -58,13 +61,33 @@ const fresh = (product: string): ChatState => ({ product, kind: 'project', msgs:
 let S: ChatState = fresh('kettle');
 let N = 0, ctl: AbortController | null = null;
 const subs = new Set<() => void>();
-const put = (p: Partial<ChatState>) => { S = { ...S, ...p }; for (const f of [...subs]) f(); };
+const notify = () => { for (const f of [...subs]) f(); };
+// kept at most every 250 ms (the box writes on every key), and at once when the page goes away
+let tm: ReturnType<typeof setTimeout> | null = null;
+const save = () => { if (tm !== null) clearTimeout(tm); tm = null; writeKept(tabStore(), S); };
+if (typeof window !== 'undefined') window.addEventListener('pagehide', () => { if (tm !== null) save(); });
+const put = (p: Partial<ChatState>) => { S = { ...S, ...p }; if (tm === null) tm = setTimeout(save, 250); notify(); };
 const say = (who: Msg['who'], text: string, err?: boolean) => put({ msgs: [...S.msgs, { n: ++N, who, text, ...(err ? { err } : {}) }] });
 const subscribe = (f: () => void) => { subs.add(f); return () => { subs.delete(f); }; };
 const get = () => S;
 const isStarted = () => S.msgs.length > 0 || S.draft !== null;
-/** Whether the chat has a conversation (the panel then shows it open). */
-export function useChatStarted(): boolean { return useSyncExternalStore(subscribe, isStarted, () => false); }
+let adopted: string | null = null;
+/** Point the store at this product: the tab's kept chat for it comes back (once per product; a switch cancels the turn in
+ *  flight, whose product's chat was kept with its message back in the box). */
+export function adoptChat(product: string) {
+  if (adopted === product && S.product === product) return;
+  if (tm !== null) save(); // the chat being left keeps its last keys
+  if (S.product !== product) { ctl?.abort(); ctl = null; }
+  adopted = product;
+  S = { ...fresh(product), kind: S.kind, ...readKept(tabStore(), product) };
+  N = Math.max(N, ...S.msgs.map((m) => m.n));
+  notify();
+}
+/** Whether the chat has a conversation (the panel then shows it open); adopts this product's kept chat first. */
+export function useChatStarted(product: string): boolean {
+  useState(() => { adoptChat(product); return 0; });
+  return useSyncExternalStore(subscribe, isStarted, () => false);
+}
 
 /** What a failed turn says, by status (the route: 503 no CLI, 504 after 3 minutes, 502 the CLI failed). */
 function failure(e: unknown): string {
@@ -122,7 +145,7 @@ function cancel() { ctl?.abort(); }
 function unqueue() { const q = S.queued; if (q === null) return; put({ queued: null, text: S.text.trim() ? q + '\n\n' + S.text : q }); }
 
 /** Start over: a new CLI session (the old one is left alone on the server). Cancels a turn in flight. */
-export function resetChat(product?: string) { const kind = S.kind; ctl?.abort(); ctl = null; S = { ...fresh(product ?? S.product), kind }; for (const f of [...subs]) f(); }
+export function resetChat() { const kind = S.kind; ctl?.abort(); ctl = null; if (tm !== null) clearTimeout(tm); tm = null; forgetKept(tabStore(), S.product); S = { ...fresh(S.product), kind }; notify(); }
 
 // ------------------------------------------------------------------------------------- component
 function useElapsed(since: number | null): string {
@@ -142,7 +165,7 @@ export function LensChat({ slug, inputRef }: { slug: string | null; inputRef: Re
   const E = useEngine(), ctx = useScanCtx(), product = slug ?? 'kettle';
   const s = useSyncExternalStore(subscribe, get, get);
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (S.product !== product) resetChat(product); }, [product]);
+  useEffect(() => { adoptChat(product); }, [product]);
   useEffect(() => { end.current?.scrollIntoView({ block: 'nearest' }); }, [s.msgs.length, s.draft, s.since]);
   const elapsed = useElapsed(s.since);
   const busy = s.since !== null;
