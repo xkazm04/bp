@@ -644,7 +644,7 @@ function withToggle(b: Base, toggle: string | null): Structure {
   // keyed on what the toggle MEANS (the enabled registry plus the ignored ids it names), not on the URL's
   // spelling: `-a,-b` and `-b,-a` are one structure. The map is also capped, because a typo is its own key.
   const on = b.entries.filter((e) => t.get(e.id) ?? e.enabled).map((e) => e.id);
-  const key = on.join(',') + ' ' + unknown.join(' ');
+  const key = on.join(',') + '\u0000' + unknown.join('\u0000');
   const hit = b.byToggle.get(key);
   if (hit) { b.byToggle.delete(key); b.byToggle.set(key, hit); return hit; } // most recently used last
   const warnings = unknown.length
