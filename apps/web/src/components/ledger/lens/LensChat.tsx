@@ -83,7 +83,8 @@ async function send(text: string) {
   if (!msg || msg.length > MAX) return;
   if (S.since !== null) { // busy: queue it, never drop it
     const q = S.queued ? S.queued + '\n\n' + msg : msg;
-    if (q.length > MAX) return;
+    // past MAX the follow-up turn would be refused: say so, and leave the text in the box to send after this turn
+    if (q.length > MAX) { say('note', `Not queued: the waiting messages would pass ${MAX} characters. Send it after this turn.`, true); return; }
     put({ queued: q, text: S.text.trim() === msg ? '' : S.text });
     return;
   }

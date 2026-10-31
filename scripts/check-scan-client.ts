@@ -297,6 +297,10 @@ const helperNames = [...clientSrc.matchAll(/export (?:async )?(?:const|function)
 expect(helperNames.length >= 10, `found ${helperNames.length} exported request helpers (update this check)`);
 for (const h of helperNames) expect(consumers(h) > 0, `client.ts exports ${h} and nothing in the web app calls it`);
 expect(!/fetch\(\s*'\/api\/lens-draft'/.test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat.tsx makes its own /api/lens-draft request instead of calling postLensDraft');
+// a message sent while Claude answers joins the queue; when the joined queue would pass MAX the chat says so in an error
+// note (the text stays in the box) instead of returning without a word
+expect(/if \(q\.length > MAX\) \{ say\('note', `Not queued: the waiting messages would pass \$\{MAX\} characters\. Send it after this turn\.`, true\); return; \}/
+  .test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat drops a queued message past MAX without a word');
 {
   const ac = new AbortController();
   asked = [];
