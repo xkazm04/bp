@@ -1060,6 +1060,28 @@ try {
     } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
   }
 
+  // ------------------------------------------------------------------ one product's write verbs: PATCH renames or re-roots, DELETE unregisters
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const one = await route('products/[slug]/route.ts');
+    const reg = () => (JSON.parse(fs.readFileSync(pf, 'utf8')).products as { slug: string; name: string; root: string }[]);
+    try {
+      const root2 = fs.mkdtempSync(path.join(dir, 're-root-'));
+      const p1 = await call(one.PATCH, '/api/products/prod', 'PATCH', { slug: 'prod' }, { name: '  Renamed ', root: root2 });
+      const e1 = reg().find((p) => p.slug === 'prod');
+      check('PATCH /api/products/prod renames and re-roots -> 200, the registry file holds the new name and root',
+        p1.status === 200 && p1.body.slug === 'prod' && p1.body.name === 'Renamed' && p1.body.root === root2 && e1?.name === 'Renamed' && e1?.root === root2, JSON.stringify({ p1, e1 }));
+      const p404 = await call(one.PATCH, '/api/products/nope', 'PATCH', { slug: 'nope' }, { name: 'X' });
+      const text = await one.PATCH(new Request('http://localhost:3000/api/products/prod', { method: 'PATCH', headers: { host: 'localhost:3000', 'content-type': 'text/plain' }, body: 'name=x' }), { params: Promise.resolve({ slug: 'prod' }) });
+      check('PATCH an unknown slug -> 404, a non-JSON body -> 415, and neither writes', p404.status === 404 && text.status === 415 && reg().find((p) => p.slug === 'prod')?.name === 'Renamed',
+        `${p404.status}:${p404.body.error} / ${text.status}`);
+      const d1 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      const gone = !reg().some((p) => p.slug === 'prod');
+      const d2 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      check('DELETE /api/products/prod -> 200 and gone from the file; DELETE again -> 404', d1.status === 200 && d1.body.slug === 'prod' && gone && d2.status === 404, JSON.stringify({ d1, d2 }));
+    } finally { fs.writeFileSync(pf, keep); }
+  }
+
   // ------------------------------------------------------------------ the standard accepts the entry
   const valid =JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/fixtures/valid-map.json'), 'utf8'));
   const entry = { id: MANIFEST.id, version: '1.0.0', source: 'project', enabled: true, temporary: true, created_at: '2026-10-13T10:00:00.000Z', manifest: MANIFEST };
