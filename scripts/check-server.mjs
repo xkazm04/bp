@@ -200,5 +200,25 @@ try {
   check('a Kettle sim that cannot be built: exits 1 with one `bp server: cannot build the Kettle sims: ...` line, no stack',
     r.status === 1 && /^bp server: cannot build the Kettle sims: /m.test(out) && !/\n\s+at /.test(out) && !/listening on/.test(out), `${r.status} ${out.trim().slice(-200)}`);
 }
+// a handler module that fails to import ends with one `bp server: cannot load the routes: <module>: ...` line and exit 1
+// (main.ts's .catch over loadRoutes, mount.ts naming the module), never an uncaught stack. Seeded by a preload, loaded after
+// core's register so its load hook runs first: the shots handler's source becomes a module that throws as it is evaluated.
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-server-broken-'));
+  const hooks = path.join(tmp, 'hooks.mjs'), preload = path.join(tmp, 'preload.mjs');
+  fs.writeFileSync(hooks, "export async function load(url, ctx, next) {\n"
+    + "  if (/\\/api\\/products\\/(\\[slug\\]|%5Bslug%5D)\\/shots\\/(\\[\\.\\.\\.path\\]|%5B\\.\\.\\.path%5D)\\/route\\.ts$/.test(url)) return { format: 'module', source: \"throw new Error('seeded import failure')\", shortCircuit: true };\n"
+    + "  return next(url, ctx);\n}\n");
+  fs.writeFileSync(preload, `import { register } from 'node:module';\nregister(${JSON.stringify(pathToFileURL(hooks).href)});\n`);
+  try {
+    const r = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, '--import', pathToFileURL(preload).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
+      { cwd: os.tmpdir(), encoding: 'utf8', timeout: 30000 });
+    const out = (r.stdout ?? '') + (r.stderr ?? '');
+    const lines = out.split(/\r?\n/).filter((l) => /^bp server: cannot load the routes: /.test(l));
+    check('a route module that fails to import: exits 1 with one `bp server: cannot load the routes: <module>` line naming it, no stack',
+      r.status === 1 && lines.length === 1 && /^bp server: cannot load the routes: products[\\/]\[slug\][\\/]shots[\\/]\[\.\.\.path\][\\/]route\.ts: seeded import failure$/.test(lines[0])
+      && !/\n\s+at /.test(out) && !/listening on|^route /m.test(out), `${r.status} ${out.trim().slice(-300)}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
 console.log(`\ncheck-server: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
