@@ -15,7 +15,7 @@ import type { Cam } from '@/engine/camera';
 import { EMPTY_SCAN, clampScale, type Model } from '@bp/core/model';
 import { applyScan, buildLiveModel, lensesOnly, liveSwarm, refreshLiveModel } from '@bp/core/model/live-feed';
 import { LiveFacets } from '@bp/core/model/live-health';
-import type { ScanSim } from '@bp/core/model/scan-sim';
+import { bindKettleScan, type ScanSim } from '@bp/core/model/scan-sim';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
 import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
@@ -182,19 +182,6 @@ function busyTiles(M: Model, jobs: readonly ScanJob[], proposals: readonly Propo
   for (const f of feats) for (const b of M.P.buildings.slice(0, M.P.scale)) if (M.L.TILE[f + (b?.sf ?? '')]) out.push(f + (b?.sf ?? ''));
   return out;
 }
-/** What the Kettle scan sim needs of the model: base slugs in layout order, the enabled lenses, the facet values now. */
-function bindSim(sim: ScanSim, M: Model) {
-  const P = M.P, base = new Map(P.base.features.map((f) => [f.id, f])), on = new Set(P.lenses.map((l) => l.id));
-  const order = [...new Set(M.L.tiles.filter((T) => T.wing.bld.i === 0).map((T) => T.f.slug))];
-  sim.bind({
-    order,
-    manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
-    value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
-    // every lens the model knows, enabled or not: the ids and looks a new Kettle lens may not repeat
-    lenses: () => Object.values(P.LENS).map((d) => ({ id: d.id, version: d.manifest.version, source: d.source, enabled: d.i >= 0, manifest: d.manifest, ...(d.temporary ? { temporary: true as const } : {}) })),
-  });
-}
-
 export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // subtle (the `/` expression) is in memory at once; a prototype (shaped, bold) is a chunk of its own, loaded here,
   // and the engine mounts once it is in (variants/registry.ts). data-variant reads the prop, so it never waits.
@@ -302,7 +289,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   useEffect(() => {
     const M = engine?.M, sim = M?.scanSim;
     if (!engine || !M || M.live || !sim) return;
-    bindSim(sim, M);
+    bindKettleScan(sim, M);
     const facets = (M.liveFacets ??= new LiveFacets(M.P, M.agg));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sync = () => {
