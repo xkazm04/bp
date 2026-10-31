@@ -382,6 +382,8 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
     `bp.uproject` (MCP on 8770) holds the module DLLs, so UBT would fail with LNK1104; it was left running. So F3's
     compile (D5), F9, the rendered captures (Approve before and after) and `run-bplink.mjs --mode editor` / `--bundle`
     are still owed by the first main-checkout build after this branch. BuildCookRun is deferred (D13).
+  - Merged as PR #12 (`16ea74a`). The editor was stopped at the session's end; the next session's plan, with D15, is
+    [`vr-build-session.md`](vr-build-session.md).
 
 ### S5. The morning while it happens (bp web and core)
 
@@ -580,7 +582,7 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | **Signatures shown on shared cards** | Personas signs `user:personas`, and the brief shows "by personas" | e2's open question 3 for Personas' owner |
 | **Where the Personas golden test lives** | Next to `PARITY.md`, or in a cross-repo job | e2's open question 1. This plan proposes both: a copy and test in Personas, and the report in bp |
 
-### Owner decisions, 2026-10-30 (triage after S1, S2 and S5; D12-D14 added 2026-10-31)
+### Owner decisions, 2026-10-30 (triage after S1, S2 and S5; D12-D17 added 2026-10-31)
 
 | # | Question | Decision |
 |---|---|---|
@@ -598,6 +600,9 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | D12 | Does a pinch on Approve at the table write? (2026-10-31: "Pinching approve in VR should approve the target decisions") | Yes. A pinch on Approve at the table approves the target decision(s) through the device's `decide` scope (supersedes S4's "Approve writes nothing"): `POST .../proposals/<id>/approve`, the Morning Watch's own Approve (approved, signed, one steering-log row, no job queued), 409 once not open, 403 while `BP_WRITES=off`. The card and the room deck's decision screen each target one finding per pinch |
 | D13 | The Quest APK (2026-10-31) | The Quest APK / BuildCookRun staged run is deferred out of this session |
 | D14 | Personas' Enter (2026-10-31) | Personas' Enter takes the recommended answer (built in the Personas repo, S3/S6) |
+| D15 | One pinch, several findings (2026-10-31) | Yes: where an approval relates to several findings at once, one pinch approves all its open findings (a set route on the `decide` scope). Planned in [`vr-build-session.md`](vr-build-session.md) §4 |
+| D16 | Personas after S6 (2026-10-31) | No node for bp's domain-group wings for now (they hold still and say so). Reading a Morning card does not move the drawing (O / Open does). Personas' TypeScript wire moves to store v5 |
+| D17 | Spend and the APK (2026-10-31) | Spend is not an issue (D11 stands). The Quest APK / BuildCookRun stays deferred (D13 stands) |
 
 ## 7. Parked: e1, "Rules you set once" (branch `hackathon/bp-sync-1029/e1`)
 
