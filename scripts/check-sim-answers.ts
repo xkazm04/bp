@@ -7,6 +7,9 @@
 //   (e) undoDecision restores every field the answer wrote;
 //   (f) the t=0 breach stamps equal the fixture's (no recount), at scale 1 and 2;
 //   plus: an option without an effect previews nothing, and a live product never simulates an effect (only "expected").
+//   (g) the Kettle scan sim (packages/core/src/model/scan-sim.ts) mid-run: cancelling a running build leaves its finding approved,
+//       cancelling a running release build fails the release so a build may start again, a temporary lens's no-impact
+//       features get an activity line and no reading, and a lens disabled mid-run logs one error while the run still ends done.
 // Run: node scripts/check-sim-answers.ts  (Node's type stripping for this file; scripts/overlays-loader.mjs transpiles src/**
 // on the fly, as for check:overlays). Exit 1 when any expectation fails.
 // Control: BP_SIM_MUTATE='[["sim.ts","this.cap[r.f] = r.cap;",""]]' rewrites source text as it loads ([file suffix, find,
@@ -142,6 +145,73 @@ for (const scale of [1, 2]) {
   expect(!!e && e.expected === 'cost +12 USD' && !e.moves.length && !e.rolls && !e.breaks && !e.asks && e.marks.every((m: Any) => m.text.startsWith('expected')), 'live: Approve previews only the expected move, labelled expected');
   const f0 = L.rolloutOf(P.F[PAY09]); L.decide('D-01', 0);
   expect(L.rolloutOf(P.F[PAY09]) === f0 && L.cap[PAY09] === undefined && L.agents.every((a: Any) => a.f === SWARM.agents.find((x: Any) => x.id === a.id).feature), 'live: deciding applies no simulated effect');
+}
+
+// ------------------------------------------------------------------ (g) the scan sim's answers mid-run (packages/core/src/model/scan-sim.ts)
+// What the Kettle sample does when a person acts on a running job: cancel a build (the finding goes back to approved, nothing
+// was committed), cancel a release build (the release fails so a build may start again), a temporary lens that finds nothing
+// to say about a feature (no impact: an activity line, no reading, health na), and a lens disabled mid-run (one error line,
+// the run still ends done). The sim's own timer runs on this check's clock, one step per advance.
+{
+  const { ScanSim } = await impCore('src/model/scan-sim.ts');
+  const structure = (await impCore('data/kettle.app-structure.json')).default as Any;
+  const manifests = new Map<string, Any>(structure.lenses.map((l: Any) => [l.id, l.manifest]));
+  const mapValue = (f: string, l: string, k: string): number | undefined => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; };
+  const order: string[] = structure.features.map((f: Any) => f.slug);
+  const TMP = { id: 'tmp.money-migration', fields: [{ key: 'oldMoneySites', label: 'Old money sites', type: 'integer', metric: { better: 'down', method: 'judgement' } }], presentation: { glyph: 'brackets', line: 'comb' } };
+  let clock = Date.parse('2026-10-15T12:00:00.000Z'), off = '';
+  const finding = { id: 'p-c0ffee', run_id: 'r0', feature: order[0], lens: 'design', title: 'A finding to build', standard: 'none', kind: 'fix', status: 'approved', created_at: '2026-10-01T00:00:00.000Z', updated_at: '2026-10-01T00:00:00.000Z' };
+  const sim = new ScanSim({ now: () => clock, findings: [finding] });
+  sim.bind({ order, manifest: (l: string) => (l === off ? undefined : l === TMP.id ? TMP : manifests.get(l)), value: mapValue });
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const step = async (ms: number) => { clock += ms; await sleep(260); };
+  const jobOf = (id: string) => sim.jobs().find((j: Any) => j.id === id);
+  const settle = async (id: string, ms = 1200) => { for (let i = 0; i < 40 && ['queued', 'running'].includes(jobOf(id)?.status); i++) await step(ms); return jobOf(id); };
+  const runOf = (id: string) => sim.snapshot().runs.find((r: Any) => r.id === id);
+  const acts = (run: string) => sim.snapshot().activity.filter((a: Any) => a.run_id === run);
+  try {
+    // cancel a running build: the finding being built goes back to approved, the run is aborted
+    const b = sim.dispatch([finding.id]).job, building = sim.snapshot().proposals.find((p: Any) => p.id === finding.id)?.status;
+    const bc = sim.cancel(b.id), after = sim.snapshot().proposals.find((p: Any) => p.id === finding.id);
+    expect(building === 'executing' && bc.status === 'cancelled' && after?.status === 'approved' && !after.result_sha && runOf(b.run_id)?.status === 'aborted',
+      `scan sim: cancelling a running build leaves the finding approved and the run aborted: ${JSON.stringify([building, bc.status, after?.status, runOf(b.run_id)?.status])}`);
+    await step(20000);
+    expect(sim.snapshot().proposals.find((p: Any) => p.id === finding.id)?.status === 'approved' && jobOf(b.id)?.status === 'cancelled', 'scan sim: a cancelled build commits nothing later on the timer');
+
+    // cancel a running release build: the release fails with the cancel named, and a build may start again
+    const free = sim.snapshot().proposals.filter((p: Any) => p.pack_id && (p.status === 'done' || p.status === 'failed')).map((p: Any) => p.id);
+    sim.triage({ ids: free, decision: 'accept', note: 'accepted for this check' });
+    const rel = sim.createRelease('0.1.0').release?.id ?? 'rel-0.1.0';
+    const relOf = () => sim.snapshot().releases.find((r: Any) => r.id === rel);
+    const rj = sim.buildRelease(rel), was = relOf()?.status;
+    const rc = sim.cancel(rj.id);
+    expect(was === 'building' && rc.status === 'cancelled' && relOf()?.status === 'failed' && /cancelled/.test(relOf()?.error ?? ''),
+      `scan sim: cancelling a running release build fails the release, naming the cancel: ${JSON.stringify([was, rc.status, relOf()?.status, relOf()?.error])}`);
+    let again: Any = null; try { again = sim.buildRelease(rel); } catch (e) { again = e; }
+    expect(again?.kind === 'release' && again.status !== 'cancelled', `scan sim: after the cancel a build of the release starts again: ${JSON.stringify(again?.status ?? again?.message)}`);
+    if (again?.id) sim.cancel(again.id);
+
+    // a temporary lens over every feature: the ones it finds nothing on log "no impact on <f>", get no reading, and read na
+    const tj = sim.startScan(TMP.id, { kind: 'all', label: 'Everything', features: [] });
+    // one advance past every feature's step: a single tick of the sim walks them all
+    const td = await settle(tj.id, 1200 * order.length), ta = acts(tj.run_id).filter((a: Any) => a.kind === 'measured');
+    const none = ta.filter((a: Any) => a.text === 'no impact on ' + a.feature).map((a: Any) => a.feature), na = sim.noImpact().get(TMP.id);
+    const read = new Set(sim.snapshot().measurements.filter((m: Any) => m.run_id === tj.run_id).map((m: Any) => m.feature));
+    expect(td?.status === 'done' && ta.length === order.length && none.length > 0 && none.length < order.length && none.every((f: string) => !read.has(f) && na?.has(f)) && na?.size === none.length
+      && order.filter((f) => !none.includes(f)).every((f) => read.has(f)),
+      `scan sim: a temporary lens logs no impact (no reading, health na) on the features it does not touch and measures the rest: ${JSON.stringify([td?.status, ta.length, none.length, read.size, na?.size])}`);
+
+    // a lens disabled mid-run: the feature after it logs one error, and the run still ends done
+    const dj = sim.startScan('design', { kind: 'room', id: 'r', label: 'Two', features: order.slice(0, 2) });
+    await step(1200);
+    const first = acts(dj.run_id).filter((a: Any) => a.kind === 'measured').length;
+    off = 'design';
+    const dd = await settle(dj.id);
+    off = '';
+    const errs = acts(dj.run_id).filter((a: Any) => a.kind === 'error');
+    expect(first === 1 && errs.length === 1 && errs[0].text === 'design is no longer enabled' && errs[0].feature === order[1] && dd?.status === 'done' && runOf(dj.run_id)?.status === 'done',
+      `scan sim: a lens disabled mid-run logs one error and the run still finishes: ${JSON.stringify([first, errs.map((a: Any) => a.text + '@' + a.feature), dd?.status, runOf(dj.run_id)?.status])}`);
+  } finally { sim.dispose(); }
 }
 
 for (const f of failures) console.log(`FAIL ${f}`);
