@@ -334,6 +334,33 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  // ------------------------------------------------------------------ the shots route: one shot served, every way out of shots/ refused 403
+  {
+    const shotsR = await route('products/[slug]/shots/[...path]/route.ts');
+    const shotsDir = path.join(store, 'shots'), outside = path.join(store, 'outside');
+    fs.mkdirSync(path.join(shotsDir, 'r0'), { recursive: true }); fs.mkdirSync(outside, { recursive: true });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    fs.writeFileSync(path.join(shotsDir, 'r0', 'a-light-md.png'), png);
+    fs.writeFileSync(path.join(store, 'secret.png'), png); fs.writeFileSync(path.join(outside, 'x.png'), png);
+    // the segments as Next hands them over: decoded, so an encoded `..%2F..` arrives as one segment holding a separator
+    const shot = async (segs: string[]) => {
+      const res = await shotsR.GET(new Request('http://localhost:3000/api/products/prod/shots/' + segs.map(encodeURIComponent).join('/'), { headers: H }), { params: Promise.resolve({ slug: 'prod', path: segs }) });
+      return { status: res.status, type: res.headers.get('content-type') ?? '', bytes: res.status === 200 ? Buffer.from(await res.arrayBuffer()) : null };
+    };
+    const okShot = await shot(['shots', 'r0', 'a-light-md.png']);
+    check('GET shots/<run>/<file>.png -> 200 image/png with the file\'s bytes', okShot.status === 200 && okShot.type === 'image/png' && !!okShot.bytes?.equals(png), okShot.status + ' ' + okShot.type);
+    const outs = await Promise.all([['..', 'secret.png'], ['../../secret.png'], ['a', '..', '..', 'secret.png'], ['shots', 'r0', '..', '..', 'secret.png'],
+      [path.join(store, 'secret.png')], ['/etc/passwd'], ['C:', 'Windows', 'win.ini']].map(shot));
+    check('GET shots with `..`, an encoded `..%2F..`, a nested a/../../x, an absolute or drive segment -> 403 each', outs.every((o) => o.status === 403), outs.map((o) => o.status).join());
+    // a link inside shots/ to a directory outside it: a junction needs no privilege on Windows (elsewhere the type is ignored)
+    let linked = '';
+    try { fs.symlinkSync(outside, path.join(shotsDir, 'esc'), 'junction'); } catch (e) { linked = (e as Error).message; }
+    if (linked) { skipped++; console.log('SKIP shots symlink leg: the OS refused to create a link inside shots/ (' + linked + ')'); }
+    else {
+      const esc = await shot(['esc', 'x.png']);
+      check('GET shots through a link that points out of shots/ -> 403 (the realpath check)', esc.status === 403, String(esc.status));
+    }
+  }
   // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
   {
     const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
