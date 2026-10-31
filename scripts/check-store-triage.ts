@@ -11,6 +11,7 @@
 // the runner (scripts/check-all.mjs) tallies, so the gap is visible and not green. BP_REQUIRE_LENS_SCAN=0 waives.
 // Run: node scripts/check-store-triage.ts   (Node type stripping; exit 1 on any failure)
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { blankComments } from './lib/source.ts';
@@ -66,6 +67,10 @@ if (import.meta.main) {
   check('control: the reader refuses a source with no TRIAGE literal, and reads one past a comment that fakes it',
     triageOf('const NOT = 1;') === null && JSON.stringify(triageOf('// const TRIAGE = { accept: [1, ["z"]] };\nconst TRIAGE = {\n  accept: [\'accepted\', [\'done\']],\n};\n')) === '{"accept":["done"]}');
 
+  // A triage note that starts with `--` must reach store.mjs as the note, not as a flag (release.server.ts valueArg).
+  check('valueArg: a dash-led value gets one leading space, any other text passes unchanged',
+    RS.valueArg('--- see PR 12') === ' --- see PR 12' && RS.valueArg('-x') === '-x' && RS.valueArg('fine') === 'fine');
+
   if (!script) {
     check('lens-scan store.mjs is found (BP_LENS_SCAN_DIR, ~/.claude/skills/lens-scan or the manifest\'s registry.local)', !required,
       'searched ' + (named !== undefined ? `BP_LENS_SCAN_DIR=${named}` : RS.lensScanDirs().join(' and ')) + ' - none holds scripts/store.mjs; BP_REQUIRE_LENS_SCAN=0 waives');
@@ -77,6 +82,27 @@ if (import.meta.main) {
       const bad = triageProblems(store, TRIAGE_FROM);
       check(`TRIAGE_FROM mirrors store.mjs TRIAGE: ${Object.keys(store).length} decisions, each with the same starting statuses`, bad.length === 0, bad.join(' | '));
     }
+    // A real triage through release.server.ts's door, on a throwaway store: a built item accepted with a `--`-led note.
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-triage-note-'));
+    try {
+      const db = path.join(tmp, 'scan.db');
+      const call = async <T>(args: string[]): Promise<T> => { const a = await RS.storeCall<T>(db, args); if (!a.ok) throw new Error(args[0] + ': ' + a.error); return a.data; };
+      const run = await call<{ id: string }>(['run-start', '--phase', 'propose', '--lenses', 'quality']);
+      const item = await call<{ id: string }>(['propose', '--run', run.id, '--feature', 'f', '--lens', 'quality', '--kind', 'fix', '--metric', 'untestedPaths', '--expected-delta', '-1', '--title', 'note check']);
+      await call(['decide', '--ids', item.id, '--decision', 'approve', '--by', 'operator:check']);
+      const exe = await call<{ id: string }>(['run-start', '--phase', 'execute', '--lenses', 'quality']);
+      const pack = await call<{ id: string }>(['pack-create', '--lens', 'quality', '--short', 'QA', '--base-ref', 'main', '--base-sha', '0'.repeat(40), '--run', exe.id]);
+      await call(['proposal-update', '--id', item.id, '--status', 'executing', '--pack', pack.id]);
+      await call(['proposal-update', '--id', item.id, '--status', 'done', '--pack', pack.id]);
+      const note = '--- see PR 12';
+      const t = await RS.triage(db, { ids: [item.id], decision: 'accept', note }, 'operator:check');
+      const [row] = await call<Array<{ status: string; triage_note?: string }>>(['proposals', '--ids', item.id]);
+      check('triage: a note that starts with -- reaches store.mjs as the note, not as a flag',
+        t.ok && row?.status === 'accepted' && row.triage_note?.trim() === note,
+        JSON.stringify({ answer: t, status: row?.status, triage_note: row?.triage_note }));
+    } catch (e) {
+      check('triage: a note that starts with -- reaches store.mjs as the note, not as a flag', false, (e as Error).message);
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
   }
   console.log(`\ncheck-store-triage: ${passed} passed, ${failed} failed`);
   process.exit(failed ? 1 : 0);

@@ -172,10 +172,20 @@ export async function storeCall<T>(dbFile: string, args: string[]): Promise<Stor
   return { ok: false, kind: r.code === 2 ? 'bad' : r.code === 1 ? 'refused' : 'error', error: why.replace(/^store: /, '') };
 }
 
+/**
+ * A free-text value for a store.mjs flag. store.mjs's parseArgs reads a next argv entry that starts with `--` as a flag
+ * of its own (and has no `--key=value` form), so a note like `--- see PR 12` would turn `--note` into `true` and the
+ * person's text into a stray flag. One leading space keeps such a value a value (subprocess-lifecycle/spawn-contract:
+ * a value is never promoted to an option); any other text passes unchanged.
+ */
+export function valueArg(v: string): string {
+  return v.startsWith('--') ? ' ' + v : v;
+}
+
 /** A person's triage, through store.mjs `triage` (it owns which statuses may move and settles the packs). */
 export function triage(dbFile: string, body: TriageBody, by: string): Promise<StoreAnswer<TriageResult>> {
   const args = ['triage', '--ids', body.ids.join(','), '--decision', body.decision, '--by', by];
-  if (body.note !== undefined && body.note.trim()) args.push('--note', body.note);
+  if (body.note !== undefined && body.note.trim()) args.push('--note', valueArg(body.note));
   return storeCall<TriageResult>(dbFile, args);
 }
 
