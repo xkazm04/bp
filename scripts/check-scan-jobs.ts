@@ -361,6 +361,34 @@ try {
       check('GET shots through a link that points out of shots/ -> 403 (the realpath check)', esc.status === 403, String(esc.status));
     }
   }
+  // ------------------------------------------------------------------ every lens in one job: `lens: 'all'` (its own validation, scans/route.ts:50-59)
+  {
+    const everything = { kind: 'all', label: 'Everything', features: [] };
+    // a product whose map has no enabled lens with a scan method: a plain project lens, and a disabled one that has a method
+    const bare = repo('bare'), bs = path.join(bare, '.ai', 'lens-scan');
+    fs.mkdirSync(bs, { recursive: true });
+    fs.writeFileSync(path.join(bs, 'app-structure.json'), JSON.stringify({ $schema: 'app-structure/3', version: 3, project: { slug: 'bare', name: 'Bare' }, features: [{ slug: 'a', name: 'A' }],
+      lenses: [lensE('com.x.plain', 'project'), lensE('com.x.off', 'project', { method: 'judgement', instructions: 'x' }, { enabled: false })] }));
+    const regFile = path.join(dir, 'bp.products.local.json'), reg0 = fs.readFileSync(regFile, 'utf8');
+    fs.writeFileSync(regFile, JSON.stringify({ products: [...JSON.parse(reg0).products, { slug: 'bare', name: 'Bare', root: bare }] }));
+    try {
+      const n0 = J.list('prod').length;
+      const allBad = await Promise.all([
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything, phase: 'execute' }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: { ...everything, features: ['zz'] } }),
+        call(scans.POST, '/x', 'POST', { slug: 'bare' }, { lens: 'all', scope: everything }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room, phase: 'measure' }),
+      ]);
+      check('POST scans lens all refusals: an execute phase, an unknown scope slug, a map with no scannable lens, a phase on a single-lens body',
+        allBad.map((c) => c.status + ':' + c.body.error).join() === '400:bad-phase,400:bad-scope,400:no-scan-method,400:bad-phase', allBad.map((c) => c.status + ':' + c.body.error).join());
+      check('POST scans lens all refusals queue nothing', J.list('prod').length === n0 && J.list('bare').length === 0, `${J.list('prod').length - n0} prod, ${J.list('bare').length} bare`);
+      const a202 = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything });
+      check('POST scans lens all -> 202, one measure job over every lens', a202.status === 202 && a202.body.kind === 'measure' && a202.body.lens === 'all' && a202.body.scope?.kind === 'all'
+        && J.list('prod').length === n0 + 1, JSON.stringify(a202).slice(0, 300));
+      check('lens all: the prompt is `/lens-scan measure --lens all`', await until(() => /^stdin \/lens-scan measure --lens all$/m.test(job('prod', a202.body.id)?.log_tail ?? '')), job('prod', a202.body.id)?.log_tail);
+      await until(() => !['queued', 'running'].includes(job('prod', a202.body.id)?.status ?? ''));
+    } finally { fs.writeFileSync(regFile, reg0); }
+  }
   // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
   {
     const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
