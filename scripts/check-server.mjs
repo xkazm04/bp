@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -158,6 +159,19 @@ try {
   bad.forEach((a, i) => check(`argv: ${a.join(' ')} exits 1 with a message and binds nothing`, refused[i].code === 1 && /^bp server: /m.test(refused[i].out) && !/listening on/.test(refused[i].out), `${refused[i].code} ${refused[i].out.trim().slice(-120)}`));
   check('argv: BP_SERVER_PORT=8o80 exits 1 naming the value', envBad.code === 1 && envBad.out.includes('8o80') && !/listening on/.test(envBad.out), `${envBad.code} ${envBad.out.trim().slice(-120)}`);
   check('argv: --host 0.0.0.0 prints a dialable URL (127.0.0.1) and names the bind', /listening on http:\/\/127\.0\.0\.1:[1-9]\d*\b.*bound to 0\.0\.0\.0/.test(wild.out), wild.out.trim().split('\n').slice(-2).join(' | '));
+  // the refusals after argv: a port another listener holds ends with the one `cannot listen` line and exit 1 (main.ts's
+  // server 'error' handler), and --lan-host is refused for every interface (0.0.0.0) and for anything that is no IPv4
+  const held = net.createServer();
+  await new Promise((resolve) => held.listen(0, '127.0.0.1', resolve));
+  const heldPort = held.address().port;
+  try {
+    const [busy, lanAll, lanJunk] = await Promise.all([spawnMain(['--port', String(heldPort)]),
+      spawnMain(['--port', '0', '--lan', '--lan-host', '0.0.0.0']), spawnMain(['--port', '0', '--lan', '--lan-host', 'nonsense'])]);
+    check('a held port: exits 1 with one `bp server: cannot listen on 127.0.0.1:<port>: EADDRINUSE` line, no stack',
+      busy.code === 1 && new RegExp(`^bp server: cannot listen on 127\\.0\\.0\\.1:${heldPort}: EADDRINUSE`, 'm').test(busy.out) && !/listening on|\n\s+at /.test(busy.out), `${busy.code} ${busy.out.trim().slice(-160)}`);
+    check('--lan --lan-host 0.0.0.0: exits 1 naming every interface, binds nothing', lanAll.code === 1 && /^bp server: --lan-host 0\.0\.0\.0 is every interface/m.test(lanAll.out) && !/listening on/.test(lanAll.out), `${lanAll.code} ${lanAll.out.trim().slice(-160)}`);
+    check('--lan --lan-host nonsense: exits 1 asking for an IPv4 address, binds nothing', lanJunk.code === 1 && /^bp server: --lan-host takes an IPv4 address, not "nonsense"/m.test(lanJunk.out) && !/listening on/.test(lanJunk.out), `${lanJunk.code} ${lanJunk.out.trim().slice(-160)}`);
+  } finally { held.close(); }
 }
 {
   const m = spawnSync(process.execPath, [path.join(ROOT, 'apps/server/src/check-mount.ts')], { cwd: ROOT, encoding: 'utf8', timeout: 60000 });
