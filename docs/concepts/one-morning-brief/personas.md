@@ -104,15 +104,38 @@ Personas view. Two seams are needed:
 2. **A `useFocusApply(nav, plan)` hook in the sheet controller** for moves within the open product. It uses `nav.toLevel`,
    `nav.openSheet` and `nav.flyToPlace('wing' | 'bay', id)` (`P:.../controller/useNavigation.ts:15-29,54-66,78`).
 
-| bp place | Personas call |
-|---|---|
-| `site`, or no target | `nav.toLevel(0)` |
-| `wing` `0:<domainId>` | `nav.flyToPlace('wing', id)` |
-| `room` `<capabilityId>` | `nav.flyToPlace('bay', id)` (a bp room is a Personas bay) |
-| a bay `<capId>.<kind>` (if S2 makes it a place) | strip `.<kind>`, then `flyToPlace('bay', ...)` |
-| `feature` | `nav.openSheet(fid, lens?)`, with `lens` read from the hash's `lens=` |
-| an id that resolves to nothing | Hold still and say "<kind> <id> is not on Personas' plan" |
-| an unknown slug | "Not in Personas: <slug>" |
+Which Personas node a bp place lands on depends on the map's shape, because Personas' ported layout (the `fbef867`
+port) draws what the map gives it. Two shapes exist:
+
+- **A current bp map** (a live product, and the demo maps that `morning-up` seeds): in bp a wing is a domain
+  (`<building>:<key>`, e.g. `0:FND` or `0:<domainId>`), a room is a **capability**, and a bay is a feature kind
+  (`<capabilityId>.<kind>`). Personas draws **each capability as its own wing and its own room**, with bp's bays as its
+  bays, and has no node at all for a domain-group wing.
+- **The older Kettle fixture** (the shape this table was first written for): Personas' wing, room and bay were bp's
+  group, domain and capability, so a capability, which is what a bp room is, was a Personas **bay**.
+
+| bp place | Personas call on a current bp map | Personas call on the older Kettle fixture |
+|---|---|---|
+| `site`, or no target | `nav.toLevel(0)` | the same |
+| `wing` `0:<key>` (a domain-group wing) | **No node. Hold still and say** "wing `<id>` is not on Personas' plan" | `nav.flyToPlace('wing', id)` |
+| `room` `<capabilityId>` | The Personas **room** of that capability, at L2 | `nav.flyToPlace('bay', id)` (a bp room is a Personas bay) |
+| a bay `<capId>.<kind>` (if S2 makes it a place) | The same bay | strip `.<kind>`, then `flyToPlace('bay', ...)` |
+| `feature` | `nav.openSheet(fid, lens?)`, with `lens` read from the hash's `lens=` | the same |
+| an id that resolves to nothing | Hold still and say "<kind> <id> is not on Personas' plan" | the same |
+| an unknown slug | "Not in Personas: <slug>" | the same |
+
+On a current map the old rule "a bp room is a Personas bay" lands a room one level too high. Personas' follower applies
+the left-hand column: the log of the S6 session found it on the first live run and fixed it in Personas `31eb33b512`
+(room to Personas room at L2, bay to the same bay, a domain-group wing holds still and says so). The layout it reads is
+`P:.../blueprint/model/layout.ts` (the `fbef867` port). The stand-in's `--personas` output (`bp:scripts/focus-standin.ts`)
+prints the left-hand column.
+
+**Owner decisions, 2026-10-31.**
+
+1. **Personas gets no node for domain-group wings for now.** A shared `wing` place holds still in Personas and says
+   so (above). Adding a wing node for domains is a later Personas layout change, not part of S6.
+2. **Reading a Morning card in Personas does not move the drawing.** Browsing the deck (the Morning tab) is reading; only
+   **O / Open** on a card flies the drawing to its place.
 
 **The follow logic.** Personas takes the follow logic from S2's copy target (`sameSpot`, `toApply`, `followingWords`),
 held by the shared-focus golden. It does not take it from e3's note: since bp `0a9cbef`, `sameSpot` also compares the
@@ -123,7 +146,7 @@ level and the hash's `at` (`bp:packages/core/src/session/focus.ts:95-99`), and t
 | Step | Where | Change |
 |---|---|---|
 | Read | Rust `bp_morning(since?)` → `GET /api/companion/morning` | bp's computed `MorningDeck` (S2: `morning-deck-1`). It is read-only and loopback-only, and needs no token |
-| Show | a new Monitor view beside Blueprint in `MonitorBody.tsx` | The cards, each with its brief, read-only. Reading a card applies its `place` locally. It publishes only if G7 is chosen |
+| Show | a new Monitor view beside Blueprint in `MonitorBody.tsx` | The cards, each with its brief, read-only. Reading a card does not move the drawing; **O / Open** does (§3.2, owner decision 2026-10-31). Nothing is published unless G7 is chosen |
 | Approve / Decline a repeat | `actions.decide([card.decision.proposal], ...)` → `lens_scan_decide` | `projectId` comes from the root table. **Never** bp's `POST /api/companion/morning`, which needs bp's human token, handed only to a same-origin bp page |
 | Defer / Hold | a deep link `?product=<slug>&morning=<card id>` | They stay in bp. They write bp's steering log (`bp:.../companion/morning.server.ts:26-27`). Personas does not append to it (G8, recommended no) |
 

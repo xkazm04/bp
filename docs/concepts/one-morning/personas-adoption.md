@@ -137,6 +137,10 @@ up like this for a live product with one building:
 | bp bay `<capId>.<kind>` | (never a PlaceKind; the stand-in resolves it to its room) | the bay `<capId>` | strip `.<kind>` and use the bay |
 | `feature` (L4) | feature id from the map | `TILE[<featureId>]` | `nav.openSheet(fid, lens?)` (useNavigation.ts:54-67) |
 
+- **Superseded for current maps (2026-10-31).** The `room` and `wing` rows above describe the older Kettle fixture. On a
+  current bp map Personas draws each capability as its own wing and room: a `room` lands on the Personas room at L2, a bay on
+  the same bay, and a domain-group `wing` has no node, so it holds still and says so. The table that holds is
+  `docs/concepts/one-morning-brief/personas.md` section 3.2.
 - When the id resolves to nothing, keep the camera still and show "<kind> <id> is not on Personas' plan". This is the
   same rule the stand-in uses (`bp:scripts/focus-standin.ts:25-33`).
 - `hash` is bp-web-only. Personas may read `lens=<id>` from it for `openSheet`'s lens argument and ignore the rest.
