@@ -66,7 +66,7 @@ being read), `morning.brief` for agents and `plan.brief` all read the same lines
   `steer` the deck's Decline uses (`POST /api/products/<slug>/proposals/<id>/decline`, ROADMAP F8;
   `vr-decline-card-*.jpg`, `vr-deck-*.jpg`). A pinch on Approve approves the card's decision through the same `steer`
   the deck's Approve uses (`POST /api/products/<slug>/proposals/<id>/approve`, ROADMAP D12); no build is queued.
-- **VR table, headless stand-in**: `scripts/focus-standin.ts` follows over the real stream and frames each place on the
+- **VR table, headless stand-in**: `scripts/focus-standin.ts` (`--lead` needs a terminal, or `--keys "n,n,q"` / `--keys -` to drive it from a script or stdin) follows over the real stream and frames each place on the
   product's own plan (room, bay's room, wing, feature's room). `--lead` publishes the next room (the table leads).
   `--personas` plays Personas' Monitor (1 Hz poll, prints its Blueprint-sheet call): see `personas-adoption.md`.
 - **Agents (MCP)**: `morning.brief` reads the deck; `focus.show` moves every follower. `scripts/morning-agent-walk.mjs`
@@ -101,7 +101,7 @@ once per fresh `morning-up`: it decides on the demo store).
    answers the same lines.
 
 ## Demo data
-`node scripts/morning-up.mjs [--port 3010] [--server]` seeds `.demo/morning/` (three copies of the Kettle map with a
+`node scripts/morning-up.mjs [--port 3010] [--server]` (with `--server`, apps/server listens on port + 100: 3110 by default, 3412 for `--port 3312`) seeds `.demo/morning/` (three copies of the Kettle map with a
 labelled synthetic night, its own registry via `BP_PRODUCTS_FILE`), adds the brief's labelled decision history to Kettle
 Web (`scripts/brief-demo-seed.mjs --morning`), starts the web with fake `claude` and `gh`, and plays the night's agent
 once (`scripts/brief-agent-demo.mjs`, scripted, no model) so the morning opens with what agents heard.

@@ -5,7 +5,7 @@
 // human path, write approve to the store and every verdict to the steering log, take a deferred decision off the deck and
 // keep a held one marked, and refuse approve under BP_WRITES=off. Then the shared focus through a REAL apps/server: the
 // headless VR stand-in (scripts/focus-standin.ts --once) follows, the deck's card is published, and the stand-in must
-// frame that card's room on its own plan.
+// frame that card's room on its own plan, and --lead --keys drives it without a terminal.
 // Run: node --import @bp/core/register scripts/check-morning-watch.ts. Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -157,6 +157,25 @@ if (up) {
   const code = await Promise.race([done, new Promise<number>((r) => setTimeout(() => r(99), 15000))]);
   check('the headless VR stand-in followed and framed the card\'s room on its own plan', code === 0 && so.includes('Following Web') && so.includes('table framed on'), so.slice(-400));
   if (code === 99) standin.kill();
+  // --lead without a terminal: the stand-in leads from a script of keys (--keys) and from stdin (--keys -), then exits
+  const lead = (extra: string[], stdin: string | null) => new Promise<{ code: number; out: string }>((res) => {
+    const c = spawn(process.execPath, ['--import', '@bp/core/register', path.join(ROOT, 'scripts/focus-standin.ts'), '--base', base, '--lead', '--keys-delay', '50', ...extra], { cwd: ROOT, stdio: [stdin === null ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    let o = '';
+    c.stdout!.on('data', (b) => { o += String(b); }); c.stderr!.on('data', (b) => { o += String(b); });
+    if (stdin !== null) c.stdin!.end(stdin);
+    const t = setTimeout(() => { c.kill(); res({ code: 99, out: o }); }, 15000);
+    c.on('exit', (cd) => { clearTimeout(t); res({ code: cd ?? 1, out: o }); });
+  });
+  const focus = async () => (await (await fetch(`${base}/api/session/focus`)).json()) as { rev: number; shared: { reader: string; place: { target?: { kind: string } } } | null };
+  const r0 = (await focus()).rev;
+  const keyed = await lead(['--keys', 'n,n,x'], null), afterKeys = await focus();
+  check('--lead --keys "n,n,x": two rooms published by the stand-in, the stray key skipped, exit 0', keyed.code === 0 && afterKeys.rev === r0 + 2 && afterKeys.shared?.reader === 'vr:standin' && afterKeys.shared.place.target?.kind === 'room' && (keyed.out.match(/The table leads/g) ?? []).length === 2 && keyed.out.includes('"x" is not a key'), keyed.out.slice(-400));
+  const piped = await lead(['--keys', '-'], 'n\nq\nn\n'), afterPipe = await focus();
+  check('--lead --keys - reads the keys from stdin and stops at q: one more room, exit 0', piped.code === 0 && afterPipe.rev === afterKeys.rev + 1 && (piped.out.match(/The table leads/g) ?? []).length === 1, piped.out.slice(-400));
+  const bare = spawn(process.execPath, ['--import', '@bp/core/register', path.join(ROOT, 'scripts/focus-standin.ts'), '--base', base, '--lead', '--once'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+  let bo = ''; bare.stderr.on('data', (b) => { bo += String(b); });
+  await new Promise((r) => setTimeout(r, 2500)); bare.kill();
+  check('--lead with no terminal and no keys says what it needs instead of doing nothing silently', bo.includes('--lead needs a terminal'), bo.slice(-300));
 }
 const gone = new Promise((r) => server.once('exit', r));
 server.kill();
