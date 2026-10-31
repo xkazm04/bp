@@ -6,8 +6,10 @@
 // With --lead, `n` moves the stand-in to the next room on its own and publishes it (the headset leading; the web follows).
 // With --personas it plays Personas' Monitor instead, as docs/concepts/one-morning/personas-adoption.md prescribes for its
 // Rust side: it polls GET /api/session/focus at 1 Hz (no stream), matches the product by its registry root's folder name
-// (Personas' bpSlug) and prints the call its Blueprint sheet would make for each place (a bp room is a Personas bay).
-//   node --import @bp/core/register scripts/focus-standin.ts [--base http://127.0.0.1:3313] [--lead] [--once] [--personas] [--reader vr:standin]
+// (Personas' bpSlug) and prints what its Blueprint sheet would do for each place (docs/concepts/one-morning-brief/personas.md 3.2: a bp room is a Personas room, a domain-group wing has no node and holds still).
+//   node --import @bp/core/register scripts/focus-standin.ts [--base http://127.0.0.1:3313] [--lead [--keys "n,n,q" | --keys -] [--keys-delay 1000]] [--once] [--personas] [--reader vr:standin]
+// --lead in a terminal: press n for the next room, q to quit. Without a terminal (CI, an agent) pass the keys: --keys "n,n"
+// plays them one per --keys-delay ms and exits; --keys - reads them from stdin (printf 'n n' | ... --lead --keys -).
 // --once exits 0 after the first place it applied (scripts/check-morning-watch.ts drives it that way), 1 after 20 s without one.
 import { toApply, type FocusPlace, type SharedView } from '../packages/core/src/session/focus.ts';
 
@@ -70,7 +72,7 @@ const roots = new Map<string, string>();
 async function personasOf(p: FocusPlace): Promise<void> {
   if (!roots.size) try { for (const x of (await (await fetch(`${BASE}/api/products`)).json()) as { slug: string; root: string }[]) roots.set(x.slug, x.root); } catch { /* none */ }
   const root = roots.get(p.product), folder = root ? root.split(/[\\/]/).filter(Boolean).pop() : undefined;
-  const t = p.target, call = !t || t.kind === 'site' ? 'nav.toLevel(0)' : t.kind === 'feature' ? `nav.openSheet('${t.id}')` : t.kind === 'room' ? `nav.flyToPlace('bay', '${t.id}')` : `nav.flyToPlace('wing', '${t.id}')`;
+  const t = p.target, call = !t || t.kind === 'site' ? 'nav.toLevel(0)' : t.kind === 'feature' ? `nav.openSheet('${t.id}')` : t.kind === 'room' ? `the Personas room '${t.id}' at L2` : `hold still: "wing ${t.id} is not on Personas' plan"`;
   console.log(`${hi('▸ Following ' + (lastFrom || 'bp'))} ${dim('·')} ${p.product}${p.say ? dim('  "' + p.say + '"') : ''}`);
   console.log(`  Personas project ${hi(folder ?? '?')}${folder && folder !== p.product ? dim(' (folder name; bp slug ' + p.product + ')') : ''}`);
   console.log(`  Blueprint sheet: ${hi(call)}   ${dim('deep link ' + BASE + '/?product=' + p.product + (t && t.kind !== 'site' ? '#' + (t.kind === 'feature' ? 'open=' : 'at=') + t.id : ''))}`);
@@ -120,22 +122,39 @@ console.log(dim(first.shared ? `opening at ${first.shared.place.product} ${first
 if (first.shared) { const plan = await planOf(first.shared.place.product); framed = plan ? resolve(plan, first.shared.place).what : framed; }
 setInterval(() => void post({ op: 'hello' }), 15_000);
 if (ONCE) setTimeout(() => { console.error('no place in 20 s'); process.exit(1); }, 20_000);
-if (LEAD && process.stdin.isTTY) {
+// --lead: the table leads. `n` moves it to the next room (publishing it), `q` quits. Three ways to drive it:
+//   a terminal             press the keys (raw mode); the interactive mode
+//   --keys "n,n,q"         a script of keys, comma or space separated, one per --keys-delay ms (default 1000); exits after the last
+//   --keys -               the same keys read from stdin (any whitespace or comma between them; a bare run like "nnq" works too),
+//                          exits at the end of stdin: echo n n | node ... --lead --keys -
+// Each exit forgets the stand-in. Without a terminal and without --keys, --lead only says so and keeps following.
+let leadK = 0;
+async function leadKey(c: string): Promise<void> {
+  if (c === 'q' || c === '\u0003') { await post({ op: 'forget' }); process.exit(0); }
+  if (c !== 'n') return;
+  const v = await post({ op: 'hello' }), product = v?.shared?.place.product ?? 'kettle', plan = await planOf(product);
+  if (!plan?.rooms.length) { console.error(`no rooms on the plan of ${product}: the table stays`); return; }
+  const room = plan.rooms[leadK++ % plan.rooms.length];
+  framed = room.name;
+  console.log(`\n${hi('◂ The table leads')}: ${room.name} ${dim('(' + product + ')')}`);
+  await post({ op: 'publish', place: { product, target: { kind: 'room', id: room.id }, level: 'L2', say: `The table moved to ${room.name}` } });
+}
+/** The keys of a script: every n or q, however they are separated; anything else is said and skipped. */
+const keysOf = (text: string): string[] => [...text].filter((ch) => { if (ch === 'n' || ch === 'q') return true; if (!/[\s,]/.test(ch)) console.error(`--keys: "${ch}" is not a key (n = next room, q = quit): skipped`); return false; });
+const KEYS = opt('--keys', '');
+if (LEAD && KEYS) {
+  // a script of keys: from the argument or, with "-", from stdin; played in order, then the stand-in forgets itself and exits
+  const text = KEYS === '-' ? await new Promise<string>((res) => { let t = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', (d) => { t += d; }); process.stdin.on('end', () => res(t)); }) : KEYS;
+  const delay = Math.max(0, Number(opt('--keys-delay', '1000')) || 0);
+  console.log(dim(`--lead --keys: ${keysOf(text).join(' ') || '(no keys)'}${KEYS === '-' ? ' (from stdin)' : ''}`));
+  for (const c of keysOf(text)) { await leadKey(c); await sleep(delay); }
+  await post({ op: 'forget' });
+  process.exit(0);
+} else if (LEAD && process.stdin.isTTY) {
   console.log(dim('--lead: press n to move the table to the next room (it publishes; following screens fly), q to quit'));
   process.stdin.setRawMode(true); process.stdin.resume();
-  let k = 0;
-  process.stdin.on('data', async (b) => {
-    const c = b.toString();
-    if (c === 'q' || c === '\u0003') { await post({ op: 'forget' }); process.exit(0); }
-    if (c !== 'n') return;
-    const v = await post({ op: 'hello' }), product = v?.shared?.place.product ?? 'kettle', plan = await planOf(product);
-    if (!plan?.rooms.length) return;
-    const room = plan.rooms[k++ % plan.rooms.length];
-    framed = room.name;
-    console.log(`\n${hi('◂ The table leads')}: ${room.name} ${dim('(' + product + ')')}`);
-    await post({ op: 'publish', place: { product, target: { kind: 'room', id: room.id }, level: 'L2', say: `The table moved to ${room.name}` } });
-  });
-}
+  process.stdin.on('data', (b) => void leadKey(b.toString()));
+} else if (LEAD) console.error(dim('--lead needs a terminal, or keys: --keys "n,n,q" or --keys - (stdin). Following only.'));
 if (PERSONAS) console.log(dim('listening: polling every second'));
 if (PERSONAS) setInterval(async () => { try { const r = await fetch(`${BASE}/api/session/focus`, { cache: 'no-store' }); if (r.ok) await take((await r.json()) as SharedView); } catch { /* again in 1 s */ } }, 1000);
 else void stream();

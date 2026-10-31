@@ -67,6 +67,11 @@ const moves: [string, number, FocusMove][] = [
   ['forward at the end of the history is refused', 8900, { kind: 'forward', ...vr }],
   ['web stops following', 9000, { kind: 'unfollow', reader: 'web-1' }],
   ['the lead (the phone) forgets: it stays as the place author, unseen', 10000, { kind: 'forget', reader: 'phone-1' }],
+  // the presence boundary: web was last seen at 9000 (its unfollow), and LIVE_MS is 45 s with a strict "<", so 44 s is live,
+  // 45 s and 46 s are gone. A port with a 40 s timeout fails the first probe; one with 50 s fails the last two.
+  ['the table says hello 44 s after web was last seen: web is still listed live', 53000, { kind: 'hello', ...vr }],
+  ['...45 s after: web is gone (the timeout is strict: seen less than 45 s ago)', 54000, { kind: 'hello', ...vr }],
+  ['...46 s after: web is gone', 55000, { kind: 'hello', ...vr }],
   ['the table says hello 50 s later: it is live, web is gone from live', 60000, { kind: 'hello', ...vr }],
 ];
 
