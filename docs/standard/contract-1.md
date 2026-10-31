@@ -132,6 +132,5 @@ The place the owner is looking at, which any surface publishes and any other fol
   a request's `Host` names. A client cannot redirect a card, or the token it carries, to another port.
 - **Products by root.** A client that knows a repository by its directory finds its slug through `GET /api/products`
   (each entry has `slug`, `name` and `root`). It never derives the slug from the directory name. A slug matches
-  `^[a-z0-9][a-z0-9-]{0,62}$`, the registry's own rule. Today the LAN door's route pattern still admits 64 characters
-  (`{0,63}`, `apps/server/src/lan-door.ts`); the registry never issues such a slug, and the alignment is left to the
-  LAN door's owner.
+  `^[a-z0-9][a-z0-9-]{0,62}$`, the registry's own rule. The LAN door's route pattern holds the same rule
+  (`apps/server/src/lan-door.ts`, aligned 2026-10-31, E6), so no surface admits a slug the registry cannot issue.

@@ -6,8 +6,9 @@
 //              ceremony and the place scope: pair, approve, claim once, claim again (410), the baton claimed, published and
 //              returned through the door, a second device's forged x-bp-device and x-bp-human dropped, scope refusals, a
 //              revoke, a corrupt registry (fails closed), expiry, the window closing the port and `pair open` reopening it;
-//              the brief as a read (F7), and the `decide` scope (F8): granted only when the owner's approve names it, and
-//              then only the repeat's decline (the free decide and the deck's steering stay unreachable).
+//              the brief as a read (F7), and the `decide` scope (F8, D12): granted only when the owner's approve names it,
+//              and then only the repeat's decline and the card's approve (the free decide and the deck's steering stay
+//              unreachable); the slug is the registry's own rule, {0,62} (E6, D3).
 //              Every refusal is collected, and they must all be byte-identical bare 403s; past admission each waits
 //              REFUSAL_DELAY_MS, and the token never reaches paired.json or the ledger.
 //   opt-in     the real `apps/server/src/main.ts` as a child: without --lan no door line, no /lan route, no $BP_HOME/lan;
@@ -24,6 +25,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { listener, loadRoutes } from '../apps/server/src/mount.ts';
 import { LanDoor, privatePeer, verbOf, readRegistry, registryFile, REFUSAL_DELAY_MS, SCOPES } from '../apps/server/src/lan-door.ts';
 import { humanToken } from '../packages/core/src/server/api/companion/door.server.ts';
+import { SLUG_RE } from '../packages/core/src/scan/readiness.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failed = 0, passed = 0;
@@ -38,17 +40,26 @@ const all = [...SCOPES];
 for (const [m, p] of [['POST', '/api/companion/cards/c1'], ['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
   ['POST', '/api/products/kettle/releases/r1/build'], ['POST', '/api/products/kettle/releases/r1/finish'], ['POST', '/api/products/kettle/waves/w1/dispatch'],
   ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/scans'],
-  ['POST', '/api/products/kettle/proposals/kf-001'], ['POST', '/api/companion/morning'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x']] as const)
+  ['POST', '/api/products/kettle/proposals/kf-001'], ['POST', '/api/companion/morning'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x'], ['POST', '/api/products/kettle/proposals/kf-001/approve/x'],
+  ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
 check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
 check('place is only the three baton verbs', verbOf(['place'], 'GET', '/api/session/place?claim=1') !== null && verbOf(['place'], 'GET', '/api/session/place') === null
   && verbOf(['place'], 'GET', '/api/products/kettle/structure') === null);
-// F7 and F8 (docs/concepts/one-morning-brief/ROADMAP.md): the brief is a read; decide is one verb, the repeat's decline
+// F7, F8 and D12 (docs/concepts/one-morning-brief/ROADMAP.md): the brief is a read; decide is two verbs, the repeat's
+// decline and the card's approve
 check("read: a proposal's brief (F7)", verbOf(['read'], 'GET', '/api/products/kettle/proposals/kf-001/brief') !== null && verbOf(['standup'], 'GET', '/api/products/kettle-web/proposals/brief-o2/brief') !== null);
-check("decide is only the repeat's decline: POST .../proposals/<id>/decline, nothing else", verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') !== null
+check("decide is only the repeat's decline and the card's approve: POST .../proposals/<id>/decline|approve, nothing else", verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') !== null
+  && verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') !== null && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null
   && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/brief-o2/decline') === null && verbOf(['decide'], 'GET', '/api/products/kettle/structure') === null
   && verbOf(['decide'], 'GET', '/api/products/kettle/proposals/kf-001/brief') === null && verbOf(['decide'], 'POST', '/api/products/kettle/proposals/kf-001') === null);
 check('no other scope reaches the decline', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') === null);
+check('no other scope reaches the approve (D12)', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null);
+// E6 (D3): the door's slug is the registry's ^[a-z0-9][a-z0-9-]{0,62}$ (registry.server.ts SLUG_RE): 63 characters pass, 64 do not
+const slug63 = 'a'.repeat(63), slug64 = 'a'.repeat(64);
+check("the slug: 63 characters, the registry's longest, pass (E6)", verbOf(all, 'GET', `/api/products/${slug63}/plan`) !== null && verbOf(['decide'], 'POST', `/api/products/${slug63}/proposals/x/approve`) !== null);
+check('the slug: 64 characters, which no product can have, are refused (E6)', verbOf(all, 'GET', `/api/products/${slug64}/plan`) === null && verbOf(['decide'], 'POST', `/api/products/${slug64}/proposals/x/approve`) === null);
+check("the slug: the same rule as the registry's SLUG_RE", SLUG_RE.test(slug63) && !SLUG_RE.test(slug64));
 for (const t of ['/api/products/kettle/../structure', '/api/products/kettle/%73tructure', '/api/products//structure', '/api/products/kettle/structure?x=1', '/api/session/place?claim=1&x=1', 'api/products/kettle/plan'])
   check(`the grammar refuses ${t}`, verbOf(all, 'GET', t) === null);
 
@@ -212,6 +223,7 @@ r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NC } });
 const tokenC = String(r.json.token), idC = String(r.json.device).split(':')[1];
 check('decide: ...so its token carries read only', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
 refused('decide: the decline without the scope', await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenC, body: {} }));
+refused('decide: the approve without the scope (D12)', await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { token: tokenC, body: {} }));
 r = await lan(QUEST, 'GET', '/api/products/kettle/proposals/kf-001/brief', { token: tokenC });
 check('read: the brief route through the door reaches the mount (F7)', r.status !== 403 && r.body !== '', `${r.status} ${r.body.slice(0, 120)}`);
 const NE = nonce();
@@ -223,6 +235,8 @@ const tokenE = String(r.json.token), deviceE = String(r.json.device);
 check('decide: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('decide'), r.body);
 r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
 check("decide: the decline reaches the route as the paired device (Kettle is no live store: the route's 404, not the door's 403 nor a 400 for a missing device)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
+r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
+check("decide: the approve reaches the route as the paired device (D12; Kettle is no live store: the route's 404)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
 refused("decide: never the free decide (the plan's POST .../proposals/<id>)", await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001', { token: tokenE, body: { decision: 'decline', note: 'x' } }));
 refused("decide: never the deck's steering", await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } }));
 for (const id of [idC, deviceE.split(':')[1]]) await admin('POST', '/lan/pair/revoke', { id });

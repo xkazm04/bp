@@ -42,11 +42,16 @@ shift. The symbol named beside each citation is the stable reference. Personas p
   with `focus.ts` and `morning.ts`, the goldens in `packages/schema/golden/` (the brief golden's old path stays a
   byte-identical mirror), `packages/schema/contract.json` held by `check:contract`, the text `docs/standard/contract-1.md`
   (E7 and C4 in it), and `scripts/personas-drift.mjs` (not in `npm run check`). Not done: C5 (a bay-aware place), and
-  E6's LAN door slug alignment (`lan-door.ts` is the VR session's file; the contract text records the gap). No card
+  E6's LAN door slug alignment (`lan-door.ts` is the VR session's file; done there on 2026-10-31, see S4). No card
   reference was added to the place: the brief's short line rides on `say`.
 - **S5 closed** on the same branch: C1 news (`&opened=`, news at the end, "1 new", `morning-demo.mjs --news`), C2
   history (`back` / `forward` ops, 10 places in the record, the chip's ‹ ›), C3 (`steering-log.md` rendered on read).
   `python scripts/morning-demo-walk.py` covers both (steps 10 and 11).
+- **S4 code complete, UE build pending** on branch `roadmap/vr-f3-approve` (2026-10-31; S4's first round landed in PR #10):
+  F3 (the shared focus through the generated structs), D12 (a pinch on Approve approves: `POST .../proposals/<id>/approve`,
+  `check:vr-approve`), E6 (the LAN door's slug is `{0,62}`). The main-checkout bpEditor build, and with it F3's compile
+  (D5), F9 and the rendered captures, wait for the machine's UE: another session's headless `UnrealEditor-Cmd` holds the
+  main checkout's module DLLs. See S4's status.
 
 ## 1. What the fused product is
 
@@ -186,7 +191,7 @@ Duplicates are merged into one row. **Origin:**
 | E3 | Goldens. A shared-focus golden covering `readFocusPlace`, `sameSpot`, `toApply`, `levelOf` and `followingWords`. The brief golden already exists (`docs/concepts/decision-brief/golden.json`, 6 cases, written by `scripts/brief-golden.ts`, held by `check:decision-brief`) | e2, e3 | S-M | `packages/schema/golden/` (proposed home), `scripts/check-shared-focus.ts` | S2 |
 | E4 | A dependency-free copy target, `packages/core/src/session/focus-contract.ts`, for the logic a schema cannot carry (`sameSpot`, `toApply`) | e3 (§6.1) | S | Merged into E1 and E3 | S2 |
 | E5 | **A drift gate between bp and the Personas port.** Three parts: a bp manifest of contract files with hashes; a Personas test over its copied goldens; a cross-repo report | e2, e3, DOSSIER §4 | M | `packages/schema/contract.json` (proposed), `scripts/personas-drift.mjs` (proposed); see [`personas.md`](personas.md) §5 | S2 (bp half), S3 (Personas half) |
-| E6 | Look up the slug by root (document `GET /api/products` as the lookup). Align the LAN door's slug `{0,63}` (`lan-door.ts:96`) with the registry's `{0,62}`, which `focus.ts:66` already uses | e3 (§6.3) | S | `lan-door.ts`, docs | S2 |
+| E6 | Look up the slug by root (document `GET /api/products` as the lookup). Align the LAN door's slug `{0,63}` (`lan-door.ts:96`) with the registry's `{0,62}`, which `focus.ts:66` already uses. **Done 2026-10-31** (D3, `roadmap/vr-f3-approve`): the door's `SLUG` is `{0,62}`, `check:lan-door` pins 63 in and 64 out, the contract text says so (`contract.json` rev 3) | e3 (§6.3) | S | `lan-door.ts`, docs | S2 (the lookup), S4 (the door) |
 | E7 | Never allow `tauri.localhost` or add CORS. Every Tauri 2 app on the machine shares that origin. Write this rule into the contract text | e3 (§6.2) | - | Contract text | S2 |
 
 ### F. VR (detail in section 4)
@@ -195,13 +200,13 @@ Duplicates are merged into one row. **Origin:**
 |---|---|---|---|---|
 | F1 | The brief on the table's decision card and on the room deck's decision screens. On `withdraw`, Decline becomes the primary answer | e2 (= A6) | L | S4 |
 | F2 | Add `briefs.json` to the offline bundle | e2 | S | S4 |
-| F3 | Parse the shared focus with generated structs instead of by hand | e3 | S | S4 (after S2) |
+| F3 | Parse the shared focus with generated structs instead of by hand. **Built 2026-10-31** (`roadmap/vr-f3-approve`): `ReceiveFollowView` reads `FBpSharedView` and its `shared` into `FBpSharedPlace` through `BpSchema::FromJson`; `SendPublish` and the follow ops write `FBpFocusPost` through `FJsonObjectConverter` (empty optionals dropped); `FBpFollowPlace` stays BpLink's in-engine type. Its UE compile (D5) waits for the main-checkout build | e3 | S | S4 (after S2) |
 | F4 | An in-world Stop and Follow | e3 | M | S7 |
 | F5 | Follow history in the headset | e3 | S-M | S7 (after C2) |
 | F6 | Follow across products: load the followed product's plan. Today another product is only captioned | e3 (from the code: `BpFollow.cpp:78-80`) | M | S7 |
 | F7 | Put the brief route on the LAN door (`read` scope) | fused | S | S4 |
-| F8 | Whether a VR Decline writes the store. Today it is memory-only (`BpDeck.cpp:1117-1129`), and the door has no decide verb | fused, an owner decision | M | S4 |
-| F9 | Realign the main checkout's `apps/vr/Plugins/MetaXR` debug files (54 .pdb/.lib written by the host's setup build) | host | S | S4 (the first main build) |
+| F8 | Whether a VR Decline writes the store. Today it is memory-only (`BpDeck.cpp:1117-1129`), and the door has no decide verb. **Built** 2026-10-30 (D8: a repeat's decline, `check:vr-decline`); **extended** 2026-10-31 (D12: a pinch on Approve approves the card's decision, `POST .../proposals/<id>/approve` on the same `decide` scope, `check:vr-approve`; BpLink `ApproveDecision`, the card's and the room deck's Approve) | fused, an owner decision | M | S4 |
+| F9 | Realign the main checkout's `apps/vr/Plugins/MetaXR` debug files (54 .pdb/.lib written by the host's setup build). Not run yet: it rides on the first main-checkout build, still blocked on 2026-10-31 (see S4) | host | S | S4 (the first main build) |
 
 ### G. Personas (detail in [`personas.md`](personas.md))
 
@@ -362,6 +367,21 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
     `run-bplink.mjs --mode editor` printed the Kettle line. L0's unpaired line held.
   - F3 waits for `shared-focus-1` (S2). F9 belongs to the main checkout's first build after the merge. Not run:
     BuildCookRun and the staged exe.
+- **Status 2026-10-31** (branch `roadmap/vr-f3-approve`, over PR #10; the owner decided D12, D13 and D14).
+  - D12 built: `POST /api/products/<slug>/proposals/<id>/approve` (a device call, the Morning Watch's own `steer` approve:
+    approved, signed and noted as the web deck's, one steering-log row, no job queued; 409 not open, 403 while
+    `BP_WRITES=off`), a second verb on the door's named-only `decide` scope, BpLink `ApproveDecision` (one
+    `SendDecision` door with the decline), the card's `CardTap` and the room deck's `DeckApprove` (which still adds the
+    finding to the draft wave). The card and the deck leave a finding only on the server's 200, bridged by `CardDecided`
+    until the store's read. Checks: `check:vr-approve` (new, through the real door), `check:lan-door`.
+  - F3 built: `ReceiveFollowView` through `FBpSharedView` / `FBpSharedPlace`, `SendPublish` and the follow ops through
+    `FBpFocusPost`. E6 done: the door's slug is `{0,62}` (`check:lan-door`; `contract-1.md` and `contract.json` rev 3).
+  - `npm run check` 129/129. The ue-standin syntax check passes with MSVC (`cl /std:c++20 /Zs`, Build Tools 14.44, the
+    clang line's equivalent; there is no clang on Lynx).
+  - **Not done: the main-checkout bpEditor build.** Another session's headless `UnrealEditor-Cmd` on the main checkout's
+    `bp.uproject` (MCP on 8770) holds the module DLLs, so UBT would fail with LNK1104; it was left running. So F3's
+    compile (D5), F9, the rendered captures (Approve before and after) and `run-bplink.mjs --mode editor` / `--bundle`
+    are still owed by the first main-checkout build after this branch. BuildCookRun is deferred (D13).
 
 ### S5. The morning while it happens (bp web and core)
 
@@ -454,7 +474,7 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
     cannot hold the SSE stream (`BpLink.cpp:770-772`).
   - The tick is `TickFollow` (`BpLink.cpp:952`). It does nothing when the table reads the bundle (`:955`).
   - The view is parsed by hand into `FBpFollowPlace` in `ReceiveFollowView` (`BpLink.cpp:1035`; struct at `BpLink.h:92`),
-    which fires `FOnBpFollow` (`BpLink.h:111`).
+    which fires `FOnBpFollow` (`BpLink.h:111`). (Since F3, 2026-10-31: read through the generated `FBpSharedView`.)
 - **The table's half.**
   - `ABpTable::Follow` (`BpFollow.cpp:64`) resolves the id as a tile, a room, a bay or a wing on the table's own plan
     (`:91-104`), and enters it by the existing lift and fade.
@@ -477,7 +497,7 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 - **Today.** `/structure`, `/plan`, `/scan`, `/scans` and `/waves` through the generated structs in
   `packages/schema/generated/ue/BpSchema.h`. BpLink sees them through the git-ignored junction
   `apps/vr/Source/BpLink/Public/Schema` (`apps/vr/tools/link-schema.ps1`, `.gitignore:61-62`). The shared focus is read
-  by hand.
+  by hand (until F3, 2026-10-31).
 - **The brief.** Already generated: `FBpDecisionBrief` (`BpSchema.h:2054`) with `FBpBriefSubject`, `Ref`, `Blast`,
   `Decided`, `Precedent`, `Reversible`, `Cost`, `Advice` and `Fact` (`:1825-2035`). `ue-standin/check.cpp:9` compiles
   `FromJson` for it. The route is `GET /api/products/<slug>/proposals/<id>/brief`.
@@ -491,9 +511,9 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 |---|---|---|---|
 | F1 brief on the card and the deck | `BpLink.h/.cpp`: `FetchBrief(Slug, Id, OnDone)` and a per-key cache. `BpMarks.cpp` `RefreshCard`: at most 5 `lines` under the header, and the `declined` fact in the approve button's amber. `BpDeck.cpp`: the decision screen's layout and primary button. `BpTable.h`: the new state | No new Content. The card is Slate built in C++, so there are no Blueprint assets. The text keeps BpType's sizes | none; the route exists |
 | F2 `briefs.json` | `BpLink.cpp` `ReadBundle` (`:145`) reads it into the cache | `apps/vr/tools/bundle-data.mjs:28-32` adds `briefs.json` (id → brief for open proposals) | none |
-| F3 generated focus structs | `BpLink.cpp` `ReceiveFollowView`, `SendPublish` | Regenerated headers through the junction | `packages/schema` (S2) |
+| F3 generated focus structs (built 2026-10-31) | `BpLink.cpp` `ReceiveFollowView`, `SendPublish`, `SendFollowOp` | Regenerated headers through the junction | `packages/schema` (S2) |
 | F7 brief on the door | none | none | `apps/server/src/lan-door.ts:99-114`: a `read` verb for `products/<slug>/proposals/<id>/brief`. Also consider `/api/companion/morning` |
-| F8 VR decline writes | `BpDeck.cpp` `DeckDecline`, a BpLink POST | none | A decide verb on the door, and its guard. Today the decision route needs a loopback page and the human token, so this is new authority (section 6) |
+| F8 VR decline writes (built; D12 adds the approve) | `BpDeck.cpp` `DeckDecline`, `DeckApprove`; `BpMarks.cpp` `CardTap`; BpLink `SendDecision` (`DeclineRepeat`, `ApproveDecision`) | none | A decide verb on the door, and its guard (`decide`: the repeat's decline and the approve, named-only). Today the decision route needs a loopback page and the human token, so this is new authority (section 6) |
 | F4 Stop and Follow in the world | `BpFollow.cpp`: the caption becomes pinchable (`follow:stop` / `follow:on`). `BpHands.cpp` Pinch targets (`:27-37`). Or a row on the wrist (`BpWrist.cpp`) | none | none |
 | F5 history | `BpLink.cpp`: read the history field. `BpFollow.cpp`: back and forward | none | C2 (S5) |
 | F6 across products | `BpFollow.cpp:78-80`: on another product, `FBpLinkClient::FetchProduct` (`BpLink.cpp:178`), then `Follow`. `BpLink.cpp:371` `GetProductSlug` | none | none |
@@ -554,13 +574,13 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | **Stand-ins that must become real** | The Kettle-copy portfolio with a synthetic night; fake-claude and fake-gh; the scripted agents; the headless and Personas stand-ins; the `/crossing` mock card; VR captures of the Kettle sample | A real portfolio needs real overnight runs (spend). The rest are retired by S4, S6, S7 and S8. **Question:** which real products form the first real morning? |
 | **Spend boundaries** | Paid: companion turns (Opus and Haiku legs), the lamp's ElevenLabs voice, real scan, execute and propose jobs, nightly runs (DOSSIER §5) | Demos and gates stay on fakes. **Question:** a budget per session for S8's single paid propose run, H1 and H2, or "not yet"? |
 | **One UE machine** | Lynx only, one UBT or editor at a time, the main checkout only. Another session's headless editor may hold it. The competition is on 2026-11-18 | Run S4 and S7 alone, after S1 lands. **Question:** should S4 land before 2026-11-18, and should `briefs.json` ride in the competition APK? |
-| **VR writes a decision** (F8) | A VR Decline is memory-only today. The LAN door has no decide verb. Deciding needs the human token | **Question:** keep VR decisions memory-only ("decide at the desk"), or add a door scope with its own ceremony? |
+| **VR writes a decision** (F8) | A VR Decline is memory-only today. The LAN door has no decide verb. Deciding needs the human token | **Question:** keep VR decisions memory-only ("decide at the desk"), or add a door scope with its own ceremony? **Answered:** D8 (a repeat's decline) and D12 (approve), both on the named-only `decide` scope |
 | **Personas publishes** (G7) | Possible from Rust with no bp change. The hazard is a lossy mapping and a ping-pong between two surfaces | **Question:** follower-only first (recommended), publishing later? |
 | **Two bp processes** | The record now re-reads on mtime (`a2a1596`), but the event bus is per process | Name apps/server as the focus host, with the web proxying (`BP_COMPANION_URL`). Personas uses the same base URL as the open bp page |
 | **Signatures shown on shared cards** | Personas signs `user:personas`, and the brief shows "by personas" | e2's open question 3 for Personas' owner |
 | **Where the Personas golden test lives** | Next to `PARITY.md`, or in a cross-repo job | e2's open question 1. This plan proposes both: a copy and test in Personas, and the report in bp |
 
-### Owner decisions, 2026-10-30 (triage after S1, S2 and S5)
+### Owner decisions, 2026-10-30 (triage after S1, S2 and S5; D12-D14 added 2026-10-31)
 
 | # | Question | Decision |
 |---|---|---|
@@ -575,6 +595,9 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | D9 | The next session | S4, the table's card carries the brief (before the 2026-11-18 deadline) |
 | D10 | Spend | A budget per session, set now. The amount is the owner's to write here before the first paid run; until then demos and gates stay on fake `claude` and fake `gh` |
 | D11 | Spend, the amount (2026-10-30, replaces D10's per-session amount) | No cap for now. Paid runs a session needs (S8's propose run, H1, H2, real overnight runs) go ahead without a per-session limit; each session still reports what it spent. Gates and demos stay on fake `claude` and fake `gh` |
+| D12 | Does a pinch on Approve at the table write? (2026-10-31: "Pinching approve in VR should approve the target decisions") | Yes. A pinch on Approve at the table approves the target decision(s) through the device's `decide` scope (supersedes S4's "Approve writes nothing"): `POST .../proposals/<id>/approve`, the Morning Watch's own Approve (approved, signed, one steering-log row, no job queued), 409 once not open, 403 while `BP_WRITES=off`. The card and the room deck's decision screen each target one finding per pinch |
+| D13 | The Quest APK (2026-10-31) | The Quest APK / BuildCookRun staged run is deferred out of this session |
+| D14 | Personas' Enter (2026-10-31) | Personas' Enter takes the recommended answer (built in the Personas repo, S3/S6) |
 
 ## 7. Parked: e1, "Rules you set once" (branch `hackathon/bp-sync-1029/e1`)
 

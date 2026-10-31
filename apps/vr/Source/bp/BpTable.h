@@ -535,9 +535,11 @@ public:
 	void ShowCard(bool bShow);
 	/** The card asks about this open finding (BpCard.Ask <id>), ahead of the room rule; empty goes back to the rule. */
 	void AskCard(const FString& ProposalId);
-	/** A hand's tap on the card (HitTest's "card:decline", "card:approve"; ROADMAP F8, owner 2026-10-30). Decline on a
-	 *  repeat (the brief's advice withdraw) declines it in the store through BpLink DeclineRepeat, and the card moves on to
-	 *  the next open finding; Decline on any other card and Approve write nothing (the desk decides those). */
+	/** A hand's tap on the card (HitTest's "card:decline", "card:approve"). Decline on a repeat (the brief's advice
+	 *  withdraw; ROADMAP F8, owner 2026-10-30) declines it in the store through BpLink DeclineRepeat; Approve (D12, owner
+	 *  2026-10-31: "Pinching approve in VR should approve the target decisions") approves the shown finding through BpLink
+	 *  ApproveDecision. On the server's 200 the card moves on to the next open finding; a refusal leaves it shown. Decline
+	 *  on any other card writes nothing (the desk's free Decline, with the owner's own note). */
 	void CardTap(const FString& Id);
 	/** The card's buttons, for the hands: a world ray on the shown card (OutId "card:<button>" or "card:panel"), and the
 	 *  world point at a button's centre (BpHands.Pinch card:decline). */
@@ -1180,9 +1182,9 @@ private:
 	FString CardShownId;
 	TSharedPtr<SWidget> CardButtons[2];
 	bool bCardFirstIsDecline = false;
-	/** Declined in the store from this table (the card or the deck) and answered 200: skipped by both until the store's read
-	 *  shows them declined (ReceiveScanState drops them then). */
-	TSet<FString> CardDeclined;
+	/** Decided in the store from this table (the card or the deck: a repeat declined, or a decision approved) and answered
+	 *  200: skipped by both until the store's read shows them decided (ReceiveScanState drops them then). */
+	TSet<FString> CardDecided;
 	/** Decision screens whose brief was asked for (FetchBrief; the answer lays the screen out again). */
 	TSet<FString> DeckBriefAsked;
 	/** The deck's decision screen's brief from BpLink's cache, and whether it makes the screen a repeat. */
@@ -1329,7 +1331,7 @@ private:
 	/** A swap happened since the room came in (until then a rebuilt queue shows its first screen). */
 	bool bDeckTouched = false;
 	FString DeckRoom;
-	/** Declined this session (memory only), and approved ones whose draft write the waves have not read back yet. */
+	/** Declined this session (memory only: no repeat), and approved ones whose draft write the waves have not read back yet. */
 	TSet<FString> DeckDeclined;
 	TSet<FString> DeckInDraft;
 	/** The four screens: the front, the two behind it, and the one leaving in a swap. */
