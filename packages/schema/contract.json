@@ -1,6 +1,6 @@
 {
   "contract": "bp-contract-1",
-  "rev": 3,
+  "rev": 4,
   "text": "docs/standard/contract-1.md",
   "note": "Every file a port outside bp copies or reproduces, with the sha256 of its LF bytes. check:contract (npm run check) fails when one changes without its entry here; node scripts/check-contract.mjs --write recomputes the hashes and raises rev. scripts/personas-drift.mjs reports a Personas checkout's pins against this file.",
   "files": [
@@ -24,7 +24,7 @@
       "role": "golden",
       "of": "packages/core/src/session/focus.ts",
       "writer": "scripts/focus-golden.ts",
-      "sha256": "88041abd77f5d3ca91ea3a5ff50a083cb600a698bbf271ed82329c7b1fc3f489"
+      "sha256": "408196b623049977c1328f0ad827bedb0317021dcefe627434e16c61f837802d"
     },
     {
       "path": "packages/schema/golden/decision-brief.json",

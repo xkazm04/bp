@@ -179,10 +179,13 @@ check('another device still cannot write the baton: 403, and the shared focus do
   const { FOCUS_GOLDEN, focusGolden } = await import('./focus-golden.ts');
   const now = focusGolden(), committed = fs.existsSync(FOCUS_GOLDEN) ? fs.readFileSync(FOCUS_GOLDEN, 'utf8').replace(/\r\n/g, '\n') : '';
   check('golden: packages/schema/golden/shared-focus.json is what focus.ts computes now (node scripts/focus-golden.ts --write)', committed === now);
-  const gd = JSON.parse(now) as { focusStep: { view: View; moved: boolean }[]; sameSpot: unknown[]; toApply: unknown[]; followingWords: unknown[]; readFocusPlace: unknown[] };
+  const gd = JSON.parse(now) as { focusStep: { name: string; view: View; moved: boolean }[]; sameSpot: unknown[]; toApply: unknown[]; followingWords: unknown[]; readFocusPlace: unknown[] };
   const badViews = gd.focusStep.map((x) => asView(x.view)).filter(Boolean);
-  check('golden: it covers every rule (19 moves with back and forward, 11 pairs, 8 applies, 6 chips, 12 bodies) and each view in it is shared-focus-1',
-    gd.focusStep.length === 19 && gd.sameSpot.length === 11 && gd.toApply.length === 8 && gd.followingWords.length === 6 && gd.readFocusPlace.length === 12 && gd.focusStep.filter((x) => x.moved).length === 7 && !badViews.length, badViews.join(' | '));
+  const live = (name: string) => gd.focusStep.find((x) => x.name.startsWith(name))?.view.readers.find((r) => r.id === 'web-1')?.live;
+  check('golden: web is listed live 44 s after it was last seen and gone at 45 s and 46 s (LIVE_MS is 45 s: a 40 s or a 50 s timeout fails)',
+    LIVE_MS === 45_000 && live('the table says hello 44 s') === true && live('...45 s') === false && live('...46 s') === false);
+  check('golden: it covers every rule (22 moves with back and forward and the 44 / 45 / 46 s presence probes, 11 pairs, 8 applies, 6 chips, 12 bodies) and each view in it is shared-focus-1',
+    gd.focusStep.length === 22 && gd.sameSpot.length === 11 && gd.toApply.length === 8 && gd.followingWords.length === 6 && gd.readFocusPlace.length === 12 && gd.focusStep.filter((x) => x.moved).length === 7 && !badViews.length, badViews.join(' | '));
 }
 off();
 fs.rmSync(HOME, { recursive: true, force: true });
