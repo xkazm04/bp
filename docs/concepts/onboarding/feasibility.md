@@ -82,3 +82,22 @@ Its timings are modelled, not measured, until step 3 below replaces them with a 
    becomes the onboarding's face and the real run plays behind it.
 
 Recorded deviations and open questions go to the idea note `.spark/Spark/ideas/project-onboarding.md`.
+
+## 4. Port results (2026-11-01, step 1 done)
+
+All three ports run on the preset sources in the lab, with typecheck green, `npm run check` 130/130, and no page or console
+errors on a production build. Their ending frames match the prototypes. What the event stream changed, per variant:
+
+| | A1 Axonometric raise | B1 Outline becomes the building | E1 Bubble diagram |
+|---|---|---|---|
+| Before the tree | empty table drifts, "waiting m:ss" | step log with real times, LLM step counting up | compass pen circles the sheet, rail clock |
+| Structure all at once | plays as the prototype's opening, then rooms at its demo pace | queued and typed at demo pace (capped at 36 s) | cluster packed, then drafted wing by wing (about 9 s for Kettle) |
+| Structure per wing | wings rise as chunks land | typing starts at about 5 s, not 0.7 s; pof runs long | cluster re-packs and rescales per chunk |
+| Lost to the stream | totals ("3/5 wings"), phase lengths | totals, measure progress, timeline seeking | domain draft order (the history reorder slide), run total |
+| Behind at 4x/8x | queue compresses to 0.4x | paces from the events' `at` | lags, because the props carry no speed |
+
+Open contract proposals:
+- A pacing hint, either `speed` in the props or B's method of reading pace from `at` against the wall clock. E asked
+  for this.
+- An optional total count on the first `structure` event. A asked for it to restore "n/N".
+- The product tree's domain order on `structure`. E asked for it.
