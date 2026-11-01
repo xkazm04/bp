@@ -7,6 +7,7 @@ import { useTheme } from '@/components/ThemeToggle';
 import type { BuildupPlan, BuildupSource, BuildupVariantProps } from './contract';
 import { fetchBuildupPlan } from './plan';
 import { presetSource, type PresetMode } from './preset';
+import { liveSource } from './live';
 import styles from './lab.module.css';
 
 const loading = () => <div className={styles.note}>Loading variant…</div>;
@@ -52,6 +53,8 @@ export function BuildupLab() {
   const v = q?.get('v') ?? 'a';
   const product = q?.get('product') ?? 'kettle';
   const mode: PresetMode = q?.get('source') === 'real' ? 'real' : 'demo';
+  /** `?source=live&feed=<origin>`: a running onboarding's event feed (scripts/buildup/onboard-live.mjs). */
+  const feed = q?.get('source') === 'live' ? q.get('feed') : null;
   const speed = Math.max(0.25, Math.min(8, Number(q?.get('speed') ?? '1') || 1));
   const [plan, setPlan] = useState<BuildupPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,14 +72,14 @@ export function BuildupLab() {
   }, []);
 
   useEffect(() => {
-    if (!q) return;
+    if (!q || feed) return;
     const ac = new AbortController();
     setPlan(null); setError(null);
     fetchBuildupPlan(product, ac.signal).then(setPlan, (e: Error) => { if (!ac.signal.aborted) setError(e.message); });
     return () => ac.abort();
-  }, [q, product]);
+  }, [q, product, feed]);
 
-  const source: BuildupSource | null = useMemo(() => (plan ? presetSource(plan, mode, speed) : null), [plan, mode, speed]);
+  const source: BuildupSource | null = useMemo(() => (feed ? liveSource(feed) : plan ? presetSource(plan, mode, speed) : null), [feed, plan, mode, speed]);
   useEffect(() => {
     if (!source) return;
     // the variant subscribes during its own effect; start on the next tick so `begin` is never missed
@@ -88,7 +91,7 @@ export function BuildupLab() {
   return (
     <div className={styles.lab}>
       {error ? <div className={styles.note}>No plan for {product}: {error}</div>
-        : source ? <V.C key={v + product + mode + speed} source={source} reducedMotion={reduced} theme={theme} />
+        : source ? <V.C key={v + (feed ?? product) + mode + speed} source={source} reducedMotion={reduced} theme={theme} />
           : <div className={styles.note}>Reading {product}…</div>}
       {bar && (
         <div className={styles.bar} role="toolbar" aria-label="Build-up lab">
