@@ -101,3 +101,70 @@ Open contract proposals:
   for this.
 - An optional total count on the first `structure` event. A asked for it to restore "n/N".
 - The product tree's domain order on `structure`. E asked for it.
+
+## 5. Real speed: what a live run looks like, and how to keep the screen from going stale
+
+Measured on the first real onboarding through the harness (`scripts/buildup/onboard-live.ts`), driving variant A. The
+repo was dowser (266 tracked files, 181 source; its context map covered 11 of them), the run used claude -p with the
+default model, on 2026-11-01, n=1. It took **16.3 min and cost $10.58**, and produced 5 wings, 16 rooms and 22 features.
+
+| t | Step | What exists on disk | What the screen showed |
+|---|---|---|---|
+| 0-23 s | check, agent start | check output | empty table |
+| 23 s | context map (LLM names unmapped code) | `work/context-supplement.json`: every code area with its files | empty table |
+| 122 s | seed | map skeleton (28 code contexts) + `work/inventory.json` (files, lines, first/last commit per area) | empty table |
+| 166-174 s | product tree (LLM) | `work/product-tree.d/NN-*.json`: the 5 domains, named, one file each (asked for in the prompt) | empty table |
+| 275-283 s | tree merged, history, measure, batches | the whole plan, dated | the plan rises (fine) |
+| 283-957 s | **judge (LLM, 3 parallel subagents)** | `work/judgement/03.json` at 597 s, `02` at 811 s, `01` at 913 s | **the same frame for 11 min** |
+| 957-978 s | merge, register, report | health in the map, ADOPT.md | health lands, done |
+
+The agent's own activity stream (stream-json) carried 166 tool calls, 20 to 30 a minute while judging, because the
+subagents' calls are visible. Each call names the files it reads. The screen is stale in two places: **0 to 4.6 min**,
+before any structure, and **4.7 to 16 min**, judging. The pipeline knows something new in both windows; it is just not
+sent.
+
+### Four more events, each read from something the run already writes
+
+| Event (wire name) | Fields | Producer (what the server watches) | First available (run A) |
+|---|---|---|---|
+| `survey` | `areas: { id, name, files, lines \| null, first \| null, last \| null }[]` | `work/context-supplement.json` + the map's code tree, then `work/inventory.json` (re-sent, merged by `id`) | 23 s, enriched at 122 s |
+| `outline` | `domains: { id, name, summary \| null, capabilities: string[] }[]` | `work/product-tree.d/*.json` (Phase A writes one file per domain) | 166 s, about 110 s before the boxes |
+| `activity` | `area \| null, path, verb: 'read' \| 'write' \| 'run'`, at most 1/s | the agent's tool calls (paths matched to survey areas by prefix) | 23 s onwards, continuous |
+| `progress` | `phase, n, of, detail \| null` | judgement files per batch, measure runs per lens | judge: 597 / 811 / 913 s |
+
+Together with change 3 (provisional health per judgement batch), the judging window gets three real health updates,
+not one at the end. All four are additive. A variant that ignores them still works, so the contract stays backward
+compatible. The absent-value convention stays `null`.
+
+### What each shortlisted variant would draw with them
+
+- **A, axonometric:** `survey` chalks the code areas as lots on the light table, sized by lines. That is a site plan of
+  the code, standing from 23 s. `outline` ghosts the wing names over the lots at 166 s. `activity` makes the survey
+  plane pulse over the lot being read. While judging, `progress` sweeps the inspection rings over the batch's tiles,
+  and each batch's health lands.
+- **B, outline:** the column types the `survey` as a "site survey" section first, then the `outline` domains at
+  166 s, which is the prototype's own idea arriving two minutes early. `activity` becomes the cursor line
+  ("reading forge/src/core"). `progress` drives the judge header.
+- **E, bubble:** the closest fit. A bubble diagram needs no boxes, so `outline` alone draws the domain bubbles at
+  166 s, and `survey` can seed pencil dots per code area before that. Judging hatches each batch's bubbles as its
+  file lands.
+
+### All three runs (2026-11-01, dowser, one real onboarding per variant, disbanded after each)
+
+| Variant | Run | Cost | Domains decided (`product-tree.d`) | Plan on screen | Judgement files | Health on screen | What the recording shows |
+|---|---|---|---|---|---|---|---|
+| A axonometric | 16.3 min | $10.58 | 166-174 s | 4.7 min | 597 / 811 / 913 s | 16.0 min | empty table for 4.6 min, then a frozen raised plan for 11 min |
+| B outline | 16.3 min | $11.49 | 235-278 s | 4.7 min | 692 / 817 / 875 s | 15.7 min | step log only for 4.7 min, then the camera rests zoomed into half the plan for 11 min |
+| E bubble | 14.9 min | $11.41 | 169-226 s | about 4 min (bubbles), 6 min (block plan) | 661 / 755 / 832 s | 14.5 min | the most movement early, then a frozen block plan for 9.5 min |
+
+Every recorder session logged 0 page errors, and every disband left dowser clean at `414e6ed`. The judging window
+(9.5 to 11 min, about two thirds of every run) is the same for all three variants, so the four events above are needed
+whichever variant wins. Without them, no variant can be told apart from a stalled app for most of a real run. The
+domain files arrive 40 to 110 s before the merged tree in every run, which supports change 2.
+
+Recordings, stills (every 30 s) and tapes are in `.contest/arena/blueprint-buildup/runs/live/`. Each run is a
+separate onboarding, so each variant drew its own product tree. The tapes are kept, so any variant can be replayed
+against any run.
+
+Harness: `scripts/buildup/onboard-live.ts` (run and feed), `scripts/buildup/record.py` (video and stills) and
+`scripts/buildup/disband.mjs` (snapshot and restore of the test repo).
