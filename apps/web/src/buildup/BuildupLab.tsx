@@ -103,7 +103,7 @@ export function BuildupLab() {
             <option value="real">Preset · real-run shape</option>
           </select>
           <select aria-label="Speed" value={String(speed)} onChange={(e) => set('speed', e.target.value)}>
-            {['0.5', '1', '2', '4'].map((s) => <option key={s} value={s}>{s}×</option>)}
+            {['0.5', '1', '2', '4', '8'].map((s) => <option key={s} value={s}>{s}×</option>)}
           </select>
           <button type="button" onClick={() => source?.replay()} disabled={!source}>Replay</button>
         </div>
