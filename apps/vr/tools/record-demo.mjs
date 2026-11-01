@@ -1,4 +1,4 @@
-// Records one demo take with ffmpeg gdigrab, for the demo video (docs/concepts/vr-light-table/demo-video-plan.md).
+// Records one demo take with ffmpeg gdigrab, for the demo video (docs/concepts/recording/plan.md).
 //   node apps/vr/tools/record-demo.mjs --name s1-table [--window "<exact title>" | --desktop] [--fps 30] [--secs 60] [--out <dir>]
 //   node apps/vr/tools/record-demo.mjs --stack <a.mp4> <b.mp4> --name s3-sync     (side by side, each scaled to 960 wide -> 1920 wide)
 // A take writes <out>/<name>-<UTC stamp>.mp4 plus a .json sidecar (start epoch ms, so a second capture can be aligned by

@@ -1,6 +1,6 @@
 # Demo video plan: Simulator footage with a web split-screen
 
-Spark `demo-video`, 2026-10-31. The competition wants a video of under 3 minutes (rule unverified, see the table). This page says whether we can make it, how, and
+Spark `demo-video`, 2026-10-31. The competition wants a video of under 3 minutes (rule unverified, see the table; links below are relative to docs/concepts/vr-light-table/). This page says whether we can make it, how, and
 what to try first. Scope is a spike on three scenes; the final cut waits for the project to settle this month.
 
 ## Can we do it? Yes, with one unproven link
