@@ -29,6 +29,7 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
 #include "Misc/ScopeExit.h"
+#include "ProfilingDebugging/CsvProfiler.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "TimerManager.h"
@@ -37,6 +38,9 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
+
+// BpBuildup.cpp defines it: the build-up's columns in a CSV capture.
+CSV_DECLARE_CATEGORY_EXTERN(BpBuild);
 
 DEFINE_LOG_CATEGORY(LogBpTable);
 
@@ -634,6 +638,8 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ABpTable::Tick(float DeltaSeconds)
 {
+	// The table's own game-thread cost a frame, a column of a CSV capture (WP-V3: the build-up's frames read apart).
+	CSV_SCOPED_TIMING_STAT(BpBuild, TableTick);
 	Super::Tick(DeltaSeconds);
 	const float Height = HeightCvarCm();
 	if (!FMath::IsNearlyEqual(Height, PlacedHeightCm, 0.01f))
@@ -985,17 +991,26 @@ void ABpTable::PlaceLabels()
 
 void ABpTable::BuildWingLabels()
 {
-	bWingLabelsDirty = false;
-	for (UWidgetComponent* Old : WingLabels)
+	// While the build-up draws (WP-V3) one label a frame, in a frame no other heavy piece took: the old ones go with the
+	// first, the rest follow.
+	const bool bSpread = SpreadNow();
+	if (bSpread && HeavyBusy()) return;
+	const double T0 = FPlatformTime::Seconds();
+	if (!bSpread || WingLabelsNext <= 0)
 	{
-		if (Old) Old->DestroyComponent();
+		for (UWidgetComponent* Old : WingLabels)
+		{
+			if (Old) Old->DestroyComponent();
+		}
+		WingLabels.Reset();
+		LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
+		WingLabelsNext = 0;
 	}
-	WingLabels.Reset();
-	LabelPlaces.RemoveAll([](const FLabelPlace& Place) { return !Place.Label.IsValid(); });
 	// Each label as the sheet would set it (its tag line over its name, on a slight dark backing), flat, at
 	// RestRoomCm + WingLabelLiftCm over the paper; its bottom-left corner is the backing's (FO: it tilts up from there).
-	for (const FWingLabel& Spec : WingLabelSpecs)
+	while (WingLabelsNext < WingLabelSpecs.Num())
 	{
+		const FWingLabel& Spec = WingLabelSpecs[WingLabelsNext++];
 		const double CmPerSlate = Spec.NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm);
 		const float Pad = static_cast<float>(LabelBackPadCm / CmPerSlate);
 		const bool bTag = !Spec.Tag.IsEmpty();
@@ -1013,10 +1028,23 @@ void ABpTable::BuildWingLabels()
 			FVector2D(Spec.U - LabelBackPadCm, Spec.NameBase + LabelBackPadCm + TypeInkDescPerEm * Spec.NameCap / TypeCapPerEm), FVector2D(0.0, 1.0), static_cast<float>(Spec.NameCap), static_cast<float>(RestRoomCm + WingLabelLiftCm));
 		Label->SetRelativeRotation(LabelRotation + FRotator(-WingLabelTiltDeg, 0.f, 0.f));
 		WingLabels.Add(Label);
+		if (bSpread)
+		{
+			PlaceLabels();
+			for (float& Shown : ShownRest) Shown = -1.f;
+			ApplyLevelVisuals();
+			NoteHeavy(TEXT("wing label"), T0);
+			if (WingLabelsNext < WingLabelSpecs.Num()) return;
+		}
 	}
-	PlaceLabels();
-	for (float& Shown : ShownRest) Shown = -1.f;
-	ApplyLevelVisuals();
+	bWingLabelsDirty = false;
+	WingLabelsNext = 0;
+	if (!bSpread)
+	{
+		PlaceLabels();
+		for (float& Shown : ShownRest) Shown = -1.f;
+		ApplyLevelVisuals();
+	}
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: wing labels float over the walls: %d"), WingLabels.Num());
 }
 
@@ -1194,7 +1222,7 @@ void ABpTable::ApplyPlanNow(const FBpPlan& Plan)
 	bEmptySheet = false;
 	const bool bNewSheet = !Sheet;
 	EnsureSheet();
-	if (!bNewSheet) Sheet->UpdateResource();
+	if (!bNewSheet) RedrawSheet();
 	DrawnRev = Plan.rev;
 	DrawnProduct = Product;
 
@@ -1228,9 +1256,9 @@ void ABpTable::ApplyPlanNow(const FBpPlan& Plan)
 	DeferredSteps = 0;
 	if (bSpread)
 	{
-		DeferredSteps = 3;
+		DeferredSteps = 5;
 		DeferredRev = SheetPlan->rev;
-		Lap(TEXT("deferred (labels, names, glyphs follow a frame each)"));
+		Lap(TEXT("deferred (counts, labels, names, glyphs, pins follow a frame each)"));
 	}
 	else
 	{
@@ -1244,9 +1272,13 @@ void ABpTable::ApplyPlanNow(const FBpPlan& Plan)
 	ResetRoomMode();
 	ResetLevels();
 	Lap(TEXT("levels"));
-	RefreshWingCounts();
-	SetTitle(FString(), ActiveLens);
-	BuildPins(FBpLinkModule::Get().GetScanState());
+	// The counts and the title follow as a step of their own too (WP-V3: 4.7 ms of the structure's frame).
+	if (!bSpread)
+	{
+		RefreshWingCounts();
+		SetTitle(FString(), ActiveLens);
+		BuildPins(FBpLinkModule::Get().GetScanState());
+	}
 	Lap(TEXT("counts+pins"));
 
 	// The sheet once more, with every index in place, logging its type against the floor (the legibility table).
@@ -1316,34 +1348,55 @@ void ABpTable::BuildLevelLabels(const FBpPlan& Plan)
 		}
 	}
 
+	// The labels themselves: all at once, or (while the build-up draws, WP-V3) a slice a frame from the tick.
+	LevelLabelsNext = 0;
+	if (!SpreadNow()) StepLevelLabels(-1.0);
+}
+
+void ABpTable::StepLevelLabels(double BudgetMs)
+{
+	if (LevelLabelsNext < 0) return;
+	if (!SheetPlan.IsValid())
+	{
+		LevelLabelsNext = -1;
+		return;
+	}
+	const FBpPlan& Plan = *SheetPlan;
+	const double T0 = FPlatformTime::Seconds();
 	// Room names: in the room's header strip, on the shell's top, at the label floor before the lift (the lift only
 	// enlarges them). Wrapped to the room's width; at L1 nothing else stands on a shell's top.
 	const double CmPerSlate = LabelCapHeightCm / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm);
 	const double EmCm = LabelCapHeightCm / TypeCapPerEm;
-	for (const FBpPlanRoom& Room : Plan.rooms)
+	// At least one a call; more while the slice's budget lasts (BudgetMs < 0: every one).
+	for (int32 Made = 0; LevelLabelsNext < Plan.rooms.Num() + Plan.bays.Num(); ++Made)
 	{
-		const FVector2D A = PlanToPaperCm(FVector2D(Room.box.x, Room.box.y));
-		const double WidthCm = Room.box.w * BpPlanUnitCm - 2.0 * LevelLabelInsetCm;
-		const FVector2D Corner = A + FVector2D(LevelLabelInsetCm, LevelLabelGapCm - (TypeAscPerEm - TypeCapPerEm) * EmCm);
-		UWidgetComponent* Label = MakeLabel(SNew(SBox).WidthOverride(static_cast<float>(FMath::Max(1.0, WidthCm) / CmPerSlate))
-			[
-				SNew(STextBlock).Text(FText::FromString(Room.name)).AutoWrapText(true)
-					.Font(LabelFont(TEXT("Regular"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
-			],
-			Corner, FVector2D(0.0, 0.0), LabelCapHeightCm, RoomShellCm + LabelLiftCm, Rooms);
-		Label->SetVisibility(false);
-		RoomLabels.Add(Label);
-	}
-
-	// Bay names: sized and judged once for their wing's lift (FitBayLabels), shown only at L2 and only where they fit.
-	for (const FBpPlanBay& Bay : Plan.bays)
-	{
+		if (BudgetMs >= 0.0 && Made > 0 && (FPlatformTime::Seconds() - T0) * 1000.0 >= BudgetMs) return;
+		const int32 Index = LevelLabelsNext++;
+		if (Index < Plan.rooms.Num())
+		{
+			const FBpPlanRoom& Room = Plan.rooms[Index];
+			const FVector2D A = PlanToPaperCm(FVector2D(Room.box.x, Room.box.y));
+			const double WidthCm = Room.box.w * BpPlanUnitCm - 2.0 * LevelLabelInsetCm;
+			const FVector2D Corner = A + FVector2D(LevelLabelInsetCm, LevelLabelGapCm - (TypeAscPerEm - TypeCapPerEm) * EmCm);
+			UWidgetComponent* Label = MakeLabel(SNew(SBox).WidthOverride(static_cast<float>(FMath::Max(1.0, WidthCm) / CmPerSlate))
+				[
+					SNew(STextBlock).Text(FText::FromString(Room.name)).AutoWrapText(true)
+						.Font(LabelFont(TEXT("Regular"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
+				],
+				Corner, FVector2D(0.0, 0.0), LabelCapHeightCm, RoomShellCm + LabelLiftCm, Rooms);
+			Label->SetVisibility(false);
+			RoomLabels.Add(Label);
+			continue;
+		}
+		// Bay names: sized and judged once for their wing's lift (FitBayLabels), shown only at L2 and only where they fit.
+		const FBpPlanBay& Bay = Plan.bays[Index - Plan.rooms.Num()];
 		UWidgetComponent* Label = MakeLabel(SNew(STextBlock).Text(FText::FromString(Bay.name))
 				.Font(LabelFont(TEXT("Regular"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper)),
 			PlanToPaperCm(FVector2D(Bay.box.x, Bay.box.y)), FVector2D(0.0, 0.0), LabelCapHeightCm, BayFloorCm + LabelLiftCm, Bays);
 		Label->SetVisibility(false);
 		BayLabels.Add(Label);
 	}
+	LevelLabelsNext = -1;
 	BayNameFits.Init(false, Plan.bays.Num());
 	FitBayLabels();
 }
@@ -2215,6 +2268,7 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	WingLabelSpecs.Reset();
 	WingLabelsKey.Reset();
 	bWingLabelsDirty = true;
+	WingLabelsNext = 0;
 	DrawnRev.Reset();
 	DrawnProduct.Reset();
 	bFollowPending = false;
@@ -2603,6 +2657,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		WingLabelsKey = FloatKey;
 		WingLabelSpecs = MoveTemp(Floating);
 		bWingLabelsDirty = true;
+		// Made again from the first (one a frame while the build-up draws).
+		WingLabelsNext = 0;
 	}
 	if (LabelTop != WingLabelTopV)
 	{

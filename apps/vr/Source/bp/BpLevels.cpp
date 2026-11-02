@@ -679,6 +679,19 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 
 void ABpTable::RedrawSheet()
 {
+	// While a build-up draws (WP-V3) the sheet is drawn by the tick, in a frame no other heavy piece of its commit took.
+	if (SpreadNow())
+	{
+		bSheetDirty = true;
+		SetActorTickInterval(0.f);
+		return;
+	}
+	DrawSheetNow();
+}
+
+void ABpTable::DrawSheetNow()
+{
+	bSheetDirty = false;
 	if (Sheet) Sheet->UpdateResource();
 }
 

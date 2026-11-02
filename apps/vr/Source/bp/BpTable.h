@@ -1597,6 +1597,8 @@ private:
 	FString BuildPhase;
 	int32 BuildN = 0;
 	int32 BuildOf = 0;
+	/** The phase BuildN of BuildOf counts (the title shows it only while that phase runs). */
+	FString BuildCountPhase;
 	FString NarrText;
 	FString NarrNext;
 	bool bBuildEnded = false;
@@ -1635,6 +1637,32 @@ private:
 	double LastSheetMs = 0.0;
 	double MaxSheetMs = 0.0;
 	int32 SheetDraws = 0;
+	/** One heavy piece of a build-up's commit a frame (WP-V3: the structure's frame cost 28 ms): the structure's volumes,
+	 *  a deferred step, a slice of level labels, a wing label, a glyph mesh loaded ahead, a sheet redraw. Each asks
+	 *  HeavyBusy first and calls NoteHeavy after; HeavyFrame is the frame (GFrameCounter) the last one ran in. While
+	 *  SpreadNow, RedrawSheet only marks the sheet dirty and the tick draws it in a free frame. */
+	uint64 HeavyFrame = MAX_uint64;
+	bool SpreadNow() const { return bBuild || SettleAt >= 0.0; }
+	bool HeavyBusy() const;
+	void NoteHeavy(const TCHAR* What, double StartSeconds);
+	/** The structure arrived (one or more events): committed by the tick in a free frame, as past or live. */
+	bool bStructurePending = false;
+	bool bStructurePast = false;
+	bool bSheetDirty = false;
+	/** The sheet drawn now (RedrawSheet's body). */
+	void DrawSheetNow();
+	/** The level labels made a slice a frame while SpreadNow: the next room (then bay) to make one for; -1 when none waits. */
+	int32 LevelLabelsNext = -1;
+	void StepLevelLabels(double BudgetMs);
+	/** The wing labels made one a frame while SpreadNow: the next spec to make one for. */
+	int32 WingLabelsNext = 0;
+	/** The furniture kit loaded ahead while the build-up draws its survey and outline (one mesh a frame), and held, so the
+	 *  structure's glyph step never loads one. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMesh>> GlyphMeshHold;
+	int32 GlyphPreloadNext = 0;
+	/** The judge's count for the title block: progress, batches LANDED of N (WP-V3), kept with the phase it counts. */
+	void NoteBuildCount(const FString& Phase, int32 N, int32 Of);
 
 	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
 	FDelegateHandle FollowHandle;

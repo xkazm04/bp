@@ -27,8 +27,12 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/PackageName.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "Rendering/SlateRenderer.h"
+
+// The build-up's columns in a CSV capture (WP-V3): the table's tick, and each heavy piece of a commit.
+CSV_DEFINE_CATEGORY(BpBuild, true);
 
 namespace
 {
@@ -60,6 +64,9 @@ namespace
 	constexpr double OutlineLeftCm = 16.0, OutlineTopCm = 43.0;
 	constexpr int32 OutlineCols = 6, OutlineRows = 2;
 	constexpr double OutlineColCm = 17.5, OutlineRowCm = 8.6;
+	/** Past OutlineRows rows (more than 12 domains, WP-V3) the rows share the same band, the pitch and the type shrinking
+	 *  together down to the floor; a row is never shallower than its name line at the floor plus this. */
+	constexpr double OutlineRowPadCm = 0.7;
 	/** The build-up's title block, near and right of centre, between the hands of the target framing (the right forearm
 	 *  covers the paper's near-right corner, where the site plan's own block stands once live). */
 	constexpr double BlockLeftCm = 80.0, BlockRightCm = 118.0, BlockBottomCm = 72.4;
@@ -67,6 +74,15 @@ namespace
 	/** A parcel's dashes and a judged batch's brackets. */
 	constexpr double DashCm = 0.7, DashGapCm = 0.45;
 	constexpr double BracketCm = 1.4, BracketOutCm = 0.6;
+	/** The batch being judged (WP-V3: the brackets read faintly at the target pose): a soft pencil wash on its tiles, a
+	 *  halo round them, a firm pencil edge and heavier brackets. */
+	constexpr float JudgeWashA = 0.26f, JudgeHaloA = 0.10f, JudgeEdgeA = 0.95f;
+	constexpr double JudgeHaloCm = 0.55;
+	constexpr float JudgeEdgePx = 5.f, JudgeBracketPx = 11.f;
+	/** A slice of level labels made in one frame while the build-up spreads its commit (ms). */
+	constexpr double LevelLabelSliceMs = 3.0;
+	/** A heavy piece longer than this is logged with its frame. */
+	constexpr double HeavyLogMs = 6.0;
 	/** A room's capability line lands this far inside its room's far-left corner. */
 	const FVector2D RoomLandCm(0.6, 1.5);
 	constexpr double LitS = 3.0;
@@ -174,7 +190,7 @@ namespace
 		void Brackets(const FBox2D& Box, float WidthPx, const FLinearColor& Color)
 		{
 			const FBox2D B(Box.Min - FVector2D(BracketOutCm, BracketOutCm), Box.Max + FVector2D(BracketOutCm, BracketOutCm));
-			const double L = FMath::Min(BracketCm, 0.4 * FMath::Min(B.GetSize().X, B.GetSize().Y));
+			const double L = FMath::Min(BracketCm, 0.45 * FMath::Min(B.GetSize().X, B.GetSize().Y));
 			const FVector2D Corners[4] = { B.Min, FVector2D(B.Max.X, B.Min.Y), B.Max, FVector2D(B.Min.X, B.Max.Y) };
 			const FVector2D Signs[4] = { FVector2D(1, 1), FVector2D(-1, 1), FVector2D(-1, -1), FVector2D(1, -1) };
 			for (int32 K = 0; K < 4; ++K)
@@ -336,7 +352,9 @@ void ABpTable::ApplyBuildupEvent(const FBpBuildupEvent& E, bool bPast)
 		bBuildHasPlan = true;
 		// Each feature's kind (the furniture it gets), from the structure itself.
 		for (const TPair<FString, FString>& Kind : E.Tiles) FBpLinkModule::Get().NoteFeatureKind(Kind.Key, Kind.Value);
-		BuildupStructure(bPast);
+		// Committed by the tick in a frame of its own (WP-V3), every chunk of a batch in one commit.
+		bStructurePending = true;
+		bStructurePast = bStructurePast || bPast;
 	}
 	else if (E.Type == TEXT("history"))
 	{
@@ -396,9 +414,8 @@ void ABpTable::ApplyBuildupEvent(const FBpBuildupEvent& E, bool bPast)
 	}
 	else if (E.Type == TEXT("progress"))
 	{
-		BuildN = E.N;
-		BuildOf = E.Of;
 		if (!E.Phase.IsEmpty()) BuildPhase = E.Phase;
+		NoteBuildCount(E.Phase.IsEmpty() ? BuildPhase : E.Phase, E.N, E.Of);
 	}
 	else if (E.Type == TEXT("narration"))
 	{
@@ -616,9 +633,10 @@ void ABpTable::BuildupStructure(bool bPast)
 		RiseOrder.Add(Room.id);
 	}
 	RiseOrder.Sort([this](const FString& A, const FString& B) { return RoomRiseAt[A] < RoomRiseAt[B]; });
-	UE_LOG(LogBpTable, Log, TEXT("BpBuild: the structure drawn as rev %s in %.1f ms (one commit: %d rooms, %d bays, %d tiles; the rooms rise one a frame at most)"),
-		*SheetPlan->rev, StructureCommitMs, SheetPlan->rooms.Num(), SheetPlan->bays.Num(), SheetPlan->tiles.Num());
 	ApplyLevelVisuals();
+	UE_LOG(LogBpTable, Log, TEXT("BpBuild: the structure drawn as rev %s in %.1f ms (%.1f ms with its choreography; %d rooms, %d bays, %d tiles; the rest follows a piece a frame, the rooms rise one a frame at most)"),
+		*SheetPlan->rev, StructureCommitMs, (FPlatformTime::Seconds() - T0) * 1000.0, SheetPlan->rooms.Num(), SheetPlan->bays.Num(), SheetPlan->tiles.Num());
+	NoteHeavy(TEXT("structure"), T0);
 }
 
 // ---- The clock --------------------------------------------------------------------------------------------------------
@@ -711,26 +729,101 @@ void ABpTable::StepDeferredCommit()
 		DeferredSteps = 0;
 		return;
 	}
+	// One piece a frame, in a frame no other heavy piece took (WP-V3).
+	if (SpreadNow() && HeavyBusy()) return;
 	const double T0 = FPlatformTime::Seconds();
 	const TCHAR* Step = TEXT("");
 	switch (DeferredSteps)
 	{
-	case 3: BuildLevelLabels(*SheetPlan); Step = TEXT("labels"); break;
-	case 2: BuildRoomNames(*SheetPlan); Step = TEXT("names"); break;
-	default: BuildGlyphs(*SheetPlan); Step = TEXT("glyphs"); break;
+	case 5: RefreshWingCounts(); SetTitle(FString(), ActiveLens); Step = TEXT("counts and title"); break;
+	case 4: BuildLevelLabels(*SheetPlan); Step = TEXT("labels (who belongs to whom; the labels follow a slice a frame)"); break;
+	case 3: BuildRoomNames(*SheetPlan); Step = TEXT("names"); break;
+	case 2: BuildGlyphs(*SheetPlan); Step = TEXT("glyphs"); break;
+	default: BuildPins(FBpLinkModule::Get().GetScanState()); Step = TEXT("pins"); break;
 	}
 	--DeferredSteps;
 	// The new pieces take the levels' (and the build-up's) Show at once.
 	for (float& Shown : ShownRest) Shown = -1.f;
 	ApplyLevelVisuals();
-	UE_LOG(LogBpTable, Log, TEXT("BpBuild: commit step %s in %.1f ms (%d left)"), Step, (FPlatformTime::Seconds() - T0) * 1000.0, DeferredSteps);
+	UE_LOG(LogBpTable, Log, TEXT("BpBuild: commit step %s in %.1f ms (%d left, frame %llu)"), Step, (FPlatformTime::Seconds() - T0) * 1000.0, DeferredSteps, static_cast<uint64>(GFrameCounter));
+	NoteHeavy(TEXT("commit step"), T0);
+}
+
+bool ABpTable::HeavyBusy() const
+{
+	return HeavyFrame == GFrameCounter;
+}
+
+void ABpTable::NoteHeavy(const TCHAR* What, double StartSeconds)
+{
+	HeavyFrame = GFrameCounter;
+	const double Ms = (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
+	CSV_CUSTOM_STAT(BpBuild, HeavyMs, static_cast<float>(Ms), ECsvCustomStatOp::Accumulate);
+	if (Ms >= HeavyLogMs)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpBuild: heavy %s %.1f ms (frame %llu)"), What, Ms, static_cast<uint64>(GFrameCounter));
+	}
+}
+
+void ABpTable::NoteBuildCount(const FString& Phase, int32 N, int32 Of)
+{
+	// progress counts batches LANDED (judged), not the batch being judged: with a real model the batches run in parallel
+	// ("Judging batch 1 of 2" and "2 of 2" in the same second, progress 0 of 2 until one lands), so the title says
+	// "n of N judged", as the web does, for the phase the count belongs to (WP-V3).
+	if (Phase != BuildCountPhase)
+	{
+		BuildCountPhase = Phase;
+		BuildOf = 0;
+	}
+	BuildN = FMath::Max(0, N);
+	if (Of > 0) BuildOf = Of;
 }
 
 bool ABpTable::TickBuildup(float DeltaSeconds)
 {
-	// One deferred commit step a frame (a structure, a glide's landing or the hand-over).
-	const bool bDeferred = DeferredSteps > 0;
+	// A sheet a build-up deferred, once it no longer spreads its commit: drawn now.
+	if (bSheetDirty && !SpreadNow()) DrawSheetNow();
+	// The structure that arrived, committed in a frame of its own (WP-V3: it shared one with the labels, 28 ms).
+	if (bStructurePending && bBuild && !HeavyBusy())
+	{
+		bStructurePending = false;
+		const bool bPast = bStructurePast;
+		bStructurePast = false;
+		BuildupStructure(bPast);
+	}
+	// One deferred commit step a frame (a structure, a glide's landing or the hand-over), then the level labels a slice a
+	// frame, each in a frame no other heavy piece took.
+	const bool bDeferred = DeferredSteps > 0 || LevelLabelsNext >= 0;
 	StepDeferredCommit();
+	if (LevelLabelsNext >= 0 && DeferredSteps < 4)
+	{
+		if (!SpreadNow()) StepLevelLabels(-1.0);
+		else if (!HeavyBusy())
+		{
+			const double T0 = FPlatformTime::Seconds();
+			StepLevelLabels(LevelLabelSliceMs);
+			NoteHeavy(TEXT("level labels"), T0);
+		}
+	}
+	// The furniture kit, loaded ahead while the survey and the outline draw (one mesh a frame), so the structure's glyph
+	// step never loads one.
+	if (bBuild && GlyphPreloadNext < GlyphMeshes.Num() && !HeavyBusy())
+	{
+		const double T0 = FPlatformTime::Seconds();
+		int32 Index = 0;
+		for (const TPair<FString, TSoftObjectPtr<UStaticMesh>>& Kind : GlyphMeshes)
+		{
+			if (Index++ != GlyphPreloadNext) continue;
+			const FSoftObjectPath Path = Kind.Value.ToSoftObjectPath();
+			if (Path.IsValid() && FPackageName::DoesPackageExist(Path.GetLongPackageName()))
+			{
+				if (UStaticMesh* Mesh = Kind.Value.LoadSynchronous()) GlyphMeshHold.AddUnique(Mesh);
+			}
+			break;
+		}
+		++GlyphPreloadNext;
+		NoteHeavy(TEXT("kit mesh"), T0);
+	}
 	// A live plan held for a build-up that never started (the feed did not answer): drawn after BuildHoldS.
 	if (HeldPlanAt >= 0.0)
 	{
@@ -782,8 +875,9 @@ bool ABpTable::TickBuildup(float DeltaSeconds)
 		if (GlideAt >= 0.0)
 		{
 			bMoving = true;
-			if (BuildClock >= GlideAt + GlideS && GlideTo.IsValid())
+			if (BuildClock >= GlideAt + GlideS && GlideTo.IsValid() && !HeavyBusy())
 			{
+				const double T0 = FPlatformTime::Seconds();
 				// Landed: the final boxes are the build-up's plan from here (the walls stand where it draws them).
 				*BuildPlan = *GlideTo;
 				GlideTo.Reset();
@@ -796,6 +890,7 @@ bool ABpTable::TickBuildup(float DeltaSeconds)
 				ApplyPlanNow(Plan);
 				bApplyingBuild = false;
 				UE_LOG(LogBpTable, Log, TEXT("BpBuild: history: the rooms glided to the final boxes (rev %s)"), *Plan.rev);
+				NoteHeavy(TEXT("glide landing"), T0);
 			}
 		}
 	}
@@ -817,21 +912,26 @@ bool ABpTable::TickBuildup(float DeltaSeconds)
 		UE_LOG(LogBpTable, Log, TEXT("BpBuild: settled; the table is the live table"));
 		return false;
 	}
-	// The sheet: redrawn at most BuildSheetHz while something on it moves, and once more when it stops.
+	// The sheet: redrawn at most BuildSheetHz while something on it moves, once more when it stops, and when a commit
+	// marked it; in a frame no other heavy piece took (the next free one).
 	const bool bSheet = SheetMovingNow();
 	const double Real = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
-	if ((bSheet && Real >= NextSheetDrawAt) || (!bSheet && bSheetMoving))
+	const bool bWant = bSheetDirty || (bSheet && Real >= NextSheetDrawAt) || (!bSheet && bSheetMoving);
+	if (bWant && !HeavyBusy())
 	{
 		NextSheetDrawAt = Real + 1.0 / BuildSheetHz;
-		RedrawSheet();
+		const double T0 = FPlatformTime::Seconds();
+		DrawSheetNow();
+		NoteHeavy(TEXT("sheet"), T0);
+		bSheetMoving = bSheet;
 	}
-	bSheetMoving = bSheet;
-	return bMoving || bSheet || SettleAt >= 0.0;
+	else if (!bWant) bSheetMoving = bSheet;
+	return bMoving || bSheet || bWant || SettleAt >= 0.0 || bStructurePending || DeferredSteps > 0 || LevelLabelsNext >= 0 || bWingLabelsDirty;
 }
 
 void ABpTable::TryHandOver()
 {
-	if (!bBuild || !PendingLivePlan.IsValid() || bBuildFailed) return;
+	if (!bBuild || !PendingLivePlan.IsValid() || bBuildFailed || bStructurePending || HeavyBusy()) return;
 	// The feed's own `done` (its final readings are in by then), the queue drained, every room up.
 	if (!bBuildEnded ||BuildClock < BuildQueue + 0.5 || RisenRooms.Num() < RiseOrder.Num() || GlideAt >= 0.0) return;
 	EndBuildup();
@@ -853,9 +953,11 @@ void ABpTable::EndBuildup()
 	bBuildCaption = false;
 	SettleAt = BuildClock;
 	CSV_EVENT_GLOBAL(TEXT("BpBuild handover"));
+	const double T0 = FPlatformTime::Seconds();
 	bSpreadCommit = true;
 	ApplyPlanNow(*Live);
 	bSpreadCommit = false;
+	NoteHeavy(TEXT("hand-over"), T0);
 	UE_LOG(LogBpTable, Log, TEXT("BpBuild: done: the live plan (rev %s) takes over; %d of %d rooms differ from the drawn boxes; the ink settles over %.1f s"),
 		*Live->rev, Moved, Live->rooms.Num(), BuildSettleS);
 	SetActorTickInterval(0.f);
@@ -887,6 +989,8 @@ void ABpTable::ResetBuildup()
 	BuildJudging.Reset();
 	BuildPhase.Reset();
 	BuildN = BuildOf = 0;
+	BuildCountPhase.Reset();
+	bStructurePending = bStructurePast = false;
 	NarrText.Reset();
 	NarrNext.Reset();
 	bBuildEnded = bBuildFailed = false;
@@ -930,7 +1034,7 @@ void ABpTable::SayBuildCaption()
 	else if (!NarrText.IsEmpty())
 	{
 		Line1 = NarrText;
-		Line2 = NarrNext.IsEmpty() ? (BuildOf > 0 ? FString::Printf(TEXT("%s · %d of %d"), *Phase, BuildN, BuildOf) : Phase) : TEXT("next: ") + NarrNext;
+		Line2 = NarrNext.IsEmpty() ? (BuildOf > 0 && BuildCountPhase == BuildPhase ? FString::Printf(TEXT("%s · %d of %d judged"), *Phase, BuildN, BuildOf) : Phase) : TEXT("next: ") + NarrNext;
 	}
 	else
 	{
@@ -1004,26 +1108,43 @@ void ABpTable::DrawBuildup(UCanvas* Canvas, bool bWithPlan)
 
 		// ---- The outline in the near margin: each domain typed, its capabilities under it; each line flies to its wing
 		// or room when the structure places it -------------------------------------------------------------------------
-		for (int32 Index = 0; Index < BuildDomains.Num() && Index < OutlineCols * OutlineRows; ++Index)
+		// The margin's grid (WP-V3: any count of domains): OutlineCols a row. Past OutlineRows rows they share the same band,
+		// the pitch and the type shrinking together down to the floor (fewer capability lines, the rest counted); past what
+		// fits with the names at the floor, the oldest domains scroll off (they are the first to have flown).
+		const int32 Count = BuildDomains.Num();
+		const double BandCm = OutlineRows * OutlineRowCm;
+		const double MarginFloorCm = TextFloorCm(FVector2D(OutlineLeftCm + OutlineCols * OutlineColCm * 0.5, OutlineTopCm));
+		const int32 MaxRows = FMath::Max(OutlineRows, FMath::FloorToInt32(BandCm / (MarginFloorCm * 1.9 + OutlineRowPadCm)));
+		const int32 Rows = FMath::Clamp((Count + OutlineCols - 1) / OutlineCols, OutlineRows, MaxRows);
+		const int32 First = FMath::Max(0, Count - Rows * OutlineCols);
+		const double RowCm = BandCm / Rows;
+		const double Scale = RowCm / OutlineRowCm;
+		const auto MarginCap = [this, Scale](const BpType::FRecipe& Recipe, double U, double V) { return FMath::Max(Recipe.CapCm * Scale, TextFloorCm(FVector2D(U, V))); };
+		for (int32 Index = First; Index < Count; ++Index)
 		{
 			const FBuildDomain& Domain = BuildDomains[Index];
-			const double X0 = OutlineLeftCm + (Index % OutlineCols) * OutlineColCm;
-			const double Y0 = OutlineTopCm + (Index / OutlineCols) * OutlineRowCm;
+			const int32 Slot = Index - First;
+			const double X0 = OutlineLeftCm + (Slot % OutlineCols) * OutlineColCm;
+			const double Y0 = OutlineTopCm + (Slot / OutlineCols) * RowCm;
 			const double MaxW = OutlineColCm - 1.0;
 			double Typed = (T - Domain.TypeAt) * BuildTypeCps;
 			if (Typed <= 0.0) continue;
 			double V = Y0;
 			const FBpPlanWing* Wing = SheetPlan.IsValid() ? SheetPlan->wings.FindByPredicate([&Domain](const FBpPlanWing& W) { return W.id == Domain.Id; }) : nullptr;
-			const int32 MaxLines = FMath::Max(1, static_cast<int32>((OutlineRowCm - 3.4) / 2.2));
+			// The capability lines under the name that fit the row, the row's last line kept for "+n more".
+			const double NameAdvance = MarginCap(DomainLine, X0, Y0 + 1.2 * Scale) * 1.9;
+			const double LineCap = MarginCap(CapabilityLine, X0, Y0 + RowCm * 0.5);
+			const int32 MaxLines = FMath::Max(0, FMath::FloorToInt32((RowCm + 0.1 - NameAdvance - LineCap) / (LineCap * 1.75)));
+			const bool bMoreFits = NameAdvance + LineCap <= RowCm + 0.1;
 			for (int32 Line = 0; Line < 1 + Domain.CapNames.Num(); ++Line)
 			{
 				const bool bName = Line == 0;
 				const BpType::FRecipe& Recipe = bName ? DomainLine : CapabilityLine;
-				const double Cap = CapAt(Recipe, X0, V + 1.2);
+				const double Cap = MarginCap(Recipe, X0, V + 1.2 * Scale);
 				if (!bName && Line > MaxLines)
 				{
 					// The column is full: the rest is counted.
-					if (Line == MaxLines + 1) Put(FString::Printf(TEXT("+%d more"), Domain.CapNames.Num() - MaxLines), CapabilityLine, X0 + 0.8, V, Cap, BuildCyan.CopyWithNewOpacity(0.6f * Survey));
+					if (Line == MaxLines + 1 && bMoreFits) Put(FString::Printf(TEXT("+%d more"), Domain.CapNames.Num() - MaxLines), CapabilityLine, X0 + 0.8, V, Cap, BuildCyan.CopyWithNewOpacity(0.6f * Survey));
 					break;
 				}
 				FString Full = bName ? Domain.Name : Domain.CapNames[Line - 1];
@@ -1061,7 +1182,10 @@ void ABpTable::DrawBuildup(UCanvas* Canvas, bool bWithPlan)
 				// A line the structure never placed recedes with the survey once the building stands.
 				const float Alpha = (bBuildHasPlan && At >= 1.0e8 ? Survey : 1.f) * (Fly > 0.75f ? (1.f - Fly) / 0.25f : 1.f);
 				const FVector2D P = FMath::Lerp(Margin, Land, static_cast<double>(E));
-				Put(Text, Recipe, P.X, P.Y, FMath::Lerp(Cap, LandCap, static_cast<double>(E)), (bName ? BuildPaper : BuildCyan).CopyWithNewOpacity((bName ? 1.f : 0.85f) * Alpha));
+				// The flying size in 0.1 cm steps (WP-V3): every new size is a new set of glyphs for the font cache to rasterize
+				// on the game thread, which a continuous size asked for on every redraw of a flight.
+				const double FlyCap = E <= 0.f ? Cap : E >= 1.f ? LandCap : FMath::Max(FMath::Min(Cap, LandCap), FMath::GridSnap(FMath::Lerp(Cap, LandCap, static_cast<double>(E)), 0.1));
+				Put(Text, Recipe, P.X, P.Y, FlyCap, (bName ? BuildPaper : BuildCyan).CopyWithNewOpacity((bName ? 1.f : 0.85f) * Alpha));
 				// The typing caret.
 				if (Shown < Full.Len() && Fly <= 0.f)
 				{
@@ -1109,7 +1233,16 @@ void ABpTable::DrawBuildup(UCanvas* Canvas, bool bWithPlan)
 					if (K / (W + H) <= E) Pen.Line(From, To, 3.f, C.CopyWithNewOpacity(0.6f));
 				}
 			}
-			if (BuildJudging.Contains(Tile.id)) Pen.Brackets(Box, 6.f, BuildPaper);
+			if (BuildJudging.Contains(Tile.id))
+			{
+				// Being judged now (B's "the pencil marks what is being judged"): a soft halo round the tile, a pencil wash
+				// on it, a firm pencil edge and heavy corner brackets, steady, so the batch reads at the target pose.
+				const FVector2D Halo(JudgeHaloCm, JudgeHaloCm);
+				Pen.Fill(Box.Min - Halo, Box.Max + Halo, BuildPaper.CopyWithNewOpacity(JudgeHaloA));
+				Pen.Fill(Box.Min, Box.Max, BuildPaper.CopyWithNewOpacity(JudgeWashA));
+				Pen.Perimeter(Box, 1.f, JudgeEdgePx, BuildPaper.CopyWithNewOpacity(JudgeEdgeA), false);
+				Pen.Brackets(Box, JudgeBracketPx, BuildPaper);
+			}
 		}
 	}
 
@@ -1138,7 +1271,7 @@ void ABpTable::DrawBuildup(UCanvas* Canvas, bool bWithPlan)
 		else
 		{
 			Sub = FString::Printf(TEXT("onboarding · %s"), *FBpLinkModule::PhaseLabel(BuildPhase.IsEmpty() ? FString(TEXT("check")) : BuildPhase));
-			if (BuildOf > 0 && Current == PhaseAt(TEXT("judge"))) Sub += FString::Printf(TEXT(" · %d of %d"), BuildN, BuildOf);
+			if (BuildOf > 0 && BuildCountPhase == BuildPhase) Sub += FString::Printf(TEXT(" · %d of %d judged"), BuildN, BuildOf);
 		}
 		Put(BuildCut(Sub.ToUpper(), BpType::TitleSub, SubCap, Inner), BpType::TitleSub, U0, SubTop, SubCap, (bBuildFailed ? HealthBad : BuildCyan).CopyWithNewOpacity(0.95f));
 		// The strip: a cell per phase, done ones filled, the current one amber (red where it stopped), the rest outlined.
