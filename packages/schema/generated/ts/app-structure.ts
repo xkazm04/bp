@@ -677,11 +677,11 @@ export interface ErrorEvent {
   message: string;
 }
 
-/** A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started. */
+/** A lens scan, an execute run, a release run (cut or finish), a prepare run or an onboarding (adopt) the blueprint started. */
 export interface ScanJob {
   id: string;
-  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. */
-  kind: 'measure' | 'execute' | 'release' | 'prepare' | 'propose';
+  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. adopt: onboard the product with the adopt-bp skill. */
+  kind: 'measure' | 'execute' | 'release' | 'prepare' | 'propose' | 'adopt';
   /** The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
@@ -697,6 +697,10 @@ export interface ScanJob {
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
   wave?: string;
   package?: string;
+  /** An adopt job that resumes an earlier onboarding that stopped. */
+  resume?: boolean;
+  /** An adopt job: the build-up phase it last started; for a failed job, the phase it failed in. Omitted until the first phase starts. */
+  adopt_phase?: 'check' | 'context-map' | 'seed' | 'product-tree' | 'events' | 'measure' | 'judge' | 'register';
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   queued_at: string;
   started_at?: string;

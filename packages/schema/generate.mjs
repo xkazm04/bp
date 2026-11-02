@@ -205,6 +205,7 @@ const VOCAB_ROWS = [
   ['WAVE_PACKAGES_MAX_ITEMS', 'scan-wire-1.schema.json', '/$defs/wave/properties/packages/maxItems', 'number'],
   ['PROPOSAL_ID_PATTERN', 'scan-wire-1.schema.json', '/$defs/proposalId/pattern', 'pattern'],
   ['BRIEF_MATCHES', 'decision-brief-1.schema.json', '/$defs/briefDecided/properties/match/enum', 'list'],
+  ['BUILDUP_PHASES', 'scan-wire-1.schema.json', '/$defs/scanJob/properties/adopt_phase/enum', 'list'],
 ];
 const constCase = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
 const plural = (s) => (/(S|X|SH|CH)$/.test(s) ? s + 'ES' : /[^AEIOU]Y$/.test(s) ? s.slice(0, -1) + 'IES' : s + 'S');

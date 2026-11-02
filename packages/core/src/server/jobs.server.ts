@@ -15,6 +15,11 @@
 // found at PERSONAS_RUN_SHIM, else `<bp root>/../personas/scripts/fleet/personas-run.mjs`. An explicit BP_CLAUDE_BIN
 // still wins. The shim reads BP_JOB_ID as its origin (`lens_scan`) and PERSONAS_RUN_LABEL (`bp-job:<id>`) as its label.
 // The onboarding chat (lens-draft) never goes through the shim: it needs `--output-format json` and `--resume`.
+// An ADOPT job (onboarding in the app, enqueueAdopt) runs the adopt-bp skill from bp's own path: no lens-scan skill check,
+// never the shim (it needs `--output-format stream-json --verbose`, whose tool calls feed the build-up's activity). Its stdout
+// is read as stream-json into readable log lines (tool names, assistant text heads, the result), so the log and log_tail stay
+// human-readable, and it feeds the build-up event feed (onboarding-job.server.ts) from its start to its settle: `done` when it
+// exits 0 and the map has features, else failed with `adopt_phase` the phase it was in. `adopt_phase` follows the phases.
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -28,6 +33,7 @@ import { OVERLAY_PATH, PREPARABLE, lensSetupNeed } from '../scan/lens-setup.ts';
 import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
 import { storeCall } from './release.server.ts';
+import { adoptPrompt, adoptSkillDir, closeJournal, mapHasFeatures, NO_ADOPT_SKILL, openFeed, readStreamLine, reportedSince, resumeFeed, runAdoptCheck, type Feed } from './onboarding-job.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
 
@@ -38,6 +44,8 @@ export const SHIM_MISSING = 'Personas fleet shim not found (BP_RUNNER=personas: 
 const TAIL_LINES = 20, TAIL_BYTES = 2048, NOTIFY_MS = 400;
 /** The flags of a job run (a wave package adds `--model` and `--effort`); the prompt follows on stdin. */
 const JOB_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'text'];
+/** An adopt job's flags: its tool calls stream as JSON (the build-up's activity); the prompt follows on stdin. */
+const ADOPT_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose'];
 
 // ------------------------------------------------------------------------------------- the CLI
 interface Cli { file: string; args: string[]; verbatim: boolean }
@@ -168,6 +176,8 @@ interface Rec {
   /** The CLI's pid once it started (journalled), and whether this record was adopted after a restart (no child, only the pid). */
   pid?: number; orphan?: boolean; watch?: ReturnType<typeof setInterval>;
   buf: string; lastErr: string; log?: fs.WriteStream;
+  /** An adopt job: the product's name (the feed's `begin`), its build-up feed while it runs, and the stream-json line buffer. */
+  name?: string; feed?: Feed; jbuf?: string;
 }
 interface Product { recs: Rec[]; subs: Set<Listener>; timer?: ReturnType<typeof setTimeout> }
 
@@ -303,6 +313,7 @@ export function reconcileJobs(slug: string, root: string): void {
         // would have failed a job whose 326 readings were there.
         const run = r.job.kind === 'measure' || r.job.kind === 'execute' || r.job.kind === 'propose' ? r.job.run_id ?? runOf(root, r.job.id) : undefined;
         if (run) { Object.assign(r.job, { status: 'done', run_id: run }); r.job.ended_at ??= now(); step(r, 'exit'); }
+        else if (r.job.kind === 'adopt' && reportedSince(root, Date.parse(r.job.started_at ?? '') || 0)) { r.job.status = 'done'; r.job.ended_at ??= now(); step(r, 'exit'); }
         else gone(`the server restarted and this job's process${r.pid !== undefined ? ` (pid ${r.pid})` : ''} was gone`);
       }
     } else if (ph === 'cancelling') {
@@ -310,6 +321,10 @@ export function reconcileJobs(slug: string, root: string): void {
       else { r.job.ended_at ??= now(); step(r, 'exit'); }
     }
     if (r.phase !== ph) { if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r); journal(slug, r); }
+    if (r.job.kind === 'adopt') {
+      if (r.phase === 'ended') closeJournal(root, r.job); // its build-up ends too, in the phase it was in
+      else if (r.orphan && r.phase === 'running') { r.feed = adoptFeed(slug, r, true); r.feed.watch(); }
+    }
     back.push(r);
   }
   p.recs = [...back, ...p.recs].sort((a, b) => a.job.queued_at.localeCompare(b.job.queued_at));
@@ -328,6 +343,11 @@ function watchOrphan(slug: string, r: Rec): void {
     if (r.phase === 'cancelling') { finish(slug, r, 'cancelled'); return; } // reaped: no run to judge
     if (r.job.kind === 'release') { settleRelease(slug, r, 0); return; }
     if (r.job.kind === 'prepare') { settlePrepare(slug, r, { exit_code: 0 }); return; }
+    if (r.job.kind === 'adopt') {
+      if (reportedSince(r.root, Date.parse(r.job.started_at ?? '') || 0)) finish(slug, r, 'done');
+      else finish(slug, r, 'failed', { error: 'the server restarted while this job ran, and its process ended before the onboarding finished' });
+      return;
+    }
     const run = r.job.run_id ?? runOf(r.root, r.job.id);
     if (run) { r.job.run_id = run; finish(slug, r, 'done', { exit_code: 0 }); }
     else finish(slug, r, 'failed', { error: 'the server restarted while this job ran, and its process ended without a run in the store' });
@@ -371,11 +391,11 @@ function prune(p: Product): void {
 
 export type Enqueued = { ok: true; job: ScanJob } | { ok: false; status: 400 | 429; error: string };
 
-function enqueue(slug: string, root: string, job: ScanJob, prompt: string): Enqueued {
+function enqueue(slug: string, root: string, job: ScanJob, prompt: string, extra: Pick<Rec, 'name'> = {}): Enqueued {
   ensure(slug, root);
   const p = prod(slug);
   if (p.recs.filter((r) => r.job.status === 'queued').length >= MAX_QUEUED) return { ok: false, status: 429, error: `${MAX_QUEUED} jobs are already queued for ${slug}` };
-  const rec: Rec = { job, root, prompt, phase: 'queued', buf: '', lastErr: '' };
+  const rec: Rec = { job, root, prompt, phase: 'queued', buf: '', lastErr: '', ...extra };
   p.recs.push(rec);
   journal(slug, rec);
   prune(p);
@@ -490,6 +510,11 @@ function finish(slug: string, r: Rec, status: 'done' | 'failed' | 'cancelled', e
   else if (extra.exit_code !== undefined) r.job.exit_code = extra.exit_code;
   r.job.ended_at ??= now();
   if (r.job.kind === 'release' && r.job.status !== 'done') failBuilding(r);
+  if (r.job.kind === 'adopt') {
+    const msg = r.job.status === 'cancelled' ? 'cancelled' : r.job.error ?? 'the run stopped';
+    if (r.feed) { const at = r.feed.settle(r.job.status === 'done', msg); if (r.job.status !== 'done') r.job.adopt_phase = at; r.feed = undefined; }
+    else closeJournal(r.root, r.job);
+  }
   r.log?.end(`\n# ${r.job.status}${r.job.exit_code !== undefined ? ` (exit ${r.job.exit_code})` : ''} at ${r.job.ended_at}\n`);
   r.log = undefined;
   if (r.watch) clearInterval(r.watch);
@@ -522,6 +547,12 @@ function failBuilding(r: Rec): void {
 }
 
 function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
+  if (r.job.kind === 'adopt' && !err) { onStreamJson(slug, r, chunk.toString('utf8')); return; }
+  addOutput(slug, r, chunk, err);
+}
+
+/** Output as the log and log_tail keep it: the bytes as they came (an adopt job's stdout: its readable lines). */
+function addOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
   const s = chunk.toString('utf8');
   r.log?.write(chunk);
   r.buf = (r.buf + s).slice(-TAIL_BYTES * 2);
@@ -532,10 +563,36 @@ function onOutput(slug: string, r: Rec, chunk: Buffer, err: boolean): void {
   notify(slug, true);
 }
 
+/** An adopt job's stdout: whole stream-json lines, read into log lines (addOutput) and tool calls (the feed). */
+function onStreamJson(slug: string, r: Rec, s: string): void {
+  r.jbuf = (r.jbuf ?? '') + s;
+  let i: number, text = '';
+  while ((i = r.jbuf.indexOf('\n')) >= 0) {
+    const line = r.jbuf.slice(0, i); r.jbuf = r.jbuf.slice(i + 1);
+    const read = readStreamLine(line);
+    for (const t of read.tools) r.feed?.tool(t.name, t.input);
+    if (read.error) r.lastErr = read.error;
+    if (read.lines.length) text += read.lines.join('\n') + '\n';
+  }
+  if (r.jbuf.length > 4 * 1024 * 1024) r.jbuf = ''; // one runaway line: drop it rather than hold it
+  if (text) addOutput(slug, r, Buffer.from(text, 'utf8'), false);
+}
+
+/** The build-up feed of adopt job `r`: `adopt_phase` follows the phases it starts (journalled, so a restart keeps it). */
+function adoptFeed(slug: string, r: Rec, resumed: boolean): Feed {
+  const o = {
+    slug, name: r.name ?? findProduct(slug)?.name ?? slug, root: r.root, id: r.job.id, t0: Date.parse(r.job.started_at ?? '') || Date.now(),
+    onPhase: (p: NonNullable<ScanJob['adopt_phase']>) => { if (r.job.adopt_phase !== p) { r.job.adopt_phase = p; journal(slug, r); notify(slug); } },
+  };
+  return resumed ? resumeFeed(o) : openFeed(o);
+}
+
 function start(slug: string, r: Rec): void {
   if (!step(r, 'start')) return;
   r.job.status = 'running';
   r.job.started_at = now();
+  const skill = r.job.kind === 'adopt' ? adoptSkillDir() : null;
+  if (r.job.kind === 'adopt' && skill) r.prompt = adoptPrompt({ skill, bp: process.cwd(), slug, name: r.name ?? findProduct(slug)?.name ?? slug, resume: !!r.job.resume });
   try {
     const dir = path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs');
     fs.mkdirSync(dir, { recursive: true });
@@ -552,6 +609,7 @@ function start(slug: string, r: Rec): void {
     // child is gone. The job's own answer cannot carry it (it reports the run, not the logging), so the server says it.
     warnOnce('job log ' + path.join(r.root, '.ai', 'lens-scan', 'work', 'bp-jobs', r.job.id + '.log'), e);
   }
+  if (r.job.kind === 'adopt') { startAdopt(slug, r, skill); return; }
   const noSkill = skillMissing(r.root);
   if (noSkill) { r.log?.write(`# ${noSkill}\n`); finish(slug, r, 'failed', { error: noSkill }); return; }
   const args = [...JOB_ARGS, ...(r.job.model ? ['--model', r.job.model] : []), ...(r.job.effort ? ['--effort', r.job.effort] : [])]; // allow-listed at enqueue
@@ -576,6 +634,51 @@ function start(slug: string, r: Rec): void {
     } else finish(slug, r, 'failed', code === null ? { error: r.lastErr || `killed (${signal ?? 'signal'})` } : { exit_code: code, error: r.lastErr || `exit ${code}` });
   });
   c.stdin?.end(r.prompt + '\n');
+}
+
+/** An adopt job: its feed opens (begin, check), adopt.mjs check runs, then the CLI with the adopt-bp prompt. A cancel during
+ *  the check (no child yet) ends the job when the check returns. */
+function startAdopt(slug: string, r: Rec, skill: string | null): void {
+  r.feed = adoptFeed(slug, r, false);
+  if (!skill) { r.log?.write(`# ${NO_ADOPT_SKILL}\n`); finish(slug, r, 'failed', { error: NO_ADOPT_SKILL }); return; }
+  void runAdoptCheck(skill, r.root, process.cwd()).then(({ items, error }) => {
+    if (r.phase !== 'running') { finish(slug, r, 'cancelled'); return; } // cancelled while checking
+    const need = items.filter((i) => i.state !== 'ok').length;
+    r.log?.write(error ? `# adopt.mjs check: ${error}\n` : `# adopt.mjs check: ${need} to produce\n`);
+    r.feed?.phase('check', 'done', error ? null : `${need} to produce`);
+    r.feed?.watch();
+    const args = [...ADOPT_ARGS, ...(r.job.model ? ['--model', r.job.model] : [])]; // allow-listed at enqueue
+    const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id, CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: '0' }, false);
+    if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
+    const c = (r.child = s.child);
+    r.pid = c.pid;
+    journal(slug, r);
+    c.stdout?.on('data', (d: Buffer) => onOutput(slug, r, d, false));
+    c.stderr?.on('data', (d: Buffer) => onOutput(slug, r, d, true));
+    c.on('error', (e: NodeJS.ErrnoException) => finish(slug, r, 'failed', { error: e.code === 'ENOENT' ? CLI_MISSING : e.message }));
+    c.on('close', (code, signal) => {
+      if (r.jbuf?.trim()) onStreamJson(slug, r, '\n'); // a last line without its newline
+      if (code === 0 && mapHasFeatures(r.root)) finish(slug, r, 'done', { exit_code: 0 });
+      else if (code === 0) finish(slug, r, 'failed', { exit_code: 0, error: r.lastErr || 'the run ended without a product tree in the map' });
+      else finish(slug, r, 'failed', code === null ? { error: r.lastErr || `killed (${signal ?? 'signal'})` } : { exit_code: code, error: r.lastErr || `exit ${code}` });
+    });
+    c.stdin?.end(r.prompt + '\n');
+  });
+}
+
+/** Opts of an adopt job: `resume` words the prompt as a resume, `model` is allow-listed (WAVE_MODELS), `name` is the
+ *  registry entry's (the prompt's --name and the feed's begin). */
+export interface AdoptOpts { resume?: boolean; model?: string; name: string }
+
+/** Queue an onboarding of a registered product: the adopt-bp skill, headless, in its root. 409 while an adopt job of the
+ *  product is queued or running (or cancelled with its process not yet gone); 400 bad-opts for a model off the list. */
+export function enqueueAdopt(slug: string, root: string, opts: AdoptOpts): Enqueued | { ok: false; status: 409; error: string } {
+  const { resume, model } = opts;
+  if ((model !== undefined && !WAVE_MODELS.includes(model as WaveModel)) || (resume !== undefined && typeof resume !== 'boolean')) return { ok: false, status: 400, error: 'bad-opts' };
+  ensure(slug, root);
+  if (prod(slug).recs.some((r) => r.job.kind === 'adopt' && r.phase !== 'ended')) return { ok: false, status: 409, error: `an onboarding of ${slug} is already queued or running` };
+  const job: ScanJob = { id: jobId(), kind: 'adopt', ...(resume ? { resume: true } : {}), ...(model ? { model: model as WaveModel } : {}), status: 'queued', queued_at: now() };
+  return enqueue(slug, root, job, '', { name: opts.name }); // the prompt is written at start, where the skill is looked up
 }
 
 /** Cancel a job: a queued one leaves the queue (ended), a running one is killed with its process tree and stays `cancelling`

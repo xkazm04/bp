@@ -292,13 +292,13 @@
       }
     },
     "scanJob": {
-      "description": "A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started.",
+      "description": "A lens scan, an execute run, a release run (cut or finish), a prepare run or an onboarding (adopt) the blueprint started.",
       "type": "object",
       "required": ["id", "kind", "status", "queued_at"],
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "kind": { "enum": ["measure", "execute", "release", "prepare", "propose"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements." },
+        "kind": { "enum": ["measure", "execute", "release", "prepare", "propose", "adopt"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. adopt: onboard the product with the adopt-bp skill." },
         "lens": { "type": "string", "description": "The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable." },
         "scope": { "$ref": "#/$defs/scanScope" },
         "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
@@ -309,6 +309,8 @@
         "effort": { "$ref": "#/$defs/waveEffort" },
         "wave": { "type": "string" },
         "package": { "type": "string" },
+        "resume": { "type": "boolean", "description": "An adopt job that resumes an earlier onboarding that stopped." },
+        "adopt_phase": { "enum": ["check", "context-map", "seed", "product-tree", "events", "measure", "judge", "register"], "description": "An adopt job: the build-up phase it last started; for a failed job, the phase it failed in. Omitted until the first phase starts." },
         "status": { "enum": ["queued", "running", "done", "failed", "cancelled"] },
         "queued_at": { "type": "string" },
         "started_at": { "type": "string" },

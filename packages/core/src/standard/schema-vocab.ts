@@ -43,3 +43,5 @@ export const WAVE_PACKAGES_MAX_ITEMS = 12;
 export const PROPOSAL_ID_PATTERN = new RegExp("^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$");
 /** decision-brief-1 $defs.briefDecided.properties.match.enum */
 export const BRIEF_MATCHES = ['same idea', 'same standard', 'similar words', 'same lens'] as const;
+/** scan-wire-1 $defs.scanJob.properties.adopt_phase.enum */
+export const BUILDUP_PHASES = ['check', 'context-map', 'seed', 'product-tree', 'events', 'measure', 'judge', 'register'] as const;
