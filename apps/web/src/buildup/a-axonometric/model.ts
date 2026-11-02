@@ -22,7 +22,9 @@ export interface Bay extends BBay { lvl: 'bay'; room: Room; wing: Wing; tiles: T
 export interface Tile extends StructureTile {
   lvl: 'tile'; bay: Bay; room: Room; wing: Wing; idx: number;
   created: string | null; general: Health | null;
-  dropT: number; stageT: number; healthT: number;
+  /** a provisional (one judgement batch) reading, shown in pencil until the final one is inked at `inkT` */
+  pen: Health | null;
+  dropT: number; stageT: number; healthT: number; inkT: number;
 }
 export type Node = Wing | Room | Bay | Tile;
 export interface Wall { x0: number; y0: number; x1: number; y1: number; mx: number; my: number; type: 'wing' | 'room'; owner: Wing | Room }
@@ -60,7 +62,7 @@ export class Model {
     }
     for (const t0 of c.tiles) {
       const b = this.B.get(t0.parentId); if (!b || this.T.has(t0.id)) continue;
-      const t: Tile = { ...t0, lvl: 'tile', bay: b, room: b.room, wing: b.wing, idx: 0, created: null, general: null, dropT: INF, stageT: INF, healthT: INF };
+      const t: Tile = { ...t0, lvl: 'tile', bay: b, room: b.room, wing: b.wing, idx: 0, created: null, general: null, pen: null, dropT: INF, stageT: INF, healthT: INF, inkT: INF };
       this.T.set(t.id, t); nt.push(t);
     }
     this.relink();

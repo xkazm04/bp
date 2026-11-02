@@ -5,9 +5,10 @@
 // every time on an element (footprint traced, room raised, slab dropped, stage stamped, health laid) is stamped when
 // its event ARRIVES, onto a visual queue `Q` the engine animates through at the prototype's own pacing. Drawing is
 // still a pure function of the engine clock T and those stamps.
-import type { BBox, BuildupEvent, BuildupSource, Health, Phase, Stage } from '../contract';
+import type { ActivityVerb, BBox, BuildupEvent, BuildupSource, Health, Phase, Stage } from '../contract';
 import { PHASES } from '../contract';
 import { HEALTHS, HEALTH_WORD, KIND_WORD, Model, STAGES, STAGE_WORD, type Bay, type Node, type Room, type Tile, type Wing } from './model';
+import { SITE, bandBox, bandLayout, byLines, capBox, ghostBox, orderLots, rectAt, retarget, siteLayout, still, unionAll, type Ghost, type Lot } from './site';
 import css from './axo.module.css';
 
 const STEPS: { n: string; name: string; y: string; llm?: boolean }[] = [
@@ -33,6 +34,8 @@ const clamp = (v: number, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const easeOut = (u: number) => 1 - Math.pow(1 - u, 3);
 const backOut = (u: number) => { const c1 = 1.25, c3 = c1 + 1; return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2); };
+const nf = (n: number) => Math.round(n).toLocaleString('en-US');
+const VERB: Readonly<Record<ActivityVerb, string>> = { read: 'READING', write: 'WRITING', run: 'WORKING IN' };
 const fmt = (s: number) => { s = Math.max(0, Math.floor(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
@@ -103,6 +106,20 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
   const phaseOn = new Set<Phase>(), phaseDone = new Set<Phase>();
   let measureOn = false;
 
+  /* ---------- the site survey: what the run knows before (and between) the plan's own events. All optional: with none
+     of them arrived, nothing below draws and the engine runs as the prototype did. ---------- */
+  const lots = new Map<string, Lot>();
+  const ghosts = new Map<string, Ghost>();
+  interface Act { area: string | null; path: string; verb: ActivityVerb; t0: number; last: number }
+  let act: Act | null = null, actPrev: Act | null = null;
+  let prog: { t: number; n: number; of: number }[] = [];
+  /** an anti-stale event has arrived: only then do the layers that answer silence (the lamp, inspection rings) run */
+  let anti = false;
+  /** the survey lamp's strength, eased per frame so it never pops */
+  let lampA = 0;
+  /** the footing strip leaves the framed extent as the plan flattens */
+  let bandGone = false;
+
   function freshSchedule() {
     return {
       steps: STEPS.map((): Step => ({ t0: INF, t1: INF, failed: false })),
@@ -130,10 +147,19 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
   const log = (t: number, html: string, wait = false, idle = false) => { S.logs.push({ t, html, wait, idle }); S.logs.sort((a, b) => a.t - b.t); };
   const dollyZ = () => clamp(0.3 * vw / 532, 0.45, 0.92);
 
-  function setExtTarget() {
+  /** The plan as known, with the footing strip in front of it; before any plan, the survey site and the pencilled wings. */
+  function siteExt(): BBox | null {
     const k = M.known();
+    if (k) return lots.size && !bandGone ? union(k, bandBox(k)) : k;
+    const boxes: BBox[] = [];
+    if (lots.size) boxes.push(SITE);
+    for (const g of ghosts.values()) if (g.fadeT === INF) boxes.push(g.tw.b);
+    return unionAll(boxes);
+  }
+  function setExtTarget() {
+    const k = siteExt();
     const next = beginExt ? (k ? union(beginExt, k) : beginExt) : k ?? NOMINAL;
-    extKnown = !!beginExt || !!k;
+    extKnown = !!beginExt || !!M.known();
     ext = next;
     if (RMODE || !begun) extD = { ...next };
     sizeKeyplan();
@@ -149,8 +175,25 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     const kc = catchUp(now);
     const c0 = Math.max(now, S.Q);
     const W = n.wings.length;
+    // hand-over: a pencilled ghost first slides onto its wing's real footprint, and the pen then inks the footprint over it
+    const HO = n.wings.some((w) => ghosts.has(w.id)) ? .8 * kc : 0;
     // footprints: grid axis chalked, a pen traces each new wing, then glass walls ripple up (prototype .2/.45/1.0 staggers)
-    n.wings.forEach((w, i) => { w.axisT = c0 + i * .07; w.footT = c0 + .25 + i * .1; w.wallT = c0 + .8 * kc + i * .17; });
+    n.wings.forEach((w, i) => { w.axisT = c0 + HO + i * .07; w.footT = c0 + HO + .25 + i * .1; w.wallT = c0 + HO + .8 * kc + i * .17; });
+    n.wings.forEach((w, i) => {
+      const g = ghosts.get(w.id); if (!g) return;
+      const t0 = c0 + i * .07;
+      g.matched = true; g.tw = { a: rectAt(g.tw, t0), b: w.box, t0, dur: HO }; g.fadeT = w.footT + .3;
+      for (const cp of g.caps) {
+        const r = w.rooms.find((x) => x.id === cp.id);
+        if (r) cp.tw = { a: rectAt(cp.tw, t0), b: r.box, t0, dur: HO };
+        cp.fadeT = w.footT; // re-set to the room's rise below, once the walk has stamped it
+      }
+    });
+    // the survey lots slide out from under the rising wings into a footing strip along the plan's front edge
+    if (lots.size) {
+      const L = bandLayout([...lots.values()], M.known() ?? SITE);
+      orderLots([...lots.values()]).forEach((l, i) => { const b = L.get(l.id); if (b) { const t0 = c0 + .3 + i * .04; l.tw = { a: rectAt(l.tw, t0), b, t0, dur: 1.4 }; } });
+    }
     let cur = W ? n.wings[W - 1].wallT + 1.1 * kc : c0;
     if (W > 1) {
       ov(c0);
@@ -184,6 +227,8 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     }
     // tiles whose parent landed in an earlier chunk but whose wing was not walked above cannot exist: `touched` covers them
     S.Q = cur;
+    // a pencilled capability gives way to its room as the room is raised
+    for (const w of n.wings) { const g = ghosts.get(w.id); if (g) for (const cp of g.caps) { const r = w.rooms.find((x) => x.id === cp.id); if (r && r.riseT < INF) cp.fadeT = r.riseT; } }
     // idle tail: look at what is standing, then drift back to the overview while the model works on
     addKey({ t: cur + .2, k: 'ext', th: TH_DOLLY, ph: PH_DOLLY, zTop: H_ROOM, frac: .8, maxZ: true, idle: true });
     if (phaseOn.has('product-tree') && !phaseDone.has('product-tree')) {
@@ -194,7 +239,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
 
   function onHistory(e: Extract<BuildupEvent, { type: 'history' }>) {
     const now = T;
-    for (const h of e.tiles) { const tl = M.tile(h.id); if (tl) tl.created = h.created; }
+    for (const h of e.tiles) { const tl = M.tile(h.id); if (tl) tl.created = h.created ? h.created.slice(0, 10) : null; }
     M.historyIn = true; M.reorderHist();
     cancelIdle(now);
     const E0 = Math.max(now, S.Q), N = M.hist.length;
@@ -206,24 +251,124 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     S.Q = E0 + (1.0 + .6) * kc + span;
   }
 
+  /** The reading a tile shows at t: a batch's provisional one (pencil) until the final one is inked. */
+  const gen = (tl: Tile, t: number): Health | null => (tl.pen != null && t < tl.inkT ? tl.pen : tl.general);
+  const inPencil = (tl: Tile, t: number) => tl.pen != null && t >= tl.healthT && t < tl.inkT;
+
   function onHealth(e: Extract<BuildupEvent, { type: 'health' }>) {
     const now = T;
-    const got: Tile[] = [];
-    for (const h of e.tiles) { const tl = M.tile(h.id); if (tl && tl.healthT === INF) { tl.general = h.general; got.push(tl); } }
-    if (!got.length) return;
+    // a first reading lands (in pencil when provisional); a final reading over a pencilled one inks it; a provisional
+    // reading never overrides anything already read
+    const got: Tile[] = [], ink: Tile[] = [];
+    for (const h of e.tiles) {
+      const tl = M.tile(h.id); if (!tl) continue;
+      if (tl.healthT === INF) { if (e.provisional) tl.pen = h.general; else tl.general = h.general; got.push(tl); }
+      else if (!e.provisional && tl.pen != null && tl.inkT === INF) { tl.general = h.general; ink.push(tl); }
+    }
+    if (e.provisional) anti = true;
+    if (!got.length && !ink.length) return;
     cancelIdle(now);
     const kc = catchUp(now);
     const cur = Math.max(now, S.Q);
     // the prototype laid health across the sheet left to right; a batch keeps that sweep inside itself
-    got.sort((a, b) => a.box.x - b.box.x || a.box.y - b.box.y);
-    got.forEach((tl, k) => { tl.healthT = cur + .3 * kc + k * .07 * kc; tl.wing.healthT = Math.min(tl.wing.healthT, tl.healthT); });
+    const lr = (a: Tile, b: Tile) => a.box.x - b.box.x || a.box.y - b.box.y;
+    got.sort(lr);
+    got.forEach((tl, k) => { tl.healthT = cur + .3 * kc + k * .07 * kc; if (!e.provisional) tl.inkT = tl.healthT; tl.wing.healthT = Math.min(tl.wing.healthT, tl.healthT); });
     // count what has landed by the end of this batch (later batches may already be queued behind it)
-    const upto = got[got.length - 1].healthT;
+    let upto = got.length ? got[got.length - 1].healthT : cur;
+    S.Q = got.length ? cur + (.3 + got.length * .07) * kc : cur;
+    if (ink.length) {
+      ink.sort(lr);
+      const i0 = got.length ? upto + .2 : cur + .3 * kc;
+      ink.forEach((tl, k) => { tl.inkT = i0 + k * .05 * kc; });
+      upto = Math.max(upto, ink[ink.length - 1].inkT + .5); S.Q = Math.max(S.Q, upto);
+    }
     const judged = M.tiles.filter((x) => x.healthT <= upto);
-    const bad = judged.filter((x) => x.general === 'bad').length;
-    log(cur, `<b>07 Judge</b> · ${judged.length}/${M.tiles.length} judged${bad ? ` · <span class="${css.bad}">${bad} in trouble</span>` : ''}`);
-    S.Q = cur + (.3 + got.length * .07) * kc;
+    const bad = judged.filter((x) => gen(x, upto) === 'bad').length;
+    const badH = bad ? ` · <span class="${css.bad}">${bad} in trouble</span>` : '';
+    if (e.provisional) {
+      const p = prog.length ? prog[prog.length - 1] : null;
+      log(cur, `<b>07 Judge</b> · ${p && p.n ? `batch ${p.n} of ${p.of} · ` : ''}${judged.length}/${M.tiles.length} pencilled${badH}`, !p || p.n < p.of);
+    } else if (ink.length) log(cur, `<b>07 Judge</b> · final readings inked · ${judged.length}/${M.tiles.length}${badH}`);
+    else log(cur, `<b>07 Judge</b> · ${judged.length}/${M.tiles.length} judged${badH}`);
   }
+
+  function onSurvey(e: Extract<BuildupEvent, { type: 'survey' }>) {
+    anti = true;
+    const now = T;
+    for (const a of e.areas) {
+      const old = lots.get(a.id);
+      if (old) Object.assign(old, a);
+      else lots.set(a.id, { ...a, chalkT: INF, tw: still({ x: 0, y: 0, w: 0, h: 0 }) });
+    }
+    const list = [...lots.values()], k = M.known();
+    const L = k ? bandLayout(list, k) : siteLayout(list);
+    let i = 0;
+    for (const l of orderLots(list)) {
+      const b = L.get(l.id); if (!b) continue;
+      // a new lot is chalked in place, one after another; a known one moves to its new size (the lines arriving)
+      if (l.chalkT === INF) { l.chalkT = now + .2 + i++ * .09; l.tw = still(b); }
+      else retarget(l.tw, b, now, 1.6);
+    }
+    setExtTarget();
+    const running = !phaseDone.has('product-tree') && (phaseOn.has('context-map') || phaseOn.has('product-tree'));
+    log(now, byLines(list)
+      ? `<b>03 Seed</b> · ${list.length} code areas measured · ${nf(list.reduce((s, l) => s + (l.lines ?? 0), 0))} lines · lots resized by lines`
+      : `<b>02 Context map</b> · ${list.length} code areas chalked on the site · sized by files until lines are counted`, running);
+  }
+
+  function layoutGhosts(now: number) {
+    const all = [...ghosts.values()].sort((a, b) => a.d.order - b.d.order || a.d.id.localeCompare(b.d.id));
+    all.forEach((g, r) => {
+      if (g.matched) return;
+      g.rank = r; g.letter = String.fromCharCode(65 + (r % 26));
+      const box = ghostBox(r, g.d.capabilities.length);
+      const fresh = g.tw.b.w === 0;
+      if (fresh) g.tw = still(box); else retarget(g.tw, box, now, 1.2);
+      g.caps = g.d.capabilities.map((c, j) => {
+        const old = g.caps.find((x) => x.id === c.id), cb = capBox(box, j);
+        if (!old) return { id: c.id, name: c.name, tw: still(cb), fadeT: INF };
+        old.name = c.name; if (!fresh) retarget(old.tw, cb, now, 1.2);
+        return old;
+      });
+    });
+  }
+  function onOutline(e: Extract<BuildupEvent, { type: 'outline' }>) {
+    anti = true;
+    const now = T;
+    const named: string[] = [];
+    for (const d of e.domains) {
+      if (M.wings.some((w) => w.id === d.id)) continue; // the wing itself is already standing
+      const g = ghosts.get(d.id);
+      if (g) g.d = d;
+      else { ghosts.set(d.id, { d, rank: 0, letter: '', appearT: now + .1 + named.length * .3, fadeT: INF, matched: false, tw: still({ x: 0, y: 0, w: 0, h: 0 }), caps: [] }); named.push(d.id); }
+    }
+    layoutGhosts(now);
+    setExtTarget();
+    for (const id of named) {
+      const g = ghosts.get(id); if (!g) continue;
+      log(now, `<b>04 Product tree</b> · wing ${esc(g.letter)} named · ${esc(g.d.name)} · ${g.d.capabilities.length} capabilities pencilled`, !phaseDone.has('product-tree'));
+    }
+  }
+  function onActivity(e: Extract<BuildupEvent, { type: 'activity' }>) {
+    anti = true;
+    const now = T;
+    if (act && act.area === e.area) { act.path = e.path; act.verb = e.verb; act.last = now; return; }
+    actPrev = act; act = { area: e.area, path: e.path, verb: e.verb, t0: now, last: now };
+  }
+  /** how lit a lot is by the agent's reading: the current lot fades in, the one before fades out (never a jump) */
+  function actW(id: string, t: number) {
+    if (!act) return 0;
+    const u = RMODE ? 1 : smooth(clamp((t - act.t0) / .9));
+    if (act.area === id) return u;
+    if (actPrev && actPrev.area === id) return 1 - u;
+    return 0;
+  }
+  function onProgress(e: Extract<BuildupEvent, { type: 'progress' }>) {
+    anti = true;
+    if (e.phase === 'judge') prog.push({ t: Math.max(T, S.Q), n: e.n, of: e.of });
+  }
+  const progAt = (t: number) => { let p: (typeof prog)[number] | null = null; for (const x of prog) if (x.t <= t) p = x; return p; };
 
   function onPhase(e: Extract<BuildupEvent, { type: 'phase' }>) {
     const now = T, i = PHASES.indexOf(e.phase), st = S.steps[i];
@@ -250,6 +395,8 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
       if (e.phase === 'measure') { measureOn = false; const l = S.sweeps[S.sweeps.length - 1]; if (l) { vt = Math.max(vt, l.t1); S.Q = Math.max(S.Q, l.t1); } }
       if (st.t0 === INF) st.t0 = vt;
       st.t1 = vt;
+      // a domain the tree named but did not keep fades with the step
+      if (e.phase === 'product-tree' && ghosts.size) { for (const g of ghosts.values()) if (!g.matched && g.fadeT === INF) { g.fadeT = vt; for (const cp of g.caps) cp.fadeT = vt; } setExtTarget(); }
       if (e.detail && e.phase !== 'register') log(vt, `<b>${STEPS[i].n} ${STEPS[i].name}</b> · ${esc(e.detail)}`);
     } else {
       st.failed = true; if (st.t0 === INF) st.t0 = vt; st.t1 = vt;
@@ -277,8 +424,10 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     projectName = e.project.name;
     S = freshSchedule();
     beginExt = e.extent && e.extent.w > 0 ? e.extent : null;
+    lots.clear(); ghosts.clear(); bandGone = false;
     begun = false; setExtTarget(); begun = true;
     phaseOn.clear(); phaseDone.clear(); measureOn = false;
+    act = actPrev = null; prog = []; anti = false; lampA = 0;
     T = 0; phase = 'build'; userTh = 0; userPh = 0; userZ = 1; liveCam = null; liveMoved = false; raise = raiseTarget = 0; tween = null; level = 0;
     hover = null; sel = null; showDetail(); $('tip').hidden = true; closeFind();
     root.classList.remove(css.live);
@@ -297,6 +446,10 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
       case 'structure': onStructure(e); break;
       case 'history': onHistory(e); break;
       case 'health': onHealth(e); break;
+      case 'survey': onSurvey(e); break;
+      case 'outline': onOutline(e); break;
+      case 'activity': onActivity(e); break;
+      case 'progress': onProgress(e); break;
       case 'done': onDone(); break;
       case 'failed': {
         S.failed = `${STEPS[PHASES.indexOf(e.phase)].n} ${STEPS[PHASES.indexOf(e.phase)].name} failed: ${e.message}`;
@@ -460,6 +613,161 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     ctx.strokeStyle = hexA(C.glow, .35); ctx.lineWidth = k; ctx.strokeRect(x0 + 10, y0 + 10, x1 - x0 - 20, y1 - y0 - 20);
     ctx.globalAlpha = 1;
   }
+  /* ---------- drawing: the site survey (lots, pencilled wings, the agent's reading, the lamp) ---------- */
+  const siteFade = (t: number) => (S.R0 === INF ? 1 : 1 - smooth(clamp((t - S.R0) / ((S.end - S.R0) * .6))));
+  const sitePens: [number, number][] = [];
+  function drawSite(t: number) {
+    sitePens.length = 0;
+    if (isLive() || (!lots.size && !ghosts.size)) return;
+    const F = siteFade(t); if (F <= 0) return;
+    const k = 1 / V.zoom, band = M.wings.length > 0;
+    const breathe = RMODE ? .5 : .5 + .5 * Math.sin(t * Math.PI * 2 / 3.6);
+    floorT(0);
+    // lots: the code areas chalked on the table, dashed, a pen tracing each one as it is surveyed
+    for (const l of orderLots([...lots.values()])) {
+      const p = RMODE ? (t >= l.chalkT ? 1 : 0) : clamp((t - l.chalkT) / .8); if (p <= 0) continue;
+      const r = rectAt(l.tw, t, RMODE), aw = actW(l.id, t);
+      ctx.globalAlpha = F;
+      ctx.fillStyle = hexA(C.ink, (band ? .045 : .06) * Math.min(1, p * 1.6)); ctx.fillRect(r.x, r.y, r.w, r.h);
+      if (aw > 0) { ctx.fillStyle = hexA(C.accent, (.07 + .09 * breathe) * aw); ctx.fillRect(r.x, r.y, r.w, r.h); }
+      ctx.beginPath();
+      if (p < 1) sitePens.push(perimPartial(r.x, r.y, r.w, r.h, p)); else ctx.rect(r.x, r.y, r.w, r.h);
+      ctx.setLineDash([7 * k, 4 * k]); ctx.strokeStyle = hexA(C.ink, band ? .3 : .42); ctx.lineWidth = 1.1 * k; ctx.stroke(); ctx.setLineDash([]);
+      if (aw > 0) { ctx.strokeStyle = hexA(C.accent, .85 * aw); ctx.lineWidth = 1.8 * k; ctx.strokeRect(r.x, r.y, r.w, r.h); }
+    }
+    // ghosts: the named wings pencilled over the lots, their capabilities as room plates
+    for (const g of ghosts.values()) {
+      const p = RMODE ? (t >= g.appearT ? 1 : 0) : clamp((t - g.appearT) / 1.0); if (p <= 0) continue;
+      const a = F * (g.fadeT === INF ? 1 : 1 - clamp((t - g.fadeT) / .7)); if (a <= 0) continue;
+      const r = rectAt(g.tw, t, RMODE);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = hexA(C['paper-hi'], .06 * p); ctx.fillRect(r.x, r.y, r.w, r.h);
+      ctx.beginPath();
+      if (p < 1) sitePens.push(perimPartial(r.x, r.y, r.w, r.h, p)); else ctx.rect(r.x, r.y, r.w, r.h);
+      ctx.setLineDash([12 * k, 5 * k]); ctx.strokeStyle = hexA(C.ink, .62); ctx.lineWidth = 1.5 * k; ctx.stroke();
+      g.caps.forEach((cp, j) => {
+        const q = RMODE ? p : clamp((t - g.appearT - .5 - j * .12) / .5); if (q <= 0) return;
+        const ca = a * q * (cp.fadeT === INF ? 1 : 1 - clamp((t - cp.fadeT) / .5)); if (ca <= 0) return;
+        const cr = rectAt(cp.tw, t, RMODE);
+        ctx.globalAlpha = ca; ctx.setLineDash([4 * k, 4 * k]); ctx.strokeStyle = hexA(C.ink, .42); ctx.lineWidth = k;
+        ctx.strokeRect(cr.x + 8, cr.y + 8, cr.w - 16, cr.h - 16);
+      });
+      ctx.setLineDash([]);
+    }
+    ctx.globalAlpha = 1;
+  }
+  function lampWant(t: number) {
+    if (!anti || RMODE || isLive() || measureOn || t >= S.R0 || t < S.Q + .4) return 0;
+    return (['context-map', 'seed', 'product-tree', 'judge'] as Phase[]).some((ph) => phaseOn.has(ph) && !phaseDone.has(ph)) ? 1 : 0;
+  }
+  /** The survey lamp: while a long step runs and nothing is landing, a slow line of light crosses the table, and the
+   *  features it passes that nobody has judged yet catch it. It says "working", never "how far". */
+  function drawLamp(t: number) {
+    if (lampA < .01 || isLive() || RMODE) return;
+    const P = 16, u = (t % P) / P, env = Math.sin(Math.PI * u) * lampA;
+    if (env < .01) return;
+    const e = extD, x = e.x - 60 + (e.w + 120) * u, k = 1 / V.zoom, y0 = e.y - 60, y1 = e.y + e.h + 60;
+    floorT(0);
+    const g = ctx.createLinearGradient(x - 110, 0, x, 0); g.addColorStop(0, hexA(C.accent, 0)); g.addColorStop(1, hexA(C.accent, .08 * env));
+    ctx.fillStyle = g; ctx.fillRect(x - 110, y0, 110, y1 - y0);
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.strokeStyle = hexA(C.accent, .5 * env); ctx.lineWidth = 1.4 * k; ctx.stroke();
+    if (!(phaseOn.has('judge') && !phaseDone.has('judge'))) return;
+    floorT(H_SLAB * V.ws);
+    for (const tl of M.tiles) {
+      if (dropP(tl, t) < 1 || t >= tl.healthT) continue;
+      const d = Math.abs(tl.box.x + tl.box.w / 2 - x); if (d > 120) continue;
+      ctx.strokeStyle = hexA(C.accent, .6 * env * (1 - d / 120)); ctx.lineWidth = 1.6 * k;
+      ctx.strokeRect(tl.box.x - 2 * k, tl.box.y - 2 * k, tl.box.w + 4 * k, tl.box.h + 4 * k);
+    }
+  }
+  function pencilBubble(x: number, y: number, letter: string) {
+    ctx.beginPath(); ctx.arc(x, y, 10.5, 0, Math.PI * 2);
+    ctx.fillStyle = hexA(C.paper, .75); ctx.fill(); ctx.setLineDash([2.5, 2.5]); ctx.strokeStyle = C['ink-2']; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+    font(`600 12px ${FM}`); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = C['ink-2']; ctx.fillText(letter, x, y + .5);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  function actTag(a: Act, alpha: number, t: number) {
+    if (!a.area || alpha <= .01) return;
+    const l = lots.get(a.area); if (!l || t < l.chalkT) return;
+    const r = rectAt(l.tw, t, RMODE), P = proj(r.x, r.y, 0);
+    const ago = t - a.last > 15 ? ` · ${fmt(t - a.last)} ago` : '';
+    font(`600 12px ${FM}`, '0.03em');
+    const txt = ell(`${VERB[a.verb]} ${a.path}${ago}`, 420), tw = ctx.measureText(txt).width;
+    let x = clamp(P[0], 8, vw - tw - 20);
+    const y = clamp(P[1] - 24, 8, vh - 30);
+    // keep clear of the legend card (DOM, over the canvas)
+    const lg = $('legend');
+    if (lg.classList.contains(css.on)) { const rr = lg.getBoundingClientRect(), r0 = root.getBoundingClientRect(), lx = rr.right - r0.left, ly = rr.top - r0.top; if (x < lx + 8 && y + 19 > ly) x = lx + 12; }
+    ctx.globalAlpha = alpha * siteFade(t);
+    ctx.fillStyle = C.accent; ctx.fillRect(x, y, tw + 12, 19);
+    ctx.fillStyle = C['on-ink']; ctx.textBaseline = 'top'; ctx.fillText(txt, x + 6, y + 4); ctx.textBaseline = 'alphabetic';
+    if (hasLS) ctx.letterSpacing = '0px';
+    ctx.globalAlpha = 1;
+  }
+  function drawSiteLabels(t: number) {
+    if (isLive() || (!lots.size && !ghosts.size)) return;
+    const F = siteFade(t); if (F <= 0) return;
+    screen();
+    const span = (a: [number, number], b: [number, number]) => Math.hypot(b[0] - a[0], b[1] - a[1]);
+    // lot names and what is known of them: files, then lines and the first and last commit
+    const under = [...ghosts.values()].some((g) => t >= g.appearT && g.fadeT === INF) ? .5 : 1;
+    if (!M.wings.length) for (const l of lots.values()) {
+      const p = RMODE ? (t >= l.chalkT ? 1 : 0) : clamp((t - l.chalkT - .4) / .5); if (p <= 0) continue;
+      const r = rectAt(l.tw, t, RMODE);
+      const P = proj(r.x + 8, r.y + 8, 0), Q = proj(r.x + r.w - 8, r.y + 8, 0), H = proj(r.x + 8, r.y + r.h - 8, 0);
+      const wpx = span(P, Q), hpx = span(P, H); if (wpx < 84 || hpx < 34) continue;
+      ctx.globalAlpha = F * p * under; ctx.textBaseline = 'top';
+      font(`600 12px ${FS}`, '0.06em'); halo(ell(l.name.toUpperCase(), wpx), P[0], P[1], C['ink-2'], 3);
+      font(`500 12px ${FM}`);
+      const stat = l.lines != null ? `${nf(l.lines)} lines · ${l.files} files` : `${l.files} file${l.files === 1 ? '' : 's'}`;
+      halo(ell(stat, wpx), P[0], P[1] + 16, C['ink-2'], 3);
+      if (under === 1 && hpx > 56 && l.first && l.last) halo(ell(`commits ${l.first.slice(5)} → ${l.last.slice(5)}`, wpx), P[0], P[1] + 32, C['ink-3'], 3);
+    }
+    if (hasLS) ctx.letterSpacing = '0px';
+    // ghost wings: a pencilled bubble and name where the wing will stand, their capabilities as pencilled plates
+    for (const g of ghosts.values()) {
+      const p = RMODE ? (t >= g.appearT ? 1 : 0) : clamp((t - g.appearT - .3) / .5); if (p <= 0) continue;
+      const a = F * p * (g.fadeT === INF ? 1 : 1 - clamp((t - g.fadeT + .3) / .5)); if (a <= 0) continue;
+      const r = rectAt(g.tw, t, RMODE), P = proj(r.x, r.y, 0), Q = proj(r.x + r.w, r.y, 0);
+      const width = Math.max(60, span(P, Q) - 6);
+      ctx.globalAlpha = a; ctx.textBaseline = 'alphabetic';
+      font(`500 12px ${FS}`);
+      halo(ell(`${g.d.capabilities.length} capabilities · pencilled`, width), P[0], P[1] - 15, C['ink-3'], 3);
+      font(`600 14px ${FS}`, '0.07em');
+      const nm = ell(g.d.name.toUpperCase(), width - 28);
+      pencilBubble(P[0] + 10.5, P[1] - 37, g.letter);
+      ctx.globalAlpha = a; font(`600 14px ${FS}`, '0.07em');
+      halo(nm, P[0] + 26, P[1] - 32, C['ink-2'], 3);
+      if (hasLS) ctx.letterSpacing = '0px';
+      g.caps.forEach((cp, j) => {
+        const q = RMODE ? 1 : clamp((t - g.appearT - .7 - j * .12) / .5); if (q <= 0) return;
+        const ca = a * q * (cp.fadeT === INF ? 1 : 1 - clamp((t - cp.fadeT) / .4)); if (ca <= 0) return;
+        const cr = rectAt(cp.tw, t, RMODE);
+        const A = proj(cr.x + 18, cr.y + 18, 0), B = proj(cr.x + cr.w - 18, cr.y + 18, 0), D = proj(cr.x + 18, cr.y + cr.h - 18, 0);
+        const maxW = Math.min(span(A, B) - 8, 260); if (maxW < 56 || span(A, D) < 30) return;
+        font(`600 12px ${FS}`, '0.07em'); ctx.globalAlpha = ca; ctx.textBaseline = 'top';
+        wrap2(cp.name.toUpperCase(), maxW).forEach((ln, i) => halo(ln, A[0], A[1] + i * 15, C['ink-2'], 3));
+        ctx.textBaseline = 'alphabetic';
+        if (hasLS) ctx.letterSpacing = '0px';
+      });
+    }
+    ctx.globalAlpha = 1;
+    // the pencils surveying lots and ghost wings
+    for (const tip of sitePens) { const q = proj(tip[0], tip[1], 0); ctx.beginPath(); ctx.arc(q[0], q[1], 3, 0, Math.PI * 2); ctx.fillStyle = C['ink-hi']; ctx.fill(); ctx.beginPath(); ctx.arc(q[0], q[1], 7, 0, Math.PI * 2); ctx.fillStyle = hexA(C.accent, .25); ctx.fill(); }
+  }
+  /** now reading: the lot the agent is in, tagged with the path (over every other label) */
+  function drawActTags(t: number) {
+    if (isLive() || !lots.size || siteFade(t) <= 0) return;
+    screen();
+    if (act) {
+      const u = RMODE ? 1 : smooth(clamp((t - act.t0) / .9));
+      if (actPrev && actPrev.area !== act.area) actTag(actPrev, 1 - u, t);
+      actTag(act, u, t);
+    }
+  }
+
+  /** where the grid bubbles stand: under the plan's front edge (the footing strip, when there is one, lies beyond) */
+  function gridFoot() { const k = lots.size ? M.known() : null; return k ? k.y + k.h + 76 : extD.y + extD.h + 76; }
   function gridAxisAlpha() { return isLive() ? 0 : (1 - V.flat) * (RMODE ? 0 : 1); }
   function axes(): [number, number][] {
     const xs: [number, number][] = M.wings.map((w) => [w.box.x, w.axisT]);
@@ -469,7 +777,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
   }
   function drawGridAxes(t: number) {
     const A = gridAxisAlpha(); if (A <= .01) return;
-    const e = extD, ya = e.y - 150, yb = e.y + e.h + 76, k = 1 / V.zoom;
+    const e = extD, ya = e.y - 150, yb = gridFoot(), k = 1 / V.zoom;
     floorT(0);
     ctx.setLineDash([16 * k, 5 * k, 3 * k, 5 * k]); ctx.lineWidth = k; ctx.strokeStyle = hexA(C.accent, .5 * A);
     ctx.beginPath();
@@ -534,7 +842,22 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     if (V.ws > .002) { ctx.fillStyle = hexA(C['paper-hi'], .5 * V.ws); ctx.fillRect(x, y, w, h); }
     if (sp < 1) { ctx.strokeStyle = hexA(C.ink, .3 * (1 - sp)); ctx.lineWidth = k; ctx.strokeRect(x, y, w, h); }
     if (sp > 0) { ctx.globalAlpha = a * sp; stagePattern(ctx, tl.stage, x, y, w, h, k); ctx.globalAlpha = a; }
-    if (hp > 0) { ctx.fillStyle = healthCol(tl.general); ctx.fillRect(x + 5, y + h - 9, (w - 10) * easeOut(hp), 5); }
+    if (hp > 0) {
+      const bw = (w - 10) * easeOut(hp), by = y + h - 9;
+      if (tl.pen != null && t < tl.inkT + .5) {
+        // pencil: one batch's reading, drawn hollow and hatched, with a pencilled ring round the slab; the final reading
+        // inks the bar from the left and the ring is rubbed out
+        const col = healthCol(tl.pen), ip = t < tl.inkT ? 0 : easeOut(clamp((t - tl.inkT) / .5));
+        ctx.save(); ctx.globalAlpha = a * (1 - ip);
+        ctx.strokeStyle = col; ctx.lineWidth = k; ctx.strokeRect(x + 5 + k / 2, by + k / 2, bw - k, 5 - k);
+        ctx.beginPath(); ctx.rect(x + 5, by, bw, 5); ctx.clip(); ctx.beginPath();
+        for (let q = -5; q < bw; q += 3) { ctx.moveTo(x + 5 + q, by + 5); ctx.lineTo(x + 10 + q, by); }
+        ctx.stroke(); ctx.restore();
+        ctx.save(); ctx.globalAlpha = a * (1 - ip) * .85; ctx.setLineDash([3 * k, 3 * k]); ctx.strokeStyle = col; ctx.lineWidth = 1.4 * k;
+        ctx.strokeRect(x - 4, y - 4, w + 8, h + 8); ctx.restore();
+        if (ip > 0) { ctx.fillStyle = healthCol(tl.general); ctx.fillRect(x + 5, by, (w - 10) * ip, 5); }
+      } else { ctx.fillStyle = healthCol(gen(tl, t)); ctx.fillRect(x + 5, by, bw, 5); }
+    }
     if (!isLive() && !RMODE) {
       const land = clamp((t - tl.dropT - .55) / .5), stamp = sp > 0 && sp < 1 ? 1 - sp : 0, flash = Math.max(land > 0 && land < 1 ? 1 - land : 0, stamp);
       if (flash > 0) { ctx.strokeStyle = hexA(C.accent, .9 * flash); ctx.lineWidth = 2 * k; ctx.strokeRect(x - 1.5 * k, y - 1.5 * k, w + 3 * k, h + 3 * k); }
@@ -615,7 +938,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     for (const tl of w.tiles) {
       if (dropP(tl, t) > 0) n++;
       if (stageP(tl, t) > 0 && tl.stage) { by[tl.stage] = (by[tl.stage] ?? 0) + 1; if (tl.stage === 'live' || tl.stage === 'flagged') live++; }
-      if (healthP(tl, t) > 0 && tl.general === 'bad') bad++;
+      if (healthP(tl, t) > 0 && gen(tl, t) === 'bad') bad++;
     }
     return { n, live, bad, by };
   }
@@ -626,7 +949,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     const hv = hover;
     // grid bubbles at the foot of each axis (the column grid of the sheet)
     if (A > .01) {
-      const yb = extD.y + extD.h + 76;
+      const yb = gridFoot();
       for (const w of M.wings) { const p = clamp((t - w.axisT - .4) / .3); if (p <= 0) continue; const q = proj(w.box.x, yb, 0); ctx.globalAlpha = A * p; bubble(q[0], q[1] + 12, w.letter, w === focusW); }
       ctx.globalAlpha = 1;
     }
@@ -703,9 +1026,17 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     }
     // pens tracing footprints
     for (const tip of pens) { const q = proj(tip[0], tip[1], 0); ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, Math.PI * 2); ctx.fillStyle = C['ink-hi']; ctx.fill(); ctx.beginPath(); ctx.arc(q[0], q[1], 9, 0, Math.PI * 2); ctx.fillStyle = hexA(C.accent, .3); ctx.fill(); }
-    // trouble rings when a bad reading lands
+    // inspection rings: a batch's readings land as a ring sweeping over the batch, left to right
     if (!live && !RMODE) for (const tl of M.tiles) {
-      if (tl.general !== 'bad') continue; const u = (t - tl.healthT - .3) / 1.1; if (u <= 0 || u >= 1) continue;
+      if (tl.pen == null) continue; const u = (t - tl.healthT) / 1.3; if (u <= 0 || u >= 1) continue;
+      const q = proj(tl.box.x + tl.box.w / 2, tl.box.y + tl.box.h / 2, H_SLAB * V.ws), rr = 8 + 40 * easeOut(u);
+      ctx.beginPath(); ctx.ellipse(q[0], q[1], rr, rr * Math.max(.45, Math.cos(V.ph)), 0, 0, Math.PI * 2);
+      ctx.strokeStyle = hexA(C.accent, .75 * (1 - u)); ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // trouble rings when a bad reading lands (a pencilled one, or a final one that turns a pencilled reading bad)
+    if (!live && !RMODE) for (const tl of M.tiles) {
+      const rt = (tl.pen ?? tl.general) === 'bad' ? tl.healthT : tl.pen != null && tl.general === 'bad' ? tl.inkT - .3 : INF;
+      const u = (t - rt - .3) / 1.1; if (!(u > 0 && u < 1)) continue;
       const q = proj(tl.box.x + tl.box.w / 2, tl.box.y + tl.box.h / 2, H_SLAB * V.ws);
       ctx.beginPath(); ctx.ellipse(q[0], q[1], 10 + 46 * u, (10 + 46 * u) * Math.max(.45, Math.cos(V.ph)), 0, 0, Math.PI * 2);
       ctx.strokeStyle = hexA(C.red, .9 * (1 - u)); ctx.lineWidth = 2; ctx.stroke();
@@ -720,13 +1051,17 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     const g = ctx.createRadialGradient(vw / 2, vh * .48, 0, vw / 2, vh * .48, Math.max(vw, vh) * .75);
     g.addColorStop(0, C.paper); g.addColorStop(1, C['paper-lo']); ctx.fillStyle = g; ctx.fillRect(0, 0, vw, vh);
     drawSheet(t);
+    drawSite(t);
     drawGridAxes(t);
     drawFloors(t);
     drawTiles(t, false);
+    drawLamp(t);
     drawWalls(t);
     drawTiles(t, true);
     drawSweep(t);
+    drawSiteLabels(t);
     drawLabels(t);
+    drawActTags(t);
     drawKeyplan(t);
   }
 
@@ -747,6 +1082,13 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     const g = kctx, { e, s, ox, oy } = kpMap();
     g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, KP.w, KP.h);
     const cr = curRoom(t);
+    if (!isLive()) {
+      g.globalAlpha = siteFade(t);
+      for (const l of lots.values()) { if (t < l.chalkT) continue; const r = rectAt(l.tw, t, RMODE); g.fillStyle = actW(l.id, t) > .5 ? hexA(C.accent, .4) : hexA(C.ink, .07); g.fillRect(ox + (r.x - e.x) * s, oy + (r.y - e.y) * s, Math.max(1, r.w * s - 1), Math.max(1, r.h * s - 1)); }
+      g.setLineDash([2, 2]); g.strokeStyle = hexA(C.ink, .45); g.lineWidth = 1;
+      for (const gh of ghosts.values()) { if (t < gh.appearT || gh.matched) continue; const r = rectAt(gh.tw, t, RMODE); g.strokeRect(ox + (r.x - e.x) * s + .5, oy + (r.y - e.y) * s + .5, r.w * s - 1, r.h * s - 1); }
+      g.setLineDash([]); g.globalAlpha = 1;
+    }
     for (const w of M.wings) {
       if (!isLive() && t < w.footT) continue;
       g.fillStyle = (sel && sel.wing === w) || (cr && cr.wing === w) ? hexA(C.accent, .35) : hexA(C.ink, .12);
@@ -769,11 +1111,19 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     $('steps').innerHTML = STEPS.map((s, i) => `<div class="${css.step}" data-st="${i}"><div class="${css.top}"><span class="${css.n}">${s.n}</span><span class="${css.nm}">${s.name}</span>${s.llm ? `<span class="${css.llm}">LLM</span>` : ''}</div><div class="${css.y}" data-sy="${i}">${s.y}</div><div class="${css.bar}" data-sb="${i}"></div></div>`).join('');
     lastHud = {};
   }
+  const chalked = (t: number) => [...lots.values()].filter((l) => t >= l.chalkT);
+  const named = (t: number) => [...ghosts.values()].filter((g) => t >= g.appearT && !g.matched);
   function stepYield(i: number, t: number) {
     const N = M.tiles.length;
-    if (i === 3) { const w = M.wings.filter((x) => t >= x.footT).length, r = M.rooms.filter((x) => t >= x.riseT).length, n = M.tiles.filter((x) => t >= x.dropT).length; return w ? `${w} wings · ${r} rooms · ${n} features` : 'waiting on the model'; }
+    if (i === 1) { const c = chalked(t); if (c.length) return `${c.length} code areas`; }
+    if (i === 2) { const c = chalked(t); if (c.length && byLines(c)) return `${nf(c.reduce((q, l) => q + (l.lines ?? 0), 0))} lines`; }
+    if (i === 3) { const w = M.wings.filter((x) => t >= x.footT).length, r = M.rooms.filter((x) => t >= x.riseT).length, n = M.tiles.filter((x) => t >= x.dropT).length; const g = named(t).length; return w ? `${w} wings · ${r} rooms · ${n} features` : g ? `${g} wings named` : 'waiting on the model'; }
     if (i === 4) { const s = M.hist.filter((x) => t >= x.stageT); if (!s.length) return M.historyIn && M.dated ? 'history from git' : 'stages'; const l = s[s.length - 1]; return M.dated ? `${l.created ?? ''} · ${s.length}/${N}` : `${s.length}/${N} stamped`; }
-    if (i === 6) { const j = M.tiles.filter((x) => t >= x.healthT); return j.length ? `${j.length}/${N} judged · ${j.filter((x) => x.general === 'bad').length} in trouble` : 'health per feature'; }
+    if (i === 6) {
+      const j = M.tiles.filter((x) => t >= x.healthT), p = progAt(t);
+      const b = p ? `batch ${p.n}/${p.of}` : '';
+      return j.length ? `${b ? b + ' · ' : ''}${j.length}/${N} judged · ${j.filter((x) => gen(x, t) === 'bad').length} in trouble` : b ? `${b} · reading` : 'health per feature';
+    }
     if (i === 7 && t >= S.end) return 'registered';
     return STEPS[i].y;
   }
@@ -785,22 +1135,33 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     for (const tl of M.tiles) {
       if (t >= tl.dropT) n++;
       if (t >= tl.stageT) { anyStage = true; if (tl.stage === 'live' || tl.stage === 'flagged') lv++; else if (tl.stage === 'in-dev' || tl.stage === 'in-review') bb++; }
-      if (t >= tl.healthT) { anyHealth = true; if (tl.general === 'bad') bad++; }
+      if (t >= tl.healthT) { anyHealth = true; if (gen(tl, t) === 'bad') bad++; }
     }
     const W = M.wings.filter((w) => live || t >= w.footT).length;
     setH('sheetline', `Project ${esc(M.name)} · <b>Drawing set</b> · Sheet G-001 · General arrangement${W ? ` · ${W} wings` : ''}`);
-    setH('psum', n ? `<b>${n}</b> features${anyStage ? ` · <b>${lv}</b> live · <span class="${css.bb}">${bb} being built</span>` : ''}${anyHealth ? ` · <span class="${css.tr}">${bad} in trouble</span>` : ''}` : `<span class="${css.mono}" style="font-size:13px">${t < S.steps[3].t0 ? 'reading the repository' : 'drafting'}…</span>`);
+    const cl = n ? [] : chalked(t), gn = n ? 0 : named(t).length;
+    const site = cl.length || gn ? [cl.length ? `<b>${cl.length}</b> code areas` : '', cl.length && byLines(cl) ? `<b>${nf(cl.reduce((q, l) => q + (l.lines ?? 0), 0))}</b> lines` : '', gn ? `<b>${gn}</b> wings named` : ''].filter(Boolean).join(' · ') : '';
+    setH('psum', n ? `<b>${n}</b> features${anyStage ? ` · <b>${lv}</b> live · <span class="${css.bb}">${bb} being built</span>` : ''}${anyHealth ? ` · <span class="${css.tr}">${bad} in trouble</span>` : ''}` : site || `<span class="${css.mono}" style="font-size:13px">${t < S.steps[3].t0 ? 'reading the repository' : 'drafting'}…</span>`);
     let cr = '';
     const tag = (s: string) => `<span class="${css.tag}">${s}</span>`, sep = `<span class="${css.sep}">›</span>`;
     if (!live) {
       const r = curRoom(t);
       if (S.failed) cr = `${tag('STOPPED')} <span>${esc(S.failed)}</span>`;
       else if (r) cr = `${tag('RAISING')} <span>${esc(r.wing.letter)} · ${esc(r.wing.name)}</span>${sep}<span>${esc(r.code)} ${esc(r.name)}</span>`;
-      else if (t < S.steps[3].t0 || M.wings.every((w) => t < w.footT)) cr = `${tag('SURVEY')} <span>reading ${esc(M.name)}</span>`;
+      else if (t < S.steps[3].t0 || M.wings.every((w) => t < w.footT)) {
+        const g = named(t).length, c = chalked(t).length;
+        cr = g ? `${tag('OUTLINE')} <span>${g} wing${g === 1 ? '' : 's'} named · the model is drawing the plan</span>`
+          : c ? `${tag('SURVEY')} <span>${c} code areas chalked</span>` : `${tag('SURVEY')} <span>reading ${esc(M.name)}</span>`;
+        if (act && !(act.area && lots.has(act.area))) cr += `${sep}<span>${esc(VERB[act.verb].toLowerCase())} ${esc(act.path)}</span>`;
+      }
       else if (t < S.steps[4].t0) cr = `${tag('SHELL')} <span>${M.wings.filter((w) => t >= w.footT).length} wings standing</span>`;
       else if (t < S.steps[5].t0) { const s = M.hist.filter((x) => t >= x.stageT); const l = s[s.length - 1]; cr = `${tag('HISTORY')} ${l ? `<span>${esc(l.created ?? l.wing.letter)}</span>${sep}<span>${esc(l.name)}</span>` : '<span>waiting for git history</span>'}`; }
       else if (t < S.steps[6].t0) cr = `${tag('SURVEY')} <span>measuring every feature</span>`;
-      else if (t < S.R0) { const w = M.wings.slice().reverse().find((x) => t >= x.healthT); cr = `${tag('INSPECTION')} <span>${w ? esc(w.letter + ' · ' + w.name) : 'waiting for the judge'}</span>`; }
+      else if (t < S.R0) {
+        const w = M.wings.slice().reverse().find((x) => t >= x.healthT), p = progAt(t);
+        const b = p ? `<span>batch ${p.n} of ${p.of}</span>${sep}` : '';
+        cr = `${tag('INSPECTION')} ${b}<span>${w ? esc(w.letter + ' · ' + w.name) : p ? 'the model is reading the first batch' : 'waiting for the judge'}</span>`;
+      }
       else cr = `${tag('PLAN')} <span>looking straight down</span>`;
     } else {
       const f = sel ?? hover;
@@ -842,21 +1203,42 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
       $('bRaise').setAttribute('aria-pressed', String(raiseTarget > 0));
     }
     // legend: stages once the first is stamped, health once the first reading has landed; counts are what has landed
-    const lg = $('legend'); const on = anyStage;
+    const lg = $('legend');
+    const sv = !live && siteFade(t) > .5 ? { lots: chalked(t).length, ghosts: named(t).length, lines: byLines(chalked(t)) } : null;
+    const on = anyStage || !!(sv && (sv.lots || sv.ghosts));
     if (lg.classList.contains(css.on) !== on) { lg.classList.toggle(css.on, on); placeFloaters(); }
     if (on) {
       const by: Partial<Record<Stage, number>> = {}, hb: Partial<Record<Health, number>> = {};
-      for (const tl of M.tiles) { if (t >= tl.stageT && tl.stage) by[tl.stage] = (by[tl.stage] ?? 0) + 1; if (t >= tl.healthT && tl.general) hb[tl.general] = (hb[tl.general] ?? 0) + 1; }
-      const key = JSON.stringify([by, hb, document.documentElement.dataset.theme]);
-      if (lastHud.legendKey !== key) { lastHud.legendKey = key; buildLegend(by, anyHealth ? hb : null); }
+      let pencilN = 0;
+      for (const tl of M.tiles) { if (t >= tl.stageT && tl.stage) by[tl.stage] = (by[tl.stage] ?? 0) + 1; const g = gen(tl, t); if (t >= tl.healthT && g) hb[g] = (hb[g] ?? 0) + 1; if (inPencil(tl, t)) pencilN++; }
+      const key = JSON.stringify([by, hb, pencilN, sv, document.documentElement.dataset.theme]);
+      if (lastHud.legendKey !== key) { lastHud.legendKey = key; buildLegend(by, anyHealth ? hb : null, sv, pencilN); }
     }
     $('hint').style.opacity = !live && t > 3.5 && t < S.steps[4].t0 && !RMODE ? '1' : '0';
   }
-  function buildLegend(by: Partial<Record<Stage, number>>, hb: Partial<Record<Health, number>> | null) {
-    let h = `<div class="${css.sec}"><h4>Stage</h4>` + STAGES.filter((s) => by[s]).map((s) => `<div class="${css.row}"><canvas data-sw="${s}" width="72" height="34"></canvas><span>${STAGE_WORD[s]}</span><span>${by[s]}</span></div>`).join('') + `</div>`;
-    if (hb) h += `<div class="${css.sec}"><h4>Health</h4>` + HEALTHS.filter((s) => hb[s]).map((s) => `<div class="${css.row}"><i class="${css.hb}" style="background:${healthCol(s)}"></i><span>${HEALTH_WORD[s]}</span><span>${hb[s]}</span></div>`).join('') + `</div>`;
+  function buildLegend(by: Partial<Record<Stage, number>>, hb: Partial<Record<Health, number>> | null, sv: { lots: number; ghosts: number; lines: boolean } | null, pencilN: number) {
+    const row = (sw: string, word: string, n: number) => `<div class="${css.row}">${sw}<span>${word}</span><span>${n}</span></div>`;
+    let h = '';
+    if (sv && (sv.lots || sv.ghosts)) h += `<div class="${css.sec}"><h4>Site survey</h4>`
+      + (sv.lots ? row(`<canvas data-sx="lot" width="72" height="34"></canvas>`, `Code area · by ${sv.lines ? 'lines' : 'files'}`, sv.lots) : '')
+      + (sv.ghosts ? row(`<canvas data-sx="ghost" width="72" height="34"></canvas>`, 'Wing named', sv.ghosts) : '') + `</div>`;
+    if (STAGES.some((s) => by[s])) h += `<div class="${css.sec}"><h4>Stage</h4>` + STAGES.filter((s) => by[s]).map((s) => row(`<canvas data-sw="${s}" width="72" height="34"></canvas>`, STAGE_WORD[s], by[s] ?? 0)).join('') + `</div>`;
+    if (hb) h += `<div class="${css.sec}"><h4>Health</h4>` + HEALTHS.filter((s) => hb[s]).map((s) => row(`<i class="${css.hb}" style="background:${healthCol(s)}"></i>`, HEALTH_WORD[s], hb[s] ?? 0)).join('')
+      + (pencilN ? row(`<canvas data-sx="pencil" width="72" height="34"></canvas>`, 'Pencil · one batch, provisional', pencilN) : '') + `</div>`;
     $('legend').innerHTML = h;
     $('legend').querySelectorAll<HTMLCanvasElement>('canvas[data-sw]').forEach((c) => swatch(c, c.dataset.sw as Stage));
+    $('legend').querySelectorAll<HTMLCanvasElement>('canvas[data-sx]').forEach((c) => siteSwatch(c, c.dataset.sx ?? ''));
+  }
+  function siteSwatch(c: HTMLCanvasElement, kind: string) {
+    const g = c.getContext('2d') as Ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
+    if (kind === 'lot') { g.fillStyle = hexA(C.ink, .08); g.fillRect(2, 2, 68, 30); g.setLineDash([7, 4]); g.strokeStyle = hexA(C.ink, .5); g.lineWidth = 1.6; g.strokeRect(2, 2, 68, 30); }
+    else if (kind === 'ghost') { g.setLineDash([12, 5]); g.strokeStyle = hexA(C.ink, .7); g.lineWidth = 2; g.strokeRect(2, 2, 68, 30); }
+    else if (kind === 'pencil') {
+      g.setLineDash([4, 4]); g.strokeStyle = C.amber; g.lineWidth = 2; g.strokeRect(2, 2, 68, 30); g.setLineDash([]);
+      g.lineWidth = 1.4; g.strokeRect(10, 20, 52, 8); g.save(); g.beginPath(); g.rect(10, 20, 52, 8); g.clip(); g.beginPath();
+      for (let q = -8; q < 52; q += 5) { g.moveTo(10 + q, 28); g.lineTo(18 + q, 20); } g.stroke(); g.restore();
+    }
+    g.setLineDash([]);
   }
   function swatch(c: HTMLCanvasElement, st: Stage | null) {
     const g = c.getContext('2d') as Ctx; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
@@ -882,7 +1264,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
       <h2>${esc(tl.name)}</h2>
       <dl>
         <dt>Stage</dt><dd>${hasStage ? `<canvas data-dsw width="72" height="34"></canvas>${tl.stage ? STAGE_WORD[tl.stage] : 'Unknown'} <span class="${css.mono} ${css.sub}">${esc(tl.stage ?? '')}</span>` : pend('lands with 05 events')}</dd>
-        <dt>Health</dt><dd>${hasHealth ? `<i class="${css.chip}" style="background:${healthCol(tl.general)}"></i>${tl.general ? HEALTH_WORD[tl.general] : '—'}` : pend('lands with 07 judge')}</dd>
+        <dt>Health</dt><dd>${hasHealth ? `<i class="${css.chip}" style="background:${healthCol(gen(tl, t))}"></i>${(() => { const g = gen(tl, t); return g ? HEALTH_WORD[g] : '—'; })()}${inPencil(tl, t) ? ` ${pend('pencil: one batch, the final reading inks it')}` : ''}` : pend('lands with 07 judge')}</dd>
         <dt>Kind</dt><dd>${tl.kind ? KIND_WORD[tl.kind] ?? esc(tl.kind) : '—'}${tl.tier ? ` · ${esc(tl.tier)}` : ''}</dd>
         <dt>Room</dt><dd>${esc(tl.room.name)}</dd>
         ${M.historyIn ? (tl.created ? `<dt>Created</dt><dd>${hasStage ? esc(tl.created) : pend('lands with 05 events')}</dd>` : '') : `<dt>Created</dt><dd>${pend('lands with 05 events')}</dd>`}
@@ -898,7 +1280,7 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     let h = '';
     if (o.lvl === 'tile') {
       const hasStage = t >= o.stageT, hasHealth = t >= o.healthT;
-      h = `<div class="${css.c}">${esc(o.bay.code)} ${esc(o.bay.name)}</div><b>${esc(o.name)}</b><div class="${css.m}">${hasStage ? (o.stage ? STAGE_WORD[o.stage] : 'stage unknown') : 'stage pending'} · ${hasHealth && o.general ? HEALTH_WORD[o.general] : 'health pending'} · ${o.kind ? KIND_WORD[o.kind] ?? esc(o.kind) : ''}</div>`;
+      h = `<div class="${css.c}">${esc(o.bay.code)} ${esc(o.bay.name)}</div><b>${esc(o.name)}</b><div class="${css.m}">${hasStage ? (o.stage ? STAGE_WORD[o.stage] : 'stage unknown') : 'stage pending'} · ${(() => { const g = gen(o, t); return hasHealth && g ? HEALTH_WORD[g] + (inPencil(o, t) ? ' (pencil)' : '') : 'health pending'; })()} · ${o.kind ? KIND_WORD[o.kind] ?? esc(o.kind) : ''}</div>`;
     } else if (o.lvl === 'room') h = `<div class="${css.c}">${esc(o.wing.letter)} · ${esc(o.wing.name)}</div><b>${esc(o.code)} ${esc(o.name)}</b><div class="${css.m}">${o.bays.length} bays · ${o.tiles.length} features</div>`;
     else if (o.lvl === 'wing') h = `<b>${esc(o.letter)} · ${esc(o.name)}</b><div class="${css.m}">${o.rooms.length} rooms · ${o.tiles.length} features</div>`;
     tip.innerHTML = h; tip.hidden = false;
@@ -970,6 +1352,9 @@ export function createEngine(root: HTMLElement, opts: EngineOpts): Engine {
     else if (de > 0) { extD = { ...ext }; dirty = true; }
     if (begun && !isLive()) {
       T += dt;
+      const lw = lampWant(T);
+      if (Math.abs(lampA - lw) > .001) lampA += (lw - lampA) * Math.min(1, dt * (lw > lampA ? .8 : 2.4));
+      if (!bandGone && lots.size && T >= S.R0) { bandGone = true; setExtTarget(); }
       // measuring has no length: the survey plane makes another pass while the step still runs
       const lastSw = S.sweeps[S.sweeps.length - 1];
       if (measureOn && lastSw && T > lastSw.t1 - .05) { S.sweeps.push({ t0: lastSw.t1, t1: lastSw.t1 + SWEEP }); S.Q = Math.max(S.Q, lastSw.t1 + SWEEP); }
