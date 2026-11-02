@@ -10,15 +10,25 @@
 //   measure   -> a sweep that repeats until `measure done` arrives
 //   health    -> one batch of tiles judged per event, queued after the sweep
 //   register / done -> the column collapses and the camera settles; the plan becomes explorable
+// The anti-stale events (all optional; without them the engine draws what it always drew):
+//   survey    -> a "site survey" section typed at the head of the column, and pencilled parcels on the sheet (sized by
+//                files, then by lines when the inventory re-sends them); it folds to one line when the outline starts
+//   outline   -> the domain and its capabilities typed as outline lines, drafts until the structure places them; the
+//                structure then writes bays and features in under them, and the same lines fly to become the wings
+//   activity  -> the cursor line ("reading forge/src/core/app.mjs") and the lit parcel / survey row of its area
+//   progress  -> the judge header's count, and the judge list (every feature, boxed when its batch lands)
+//   health.provisional -> pencil (dashed) until the final reading inks it (solid)
+// Once the build queue drains on such a run the camera returns to the whole plan, visits each judged batch, and leaves.
 // The engine's clock runs in run seconds: it follows the source's own clock (events carry `at`), so a lab speed of 4x
 // plays the prototype's x4.
-import { PHASES, type BBox, type BuildupEvent, type Health, type Phase, type Stage } from '../contract';
+import { PHASES, type ActivityVerb, type BBox, type BuildupEvent, type Health, type Phase, type Stage, type SurveyArea } from '../contract';
 
 type Styles = Readonly<Record<string, string>>;
 type Kind = 'wing' | 'room' | 'bay' | 'tile';
 
 interface Line { kind: Kind; ref: PNode; prefix: string; text: string; i: number; t0: number; t1: number }
-interface NodeBase { id: string; name: string; order: number; box: BBox; line: Line; fly: number }
+/** `draft`: named by an `outline` event, not yet placed by a `structure` (no box; its line is typed, it does not fly). */
+interface NodeBase { id: string; name: string; order: number; box: BBox; line: Line; fly: number; draft: boolean }
 interface WingN extends NodeBase { kind: 'wing'; letter: string; rooms: RoomN[]; tiles: TileN[] }
 interface RoomN extends NodeBase { kind: 'room'; wing: WingN; bays: BayN[]; tiles: TileN[] }
 interface BayN extends NodeBase { kind: 'bay'; room: RoomN; wing: WingN; tiles: TileN[]; foldAt: number | undefined }
@@ -26,8 +36,12 @@ interface TileN extends NodeBase {
   kind: 'tile'; bay: BayN; room: RoomN; wing: WingN; idx: number;
   stage: Stage | null; fkind: string | null; tier: string | null; summary: string | null;
   created: string | null; general: Health | null; wrap: string[]; stampAt: number; healthAt: number;
+  /** A batch's provisional reading (pencil) and when the final reading inks it (Infinity until a final one lands). */
+  pencil: Health | null; inkAt: number;
 }
 type PNode = WingN | RoomN | BayN | TileN;
+interface SArea extends SurveyArea { ord: number; t0: number }
+interface Act { verb: ActivityVerb; path: string; area: string | null; t: number; wall: number; areaWall: number }
 interface Cam { x: number; y: number; s: number }
 interface Key extends Cam { t: number; d: number }
 interface Step { k: Phase; n: string; llm?: boolean; what: string; t0: number; t1: number }
@@ -140,10 +154,24 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
   let provisional: BBox | null = null;
   let origin: { x: number; y: number; t: number } | null = null;
 
+  // the anti-stale layers (survey, outline, activity, progress, provisional health). `anti` turns on with the first of
+  // them; with the old event set alone the engine draws what it always drew.
+  let anti = false;
+  let wingsAll: WingN[] = []; // placed and drafted wings, in order: what the column writes
+  let areas: SArea[] = [], areaById = new Map<string, SArea>(), surveyT0 = Infinity, surveyType = 0;
+  let surveyLayouts: { t: number; rects: Map<string, BBox> }[] = [];
+  let act: Act | null = null, actPrev: Act | null = null;
+  let progress: { n: number; of: number; t: number } | null = null; // the judge's batches
+  let batches: { t: number; tiles: TileN[] }[] = [];
+  let firstTypeAt = Infinity, structAt = Infinity, treeDoneAt = Infinity;
+  let wallNow = 0; // performance.now() of the frame: ambient motion (fades, the breath, the sweep) runs in wall time
+
   function reset(e: Extract<BuildupEvent, { type: 'begin' }>) {
     leaveLive();
     project = e.project; announced = e.extent;
     wings = []; rooms = []; bays = []; tiles = []; lines = []; byId = new Map();
+    anti = false; wingsAll = []; areas = []; areaById = new Map(); surveyT0 = Infinity; surveyType = 0; surveyLayouts = [];
+    act = null; actPrev = null; progress = null; batches = []; firstTypeAt = Infinity; structAt = Infinity; treeDoneAt = Infinity;
     typeEnd = 0; prevFly = -1e9; lastLand = 0; structTail = 0; treeDone = false;
     steps = STEP_DEF.map((s) => ({ ...s, t0: Infinity, t1: Infinity }));
     rail = PHASES.map(() => ({ t0: Infinity, t1: Infinity, failed: false, detail: null }));
@@ -191,25 +219,119 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
   const byOrder = (a: { order: number }, b: { order: number }) => a.order - b.order;
   const noLine = undefined as unknown as Line; // set in the same call that creates the node
 
+  // the column walks the whole tree (drafted domains included) and writes what is new; a line that already stands
+  // keeps its place, so a structure that fills in drafted domains inserts its bays and features under their rooms, the
+  // way an outline is filled in. Prefixes are recomputed for every line (a sibling added below turns a └─ into a ├─).
+  function relayout(fresh: Set<PNode>): Line[] {
+    const order: Line[] = [], nl: Line[] = [];
+    const put = (ref: PNode, prefix: string, text: string) => {
+      if (fresh.has(ref)) {
+        const l: Line = { kind: ref.kind, ref, prefix, text, i: 0, t0: Infinity, t1: Infinity };
+        ref.line = l; nl.push(l);
+        if (!ref.draft) {
+          if (ref.kind === 'room') rooms.push(ref);
+          else if (ref.kind === 'bay') bays.push(ref);
+          else if (ref.kind === 'tile') { ref.idx = tiles.length; tiles.push(ref); ref.room.tiles.push(ref); ref.wing.tiles.push(ref); }
+        }
+      } else ref.line.prefix = prefix;
+      order.push(ref.line);
+    };
+    for (const w of wingsAll) {
+      put(w, w.letter + '  ', w.name.toUpperCase());
+      w.rooms.forEach((r, ri) => {
+        const lastR = ri === w.rooms.length - 1;
+        put(r, '  ' + (lastR ? '└─ ' : '├─ '), r.name);
+        const p1 = '  ' + (lastR ? '   ' : '│  ');
+        r.bays.forEach((b, bi) => {
+          const lastB = bi === r.bays.length - 1;
+          put(b, p1 + (lastB ? '└─ ' : '├─ '), b.name);
+          for (const tl of b.tiles) put(tl, p1 + (lastB ? '   ' : '│  ') + '· ', tl.name);
+        });
+      });
+    }
+    order.forEach((l, i) => { l.i = i; });
+    lines = order;
+    return nl;
+  }
+  /** Types new lines after what is queued: the prototype's demo weights, compressed when the queue would run past DRAIN s. */
+  function typeLines(nl: Line[], now: number): number {
+    const backlog = Math.max(0, typeEnd - now);
+    const newW = nl.reduce((a, l) => a + WEIGHT[l.kind], 0);
+    let k = K0;
+    if (backlog + newW * K0 > DRAIN) k = Math.max(K_MIN, (DRAIN - Math.min(backlog, DRAIN * 0.5)) / newW);
+    let t = Math.max(now + 0.12, typeEnd);
+    for (const l of nl) { const d = WEIGHT[l.kind] * k; l.t0 = t; l.t1 = t + Math.min(d * 0.85, 0.1 + l.text.length * 0.011); t += d; }
+    if (nl.length) firstTypeAt = Math.min(firstTypeAt, nl[0].t0);
+    typeEnd = t;
+    return k;
+  }
+
+  // an outline domain: its name and capabilities are written into the column as soon as the model has decided them;
+  // they stay drafts (no box) until the structure places them, then become the wing and its rooms
+  function onOutline(e: Extract<BuildupEvent, { type: 'outline' }>) {
+    const fresh = new Set<PNode>();
+    for (const d of [...e.domains].sort(byOrder)) {
+      const got = byId.get('wing:' + d.id);
+      if (got && got.kind !== 'wing') continue;
+      let w: WingN;
+      if (got) { w = got; if (!w.draft) continue; }
+      else {
+        w = { kind: 'wing', id: d.id, name: d.name, order: d.order, letter: d.order >= 0 && d.order < 26 ? String.fromCharCode(65 + d.order) : '·',
+          box: { x: 0, y: 0, w: 0, h: 0 }, line: noLine, fly: Infinity, draft: true, rooms: [], tiles: [] };
+        byId.set('wing:' + d.id, w); wingsAll.push(w); fresh.add(w);
+      }
+      const wing = w;
+      d.capabilities.forEach((c, ci) => {
+        if (byId.has('room:' + c.id)) return;
+        const r: RoomN = { kind: 'room', id: c.id, name: c.name, order: ci, box: { x: 0, y: 0, w: 0, h: 0 }, line: noLine, fly: Infinity, draft: true, wing, bays: [], tiles: [] };
+        byId.set('room:' + c.id, r); wing.rooms.push(r); fresh.add(r);
+      });
+    }
+    if (!fresh.size) return;
+    wingsAll.sort(byOrder);
+    typeLines(relayout(fresh), S.t);
+  }
+  // a draft the structure never placed is struck from the column when the tree is done
+  function dropDrafts(now: number) {
+    for (const o of byId.values()) if (o.draft && !fin(o.fly)) o.fly = Math.max(now, o.line.t1) + 0.3;
+  }
+
   function onStructure(e: Extract<BuildupEvent, { type: 'structure' }>) {
     const now = S.t;
-    const fresh = new Set<PNode>();
+    if (!fin(structAt)) structAt = now;
+    const fresh = new Set<PNode>(), placed: PNode[] = [];
     for (const w of e.wings) {
-      if (byId.has('wing:' + w.id)) continue;
-      const n: WingN = { kind: 'wing', id: w.id, name: w.name, order: w.order, letter: w.letter, box: w.box, line: noLine, fly: Infinity, rooms: [], tiles: [] };
-      byId.set('wing:' + w.id, n); wings.push(n); fresh.add(n);
+      const got = byId.get('wing:' + w.id);
+      if (got) {
+        if (got.kind === 'wing' && got.draft) {
+          Object.assign(got, { draft: false, box: w.box, letter: w.letter, name: w.name, order: w.order });
+          got.line.text = w.name.toUpperCase(); wings.push(got); placed.push(got);
+        }
+        continue;
+      }
+      const n: WingN = { kind: 'wing', id: w.id, name: w.name, order: w.order, letter: w.letter, box: w.box, line: noLine, fly: Infinity, draft: false, rooms: [], tiles: [] };
+      byId.set('wing:' + w.id, n); wings.push(n); wingsAll.push(n); fresh.add(n);
     }
-    wings.sort(byOrder);
+    wings.sort(byOrder); wingsAll.sort(byOrder);
     for (const r of e.rooms) {
       const w = byId.get('wing:' + r.parentId);
-      if (byId.has('room:' + r.id) || !w || w.kind !== 'wing') continue;
-      const n: RoomN = { kind: 'room', id: r.id, name: r.name, order: r.order, box: r.box, line: noLine, fly: Infinity, wing: w, bays: [], tiles: [] };
+      const got = byId.get('room:' + r.id);
+      if (got) {
+        if (got.kind === 'room' && got.draft && w && w.kind === 'wing' && !w.draft) {
+          if (got.wing !== w) { const old = got.wing; old.rooms = old.rooms.filter((x) => x !== got); got.wing = w; w.rooms.push(got); }
+          Object.assign(got, { draft: false, box: r.box, name: r.name, order: r.order });
+          got.line.text = r.name; w.rooms.sort(byOrder); rooms.push(got); placed.push(got);
+        }
+        continue;
+      }
+      if (!w || w.kind !== 'wing') continue;
+      const n: RoomN = { kind: 'room', id: r.id, name: r.name, order: r.order, box: r.box, line: noLine, fly: Infinity, draft: false, wing: w, bays: [], tiles: [] };
       byId.set('room:' + r.id, n); w.rooms.push(n); w.rooms.sort(byOrder); fresh.add(n);
     }
     for (const b of e.bays) {
       const r = byId.get('room:' + b.parentId);
-      if (byId.has('bay:' + b.id) || !r || r.kind !== 'room') continue;
-      const n: BayN = { kind: 'bay', id: b.id, name: b.name, order: b.order, box: b.box, line: noLine, fly: Infinity, room: r, wing: r.wing, tiles: [], foldAt: undefined };
+      if (byId.has('bay:' + b.id) || !r || r.kind !== 'room' || r.draft) continue;
+      const n: BayN = { kind: 'bay', id: b.id, name: b.name, order: b.order, box: b.box, line: noLine, fly: Infinity, draft: false, room: r, wing: r.wing, tiles: [], foldAt: undefined };
       byId.set('bay:' + b.id, n); r.bays.push(n); r.bays.sort(byOrder); fresh.add(n);
     }
     ctx.font = `500 14px ${SANS}`;
@@ -217,43 +339,16 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       const b = byId.get('bay:' + t.parentId);
       if (byId.has('tile:' + t.id) || !b || b.kind !== 'bay') continue;
       const n: TileN = {
-        kind: 'tile', id: t.id, name: t.name, order: t.order, box: t.box, line: noLine, fly: Infinity, bay: b, room: b.room, wing: b.wing, idx: 0,
+        kind: 'tile', id: t.id, name: t.name, order: t.order, box: t.box, line: noLine, fly: Infinity, draft: false, bay: b, room: b.room, wing: b.wing, idx: 0,
         stage: t.stage, fkind: t.kind, tier: t.tier, summary: t.summary, created: null, general: null,
-        wrap: wrapText(t.name, t.box.w - 16, 3), stampAt: Infinity, healthAt: Infinity,
+        wrap: wrapText(t.name, t.box.w - 16, 3), stampAt: Infinity, healthAt: Infinity, pencil: null, inkAt: Infinity,
       };
       byId.set('tile:' + t.id, n); b.tiles.push(n); b.tiles.sort(byOrder); fresh.add(n);
     }
-    if (!fresh.size) return;
-    // the outline: new nodes in tree order, appended (an outline is written top to bottom; it never inserts)
-    const nl: Line[] = [];
-    const emit = (ref: PNode, prefix: string, text: string) => {
-      const l: Line = { kind: ref.kind, ref, prefix, text, i: lines.length, t0: Infinity, t1: Infinity };
-      ref.line = l; lines.push(l); nl.push(l);
-      if (ref.kind === 'room') rooms.push(ref);
-      else if (ref.kind === 'bay') bays.push(ref);
-      else if (ref.kind === 'tile') { ref.idx = tiles.length; tiles.push(ref); ref.room.tiles.push(ref); ref.wing.tiles.push(ref); }
-    };
-    for (const w of wings) {
-      if (fresh.has(w)) emit(w, w.letter + '  ', w.name.toUpperCase());
-      w.rooms.forEach((r, ri) => {
-        const lastR = ri === w.rooms.length - 1;
-        if (fresh.has(r)) emit(r, '  ' + (lastR ? '└─ ' : '├─ '), r.name);
-        const p1 = '  ' + (lastR ? '   ' : '│  ');
-        r.bays.forEach((b, bi) => {
-          const lastB = bi === r.bays.length - 1;
-          if (fresh.has(b)) emit(b, p1 + (lastB ? '└─ ' : '├─ '), b.name);
-          for (const tl of b.tiles) if (fresh.has(tl)) emit(tl, p1 + (lastB ? '   ' : '│  ') + '· ', tl.name);
-        });
-      });
-    }
-    // typing: the prototype's demo weights, compressed when the queue would run past DRAIN seconds
-    const backlog = Math.max(0, typeEnd - now);
-    const newW = nl.reduce((a, l) => a + WEIGHT[l.kind], 0);
-    let k = K0;
-    if (backlog + newW * K0 > DRAIN) k = Math.max(K_MIN, (DRAIN - Math.min(backlog, DRAIN * 0.5)) / newW);
-    let t = Math.max(now + 0.12, typeEnd);
-    for (const l of nl) { const d = WEIGHT[l.kind] * k; l.t0 = t; l.t1 = t + Math.min(d * 0.85, 0.1 + l.text.length * 0.011); t += d; }
-    typeEnd = t;
+    if (!fresh.size && !placed.length) return;
+    // the outline: new nodes in tree order (drafted lines already stand; what is new is written under them)
+    const nl = relayout(fresh);
+    const k = typeLines(nl, now);
     // flights: bays leave the outline in outline order, each as one block
     const f = Math.min(1, k / K0);
     const STAG = Math.max(0.32, 0.85 * f), RX = Math.max(0.22, 0.45 * f), WX = Math.max(0.26, 0.5 * f);
@@ -275,9 +370,12 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       if (o.kind === 'tile' && !fin(o.fly)) o.fly = Math.max(o.bay.fly, o.line.t1 + LAG); // a late tile for a bay that already flew
       else if ((o.kind === 'room' || o.kind === 'wing') && !fin(o.fly)) o.fly = o.line.t1 + LAG;
     }
+    // a placed draft with nothing under it: it leaves the column now (its line was written long ago)
+    for (const o of placed) if (!fin(o.fly)) o.fly = Math.max(now + 0.25, o.line.t1 + LAG);
     for (const b of bays) lastLand = Math.max(lastLand, b.fly + DUR.bay);
     for (const r of rooms) lastLand = Math.max(lastLand, r.fly + DUR.room);
-    structTail = Math.max(lines[lines.length - 1].t1 + 0.3, lastLand + 0.25);
+    let lastT1 = 0; for (const l of lines) if (!l.ref.draft) lastT1 = Math.max(lastT1, l.t1);
+    structTail = Math.max(lastT1 + 0.3, lastLand + 0.25);
     updateExtent();
     for (const [key, v] of flightCache) if (v.fly > now) flightCache.delete(key);
     refold(now);
@@ -313,13 +411,77 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
   function onHealth(e: Extract<BuildupEvent, { type: 'health' }>) {
     const now = S.t;
     const j0 = fin(steps[6].t0) ? steps[6].t0 : after(6);
-    let at = Math.max(now, j0 + 0.4, lastHealthAt + HEALTH_GAP);
+    let at = Math.max(now, j0 + 0.4, lastHealthAt + HEALTH_GAP), ink = Math.max(now, j0 + 0.4);
+    if (e.provisional) anti = true;
+    const batch: TileN[] = [];
     for (const h of e.tiles) {
       const tl = byId.get('tile:' + h.id);
       if (!tl || tl.kind !== 'tile') continue;
+      if (e.provisional && fin(tl.inkAt)) continue; // the final reading wins
       tl.general = h.general;
-      if (!fin(tl.healthAt)) { tl.healthAt = at; healthOrder.push(tl); lastHealthAt = at; at += HEALTH_GAP; }
+      if (e.provisional) tl.pencil = h.general;
+      if (!fin(tl.healthAt)) {
+        tl.healthAt = at; healthOrder.push(tl); lastHealthAt = at; at += HEALTH_GAP; batch.push(tl);
+        if (!e.provisional) tl.inkAt = tl.healthAt;
+      } else if (!e.provisional && !fin(tl.inkAt)) { tl.inkAt = ink; ink += HEALTH_GAP; } // pencil inked over, in turn
     }
+    if (e.provisional && batch.length) { batches.push({ t: batch[0].healthAt, tiles: batch }); buildKeys(); }
+  }
+  /** A tile's reading as drawn at t: the batch's pencil until the final reading inks it. */
+  const isPencil = (tl: TileN, t: number) => tl.pencil !== null && !(t >= tl.inkAt);
+  const shownHealth = (tl: TileN, t: number): Health | null => (isPencil(tl, t) ? tl.pencil : tl.general);
+
+  function onSurvey(e: Extract<BuildupEvent, { type: 'survey' }>) {
+    anti = true;
+    const now = S.t, fresh: SArea[] = [];
+    if (!fin(surveyT0)) surveyT0 = now;
+    for (const a of e.areas) {
+      const got = areaById.get(a.id);
+      if (got) Object.assign(got, a);
+      else { const n: SArea = { ...a, ord: 0, t0: Infinity }; areaById.set(a.id, n); areas.push(n); fresh.push(n); }
+    }
+    if (fresh.length) {
+      // the first send fixes the order (by group, then size); a re-send enriches in place, so nothing reshuffles
+      if (areas.length === fresh.length) areas.sort((x, y) => (x.group ?? '~').localeCompare(y.group ?? '~') || y.files - x.files);
+      let t = Math.max(now + 0.15, surveyType);
+      for (const a of areas) if (!fin(a.t0)) { a.t0 = t; t += 0.09; }
+      surveyType = t;
+      areas.forEach((a, i) => { a.ord = i; });
+    }
+    surveyLayouts.push({ t: now, rects: layoutSurvey() });
+  }
+  // the survey plat: code areas as parcels, sized by lines once the inventory has counted them (files before), laid by
+  // halving the list along the longer side so neighbours in the list stay neighbours on the sheet
+  function layoutSurvey(): Map<string, BBox> {
+    const useLines = areas.every((a) => a.lines !== null);
+    const raw = areas.map((a) => (useLines ? a.lines ?? 0 : a.files));
+    const tot = raw.reduce((x, y) => x + y, 0) || 1;
+    const items = areas.map((a, i) => ({ id: a.id, w: Math.max(raw[i], tot * 0.02) }));
+    const out = new Map<string, BBox>();
+    const aspect = Math.max(0.3, (V.W - V.colW - 160) / Math.max(1, V.H - 240));
+    const split = (it: { id: string; w: number }[], r: BBox) => {
+      if (!it.length) return;
+      if (it.length === 1) { out.set(it[0].id, r); return; }
+      const sum = it.reduce((x, y) => x + y.w, 0);
+      let acc = 0, best = 1, bd = Infinity;
+      for (let i = 0; i < it.length - 1; i++) { acc += it[i].w; const d = Math.abs(acc - sum / 2); if (d < bd) { bd = d; best = i + 1; } }
+      const fa = it.slice(0, best).reduce((x, y) => x + y.w, 0) / sum;
+      if (r.w * aspect >= r.h) { split(it.slice(0, best), { x: r.x, y: r.y, w: r.w * fa, h: r.h }); split(it.slice(best), { x: r.x + r.w * fa, y: r.y, w: r.w * (1 - fa), h: r.h }); }
+      else { split(it.slice(0, best), { x: r.x, y: r.y, w: r.w, h: r.h * fa }); split(it.slice(best), { x: r.x, y: r.y + r.h * fa, w: r.w, h: r.h * (1 - fa) }); }
+    };
+    split(items, { x: 0, y: 0, w: 1, h: 1 });
+    return out;
+  }
+  function onActivity(e: Extract<BuildupEvent, { type: 'activity' }>) {
+    anti = true;
+    const wall = performance.now();
+    const same = act !== null && act.area === e.area;
+    actPrev = act;
+    act = { verb: e.verb, path: e.path, area: e.area, t: S.t, wall, areaWall: same && act ? act.areaWall : wall };
+  }
+  function onProgress(e: Extract<BuildupEvent, { type: 'progress' }>) {
+    anti = true;
+    if (e.phase === 'judge') progress = { n: e.n, of: e.of, t: S.t };
   }
 
   function onPhase(e: Extract<BuildupEvent, { type: 'phase' }>) {
@@ -335,7 +497,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       if (i === 7) buildKeys();
     } else {
       if (i <= 2) st.t1 = now;
-      if (i === 3) treeDone = true;
+      if (i === 3) { treeDone = true; treeDoneAt = now; dropDrafts(now); buildKeys(); }
       if (i === 5) { // the sweep finishes its pass, then repeats only while measuring was still running
         measureDone = true;
         if (!fin(st.t0)) st.t0 = Math.max(now, after(5));
@@ -370,6 +532,10 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     else if (e.type === 'history') onHistory(e);
     else if (e.type === 'health') onHealth(e);
     else if (e.type === 'phase') onPhase(e);
+    else if (e.type === 'survey') onSurvey(e);
+    else if (e.type === 'outline') { anti = true; onOutline(e); }
+    else if (e.type === 'activity') onActivity(e);
+    else if (e.type === 'progress') onProgress(e);
     else if (e.type === 'done') onDone();
     else if (e.type === 'failed') {
       failed = { phase: e.phase, message: e.message };
@@ -411,7 +577,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       if (T0 <= now) continue;
       let count = 0;
       for (const l of lines) {
-        if (l.t0 > T0) break;
+        if (l.t0 > T0 || l.ref.draft) continue; // lines are in tree order, not typing order, once drafts are filled in
         if (liftOf(l) <= T0) continue;
         if (l.kind === 'tile') { const fa = (l.ref as TileN).bay.foldAt; if (fa !== undefined && fa <= T0) continue; }
         count++;
@@ -450,13 +616,34 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       for (const b of bays) if (fin(b.fly)) ev.push({ t: b.fly, box: { x: b.box.x, y: b.box.y - 20, w: b.box.w, h: b.box.h + 30 } });
       ev.sort((p, q2) => p.t - q2.t);
       const padL = 40 / s, padR = 40 / s, padT = 96 / s, padB = 120 / s;
+      let lastEv = -Infinity;
       for (const e of ev) {
+        lastEv = e.t;
         const bx = e.box; let nx = cx, ny = cy;
         if (bx.w + padL + padR > 2 * hw) nx = bx.x - padL + hw;
         else { if (bx.x - padL < nx - hw) nx = bx.x - padL + hw; if (bx.x + bx.w + padR > nx + hw) nx = bx.x + bx.w + padR - hw; }
         if (bx.h + padT + padB > 2 * hh) ny = bx.y - padT + hh;
         else { if (bx.y - padT < ny - hh) ny = bx.y - padT + hh; if (bx.y + bx.h + padB > ny + hh) ny = bx.y + bx.h + padB - hh; }
         if (Math.abs(nx - cx) > 1 || Math.abs(ny - cy) > 1) { keys.push({ t: e.t - 0.15, x: nx, y: ny, s, d: 1.0 }); cx = nx; cy = ny; }
+      }
+      // a real run judges for ten minutes after the build: once the queue has drained the camera steps back to the
+      // whole plan, and each judgement batch is visited as it lands, then left again (it never rests on one part)
+      if (anti && ext && treeDone && wings.length) {
+        const whole = fitBox(ext, area(V.colW), 30, 110, 60, 1);
+        const drainT = Math.max(lastEv + 1.4, lastLand + 0.8, treeDoneAt + 0.5);
+        if (!fin(endT) || drainT < endT) keys.push({ t: drainT, ...whole, d: 2.2 });
+        let lastVisit = -Infinity;
+        for (const b of batches) {
+          if (b.t < drainT + 2.4 || b.t - lastVisit < 14 || (fin(endT) && b.t + 3 > endT)) continue;
+          let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+          for (const tl of b.tiles) { x0 = Math.min(x0, tl.box.x); y0 = Math.min(y0, tl.box.y); x1 = Math.max(x1, tl.box.x + tl.box.w); y1 = Math.max(y1, tl.box.y + tl.box.h); }
+          if (!fin(x0)) continue;
+          const fit = fitBox({ x: x0 - 30, y: y0 - 70, w: x1 - x0 + 60, h: y1 - y0 + 100 }, area(V.colW), 40, 110, 70, s);
+          if (fit.s < whole.s * 1.15) continue; // the batch is most of the site: the whole view already shows it
+          const back = fin(endT) ? Math.min(b.t + 7, endT - 0.2) : b.t + 7;
+          keys.push({ t: b.t - 0.5, ...fit, d: 1.6 }, { t: back, ...whole, d: 2 });
+          lastVisit = b.t;
+        }
       }
       if (V.fin && fin(endT)) keys.push({ t: endT + 0.25, ...V.fin, d: 2.7 });
     }
@@ -524,14 +711,38 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     if (t > lift) h *= 1 - ease(span(t, lift + (S.reduced ? 0.6 : 0.2), 0.5));
     return h;
   }
+  // the anti-stale column, top to bottom: the step log, the site survey (folded to its head line once the outline is
+  // being written), the outline, and the cursor line where the agent's reading shows while nothing is being typed
+  function surveyShown() {
+    const max = Math.max(3, V.cap - 9);
+    return areas.length > max ? { n: max - 1, more: areas.length - (max - 1) } : { n: areas.length, more: 0 };
+  }
+  const surveyFold = (t: number) => (!fin(firstTypeAt) ? 0 : S.reduced ? (t >= firstTypeAt ? 1 : 0) : ease(span(t, firstTypeAt, 0.6)));
+  const rowOpen = (t: number, t0: number) => (t < t0 ? 0 : S.reduced ? 1 : easeOut(span(t, t0, 0.14)));
   function layoutColumn(t: number) {
     const n = lines.length, ys = new Float32Array(n);
-    let y = 0, cursor = -1;
-    for (let i = 0; i < n; i++) { ys[i] = y; const l = lines[i]; if (l.t0 <= t) cursor = i; y += slotH(l, t); }
+    let y = 0, logRows = 0, logA = 1;
+    if (anti) {
+      for (let i = 0; i < 4; i++) if (fin(rail[i].t0)) logRows = i + 1;
+      logA = fin(firstTypeAt) ? 1 - span(t, firstTypeAt - 0.4, 0.4) : 1;
+      if (logRows) y += (logRows + 0.5) * LH * logA;
+    }
+    const surveyY = y;
+    if (anti && areas.length && t >= surveyT0) {
+      const c = surveyFold(t), sh = surveyShown();
+      y += LH * rowOpen(t, surveyT0);
+      for (let i = 0; i < sh.n; i++) y += LH * rowOpen(t, areas[i].t0) * (1 - c);
+      if (sh.more) y += LH * rowOpen(t, areas[sh.n].t0) * (1 - c);
+      y += LH * 0.5;
+    }
+    let cursor = -1, cT = -Infinity;
+    for (let i = 0; i < n; i++) { ys[i] = y; const l = lines[i]; if (l.t0 <= t && l.t0 >= cT) { cursor = i; cT = l.t0; } y += slotH(l, t); }
+    const actY = y;
+    const typing = cursor >= 0 && t < lines[cursor].t1;
     const visH = V.H - HDR - 14;
-    const cb = cursor >= 0 ? ys[cursor] + LH : 0;
-    const scroll = Math.max(0, cb - (visH - LH * 1.5));
-    return { ys, scroll, cursor };
+    const focus = anti && !typing && (act || cursor < 0) ? actY + LH : cursor >= 0 ? ys[cursor] + LH : 0;
+    const scroll = Math.max(0, focus - (visH - LH * 1.5));
+    return { ys, scroll, cursor, typing, logA, surveyY, actY };
   }
   function lineText(l: Line) {
     const max = V.maxChars - l.prefix.length - (l.kind === 'bay' ? 4 : 0);
@@ -554,7 +765,8 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     if (step <= 3 && t < steps[3].t1) {
       const lay = layoutColumn(t);
       ctx.textBaseline = 'middle';
-      drawStepLog(t, cw, lines.length && lines[0].t0 <= t + 0.4 ? 1 - span(t, lines[0].t0 - 0.4, 0.4) : 1);
+      if (!anti) drawStepLog(t, cw, lines.length && lines[0].t0 <= t + 0.4 ? 1 - span(t, lines[0].t0 - 0.4, 0.4) : 1, HDR + LH * 2);
+      else { drawStepLog(t, cw, lay.logA, HDR - lay.scroll); drawSurveyRows(t, cw, HDR - lay.scroll + lay.surveyY); }
       for (let i = 0; i < lines.length; i++) {
         const l = lines[i]; const h = slotH(l, t); if (h < 0.5) continue;
         const y = HDR + lay.ys[i] - lay.scroll + LH / 2;
@@ -595,7 +807,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       }
       // cursor
       const lastL = lines[lines.length - 1];
-      if (t >= steps[3].t0 && (!lastL || !treeDone || t < lastL.t1 + 4)) {
+      if (anti) {
+        // typing: the block rides the text; otherwise it waits on the cursor line, under what the agent is reading
+        if (lay.typing) {
+          const l = lines[lay.cursor], txt = lineText(l), p = S.reduced ? 1 : span(t, l.t0, l.t1 - l.t0);
+          const cy2 = HDR + lay.ys[lay.cursor] - lay.scroll + LH / 2, cx2 = 16 + (l.prefix.length + Math.ceil(txt.length * p)) * V.cw + 2;
+          ctx.fillStyle = C.accent; ctx.fillRect(cx2, cy2 - 8, Math.max(7, V.cw * 0.8), 16);
+        } else if (act || t >= steps[3].t0 || areas.length) drawActLine(t, cw, HDR + lay.actY - lay.scroll + LH / 2, true);
+      } else if (t >= steps[3].t0 && (!lastL || !treeDone || t < lastL.t1 + 4)) {
         let cy2 = HDR + LH / 2, cx2 = x0;
         if (lay.cursor >= 0) {
           const l = lines[lay.cursor]; const txt = lineText(l);
@@ -619,14 +838,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     ctx.fillStyle = C['ink-4']; ctx.fillRect(cw - 1, 0, 1, H);
   }
   // before the first words: the steps the run has finished, with their real times, under the waiting cursor
-  function drawStepLog(t: number, cw: number, a: number) {
+  function drawStepLog(t: number, cw: number, a: number, y0: number) {
     if (a <= 0.01) return;
     const x0 = 16;
     ctx.font = `14px ${MONO}`; ctx.textBaseline = 'middle';
     let row = 0;
     for (let i = 0; i < 4; i++) {
       const r = rail[i]; if (!fin(r.t0)) break;
-      const y = HDR + LH * (2 + row) + LH / 2;
+      const y = y0 + LH * row + LH / 2;
       const running = !fin(r.t1);
       const dur = (running ? t : r.t1) - r.t0;
       ctx.globalAlpha = a;
@@ -641,6 +860,91 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     }
     ctx.globalAlpha = 1;
   }
+  const fmtK = (n: number) => (n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const surveyLines = () => areas.every((a) => a.lines !== null);
+  const areaMetric = (a: SArea) => (a.lines !== null ? fmtK(a.lines) + ' lines' : a.files + (a.files === 1 ? ' file' : ' files'));
+  function surveyTotal(): string {
+    const files = areas.reduce((x, a) => x + a.files, 0);
+    return surveyLines() ? fmtK(areas.reduce((x, a) => x + (a.lines ?? 0), 0)) + ' lines' : files + ' files';
+  }
+  /** How lit a survey area is by the agent's reading: fades in and out in wall time, steady under reduced motion. */
+  function litOf(id: string, t: number): number {
+    if (!act) return 0;
+    const k = t - act.t < 20 ? 1 : 0.55;
+    if (S.reduced) return act.area === id ? k : 0;
+    if (act.area === id) return k * span(wallNow, act.areaWall, 500);
+    if (actPrev && actPrev.area === id) return 1 - span(wallNow, act.wall, 500);
+    return 0;
+  }
+  // the site survey, typed as the column's first section: what the code map found before any product name exists
+  function drawSurveyRows(t: number, cw: number, y0: number) {
+    if (!areas.length || t < surveyT0) return;
+    const x0 = 16, c = surveyFold(t), sh = surveyShown();
+    const ha = rowOpen(t, surveyT0);
+    let y = y0;
+    ctx.textBaseline = 'middle';
+    ctx.globalAlpha = ha;
+    ctx.font = `600 14px ${MONO}`; ctx.fillStyle = C.accent; ctx.fillText('§', x0, y + LH / 2);
+    ctx.fillStyle = c > 0.5 ? C['ink-2'] : C['ink-hi'];
+    ctx.fillText(fitMono(`SITE SURVEY · ${areas.length} code areas · ${surveyTotal()}`, V.maxChars - 3), x0 + 3 * V.cw, y + LH / 2);
+    y += LH * ha;
+    ctx.font = `14px ${MONO}`;
+    const rows = sh.n + (sh.more ? 1 : 0);
+    for (let i = 0; i < rows; i++) {
+      const a = areas[i], more = i === sh.n;
+      const h = LH * rowOpen(t, a.t0) * (1 - c);
+      if (h < 0.5) { y += h; continue; }
+      const rowA = h / LH, cy = y + LH / 2;
+      let lit = 0;
+      if (more) for (let j = sh.n; j < areas.length; j++) lit = Math.max(lit, litOf(areas[j].id, t));
+      else lit = litOf(a.id, t);
+      if (lit > 0) { ctx.globalAlpha = rowA * lit; ctx.fillStyle = accA(0.16); ctx.fillRect(8, y + 1, cw - 16, LH - 2); }
+      ctx.globalAlpha = rowA;
+      ctx.fillStyle = C['ink-3']; drawPrefix('  ' + (i === rows - 1 ? '└─ ' : '├─ '), x0, cy);
+      const metric = more ? '' : areaMetric(a);
+      const name = more ? `· ${sh.more} more areas` : a.name;
+      const room = V.maxChars - 5 - metric.length - 1;
+      const txt = fitMono(name, room);
+      const p = S.reduced ? 1 : span(t, a.t0, 0.25);
+      ctx.fillStyle = lit > 0.5 ? C['ink-hi'] : more ? C['ink-3'] : C['ink-2'];
+      ctx.fillText(txt.slice(0, Math.ceil(txt.length * p)), x0 + 5 * V.cw, cy);
+      if (metric && p >= 1) { ctx.fillStyle = C['ink-3']; ctx.textAlign = 'right'; ctx.fillText(metric, cw - 16, cy); ctx.textAlign = 'left'; }
+      y += h;
+    }
+    ctx.globalAlpha = 1;
+  }
+  const VERB: Record<ActivityVerb, [string, string]> = { read: ['reading', 'read'], write: ['writing', 'wrote'], run: ['running on', 'ran on'] };
+  // the cursor line: what the agent touched last, as a path; after 20 s without news it says how long ago
+  function drawActLine(t: number, cw: number, y: number, cursorOn: boolean) {
+    const x0 = 16, maxC = Math.floor((cw - 32) / V.cw) - 4;
+    ctx.font = `14px ${MONO}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+    const draw = (a: Act, alpha: number) => {
+      const age = t - a.t, fresh = age < 20;
+      const verb = (fresh ? VERB[a.verb][0] : 'last ' + VERB[a.verb][1]) + ' ';
+      const tail = fresh ? '' : ' · ' + fmtT(age) + ' ago';
+      const room = Math.max(6, maxC - verb.length - tail.length);
+      const path = a.path.length > room ? '…' + a.path.slice(a.path.length - room + 1) : a.path;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = fresh ? C.accent : C['ink-3']; ctx.fillText('▸', x0, y);
+      let x = x0 + 2 * V.cw;
+      ctx.fillStyle = C['ink-3']; ctx.fillText(verb, x, y); x += verb.length * V.cw;
+      ctx.fillStyle = fresh ? C.ink : C['ink-2']; ctx.fillText(path, x, y); x += path.length * V.cw;
+      if (tail) { ctx.fillStyle = C['ink-3']; ctx.fillText(tail, x, y); x += tail.length * V.cw; }
+      return x;
+    };
+    let cx = x0;
+    if (act) {
+      const f = S.reduced ? 1 : span(wallNow, act.wall, 350);
+      if (actPrev && f < 1) draw(actPrev, 1 - f);
+      cx = draw(act, f) + 4;
+    }
+    if (cursorOn) {
+      // a slow breath, not a blink: the run is working even when nothing has arrived for a minute
+      ctx.globalAlpha = S.reduced ? 1 : 0.3 + 0.7 * (0.5 + 0.5 * Math.cos((wallNow / 1000) * Math.PI * 1.25));
+      ctx.fillStyle = C.accent; ctx.fillRect(cx, y - 8, Math.max(7, V.cw * 0.8), 16);
+    }
+    ctx.globalAlpha = 1;
+  }
   function drawHeader(t: number, cw: number, step: number) {
     const x0 = 16; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     setLS(1.6); ctx.font = `500 12px ${MONO}`; ctx.fillStyle = C['ink-3'];
@@ -650,10 +954,10 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     setLS(0);
     // counters: what has been written so far (real counts as they arrive)
     let w = 0, r = 0, b = 0, f = 0;
-    for (const l of lines) { if (l.t0 > t) break; if (l.kind === 'wing') w++; else if (l.kind === 'room') r++; else if (l.kind === 'bay') b++; else f++; }
+    for (const l of lines) { if (l.t0 > t || (l.ref.draft && t >= l.ref.fly)) continue; if (l.kind === 'wing') w++; else if (l.kind === 'room') r++; else if (l.kind === 'bay') b++; else f++; }
     ctx.font = `14px ${SANS}`; ctx.fillStyle = C['ink-2'];
     const pl = (n: number, w1: string) => n + ' ' + w1 + (n === 1 ? '' : 's');
-    const ct = t < steps[3].t0 ? 'reading the repository…' : `${pl(w, 'wing')} · ${pl(r, 'room')} · ${pl(b, 'bay')} · ${pl(f, 'feature')}`;
+    const ct = t < steps[3].t0 ? (anti && areas.length && t >= surveyT0 ? `${areas.length} code areas surveyed · ${surveyTotal()}` : 'reading the repository…') : `${pl(w, 'wing')} · ${pl(r, 'room')} · ${pl(b, 'bay')} · ${pl(f, 'feature')}`;
     ctx.fillText(fitEll(ct, cw - 32), x0, 82);
     // the running step
     const st = steps[step];
@@ -662,7 +966,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     let detail = st.what;
     if (step === 3) {
       let typed = 0;
-      for (const l of lines) { if (l.t0 <= t) typed++; else break; }
+      for (const l of lines) if (l.t0 <= t) typed++;
       const allTyped = typed === lines.length && lines.length > 0;
       detail = typed + ' of ' + (treeDone && allTyped ? lines.length : '…') + ' lines';
       if (typed === 0) detail = 'the model is reading the code · ' + fmtT(t - st.t0);
@@ -670,8 +974,13 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       if (allTyped && treeDone) detail = 'all ' + lines.length + ' lines written · drafting';
     } else if (step === 6) {
       let judged = 0; for (const x of healthOrder) if (x.healthAt <= t) judged++;
-      detail = `${judged} of ${tiles.length} judged`;
-      if (!judgeDone && judged === healthOrder.length) detail += ' · waiting for the model';
+      if (progress) { // the judge's own count: batches written, and how long it has been judging
+        let inked = 0; for (const x of tiles) if (x.inkAt <= t) inked++;
+        detail = tiles.length && inked >= tiles.length ? `all ${tiles.length} judged · final reading` : `${progress.n} of ${progress.of} batches judged · ${fmtT(t - st.t0)}`;
+      } else {
+        detail = `${judged} of ${tiles.length} judged`;
+        if (!judgeDone && judged === healthOrder.length) detail += ' · waiting for the model';
+      }
     }
     if (failed) { ctx.fillStyle = C['red-2']; detail = `failed at ${failed.phase}: ${failed.message}`; }
     ctx.fillText(fitEll(`${step + 1}/8 ${st.n.toUpperCase()}${st.llm ? ' (LLM)' : ''} · ${detail}`, cw - 32), x0, 106);
@@ -685,7 +994,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     let list: TileN[] | null = null, keyName: 'stampAt' | 'healthAt' = 'stampAt';
     if (step === 4) { list = stampOrder; keyName = 'stampAt'; }
     else if (step >= 6) { list = healthOrder; keyName = 'healthAt'; }
-    const top = HDR + 6, rows = Math.floor((V.H - top - 12) / LH);
+    const actOn = anti && act !== null;
+    if (actOn) { // the cursor line, pinned at the foot of the column while the later steps log above it
+      const ay = V.H - 12 - LH / 2;
+      ctx.fillStyle = C['ink-4']; ctx.fillRect(x0, ay - LH * 0.9, cw - 32, 1);
+      drawActLine(t, cw, ay, !doneSeen);
+    }
+    const top = HDR + 6, rows = Math.floor((V.H - top - 12 - (actOn ? LH * 1.6 : 0)) / LH);
+    if (step >= 6 && progress) { drawJudgeList(t, cw, top, rows); return; }
     if (step === 5) {
       const st = steps[5];
       const p = measureDone && t >= st.t1 - MS_DUR ? span(t, st.t1 - MS_DUR, MS_DUR) : ((t - st.t0) % MS_DUR) / MS_DUR;
@@ -722,6 +1038,47 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     ctx.globalAlpha = 1;
   }
 
+  // judging, with the judge's count: every feature is listed from the start, an empty box until its batch lands; a
+  // batch's reading is pencilled (a dashed box), the final merge inks it (a filled one)
+  function drawJudgeList(t: number, cw: number, top: number, rows: number) {
+    const x0 = 16;
+    let y = top + LH / 2;
+    ctx.font = `12px ${MONO}`; ctx.textBaseline = 'middle';
+    ctx.strokeStyle = inkA(0.7); ctx.lineWidth = 1.2; ctx.setLineDash([2, 2]); ctx.strokeRect(x0 + 0.5, y - 4.5, 9, 9); ctx.setLineDash([]);
+    ctx.fillStyle = C['ink-3']; ctx.fillText('pencil · one batch', x0 + 16, y);
+    const lx = x0 + 16 + ctx.measureText('pencil · one batch').width + 22;
+    ctx.fillStyle = inkA(0.7); ctx.fillRect(lx, y - 5, 10, 10);
+    ctx.fillStyle = C['ink-3']; ctx.fillText('ink · final reading', lx + 16, y);
+    top += LH; rows -= 1;
+    const landed = healthOrder.filter((x) => x.healthAt <= t), seen = new Set(landed);
+    const list = landed.concat(tiles.filter((x) => !seen.has(x)));
+    const hi = landed.length - 1;
+    const from = list.length <= rows ? 0 : clamp(hi - Math.floor(rows * 0.6), 0, list.length - rows);
+    ctx.font = `14px ${MONO}`;
+    for (let i = from; i < Math.min(list.length, from + rows); i++) {
+      const tl = list[i], yy = top + (i - from) * LH + LH / 2;
+      const nameW = Math.floor((cw - 14 - 7 * V.cw - x0 - 18) / V.cw);
+      if (i > hi) {
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = inkA(0.28); ctx.lineWidth = 1; ctx.setLineDash([1.5, 2.5]); ctx.strokeRect(x0 + 0.5, yy - 4.5, 9, 9); ctx.setLineDash([]);
+        ctx.fillStyle = C['ink-3']; ctx.fillText(fitMono(tl.name, nameW), x0 + 18, yy);
+        continue;
+      }
+      const a = S.reduced ? 1 : span(t, tl.healthAt, 0.25), g = shownHealth(tl, t), pen = isPencil(tl, t);
+      const col = healthCol(g);
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+      if (pen) ctx.setLineDash([2, 2]);
+      ctx.strokeRect(x0 + 0.5, yy - 4.5, 9, 9); ctx.setLineDash([]);
+      if (!pen) { ctx.globalAlpha = a * (S.reduced ? 1 : span(t, tl.inkAt, 0.4)); ctx.fillStyle = col; ctx.fillRect(x0, yy - 5, 10, 10); ctx.globalAlpha = a; }
+      ctx.fillStyle = C['ink-2']; ctx.fillText(fitMono(tl.name, nameW), x0 + 18, yy);
+      ctx.fillStyle = g === 'bad' ? C['red-2'] : g === 'watch' ? C.amber : C['ink-3'];
+      if (pen) ctx.globalAlpha = a * 0.75;
+      ctx.textAlign = 'right'; ctx.fillText(g ?? '', cw - 14, yy); ctx.textAlign = 'left';
+    }
+    ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  }
+
   // ---------- the plan ----------
   const isDone = (t: number) => S.live || t >= T;
   function wallProgress(o: PNode, t: number) { // how much of a box's walls are drawn
@@ -744,7 +1101,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     if (fin(ms.t1) && t >= ms.t1 - MS_DUR) return t - (ms.t1 - MS_DUR);
     return (t - ms.t0) % MS_DUR;
   }
-  interface TileState { a: number; la: number; k: number; sa: number; ha: number; fl: number; ma: number }
+  interface TileState { a: number; la: number; k: number; sa: number; ha: number; fl: number; ma: number; g: Health | null; pen: boolean; ink: number }
   function tileState(tl: TileN, t: number): TileState {
     const done = isDone(t);
     const b = tl.bay, Db = DUR.bay, f0 = tl.fly;
@@ -764,7 +1121,9 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       if (loc >= at) ma = 1 - span(loc, at, 0.9);
       else if (t - steps[5].t0 >= MS_DUR) ma = 1 - span(loc + MS_DUR, at, 0.9);
     }
-    return { a, la, k, sa, ha, fl: t >= tl.stampAt ? fl : 0, ma };
+    const pen = isPencil(tl, t);
+    const ink = pen ? 0 : done || S.reduced ? 1 : span(t, tl.inkAt, 0.5);
+    return { a, la, k, sa, ha, fl: t >= tl.stampAt ? fl : 0, ma, g: shownHealth(tl, t), pen, ink };
   }
   function perim(x: number, y: number, w: number, h: number, p: number) { // trace a rectangle's walls from the top-left, clockwise
     const L = 2 * (w + h); let r = L * p;
@@ -800,7 +1159,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     if (fp > 0.5) {
       ctx.globalAlpha = span(fp, 0.5, 0.5);
       ctx.font = `500 12px ${MONO}`; setLS(1.4); ctx.fillStyle = C['ink-3']; ctx.textBaseline = 'bottom';
-      ctx.fillText(`SHEET G-001 · GENERAL ARRANGEMENT · ${project.name.toUpperCase()}${ex.known ? '' : ' · SITE NOT YET SURVEYED'}`, sx(e.x - pad) + 2, fTop - 6);
+      ctx.fillText(`SHEET G-001 · GENERAL ARRANGEMENT · ${project.name.toUpperCase()}${ex.known ? '' : anti && areas.length && t >= surveyT0 ? ` · SITE SURVEY · ${areas.length} CODE AREAS` : ' · SITE NOT YET SURVEYED'}`, sx(e.x - pad) + 2, fTop - 6);
       if (S.live || t >= steps[4].t0) {
         const by = sy(e.y + e.h) + 30; ctx.textBaseline = 'middle';
         if (by < V.H - 10) {
@@ -812,6 +1171,53 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       }
       setLS(0); ctx.globalAlpha = 1;
     }
+  }
+  function surveyRects(t: number): Map<string, BBox> | null {
+    type SL = { t: number; rects: Map<string, BBox> };
+    let cur: SL | null = null, prev: SL | null = null;
+    for (const v of surveyLayouts) { if (v.t > t) break; prev = cur; cur = v; }
+    if (!cur) return surveyLayouts.length ? surveyLayouts[0].rects : null;
+    if (!prev || S.reduced) return cur.rects;
+    const p = ease(span(t, cur.t, 1.2));
+    if (p >= 1) return cur.rects;
+    const out = new Map<string, BBox>();
+    for (const [id, r] of cur.rects) { const r0 = prev.rects.get(id); out.set(id, r0 ? lerpBox(r0, r, p) : r); }
+    return out;
+  }
+  // the site survey on the sheet: each code area a pencilled parcel inside the provisional frame, the one being read
+  // lit, its dashes slowly walking. When the structure lands the frame becomes the site and the parcels recede under it.
+  function drawSurveyPlat(t: number) {
+    if (!anti || !areas.length || S.live || t < surveyT0) return;
+    const fade = fin(structAt) ? 1 - span(t, structAt, S.reduced ? 0.6 : 3) : 1;
+    if (fade <= 0) return;
+    const ex = extAt(t), R = surveyRects(t);
+    if (!ex || !R) return;
+    const e = ex.box, s = F.cam.s;
+    for (const a of areas) {
+      const r = R.get(a.id); if (!r) continue;
+      const p = S.reduced ? (t >= a.t0 ? 1 : 0) : span(t, a.t0, 0.8); if (p <= 0) continue;
+      const X = sx(e.x + r.x * e.w) + 3, Y = sy(e.y + r.y * e.h) + 3, Wd = r.w * e.w * s - 6, Hd = r.h * e.h * s - 6;
+      if (Wd < 2 || Hd < 2) continue;
+      const lit = litOf(a.id, t);
+      ctx.globalAlpha = fade;
+      if (lit > 0 && p >= 1) { ctx.fillStyle = accA(0.1 * lit); ctx.fillRect(X, Y, Wd, Hd); }
+      ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+      ctx.lineDashOffset = lit > 0 && !S.reduced ? -(wallNow / 1000) * 7 : 0;
+      ctx.strokeStyle = lit > 0.05 ? accA(0.3 + 0.5 * lit) : inkA(0.3);
+      perim(X, Y, Wd, Hd, p);
+      ctx.setLineDash([]); ctx.lineDashOffset = 0;
+      if (p >= 1 && Wd > 70 && Hd > 24) { // lettering only where it reads at 12 px
+        ctx.font = `500 12px ${MONO}`; setLS(0.8); ctx.textBaseline = 'top';
+        ctx.fillStyle = lit > 0.5 ? C['ink-hi'] : C['ink-3'];
+        ctx.fillText(fitEll((lit > 0.5 ? '▸ ' : '') + a.name.toUpperCase(), Wd - 14), X + 7, Y + 7);
+        setLS(0);
+        if (Hd > 44) {
+          ctx.font = `12px ${MONO}`; ctx.fillStyle = C['ink-3'];
+          ctx.fillText(fitEll(areaMetric(a) + (a.first && a.last ? ` · ${a.first.slice(5)} → ${a.last.slice(5)}` : ''), Wd - 14), X + 7, Y + 25);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
   }
   function drawPlan(t: number) {
     const s = F.cam.s;
@@ -855,6 +1261,15 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       const gr = ctx.createLinearGradient(X - 90, 0, X, 0); gr.addColorStop(0, accA(0)); gr.addColorStop(1, accA(0.18));
       ctx.fillStyle = gr; ctx.fillRect(X - 90, Y0, 90, Y1 - Y0);
       ctx.fillStyle = C.accent; ctx.fillRect(X - 1, Y0, 2, Y1 - Y0);
+    }
+    // judging: a faint inspection line walks the site, in wall time, so ten quiet minutes still read as work (it marks
+    // no progress; the judge's count is in the column)
+    if (ext && anti && progress && !S.live && !S.reduced && stepAt(t) === 6 && !(tiles.length && tiles.every((x) => x.inkAt <= t))) {
+      const P = 11000, p = (wallNow % P) / P;
+      const X = sx(ext.x - 30 + (ext.w + 60) * p), Y0 = sy(ext.y - 20), Y1 = sy(ext.y + ext.h + 20);
+      const gr = ctx.createLinearGradient(X - 140, 0, X, 0); gr.addColorStop(0, accA(0)); gr.addColorStop(1, accA(0.07));
+      ctx.fillStyle = gr; ctx.fillRect(X - 140, Y0, 140, Y1 - Y0);
+      ctx.fillStyle = accA(0.35); ctx.fillRect(X - 0.5, Y0, 1, Y1 - Y0);
     }
     // labels over the drawing: bays, rooms, wings
     for (const b of bays) {
@@ -963,8 +1378,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     // health, judged last
     if (st.ha > 0) {
       ctx.globalAlpha = st.a;
-      const hh = Math.max(2, 5 * s);
-      ctx.fillStyle = healthCol(tl.general); ctx.fillRect(X, Y + Hd - hh, Wd * easeOut(st.ha), hh);
+      const hh = Math.max(2, 5 * s), col = healthCol(st.g);
+      if (tl.pencil !== null && st.ink < 1) { // pencil: one batch's reading, a dashed stroke where the bar will be inked
+        const yb = Y + Hd - hh / 2;
+        ctx.strokeStyle = col; ctx.lineWidth = Math.max(1.5, 2.5 * s); ctx.setLineDash([Math.max(3, 6 * s), Math.max(2, 4 * s)]);
+        ctx.beginPath(); ctx.moveTo(X + 2, yb); ctx.lineTo(X + 2 + (Wd - 4) * easeOut(st.ha), yb); ctx.stroke();
+        ctx.setLineDash([]); ctx.lineWidth = 1;
+      }
+      if (!st.pen) { ctx.fillStyle = col; ctx.fillRect(X, Y + Hd - hh, Wd * easeOut(tl.pencil !== null ? st.ink : st.ha), hh); }
     }
     // label: only where it reads at 12 px or more
     if (showLabels && st.la > 0 && st.k >= 1) {
@@ -1079,8 +1500,10 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     setFrame(t);
     ctx.setTransform(V.dpr, 0, 0, V.dpr, 0, 0);
     ctx.textAlign = 'left'; ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.shadowBlur = 0; setLS(0);
+    wallNow = performance.now();
     drawPaper(t);
     if (S.began) {
+      drawSurveyPlat(t);
       drawPlan(t);
       drawHighlights();
       drawColumn(t, F.cw);
@@ -1219,14 +1642,15 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     S.sel = tl;
     const t = S.t;
     const created = tl.created ? String(tl.created).slice(0, 10) : !S.live && t < steps[4].t0 ? 'not read from history yet' : 'no date in this repo’s history';
-    const health = tl.general && (S.live || t >= tl.healthAt) ? tl.general : 'not judged yet';
+    const hk = !!tl.general && (S.live || t >= tl.healthAt), pen = hk && isPencil(tl, t), shown = shownHealth(tl, t);
+    const health = hk && shown ? shown + (pen ? ' (one batch’s reading, not final yet)' : '') : 'not judged yet';
     const stage = tl.stage ? `${esc(STAGE_WORD[tl.stage] || tl.stage)} <span class="${cls.muted}">(${esc(tl.stage)})</span>` : 'none given';
     el.card.innerHTML = `<button class="${cls.btn} ${cls.x}" data-c="x" title="Close (Esc)">✕</button>
       <div class="${cls.path}">${esc(tl.wing.letter + ' ' + tl.wing.name.toUpperCase())} › ${esc(tl.room.name)} › ${esc(tl.bay.name)}</div>
       <h3>${esc(tl.name)}</h3>
       ${tl.summary ? `<p>${esc(tl.summary)}</p>` : ''}
       <dl><dt>Stage</dt><dd>${stage}</dd>
-      <dt>Health</dt><dd><span class="${cls.dot}" style="background:${health === 'not judged yet' ? inkA(0.12) : healthCol(tl.general)}"></span>${esc(health)}</dd>
+      <dt>Health</dt><dd><span class="${cls.dot}" style="background:${hk ? healthCol(shown) : inkA(0.12)}"></span>${esc(health)}</dd>
       <dt>Kind</dt><dd>${esc(tl.fkind ? KIND_WORD[tl.fkind] || tl.fkind : '—')}${tl.tier ? ' · ' + esc(tl.tier) : ''}</dd>
       <dt>Created</dt><dd>${esc(created)}</dd></dl>
       <button class="${cls.btn}" data-c="zoom">Zoom to feature</button>`;
@@ -1249,7 +1673,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     const t = S.t, known = S.live || t >= o.stampAt, hk = S.live || t >= o.healthAt;
     const stage = known ? (o.stage ? STAGE_WORD[o.stage] || o.stage : 'no stage') : 'stage: waiting for history';
     tip.innerHTML = `<div class="${cls.n}">${esc(o.name)}</div><div class="${cls.m}">${esc(o.room.name)} › ${esc(o.bay.name)}</div>
-      <div class="${cls.m}">${esc(stage)} · ${hk && o.general ? 'health ' + esc(o.general) : 'health: not judged yet'}</div>`;
+      <div class="${cls.m}">${esc(stage)} · ${hk && o.general ? 'health ' + esc(shownHealth(o, t) ?? o.general) + (isPencil(o, t) ? ' (pencil)' : '') : 'health: not judged yet'}</div>`;
     tip.style.display = 'block';
     const r = tip.getBoundingClientRect();
     let x = cx + 16, y = cy + 16;
@@ -1262,6 +1686,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
   function buildIndex() {
     const ol = el.idxList; ol.innerHTML = '';
     for (const l of lines) {
+      if (l.ref.draft) continue;
       const li = document.createElement('li'); li.className = l.kind === 'wing' ? cls.wing : l.kind === 'room' ? cls.room : '';
       const b = document.createElement('button');
       b.type = 'button';
