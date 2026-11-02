@@ -6,6 +6,33 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-11-02: the table builds itself while a product onboards (spark onboarding-vr WP-V2)
+
+While the open product's adopt job runs, BpLink reads `.../onboarding/feed?after=<n>&job=<id>&layout=islands` every 0.5 s
+(parsed off the game thread) and `BpBuildup.cpp` draws B's choreography on the table: survey parcels, the outline typed in
+the near margin, each line flying to its wing as the wing's outline draws and its rooms rise one at a time (rest walls'
+height and Show, at most one room committed a frame), pencil brackets, pencil then ink health, narration on the follow
+caption and the phase strip in a title block. All 2D goes into the sheet's one render target (no new component). At
+`done` the live plan takes over with the same boxes and the ink fades over 2 s. `BpBuild.Line` logs the state. Server:
+apps/server on 3197 with `fake-onboard.mjs env`; one fresh `fake-onboard.mjs --slug dowser-v2<x>` per run.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 46 | `--mode game --xr-sim --url ... --exec "BpView.Pose target"`, `-csvCaptureFrames=900`, Kettle, before (`29320f0` binaries) and after | RHI draws p50 **162** both (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2), p95 164 both |
+| 47 | game, switch to `dowser-v2a` at 15 s, fake onboarding, feed to done | `structure: 4 wings, 7 rooms queued over 9.4 s`; `history: the final plan ... read; 3 of 7 rooms move` then `the rooms glided to the final boxes`; `done: the live plan ... takes over; 0 of 7 rooms differ from the drawn boxes`; `settled; the table is the live table` |
+| 48 | the structure's commit, before and after spreading it (labels, names, glyphs one a frame) | before `the structure drawn ... in 74.7 ms`; after `in 14.9 ms`, then `commit step labels in 5.2 ms`, `names in 6.9 ms`, `glyphs in 14.9 ms` |
+| 49 | CSV over a whole build-up (`dowser-v2e`, `CsvProfile Start/Stop`, events `BpBuild structure/risen/handover`), ~100 fps xr-sim | idle before: FrameTime p50 5.7 p95 9.1, draws p50 120; structure burst (structure to risen + 300 frames): p50 5.9 **p95 9.3**, game-thread max 28.3 (the structure frame), draws p50 139 p95 143 max 159; judging: draws p50 141; hand-over + 300: p95 10.6, max 15.7, draws max 165; GC every ~60 s 48-59 ms (`GC##` events), as before |
+| 50 | `BpLink.Product kettle` mid-judging, then back (PIE, and game `dowser-v2g`) | `is being onboarded: its live plan ... waits for the build-up`, then `54 events (past, at their end state) applied in 3.7 ms`; every room up and the pencil as live; at done `0 of 7 rooms differ`. Before the hold (PIE run 3) the live plan drew for 7 frames first, then the build-up replaced it |
+
+Captures (PIE, PoF `capture_viewport`, `mcp-steps/onb-v2-capture.jsonl`): [survey](captures/onb-v2-survey.jpg),
+[outline](captures/onb-v2-outline.jpg), [a wing drawing, lines flying](captures/onb-v2-structure-early.jpg),
+[rooms rising](captures/onb-v2-structure-mid.jpg), [built](captures/onb-v2-built.jpg), [judging: pencil and
+brackets](captures/onb-v2-judging.jpg), [join mid-run](captures/onb-v2-join.jpg), [hand-over](captures/onb-v2-handover.jpg),
+[done, the live table](captures/onb-v2-done.jpg), [a long product name](captures/onb-v2-long-name.jpg).
+
+Not established: a frame with no game-thread spike at the structure (28 ms once, down from about 75); the brackets read
+faintly at the target pose; a build of a product with more than 12 domains (the margin holds 12, the rest are not typed).
+
 ## Lynx, 2026-11-02: another product at runtime, the wrist's Projects tab, onboarding lines (spark onboarding-vr WP-V1)
 
 `BpLink.Product <slug>` (and a pinch on a Projects row) retargets the table without a relaunch: BpLink cancels what is
