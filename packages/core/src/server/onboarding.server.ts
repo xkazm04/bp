@@ -6,6 +6,10 @@
 //                   event from `begin` first (the journal: a reload, a second tab or a late subscriber catches up), then
 //                   live ones, with a comment ping every 15 s. The stream stays open after `done`/`failed` (pings only), so
 //                   an EventSource does not reconnect into a second replay.
+//   onboardingList  GET /api/onboarding: every registered product with its latest adopt job, the onboarding ones first.
+//   buildupPage     GET /api/products/[slug]/onboarding/feed: the same build-up as pollable JSON pages, for a client that
+//                   cannot read SSE (UE's HTTP, the VR table): `after` an index, at most FEED_PAGE events, `next` and `done`;
+//                   `islands` re-projects every `structure` event's boxes with the plan route's islands layout.
 // The adopt job itself (enqueueAdopt) is jobs.server.ts's; its feed, prompt and check are onboarding-job.server.ts's.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -14,8 +18,10 @@ import type { ScanJob } from '../scan/jobs.ts';
 import type { BuildupEvent, OnboardCheck, OnboardCheckItem } from '../scan/onboarding.ts';
 import { RESERVED_SLUGS, SLUG_RE } from '../scan/readiness.ts';
 import { list } from './jobs.server.ts';
-import { adoptSkillDir, closeJournal, NO_ADOPT_SKILL, runAdoptCheck, subscribeBuildup } from './onboarding-job.server.ts';
-import { readRegistry } from './products.server.ts';
+import { islandsOf, islandsRoomGap, LIVE_ROOM_GAP, projectPlan, type Islandable, type PlanBox } from './plan-projection.ts';
+import { adoptSkillDir, closeJournal, NO_ADOPT_SKILL, readBuildup, runAdoptCheck, subscribeBuildup } from './onboarding-job.server.ts';
+import { readRegistry, storeDir } from './products.server.ts';
+import type { ProductEntry } from '../scan/types.ts';
 
 if (typeof window !== 'undefined') throw new Error('onboarding.server.ts is server-only');
 
@@ -109,4 +115,90 @@ export function buildupStream(req: Request, slug: string, root: string, jobId: s
   return new Response(stream, {
     headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' },
   });
+}
+
+// ------------------------------------------------------------------------------------ the pollable feed (VR)
+/** One registered product and its latest adopt job (null: never onboarded through the app). */
+export interface OnboardingItem { slug: string; name: string; job: ScanJob | null }
+
+const live = (j: ScanJob | null) => j?.status === 'running' || j?.status === 'queued';
+const startedMs = (j: ScanJob | null) => (j ? Date.parse(j.started_at ?? j.queued_at) || 0 : -1);
+
+/**
+ * Every registered product (Kettle is built in and not registered) with its latest adopt job: running or queued ones
+ * first, then by the most recent start (a queued job by its queue time), products never onboarded last; ties keep the
+ * registry's order. `problem` = the registry file cannot be read (the products route's answer for the same file).
+ */
+export function onboardingList(): { items: OnboardingItem[]; problem?: { status: 409 | 500; error: string } } {
+  const { products, problem } = readRegistry();
+  if (problem) return { items: [], problem };
+  const items = products.map((p) => ({ slug: p.slug, name: p.name, job: latestAdopt(p.slug) }));
+  const rank = items.map((it, i) => ({ it, i }));
+  rank.sort((a, b) => Number(live(b.it.job)) - Number(live(a.it.job)) || startedMs(b.it.job) - startedMs(a.it.job) || a.i - b.i);
+  return { items: rank.map((r) => r.it) };
+}
+
+/** The most events one feed answer carries. */
+export const FEED_PAGE = 500;
+
+/** One answer of the pollable feed. */
+export interface FeedPage { job: ScanJob | null; events: BuildupEvent[]; next: number; done: boolean }
+
+/**
+ * A journaled `structure` event as the islands view of the product's map NOW lays it out: when the map's
+ * `/plan?layout=islands` answer (projectPlan, the same call) holds every wing, room, bay and tile the event names, their
+ * boxes, orders and wing letters are taken from it (in its order): the table the build-up becomes at done. The journaled
+ * boxes cannot simply be pulled apart: wing order is chronological, read from events.jsonl, which adopt-bp writes AFTER the product tree, so the wings of the
+ * journaled event can stand in another order than the live table's (dowser@414e6ed, 2026-11-02: two wings swapped). A map
+ * that cannot be read, or one that no longer holds a node of the event, falls back to the journaled boxes pulled apart
+ * with islandsOf and the map's room gap (LIVE_ROOM_GAP when it cannot be read: an onboarded product's rooms are
+ * capabilities).
+ */
+function structureIslands<E extends Islandable>(p: ProductEntry, e: E): E {
+  const dir = storeDir(p);
+  let events: string | null = null, raw: unknown;
+  try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
+  try { raw = JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')); } catch { return islandsOf(e, LIVE_ROOM_GAP); }
+  let plan: Islandable;
+  try { plan = projectPlan(raw, events, 'feed', { islands: true }); } catch { return islandsOf(e, LIVE_ROOM_GAP); }
+  const KEYS = ['wings', 'rooms', 'bays', 'tiles'] as const;
+  type Node = { id: string; order: number; box: PlanBox; letter?: string };
+  const byId = new Map<string, Node>();
+  for (const k of KEYS) for (const n of plan[k] as Node[]) byId.set(k + ':' + n.id, n);
+  if (!KEYS.every((k) => e[k].every((n) => byId.has(k + ':' + n.id)))) {
+    let gap = LIVE_ROOM_GAP;
+    try { gap = islandsRoomGap(raw, events); } catch { /* the default */ }
+    return islandsOf(e, gap);
+  }
+  // the event's nodes in the plan's order, each with the plan's box, order and (a wing) letter
+  const at = <N extends { id: string }>(k: (typeof KEYS)[number], ns: N[]): N[] => {
+    const mine = new Map(ns.map((n) => [n.id, n]));
+    return (plan[k] as Node[]).filter((q) => mine.has(q.id)).map((q) => ({ ...mine.get(q.id)!, box: { ...q.box }, order: q.order, ...(q.letter !== undefined && 'letter' in mine.get(q.id)! ? { letter: q.letter } : {}) }));
+  };
+  return { ...e, wings: at('wings', e.wings), rooms: at('rooms', e.rooms), bays: at('bays', e.bays), tiles: at('tiles', e.tiles) };
+}
+
+/**
+ * Page `after` of adopt job `jobId`'s build-up (default: the latest job): the journal's events with index >= after, at
+ * most FEED_PAGE; `next` = the index to ask for next; `done` = the job has ended, its build-up holds its `done`/`failed`
+ * (or never started) and every event has been answered. `islands`: every `structure` event's boxes as
+ * `/plan?layout=islands` lays out the map (structureIslands). null = no such job (a named one; with no
+ * job named, a product never onboarded answers an empty, done page).
+ */
+export function buildupPage(p: ProductEntry, o: { after: number; jobId: string | null; islands: boolean }): FeedPage | null {
+  const jobs = adoptJobs(p.slug);
+  const job = o.jobId ? jobs.find((j) => j.id === o.jobId) : jobs.at(-1);
+  if (!job) return o.jobId ? null : { job: null, events: [], next: 0, done: true };
+  const ended = !live(job);
+  if (ended) closeJournal(p.root, job); // a job that ended out of sight of its feed (a restart) ends its build-up too
+  const all = readBuildup(p.root, job.id);
+  const from = Math.min(o.after, all.length);
+  let events = all.slice(from, from + FEED_PAGE);
+  const next = from + events.length;
+  const last = all.at(-1);
+  const done = ended && next >= all.length && (!last || last.type === 'done' || last.type === 'failed');
+  if (o.islands && events.some((e) => e.type === 'structure')) {
+    events = events.map((e) => (e.type === 'structure' ? structureIslands(p, e) : e));
+  }
+  return { job, events, next, done };
 }

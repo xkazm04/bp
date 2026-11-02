@@ -62,21 +62,36 @@ export function projectPlan(raw: unknown, eventsText: string | null, rev: string
       health: Object.fromEntries(lenses.map((id) => [id, t.f.lens[id]?.h ?? 'unmeasured'])), general: t.f.health,
     })),
   };
-  return opts.islands ? islands(plan, L.rooms.some((r) => r.cap) ? LIVE_ROOM_GAP : ROOM_GAP) : plan;
+  return opts.islands ? islandsOf(plan, gapOf(L)) : plan;
 }
+
+/** The islands view's room gap for a layout: LIVE_ROOM_GAP where rooms are capabilities (a live product), else ROOM_GAP. */
+const gapOf = (L: ReturnType<typeof layoutProduct>): number => (L.rooms.some((r) => r.cap) ? LIVE_ROOM_GAP : ROOM_GAP);
+
+/** The room gap `projectPlan(raw, eventsText, rev, { islands: true })` spaces this map's rooms by. For a caller that holds
+ *  boxes projected from the same map and pulls them apart with islandsOf (the onboarding feed's journaled `structure`). */
+export function islandsRoomGap(raw: unknown, eventsText: string | null): number {
+  return gapOf(layoutProduct(buildProduct(loadStructure(raw, eventsText), 1)));
+}
+
+/** What islandsOf moves: wings, and rooms, bays and tiles that name their parent, each with its order and box. */
+interface IslandNode { id: string; order: number; box: PlanBox }
+interface IslandChild extends IslandNode { parentId: string }
+export interface Islandable { wings: IslandNode[]; rooms: IslandChild[]; bays: IslandChild[]; tiles: IslandChild[] }
 
 /**
  * The plan pulled apart into islands: wing i (by order) moves right by i * WING_GAP; inside its wing, room j (by order)
  * moves down by j * roomGap (ROOM_GAP, or LIVE_ROOM_GAP when rooms are capabilities), layout's stacking axis, and the
  * wing grows by the gaps between its rooms. Bays and tiles
  * move with their room, so every box still contains its children. Shifts only: no size but the wings' heights changes.
+ * Any other field rides along, so a plan and the onboarding feed's `structure` event go through the same function.
  */
-function islands(p: Plan, roomGap: number): Plan {
+export function islandsOf<P extends Islandable>(p: P, roomGap: number): P {
   const at = (b: PlanBox, dx: number, dy: number): PlanBox => ({ ...b, x: b.x + dx, y: b.y + dy });
   const wingDx = new Map(p.wings.map((w) => [w.id, w.order * WING_GAP]));
   const roomAt = new Map(p.rooms.map((r) => [r.id, { dx: wingDx.get(r.parentId) ?? 0, dy: r.order * roomGap }]));
   const bayAt = new Map(p.bays.map((b) => [b.id, roomAt.get(b.parentId) ?? { dx: 0, dy: 0 }]));
-  const move = <T extends PlanRoom | PlanBay | PlanTile>(n: T, s: { dx: number; dy: number } | undefined): T => ({ ...n, box: at(n.box, s?.dx ?? 0, s?.dy ?? 0) });
+  const move = <T extends IslandChild>(n: T, s: { dx: number; dy: number } | undefined): T => ({ ...n, box: at(n.box, s?.dx ?? 0, s?.dy ?? 0) });
   return {
     ...p,
     wings: p.wings.map((w) => {
