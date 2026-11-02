@@ -21,7 +21,13 @@ import { shallowEqual, useBp, useEngine, useLive, useWritesOn } from './hooks';
 import { PageSwitch } from './Header';
 import type { LedgerPageProps } from './ledger/LedgerPage';
 
-const LedgerChunk = lazy(() => import('./ledger/LedgerPage').then((m) => ({ default: m.LedgerPage })));
+// One named loader, so the boot prefetch below and lazy() share the same module promise.
+const loadLedger = () => import('./ledger/LedgerPage');
+const LedgerChunk = lazy(() => loadLedger().then((m) => ({ default: m.LedgerPage })));
+// A cold load that already targets the ledger (#page=ledger) starts the chunk now, overlapping the engine boot, instead
+// of after the engine reads the hash and React mounts the page (page-load-pipeline/discoverable-critical-resources).
+// `/`'s first-load JS is unchanged: this only starts a fetch the page would make anyway.
+if (typeof location !== 'undefined' && /(^|[#&])page=ledger(&|$)/.test(location.hash)) void loadLedger().catch(() => {});
 /**
  * The findings ledger, loaded on demand: mount it only while the store's `page` is 'ledger' (the import starts at the
  * first mount, and nothing shows until it lands: the page fades in as it always did). The one door to the ledger's
