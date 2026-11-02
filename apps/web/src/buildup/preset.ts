@@ -2,7 +2,8 @@
 //   demo - about 45 s at 1x, the product tree arriving wing by wing (the pipeline we would like: an incremental tree);
 //   real - about 2.5 min at 1x, in today's pipeline shape: a long silent product-tree step, then the WHOLE structure in
 //          one chunk (adopt-bp writes work/product-tree.json at once), history at once, then health in uneven batches
-//          of 8 (one per judgement batch file). The extent is not announced (null), as a live run could not know it.
+//          of 8 (one per judgement batch file, provisional, with `progress`; the final merge re-sends them all). Domain
+//          names arrive as `outline` before the structure, as work/product-tree.d lets them. The extent is not announced (null), as a live run could not know it.
 // Gaps are seeded by the product slug, so a replay is the same run. Timings are modelled, not measured: the feasibility
 // check replaces them with a tape recorded from a real adopt run (docs/concepts/onboarding/feasibility.md).
 import { extentOf } from './plan';
@@ -47,7 +48,14 @@ export function presetSchedule(plan: BuildupPlan, mode: PresetMode): BuildupEven
       out.push({ type: 'structure', at: Math.round(t), wings: [w], rooms: rs, bays: bs, tiles: tiles.filter((x) => bid.has(x.parentId)).map(structureTile) });
     }
   } else {
-    wait(45000, 65000);
+    // the tree is decided domain by domain (work/product-tree.d), then merged in one write: outline first, boxes later
+    wait(15000, 25000);
+    for (const w of sorted) {
+      wait(1500, 9000);
+      out.push({ type: 'outline', at: Math.round(t), domains: [{ id: w.id, name: w.name, order: w.order, summary: null,
+        capabilities: rooms.filter((x) => x.parentId === w.id).sort((a, b) => a.order - b.order).map((x) => ({ id: x.id, name: x.name })) }] });
+    }
+    wait(20000, 40000);
     out.push({ type: 'structure', at: Math.round(t), wings: sorted, rooms, bays, tiles: tiles.map(structureTile) });
   }
   phase('product-tree', 'done', `${wings.length} wings, ${rooms.length} rooms, ${tiles.length} features`);
@@ -62,11 +70,15 @@ export function presetSchedule(plan: BuildupPlan, mode: PresetMode): BuildupEven
   const batches: (typeof tiles)[] = [];
   for (let i = 0; i < tiles.length; i += 8) batches.push(tiles.slice(i, i + 8));
   const budget = mode === 'demo' ? 10000 : 60000;
-  for (const b of batches) {
+  const real = mode === 'real';
+  if (real) out.push({ type: 'progress', at: Math.round(t), phase: 'judge', n: 0, of: batches.length, detail: null });
+  batches.forEach((b, i) => {
     const mean = budget / Math.max(1, batches.length);
     wait(mean * (mode === 'demo' ? 0.7 : 0.2), mean * (mode === 'demo' ? 1.3 : 1.8));
-    out.push({ type: 'health', at: Math.round(t), tiles: b.map((x) => ({ id: x.id, general: x.general ?? 'unmeasured' })) });
-  }
+    if (real) out.push({ type: 'progress', at: Math.round(t), phase: 'judge', n: i + 1, of: batches.length, detail: `${b.length} features judged` });
+    out.push({ type: 'health', at: Math.round(t), provisional: real, tiles: b.map((x) => ({ id: x.id, general: x.general ?? 'unmeasured' })) });
+  });
+  if (real) { wait(3000, 6000); out.push({ type: 'health', at: Math.round(t), provisional: false, tiles: tiles.map((x) => ({ id: x.id, general: x.general ?? 'unmeasured' })) }); }
   phase('judge', 'done', `${tiles.filter((x) => x.general === 'bad').length} in trouble`);
 
   phase('register', 'start'); wait(300, 600); phase('register', 'done', plan.project.slug);

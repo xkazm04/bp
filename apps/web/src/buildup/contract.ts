@@ -11,6 +11,14 @@
 //   judge (LLM, batches of ~8)    -> `health` events, one per batch
 //   register                      -> `done`
 // Absent values: a field the pipeline has not produced is `null` (never omitted, never 0).
+//
+// Anti-stale events (docs/concepts/onboarding/feasibility.md section 5): a real run is silent for minutes at a time (no
+// structure for ~4.5 min, then ~10 min of judging), so four more events carry what the run already knows in between.
+// All four are optional to draw: a variant that ignores them still ends on the right frame.
+//   context-map, seed             -> `survey` (code areas; re-sent enriched with lines and dates, merge by id)
+//   product-tree (LLM)            -> `outline` per decided domain, before the boxes (ids match the later wings/rooms)
+//   any time                      -> `activity`: what the agent is reading or writing now, at most one a second
+//   judge (and measure)           -> `progress` n of N, with the batch's provisional `health`
 
 /** World units (bp's layout: a tile is 160 x 76). */
 export interface BBox { x: number; y: number; w: number; h: number }
@@ -51,6 +59,22 @@ export type PhaseState = 'start' | 'done' | 'failed';
 /** Tile fields known at product-tree time: everything but the first-seen date and the health reading. */
 export type StructureTile = Pick<BTile, 'id' | 'name' | 'order' | 'parentId' | 'box' | 'stage' | 'kind' | 'tier' | 'summary'>;
 
+/** One code area (a context of the code map): what exists before any product name does. */
+export interface SurveyArea {
+  id: string; name: string; group: string | null;
+  files: number; lines: number | null;
+  /** First and last commit touching the area, YYYY-MM-DD. */
+  first: string | null; last: string | null;
+}
+
+/** A domain the product tree has decided. `id` equals the wing id it becomes; capability ids equal the room ids. */
+export interface OutlineDomain {
+  id: string; name: string; order: number; summary: string | null;
+  capabilities: { id: string; name: string }[];
+}
+
+export type ActivityVerb = 'read' | 'write' | 'run';
+
 export type BuildupEvent =
   /** `at`: ms since the run started. `detail`: one human line ("13 domains, 133 features"), or null. */
   | { type: 'begin'; at: number; project: { slug: string; name: string }; /** The plan's extent, known up front only by a preset; null live. */ extent: BBox | null }
@@ -58,7 +82,16 @@ export type BuildupEvent =
   /** One chunk of the product tree. Parents always arrive before or with their children. */
   | { type: 'structure'; at: number; wings: BWing[]; rooms: BRoom[]; bays: BBay[]; tiles: StructureTile[] }
   | { type: 'history'; at: number; tiles: { id: string; created: string | null }[] }
-  | { type: 'health'; at: number; tiles: { id: string; general: Health }[] }
+  /** `provisional`: read from one judgement batch before the final merge (a later non-provisional event overrides). */
+  | { type: 'health'; at: number; provisional: boolean; tiles: { id: string; general: Health }[] }
+  /** Code areas, cumulative per send: an area re-sent with the same id replaces the earlier one. */
+  | { type: 'survey'; at: number; areas: SurveyArea[] }
+  /** Decided domains, merged by id; arrives one domain at a time while the tree is written. */
+  | { type: 'outline'; at: number; domains: OutlineDomain[] }
+  /** The agent touched `path` (repo-relative); `area` is the survey area that owns it, or null. */
+  | { type: 'activity'; at: number; verb: ActivityVerb; path: string; area: string | null }
+  /** A long phase's count: judgement batches written, n of `of`. */
+  | { type: 'progress'; at: number; phase: Phase; n: number; of: number; detail: string | null }
   | { type: 'done'; at: number }
   | { type: 'failed'; at: number; phase: Phase; message: string };
 
