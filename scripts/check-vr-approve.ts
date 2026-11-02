@@ -10,6 +10,10 @@
 //   - a device paired without `decide` is refused at the door; a forged x-bp-device is dropped there;
 //   - again: 409 (already approved); a repeat declined first through the decline verb: 409 (already declined);
 //   - the morning deck keeps the card in its slot, marked approved.
+//   - D15, the set verb POST .../proposals/approve { ids } (one pinch on several findings): the same guards (no x-bp-device 400,
+//     BP_WRITES=off 403, ids not 1..50 strings 400, unknown product 404), through the door only with `decide`; of a set of
+//     three proposed + one approved + one unknown, the proposed ones are approved (one steering row each, signed as the
+//     one-finding verb signs), the rest are skipped with their status, no job is queued, a repeated id counts once.
 // Run: node --import @bp/core/register scripts/check-vr-approve.ts. Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -33,6 +37,7 @@ const seed = spawnSync(process.execPath, [path.join(ROOT, 'scripts/morning-demo.
 const hist = spawnSync(process.execPath, [path.join(ROOT, 'scripts/brief-demo-seed.mjs'), '--dir', path.join(TMP, 'kettle-web'), '--morning'], { encoding: 'utf8' });
 check('the portfolio and the labelled decision history seed into a temp registry', seed.status === 0 && hist.status === 0 && fs.existsSync(REG), seed.stderr + hist.stderr);
 
+const setRoute = await import('../packages/core/src/server/api/products/[slug]/proposals/approve/route.ts');
 const { POST } = await import('../packages/core/src/server/api/products/[slug]/proposals/[id]/approve/route.ts');
 const decline = await import('../packages/core/src/server/api/products/[slug]/proposals/[id]/decline/route.ts');
 const morning = await import('../packages/core/src/server/api/companion/morning/route.ts');
@@ -137,6 +142,47 @@ const md = fs.readFileSync(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'wor
 check("the day's steering-log.md says it", /Approved/.test(md) && md.includes(pinch.json.title as string), md.slice(0, 400));
 const after = await deck();
 check('the morning deck keeps the card in its slot, marked approved', after.cards.find((c) => c.decision?.proposal === 'find-kettle-web-1')?.decision?.steered?.verdict === 'approve');
+
+// D15: the set verb
+const steerRows = () => fs.readFileSync(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'work', 'steering-log.jsonl'), 'utf8').trim().split(String.fromCharCode(10)).length;
+const setAt = (body: unknown, h: Record<string, string> = DEV, slug = 'kettle-web') =>
+  setRoute.POST(new Request(`http://127.0.0.1:3413/api/products/${slug}/proposals/approve`, { method: 'POST', headers: { host: '127.0.0.1:3413', 'content-type': 'application/json', ...h }, body: typeof body === 'string' ? body : JSON.stringify(body) }),
+    { params: Promise.resolve({ slug }) });
+const proposed = (db.prepare("SELECT id FROM proposals WHERE status = 'proposed' ORDER BY id").all() as { id: string }[]).map((x) => x.id);
+check('the seed leaves at least three proposed findings for a set', proposed.length >= 3, String(proposed.length));
+const three = proposed.slice(0, 3);
+r = await setAt({ ids: three }, {});
+check('set: no x-bp-device is 400', r.status === 400 && /x-bp-device/.test(await r.text()), String(r.status));
+r = await setAt('[]');
+check('set: a body that is no object is 400', r.status === 400, String(r.status));
+r = await setAt({ ids: [] });
+check('set: no ids is 400', r.status === 400);
+r = await setAt({ ids: Array.from({ length: 51 }, (_, i) => `f-${i}`) });
+check('set: 51 ids is refused (400), nothing written', r.status === 400 && three.every((id) => st(id).status === 'proposed'), String(r.status));
+r = await setAt({ ids: [1, 2] });
+check('set: ids that are not strings is 400', r.status === 400);
+r = await setAt({ ids: three }, DEV, 'no-such-product');
+check('set: an unknown product is 404', r.status === 404);
+process.env.BP_WRITES = 'off';
+r = await setAt({ ids: three });
+check('set: BP_WRITES=off is 403, nothing written', r.status === 403 && three.every((id) => st(id).status === 'proposed'), String(r.status));
+delete process.env.BP_WRITES;
+const stewBefore = steerRows();
+const jobsBeforeSet = jobs.list('kettle-web').length;
+const noSet = await send(door.port as number, 'POST', '/api/products/kettle-web/proposals/approve', { [PEER]: QUEST, authorization: `Bearer ${reader.token}` }, { ids: three });
+check('set: a headset paired without decide is refused at the door (bare 403), nothing written', noSet.status === 403 && noSet.body === '' && three.every((id) => st(id).status === 'proposed'), `${noSet.status} ${noSet.body}`);
+const set = await send(door.port as number, 'POST', '/api/products/kettle-web/proposals/approve', { [PEER]: QUEST, authorization: `Bearer ${quest.token}`, 'x-bp-device': 'forged' },
+  { ids: [...three, 'find-kettle-web-1', 'no-such-finding', three[0]] });
+const gotApproved = (set.json.approved as string[] | undefined) ?? [], gotSkipped = (set.json.skipped as { id: string; status: string }[] | undefined) ?? [];
+check('set: through the door, the three proposed are approved (a repeated id once)', set.status === 200 && JSON.stringify([...gotApproved].sort()) === JSON.stringify([...three].sort()), set.body);
+check('set: the approved one and the unknown id are skipped with their status', gotSkipped.length === 2 && gotSkipped.some((x) => x.id === 'find-kettle-web-1' && x.status === 'approved') && gotSkipped.some((x) => x.id === 'no-such-finding' && x.status === 'unknown'), JSON.stringify(gotSkipped));
+check("set: each row is approved, signed and noted as the web deck's Approve signs one", three.every((id) => { const x = st(id); return x.status === 'approved' && x.decided_by === webRow.decided_by && x.decision_note === 'Morning Watch'; }), JSON.stringify(three.map(st)));
+check('set: the device is the paired one (the forged header dropped)', /^quest3s:[0-9a-f]{8}$/.test(String(set.json.device)), String(set.json.device));
+const stewAfter = steerRows();
+check('set: one steering-log row per approved finding, no job queued', stewAfter - stewBefore === three.length && jobs.list('kettle-web').length === jobsBeforeSet, `${stewAfter - stewBefore} rows`);
+r = await setAt({ ids: three });
+const again = (await r.json()) as { approved: string[]; skipped: { id: string; status: string }[] };
+check('set: the same set again approves nothing and skips all as approved', r.status === 200 && again.approved.length === 0 && again.skipped.length === 3 && again.skipped.every((x) => x.status === 'approved'), JSON.stringify(again));
 db.close();
 await door.stop();
 await new Promise<void>((res) => { loop.close(() => res()); loop.closeAllConnections(); });

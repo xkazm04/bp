@@ -54,6 +54,9 @@ check("decide is only the repeat's decline and the card's approve: POST .../prop
   && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/brief-o2/decline') === null && verbOf(['decide'], 'GET', '/api/products/kettle/structure') === null
   && verbOf(['decide'], 'GET', '/api/products/kettle/proposals/kf-001/brief') === null && verbOf(['decide'], 'POST', '/api/products/kettle/proposals/kf-001') === null);
 check('no other scope reaches the decline', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') === null);
+check('decide reaches the set approve (D15): POST .../proposals/approve, POST only, and no other scope', verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve') !== null
+  && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/approve') === null && verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/approve') === null
+  && verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve/x') === null);
 check('no other scope reaches the approve (D12)', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null);
 // E6 (D3): the door's slug is the registry's ^[a-z0-9][a-z0-9-]{0,62}$ (registry.server.ts SLUG_RE): 63 characters pass, 64 do not
 const slug63 = 'a'.repeat(63), slug64 = 'a'.repeat(64);

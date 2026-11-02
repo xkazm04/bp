@@ -26,10 +26,11 @@
 // 4. Scope (verb-allowlists). VERBS below is the whole remote vocabulary, a closed grammar: a method plus an anchored path
 //    pattern, no percent-escapes, no query except the baton's `claim=1`. `read`: the plan reads; `standup`: read plus the
 //    companion turn, focus and cards GETs; `place`: the three baton verbs; `focus`: the shared focus's GET and POST (a
-//    headset follows and publishes without `read`; the route pins its reader to the paired device); `decide`: two verbs, the
+//    headset follows and publishes without `read`; the route pins its reader to the paired device); `decide`: three verbs, the
 //    headset's pinch on a card: a REPEAT declined (ROADMAP F8: .../proposals/<id>/decline, which refuses any card that is
 //    not the same idea declined before) and the card's decision approved (D12: .../proposals/<id>/approve, the Morning
-//    Watch's Approve: proposed -> approved, no job queued). `decide` has its own ceremony: a device may ask for it, but
+//    Watch's Approve: proposed -> approved, no job queued), and the same for several findings at once (D15: .../proposals/approve
+//    with { ids }, 1..50). `decide` has its own ceremony: a device may ask for it, but
 //    only the owner's approve that names it (`--scope ...,decide`) grants it; a plain approve drops it. Never the plan's
 //    free decide (proposals/<id>), cards/<id>, human-token, dispatch, build
 //    or finish, and none of this server's own /lan or /athena routes.
@@ -122,6 +123,7 @@ export const VERBS: readonly Verb[] = [
   { scope: 'focus', method: 'POST', path: /^\/api\/session\/focus$/ },
   { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/decline`) },
   { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/approve`) },
+  { scope: 'decide', method: 'POST', path: products('proposals/approve') },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */
