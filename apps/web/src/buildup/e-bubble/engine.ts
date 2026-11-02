@@ -9,7 +9,7 @@
 //   done      -> the sheet is stamped (G-001) and stays explorable.
 // Anything that arrives early waits in the queue; nothing is dropped. Every rAF, listener and timer is released in
 // `dispose`, and `begin` rebuilds the model from nothing (replay).
-import type { BBox, BuildupEvent, Health, Phase } from '../contract';
+import type { ActivityVerb, BBox, BuildupEvent, Health, OutlineDomain, Phase, SurveyArea } from '../contract';
 import { PHASES } from '../contract';
 import {
   TAU, clamp, lerp, sstep, eOut, eInOut, eBack, seg, mulberry32, hashStr, shuffle, packSiblings, enclose,
@@ -19,6 +19,7 @@ import {
   KIND_WORD, HEALTH_WORD, rungOf, stageGroup, stageWord, emptyStat,
   type BayE, type Ent, type Local, type Pack, type RoomE, type RoomLab, type Stat, type TileE, type WingE, type Wob,
 } from './model';
+import { layoutOutline, layoutSurvey, type GroupUnit, type LotUnit } from './stale';
 
 export interface Engine {
   push(e: BuildupEvent): void;
@@ -35,7 +36,18 @@ interface Theme {
 interface Cam { cx: number; cy: number; s: number }
 interface Box4 { x0: number; y0: number; x1: number; y1: number }
 interface Unit { t: number; wing: WingE; rooms: RoomE[]; fresh: boolean }
-interface Sweep { t0: number; t1: number; x0: number; x1: number; y0: number; y1: number }
+/** `ink`: the final reading inks the plan (accent scan line); a provisional batch is pencilled in (a grey one). */
+interface Sweep { t0: number; t1: number; x0: number; x1: number; y0: number; y1: number; ink: boolean }
+/** A code area on the site survey: its unit slot (tweening from u0), when the pen draws it, and when the agent read it. */
+interface Lot { a: SurveyArea; u: LotUnit; u0: LotUnit; tIn: number; wob: Wob; reads: number; tOn: number; tOff: number }
+interface Frame { cx: number; cy: number; s: number }
+/** A decided domain before its wing exists: world circle (tweening from c0), capabilities local to it. */
+interface GCap { id: string; name: string; wob: Wob; u: Local; u0: Local; tIn: number }
+interface Ghost {
+  d: OutlineDomain; wob: Wob; c: Pack; c0: Pack; caps: GCap[]; tIn: number; tPlate: number;
+  /** When its wing took over (Infinity: not yet); the wing that did. */
+  handT: number; wing: WingE | null; plate: { w: number; h: number; ux: number; uy: number; off: number };
+}
 interface PhaseRec { state: 'pend' | 'run' | 'done' | 'fail'; startWall: number; endWall: number; detail: string | null }
 interface FindSet { wings: Set<WingE>; rooms: Set<RoomE>; tiles: Set<TileE> }
 
@@ -43,6 +55,10 @@ const SANS_FALLBACK = "'IBM Plex Sans Condensed','Arial Narrow','Roboto Condense
 const MONO_FALLBACK = "'IBM Plex Mono',Consolas,'SFMono-Regular',Menlo,monospace";
 /** A provisional sheet for a run that has not said how big the plan is (extent null, no structure yet). */
 const PROVISIONAL: BBox = { x: 0, y: 0, w: 2400, h: 1300 };
+/** World height the sheet grows by, under the ruler: the key plan (the code survey) once a survey has arrived, or just
+    the judge's count when only `progress` came. The key band grows with a wide plan, which is width-limited anyway. */
+const KEY_EXT = 470, COUNT_EXT = 260;
+const VERB_WORD: Readonly<Record<ActivityVerb, string>> = { read: 'READING', write: 'WRITING', run: 'WORKING IN' };
 
 const STEPS: { n: string; tag?: string; d: string }[] = [
   { n: 'Check', d: 'what bp already has' }, { n: 'Context map', d: 'code into areas' }, { n: 'Seed', d: 'the code tree' },
@@ -113,15 +129,22 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     X0: 0, Y0: 0, X1: PROVISIONAL.w, Y1: PROVISIONAL.h,
     sheet: { x0: 0, y0: 0, x1: 1, y1: 1 } as Box4, sh0: { x0: 0, y0: 0, x1: 1, y1: 1 } as Box4, sd: { x0: 0, y0: 0, x1: 1, y1: 1 } as Box4,
     dotR: 10, dr0: 10, dd: 10, rotA: null as number | null,
-    dated: false, d0: 0, d1: 1,
+    dated: false, d0: 0, d1: 1, keyExt: 0, keyOn: false, countOn: false,
   };
   /* the schedule, in engine seconds; Infinity = not known yet */
   const S = {
     rnd: mulberry32(1), qT: 0, structEnd: 0, units: [] as Unit[],
     tHist: Infinity, tSlideEnd: Infinity, tCam0: Infinity, dCam: 1, tRooms0: Infinity, tRoomsEnd: Infinity, tFade0: Infinity, dFade: 3.2,
-    sweeps: [] as Sweep[], sweepEnd: 0, pending: [] as TileE[][], firstH: Infinity,
+    sweeps: [] as Sweep[], sweepEnd: 0, pending: [] as { batch: TileE[]; final: boolean }[], firstH: Infinity, finalH: false,
     tReg0: Infinity, total: Infinity, endT: 0, lay: { t0: -Infinity, dur: 1 },
   };
+  /* the anti-stale layers: survey lots, outline ghosts, what the agent is reading, the judge's count */
+  const SV = { lots: new Map<string, Lot>(), groups: [] as GroupUnit[], g0: new Map<string, GroupUnit>(), A: 1, A0: 1, lay: { t0: -Infinity, dur: 1 }, tKey0: Infinity, qT: 0, tFirst: Infinity };
+  const GH = { doms: new Map<string, Ghost>(), lay: { t0: -Infinity, dur: 1 }, qT: 0 };
+  const ACT = { area: null as string | null, cap: '', capPrev: '', capT: -Infinity };
+  const PROG = new Map<Phase, { n: number; of: number }>();
+  let penC: { x: number; y: number; r: number; t: number } | null = null;
+  let LOTHIT: { lot: Lot; x: number; y: number; r: number }[] = [];
   const RUN = { begunWall: 0, phases: new Map<Phase, PhaseRec>(), failed: null as string | null, done: false };
   const VIEW = { hover: null as Ent | null, sel: null as Ent | null, find: null as FindSet | null, railW: 214, fade: 0, th: 0 };
   const ST = {
@@ -137,14 +160,17 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     P.wings = []; P.rooms = []; P.bays = []; P.tiles = [];
     P.wById.clear(); P.rById.clear(); P.bById.clear(); P.tById.clear(); P.wingArrival = [];
     P.extent = extent && extent.w > 0 && extent.h > 0 ? extent : null;
-    P.rotA = null; P.dated = false;
+    P.rotA = null; P.dated = false; P.keyOn = false; P.countOn = false;
     setExtents();
     P.sh0 = P.sheet; P.sd = P.sheet;
     P.dotR = P.dr0 = P.dd = 10;
     S.rnd = mulberry32(hashStr(project.slug) ^ 0x51f15e);
     S.qT = 0; S.structEnd = 0; S.units = [];
     S.tHist = S.tSlideEnd = S.tCam0 = S.tRooms0 = S.tRoomsEnd = S.tFade0 = S.tReg0 = S.total = S.firstH = Infinity;
-    S.dCam = 1; S.sweeps = []; S.sweepEnd = 0; S.pending = []; S.endT = 0; S.lay = { t0: -Infinity, dur: 1 };
+    S.dCam = 1; S.sweeps = []; S.sweepEnd = 0; S.pending = []; S.endT = 0; S.lay = { t0: -Infinity, dur: 1 }; S.finalH = false;
+    SV.lots.clear(); SV.groups = []; SV.g0.clear(); SV.A = SV.A0 = 1; SV.lay = { t0: -Infinity, dur: 1 }; SV.tKey0 = Infinity; SV.qT = 0; SV.tFirst = Infinity;
+    GH.doms.clear(); GH.lay = { t0: -Infinity, dur: 1 }; GH.qT = 0;
+    ACT.area = null; ACT.cap = ''; ACT.capPrev = ''; ACT.capT = -Infinity; PROG.clear(); penC = null; penLast = null; PENBOX = null; LOTHIT = []; P.keyExt = 0; P.keyOn = false; P.countOn = false;
     RUN.begunWall = performance.now(); RUN.phases = new Map(PHASES.map((p) => [p, { state: 'pend', startWall: 0, endWall: 0, detail: null }]));
     RUN.failed = null; RUN.done = false;
     VIEW.hover = null; VIEW.sel = null; VIEW.find = null;
@@ -165,7 +191,8 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     }
     P.X0 = b.x; P.Y0 = b.y; P.X1 = b.x + b.w; P.Y1 = b.y + b.h;
     // the sheet reaches further up than down: it holds the wing headers
-    P.sheet = { x0: P.X0 - 160, y0: P.Y0 - 415, x1: P.X1 + 145, y1: P.Y1 + 250 };
+    P.keyExt = P.keyOn ? Math.max(KEY_EXT, 0.17 * (P.X1 - P.X0)) : P.countOn ? COUNT_EXT : 0;
+    P.sheet = { x0: P.X0 - 160, y0: P.Y0 - 415, x1: P.X1 + 145, y1: P.Y1 + 250 + P.keyExt };
   }
 
   /* ---------- intake ---------- */
@@ -178,7 +205,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       const o: WingE = {
         type: 'wing', id: w.id, name: w.name, letter: w.letter, order: w.order, box: w.box, cx: w.box.x + w.box.w / 2, cy: w.box.y + w.box.h / 2,
         rooms: [], tiles: [], stat: emptyStat(), wob: wobOf(w.id), pkR: 1, pack: { cx: 0, cy: 0, R: 0 }, pk0: { cx: 0, cy: 0, R: 0 }, pd: { cx: 0, cy: 0, R: 0 },
-        median: null, lab: null,
+        median: null, lab: null, ghostT: Infinity,
         sc: { tIn: Infinity, tPlate: Infinity, tSlide: Infinity, tSq0: Infinity, tInk0: Infinity, tHead: Infinity },
         s: { appear: 0, slide: 0, sq: 0, cx: 0, cy: 0, hw: 0, hh: 0, n: 2, ink: 0, head: 0, plate: 0, letter: 0 },
       };
@@ -210,10 +237,10 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       const room = bay.room, wing = room.wing;
       const o: TileE = {
         type: 'tile', id: t.id, name: t.name, order: t.order, box: t.box, cx: t.box.x + t.box.w / 2, cy: t.box.y + t.box.h / 2,
-        stage: t.stage, kind: t.kind, summary: t.summary ?? '', created: null, day: null, general: null,
+        stage: t.stage, kind: t.kind, summary: t.summary ?? '', created: null, day: null, general: null, gP: null, gF: null,
         bay, room, wing, u: { x: 0, y: 0 }, ready: false,
-        sc: { tDot: Infinity, tSw0: Infinity, tC0: Infinity, rung: rungOf(t.stage), tH: Infinity },
-        s: { appear: 0, sw: 0, cx: 0, cy: 0, hw: 0, hh: 0, rad: 0, climb: 0, health: 0, hflash: 0, vis: false },
+        sc: { tDot: Infinity, tSw0: Infinity, tC0: Infinity, rung: rungOf(t.stage), tH: Infinity, tHF: Infinity },
+        s: { appear: 0, sw: 0, cx: 0, cy: 0, hw: 0, hh: 0, rad: 0, climb: 0, health: 0, hink: 0, hflash: 0, vis: false },
       };
       P.tById.set(t.id, o); bay.tiles.push(o); newTiles.push(o);
       if (!touched.includes(wing)) touched.push(wing);
@@ -222,25 +249,38 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     const shNow = sheetAt(now);
     setExtents();
     relayout(now, shNow);
+    // hand-over: a wing whose domain is already drawn as an outline bubble starts where that bubble is, already drafted
+    // (the same id, so the same pencil wobble): the ghost does not vanish, it becomes the wing and slides to its slot
+    const handedRooms = new Set<RoomE>();
+    for (const w of freshW) {
+      const g = GH.doms.get(w.id); if (!g || fin(g.handT)) continue;
+      g.handT = now; g.wing = w;
+      if (g.tIn > now) continue; // queued, never drawn: the wing is drafted as usual
+      w.pk0 = ghostAt(g, now); w.ghostT = now;
+      for (const r of w.rooms) { const c = g.caps.find((x) => x.id === r.id); if (c && c.tIn <= now) { r.lc0 = capAt(c, now); handedRooms.add(r); } }
+    }
+    if (freshW.size) SV.tKey0 = Math.min(SV.tKey0, now + 0.05);
     // the pacing queue: one unit per wing that got rooms or tiles in this chunk, in plan order
     touched.sort((a, b) => a.order - b.order);
     for (const w of touched) {
-      const fresh = freshW.has(w);
+      const fresh = freshW.has(w), handed = fresh && w.ghostT === now;
       const tA = Math.max(now + 0.05, S.qT);
-      if (fresh) { w.sc.tIn = tA; w.sc.tPlate = tA + 0.5; }
+      if (handed) { w.sc.tIn = now - 1; w.sc.tPlate = now - 1; }
+      else if (fresh) { w.sc.tIn = tA; w.sc.tPlate = tA + 0.5; }
       const rs = newRooms.filter((r) => r.wing === w).sort((a, b) => a.order - b.order);
-      const off0 = fresh ? 0.55 : 0.12;
-      rs.forEach((r, j) => { r.sc.tIn = tA + off0 + j * 0.34; });
+      const off0 = fresh && !handed ? 0.55 : 0.12;
+      let j = 0;
+      for (const r of rs) { if (handedRooms.has(r)) r.sc.tIn = now - 1; else r.sc.tIn = tA + off0 + (j++) * 0.34; }
       const rooms = new Set<RoomE>(); for (const t of newTiles) if (t.wing === w) rooms.add(t.room);
       for (const r of rooms) {
         const ts = newTiles.filter((t) => t.room === r);
         const n = r.tiles.length, sp = clamp(0.75 / Math.max(n, 1), 0.022, 0.075), ord = shuffle(ts, S.rnd);
-        const base = Math.max(r.sc.tIn + 0.4, now + 0.05);
+        const base = Math.max(r.sc.tIn + 0.4, now + 0.05, tA + 0.15);
         ord.forEach((tl, rank) => { tl.sc.tDot = base + rank * sp * (0.8 + 0.4 * S.rnd()); S.structEnd = Math.max(S.structEnd, tl.sc.tDot + 0.4); });
       }
       for (const r of rs) S.structEnd = Math.max(S.structEnd, r.sc.tIn + 0.6);
       S.units.push({ t: tA, wing: w, rooms: rs, fresh });
-      S.qT = tA + off0 + Math.max(1, rs.length) * 0.34 + 0.3;
+      S.qT = handed ? tA + off0 + j * 0.34 + 0.75 : tA + off0 + Math.max(1, rs.length) * 0.34 + 0.3;
       bump(S.structEnd);
     }
     // structure after history (not the pipeline's order, but allowed): square what is new right after the rest
@@ -328,7 +368,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     }
     const { x0, x1, y0, y1 } = cs.length ? bbox() : { x0: 0, x1: 0, y0: 0, y1: 0 };
     const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
-    const SH = P.sheet, ccx = (SH.x0 + SH.x1) / 2, ccy = (SH.y0 + SH.y1) / 2;
+    const SH = P.sheet, ccx = (SH.x0 + SH.x1) / 2, ccy = (SH.y0 + SH.y1 - P.keyExt) / 2;
     // one scale for the whole product: the tightest wing decides, so every wing bubble fits inside its own final box
     let k = Infinity;
     for (const w of P.wings) k = Math.min(k, 0.455 * Math.min(w.box.w, w.box.h) / w.pkR);
@@ -389,18 +429,26 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     bump(S.tSlideEnd + 0.3);
     // health that came early waited for its tiles to stand
     const pend = S.pending; S.pending = [];
-    for (const b of pend) scheduleHealth(b);
+    for (const b of pend) scheduleHealth(b.batch, b.final);
     ST.dirty = true;
   }
+  /* a provisional batch (one judgement file) is pencilled in; the final reading inks the plan and wins */
   function addHealth(e: Extract<BuildupEvent, { type: 'health' }>) {
-    const batch: TileE[] = [];
-    for (const h of e.tiles) { const t = P.tById.get(h.id); if (t) { t.general = h.general as Health; batch.push(t); } }
+    const batch: TileE[] = [], final = !e.provisional;
+    for (const h of e.tiles) {
+      const t = P.tById.get(h.id); if (!t) continue;
+      const g = h.general as Health;
+      if (final) { if (t.gF === g && fin(t.sc.tHF)) continue; t.gF = g; }
+      else { if (t.gF) continue; t.gP = g; }
+      t.general = t.gF ?? t.gP; batch.push(t);
+    }
+    if (final && batch.length) S.finalH = true;
     if (!batch.length) return;
-    if (!fin(S.tHist)) { S.pending.push(batch); return; }
-    scheduleHealth(batch);
+    if (!fin(S.tHist)) { S.pending.push({ batch, final }); return; }
+    scheduleHealth(batch, final);
   }
   /* a scan line crosses each judged batch, once its tiles stand (the prototype swept the whole plan at once) */
-  function scheduleHealth(batch: TileE[]) {
+  function scheduleHealth(batch: TileE[], final: boolean) {
     const now = ST.t;
     let ready = 0, x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     for (const t of batch) {
@@ -411,8 +459,11 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     const v = (P.X1 - P.X0 + 120) / 4.4;
     const a = Math.max(now + 0.05, ready, S.sweepEnd - 0.15);
     const dur = Math.max(0.35, (x1 - x0) / v);
-    for (const t of batch) t.sc.tH = a + clamp((t.cx - x0) / (x1 - x0)) * dur;
-    S.sweeps.push({ t0: a, t1: a + dur, x0, x1, y0: y0 - 30, y1: y1 + 30 });
+    for (const t of batch) {
+      const at = a + clamp((t.cx - x0) / (x1 - x0)) * dur;
+      if (final) { t.sc.tHF = at; if (!fin(t.sc.tH)) t.sc.tH = at; } else t.sc.tH = at;
+    }
+    S.sweeps.push({ t0: a, t1: a + dur, x0, x1, y0: y0 - 30, y1: y1 + 30, ink: final });
     S.sweepEnd = a + dur;
     S.firstH = Math.min(S.firstH, a);
     bump(a + dur + 0.7);
@@ -420,10 +471,175 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
   function addDone() {
     const now = ST.t;
     RUN.done = true;
+    // the run has stopped reading: the touch lifts and the words go
+    const was = ACT.area ? SV.lots.get(ACT.area) : undefined; if (was) was.tOff = now;
+    ACT.area = null; if (ACT.cap) { ACT.capPrev = ACT.cap; ACT.cap = ''; ACT.capT = now; }
     S.tReg0 = Math.max(now + 0.05, S.endT + 0.3);
     S.total = S.tReg0 + 1.9;
     bump(S.total);
     ST.dirty = true;
+  }
+
+  /* ---- the anti-stale layers: what the run knows before the plan, and while it is judged ---- */
+  /** Progress of an interval for the anti-stale layers: under reduced motion anything scheduled is simply there. */
+  const rs = (t: number, a: number, d: number) => (REDUCED ? (fin(a) ? 1 : 0) : seg(t, a, d));
+  const lerpLot = (a: LotUnit, b: LotUnit, t: number): LotUnit => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), r: lerp(a.r, b.r, t) });
+  const svLay = (t: number) => (REDUCED ? 1 : eInOut(seg(t, SV.lay.t0, SV.lay.dur)));
+  const ghLay = (t: number) => (REDUCED ? 1 : eInOut(seg(t, GH.lay.t0, GH.lay.dur)));
+  /** The survey recedes into the key plan once the product has a shape (the first domain or the first structure). */
+  const keyA = (t: number) => (REDUCED ? (fin(SV.tKey0) ? 1 : 0) : eInOut(seg(t, SV.tKey0, 1.6)));
+  /** The plan's own part of a sheet box (the sheet holds margins for wing headers, the ruler and the key band). */
+  const planBox = (sh: Box4) => ({ X0: sh.x0 + 160, X1: sh.x1 - 145, Y0: sh.y0 + 415, Y1: sh.y1 - 250 - P.keyExt });
+  const sheetMid = (sh: Box4) => ({ x: (sh.x0 + sh.x1) / 2, y: (sh.y0 + sh.y1 - P.keyExt) / 2 });
+  /* centre stage: the survey is all there is; the key plan: lower left of the sheet, under the ruler */
+  function stageFrame(sh: Box4, A: number): Frame {
+    const pb = planBox(sh), m = sheetMid(sh);
+    return { cx: m.x, cy: m.y, s: Math.max(1, Math.min((pb.X1 - pb.X0) * 0.42 / A, (pb.Y1 - pb.Y0) * 0.36)) };
+  }
+  /** The top of the key band: under the ruler and its words (which are screen-sized, so the plan's scale decides). */
+  function keyTop(sh: Box4): number { const pb = planBox(sh), ps = fitBox(sh, insets(), 0.012).s; return pb.Y1 + 135 + 54 / Math.max(0.02, ps); }
+  function keyFrame(sh: Box4, A: number): Frame {
+    const pb = planBox(sh), top = keyTop(sh), bottom = sh.y1 - 90;
+    const s = Math.max(1, Math.min(190, (bottom - top) / 2, (pb.X1 - pb.X0) * 0.3 / A));
+    return { cx: pb.X0 + A * s, cy: top + s, s };
+  }
+  function lotFrame(t: number, sh: Box4): Frame {
+    const A = lerp(SV.A0, SV.A, svLay(t)), a = keyA(t), f0 = stageFrame(sh, A), f1 = keyFrame(sh, A);
+    return { cx: lerp(f0.cx, f1.cx, a), cy: lerp(f0.cy, f1.cy, a), s: Math.exp(lerp(Math.log(f0.s), Math.log(f1.s), a)) };
+  }
+  const lotAt = (l: Lot, t: number) => lerpLot(l.u0, l.u, svLay(t));
+  /** How strongly the agent's attention sits on a lot: eases in when it is read, out when the reading moves on. */
+  function touchOf(l: Lot, t: number): number {
+    if (!fin(l.tOn)) return 0;
+    if (!fin(l.tOff)) return rs(t, l.tOn, 0.8);
+    if (REDUCED) return 0;
+    return seg(l.tOff, l.tOn, 0.8) * (1 - seg(t, l.tOff, 1.5));
+  }
+  function addSurvey(e: Extract<BuildupEvent, { type: 'survey' }>) {
+    const now = ST.t, la = svLay(now);
+    for (const l of SV.lots.values()) l.u0 = lotAt(l, now);
+    for (const g of SV.groups) { const f = SV.g0.get(g.key); SV.g0.set(g.key, f ? { key: g.key, x: lerp(f.x, g.x, la), y: lerp(f.y, g.y, la), r: lerp(f.r, g.r, la) } : g); }
+    SV.A0 = SV.lots.size ? lerp(SV.A0, SV.A, la) : SV.A0;
+    const fresh: Lot[] = [];
+    for (const a of e.areas) {
+      const l = SV.lots.get(a.id);
+      if (l) { l.a = a; continue; }
+      const z = { x: 0, y: 0, r: 0 };
+      const n: Lot = { a, u: z, u0: z, tIn: Infinity, wob: wobOf('lot:' + a.id), reads: 0, tOn: Infinity, tOff: Infinity };
+      if (ACT.area === a.id) n.tOn = now;
+      SV.lots.set(a.id, n); fresh.push(n);
+    }
+    if (!SV.lots.size) return;
+    const L = layoutSurvey([...SV.lots.values()].map((l) => l.a));
+    if (!SV.groups.length) SV.A0 = L.A;
+    SV.A = L.A;
+    for (const [id, l] of SV.lots) { const u = L.lots.get(id); if (u) l.u = u; }
+    for (const g of L.groups) if (!SV.g0.has(g.key)) SV.g0.set(g.key, g);
+    SV.groups = L.groups;
+    for (const l of fresh) { l.u0 = l.u; l.tIn = Math.max(now + 0.05, SV.qT); SV.qT = l.tIn + 0.11; SV.tFirst = Math.min(SV.tFirst, l.tIn); }
+    SV.lay = { t0: now, dur: REDUCED ? 0.001 : 1.4 };
+    bump(SV.qT + 0.6);
+    // the sheet grows a key band for the survey to recede into
+    if (!P.keyOn) { P.keyOn = true; growSheet(now); }
+    if (P.wings.length || GH.doms.size) SV.tKey0 = Math.min(SV.tKey0, now + 0.05);
+  }
+  function growSheet(now: number) {
+    const shNow = sheetAt(now);
+    setExtents();
+    if (P.wings.length) relayout(now, shNow); else { P.sh0 = shNow; S.lay = { t0: now, dur: REDUCED ? 0.001 : 1.0 }; }
+  }
+  const ghostAt = (g: Ghost, t: number): Pack => lerpPack(g.c0, g.c, ghLay(t));
+  const capAt = (c: GCap, t: number): Local => lerpLocal(c.u0, c.u, ghLay(t));
+  function addOutline(e: Extract<BuildupEvent, { type: 'outline' }>) {
+    const now = ST.t;
+    for (const g of GH.doms.values()) { g.c0 = ghostAt(g, now); for (const c of g.caps) c.u0 = capAt(c, now); }
+    const fresh: Ghost[] = [];
+    for (const d of e.domains) {
+      if (P.wById.has(d.id)) continue; // its wing is already on the sheet
+      const g = GH.doms.get(d.id);
+      if (g) {
+        if (fin(g.handT)) continue;
+        g.d = d;
+        const old = new Map(g.caps.map((c) => [c.id, c]));
+        g.caps = d.capabilities.map((c, j) => old.get(c.id) ?? { id: c.id, name: c.name, wob: wobOf(c.id), u: { x: 0, y: 0, R: 0 }, u0: { x: 0, y: 0, R: 0 }, tIn: Math.max(now + 0.05, g.tIn + 0.55 + j * 0.34) });
+        for (const c of g.caps) c.name = d.capabilities.find((x) => x.id === c.id)?.name ?? c.name;
+        continue;
+      }
+      const z = { cx: 0, cy: 0, R: 0 };
+      const n: Ghost = {
+        d, wob: wobOf(d.id), c: z, c0: z, tIn: Infinity, tPlate: Infinity, handT: Infinity, wing: null,
+        caps: d.capabilities.map((c) => ({ id: c.id, name: c.name, wob: wobOf(c.id), u: { x: 0, y: 0, R: 0 }, u0: { x: 0, y: 0, R: 0 }, tIn: Infinity })),
+        plate: { w: 0, h: 46, ux: 0, uy: -1, off: 6 },
+      };
+      GH.doms.set(d.id, n); fresh.push(n);
+    }
+    const live = [...GH.doms.values()].filter((g) => !fin(g.handT));
+    if (!live.length) return;
+    const L = layoutOutline(live.map((g) => g.d));
+    const pb = planBox(P.sheet), m = sheetMid(P.sheet);
+    const k = Math.min(105, (pb.X1 - pb.X0) * 0.8 / Math.max(1, L.w), (pb.Y1 - pb.Y0) * 0.8 / Math.max(1, L.h));
+    for (const g of live) {
+      const u = L.doms.get(g.d.id); if (!u) continue;
+      g.c = { cx: m.x + u.x * k, cy: m.y + u.y * k, R: u.R * k };
+      for (const c of g.caps) { const cu = u.caps.get(c.id); c.u = cu ? { x: cu.x * k, y: cu.y * k, R: cu.R * k } : { x: 0, y: 0, R: k }; }
+    }
+    for (const g of fresh) {
+      g.c0 = g.c; for (const c of g.caps) c.u0 = c.u;
+      // the pen drafts each domain in turn: its bubble, then its capabilities, as it drafts a wing
+      g.tIn = Math.max(now + 0.05, GH.qT); g.tPlate = g.tIn + 0.5;
+      g.caps.forEach((c, j) => { c.tIn = g.tIn + 0.55 + j * 0.34; });
+      GH.qT = g.tIn + 0.55 + Math.max(1, g.caps.length) * 0.34 + 0.3;
+      bump(GH.qT);
+    }
+    GH.lay = { t0: now, dur: REDUCED ? 0.001 : 1.0 };
+    placeGhostPlates();
+    SV.tKey0 = Math.min(SV.tKey0, now + 0.3);
+  }
+  /* each domain's name plate goes where it covers the fewest other bubbles (planLabels' rule, for the outline) */
+  function placeGhostPlates() {
+    if (!TH) return;
+    const live = [...GH.doms.values()].filter((g) => !fin(g.handT));
+    if (!live.length) return;
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const g of live) { x0 = Math.min(x0, g.c.cx - g.c.R); x1 = Math.max(x1, g.c.cx + g.c.R); y0 = Math.min(y0, g.c.cy - g.c.R); y1 = Math.max(y1, g.c.cy + g.c.R); }
+    const base = fitBox(P.sheet, insets(), 0.012), s = clamp(frameFor(x0, y0, x1, y1).s, base.s, base.s * 2.6);
+    const c0 = ctx; ctx = ctxMain;
+    const placed: { cx: number; cy: number; w: number; h: number }[] = [];
+    for (const g of live) {
+      ctx.font = `600 15px ${F_SANS}`; const nw = ctx.measureText(g.d.name.toUpperCase()).width;
+      ctx.font = `12px ${F_MONO}`; const cw = ctx.measureText('00 CAPABILITIES').width;
+      const L = g.plate; L.w = Math.max(nw, cw) + 16; L.h = 46;
+      const me = { x: g.c.cx * s, y: g.c.cy * s, R: g.c.R * s };
+      let best = { pen: Infinity, cx: me.x, cy: me.y - me.R - L.h };
+      for (let kk = 0; kk < 24; kk++) {
+        const a = -Math.PI / 2 + (kk % 2 ? 1 : -1) * Math.ceil(kk / 2) * (TAU / 24);
+        const ux = Math.cos(a), uy = Math.sin(a), offd = Math.abs(ux) * L.w / 2 + Math.abs(uy) * L.h / 2 + 6;
+        const cx = me.x + ux * (me.R + offd), cy = me.y + uy * (me.R + offd);
+        let pen = (uy > 0.3 ? 14 : 0) + kk * 0.6;
+        for (const o of live) {
+          if (o === g) continue;
+          const ox = o.c.cx * s, oy = o.c.cy * s, oR = o.c.R * s;
+          const nx = clamp(ox, cx - L.w / 2, cx + L.w / 2), ny = clamp(oy, cy - L.h / 2, cy + L.h / 2), d = Math.hypot(ox - nx, oy - ny) - oR;
+          if (d < 8) pen += 60 + (8 - d) * 3;
+        }
+        for (const p of placed) { if (Math.abs(p.cx - cx) < (p.w + L.w) / 2 + 6 && Math.abs(p.cy - cy) < (p.h + L.h) / 2 + 6) pen += 200; }
+        if (pen < best.pen) best = { pen, cx, cy };
+      }
+      const vx = best.cx - me.x, vy = best.cy - me.y, d = Math.hypot(vx, vy) || 1; L.ux = vx / d; L.uy = vy / d; L.off = d - me.R;
+      placed.push({ cx: best.cx, cy: best.cy, w: L.w, h: L.h });
+    }
+    ctx = c0;
+  }
+  function addActivity(e: Extract<BuildupEvent, { type: 'activity' }>) {
+    const now = ST.t, area = e.area;
+    if (area !== ACT.area) {
+      const was = ACT.area ? SV.lots.get(ACT.area) : undefined; if (was) was.tOff = now;
+      const l = area ? SV.lots.get(area) : undefined; if (l) { l.tOn = now; l.tOff = Infinity; }
+      ACT.area = area;
+    }
+    const l = area ? SV.lots.get(area) : undefined; if (l) l.reads++;
+    const cap = VERB_WORD[e.verb] + ' ' + e.path;
+    if (cap !== ACT.cap) { ACT.capPrev = ACT.cap; ACT.cap = cap; ACT.capT = now; }
   }
 
   function push(ev: BuildupEvent) {
@@ -444,6 +660,13 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       case 'history': addHistory(ev); break;
       case 'health': addHealth(ev); break;
       case 'done': addDone(); break;
+      case 'survey': addSurvey(ev); break;
+      case 'outline': addOutline(ev); break;
+      case 'activity': addActivity(ev); break;
+      case 'progress':
+        PROG.set(ev.phase, { n: ev.n, of: ev.of });
+        if (ev.phase === 'judge' && !P.countOn) { P.countOn = true; if (!P.keyOn) growSheet(ST.t); }
+        break;
       case 'failed': {
         RUN.failed = ev.message; const r = RUN.phases.get(ev.phase); if (r) { r.state = 'fail'; r.endWall = wall; }
         toast('<b>' + esc(PHASE_NAME(ev.phase)) + ' failed:</b> ' + esc(ev.message), 12000);
@@ -509,6 +732,16 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       const p = lerpPack(w.pk0, w.pack, a);
       x0 = Math.min(x0, p.cx - p.R); x1 = Math.max(x1, p.cx + p.R); y0 = Math.min(y0, p.cy - p.R); y1 = Math.max(y1, p.cy + p.R);
     }
+    // no wing yet: frame the outline's domain bubbles, else the site survey while it holds the stage
+    if (!fin(x0)) for (const g of GH.doms.values()) {
+      if (fin(g.handT) || !(g.tIn - 0.25 <= t)) continue;
+      const p = ghostAt(g, t);
+      x0 = Math.min(x0, p.cx - p.R); x1 = Math.max(x1, p.cx + p.R); y0 = Math.min(y0, p.cy - p.R); y1 = Math.max(y1, p.cy + p.R);
+    }
+    if (!fin(x0) && SV.lots.size && keyA(t) < 0.5 && t >= SV.tFirst - 0.25) {
+      const F = lotFrame(t, sheetAt(t)), A = lerp(SV.A0, SV.A, svLay(t));
+      x0 = F.cx - A * F.s; x1 = F.cx + A * F.s; y0 = F.cy - F.s - 40; y1 = F.cy + F.s * 1.2 + 60;
+    }
     // nothing drafted yet: the pen works close, over the middle of the sheet, as the prototype's first bubble did
     if (!fin(x0)) return { cx: base.cx, cy: base.cy, s: base.s * 2.0 };
     const cam = frameFor(x0, y0, x1, y1);
@@ -568,7 +801,9 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       s.rad = lerp(P.dd, 3.5, s.sw);
       s.climb = fin(sc.tC0) ? clamp((t - sc.tC0) / 0.15, 0, sc.rung + 1) : 0;
       s.health = seg(th, sc.tH, 0.4);
-      s.hflash = fin(sc.tH) ? 1 - seg(th, sc.tH, 0.7) : 0;
+      s.hink = seg(th, sc.tHF, 0.4);
+      const hl = fin(sc.tHF) && th >= sc.tHF ? sc.tHF : sc.tH;
+      s.hflash = fin(hl) ? 1 - seg(th, hl, 0.7) : 0;
       s.vis = s.appear > 0.01;
     }
   }
@@ -778,20 +1013,35 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     const rung = Math.min(Math.floor(s.climb), tl.sc.rung), frac = s.climb - Math.floor(s.climb);
     const flash = (s.climb > 0 && s.climb < tl.sc.rung + 1) ? (1 - frac) * 0.6 : 0;
     drawTileBody(tl, x, y, w, h, Math.min(rad, h / 2), rung, flash);
-    if (s.sw > 0.9) drawHealth(tl, x, y, w);
+    if (s.sw > 0.9) { drawHealth(tl, x, y, w); drawMarkup(tl, x, y, w, h); }
   }
+  /* the health strip over a tile: a provisional reading is pencilled (a broken strip), the final one is inked (solid) */
   function drawHealth(tl: TileE, x: number, y: number, w: number) {
-    const s = tl.s, k = CAM.s, bh = clamp(5 * k, 2, 5);
+    const s = tl.s, k = CAM.s, bh = clamp(5 * k, 2, 5), yb = y - bh - 1;
+    const tone = (g: Health | null, a: number): string | null => g === 'bad' ? rgba(TH.red, a) : g === 'watch' ? rgba(TH.amber, a) : g === 'good' ? inkA(0.62 * a) : null;
     ctx.save(); ctx.globalAlpha = dimT(tl, 0.3);
-    ctx.fillStyle = inkA(0.12); ctx.fillRect(x, y - bh - 1, w, bh);
-    if (s.health > 0) {
-      const g = tl.general, col = g === 'bad' ? TH.red : g === 'watch' ? TH.amber : g === 'good' ? TH.ink : null;
-      if (col) {
-        ctx.fillStyle = g === 'good' ? inkA(0.62) : rgba(col, 1);
-        ctx.fillRect(x, y - bh - 1, w * eOut(s.health), bh);
-        if (s.hflash > 0) { ctx.fillStyle = rgba(TH.accent, 0.8 * s.hflash); ctx.fillRect(x, y - bh - 1, w * eOut(s.health), bh); }
-      }
+    ctx.fillStyle = inkA(0.12); ctx.fillRect(x, yb, w, bh);
+    let shown = 0;
+    if (s.health > 0 && tl.gP && s.hink < 1) {
+      const c = tone(tl.gP, 0.85 * (1 - s.hink));
+      if (c) { ctx.fillStyle = c; shown = w * eOut(s.health); for (let xx = 0; xx < shown; xx += 5) ctx.fillRect(x + xx, yb, Math.min(3, shown - xx), bh); }
     }
+    if (s.hink > 0 && tl.gF) {
+      const c = tone(tl.gF, 1);
+      if (c) { ctx.fillStyle = c; shown = w * eOut(s.hink); ctx.fillRect(x, yb, shown, bh); }
+    }
+    if (s.hflash > 0 && shown > 0) { ctx.fillStyle = rgba(TH.accent, 0.8 * s.hflash); ctx.fillRect(x, yb, shown, bh); }
+    ctx.restore();
+  }
+  /* an inspector's pencil mark-up: a provisional `bad` or `watch` reading rings the tile in red or amber pencil; the
+     final reading settles it (the ring is rubbed out as the ink lands, the strip and the counts carry the verdict) */
+  function drawMarkup(tl: TileE, x: number, y: number, w: number, h: number) {
+    const s = tl.s; if (s.health <= 0 || s.hink >= 1 || !tl.gP || (tl.gP !== 'bad' && tl.gP !== 'watch')) return;
+    const col = tl.gP === 'bad' ? TH.red : TH.amber, wob = wobOf('mk:' + tl.id);
+    ctx.save(); ctx.globalAlpha = dimT(tl, 0.3); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+    const bad = tl.gP === 'bad';
+    ctx.lineWidth = bad ? 2 : 1.2; ctx.strokeStyle = rgba(col, (bad ? 0.95 : 0.6) * (1 - s.hink));
+    sePath(x + w / 2, y + h / 2, w / 2 + 6, h / 2 + 6, 2.6, wob, 0.035, wob.a0, 1.06 * eOut(s.health)); ctx.stroke();
     ctx.restore();
   }
 
@@ -880,7 +1130,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     for (const r of P.rooms) {
       const s = r.s, lab = r.lab; if (!lab || s.appear < 0.8) continue;
       const fadeO = (1 - sstep(s.sq * 2.5)) * (1 - VIEW.fade) * sstep((s.appear - 0.8) * 5); if (fadeO <= 0.01) continue;
-      const ws = r.wing.s, dim = dimR(r, 0.4);
+      const ws = r.wing.s, dim = dimR(r, 0.4) * handIn(r.wing, t);
       ctx.save(); ctx.globalAlpha = fadeO * dim;
       if (lab.inside) {
         const f = `600 12px ${F_SANS}`, lh = 14, cx = sx(s.cx), cy = sy(s.cy), x = cx - lab.w / 2, y = cy - lab.h / 2;
@@ -906,7 +1156,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       if (fadeO <= 0.01) continue;
       const L = w.lab, Rw = w.pd.R * k, cx = sx(s.cx) + L.ux * (Rw + L.off), cy = sy(s.cy) + L.uy * (Rw + L.off);
       const x = cx - L.w / 2, y = cy - L.h / 2;
-      ctx.save(); ctx.globalAlpha = Math.min(1, s.plate * 2) * fadeO * dimW(w, 0.4);
+      ctx.save(); ctx.globalAlpha = Math.min(1, s.plate * 2) * fadeO * dimW(w, 0.4) * handIn(w, t);
       ctx.fillStyle = rgba(TH.labelBg, 0.95); ctx.fillRect(x, y, L.w, L.h);
       ctx.strokeStyle = inkA(0.4); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, L.w - 1, L.h - 1);
       const typed = Math.ceil(w.name.length * clamp(s.plate * 1.15));
@@ -1045,6 +1295,14 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       if (!(th > sw.t0 && th < sw.t1)) continue;
       const a = (th - sw.t0) / (sw.t1 - sw.t0);
       const x = sx(lerp(sw.x0, sw.x1, a)), y0 = sy(sw.y0), y1 = sy(sw.y1);
+      if (!sw.ink) {
+        // a batch's provisional reading: a pencil line, no glow
+        const gp = ctx.createLinearGradient(x - 50, 0, x + 1, 0);
+        gp.addColorStop(0, inkA(0)); gp.addColorStop(1, inkA(0.1));
+        ctx.fillStyle = gp; ctx.fillRect(x - 50, y0, 51, y1 - y0);
+        ctx.fillStyle = inkA(0.6); ctx.fillRect(x - 0.75, y0, 1.5, y1 - y0);
+        continue;
+      }
       const g = ctx.createLinearGradient(x - 60, 0, x + 2, 0);
       g.addColorStop(0, rgba(TH.accent, 0)); g.addColorStop(1, rgba(TH.accent, TH.light ? 0.16 : 0.22));
       ctx.fillStyle = g; ctx.fillRect(x - 60, y0, 62, y1 - y0);
@@ -1052,40 +1310,266 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     }
   }
   /* while the pipeline is still thinking, the pen does not rest: it swings a compass over the next bubble's slot, or,
-     when nothing says where the next bubble goes, over the sheet's open paper beside the cluster */
-  function penWaiting(t: number): boolean {
-    if (REDUCED || t >= S.tHist || RUN.done) return false;
-    return true;
-  }
+     when nothing says where the next bubble goes, over the sheet's open paper beside the cluster; once the plan stands
+     and the run is reading (judging), it circles the lot of code being read, or the judge's open batch */
+  let penLast: { x: number; y: number; t: number } | null = null;
   function drawIdlePen(t: number) {
-    if (!penWaiting(t)) return;
+    if (REDUCED || RUN.done) return;
+    if (t < S.tHist) { if (draftPen(t)) return; }
+    else if (!(t > S.tRoomsEnd + 0.6)) return;
+    const tg = workTarget(t); if (!tg) return;
+    // ease toward the target, so a new reading glides the pen over rather than jumping it
+    if (!penC || t - penC.t > 0.5) { const from = penLast && t - penLast.t < 0.5 ? penLast : tg; penC = { x: from.x, y: from.y, r: tg.r, t }; }
+    const e = 1 - Math.exp(-Math.max(0, t - penC.t) / 0.55);
+    penC = { x: lerp(penC.x, tg.x, e), y: lerp(penC.y, tg.y, e), r: lerp(penC.r, tg.r, e), t };
+    orbit(t, sx(penC.x), sy(penC.y), penC.r, 0.7, false, 1);
+  }
+  function orbit(t: number, cx: number, cy: number, R: number, speed: number, glide: boolean, lead: number) {
+    const pos = (tt: number) => { const th = tt * speed + 1.3, rr0 = R * (0.9 + 0.1 * Math.sin(tt * 1.7)); return { x: cx + Math.cos(th) * rr0, y: cy + Math.sin(th) * rr0 }; };
+    ctx.lineCap = 'round'; ctx.setLineDash([]);
+    for (let j = 24; j >= 1; j--) { const a = pos(t - j * 0.05), b = pos(t - (j - 1) * 0.05); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = rgba(TH.accent, 0.62 * (1 - j / 25)); ctx.lineWidth = 1.7; ctx.stroke(); }
+    let p = pos(t);
+    if (glide) { const g = sstep(t / Math.max(0.2, lead)), sx0 = VW * 0.16, sy0 = VH * 0.28; p = { x: lerp(sx0, p.x, g), y: lerp(sy0, p.y, g) }; }
+    TIPS.push(p);
+    penLast = { x: wx(p.x), y: wy(p.y), t };
+  }
+  /** Before the plan stands. Returns false when it has nothing to draft and the work target should lead instead. */
+  function draftPen(t: number): boolean {
     let ni = -1; for (let i = 0; i < S.units.length; i++) if (S.units[i].t > t) { ni = i; break; }
     const last = S.units.length ? S.units[S.units.length - 1] : null;
     let ax: number, ay: number, ar: number, lead: number;
     if (ni >= 0) {
-      if (ni > 0 && t < S.units[ni - 1].t + 1.9) return;
+      if (ni > 0 && t < S.units[ni - 1].t + 1.9) return true;
       const u = S.units[ni], w = u.wing;
       if (u.fresh) { ax = w.pd.cx; ay = w.pd.cy; ar = w.pd.R; } else { const r = u.rooms[0] ?? w.rooms[0]; ax = w.pd.cx + (r ? r.ld.x : 0); ay = w.pd.cy + (r ? r.ld.y : 0); ar = r ? r.ld.R : w.pd.R; }
       lead = u.t;
     } else {
-      if (last && t < last.t + 1.9) return;
-      if (fin(S.tHist)) return;
+      if (last && t < last.t + 1.9) return true;
+      if (fin(S.tHist)) return true;
+      // the outline or the survey is being drafted: those pens show their own tips
+      if (t < GH.qT + 0.9 || t < SV.qT + 0.6) return true;
+      if (workTarget(t)) return false;
       // no next slot is known: the pen circles open paper, right of what has been drafted (or the sheet's middle)
-      const sh = P.sd, mid = { x: (sh.x0 + sh.x1) / 2, y: (sh.y0 + sh.y1) / 2 };
-      if (P.wings.length) {
-        let x1 = -Infinity, cyS = 0, rS = 0; for (const w of P.wings) { x1 = Math.max(x1, w.pd.cx + w.pd.R); cyS += w.pd.cy; rS += w.pd.R; }
-        const rm = rS / P.wings.length;
-        ax = Math.min(x1 + rm * 1.1, sh.x1 - rm - 60); ay = cyS / P.wings.length; ar = rm * 0.8;
+      const sh = P.sd, mid = sheetMid(sh);
+      const drawn: Pack[] = P.wings.length ? P.wings.map((w) => w.pd) : [...GH.doms.values()].filter((g) => !fin(g.handT) && g.tIn <= t).map((g) => ghostAt(g, t));
+      if (drawn.length) {
+        let x1 = -Infinity, cyS = 0, rS = 0; for (const d of drawn) { x1 = Math.max(x1, d.cx + d.R); cyS += d.cy; rS += d.R; }
+        const rm = rS / drawn.length;
+        ax = Math.min(x1 + rm * 1.1, sh.x1 - rm - 60); ay = cyS / drawn.length; ar = rm * 0.8;
       } else { ax = mid.x; ay = mid.y; ar = Math.min(sh.x1 - sh.x0, sh.y1 - sh.y0) * 0.12; }
       lead = 1.6;
     }
-    const k = CAM.s, cx = sx(ax), cy = sy(ay), R = Math.max(14, ar * k);
-    const pos = (tt: number) => { const th = tt * 0.95 + 1.3, rr0 = R * (0.9 + 0.1 * Math.sin(tt * 1.7)); return { x: cx + Math.cos(th) * rr0, y: cy + Math.sin(th) * rr0 }; };
-    ctx.lineCap = 'round'; ctx.setLineDash([]);
-    for (let j = 24; j >= 1; j--) { const a = pos(t - j * 0.05), b = pos(t - (j - 1) * 0.05); ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = rgba(TH.accent, 0.62 * (1 - j / 25)); ctx.lineWidth = 1.7; ctx.stroke(); }
-    let p = pos(t);
-    if (ni <= 0 && !last) { const g = sstep(t / Math.max(0.2, lead)), sx0 = VW * 0.16, sy0 = VH * 0.28; p = { x: lerp(sx0, p.x, g), y: lerp(sy0, p.y, g) }; }
-    TIPS.push(p);
+    const k = CAM.s;
+    orbit(t, sx(ax), sy(ay), Math.max(14, ar * k), 0.95, ni <= 0 && !last, lead);
+    return true;
+  }
+  /** Where the agent is working: the lot it is reading (world centre, screen radius), else the judge's open batch. */
+  function workTarget(t: number): { x: number; y: number; r: number } | null {
+    const l = ACT.area ? SV.lots.get(ACT.area) : undefined;
+    if (l && rs(t, l.tIn, 0.6) >= 1 && (fin(S.tHist) || keyA(t) < 0.5)) {
+      const F = lotFrame(t, P.sd), u = lotAt(l, t);
+      return { x: F.cx + u.x * F.s, y: F.cy + u.y * F.s, r: Math.max(12, u.r * F.s * CAM.s + 10) };
+    }
+    if (PENBOX && fin(S.tHist) && RUN.phases.get('judge')?.state === 'run') return { x: wx(PENBOX.x), y: wy(PENBOX.y), r: 15 };
+    return null;
+  }
+
+  /* ---------- the site survey: code areas as pencil lots, sized by lines; later the sheet's key plan ---------- */
+  function drawSurvey(t: number) {
+    if (ctx === ctxMain) LOTHIT = [];
+    if (!SV.lots.size) return;
+    const F = lotFrame(t, P.sd), k = CAM.s, a = keyA(t), la = svLay(t), ga = 1 - a;
+    const counts = new Map<string, number>(), firstIn = new Map<string, number>();
+    for (const l of SV.lots.values()) { const g = l.a.group ?? l.a.id.split(/[-/:]/)[0] ?? l.a.id; counts.set(g, (counts.get(g) ?? 0) + 1); firstIn.set(g, Math.min(firstIn.get(g) ?? Infinity, l.tIn)); }
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    // each code group: a faint dotted compass ring, named, while the survey holds the stage
+    if (ga > 0.02) {
+      for (const g of SV.groups) {
+        const gIn = rs(t, firstIn.get(g.key) ?? Infinity, 0.8);
+        if ((counts.get(g.key) ?? 0) < 2 || gIn <= 0) continue;
+        const f = SV.g0.get(g.key) ?? g, X = sx(F.cx + lerp(f.x, g.x, la) * F.s), Y = sy(F.cy + lerp(f.y, g.y, la) * F.s), R = lerp(f.r, g.r, la) * F.s * k;
+        ctx.setLineDash([1, 6]); ctx.lineWidth = 1.2; ctx.strokeStyle = inkA(0.36 * ga * gIn); ctx.beginPath(); ctx.arc(X, Y, R, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+        if (R > 34) txtF(ga * gIn, g.key.toUpperCase(), X, Y - R - 7, `12px ${F_MONO}`, inkA(0.7), 'center');
+      }
+    }
+    for (const l of SV.lots.values()) {
+      const ap = rs(t, l.tIn, 0.6); if (ap <= 0) continue;
+      const u = lotAt(l, t), X = sx(F.cx + u.x * F.s), Y = sy(F.cy + u.y * F.s), R = Math.max(3, u.r * F.s * k);
+      const tc = touchOf(l, t), wob = l.wob;
+      if (ap >= 1) {
+        // sketch marks: the lot is hatched in pencil, heavier while it is read
+        ctx.save(); sePath(X, Y, R, R, 2, wob, 0.03, wob.a0, 1); ctx.clip();
+        ctx.globalAlpha = 0.32 + 0.4 * tc; ctx.fillStyle = pattern(PAT.diag); ctx.fillRect(X - R - 2, Y - R - 2, 2 * R + 4, 2 * R + 4);
+        ctx.restore();
+        if (l.reads > 0 || tc > 0) { sePath(X, Y, R, R, 2, wob, 0.03, wob.a0, 1); ctx.fillStyle = rgba(TH.accent, 0.07 + 0.13 * tc); ctx.fill(); }
+      }
+      ctx.lineWidth = 1.3; ctx.strokeStyle = inkA(0.62 + 0.3 * tc);
+      const tip = sePath(X, Y, R, R, 2, wob, 0.03, wob.a0, ap); ctx.stroke();
+      if (ap < 1) TIPS.push(tip);
+      else { ctx.lineWidth = 0.8; ctx.strokeStyle = inkA(0.26); sePath(X, Y, R * 1.02, R * 1.02, 2, { a1: wob.a2, a2: wob.a3, a3: wob.a1, p1: wob.p3, p2: wob.p1, p3: wob.p2, a0: wob.a0 }, 0.04, wob.a0 + 0.5, 0.97); ctx.stroke(); }
+      if (tc > 0.01) {
+        // the agent is reading here: the pencil goes round it again, in the pen's colour
+        ctx.lineWidth = 2; ctx.strokeStyle = rgba(TH.accent, 0.85 * tc);
+        sePath(X, Y, R + 4, R + 4, 2, { a1: wob.a3, a2: wob.a1, a3: wob.a2, p1: wob.p2, p2: wob.p3, p3: wob.p1, a0: wob.a0 }, 0.04, wob.a0 + 1.1, 1); ctx.stroke();
+      }
+      // a lot the run has read keeps a dab of the pencil
+      if (l.reads > 0 && ap >= 1) { ctx.beginPath(); ctx.arc(X, R > 26 && ga > 0.5 ? Y - R * 0.55 : Y, 2.4, 0, TAU); ctx.fillStyle = inkA(0.9); ctx.fill(); }
+      if (ga > 0.02 && ap >= 1) {
+        const f12 = `12px ${F_MONO}`; ctx.font = f12;
+        const nm = l.a.name, wN = ctx.measureText(nm).width;
+        if (wN + 10 < 2 * R) {
+          txtF(ga, nm, X, Y + 4, f12, inkA(0.95), 'center');
+          const sub = l.a.lines != null ? l.a.lines.toLocaleString('en-US') + ' lines' : l.a.files + (l.a.files === 1 ? ' file' : ' files');
+          if (R > 30) txtF(ga, sub, X, Y + 20, f12, inkA(0.66), 'center');
+        }
+      }
+      if (ctx === ctxMain) LOTHIT.push({ lot: l, x: X, y: Y, r: R });
+    }
+    ctx.restore();
+  }
+  /** Text that fades as a whole, halo included. */
+  function txtF(al: number, str: string, x: number, y: number, font: string, color: string, align: CanvasTextAlign) {
+    if (al <= 0.01) return;
+    ctx.save(); ctx.globalAlpha *= al; txt(str, x, y, font, color, align, true); ctx.restore();
+  }
+  const clipPath = (p: string) => (p.length > 62 ? p.slice(0, 18) + '…' + p.slice(-42) : p);
+  function drawCaption(t: number, x: number, y: number, align: CanvasTextAlign, alpha: number) {
+    if (alpha <= 0.01) return;
+    const f = `13px ${F_MONO}`, out = rs(t, ACT.capT, 0.3), inn = rs(t, ACT.capT + 0.3, 0.45);
+    // fade with globalAlpha, so the text's halo fades with it
+    const one = (str: string, al: number) => { ctx.save(); ctx.globalAlpha *= al; txt(clipPath(str), x, y, f, rgba(TH.accent, 1), align, true); ctx.restore(); };
+    if (ACT.capPrev && out < 1) one(ACT.capPrev, alpha * (1 - out));
+    if (ACT.cap && inn > 0) one(ACT.cap, alpha * inn);
+  }
+  /* the survey's words: under the cluster while it holds the stage, beside it once it is the key plan */
+  function drawSurveyText(t: number) {
+    if (!SV.lots.size) {
+      // no survey: the reading is still worth a line, under the plan's left edge
+      if (fin(S.tHist) && P.keyExt) { const pb = planBox(P.sd); drawCaption(t, sx(pb.X0), sy(keyTop(P.sd)) + 14, 'left', 1); }
+      return;
+    }
+    const F = lotFrame(t, P.sd), a = keyA(t), A = lerp(SV.A0, SV.A, svLay(t)), f12 = `12px ${F_MONO}`;
+    let files = 0, lines = 0, hasL = false;
+    for (const l of SV.lots.values()) { files += l.a.files; if (l.a.lines != null) { lines += l.a.lines; hasL = true; } }
+    const sum = SV.lots.size + ' CODE AREAS · ' + files + ' FILES' + (hasL ? ' · ' + lines.toLocaleString('en-US') + ' LINES' : '');
+    const gIn = rs(t, SV.tFirst, 0.8);
+    if (a < 0.98) {
+      const X = sx(F.cx), Y = sy(F.cy + F.s) + 30, ga = (1 - a) * gIn;
+      txtF(ga, sum, X, Y, f12, inkA(0.72), 'center');
+      drawCaption(t, X, Y + 22, 'center', ga);
+    }
+    if (a > 0.02) {
+      const X = sx(F.cx + A * F.s) + 30, Y = sy(F.cy - F.s);
+      txtF(a, 'KEY PLAN · CODE SURVEY', X, Y + 14, `600 13px ${F_SANS}`, inkA(0.92), 'left');
+      txtF(a, sum, X, Y + 34, f12, inkA(0.66), 'left');
+      drawCaption(t, X, Y + 60, 'left', a);
+      // a leader from the words to the lot being read
+      const l = ACT.area ? SV.lots.get(ACT.area) : undefined, tc = l ? touchOf(l, t) : 0;
+      if (l && tc > 0.01) {
+        const u = lotAt(l, t), lx = sx(F.cx + u.x * F.s), ly = sy(F.cy + u.y * F.s), lr = u.r * F.s * CAM.s + 4;
+        const ex = X - 8, ey = Y + 55, ang = Math.atan2(ey - ly, ex - lx);
+        ctx.beginPath(); ctx.moveTo(lx + Math.cos(ang) * lr, ly + Math.sin(ang) * lr); ctx.lineTo(ex, ey);
+        ctx.lineWidth = 1; ctx.strokeStyle = rgba(TH.accent, 0.5 * tc * a); ctx.setLineDash([2, 3]); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+  }
+  /* the judge's count, in the sheet's lower right: one box per judgement batch, pencilled as each lands, inked by the
+     final reading; the open batch's box breathes while the run reads (a count, never a percentage) */
+  let PENBOX: { x: number; y: number } | null = null;
+  function drawCounter(t: number) {
+    PENBOX = null;
+    const pr = PROG.get('judge'); if (!pr || pr.of <= 0 || !fin(S.tHist) || t < S.tHist) return;
+    const pb = planBox(P.sd), X = sx(pb.X1), Y = sy(keyTop(P.sd)) + 14;
+    const judging = RUN.phases.get('judge')?.state === 'run';
+    const a = rs(t, S.tHist + 0.6, 0.8);
+    ctx.save(); ctx.globalAlpha = a;
+    txt((judging ? 'INSPECTION · ' : 'INSPECTED · ') + pr.n + ' OF ' + pr.of + (pr.of === 1 ? ' BATCH' : ' BATCHES'), X, Y, `12px ${F_MONO}`, inkA(0.85), 'right', true);
+    const n = Math.min(pr.of, 40), bs = 14, gap = 6, bw = n * bs + (n - 1) * gap, by = Y + 10;
+    for (let i = 0; i < n; i++) {
+      const x = X - bw + i * (bs + gap);
+      if (i < pr.n) {
+        if (S.finalH) { ctx.fillStyle = inkA(0.85); ctx.fillRect(x, by, bs, bs); }
+        else {
+          ctx.save(); ctx.beginPath(); ctx.rect(x, by, bs, bs); ctx.clip(); ctx.fillStyle = pattern(PAT.cross); ctx.fillRect(x, by, bs, bs); ctx.restore();
+          ctx.setLineDash([2, 2]); ctx.lineWidth = 1; ctx.strokeStyle = inkA(0.85); ctx.strokeRect(x + 0.5, by + 0.5, bs - 1, bs - 1); ctx.setLineDash([]);
+        }
+      } else if (i === pr.n && judging) {
+        const br = REDUCED ? 0.6 : 0.4 + 0.35 * (0.5 + 0.5 * Math.sin(t * TAU / 4));
+        ctx.setLineDash([3, 2]); ctx.lineWidth = 1.4; ctx.strokeStyle = rgba(TH.accent, br); ctx.strokeRect(x + 0.5, by + 0.5, bs - 1, bs - 1); ctx.setLineDash([]);
+        PENBOX = { x: x + bs / 2, y: by + bs / 2 };
+      } else { ctx.lineWidth = 1; ctx.strokeStyle = inkA(0.3); ctx.strokeRect(x + 0.5, by + 0.5, bs - 1, bs - 1); }
+    }
+    ctx.restore();
+  }
+
+  /* ---------- the outline: each decided domain drafted as its bubble, capabilities inside, before any box exists ---------- */
+  const handIn = (w: WingE, t: number) => (fin(w.ghostT) ? rs(t, w.ghostT + 0.15, 0.6) : 1);
+  const ghostShown = (g: Ghost, t: number) => fin(g.tIn) && t >= g.tIn && !(fin(g.handT) && g.tIn > g.handT);
+  const ghostFade = (g: Ghost, t: number) => (g.wing ? 1 : 1 - rs(t, S.tHist, 1.2));
+  function drawGhosts(t: number) {
+    const k = CAM.s;
+    for (const g of GH.doms.values()) {
+      if (!ghostShown(g, t) || (fin(g.handT) && t >= g.handT)) continue;
+      const fade = ghostFade(g, t); if (fade <= 0.01) continue;
+      const ap = rs(t, g.tIn, 0.85), p = ghostAt(g, t), cx = sx(p.cx), cy = sy(p.cy), R = p.R * k, wob = g.wob;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      // the same pencil as a wing's bubble (and the same wobble: the id is the wing's), so the hand-over is seamless
+      ctx.setLineDash([]); ctx.lineWidth = 1; ctx.strokeStyle = inkA(0.16 * fade);
+      sePath(cx, cy, R, R, 2, wob, 0.01, -Math.PI / 2, Math.min(1, ap)); ctx.stroke();
+      ctx.setLineDash([0.4, 8.6]); ctx.lineDashOffset = REDUCED ? 0 : -((t * 5) % 9); ctx.lineWidth = 2.9; ctx.strokeStyle = inkA(0.92 * fade);
+      const tip = sePath(cx, cy, R, R, 2, wob, 0.012, -Math.PI / 2, ap); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+      if (ap < 1) TIPS.push(tip);
+      const al = 0.55 * Math.min(1, ap * 3) * fade; ctx.strokeStyle = inkA(al); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(cx - 6, cy); ctx.lineTo(cx + 6, cy); ctx.moveTo(cx, cy - 6); ctx.lineTo(cx, cy + 6); ctx.stroke();
+      for (const c of g.caps) {
+        const ca = rs(t, c.tIn, 0.6); if (ca <= 0) continue;
+        const u = capAt(c, t), X = cx + u.x * k, Y = cy + u.y * k, r = u.R * k, w2 = c.wob;
+        if (ca >= 1) { sePath(X, Y, r, r, 2, w2, 0.022, w2.a0, 1); ctx.fillStyle = rgba(TH.accent, 0.05 * fade); ctx.fill(); }
+        ctx.lineWidth = 1.8; ctx.strokeStyle = inkA(0.72 * fade);
+        const tp = sePath(X, Y, r, r, 2, w2, 0.022, w2.a0, ca * 1.05); ctx.stroke();
+        ctx.lineWidth = 1; ctx.strokeStyle = inkA(0.3 * fade);
+        sePath(X, Y, r * 1.012, r * 1.012, 2, { a1: w2.a2, a2: w2.a3, a3: w2.a1, p1: w2.p3, p2: w2.p1, p3: w2.p2, a0: w2.a0 }, 0.022 * 1.3, w2.a0 + 0.35, Math.min(1, ca * 0.96)); ctx.stroke();
+        if (ca < 1) TIPS.push(tp);
+      }
+    }
+  }
+  function drawGhostLabels(t: number) {
+    const k = CAM.s;
+    for (const g of GH.doms.values()) {
+      if (!ghostShown(g, t)) continue;
+      const fade = ghostFade(g, t) * (fin(g.handT) ? 1 - rs(t, g.handT, 0.6) : 1); if (fade <= 0.01) continue;
+      // after the hand-over the words ride on the wing's bubble while they fade into the wing's own
+      const w = fin(g.handT) ? g.wing : null;
+      const p = w ? { cx: w.s.cx, cy: w.s.cy, R: w.pd.R } : ghostAt(g, t);
+      for (const c of g.caps) {
+        const ca = rs(t, c.tIn, 0.6); if (ca < 0.8) continue;
+        const room = w ? w.rooms.find((r) => r.id === c.id) : undefined;
+        const u = room ? { x: room.s.cx - p.cx, y: room.s.cy - p.cy, R: room.ld.R } : capAt(c, t);
+        const X = sx(p.cx + u.x), Y = sy(p.cy + u.y), Rpx = u.R * k, f12 = `600 12px ${F_SANS}`;
+        ctx.save(); ctx.globalAlpha = sstep((ca - 0.8) * 5) * fade;
+        const lines = wrapLines(c.name.toUpperCase(), Math.max(40, Rpx * 2 - 14), 3, f12);
+        if (lines) {
+          ctx.font = f12; let pw = 0; lines.forEach((l) => { pw = Math.max(pw, ctx.measureText(l).width); });
+          pw += 12; const ph = lines.length * 14 + 8, x = X - pw / 2, y = Y - ph / 2;
+          ctx.fillStyle = rgba(TH.labelBg, 0.93); ctx.fillRect(x, y, pw, ph);
+          ctx.strokeStyle = inkA(0.28); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, pw - 1, ph - 1);
+          lines.forEach((l, i) => txt(l, X, y + 4 + 11 + i * 14, f12, inkA(0.98), 'center', false));
+        } else {
+          const ls = wrapEllipsis(c.name.toUpperCase(), Math.max(70, Rpx * 2), 2, f12);
+          ls.forEach((l, i) => txt(l, X, Y + 4 + (i - (ls.length - 1) / 2) * 14, f12, inkA(0.95), 'center', true));
+        }
+        ctx.restore();
+      }
+      const pl = rs(t, g.tPlate, 0.7); if (pl <= 0) continue;
+      const L = g.plate, Rw = p.R * k, cx = sx(p.cx) + L.ux * (Rw + L.off), cy = sy(p.cy) + L.uy * (Rw + L.off), x = cx - L.w / 2, y = cy - L.h / 2;
+      ctx.save(); ctx.globalAlpha = Math.min(1, pl * 2) * fade;
+      ctx.fillStyle = rgba(TH.labelBg, 0.95); ctx.fillRect(x, y, L.w, L.h);
+      ctx.strokeStyle = inkA(0.4); ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, y + 0.5, L.w - 1, L.h - 1);
+      const typed = Math.ceil(g.d.name.length * clamp(pl * 1.15));
+      txt(g.d.name.toUpperCase().slice(0, typed), x + 8, y + 20, `600 15px ${F_SANS}`, inkA(1), 'left', false);
+      const nc = g.caps.length;
+      txt(nc + (nc === 1 ? ' CAPABILITY' : ' CAPABILITIES'), x + 8, y + L.h - 9, `12px ${F_MONO}`, inkA(0.72), 'left', false);
+      ctx.restore();
+    }
   }
   function drawTips() {
     for (const tp of TIPS) {
@@ -1113,6 +1597,8 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     ctx = c; CAM = cam; TIPS = [];
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     drawSheet(t);
+    drawSurvey(t);
+    drawGhosts(t);
     for (const w of P.wings) drawWingPencil(w, t);
     for (const r of P.rooms) drawRoomPencil(r);
     for (const r of P.rooms) drawRoomInk(r);
@@ -1121,10 +1607,13 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     for (const tl of P.tiles) drawTile(tl);
     drawSweep();
     drawRuler(t);
+    drawSurveyText(t);
+    drawCounter(t);
     for (const r of P.rooms) { drawRoomPlate(r); drawBayTags(r); }
     for (const tl of P.tiles) drawTileLabels(tl);
     for (const w of P.wings) drawWingHeader(w);
     drawPencilLabels(t);
+    drawGhostLabels(t);
     drawHover();
     drawIdlePen(t);
     drawTips();
@@ -1203,10 +1692,11 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     $('steps').innerHTML = STEPS.map((s, i) => '<li data-i="' + i + '"' + (i < 3 ? ' data-pre="1"' : '') + ' data-st="pend"><span data-g aria-hidden="true">✓</span><div><div data-n>' + (i + 1) + ' ' + esc(s.n) + (s.tag ? '<em>' + s.tag + '</em>' : '') + '</div><div data-d></div></div></li>').join('');
   }
   function counts() {
-    const c = { found: 0, live: 0, build: 0, paper: 0, dep: 0, done: 0, judged: 0, bad: 0, watch: 0, good: 0, rooms: 0, wings: 0 };
+    const c = { found: 0, live: 0, build: 0, paper: 0, dep: 0, done: 0, judged: 0, bad: 0, watch: 0, good: 0, rooms: 0, wings: 0, pencil: 0 };
     for (const tl of P.tiles) {
       if (tl.s.appear > 0.5) c.found++;
       if (tl.s.climb >= tl.sc.rung + 1) { c.done++; c[stageGroup(tl.stage)]++; }
+      if (tl.s.health >= 1 && tl.s.hink < 1 && tl.gP) c.pencil++;
       if (tl.s.health >= 1) { c.judged++; if (tl.general === 'bad') c.bad++; else if (tl.general === 'watch') c.watch++; else if (tl.general === 'good') c.good++; }
     }
     for (const r of P.rooms) if (r.s.appear > 0.5) c.rooms++;
@@ -1218,13 +1708,20 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     const el = (rec.state === 'run' ? wall - rec.startWall : rec.endWall - rec.startWall) / 1000;
     if (st === 'fail') return RUN.failed ? 'failed: ' + RUN.failed : 'failed';
     switch (i) {
+      case 1:
+        if (st === 'run' && SV.lots.size) return SV.lots.size + ' areas · ' + fmtTime(el);
+        return st === 'run' ? STEPS[i].d + ' · ' + fmtTime(el) : (rec.detail ?? STEPS[i].d);
       case 3:
         if (st === 'pend') return STEPS[3].d;
+        if (st === 'run' && !P.wings.length && GH.doms.size) return GH.doms.size + (GH.doms.size === 1 ? ' domain' : ' domains') + ' named · ' + fmtTime(el);
         if (st === 'run' && !P.wings.length) return 'naming the product · ' + fmtTime(el);
         return c.wings + ' of ' + P.wings.length + (P.wings.length === 1 ? ' wing' : ' wings') + ' · ' + c.found + ' features' + (st === 'run' ? ' · ' + fmtTime(el) : '');
       case 4: return st === 'pend' ? STEPS[4].d : st === 'run' ? 'reading history…' : (P.dated ? fmtDay(P.d0) + ' → ' + fmtDay(P.d1) + ' · wings ordered' : 'wings ordered, oldest first');
       case 5: return st === 'pend' ? STEPS[5].d : st === 'run' ? 'reading metrics… ' + fmtTime(el) : 'metrics in';
-      case 6: return st === 'pend' ? STEPS[6].d : st === 'run' ? c.judged + ' of ' + nT + ' judged · ' + fmtTime(el) : c.bad + ' in trouble · ' + c.watch + ' watch';
+      case 6: {
+        const pr = PROG.get('judge');
+        return st === 'pend' ? STEPS[6].d : st === 'run' ? (pr ? 'batch ' + pr.n + ' of ' + pr.of + ' · ' : '') + c.judged + ' of ' + nT + ' judged · ' + fmtTime(el) : c.bad + ' in trouble · ' + c.watch + ' watch';
+      }
       case 7: return st === 'pend' ? STEPS[7].d : st === 'run' ? 'stamping the sheet…' : 'on the board';
       default: return st === 'run' ? STEPS[i].d + ' · ' + fmtTime(el) : (rec.detail ?? STEPS[i].d);
     }
@@ -1232,9 +1729,16 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
   function updateHud(tv: number) {
     const c = counts(), wall = performance.now();
     const phase = tv < S.tHist ? 0 : tv < S.tReg0 ? 1 : 2;
-    setTxt($('tCode'), ['A-001', 'A-002', 'G-001'][phase]); setTxt($('tName'), ['BUBBLE DIAGRAM', 'BLOCK PLAN', 'GENERAL ARRANGEMENT'][phase]);
+    const surveyOnly = phase === 0 && !P.wings.length && !GH.doms.size && SV.lots.size > 0;
+    setTxt($('tCode'), surveyOnly ? 'A-000' : ['A-001', 'A-002', 'G-001'][phase]); setTxt($('tName'), surveyOnly ? 'SITE SURVEY' : ['BUBBLE DIAGRAM', 'BLOCK PLAN', 'GENERAL ARRANGEMENT'][phase]);
     let h: string;
-    if (tv < S.tHist) {
+    if (tv < S.tHist && !P.wings.length && GH.doms.size) {
+      let nc = 0; for (const g of GH.doms.values()) nc += g.caps.length;
+      h = '<b>' + GH.doms.size + '</b> ' + (GH.doms.size === 1 ? 'domain' : 'domains') + ' named <span data-dim>· ' + nc + ' capabilities</span>';
+    } else if (tv < S.tHist && !P.wings.length && SV.lots.size) {
+      let files = 0; for (const l of SV.lots.values()) files += l.a.files;
+      h = '<b>' + SV.lots.size + '</b> code areas surveyed <span data-dim>· ' + files + ' files</span>';
+    } else if (tv < S.tHist) {
       const treeDone = RUN.phases.get('product-tree')?.state === 'done';
       h = '<b>' + c.found + '</b> features found' + (treeDone && P.wings.length ? ' <span data-dim>· ' + P.wings.length + ' wings · ' + P.rooms.length + ' rooms</span>' : '');
     } else {
@@ -1244,6 +1748,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       if (c.paper) h += ' · <b>' + c.paper + '</b> on paper';
       if (c.dep) h += ' · <b>' + c.dep + '</b> to demolish';
       if (c.bad) h += ' · <span data-bad><b>' + c.bad + '</b> in trouble</span>';
+      if (c.pencil) h += ' <span data-dim>· ' + c.pencil + ' readings pencilled</span>';
     }
     setHtml($('stats'), h);
     const lis = $('steps').children;
@@ -1333,9 +1838,10 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     if (e.type === 'wing') return { title: (historyKnown() && e.s.letter > 0 ? e.letter + ' · ' : '') + e.name, meta: 'Wing · ' + e.rooms.length + (e.rooms.length === 1 ? ' room' : ' rooms') + ' · ' + e.tiles.length + ' features', body: '' };
     return { title: e.name, meta: '', body: '' };
   }
-  function showTip(e: Ent, mx: number, my: number) {
-    const tip = $('tip'), d = describe(e);
-    tip.innerHTML = '<b>' + esc(d.title) + '</b>' + (d.meta ? '<div data-m>' + esc(d.meta) + '</div>' : '') + (d.body ? '<p>' + esc(d.body) + '</p>' : '');
+  function showTip(e: Ent, mx: number, my: number) { const d = describe(e); showTipRaw(d.title, d.meta, d.body, mx, my); }
+  function showTipRaw(title: string, meta: string, body: string, mx: number, my: number) {
+    const tip = $('tip');
+    tip.innerHTML = '<b>' + esc(title) + '</b>' + (meta ? '<div data-m>' + esc(meta) + '</div>' : '') + (body ? '<p>' + esc(body) + '</p>' : '');
     tip.style.display = 'block';
     const w = tip.offsetWidth, h = tip.offsetHeight;
     let x = mx + 16, y = my + 18; if (x + w > VW - 8) x = mx - w - 14; if (y + h > VH - 8) y = my - h - 14;
@@ -1353,7 +1859,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
       if (staged(e) && e.stage) h += '<dt>Stage</dt><dd><span data-chip>' + stageWord(e.stage) + '</span> ' + esc(e.stage) + '</dd>';
       if (e.kind) h += '<dt>Kind</dt><dd>' + esc(KIND_WORD[e.kind] ?? e.kind) + '</dd>';
       if (e.created && historyKnown()) h += '<dt>Created</dt><dd>' + esc(fmtDate(e.created)) + '</dd>';
-      if (e.s.health >= 1 && e.general) h += '<dt>Health</dt><dd data-hb="' + e.general + '">' + HEALTH_WORD[e.general] + '</dd>';
+      if (e.s.health >= 1 && e.general) h += '<dt>Health</dt><dd data-hb="' + e.general + '">' + HEALTH_WORD[e.general] + (e.gF && e.s.hink >= 1 ? '' : ' (pencilled: one batch\'s reading)') + '</dd>';
       h += '</dl>';
       cardKids = [];
     } else {
@@ -1498,7 +2004,14 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
     const hover = (px: number, py: number) => {
       const e = hitTest(px, py);
       if (e !== VIEW.hover) { VIEW.hover = e; ST.dirty = true; setCur(e ? 'hit' : ''); }
-      if (e && !drag) showTip(e, px, py); else hideTip();
+      if (e && !drag) { showTip(e, px, py); return; }
+      const lot = drag ? null : LOTHIT.find((h) => Math.hypot(px - h.x, py - h.y) <= h.r);
+      if (lot) {
+        const a = lot.lot.a;
+        const meta = 'Code area' + (a.group ? ' · ' + a.group : '') + ' · ' + a.files + (a.files === 1 ? ' file' : ' files') + (a.lines != null ? ' · ' + a.lines.toLocaleString('en-US') + ' lines' : '');
+        const body = a.first && a.last ? 'Commits ' + a.first + ' to ' + a.last + '.' : '';
+        showTipRaw(a.name, meta, body, px, py);
+      } else hideTip();
     };
     listen(cv, 'pointerdown', (ev) => {
       try { cv.setPointerCapture(ev.pointerId); } catch { /* a synthetic pointer */ }
@@ -1606,7 +2119,7 @@ export function createEngine(root: HTMLElement, opts: { reduced: boolean; theme:
 
   return {
     push,
-    setTheme(t) { theme = t; readTheme(); planLabels(); },
+    setTheme(t) { theme = t; readTheme(); planLabels(); placeGhostPlates(); },
     setReduced(r) { if (r === REDUCED) return; REDUCED = r; ST.rfade = null; ST.auto = true; ST.snap = reached(); ST.cam = null; ST.dirty = true; syncButtons(); },
     dispose() {
       disposed = true;

@@ -24,6 +24,8 @@ export interface WingE {
   rooms: RoomE[]; tiles: TileE[]; stat: Stat; wob: Wob;
   /** Packing radius in dot units; target pack (world), the pack it tweens from, the pack drawn this frame. */
   pkR: number; pack: Pack; pk0: Pack; pd: Pack; median: number | null; lab: WingLab | null;
+  /** When this wing took over from its outline bubble (Infinity: it had none): its labels fade in as the ghost's fade out. */
+  ghostT: number;
   sc: { tIn: number; tPlate: number; tSlide: number; tSq0: number; tInk0: number; tHead: number };
   s: { appear: number; slide: number; sq: number; cx: number; cy: number; hw: number; hh: number; n: number; ink: number; head: number; plate: number; letter: number };
 }
@@ -37,10 +39,13 @@ export interface RoomE {
 export interface BayE { type: 'bay'; id: string; name: string; order: number; box: BBox; room: RoomE; tiles: TileE[] }
 export interface TileE {
   type: 'tile'; id: string; name: string; order: number; box: BBox; cx: number; cy: number;
-  stage: Stage | null; kind: string | null; summary: string; created: string | null; day: number | null; general: Health | null;
+  stage: Stage | null; kind: string | null; summary: string; created: string | null; day: number | null;
+  /** The reading shown: the final one once it has arrived, else the provisional one (a judgement batch's), else null. */
+  general: Health | null; gP: Health | null; gF: Health | null;
   bay: BayE; room: RoomE; wing: WingE; u: { x: number; y: number }; ready: boolean;
-  sc: { tDot: number; tSw0: number; tC0: number; rung: number; tH: number };
-  s: { appear: number; sw: number; cx: number; cy: number; hw: number; hh: number; rad: number; climb: number; health: number; hflash: number; vis: boolean };
+  /** tH: the first reading lands (pencil if provisional); tHF: the final reading inks it. */
+  sc: { tDot: number; tSw0: number; tC0: number; rung: number; tH: number; tHF: number };
+  s: { appear: number; sw: number; cx: number; cy: number; hw: number; hh: number; rad: number; climb: number; health: number; hink: number; hflash: number; vis: boolean };
 }
 export type Ent = WingE | RoomE | BayE | TileE;
 
