@@ -168,3 +168,26 @@ against any run.
 
 Harness: `scripts/buildup/onboard-live.ts` (run and feed), `scripts/buildup/record.py` (video and stills) and
 `scripts/buildup/disband.mjs` (snapshot and restore of the test repo).
+
+### The four events, built and replayed (2026-11-02)
+
+The contract carries `survey`, `outline`, `activity`, `progress` and `health.provisional` (commit 6850c10).
+`scripts/buildup/derive.ts` reads them from the files the run already writes; `onboard-live.ts` sends them and copies
+those files into the tape; `scripts/buildup/replay-tape.ts` plays any tape as a live feed (17c1ccf). All three variants
+draw them (c794bdc A, ead3bfd B with the camera fix, e505c45 E), and the demo source looks as it did.
+
+The three tapes above predate the events, so the replay re-derives them, with two approximations: the code areas come
+from dowser@414e6ed rebuilt in a throwaway clone (17 folder-named areas, `dowser-414e6ed.docs.json`), not the 28 the
+runs' model named; and each provisional batch is the final readings split into eights, since the tapes did not keep
+which features were judged together. A tape recorded from now on needs neither.
+
+Each tape was replayed at 1x through all three variants at once (9 recordings, 0 page errors, in
+`.contest/arena/blueprint-buildup/runs/replay/tape-<run>/<variant>/`, side by side in `compare-tape-<run>.png`).
+Every variant now shows true progress from 23 s: A traces code lots on the table and pencils the wings over them, B
+types a site survey and the domain outline in its column, E sketches code-area circles, then domain bubbles. During
+judging each shows the batch count, the area being read and pencil readings that ink at the end.
+
+The silences are shorter, not gone: during judging the subagents' tool calls are sparse, and the longest gap with no
+event at all is 100-177 s depending on the run. Each variant keeps a calm idle motion there (A a light line, B a breathing
+cursor and ticking clocks, E a circling pen) and shows no invented number. Both A and E's builders asked for one more
+link: which code areas each wing or feature covers, so activity could light the feature being judged, not a code area.
