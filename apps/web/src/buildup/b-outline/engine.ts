@@ -20,7 +20,12 @@
 //   health.provisional -> pencil (dashed) until the final reading inks it (solid)
 // Once the build queue drains on such a run the camera returns to the whole plan, visits each judged batch, and leaves.
 // The engine's clock runs in run seconds: it follows the source's own clock (events carry `at`), so a lab speed of 4x
-// plays the prototype's x4.
+// plays the prototype's x4. The animation clock (S.t) runs at the feed's pace but is its own: it waits for typing and
+// flights. What the screen SHOWS as time (the clock, the rail, the step log, "1:50 ago") is the run's clock (live.ts
+// runClock), so it matches the feed and never steps back.
+// Catch-up: an event marked `past` (history resent on connect) is applied and the animation clock jumps to where
+// everything queued so far has settled, so a page opened mid-run draws the run so far in a frame.
+import { runClock } from '../live';
 import { PHASES, type ActivityVerb, type BBox, type BuildupEvent, type Health, type Phase, type Stage, type SurveyArea } from '../contract';
 
 type Styles = Readonly<Record<string, string>>;
@@ -41,7 +46,7 @@ interface TileN extends NodeBase {
 }
 type PNode = WingN | RoomN | BayN | TileN;
 interface SArea extends SurveyArea { ord: number; t0: number }
-interface Act { verb: ActivityVerb; path: string; area: string | null; t: number; wall: number; areaWall: number }
+interface Act { verb: ActivityVerb; path: string; area: string | null; t: number; run: number; wall: number; areaWall: number }
 interface Cam { x: number; y: number; s: number }
 interface Key extends Cam { t: number; d: number }
 interface Step { k: Phase; n: string; llm?: boolean; what: string; t0: number; t1: number }
@@ -83,13 +88,17 @@ const lerpBox = (a: BBox, b: BBox, p: number): BBox => ({ x: lerp(a.x, b.x, p), 
 const sameBox = (a: BBox, b: BBox) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) + Math.abs(a.w - b.w) + Math.abs(a.h - b.h) < 0.5;
 
 export interface OutlineEngine {
-  onEvent(e: BuildupEvent): void;
+  /** `past`: history being caught up (contract.ts BuildupListener): drawn at its end state. */
+  onEvent(e: BuildupEvent, past?: boolean): void;
   setReduced(r: boolean): void;
   setTheme(): void;
   destroy(): void;
 }
 
-export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngine {
+/** `onLive`: the build-up has ended and settled (the column collapsed, the camera at rest, the plan explorable). */
+export interface OutlineOptions { onLive?: () => void }
+
+export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: OutlineOptions = {}): OutlineEngine {
   const q = <T extends HTMLElement>(r: string): T => {
     const el = root.querySelector<T>(`[data-r="${r}"]`);
     if (!el) throw new Error('outline: missing element ' + r);
@@ -122,7 +131,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     hover: null as PNode | null, sel: null as TileN | null,
     drag: null as { x: number; y: number; moved: boolean; cam: Cam } | null,
   };
-  let rate = 1, ratePair: { at: number; wall: number } | null = null, rateSeen = false;
+  let clock = runClock(), run = 0; // run seconds as shown this frame
 
   let C: Record<string, string> = {};
   let inkRgb: [number, number, number] = [223, 240, 255], accRgb: [number, number, number] = [127, 224, 255];
@@ -472,12 +481,12 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     split(items, { x: 0, y: 0, w: 1, h: 1 });
     return out;
   }
-  function onActivity(e: Extract<BuildupEvent, { type: 'activity' }>) {
+  function onActivity(e: Extract<BuildupEvent, { type: 'activity' }>, past: boolean) {
     anti = true;
-    const wall = performance.now();
+    const wall = performance.now() - (past ? 1000 : 0); // a caught-up line is simply there, no cross-fade
     const same = act !== null && act.area === e.area;
     actPrev = act;
-    act = { verb: e.verb, path: e.path, area: e.area, t: S.t, wall, areaWall: same && act ? act.areaWall : wall };
+    act = { verb: e.verb, path: e.path, area: e.area, t: S.t, run, wall, areaWall: same && act ? act.areaWall : wall };
   }
   function onProgress(e: Extract<BuildupEvent, { type: 'progress' }>) {
     anti = true;
@@ -488,8 +497,8 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     const now = S.t, i = PHASES.indexOf(e.phase);
     if (i < 0) return;
     const r = rail[i];
-    if (e.state === 'start') r.t0 = now;
-    else { if (!fin(r.t0)) r.t0 = now; r.t1 = now; r.detail = e.detail; r.failed = e.state === 'failed'; }
+    if (e.state === 'start') r.t0 = run;
+    else { if (!fin(r.t0)) r.t0 = run; r.t1 = run; r.detail = e.detail; r.failed = e.state === 'failed'; }
     const st = steps[i];
     if (e.state === 'start') {
       if (i <= 3) st.t0 = now;
@@ -518,30 +527,43 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     buildKeys();
   }
 
-  function onEvent(e: BuildupEvent) {
+  function onEvent(e: BuildupEvent, past = false) {
     const wall = performance.now();
-    if (e.type === 'begin') { ratePair = { at: e.at, wall }; reset(e); return; }
+    if (e.type === 'begin') { clock = runClock(); clock.see(e, past, wall); run = clock.now(wall); reset(e); return; }
     if (!S.began) return;
     // the run's own clock: `at` is run time, so the source's pace (a lab speed, or 1 live) sets the engine's
-    if (ratePair && wall - ratePair.wall > 80 && e.at > ratePair.at) {
-      const r = clamp((e.at - ratePair.at) / (wall - ratePair.wall), 0.25, 8);
-      rate = rateSeen ? lerp(rate, r, 0.5) : r; rateSeen = true;
-      ratePair = { at: e.at, wall };
-    } else if (!ratePair || e.at > ratePair.at) ratePair = { at: e.at, wall };
+    clock.see(e, past, wall);
+    run = clock.now(wall);
     if (e.type === 'structure') onStructure(e);
     else if (e.type === 'history') onHistory(e);
     else if (e.type === 'health') onHealth(e);
     else if (e.type === 'phase') onPhase(e);
     else if (e.type === 'survey') onSurvey(e);
     else if (e.type === 'outline') { anti = true; onOutline(e); }
-    else if (e.type === 'activity') onActivity(e);
+    else if (e.type === 'activity') onActivity(e, past);
     else if (e.type === 'progress') onProgress(e);
     else if (e.type === 'done') onDone();
     else if (e.type === 'failed') {
       failed = { phase: e.phase, message: e.message };
-      const i = PHASES.indexOf(e.phase); if (i >= 0) { rail[i].failed = true; if (!fin(rail[i].t1)) rail[i].t1 = S.t; }
+      const i = PHASES.indexOf(e.phase); if (i >= 0) { rail[i].failed = true; if (!fin(rail[i].t0)) rail[i].t0 = run; if (!fin(rail[i].t1)) rail[i].t1 = run; }
     }
+    if (past) settle();
     dirty = true;
+  }
+
+  /** Catch-up: move the animation clock to where everything scheduled so far has finished (lines typed, boxes landed,
+   *  stamps and readings set, the camera at rest), so a past event is drawn at its end state. */
+  function settle() {
+    let m = S.t;
+    const f = (v: number) => { if (fin(v) && v > m) m = v; };
+    f(typeEnd); f(structTail); f(lastLand); f(surveyType + 0.8);
+    for (const s of steps) f(s.t1);
+    for (const tl of tiles) { f(tl.stampAt + 0.7); f(tl.healthAt + 0.4); f(tl.inkAt + 0.5); }
+    for (const o of byId.values()) if (o.draft) f(o.fly + 1);
+    for (const v of extVersions) f(v.t + 1.2);
+    for (const k of V.keys) f(k.t + k.d);
+    S.t = m;
+    if (fin(T) && S.t >= T) S.t = T;
   }
 
   const stepAt = (t: number) => { for (let i = steps.length - 1; i >= 0; i--) if (t >= steps[i].t0) return i; return 0; };
@@ -847,7 +869,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       const r = rail[i]; if (!fin(r.t0)) break;
       const y = y0 + LH * row + LH / 2;
       const running = !fin(r.t1);
-      const dur = (running ? t : r.t1) - r.t0;
+      const dur = (running ? run : r.t1) - r.t0;
       ctx.globalAlpha = a;
       ctx.fillStyle = running ? C.accent : r.failed ? C['red-2'] : C['ink-3'];
       ctx.fillText(running ? '▸' : r.failed ? '✕' : '✓', x0, y);
@@ -919,7 +941,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     const x0 = 16, maxC = Math.floor((cw - 32) / V.cw) - 4;
     ctx.font = `14px ${MONO}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     const draw = (a: Act, alpha: number) => {
-      const age = t - a.t, fresh = age < 20;
+      const age = run - a.run, fresh = age < 20;
       const verb = (fresh ? VERB[a.verb][0] : 'last ' + VERB[a.verb][1]) + ' ';
       const tail = fresh ? '' : ' · ' + fmtT(age) + ' ago';
       const room = Math.max(6, maxC - verb.length - tail.length);
@@ -949,8 +971,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     const x0 = 16; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
     setLS(1.6); ctx.font = `500 12px ${MONO}`; ctx.fillStyle = C['ink-3'];
     ctx.fillText(step < 4 ? 'ONBOARDING · PRODUCT TREE' : 'ONBOARDING · ' + STEP_DEF[step].n.toUpperCase(), x0, 26);
-    setLS(1); ctx.font = `600 26px ${SANS}`; ctx.fillStyle = C['ink-hi'];
-    ctx.fillText(fitEll(project.name.toUpperCase(), cw - 32), x0, 58);
+    // the project's name: shrunk to fit before it is ever cut (a long kebab slug fits whole down to 15 px)
+    const nm = project.name.toUpperCase();
+    let fs = 26;
+    setLS(1); ctx.font = `600 ${fs}px ${SANS}`;
+    const nw = ctx.measureText(nm).width;
+    if (nw > cw - 32) { fs = Math.max(15, Math.floor(26 * (cw - 32) / nw)); setLS(fs > 20 ? 1 : 0.5); ctx.font = `600 ${fs}px ${SANS}`; }
+    ctx.fillStyle = C['ink-hi'];
+    ctx.fillText(fitEll(nm, cw - 32), x0, 58);
     setLS(0);
     // counters: what has been written so far (real counts as they arrive)
     let w = 0, r = 0, b = 0, f = 0;
@@ -969,14 +997,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
       for (const l of lines) if (l.t0 <= t) typed++;
       const allTyped = typed === lines.length && lines.length > 0;
       detail = typed + ' of ' + (treeDone && allTyped ? lines.length : '…') + ' lines';
-      if (typed === 0) detail = 'the model is reading the code · ' + fmtT(t - st.t0);
+      if (typed === 0) detail = 'the model is reading the code · ' + fmtT(run - rail[3].t0);
       else if (allTyped && !treeDone) detail += ' · waiting for the model';
       if (allTyped && treeDone) detail = 'all ' + lines.length + ' lines written · drafting';
     } else if (step === 6) {
       let judged = 0; for (const x of healthOrder) if (x.healthAt <= t) judged++;
       if (progress) { // the judge's own count: batches written, and how long it has been judging
         let inked = 0; for (const x of tiles) if (x.inkAt <= t) inked++;
-        detail = tiles.length && inked >= tiles.length ? `all ${tiles.length} judged · final reading` : `${progress.n} of ${progress.of} batches judged · ${fmtT(t - st.t0)}`;
+        detail = tiles.length && inked >= tiles.length ? `all ${tiles.length} judged · final reading` : `${progress.n} of ${progress.of} batches judged · ${fmtT(run - (fin(rail[6].t0) ? rail[6].t0 : run))}`;
       } else {
         detail = `${judged} of ${tiles.length} judged`;
         if (!judgeDone && judged === healthOrder.length) detail += ' · waiting for the model';
@@ -1501,6 +1529,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     ctx.setTransform(V.dpr, 0, 0, V.dpr, 0, 0);
     ctx.textAlign = 'left'; ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.shadowBlur = 0; setLS(0);
     wallNow = performance.now();
+    run = clock.now(wallNow);
     drawPaper(t);
     if (S.began) {
       drawSurveyPlat(t);
@@ -1543,14 +1572,14 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     segEls.forEach((d, i) => {
       const r = rail[i]; if (!r) return;
       const started = fin(r.t0), done = fin(r.t1);
-      const dur = started ? (done ? r.t1 : t) - r.t0 : 0;
+      const dur = started ? (done ? r.t1 : run) - r.t0 : 0;
       d.style.flex = Math.max(2.5, dur) + ' 1 0';
       const fill = d.firstChild as HTMLElement | null;
       if (fill) fill.style.width = started ? '100%' : '0%';
       d.classList.toggle(cls.on, i === cur && !done && !S.live);
       d.classList.toggle(cls.bad, r.failed);
     });
-    const c = fmtT(t) + ' / ' + (fin(T) ? fmtT(T) : '…');
+    const c = fmtT(run) + ' / ' + (clock.ended ? fmtT(run) : '…');
     if (c !== lastClock) { el.clock.textContent = c; lastClock = c; }
     const step = stepAt(t);
     if (step !== lastStep && S.began) { lastStep = step; el.live.textContent = `Step ${step + 1} of 8: ${STEP_DEF[step].n}`; }
@@ -1568,6 +1597,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     renderCrumbs();
     toast(`${project.name} is registered · the plan is live · scroll to zoom, drag to pan, / to find`);
     dirty = true;
+    opts.onLive?.();
   }
   function leaveLive() {
     S.live = false; S.tween = null;
@@ -1837,7 +1867,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles): OutlineEngi
     raf = requestAnimationFrame(loop);
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     if (S.began && !S.live) {
-      S.t += dt * rate; dirty = true;
+      S.t += dt * clock.rate; dirty = true;
       if (fin(T) && S.t >= T) enterLive();
     }
     if (S.tween) {

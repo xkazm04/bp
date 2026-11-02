@@ -1,0 +1,14 @@
+/* "Onboarding in progress · Watch" over the blueprint, under its header. App tokens only. */
+.banner {
+  position: absolute; left: 50%; top: 64px; translate: -50% 0; z-index: 30; display: flex; align-items: center; gap: 10px;
+  padding: 6px 6px 6px 12px; background: var(--card); border: 1px solid var(--accent); border-radius: 4px;
+  box-shadow: 0 8px 24px var(--shadow); font: 14px var(--font-sans); color: var(--ink); white-space: nowrap;
+}
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+.watch {
+  font: 500 12px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--paper-lo); background: var(--accent);
+  border-radius: 3px; padding: 4px 10px; text-decoration: none;
+}
+.watch:hover { filter: brightness(1.08); }

@@ -40,6 +40,7 @@ import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
 import { EmptyPlan } from './EmptyPlan';
+import { OnboardingBanner } from '@/onboarding/Banner';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
 import { GENERAL } from '@bp/core/data/types';
 import './blueprint.css';
@@ -331,6 +332,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
       {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
+      {product && <OnboardingBanner slug={product} />}
       <div className="bp-ui" ref={ui}>
         {engine && variant && (
           <EngineCtx.Provider value={engine}>

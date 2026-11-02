@@ -2,21 +2,26 @@
 // Build-up variant B: The outline becomes the building (contest blueprint-buildup, o3 variant-1), ported to the build-up
 // contract. React renders the prototype's static chrome; the canvas engine (engine.ts) draws the outline and the plan and
 // fills the chrome imperatively, driven only by the source's events.
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import type { BuildupVariantProps } from '../contract';
 import { createOutlineEngine, type OutlineEngine } from './engine';
 import styles from './outline.module.css';
 
-export default function Variant({ source, reducedMotion, theme }: BuildupVariantProps) {
+/** `onLive`: called once the build-up has ended and settled (the onboarding screen then offers the hand-over).
+ *  `chrome`: a screen's own controls (the onboarding screen's back, name, time and actions), folded into the sheet's bar
+ *  in place of the sheet title, so the build-up keeps the whole window. */
+export default function Variant({ source, reducedMotion, theme, chrome, onLive }: BuildupVariantProps & { chrome?: ReactNode; onLive?: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const engRef = useRef<OutlineEngine | null>(null);
+  const onLiveRef = useRef(onLive);
+  useEffect(() => { onLiveRef.current = onLive; }, [onLive]);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const eng = createOutlineEngine(root, styles);
+    const eng = createOutlineEngine(root, styles, { onLive: () => onLiveRef.current?.() });
     engRef.current = eng;
-    const off = source.subscribe((e) => eng.onEvent(e));
+    const off = source.subscribe((e, past) => eng.onEvent(e, past));
     return () => { off(); eng.destroy(); engRef.current = null; };
   }, [source]);
   // declared after the engine's effect, so on mount they run after it and hand it the current values
@@ -26,7 +31,7 @@ export default function Variant({ source, reducedMotion, theme }: BuildupVariant
   return (
     <div ref={rootRef} className={styles.root}>
       <div className={styles.bar} role="toolbar" aria-label="Plan tools">
-        <div className={styles.brand}><b>bp</b> · onboarding · sheet G-001 · general arrangement</div>
+        {chrome ?? <div className={styles.brand}><b>bp</b> · onboarding · sheet G-001 · general arrangement</div>}
         <div className={styles.spacer} />
         <div className={styles.findWrap}>
           <input data-r="find" className={styles.find} type="search" placeholder="Find a feature, room or wing" aria-label="Find" autoComplete="off" />

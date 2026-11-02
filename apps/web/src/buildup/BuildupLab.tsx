@@ -9,6 +9,7 @@ import type { BuildupPlan, BuildupSource, BuildupVariantProps } from './contract
 import { fetchBuildupPlan } from './plan';
 import { presetSource, type PresetMode } from './preset';
 import { liveSource } from './live';
+import { useReducedMotion } from '@/onboarding/motion';
 import styles from './lab.module.css';
 
 const loading = () => <div className={styles.note}>Loading the build-up…</div>;
@@ -29,18 +30,6 @@ function useQuery() {
     setQ(n);
   };
   return [q, set] as const;
-}
-
-function useReducedMotion(): boolean {
-  const [r, setR] = useState(false);
-  useEffect(() => {
-    const m = matchMedia('(prefers-reduced-motion: reduce)');
-    const on = () => setR(m.matches);
-    on();
-    m.addEventListener('change', on);
-    return () => m.removeEventListener('change', on);
-  }, []);
-  return r;
 }
 
 export function BuildupLab() {

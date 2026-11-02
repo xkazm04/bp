@@ -1,0 +1,54 @@
+/* The onboarding screen's shell: its controls sit in the build-up's own bar (chrome), its bands float over the sheet
+   above the pipeline rail. App tokens only (globals.css). */
+.screen { position: fixed; inset: 0; overflow: hidden; background: var(--paper-lo); color: var(--ink); font: 14px/1.45 var(--font-sans); }
+.note { position: absolute; inset: 0; display: grid; place-items: center; font: 14px var(--font-sans); color: var(--ink-2); }
+
+/* the bar: back, name, time, status ... actions; the name gives way last and never below a readable width */
+.chrome { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1000 1 auto; white-space: nowrap; }
+.back {
+  font: 500 12px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); text-decoration: none;
+  border: 1px solid var(--ink-4); border-radius: 3px; height: 30px; padding: 0 10px; display: inline-flex; align-items: center; flex: none;
+}
+.back:hover { color: var(--ink-hi); background: var(--ink-4); }
+.kicker { font: 500 12px var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); flex: none; }
+.name {
+  margin: 0; font: 600 17px var(--font-sans); letter-spacing: .04em; color: var(--ink-hi);
+  min-width: 8ch; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis;
+}
+.time { font: 500 13px var(--font-mono); color: var(--ink-2); font-variant-numeric: tabular-nums; flex: none; }
+.status { font: 500 12px var(--font-mono); color: var(--ink-3); flex: 0 2 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.status[data-tone='warn'] { color: var(--amber); }
+.status[data-tone='bad'] { color: var(--red-2); }
+.grow { flex: 1 1 0; }
+.act, .primary {
+  font: 500 12px var(--font-mono); letter-spacing: .08em; text-transform: uppercase; height: 30px; padding: 0 12px;
+  display: inline-flex; align-items: center; border-radius: 3px; cursor: pointer; text-decoration: none; flex: none; white-space: nowrap;
+}
+.act { background: transparent; border: 1px solid var(--ink-4); color: var(--ink-2); }
+.act:hover { color: var(--ink-hi); background: var(--ink-4); }
+.act[data-tone='bad'] { border-color: var(--red); color: var(--red-2); }
+.primary { background: var(--accent); border: 1px solid var(--accent); color: var(--paper-lo); font-weight: 600; }
+.primary:hover { filter: brightness(1.08); }
+.act:disabled, .primary:disabled { opacity: .5; cursor: default; }
+.confirm { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--ink); }
+
+/* a band over the sheet, above the rail, breadcrumbs and zoom: the hand-over, or how the run stopped */
+.band {
+  position: absolute; left: 50%; bottom: calc(48px + 58px); translate: -50% 0; z-index: 8; display: flex; align-items: center; gap: 14px;
+  max-width: min(860px, calc(100% - 48px)); padding: 12px 14px 12px 18px; background: var(--card); border: 1px solid var(--accent);
+  border-radius: 6px; box-shadow: 0 14px 40px var(--shadow); animation: rise .45s ease-out both;
+}
+.band[data-tone='bad'] { border-color: var(--red); }
+.band[data-motion='none'] { animation: none; }
+@media (prefers-reduced-motion: reduce) { .band { animation: none; } }
+@keyframes rise { from { opacity: 0; translate: -50% 10px; } to { opacity: 1; translate: -50% 0; } }
+.bandText { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
+.bandText b { font: 600 17px var(--font-sans); color: var(--ink-hi); }
+.bandText span { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.muted { color: var(--ink-2) !important; }
+.err { color: var(--red-2) !important; }
+
+.empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; }
+.empty h1 { margin: 0; font: 600 24px var(--font-sans); color: var(--ink-hi); }
+.empty p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.emptyActs { display: flex; gap: 10px; margin-top: 12px; }
