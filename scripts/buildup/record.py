@@ -1,13 +1,13 @@
 """Record the /buildup lab while a live onboarding runs (scripts/buildup/onboard-live.ts): a real-time video at
 1600x900 plus a still every --every seconds, until the feed reports done and the animation has had --tail seconds.
 
-  python scripts/buildup/record.py --lab http://127.0.0.1:3200 --variant a --feed http://127.0.0.1:3300 --out <dir>
+  python scripts/buildup/record.py --lab http://127.0.0.1:3200 --feed http://127.0.0.1:3300 --out <dir>
 """
 import argparse, asyncio, json, pathlib, time, urllib.request
 
 ap = argparse.ArgumentParser()
 ap.add_argument('--lab', required=True)
-ap.add_argument('--variant', required=True)
+ap.add_argument('--variant', default='b')  # names the outputs; the lab has one build-up since 2026-11-02
 ap.add_argument('--feed', required=True)
 ap.add_argument('--out', required=True)
 ap.add_argument('--every', type=float, default=30)

@@ -1,6 +1,6 @@
 // The build-up contract: what an onboarding run tells the screen, in the order the real pipeline (adopt-bp) learns it.
-// Three build-up variants (spark project-onboarding, contest blueprint-buildup shortlist A1, B1, E1) consume these events
-// and nothing else, so one source can be swapped for another: the preset (a scheduled replay of a finished plan) today,
+// The build-up (b-outline/, the owner's winner of contest blueprint-buildup, spark project-onboarding) consumes these
+// events and nothing else, so one source can be swapped for another: the preset (a scheduled replay of a finished plan) today,
 // the live adopt job's stream later. A variant never reads the plan behind the source's back; it draws what has arrived.
 //
 // Order of arrival, as adopt-bp produces it (SKILL.md "The run"):

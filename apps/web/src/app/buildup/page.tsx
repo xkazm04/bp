@@ -3,10 +3,10 @@ import { BuildupLab } from '@/buildup/BuildupLab';
 
 export const metadata: Metadata = {
   title: 'bp · build-up lab',
-  description: 'The onboarding build-up: three shortlisted variants driven by one event contract (spark project-onboarding).',
+  description: 'The onboarding build-up (the outline becomes the building), driven by the onboarding event contract.',
 };
 
-// /buildup?v=a|b|e&product=<slug>&source=demo|real&speed=1 - a lab surface, not linked from the product nav.
+// /buildup?product=<slug>&source=demo|real|live[&feed=<origin>]&speed=1 - a lab surface, not linked from the product nav.
 export default function BuildupPage() {
   return <BuildupLab />;
 }
