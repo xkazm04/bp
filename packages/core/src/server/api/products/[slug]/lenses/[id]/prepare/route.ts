@@ -8,6 +8,7 @@
 import { door } from '@bp/core/server/route-door.server';
 import { enqueuePrepare } from '@bp/core/server/jobs.server';
 import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { gateScan, refusedBy } from '@bp/core/server/rules.server';
 
 const prepare = door('products/[slug]/lenses/[id]/prepare', {
   POST: {
@@ -19,6 +20,10 @@ const prepare = door('products/[slug]/lenses/[id]/prepare', {
       if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
       const entry = map.lenses.find((e) => e.id === params.id && e.enabled);
       if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+      // a prepare job edits the product repo for one lens across the product: a standing order that refuses that lens's
+      // scan of everything (a hold, an `only` of other lenses) refuses it too, cited (rules.server.ts)
+      const g = gateScan(p, 'lens.prepare', entry.id, { kind: 'all', label: 'Everything', features: [] });
+      if (g.refused) return refusedBy(g);
       const r = enqueuePrepare(slug, p.root, entry.id);
       return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
     },

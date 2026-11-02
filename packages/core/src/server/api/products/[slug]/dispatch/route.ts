@@ -16,6 +16,7 @@ import { MAX_PROPOSALS, busyProposals, enqueueExecute } from '@bp/core/server/jo
 import { NOTHING_TO_BUILD } from '@bp/core/scan/admit';
 import { triageBy } from '@bp/core/server/release.server';
 import { takeForBuild } from '@bp/core/server/waves.server';
+import { gateBuild, refusedBy } from '@bp/core/server/rules.server';
 
 /** The proposal ids, or `null` for a body that is not `{ ids }` with 1..MAX_PROPOSALS safe ids. */
 function parse(raw: unknown): string[] | null {
@@ -32,11 +33,17 @@ const dispatch = door('products/[slug]/dispatch', {
     store: 'required',
     live: async ({ slug, product: p, body: ids }) => {
       const file = storeFile(p);
-      const { approved, go, skipped, error } = takeForBuild(file, ids, busyProposals(slug), await triageBy());
+      // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited; all of it held = 403
+      let g: ReturnType<typeof gateBuild>;
+      try { g = gateBuild(p, 'dispatch', ids); } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
+      const held = new Set(g.held.map((h) => h.id));
+      if (g.refused) return refusedBy(g);
+      const { approved, go, skipped, error } = takeForBuild(file, ids.filter((x: string) => !held.has(x)), busyProposals(slug), await triageBy());
+      skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));
       if (error) return Response.json({ error: `dispatch failed: ${error}`, approved, skipped }, { status: 503 });
       if (!go.length) return Response.json({ error: NOTHING_TO_BUILD, skipped }, { status: 409 });
       const r = enqueueExecute(slug, p.root, go);
-      return r.ok ? Response.json({ job: r.job, approved, skipped }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
+      return r.ok ? Response.json({ job: r.job, approved, skipped, ...(g.words ? { held: g.held, note: g.words } : {}) }, { status: 202 }) : Response.json({ error: r.error, approved, skipped }, { status: r.status });
     },
   },
 });

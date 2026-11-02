@@ -64,6 +64,7 @@
     "check:companion-runtime": "node scripts/check-companion-runtime.ts",
     "check:companion-brain": "node scripts/check-companion-brain.ts",
     "check:companion-door": "node scripts/check-companion-door.ts",
+    "check:rules": "node scripts/check-rules.ts",
     "check:companion-web": "node scripts/check-companion-web.ts",
     "check:guard-kill": "node scripts/guard-kill.mjs --test",
     "check:bplink": "node scripts/check-bplink.mjs",

@@ -60,6 +60,10 @@ export interface InboxItem {
   rank: number;
   /** `brief`: the decision brief's lines when the recommendation was made (scan/brief.ts). */
   recommendation?: { verdict: Verdict; why: string; brief?: string[] };
+  /** A live standing order holds its place (bp-rules.json): no door will build it until the owner lifts `heldBy`. */
+  heldBy?: string;
+  /** A live standing grant lets an agent approve it without a card. */
+  grant?: string;
 }
 
 export type GapReason = 'unmeasured' | 'stale' | 'unknown' | 'deviation';

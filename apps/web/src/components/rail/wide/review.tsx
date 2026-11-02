@@ -16,6 +16,7 @@ import { nextVetoLapse, vetoable } from '@bp/core/scan/trust';
 import { vetoDecision } from '@/lib/scan/actions';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 import { BriefFacts, useBrief } from '../../Brief';
+import { RuleChip, RuleNote, useRuleMark } from './rule-mark';
 
 
 /** The list key prefix of a machine decision row (v5): `veto:<proposal id>`. */
@@ -118,7 +119,7 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && d.recNote && <span className="db" title={'The decision brief: ' + d.recNote}>declined before</span>}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && d.recNote && <span className="db" title={'The decision brief: ' + d.recNote}>declined before</span>}{p && <RowRule p={p} />}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
@@ -202,6 +203,9 @@ export function Review() {
 }
 
 /** The kicker over a detail title: urgency, lens, id, newness. */
+/** A row's standing-rule chip (a component: the hook needs a component per row). */
+function RowRule({ p }: { p: Proposal }) { return <RuleChip m={useRuleMark(p)} />; }
+
 function Kicker({ d, extra }: { d: SimDecision; extra?: string }) {
   const E = useEngine(), M = E.M, ld = M.P.LENS[d.lens];
   return (
@@ -229,6 +233,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
   const brief = useBrief(d);
+  const mark = useRuleMark(p); // the owner's standing rules over this finding (rule-mark.tsx)
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
   useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
@@ -251,6 +256,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
         {p && (p.tier !== undefined || p.origin === 'ado') && <div className="wb-tier"><TierChip p={p} /><OriginChip p={p} /></div>}
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
+        <RuleNote m={mark} />
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>
         {brief && <BriefFacts b={brief} d={d} />}
         {mv && (

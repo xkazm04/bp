@@ -12,7 +12,7 @@ import { admitForBuild, buildChunks } from '../scan/admit.ts';
 import type { ScanJob } from '../scan/jobs.ts';
 import { recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
 import { decide, snapshotOf } from './store.server.ts';
-import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveRefusal, type WaveStep } from '../scan/waves.ts';
+import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WavePackage, type WaveRefusal, type WaveStep } from '../scan/waves.ts';
 
 if (typeof window !== 'undefined') throw new Error('waves.server.ts is server-only');
 
@@ -106,7 +106,9 @@ export function takeForBuild(file: string, ids: readonly string[], busy?: Readon
 }
 
 /** The answer of dispatchWave: the route's status and body (202 and 429 carry `wave`, `jobs`, `approved`, `skipped`). */
-export interface WaveDispatchAnswer { status: 202 | 400 | 404 | 409 | 429 | 503; body: Record<string, unknown> }
+export interface WaveDispatchAnswer { status: 202 | 400 | 403 | 404 | 409 | 429 | 503; body: Record<string, unknown> }
+/** What the owner's standing orders hold of one package (rules.server.ts Gated, kept structural here: rules.server reads waves). */
+export interface Held { held: { id: string; order: { id: string } }[]; words: string }
 
 /**
  * Dispatch a wave (default: every package, else the named ones): per package, keep its proposed or approved findings that
@@ -114,7 +116,7 @@ export interface WaveDispatchAnswer { status: 202 | 400 | 404 | 409 | 429 | 503;
  * package's model and effort. The first job makes the wave `dispatched`; a later call ("Dispatch remaining") appends. A full
  * queue (429) stops it with what was queued so far recorded and the approvals standing; 409 when nothing could go.
  */
-export function dispatchWave(slug: string, product: ProductEntry, waveId: string, packages?: readonly string[], by = 'blueprint'): WaveDispatchAnswer {
+export function dispatchWave(slug: string, product: ProductEntry, waveId: string, packages?: readonly string[], by = 'blueprint', hold?: (pk: WavePackage) => Held): WaveDispatchAnswer {
   const waves = listWaves(product.root), wave = waves.find((w) => w.id === waveId);
   if (!wave) return { status: 404, body: { error: `no wave ${waveId}` } };
   const pkgs = packagesOf(wave, packages);
@@ -124,9 +126,13 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
   const file = storeFile(product), busy = busyProposals(slug);
   const approved: string[] = [], skipped: { id: string; status: string }[] = [], jobs: ScanJob[] = [], refs: { package: string; job: string }[] = [];
   let stop: { status: 400 | 429 | 503; error: string } | undefined, went = 0;
+  const held: Held['held'] = [], said: string[] = [];
   for (const pk of pkgs) {
     if (stop) break;
-    const t = takeForBuild(file, pk.ids, busy, by);
+    // the owner's standing orders (rules.server.ts, through the route): what an order holds is skipped as `held:<order>`
+    const h = hold?.(pk), out = new Set(h?.held.map((x) => x.id));
+    if (h?.held.length) { held.push(...h.held); said.push(h.words); skipped.push(...h.held.map((x) => ({ id: x.id, status: 'held:' + x.order.id }))); }
+    const t = takeForBuild(file, pk.ids.filter((x) => !out.has(x)), busy, by);
     approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
     if (t.error) stop = { status: 503, error: `dispatch failed: ${t.error}` };
     for (const chunk of buildChunks(t.go)) {
@@ -136,6 +142,7 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
       for (const id of r.job.proposals ?? []) busy.add(id);
     }
   }
+  if (!jobs.length && !stop && !went && held.length) return { status: 403, body: { error: 'refused: ' + said.join('. '), order: held[0].order, held, skipped } };
   if (!jobs.length && !stop && !went) return { status: 409, body: { error: 'none of these findings can be built (only proposed or approved ones that no job is building can)', skipped } };
   let next = wave;
   if (jobs.length) {
@@ -144,6 +151,6 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
       return { status: 503, body: { error: `jobs queued but the wave could not be saved: ${(e as Error).message}`, wave, jobs, approved, skipped } };
     }
   }
-  const body = { wave: next, jobs, approved, skipped };
+  const body = { wave: next, jobs, approved, skipped, ...(held.length ? { held, note: said.join('. ') } : {}) };
   return stop ? { status: stop.status, body: { error: stop.error, ...body } } : { status: 202, body };
 }

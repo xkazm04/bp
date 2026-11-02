@@ -7,6 +7,7 @@ import { door } from '@bp/core/server/route-door.server';
 import { storeFile } from '@bp/core/server/products.server';
 import { decide, parseDecision } from '@bp/core/server/store.server';
 import { triageBy } from '@bp/core/server/release.server';
+import { agentSigner } from '../../../../companion/door.server.ts';
 import type { DecisionBody } from '@bp/core/scan/types';
 
 const proposal = door('products/[slug]/proposals/[id]', {
@@ -14,9 +15,12 @@ const proposal = door('products/[slug]/proposals/[id]', {
     body: (raw) => parseDecision(raw) ?? Response.json({ error: "body must be { decision: 'approve' | 'decline', note?: string } (a note may not start with 'veto:')" }, { status: 400 }),
     store: 'required',
     writes: true,
-    live: async ({ product: p, params: { id }, body }) => {
+    live: async ({ req, slug, product: p, params: { id }, body }) => {
+      // a call a standing permission runs is signed rule:G-n / policy:pol_.. (door.server.ts agentSigner), re-checked here
+      const as = agentSigner(req, { slug, id, decision: (body as DecisionBody).decision });
+      if (as && 'refuse' in as) return as.refuse;
       try {
-        const r = decide(storeFile(p), id, body as DecisionBody, await triageBy());
+        const r = decide(storeFile(p), id, body as DecisionBody, as?.by ?? await triageBy());
         if (r.ok) return Response.json(r.proposal);
         if (r.status === 404) return Response.json({ error: `no proposal ${id}` }, { status: 404 });
         return Response.json(r.proposal, { status: 409 });

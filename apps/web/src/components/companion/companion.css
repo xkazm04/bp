@@ -46,3 +46,11 @@
 .cp-tr li button { padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: var(--line); text-underline-offset: 3px; }
 .cp-tr li button:hover { color: var(--ink-hi); }
 .cp-tr small { display: block; font: 400 12px var(--mono); color: var(--ink-2); }
+
+/* a rule.propose card's replay (RuleCardReplay.tsx): the draft's agreement with the owner's past decisions */
+.cp-replay { margin: 4px 0 10px; padding: 8px 10px; display: grid; gap: 4px; border-left: 3px solid var(--mint); background: color-mix(in srgb, var(--mint) 6%, transparent); font: 400 13px/1.4 var(--sans); color: var(--ink); }
+.cp-replay b { font: 600 15px var(--mono); color: var(--ink-hi); }
+.cp-replay.bad { border-left-color: var(--red); background: color-mix(in srgb, var(--red) 7%, transparent); }
+.cp-replay .fl { color: var(--red-2); font-weight: 600; }
+.cp-replay button { justify-self: start; padding: 3px 9px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink); cursor: pointer; }
+.cp-replay button:hover { border-color: var(--ink); color: var(--ink-hi); }

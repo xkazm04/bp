@@ -16,7 +16,7 @@ import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
-import { DEEP_LINK_KEYS, deepLinkHash, withoutDeepLink } from './deep-link';
+import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
 import { saveFailWords, unknownFeatureWords } from './copy';
 import { lineSiblings } from './lines';
@@ -24,7 +24,7 @@ import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, drawTableTop, featRect, resetOutlines } from './render/plan';
 import {
-  drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawOverlays, drawPins, drawPreview,
+  drawAgents, drawAnswer, drawBlockers, drawBreaches, drawFocus, drawHeat, drawLasso, drawOrderZones, drawRuleZones, drawOverlays, drawPins, drawPreview,
   drawPulses, drawReleases, drawTargets, type APos,
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
@@ -35,6 +35,7 @@ import { ScanLayer, type ScanView } from './render/scans';
 import { loadArt } from './render/illo';
 import { rs, smooth, union, type SRect, type View } from './render/view';
 import { GENERAL } from '@bp/core/data/types';
+import type { Rule } from '@bp/core/scan/rules';
 
 export interface EngineOptions {
   canvas: HTMLCanvasElement;
@@ -471,7 +472,7 @@ export class Engine {
     this.hits.reset(); this.stampHits();
     drawOverlays(this, ctx, v, lod);
     if (this.introOn) { this.flags = NO_FLAGS; return; }
-    drawOrderZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
+    drawOrderZones(this, ctx, v, lod); drawRuleZones(this, ctx, v, lod); drawTargets(this, ctx, v, lod);
     drawHeat(this, ctx, v, lod, now);
     drawAgents(this, ctx, v, lod, now); drawPulses(this, ctx, v, lod, now);
     drawPins(this, ctx, v, lod, now); drawTracks(this, ctx, v, lod); drawBreaches(this, ctx, v, lod, now);
@@ -802,6 +803,11 @@ export class Engine {
     return this.apVal;
   }
   setOrdHi(id: string | null) { if (this.S.ordHi !== id) this.set({ ordHi: id }); }
+  /** A live product's standing rules (lib/rules/client.ts), drawn on the plan by drawRuleZones. */
+  liveRules: readonly Rule[] = [];
+  /** A rule a deep link named (`?dock=orders&rule=O-3`), until the Orders panel takes it. */
+  linkedRule: string | null = null;
+  setLiveRules(rules: readonly Rule[]) { if (this.liveRules !== rules) { this.liveRules = rules; this.dirty(); } }
   /** Open a rail flyout; the open one again (or null) closes it. */
   setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }
@@ -1441,6 +1447,9 @@ export class Engine {
     // the hash written next carries the page from here on
     const deep = deepLinkHash(location.search);
     if (deep.page && !h.page) { h.page = deep.page; if (deep.lv) h.lv = deep.lv; }
+    // ?dock=orders[&rule=O-3]: the standing rules, opened on a rule (rules.tsx takes linkedRule once)
+    const dock = deepLinkDock(location.search);
+    if (dock.dock) { this.store.set({ dtab: dock.dock }); this.linkedRule = dock.rule ?? null; }
     const q = new URLSearchParams(location.search);
     if (DEEP_LINK_KEYS.some((k) => q.has(k))) {
       try { history.replaceState(history.state, '', location.pathname + withoutDeepLink(location.search) + location.hash); } catch { /* ignore */ }

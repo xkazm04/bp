@@ -4,6 +4,8 @@
 // Class is derived, never declared: AUTO when reversible and not external, else GATED (a card, or a policy grant).
 // Each tool is one HTTP call to bp (`route`), so the companion is a principal on the same door as every other client.
 
+import { WAVE_EFFORTS } from '../standard/schema-vocab.ts';
+
 export type SideEffects = 'none' | 'internal' | 'external';
 export type ToolClass = 'AUTO' | 'GATED';
 
@@ -22,7 +24,7 @@ const slug = { type: 'string', description: "the product's slug (bp.products.loc
 const str = (description: string) => ({ type: 'string', description });
 
 export const TOOLS: readonly ToolSpec[] = [
-  { name: 'inbox.list', description: 'Open decisions across every registered product, ranked by tier, age and value.', reversible: true, side_effects: 'none',
+  { name: 'inbox.list', description: "Open decisions across every registered product, ranked by tier, age and value; `heldBy` names the owner's standing order that holds one (no door will build it), `grant` the grant that lets an agent approve it alone.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { limit: { type: 'number' } } }, route: { method: 'GET', path: '/api/companion/inbox' } },
   { name: 'decision.recommend', description: 'Attach a recommended verdict and its reason to one open decision, for the person to approve in a batch.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, id: str('the proposal id'), verdict: { type: 'string', enum: ['approve', 'decline', 'rework', 'descope'] }, why: str('one or two sentences') }, required: ['slug', 'id', 'verdict', 'why'] },
@@ -36,6 +38,11 @@ export const TOOLS: readonly ToolSpec[] = [
   { name: 'policy.propose', description: 'Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it.', reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { product: str('a slug or *'), tools: { type: 'array', items: { type: 'string' } }, minTier: { type: 'number', description: 'cover only findings of this tier or milder (0 stop-ship .. 3 backlog)' }, hours: { type: 'number' } }, required: ['product', 'tools', 'hours'] },
     route: { method: 'POST', path: '/api/companion/policies' } },
+  { name: 'rules.list', description: "The owner's standing rules for a product: orders (what agents may not do: hold a place, only some lenses' work there, an effort cap) and grants (what agents may decide alone), each with its id, author, place and expiry. Read them before composing, dispatching or scanning; a door refuses what an order holds and cites it.", reversible: true, side_effects: 'none',
+    params_schema: { type: 'object', properties: { slug }, required: ['slug'] }, route: { method: 'GET', path: '/api/products/{slug}/rules' } },
+  { name: 'rule.propose', description: "Propose a standing rule to the owner (kind hold|only|cap|grant over a place's features); they see it replayed over their own past decisions before they set it. Only the person can set it.", reversible: false, side_effects: 'internal',
+    params_schema: { type: 'object', properties: { slug, kind: { type: 'string', enum: ['hold', 'only', 'cap', 'grant'] }, scope: { type: 'object', description: '{ kind: feature|bay|room|wing|all|selection, id?, label, features: feature slugs (plan.find) }' }, lenses: { type: 'array', items: { type: 'string' } }, maxEffort: { type: 'string', enum: [...WAVE_EFFORTS] }, minTier: { type: 'number' }, hours: { type: 'number' }, text: str("the rule in the owner's words") }, required: ['slug', 'kind', 'scope'] },
+    route: { method: 'POST', path: '/api/products/{slug}/rules' } },
   { name: 'wave.compose', description: 'Group findings into a draft wave of packages, each with a model and an effort.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, name: str('the wave name'), packages: { type: 'array', maxItems: 20, items: { type: 'object', description: '{ name, model: sonnet|opus, effort: low|medium|high|xhigh, ids }' } } }, required: ['slug', 'name', 'packages'] },
     route: { method: 'POST', path: '/api/products/{slug}/waves' } },
