@@ -168,7 +168,8 @@ bool ABpTable::TickFollowCaption(float DeltaSeconds)
 		FollowBay.Reset();
 	}
 	// BpLink.Follow off: the caption goes with it.
-	const bool bShow = !FollowLine.IsEmpty() && FBpLinkModule::Get().IsFollowing();
+	// The build-up's narration (BpBuildup.cpp) holds it too, following or not.
+	const bool bShow = !FollowLine.IsEmpty() && (FBpLinkModule::Get().IsFollowing() || bBuildCaption);
 	const float Want = bShow ? 1.f : 0.f;
 	if (FollowCaptionAlpha == Want) return false;
 	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));

@@ -559,6 +559,8 @@ void FBpLinkModule::SetProduct(const FString& InSlug)
 	for (uint32& Hash : ScanBodyHash) Hash = 0;
 	bScanBundled = false;
 	NextScanPollS = 0.0;
+	// The old product's build-up feed stops; the new one's starts from its begin if its job runs (WP-V2).
+	ResetBuildup();
 
 	UE_LOG(LogBpLink, Log, TEXT("BpLink: product %s -> %s (%d requests cancelled; the plan, structure, scans, waves, briefs and draft of %s cleared)%s"),
 		*Was, *Slug, Cancelled, *Was, Entry ? *FString::Printf(TEXT("; onboarding %s%s"), *Entry->State, Entry->bHasMap ? TEXT(", has a map") : TEXT(", no map yet")) : TEXT(""));
@@ -618,6 +620,7 @@ void FBpLinkModule::ShutdownModule()
 	ProductDelegate.Clear();
 	OnboardingDelegate.Clear();
 	MilestoneDelegate.Clear();
+	BuildupDelegate.Clear();
 }
 
 // ---- The scan side (spark vr-fidelity-40 FC1): the jobs, the store's tables and the waves, polled ----------------------
@@ -1537,6 +1540,8 @@ bool FBpLinkModule::TickOnboarding(float)
 		NextOnboardingPollS = Now + (bBusy ? OnboardingBusyS : OnboardingPollS);
 		PollOnboarding();
 	}
+	// The open product's build-up (WP-V2): its feed, while its job runs.
+	TickBuildup(Now);
 	return true;
 }
 
@@ -1870,4 +1875,278 @@ void FBpLinkModule::ReceiveFeed(const FString& Slug, const FString& JobId, int32
 	if (bPhaseMoved) JudgeMilestones(Now, Now.State, WasPhase, !JobsSeen.Contains(Now.JobId));
 	++Onboarding.Serial;
 	OnboardingDelegate.Broadcast(Onboarding);
+}
+
+// ---- The open product's build-up feed (spark onboarding-vr WP-V2) --------------------------------------------------------
+// While the open product's adopt job runs, the table draws its onboarding as it happens: BpLink reads the job's journal
+// through GET .../onboarding/feed?after=<n>&job=<id>&layout=islands every BuildupPollS (UE's HTTP cannot read the SSE
+// route, machine.md reading 13) and hands the table each answer, parsed off the game thread into FBpBuildupEvent. The
+// first answer after a (re)start carries every event so far and is marked past (the table draws it at its end state).
+
+namespace
+{
+	FBpPlanBox ReadBox(const TSharedPtr<FJsonObject>& Node)
+	{
+		FBpPlanBox Box;
+		const TSharedPtr<FJsonObject>* B = nullptr;
+		if (Node.IsValid() && Node->TryGetObjectField(TEXT("box"), B))
+		{
+			(*B)->TryGetNumberField(TEXT("x"), Box.x);
+			(*B)->TryGetNumberField(TEXT("y"), Box.y);
+			(*B)->TryGetNumberField(TEXT("w"), Box.w);
+			(*B)->TryGetNumberField(TEXT("h"), Box.h);
+		}
+		return Box;
+	}
+
+	FString Str(const TSharedPtr<FJsonObject>& Object, const TCHAR* Field)
+	{
+		FString Value;
+		if (Object.IsValid()) Object->TryGetStringField(Field, Value);
+		return Value;
+	}
+
+	/** Each object of an array field. */
+	TArray<TSharedPtr<FJsonObject>> Objects(const TSharedPtr<FJsonObject>& Object, const TCHAR* Field)
+	{
+		TArray<TSharedPtr<FJsonObject>> Out;
+		const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+		if (!Object.IsValid() || !Object->TryGetArrayField(Field, Values)) return Out;
+		for (const TSharedPtr<FJsonValue>& Value : *Values)
+		{
+			const TSharedPtr<FJsonObject>* Each = nullptr;
+			if (Value.IsValid() && Value->TryGetObject(Each)) Out.Add(*Each);
+		}
+		return Out;
+	}
+
+	bool ReadBuildupEvent(const TSharedPtr<FJsonObject>& E, FBpBuildupEvent& Out)
+	{
+		if (!E.IsValid() || !E->TryGetStringField(TEXT("type"), Out.Type)) return false;
+		E->TryGetNumberField(TEXT("at"), Out.At);
+		Out.Phase = Str(E, TEXT("phase"));
+		Out.State = Str(E, TEXT("state"));
+		Out.Detail = Str(E, TEXT("detail"));
+		Out.Next = Str(E, TEXT("next"));
+		Out.Verb = Str(E, TEXT("verb"));
+		Out.Path = Str(E, TEXT("path"));
+		Out.Area = Str(E, TEXT("area"));
+		E->TryGetNumberField(TEXT("n"), Out.N);
+		E->TryGetNumberField(TEXT("of"), Out.Of);
+		E->TryGetBoolField(TEXT("provisional"), Out.bProvisional);
+		Out.Text = Str(E, Out.Type == TEXT("failed") ? TEXT("message") : TEXT("text"));
+		if (Out.Type == TEXT("begin"))
+		{
+			const TSharedPtr<FJsonObject>* Project = nullptr;
+			if (E->TryGetObjectField(TEXT("project"), Project)) Out.Text = Str(*Project, TEXT("name"));
+		}
+		const TArray<TSharedPtr<FJsonValue>>* Features = nullptr;
+		if (E->TryGetArrayField(TEXT("features"), Features))
+		{
+			for (const TSharedPtr<FJsonValue>& Value : *Features)
+			{
+				FString Slug;
+				if (Value.IsValid() && Value->TryGetString(Slug)) Out.Features.Add(Slug);
+			}
+		}
+		for (const TSharedPtr<FJsonObject>& A : Objects(E, TEXT("areas")))
+		{
+			FBpBuildupArea Area;
+			Area.Id = Str(A, TEXT("id"));
+			Area.Name = Str(A, TEXT("name"));
+			Area.Group = Str(A, TEXT("group"));
+			A->TryGetNumberField(TEXT("files"), Area.Files);
+			double Lines = -1.0;
+			if (A->TryGetNumberField(TEXT("lines"), Lines)) Area.Lines = static_cast<int32>(Lines);
+			if (!Area.Id.IsEmpty()) Out.Areas.Add(MoveTemp(Area));
+		}
+		for (const TSharedPtr<FJsonObject>& D : Objects(E, TEXT("domains")))
+		{
+			FBpBuildupDomain Domain;
+			Domain.Id = Str(D, TEXT("id"));
+			Domain.Name = Str(D, TEXT("name"));
+			D->TryGetNumberField(TEXT("order"), Domain.Order);
+			for (const TSharedPtr<FJsonObject>& C : Objects(D, TEXT("capabilities")))
+			{
+				Domain.CapIds.Add(Str(C, TEXT("id")));
+				Domain.CapNames.Add(Str(C, TEXT("name")));
+			}
+			if (!Domain.Id.IsEmpty()) Out.Domains.Add(MoveTemp(Domain));
+		}
+		if (Out.Type == TEXT("structure"))
+		{
+			for (const TSharedPtr<FJsonObject>& W : Objects(E, TEXT("wings")))
+			{
+				FBpPlanWing Wing;
+				Wing.id = Str(W, TEXT("id"));
+				Wing.name = Str(W, TEXT("name"));
+				Wing.letter = Str(W, TEXT("letter"));
+				W->TryGetNumberField(TEXT("order"), Wing.order);
+				Wing.box = ReadBox(W);
+				Out.Structure.wings.Add(MoveTemp(Wing));
+			}
+			for (const TSharedPtr<FJsonObject>& R : Objects(E, TEXT("rooms")))
+			{
+				FBpPlanRoom Room;
+				Room.id = Str(R, TEXT("id"));
+				Room.parentId = Str(R, TEXT("parentId"));
+				Room.name = Str(R, TEXT("name"));
+				R->TryGetNumberField(TEXT("order"), Room.order);
+				Room.box = ReadBox(R);
+				Out.Structure.rooms.Add(MoveTemp(Room));
+			}
+			for (const TSharedPtr<FJsonObject>& B : Objects(E, TEXT("bays")))
+			{
+				FBpPlanBay Bay;
+				Bay.id = Str(B, TEXT("id"));
+				Bay.parentId = Str(B, TEXT("parentId"));
+				Bay.name = Str(B, TEXT("name"));
+				B->TryGetNumberField(TEXT("order"), Bay.order);
+				Bay.box = ReadBox(B);
+				Out.Structure.bays.Add(MoveTemp(Bay));
+			}
+			for (const TSharedPtr<FJsonObject>& T : Objects(E, TEXT("tiles")))
+			{
+				FBpPlanTile Tile;
+				Tile.id = Str(T, TEXT("id"));
+				Tile.parentId = Str(T, TEXT("parentId"));
+				Tile.name = Str(T, TEXT("name"));
+				T->TryGetNumberField(TEXT("order"), Tile.order);
+				Tile.box = ReadBox(T);
+				Tile.general = TEXT("unmeasured");
+				Out.Tiles.Emplace(Tile.id, Str(T, TEXT("kind")));
+				Out.Structure.tiles.Add(MoveTemp(Tile));
+			}
+		}
+		else if (Out.Type == TEXT("history") || Out.Type == TEXT("health"))
+		{
+			const TCHAR* Field = Out.Type == TEXT("history") ? TEXT("created") : TEXT("general");
+			for (const TSharedPtr<FJsonObject>& T : Objects(E, TEXT("tiles"))) Out.Tiles.Emplace(Str(T, TEXT("id")), Str(T, Field));
+		}
+		return true;
+	}
+}
+
+void FBpLinkModule::ResetBuildup()
+{
+	BuildupJob.Reset();
+	BuildupNext = 0;
+	bBuildupOut = false;
+	bBuildupDone = false;
+	bBuildupPast = true;
+	NextBuildupPollS = 0.0;
+}
+
+void FBpLinkModule::TickBuildup(double Now)
+{
+	const FBpProductEntry* Entry = FindProduct(ProductSlug());
+	if (!Entry || Entry->JobId.IsEmpty()) return;
+	if (Entry->JobId != BuildupJob)
+	{
+		// Another job of the open product (or the first one seen): read it from its begin. A job that ended done before the
+		// table opened the product is not drawn again: the live plan is the table. One that stopped with no map is (what
+		// was drawn stays drawn).
+		const bool bWatch = Entry->IsBuilding() || (Entry->IsStopped() && !Entry->bHasMap);
+		if (!bWatch) return;
+		ResetBuildup();
+		BuildupJob = Entry->JobId;
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: build-up of %s: reading job %s's feed from its begin (%s %s)"), *Entry->Slug, *BuildupJob, *Entry->State, *Entry->Phase);
+	}
+	if (bBuildupDone || bBuildupOut || Now < NextBuildupPollS) return;
+	NextBuildupPollS = Now + BuildupPollS;
+	PollBuildup(*Entry);
+}
+
+void FBpLinkModule::PollBuildup(const FBpProductEntry& Entry)
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const FString Url = FString::Printf(TEXT("%s/api/products/%s/onboarding/feed?after=%d&job=%s&layout=islands"), *GClient->GetBaseUrl(), *Entry.Slug, BuildupNext,
+		*FGenericPlatformHttp::UrlEncode(Entry.JobId));
+	bBuildupOut = true;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url, TEXT("application/json"));
+	TrackProductRequest(Request);
+	const uint32 Gen = GProductGen;
+	const FString Slug = Entry.Slug, JobId = Entry.JobId;
+	const bool bPast = bBuildupPast;
+	Request->OnProcessRequestComplete().BindLambda([Gen, Slug, JobId, bPast](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module || Gen != GProductGen || Module->BuildupJob != JobId) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status != 200)
+		{
+			Module->bBuildupOut = false;
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: build-up feed of %s answered %d"), *Slug, Status);
+			return;
+		}
+		// Up to 500 events with the whole product tree among them: parsed off the game thread (prepare), handed over whole
+		// on it (commit).
+		Async(EAsyncExecution::ThreadPool, [Gen, Slug, JobId, bPast, Body = Response->GetContentAsString()]()
+		{
+			TSharedPtr<FBpBuildupBatch> Batch = MakeShared<FBpBuildupBatch>();
+			Batch->Slug = Slug;
+			Batch->JobId = JobId;
+			Batch->bPast = bPast;
+			int32 Next = -1;
+			TSharedPtr<FJsonObject> Json;
+			const double T0 = FPlatformTime::Seconds();
+			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid())
+			{
+				Json->TryGetNumberField(TEXT("next"), Next);
+				Json->TryGetBoolField(TEXT("done"), Batch->bDone);
+				const TSharedPtr<FJsonObject>* Job = nullptr;
+				if (Json->TryGetObjectField(TEXT("job"), Job))
+				{
+					Batch->JobStatus = Str(*Job, TEXT("status"));
+					Batch->JobPhase = Str(*Job, TEXT("adopt_phase"));
+				}
+				for (const TSharedPtr<FJsonObject>& Each : Objects(Json, TEXT("events")))
+				{
+					FBpBuildupEvent Event;
+					if (ReadBuildupEvent(Each, Event)) Batch->Events.Add(MoveTemp(Event));
+				}
+			}
+			const double ParseMs = (FPlatformTime::Seconds() - T0) * 1000.0;
+			const int32 Bytes = Body.Len();
+			AsyncTask(ENamedThreads::GameThread, [Gen, Batch, Next, ParseMs, Bytes]()
+			{
+				FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+				if (!Module || Gen != GProductGen || Module->BuildupJob != Batch->JobId) return;
+				Module->bBuildupOut = false;
+				if (Next < 0)
+				{
+					UE_LOG(LogBpLink, Warning, TEXT("BpLink: build-up feed of %s did not read as { events, next }"), *Batch->Slug);
+					return;
+				}
+				Module->BuildupNext = Next;
+				Module->bBuildupDone = Batch->bDone;
+				if (Batch->Events.Num() == 0 && !Batch->bDone && !Module->bBuildupPast) return;
+				Module->bBuildupPast = false;
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: build-up %s: %d events%s, next %d%s (%d chars parsed off the game thread in %.1f ms)"), *Batch->Slug, Batch->Events.Num(),
+					Batch->bPast ? TEXT(" (past: drawn at their end state)") : TEXT(""), Next, Batch->bDone ? TEXT(", done") : TEXT(""), Bytes, ParseMs);
+				Module->BuildupDelegate.Broadcast(*Batch);
+			});
+		});
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::FetchIslandsPlan(TFunction<void(bool, const FBpPlan&)> OnDone)
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const FString Url = FString::Printf(TEXT("%s/api/products/%s/plan?layout=islands"), *GClient->GetBaseUrl(), *ProductSlug());
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url, TEXT("application/json"));
+	TrackProductRequest(Request);
+	const uint32 Gen = GProductGen;
+	Request->OnProcessRequestComplete().BindLambda([Gen, OnDone, Url](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		if (Gen != GProductGen) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		FBpLinkSnapshot Snapshot;
+		FString Refused;
+		const bool bOk = Status == 200 && ParsePlanBody(Response->GetContentAsString(), Snapshot, Refused);
+		if (!bOk) UE_LOG(LogBpLink, Log, TEXT("BpLink: GET %s answered %d%s"), *Url, Status, Refused.IsEmpty() ? TEXT("") : *(TEXT(": ") + Refused));
+		OnDone(bOk, Snapshot.Plan);
+	});
+	Request->ProcessRequest();
 }

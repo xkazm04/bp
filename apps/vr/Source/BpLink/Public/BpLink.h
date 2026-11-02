@@ -158,6 +158,68 @@ DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnBpMilestone, const FBpProductEntry& /*
  *  and before the new product's read is answered. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpProduct, const FString& /*Slug*/);
 
+/** One event of the open product's onboarding feed (spark onboarding-vr WP-V2), as apps/web/src/buildup/contract.ts
+ *  BuildupEvent says it, flattened: Type names which fields carry it. Read off the game thread from
+ *  GET .../onboarding/feed?layout=islands, so a `structure` event's boxes are the table's islands layout. */
+struct BPLINK_API FBpBuildupArea
+{
+	FString Id;
+	FString Name;
+	FString Group;
+	int32 Files = 0;
+	/** -1 until the inventory sends them. */
+	int32 Lines = -1;
+};
+struct BPLINK_API FBpBuildupDomain
+{
+	FString Id;
+	FString Name;
+	int32 Order = 0;
+	TArray<FString> CapIds;
+	TArray<FString> CapNames;
+};
+struct BPLINK_API FBpBuildupEvent
+{
+	/** begin, phase, survey, outline, structure, history, health, activity, progress, narration, done, failed. */
+	FString Type;
+	/** ms since the run started. */
+	double At = 0.0;
+	/** phase: Phase and State (start, done, failed) and Detail; progress: Phase, N of Of, Detail; narration: Phase, Text,
+	 *  Next, Features; failed: Phase and Text (its message); begin: Text (the project's name); activity: Verb, Path, Area. */
+	FString Phase;
+	FString State;
+	FString Detail;
+	FString Text;
+	FString Next;
+	FString Verb;
+	FString Path;
+	FString Area;
+	int32 N = 0;
+	int32 Of = 0;
+	TArray<FString> Features;
+	TArray<FBpBuildupArea> Areas;
+	TArray<FBpBuildupDomain> Domains;
+	/** structure: the chunk's wings, rooms, bays and tiles (tiles carry no health; rev and lenses empty). */
+	FBpPlan Structure;
+	/** history: (tile id, created); health: (tile id, general), with bProvisional; structure: (tile id, kind). */
+	TArray<TPair<FString, FString>> Tiles;
+	bool bProvisional = false;
+};
+/** One answer of the feed: its events, the job as the answer saw it, and whether it is history being caught up (the first
+ *  answer after the table started reading this job: a join mid-run, or a switch back) or news. */
+struct BPLINK_API FBpBuildupBatch
+{
+	FString Slug;
+	FString JobId;
+	FString JobStatus;
+	FString JobPhase;
+	TArray<FBpBuildupEvent> Events;
+	bool bPast = false;
+	/** The job has ended and every event has been read. */
+	bool bDone = false;
+};
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpBuildup, const FBpBuildupBatch&);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -208,11 +270,25 @@ public:
 	static FString PhaseLabel(const FString& Phase);
 	/** The product's name as the products list or its structure gives it, else its slug. */
 	FString NameOf(const FString& Slug) const;
+
+	/** The open product's build-up (spark onboarding-vr WP-V2): while the open product's adopt job runs (or it stopped and
+	 *  the product has no map), BpLink reads its .../onboarding/feed?after=<n>&job=<id>&layout=islands every BuildupPollS
+	 *  and hands each answer that brought events (and the last one) to OnBuildup, parsed off the game thread. The first
+	 *  answer after a (re)start is marked past. Another product (SetProduct) stops it. */
+	FOnBpBuildup& OnBuildup() { return BuildupDelegate; }
+	static constexpr float BuildupPollS = 0.5f;
+	/** The job the build-up feed reads, empty when none. */
+	const FString& GetBuildupJob() const { return BuildupJob; }
+	/** GET .../plan?layout=islands of the open product, once, outside the startup read (the build-up's history step: the
+	 *  final boxes). OnDone on the game thread; dropped when the product changed meanwhile. */
+	void FetchIslandsPlan(TFunction<void(bool bOk, const FBpPlan& Plan)> OnDone);
 	/** structure.project.name from the last structure that parsed; empty while none has. */
 	const FString& GetProductName() const { return ProductName; }
 	/** A feature's kind (structure.features[].kind: user_flow, capability, integration, ops) by its slug, which is the
 	 *  plan tile's id; null when the last structure that parsed has no such feature or names no kind. */
 	const FString* FindFeatureKind(const FString& Slug) const { return FeatureKinds.Find(Slug); }
+	/** A feature's kind as the build-up's structure names it (WP-V2), until the product's own structure read replaces them. */
+	void NoteFeatureKind(const FString& Slug, const FString& Kind) { if (!Slug.IsEmpty() && !Kind.IsEmpty() && !FeatureKinds.Contains(Slug)) FeatureKinds.Add(Slug, Kind); }
 	/** A feature's one line (structure.features[].summary) by its slug; null when the structure names none. */
 	const FString* FindFeatureSummary(const FString& Slug) const { return FeatureSummaries.Find(Slug); }
 	/** A lens's name (structure.lenses[].manifest.name, what the web's P.LENS shows) by its id; null when the last structure
@@ -355,6 +431,17 @@ private:
 	/** Says each milestone a job just passed (once), and reads the open product again when its own job is done. */
 	void JudgeMilestones(const FBpProductEntry& Entry, const FString& WasState, const FString& WasPhase, bool bFirstSight);
 	void LogOnboardingEntry(const FBpProductEntry& Entry) const;
+	// ---- The open product's build-up feed (WP-V2) ----
+	FOnBpBuildup BuildupDelegate;
+	FString BuildupJob;
+	int32 BuildupNext = 0;
+	bool bBuildupOut = false;
+	bool bBuildupDone = false;
+	bool bBuildupPast = true;
+	double NextBuildupPollS = 0.0;
+	void TickBuildup(double Now);
+	void PollBuildup(const FBpProductEntry& Entry);
+	void ResetBuildup();
 
 	void SendPublish(const FBpFollowPlace& Place);
 	/** The shared focus as last read or published (product, kind, id): the echo rule's "already the shared one". */

@@ -1478,6 +1478,163 @@ private:
 	bool bEmptySheet = false;
 	/** The lamp's caption shows outside room mode too while it says an onboarding's milestone. */
 	bool bLampNotice = false;
+	/** The live plan's body (ApplyPlan's, minus the build-up's hold). */
+	void ApplyPlanNow(const FBpPlan& Plan);
+
+	// ---- The build-up (BpBuildup.cpp; spark onboarding-vr WP-V2): the table builds itself while the open product onboards ----
+	// Mirrors the web's winner B ("the outline becomes the building") in the table's own idiom, from the job's feed only:
+	// the survey's code areas chalked onto the paper as dashed parcels, the outline's domains typed in the paper's near
+	// margin, each domain line flying to its wing as the wing's outline draws itself and its rooms rise one at a time (the
+	// rest walls' Show scalar and their height, never visibility), pencil brackets on the batch being judged, provisional
+	// health pencilled and the final reading inked, the agent's narration on the follow caption and the phase strip in
+	// the title block. Everything 2D is drawn into the sheet's one render target, so the build-up adds no draw call of
+	// its own. At done the live plan (the same islands boxes) takes over and the ink fades into it.
+public:
+	/** The build-up's pace (seconds): a parcel chalked, a domain line's flight, a wing's outline drawn, the stagger
+	 *  between two rooms and one room's rise, the survey's recession, an ink stroke. A burst longer than BuildDrainS is
+	 *  compressed to it (B's DRAIN). bp.ReducedMotion 1 draws each step at its end state. */
+	static constexpr float BuildChalkS = 0.5f;
+	static constexpr float BuildFlyS = 0.8f;
+	static constexpr float BuildWingDrawS = 0.7f;
+	static constexpr float BuildRoomStaggerS = 0.4f;
+	static constexpr float BuildRoomRiseS = 0.6f;
+	static constexpr float BuildRecedeS = 1.2f;
+	static constexpr float BuildInkS = 0.4f;
+	static constexpr float BuildDrainS = 30.f;
+	/** Characters a second the outline is typed at. */
+	static constexpr float BuildTypeCps = 45.f;
+	/** The sheet is redrawn at most this often while something on it moves. */
+	static constexpr float BuildSheetHz = 15.f;
+	/** After the hand-over the ink overlay fades into the live table over this long. */
+	static constexpr float BuildSettleS = 2.f;
+	/** For checks: "<phase> <n>/<of> areas=<a> domains=<d> rooms=<risen>/<rooms> pencil=<p> ink=<i>" or "" when none runs. */
+	FString GetBuildLine() const;
+	bool IsBuilding() const { return bBuild; }
+private:
+	struct FBuildArea
+	{
+		FString Id;
+		FString Name;
+		FString Group;
+		int32 Files = 0;
+		int32 Lines = -1;
+		/** Where it lies on the paper (cm), where it lay before a re-send resized it, and since when. */
+		FBox2D Box = FBox2D(ForceInit);
+		FBox2D From = FBox2D(ForceInit);
+		double MovedAt = -1.0e6;
+		double BornAt = -1.0e6;
+	};
+	struct FBuildDomain
+	{
+		FString Id;
+		FString Name;
+		int32 Order = 0;
+		TArray<FString> CapIds;
+		TArray<FString> CapNames;
+		/** When its typing starts; its lines' flights (by line: 0 the domain, 1.. its capabilities); -1 unflown. */
+		double TypeAt = -1.0e6;
+		TArray<double> FlyAt;
+	};
+	FDelegateHandle BuildupHandle;
+	void OnBuildup(const struct FBpBuildupBatch& Batch);
+	void ApplyBuildupEvent(const struct FBpBuildupEvent& Event, bool bPast);
+	/** Steps the build-up's clock, commits at most one room a frame, redraws the sheet while it moves and hands over at
+	 *  done; true while anything moves. */
+	bool TickBuildup(float DeltaSeconds);
+	/** Forgets the build-up (another product, or the hand-over's fade done). */
+	void ResetBuildup();
+	/** The structure as the plan the table draws (the islands boxes the feed sends), through ApplyPlanNow, and its
+	 *  choreography queued. */
+	void BuildupStructure(bool bPast);
+	void LayoutSurvey(bool bPast);
+	/** The hand-over: the live plan drawn (the same boxes), the build-up's ink fading into it. */
+	void EndBuildup();
+	void TryHandOver();
+	/** The build-up's 2D on the sheet: the parcels, the margin outline and its flights, the wings drawing themselves, the
+	 *  judging brackets, pencil and ink, and its title block with the phase strip. bWithPlan: drawn over a plan. */
+	void DrawBuildup(UCanvas* Canvas, bool bWithPlan);
+	/** 0..1: how far a room (plan index) has risen; a wing's outline, drawn; 1 when no build-up runs. */
+	float RoomBuildShow(int32 Room) const;
+	float WingBuildShow(const FString& Wing) const;
+	/** The rising rooms' rest walls at their height now (from RestBase), and the levels' Show again. */
+	void ApplyRoomRise();
+	/** The narration on the follow caption. */
+	void SayBuildCaption();
+	bool bBuild = false;
+	FString BuildJob;
+	FString BuildName;
+	/** The build-up's own clock (seconds) and when what is queued on it settles. */
+	double BuildClock = 0.0;
+	double BuildQueue = 0.0;
+	TArray<FBuildArea> BuildAreas;
+	double SurveyGoneAt = 1.0e9;
+	FString LitArea;
+	double LitAt = -1.0e6;
+	TArray<FBuildDomain> BuildDomains;
+	/** The structure as it arrived (merged by id), and whether one has. */
+	TSharedPtr<FBpPlan> BuildPlan;
+	bool bBuildHasPlan = false;
+	TMap<FString, double> WingDrawAt;
+	TMap<FString, double> RoomRiseAt;
+	/** Rooms (plan index) in the order they rise, how many are committed (at most one more a frame), and each one's rise as
+	 *  last written. */
+	TArray<FString> RiseOrder;
+	TSet<FString> RisenRooms;
+	/** Each structure drawn bumps it (the synthesized plan's rev). */
+	int32 BuildSerial = 0;
+	/** The last caption said, so it is set only when it changes. */
+	FString BuildCaptionKey;
+	/** Whether the sheet showed anything moving at the last tick (one more redraw lands the end state). */
+	bool SheetMovingNow() const;
+	TArray<float> RoomRiseShown;
+	/** The rest walls' transforms as BuildVolumes made them (a rising room's are scaled from these). */
+	TArray<FTransform> RestBase;
+	TMap<FString, FString> BuildPencil;
+	TMap<FString, double> PencilAt;
+	TMap<FString, FString> BuildInk;
+	TMap<FString, double> InkAt;
+	TSet<FString> BuildJudging;
+	FString BuildPhase;
+	int32 BuildN = 0;
+	int32 BuildOf = 0;
+	FString NarrText;
+	FString NarrNext;
+	bool bBuildEnded = false;
+	bool bBuildFailed = false;
+	FString BuildFailPhase;
+	FString BuildFailText;
+	double BuildEndedAt = -1.0;
+	/** The live plan, held while the build-up still draws. */
+	TSharedPtr<FBpPlan> PendingLivePlan;
+	/** When a live plan was held for a build-up not yet started (real seconds; < 0: none), and how long it may wait. */
+	double HeldPlanAt = -1.0;
+	static constexpr double BuildHoldS = 3.0;
+	/** The ink's fade after the hand-over (< 0: none). */
+	double SettleAt = -1.0;
+	double NextSheetDrawAt = 0.0;
+	bool bSheetMoving = false;
+	/** ApplyPlanNow is drawing the build-up's own plan. */
+	bool bApplyingBuild = false;
+	/** The narration holds the follow caption. */
+	bool bBuildCaption = false;
+	/** History's glide to the final boxes: from and to (by room id, paper-local cm offset), start. */
+	TMap<int32, FVector> GlideDelta;
+	double GlideAt = -1.0;
+	TSharedPtr<FBpPlan> GlideTo;
+	/** The wall-clock seconds the structure's commit took (ApplyPlanNow), for the report. */
+	double StructureCommitMs = 0.0;
+	/** A plan the build-up commits (its structure, the glide's landing, the hand-over) is committed over several frames:
+	 *  the volumes and the sheet at once, then the level labels, the room names and the glyphs one step a frame (the
+	 *  rooms stand at Show 0 or are already drawn by then). bSpreadCommit asks ApplyPlanNow for it; DeferredSteps counts
+	 *  what is left for the plan of rev DeferredRev. */
+	bool bSpreadCommit = false;
+	int32 DeferredSteps = 0;
+	FString DeferredRev;
+	void StepDeferredCommit();
+	/** The last sheet draw's game-thread cost (ms) and the most of any since the build-up began. */
+	double LastSheetMs = 0.0;
+	double MaxSheetMs = 0.0;
+	int32 SheetDraws = 0;
 
 	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
 	FDelegateHandle FollowHandle;

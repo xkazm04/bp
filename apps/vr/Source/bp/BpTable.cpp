@@ -28,6 +28,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
+#include "Misc/ScopeExit.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "TimerManager.h"
@@ -121,6 +122,17 @@ namespace
 		return FVector2D(Text.Len() * 0.533f * EmPx, 1.2f * EmPx);
 	}
 
+	/** Text cut at the end with an ellipsis until it measures at most MaxPx in Font (Slate units: sheet pixels for a
+	 *  SheetFont); unchanged when it fits. */
+	FString CutToPx(const FString& Text, const FSlateFontInfo& Font, double MaxPx, float TrackPx = 0.f)
+	{
+		const auto W = [&Font, TrackPx](const FString& T) { return MeasureText(T, Font).X + TrackPx * T.Len(); };
+		if (W(Text) <= MaxPx) return Text;
+		FString Cut = Text;
+		while (Cut.Len() > 3 && W(Cut + BpType::Ellipsis()) > MaxPx) Cut = Cut.LeftChop(1).TrimEnd();
+		return Cut + BpType::Ellipsis();
+	}
+
 	/** Sheet pixels per paper centimetre (the render target covers the paper; its pixels are square). */
 	double SheetPxPerCm() { return ABpTable::SheetPxPerCm(); }
 
@@ -191,6 +203,14 @@ namespace
 	/** The breadcrumb's line box: its bottom on the paper (it is right-aligned to TitleAnchorCm.X, near-right, where the
 	 *  target framing still sees the paper). */
 	constexpr double CrumbBottomCm = 74.6;
+	/** The title block's second line at most this wide, and the block inside this band of the paper (what the target framing
+	 *  sees of its near band; a long product name cut, never pushing the block off: spark onboarding-vr WP-V2). */
+	constexpr double TitleMaxCm = 34.0;
+	constexpr double TitleSafeLeftCm = 15.0;
+	constexpr double TitleSafeRightCm = 128.0;
+	/** The breadcrumb's product crumb and the empty sheet's line at most this wide (cut with an ellipsis). */
+	constexpr double CrumbMaxCm = 48.0;
+	constexpr double WaitLineMaxCm = 120.0;
 	/** The compass (FO): under the shortest wing, centred between it and the title block, where the target framing sees
 	 *  it (the left margin, FC1's place, lies outside the frame). */
 	constexpr double CompassRadiusCm = 4.0;
@@ -583,6 +603,8 @@ void ABpTable::BeginPlay()
 	ProductHandle = Link.OnProduct().AddUObject(this, &ABpTable::OnProductChanged);
 	OnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpTable::OnOnboardingState);
 	MilestoneHandle = Link.OnMilestone().AddUObject(this, &ABpTable::OnMilestone);
+	// The open product's onboarding, drawn as it happens (BpBuildup.cpp, WP-V2).
+	BuildupHandle = Link.OnBuildup().AddUObject(this, &ABpTable::OnBuildup);
 	if (const FBpPlan* Plan = Link.GetPlan())
 	{
 		ApplyPlan(*Plan);
@@ -605,6 +627,7 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnProduct().Remove(ProductHandle);
 		Link->OnOnboarding().Remove(OnboardingHandle);
 		Link->OnMilestone().Remove(MilestoneHandle);
+		Link->OnBuildup().Remove(BuildupHandle);
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -657,7 +680,9 @@ void ABpTable::Tick(float DeltaSeconds)
 	// run at the frame rate while they move; then the tick drops back as the others do.
 	// The follow caption's fade and a followed feature's deck focus (BpFollow.cpp) ride the same rule.
 	const bool bFollowMoving = TickFollow(FMath::Min(DeltaSeconds, 0.05f));
-	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving) SetActorTickInterval(0.f);
+	// The build-up (BpBuildup.cpp) runs at the frame rate while it moves.
+	const bool bBuildMoving = TickBuildup(DeltaSeconds);
+	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving || bBuildMoving) SetActorTickInterval(0.f);
 	else if (GetActorTickInterval() == 0.f && !IsLevelMoving() && !IsRoomModeMoving() && !IsDeckMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 }
 
@@ -1076,7 +1101,7 @@ void ABpTable::SetTitle(const FString& Line1, const FString& Line2)
 	else
 	{
 		TitleWaitLine = Line1;
-		SetCrumbs({ TPair<FString, FString>(FString(), Line1) });
+		SetCrumbs({ TPair<FString, FString>(FString(), CutToPx(Line1, SheetFont(TEXT("Bold"), LabelCapHeightCm), CrumbMaxCm * SheetPxPerCm())) });
 	}
 }
 
@@ -1084,7 +1109,9 @@ void ABpTable::UpdateBreadcrumb()
 {
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	TArray<TPair<FString, FString>> Items;
-	Items.Emplace(TEXT("home"), Link.GetProductName().IsEmpty() ? TitleCase(Link.GetProductSlug()) : Link.GetProductName());
+	// A long product name is cut (WP-V2), so the crumb never runs off the paper's seen band.
+	Items.Emplace(TEXT("home"), CutToPx(Link.GetProductName().IsEmpty() ? TitleCase(Link.GetProductSlug()) : Link.GetProductName(),
+		SheetFont(TEXT("Regular"), LabelCapHeightCm), CrumbMaxCm * SheetPxPerCm()));
 	if (Level != EBpLevel::L0)
 	{
 		if (const FBpPlanWing* Wing = FindWing(WingId)) Items.Emplace(TEXT("wing:") + WingId, Wing->letter + TEXT(" ") + Wing->name);
@@ -1106,6 +1133,32 @@ FString ABpTable::GetBreadcrumb() const
 }
 
 void ABpTable::ApplyPlan(const FBpPlan& Plan)
+{
+	// While the build-up draws (WP-V2) the live plan waits for it: at done it takes over with the same boxes.
+	if (bBuild && !bApplyingBuild)
+	{
+		PendingLivePlan = MakeShared<FBpPlan>(Plan);
+		UE_LOG(LogBpTable, Log, TEXT("BpBuild: the live plan (rev %s) waits for the build-up to settle"), *Plan.rev);
+		TryHandOver();
+		return;
+	}
+	// A product still being onboarded (a join mid-run whose map is already written): its build-up draws first, so the
+	// live plan is held a moment instead of flashing before the build-up replaces it (BpBuildup.cpp lets it go if no
+	// build-up starts within BuildHoldS).
+	const FBpLinkModule& Link = FBpLinkModule::Get();
+	const FBpProductEntry* Entry = Link.FindProduct(Link.GetProductSlug());
+	if (!bApplyingBuild && !bSpreadCommit && Entry && Entry->IsBuilding())
+	{
+		PendingLivePlan = MakeShared<FBpPlan>(Plan);
+		HeldPlanAt = GetWorld() ? GetWorld()->GetRealTimeSeconds() : 0.0;
+		UE_LOG(LogBpTable, Log, TEXT("BpBuild: %s is being onboarded: its live plan (rev %s) waits for the build-up"), *Entry->Slug, *Plan.rev);
+		SetActorTickInterval(0.f);
+		return;
+	}
+	ApplyPlanNow(Plan);
+}
+
+void ABpTable::ApplyPlanNow(const FBpPlan& Plan)
 {
 	// Once per plan rev of one product: a second BpLink.Fetch of the same rev changes nothing; another product's plan
 	// (BpLink.Product) is another drawing, whatever its rev.
@@ -1153,23 +1206,54 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 	ActiveLens = Plan.lenses.Num() > 0 ? Plan.lenses[0] : FString();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: wings=%d order=%s height_cm=%d"), Wings.Num(), *FString::Join(Order, TEXT(",")), FMath::RoundToInt(PlacedHeightCm));
 
+	// Each step's game-thread cost is logged (WP-V2: the build-up commits a plan mid-session, which must not hitch).
+	double StepAt = FPlatformTime::Seconds();
+	TArray<FString> Steps;
+	const auto Lap = [&StepAt, &Steps](const TCHAR* Name)
+	{
+		const double Now = FPlatformTime::Seconds();
+		Steps.Add(FString::Printf(TEXT("%s %.1f"), Name, (Now - StepAt) * 1000.0));
+		StepAt = Now;
+	};
 	BuildVolumes(*SheetPlan);
+	Lap(TEXT("volumes"));
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: instances rooms=%d bays=%d tiles=%d lens=%s"),
 		Rooms->GetInstanceCount(), Bays->GetInstanceCount(), Tiles->GetInstanceCount(), *ActiveLens);
 
 	// The levels: room and bay names on their batches, everything at L0, the counts for the first lens, the title.
-	BuildLevelLabels(*SheetPlan);
-	BuildRoomNames(*SheetPlan);
-	BuildGlyphs(*SheetPlan);
+	// From the build-up (WP-V2) the labels, the names and the glyphs follow one a frame (StepDeferredCommit), so a plan
+	// committed mid-session costs no long frame. The ones standing (the same rooms, drawn a moment ago) stay until each
+	// is replaced, so nothing blinks; the build-up's first commit has none (a product switch cleared them).
+	const bool bSpread = bSpreadCommit || bApplyingBuild;
+	DeferredSteps = 0;
+	if (bSpread)
+	{
+		DeferredSteps = 3;
+		DeferredRev = SheetPlan->rev;
+		Lap(TEXT("deferred (labels, names, glyphs follow a frame each)"));
+	}
+	else
+	{
+		BuildLevelLabels(*SheetPlan);
+		Lap(TEXT("labels"));
+		BuildRoomNames(*SheetPlan);
+		Lap(TEXT("names"));
+		BuildGlyphs(*SheetPlan);
+		Lap(TEXT("glyphs"));
+	}
 	ResetRoomMode();
 	ResetLevels();
+	Lap(TEXT("levels"));
 	RefreshWingCounts();
 	SetTitle(FString(), ActiveLens);
 	BuildPins(FBpLinkModule::Get().GetScanState());
+	Lap(TEXT("counts+pins"));
 
 	// The sheet once more, with every index in place, logging its type against the floor (the legibility table).
 	bReportType = true;
 	RedrawSheet();
+	Lap(TEXT("sheet"));
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: plan applied, ms by step: %s"), *FString::Join(Steps, TEXT(", ")));
 
 	// BpLevel.* commands that came before the plan (-ExecCmds at startup) run now, in order.
 	TArray<FString> Pending = MoveTemp(PendingLevelCommands());
@@ -1493,6 +1577,8 @@ void ABpTable::ApplyRoomNames(float WingEase)
 		// Room mode: the names fold away halfway through the fade (a card cannot fade; the walls round it do).
 		if (RoomFade >= 0.5f) State = 0;
 		if (State == 1 && Each.Room == HighlightRestRoom) State = 2;
+		// The build-up: a room's name stands once its walls have risen.
+		if (RoomBuildShow(Each.Room) < 1.f) State = 0;
 		bChanged |= RoomNameState[Index] != State || (State == 2 && AppliedNameColumnScale != ColumnScale);
 		RoomNameState[Index] = State;
 		const FVector2D Size = RoomNameRectPx(Each) * (Each.CapCm / Each.CapPx);
@@ -1626,6 +1712,9 @@ void ABpTable::BuildVolumes(const FBpPlan& Plan)
 		AddRest(Cell, TileCellCm, 0.f, TileCellShow, Room ? *Room : INDEX_NONE);
 	}
 	RestVolumes->SetNumCustomDataFloats(VolumeCustomFloats + 1);
+	// A rising room's walls are scaled from these (the build-up, BpBuildup.cpp).
+	RestBase = Transforms;
+	RoomRiseShown.Init(-1.f, Plan.rooms.Num());
 	if (Transforms.Num() > 0)
 	{
 		RestVolumes->AddInstances(Transforms, false, false, false);
@@ -1897,6 +1986,8 @@ void ABpTable::ApplyGlyphs(float WingEase)
 			if (HighlightRestRoom != INDEX_NONE) Show = Room == HighlightRestRoom ? 0.f : Show * PointedGlyphDim;
 			// Room mode: the site's furniture fades as the room's map comes in.
 			Show *= SiteShow();
+			// The build-up: a room's furniture comes with its walls.
+			Show *= RoomBuildShow(Room);
 			if (ShownBayGlyph[Batch][Index] == Show) continue;
 			ShownBayGlyph[Batch][Index] = Show;
 			BayGlyphs[Batch]->SetCustomDataValue(Index, 0, Show, false);
@@ -2132,6 +2223,8 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	bEmptySheet = true;
 	EnsureSheet();
 	SetTitle(EmptySheetLine(true), FString());
+	// The old product's build-up goes with its drawing; BpLink reads the new one's feed if its job runs.
+	ResetBuildup();
 	SetActorTickInterval(0.f);
 }
 
@@ -2170,11 +2263,12 @@ void ABpTable::DrawEmptySheet(UCanvas* Canvas)
 	LineCm(BL, BB, BL, BT, 3.f, Border);
 	// The one line ("<name> · being onboarded"), centred across the paper a little nearer than its middle, in the title's
 	// recipe with its cap raised to BpType's floor where it stands; a rule under it, the title block's.
-	const FString Text = TitleWaitLine.ToUpper();
 	const double V = PaperDepthCm * 0.58;
 	const double Cap = FMath::Max(BpType::Title.CapCm, TextFloorCm(FVector2D(PaperWidthCm * 0.5, V)));
 	const FSlateFontInfo Font = SheetFont(BpType::Title.Face, Cap);
 	const float TrackPx = static_cast<float>(BpType::Title.TrackEm * Cap / BpType::CapPerEm * SheetPxPerCm());
+	// A long product name is cut, never set under the floor or past the paper (WP-V2).
+	const FString Text = CutToPx(TitleWaitLine.ToUpper(), Font, WaitLineMaxCm * SheetPxPerCm(), TrackPx);
 	const double WidthCm = (MeasureText(Text, Font).X + TrackPx * Text.Len()) / SheetPxPerCm();
 	const double Top = V - Cap - (BpType::AscPerEm - BpType::CapPerEm) * (Cap / BpType::CapPerEm);
 	const double U0 = PaperWidthCm * 0.5 - WidthCm * 0.5;
@@ -2193,9 +2287,18 @@ void ABpTable::DrawEmptySheet(UCanvas* Canvas)
 
 void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 {
-	if (Canvas && !SheetPlan.IsValid() && bEmptySheet)
+	const double SheetT0 = FPlatformTime::Seconds();
+	ON_SCOPE_EXIT
 	{
-		DrawEmptySheet(Canvas);
+		LastSheetMs = (FPlatformTime::Seconds() - SheetT0) * 1000.0;
+		MaxSheetMs = FMath::Max(MaxSheetMs, LastSheetMs);
+		++SheetDraws;
+	};
+	if (Canvas && !SheetPlan.IsValid() && (bEmptySheet || bBuild))
+	{
+		// Before its structure lands the build-up draws on the empty sheet (BpBuildup.cpp).
+		if (bBuild) DrawBuildup(Canvas, false);
+		else DrawEmptySheet(Canvas);
 		return;
 	}
 	if (!Canvas || !SheetPlan.IsValid()) return;
@@ -2212,9 +2315,11 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 		Pen.Line(B, FVector2D(A.X, B.Y), WidthPx, Color);
 		Pen.Line(FVector2D(A.X, B.Y), A, WidthPx, Color);
 	};
+	// The build-up (BpBuildup.cpp): a wing's ink comes as its outline draws itself, a room's with its rise.
+	const auto RoomInk = [this](int32 Room) { return RoomBuildShow(Room); };
 	for (const FBpPlanWing& Wing : SheetPlan->wings)
 	{
-		const float Ink = SheetInkFactor(Wing.id);
+		const float Ink = SheetInkFactor(Wing.id) * WingBuildShow(Wing.id);
 		const bool bLit = !SheetHighlightWing.IsEmpty() && Wing.id == SheetHighlightWing;
 		Pen.Fill(Px(Wing.box.x, Wing.box.y), Px(Wing.box.x + Wing.box.w, Wing.box.y + Wing.box.h),
 			CyanWhite.CopyWithNewOpacity((bLit ? HighlightFillOpacity : WingFillOpacity) * Ink));
@@ -2222,23 +2327,46 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
 	{
 		const int32 Room = TileRoom.IsValidIndex(Index) ? TileRoom[Index] : INDEX_NONE;
-		const float Ink = RoomWing.IsValidIndex(Room) ? SheetInkFactor(RoomWing[Room]) : 1.f;
+		const float Ink = (RoomWing.IsValidIndex(Room) ? SheetInkFactor(RoomWing[Room]) : 1.f) * RoomInk(Room);
 		Outline(SheetPlan->tiles[Index].box, TileEdgePx, CyanWhite.CopyWithNewOpacity(TileEdgeOpacity * Ink));
 	}
 	for (int32 Index = 0; Index < SheetPlan->bays.Num(); ++Index)
 	{
 		const int32 Room = BayRoom.IsValidIndex(Index) ? BayRoom[Index] : INDEX_NONE;
-		const float Ink = RoomWing.IsValidIndex(Room) ? SheetInkFactor(RoomWing[Room]) : 1.f;
+		const float Ink = (RoomWing.IsValidIndex(Room) ? SheetInkFactor(RoomWing[Room]) : 1.f) * RoomInk(Room);
 		Outline(SheetPlan->bays[Index].box, BayEdgePx, CyanWhite.CopyWithNewOpacity(BayEdgeOpacity * Ink));
 	}
-	for (const FBpPlanRoom& Room : SheetPlan->rooms)
+	for (int32 Index = 0; Index < SheetPlan->rooms.Num(); ++Index)
 	{
-		Outline(Room.box, RoomEdgePx, CyanWhite.CopyWithNewOpacity(RoomEdgeOpacity * SheetInkFactor(Room.parentId)));
+		const FBpPlanRoom& Room = SheetPlan->rooms[Index];
+		Outline(Room.box, RoomEdgePx, CyanWhite.CopyWithNewOpacity(RoomEdgeOpacity * SheetInkFactor(Room.parentId) * RoomInk(Index)));
 	}
+	/** The build-up draws a wing's outline as a pen would, clockwise from its far-left corner: Drawn of its perimeter. */
+	const auto PartOutline = [&Pen, &Px](const FBpPlanBox& Box, float Drawn, float WidthPx, const FLinearColor& Color)
+	{
+		const FVector2D C[5] = { Px(Box.x, Box.y), Px(Box.x + Box.w, Box.y), Px(Box.x + Box.w, Box.y + Box.h), Px(Box.x, Box.y + Box.h), Px(Box.x, Box.y) };
+		double Total = 0.0;
+		for (int32 Side = 0; Side < 4; ++Side) Total += FVector2D::Distance(C[Side], C[Side + 1]);
+		double Left = Total * FMath::Clamp(Drawn, 0.f, 1.f);
+		for (int32 Side = 0; Side < 4 && Left > 0.0; ++Side)
+		{
+			const double Len = FVector2D::Distance(C[Side], C[Side + 1]);
+			const double Take = FMath::Min(Len, Left);
+			Pen.Line(C[Side], C[Side] + (C[Side + 1] - C[Side]) * (Len > 0.0 ? Take / Len : 0.0), WidthPx, Color);
+			Left -= Take;
+		}
+	};
 	for (const FBpPlanWing& Wing : SheetPlan->wings)
 	{
 		const bool bLit = !SheetHighlightWing.IsEmpty() && Wing.id == SheetHighlightWing;
 		const float Ink = bLit ? 1.f : SheetInkFactor(Wing.id);
+		const float Drawn = WingBuildShow(Wing.id);
+		if (Drawn <= 0.f) continue;
+		if (Drawn < 1.f)
+		{
+			PartOutline(Wing.box, Drawn, WingEdgePx, CyanWhite.CopyWithNewOpacity(WingEdgeOpacity * Ink));
+			continue;
+		}
 		// The glow is the wing outline's alone (the strongest line), under it.
 		for (int32 Pass = 0; Pass < 2; ++Pass) Outline(Wing.box, WingGlowPx[Pass], CyanWhite.CopyWithNewOpacity(WingGlowOpacity[Pass] * Ink));
 		Outline(Wing.box, bLit ? HighlightEdgePx : WingEdgePx, CyanWhite.CopyWithNewOpacity(bLit ? 1.f : WingEdgeOpacity * Ink));
@@ -2246,6 +2374,8 @@ void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 
 	// The ornament and the text (FC1): its lines join the same triangle batch, its text is drawn after them.
 	DrawSheetText(Canvas, Pen.Tris);
+	// The build-up's own 2D over it (and its ink fading into the live table after the hand-over).
+	if (bBuild || SettleAt >= 0.0) DrawBuildup(Canvas, true);
 }
 
 void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
@@ -2412,7 +2542,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 
 		// Dimensions, from the plan's boxes only: the wing's width under it, and a chain down its left side ticked at
 		// every room's edge. Fine lines, no figures.
-		const FLinearColor Dim = Ink(CyanWhite, DimOpacity * TextInk);
+		const FLinearColor Dim = Ink(CyanWhite, DimOpacity * TextInk * WingBuildShow(Wing.id));
 		const double Dv = B.Y + DimOffsetCm;
 		LineCm(A.X, B.Y + 0.2, A.X, Dv + 0.35, 2.f, Dim);
 		LineCm(B.X, B.Y + 0.2, B.X, Dv + 0.35, 2.f, Dim);
@@ -2514,6 +2644,8 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	// ---- The title block, on the border's near rule below the shortest wing: the level's plan, the product and lens, the
 	// scale bar ----
 	FVector2D CompassCentreCm(PaperWidthCm * 0.5, PaperDepthCm * 0.5);
+	// While the table builds itself its own title block (the phase strip) stands instead (BpBuildup.cpp).
+	if (!bBuild)
 	{
 		const FBpPlanWing* Shortest = nullptr;
 		for (const FBpPlanWing* Wing : Wings)
@@ -2522,21 +2654,21 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		}
 		const FVector2D SA = PlanToPaperCm(FVector2D(Shortest->box.x, Shortest->box.y));
 		const FVector2D SB = PlanToPaperCm(FVector2D(Shortest->box.x + Shortest->box.w, Shortest->box.y + Shortest->box.h));
-		const double Cx = (SA.X + SB.X) * 0.5;
+		const double Cx0 = (SA.X + SB.X) * 0.5;
 		const TCHAR* Names[] = { TEXT("SITE PLAN — LEVEL 0"), TEXT("WING PLAN — LEVEL 1"), TEXT("ROOM PLAN — LEVEL 2") };
 		const FBpLinkModule& Link = FBpLinkModule::Get();
 		const FString Product = Link.GetProductName().IsEmpty() ? Link.GetProductSlug() : Link.GetProductName();
-		const FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *BpWords::Lens(TitleLensLine)));
+		FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *BpWords::Lens(TitleLensLine)));
 		const FString Title = Names[static_cast<int32>(Level)];
 		// Each row's cap meets the floor at its own baseline; the floor is taken across the block's likely width. The block
 		// stands on the border's near rule (FO): laid out once from a trial top, then moved down onto the rule and laid out
 		// again there (the floors change with v).
-		const double U0 = Cx - 12.0, U1 = Cx + 12.0;
+		const double U0 = Cx0 - 12.0, U1 = Cx0 + 12.0;
 		// Above the breadcrumb's line where it runs under the block (L1 and L2's crumbs are long).
 		double NearRule = PaperDepthCm - BorderInsetCm;
 		for (const FCrumb& Crumb : Crumbs)
 		{
-			if (Crumb.PaperCm.Min.X < Cx + 14.0 && Crumb.PaperCm.Max.X > Cx - 14.0) NearRule = FMath::Min(NearRule, Crumb.PaperCm.Min.Y - 0.5);
+			if (Crumb.PaperCm.Min.X < Cx0 + 14.0 && Crumb.PaperCm.Max.X > Cx0 - 14.0) NearRule = FMath::Min(NearRule, Crumb.PaperCm.Min.Y - 0.5);
 		}
 		double Top = SB.Y + 3.5, TitleTop = 0.0, TitleCap = 0.0, SubTop = 0.0, SubCap = 0.0, FigTop = 0.0, FigCap = 0.0, BarV = 0.0, Bottom = 0.0;
 		for (int32 Layout = 0; Layout < 3; ++Layout)
@@ -2555,11 +2687,21 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 			Top += NearRule - Bottom;
 		}
 		Top -= NearRule - Bottom;
+		// A long product name (WP-V1's finding: it pushed the block off the paper): the second line is cut at TitleMaxCm with
+		// an ellipsis (never set smaller than its floor), and the block slides to stay inside what the target framing sees.
+		if (WidthCm(Sub, BpType::TitleSub, SubCap) > TitleMaxCm)
+		{
+			FString Cut = Sub;
+			while (Cut.Len() > 3 && WidthCm(Cut + BpType::Ellipsis(), BpType::TitleSub, SubCap) > TitleMaxCm) Cut = Cut.LeftChop(1).TrimEnd();
+			Sub = Cut + BpType::Ellipsis();
+		}
 		const double TitleW = WidthCm(Title, BpType::Title, TitleCap), SubW = WidthCm(Sub, BpType::TitleSub, SubCap);
 		const double UnitW = WidthCm(TEXT("CM"), BpType::Figure, FigCap);
 		const double BarW = ScaleBarCm + 1.0 + UnitW;
 		const double Inner = FMath::Max(FMath::Max(TitleW, SubW), BarW);
-		const double L = Cx - Inner * 0.5 - TitlePadCm, R = Cx + Inner * 0.5 + TitlePadCm;
+		const double Half = Inner * 0.5 + TitlePadCm;
+		const double Cx = FMath::Clamp(Cx0, TitleSafeLeftCm + Half, FMath::Max(TitleSafeLeftCm + Half, TitleSafeRightCm - Half));
+		const double L = Cx - Half, R = Cx + Half;
 		Put(Title, BpType::Title, Cx, TitleTop, TitleCap, Ink(WarmPaper, 1.f), 0.5);
 		Put(Sub, BpType::TitleSub, Cx, SubTop, SubCap, Ink(CyanWhite, 0.9f), 0.5);
 		Report(TEXT("title"), Title, Cx, TitleTop + TitleCap, TitleCap, FloorAt(U0, U1, TitleTop + TitleCap));
@@ -2598,6 +2740,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 	}
 
 	// ---- The compass rose, under the shortest wing (FO): two rings, the cross and its ticks, a north arrow toward the far edge
+	if (!bBuild)
 	{
 		const FLinearColor Rose = Ink(CyanWhite, 0.8f);
 		const FVector2D C = CompassCentreCm;

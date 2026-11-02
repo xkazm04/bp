@@ -657,6 +657,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		else if (Pointed != INDEX_NONE) Show *= PointedDim;
 		// Room mode: the site's walls fade as the room's map comes in.
 		Show *= SiteShow();
+		// The build-up (BpBuildup.cpp): a room's walls come up with its rise.
+		Show *= RoomBuildShow(Room);
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
@@ -669,7 +671,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	{
 		const FString& Wing = WingLabelSpecs[Index].Wing;
 		const float Alpha = !bOn ? 0.f : AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
-		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow());
+		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow() * WingBuildShow(Wing));
 	}
 	ApplyGlyphs(WingEase);
 	ApplyRoomNames(WingEase);
