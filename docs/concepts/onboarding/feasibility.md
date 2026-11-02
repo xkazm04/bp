@@ -188,6 +188,6 @@ types a site survey and the domain outline in its column, E sketches code-area c
 judging each shows the batch count, the area being read and pencil readings that ink at the end.
 
 The silences are shorter, not gone: during judging the subagents' tool calls are sparse, and the longest gap with no
-event at all is 100-177 s depending on the run. Each variant keeps a calm idle motion there (A a light line, B a breathing
+event at all is 88-111 s depending on the run (measured on the replayed event lists). Each variant keeps a calm idle motion there (A a light line, B a breathing
 cursor and ticking clocks, E a circling pen) and shows no invented number. Both A and E's builders asked for one more
 link: which code areas each wing or feature covers, so activity could light the feature being judged, not a code area.
