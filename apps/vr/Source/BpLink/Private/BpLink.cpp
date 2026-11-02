@@ -20,6 +20,7 @@
 #include "Policies/CondensedJsonPrintPolicy.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Engine/Engine.h"
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -80,6 +81,38 @@ namespace
 	const TCHAR* const BundleUrl = TEXT("bundle");
 	FString BundlePath(const FString& Slug, const TCHAR* File) { return FPaths::ProjectContentDir() / TEXT("BpData") / Slug / File; }
 	bool ReadBundleFile(const FString& Slug, const TCHAR* File, FString& Out) { return FFileHelper::LoadFileToString(Out, *BundlePath(Slug, File)); }
+
+	/**
+	 * The product generation (spark onboarding-vr WP-V1): bumped by every SetProduct. A request made for one product
+	 * captures it, and its answer is dropped when the table has moved on, so an old product's plan or scan side never
+	 * lands on the new one. Each such request is also kept here (weakly), so SetProduct can cancel what is still out.
+	 */
+	uint32 GProductGen = 0;
+	TArray<TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>> GProductRequests;
+	void TrackProductRequest(const TSharedRef<IHttpRequest, ESPMode::ThreadSafe>& Request)
+	{
+		GProductRequests.RemoveAll([](const TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>& Each) { return !Each.IsValid(); });
+		GProductRequests.Add(Request);
+	}
+	/** Cancels every product request still out; how many were. Their answers see a stale generation and are dropped. */
+	int32 CancelProductRequests()
+	{
+		int32 Cancelled = 0;
+		TArray<TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>> Out = MoveTemp(GProductRequests);
+		GProductRequests.Reset();
+		for (const TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>& Each : Out)
+		{
+			if (TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Request = Each.Pin())
+			{
+				if (!EHttpRequestStatus::IsFinished(Request->GetStatus()))
+				{
+					Request->CancelRequest();
+					++Cancelled;
+				}
+			}
+		}
+		return Cancelled;
+	}
 
 	/** The /structure answer { structure, events, rev } into Snapshot. False with the refusing step in Refused. */
 	bool ParseStructurePayload(const FString& Body, FBpLinkSnapshot& Snapshot, FString& Refused)
@@ -192,9 +225,18 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 	}
 	const FString Root = BaseUrl + TEXT("/api/products/") + Slug;
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Structure = MakeGet(Root + TEXT("/structure"), TEXT("application/json"));
+	// The product this read is for (WP-V1): an answer that comes after the table moved to another product is dropped
+	// before anything reads it (a cancelled read must not fall back to the bundle either).
+	const uint32 Gen = GProductGen;
+	TrackProductRequest(Structure);
 
-	Structure->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	Structure->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Gen](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
+		if (Gen != GProductGen)
+		{
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: dropped the %s/structure answer: the table moved to another product"), *Root);
+			return;
+		}
 		FBpLinkSnapshot Snapshot;
 		if (!bConnected || !Response.IsValid() || Response->GetResponseCode() != 200)
 		{
@@ -227,8 +269,14 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// and rev still stand, and bHasPlan stays false. Snapshot is MOVED into this continuation as into the /stream one.
 		// The islands view: the server spaces wings and rooms apart for the table (VR computes no layout of its own).
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"));
-		Plan->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr PlanResponse, bool bPlanConnected) mutable
+		TrackProductRequest(Plan);
+		Plan->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Gen, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr PlanResponse, bool bPlanConnected) mutable
 		{
+			if (Gen != GProductGen)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: dropped the %s/plan answer: the table moved to another product"), *Root);
+				return;
+			}
 			const int32 PlanCode = (bPlanConnected && PlanResponse.IsValid()) ? PlanResponse->GetResponseCode() : 0;
 			if (PlanCode != 200)
 			{
@@ -266,8 +314,14 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 					FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Request](float) { Request->CancelRequest(); return false; }));
 				}
 			});
-			Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, StreamCode, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
+			TrackProductRequest(Stream);
+			Stream->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Gen, StreamCode, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr StreamResponse, bool bStreamConnected) mutable
 			{
+				if (Gen != GProductGen)
+				{
+					UE_LOG(LogBpLink, Log, TEXT("BpLink: dropped the %s read: the table moved to another product"), *Root);
+					return;
+				}
 				Snapshot.StreamStatus = *StreamCode > 0 ? *StreamCode : (bStreamConnected && StreamResponse.IsValid()) ? StreamResponse->GetResponseCode() : 0;
 				if (Snapshot.StreamStatus == 200)
 				{
@@ -328,14 +382,15 @@ namespace
 	const TCHAR* const KettleSlug = TEXT("kettle");
 
 	/**
-	 * The product the table reads, settled once per process: -BpLinkProduct=<slug> on the command line, else the
-	 * environment variable BP_LINK_PRODUCT, else Kettle. The same precedence as -BpLinkUrl / BP_LINK_URL. A slug other
-	 * than kettle exists only on a server started where bp.products.local.json lists it (products.server.ts reads it
-	 * from the server's cwd); otherwise /structure answers 404 and the existing "GET ... failed" Error says so.
+	 * The product the table reads. At launch: -BpLinkProduct=<slug> on the command line, else the environment variable
+	 * BP_LINK_PRODUCT, else Kettle (the same precedence as -BpLinkUrl / BP_LINK_URL). SetProduct changes it at runtime
+	 * (spark onboarding-vr WP-V1). A slug other than kettle exists only on a server started where bp.products.local.json
+	 * lists it (products.server.ts reads it from the server's cwd); otherwise /structure answers 404 and the existing
+	 * "GET ... failed" Error says so.
 	 */
-	const FString& ProductSlug()
+	FString& ProductSlugRef()
 	{
-		static const FString Slug = []
+		static FString Slug = []
 		{
 			FString Value;
 			if (!FParse::Value(FCommandLine::Get(), TEXT("BpLinkProduct="), Value) || Value.IsEmpty())
@@ -347,21 +402,71 @@ namespace
 		}();
 		return Slug;
 	}
+	const FString& ProductSlug() { return ProductSlugRef(); }
 
 	void FetchProduct()
 	{
 		if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: reading %s from %s"), *ProductSlug(), *GClient->GetBaseUrl());
-		GClient->FetchProduct(ProductSlug(), [](bool bOk, const FBpLinkSnapshot& Snapshot)
+		const FString Slug = ProductSlug();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: reading %s from %s"), *Slug, *GClient->GetBaseUrl());
+		GClient->FetchProduct(Slug, [Slug](bool bOk, const FBpLinkSnapshot& Snapshot)
 		{
-			if (bOk) LogProduct(ProductSlug(), Snapshot);
+			if (bOk) LogProduct(Slug, Snapshot);
 			// The module keeps what was read, so the table (ABpTable) never asks a second time.
 			if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->ReceiveSnapshot(bOk, Snapshot);
 		});
 	}
 
-	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read the product (-BpLinkProduct=, BP_LINK_PRODUCT, else Kettle) from apps/server and log its wings."),
+	FAutoConsoleCommand GFetchCommand(TEXT("BpLink.Fetch"), TEXT("Read the product (-BpLinkProduct=, BP_LINK_PRODUCT, else Kettle; BpLink.Product changes it) from apps/server and log its wings."),
 		FConsoleCommandDelegate::CreateStatic(&FetchProduct));
+
+	/** BpLink.After <seconds> <command ...>: runs the command that many seconds later in the playing world (game or PIE), for
+	 *  headless runs whose -ExecCmds all start at once (WP-V1's switch kettle -> pof -> kettle and the deck after it). */
+	FAutoConsoleCommand GAfterCommand(TEXT("BpLink.After"),
+		TEXT("BpLink.After <seconds> <command ...>: run the command that many seconds later in the playing world (-ExecCmds timing for headless checks)."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			if (Args.Num() < 2)
+			{
+				UE_LOG(LogBpLink, Warning, TEXT("BpLink: usage BpLink.After <seconds> <command ...>"));
+				return;
+			}
+			const float Delay = FMath::Max(0.f, FCString::Atof(*Args[0]));
+			const FString Command = FString::Join(TArrayView<const FString>(Args).RightChop(1), TEXT(" "));
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: in %.1f s: %s"), Delay, *Command);
+			FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Command](float)
+			{
+				UWorld* World = nullptr;
+				if (GEngine)
+				{
+					for (const FWorldContext& Context : GEngine->GetWorldContexts())
+					{
+						if ((Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE) && Context.World()) { World = Context.World(); break; }
+					}
+				}
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: after: %s%s"), *Command, World ? TEXT("") : TEXT(" (no playing world)"));
+				if (GEngine) GEngine->Exec(World, *Command);
+				return false;
+			}), Delay);
+		}));
+
+	FAutoConsoleCommand GProductCommand(TEXT("BpLink.Product"),
+		TEXT("BpLink.Product <slug>: switch the table to that product at runtime (the same slug reads it again); with no slug, log the products and their onboarding."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: product is %s; %d products known"), *Module->GetProductSlug(), Module->GetOnboarding().Products.Num());
+				for (const FBpProductEntry& Entry : Module->GetOnboarding().Products)
+				{
+					UE_LOG(LogBpLink, Log, TEXT("BpLink:   %s \"%s\" map=%d onboarding=%s %s %d/%d"), *Entry.Slug, *Entry.Name, Entry.bHasMap, *Entry.State, *Entry.Phase, Entry.N, Entry.Of);
+				}
+				return;
+			}
+			Module->SetProduct(Args[0]);
+		}));
 }
 
 FBpLinkModule& FBpLinkModule::Get()
@@ -417,6 +522,74 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 	}
 }
 
+void FBpLinkModule::SetProduct(const FString& InSlug)
+{
+	FString Slug = InSlug.TrimStartAndEnd().ToLower();
+	if (Slug.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: SetProduct needs a slug (the products: BpLink.Product with no argument)"));
+		return;
+	}
+	const FString Was = ProductSlug();
+	// Whatever is still out for the old product is cancelled, and every answer of the old generation is dropped.
+	++GProductGen;
+	const int32 Cancelled = CancelProductRequests();
+	ProductSlugRef() = Slug;
+
+	// The old product's state: its plan and structure words, its scan side, waves, briefs and the draft the table wrote.
+	Plan = FBpPlan();
+	bHasPlan = false;
+	PlanState = EBpPlanState::Pending;
+	const FBpProductEntry* Entry = FindProduct(Slug);
+	ProductName = Entry && !Entry->Name.IsEmpty() ? Entry->Name : FString();
+	FeatureKinds.Reset();
+	FeatureSummaries.Reset();
+	LensNames.Reset();
+	FieldLabels.Reset();
+	FieldUnits.Reset();
+	Briefs.Reset();
+	bBriefsBundled = false;
+	FocusWaveId.Reset();
+	DecisionsOut.Reset();
+	bWaveWriteOut = false;
+	const int32 Serial = ScanState.Serial;
+	ScanState = FBpScanState();
+	ScanState.Serial = Serial + 1;
+	ScanPartsOut = 0;
+	for (uint32& Hash : ScanBodyHash) Hash = 0;
+	bScanBundled = false;
+	NextScanPollS = 0.0;
+
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: product %s -> %s (%d requests cancelled; the plan, structure, scans, waves, briefs and draft of %s cleared)%s"),
+		*Was, *Slug, Cancelled, *Was, Entry ? *FString::Printf(TEXT("; onboarding %s%s"), *Entry->State, Entry->bHasMap ? TEXT(", has a map") : TEXT(", no map yet")) : TEXT(""));
+	// The table drops what it drew of the old product first; then the scan side reads empty until the new one answers.
+	ProductDelegate.Broadcast(Slug);
+	ScanStateDelegate.Broadcast(ScanState);
+	FetchProduct();
+}
+
+FString FBpLinkModule::NameOf(const FString& Slug) const
+{
+	if (Slug == ProductSlug() && !ProductName.IsEmpty()) return ProductName;
+	if (const FBpProductEntry* Entry = FindProduct(Slug))
+	{
+		if (!Entry->Name.IsEmpty()) return Entry->Name;
+	}
+	return Slug == KettleSlug ? FString(TEXT("Kettle")) : Slug;
+}
+
+FString FBpLinkModule::PhaseLabel(const FString& Phase)
+{
+	// apps/web/src/buildup/contract.ts PHASE_LABEL.
+	static const TMap<FString, FString> Labels = {
+		{ TEXT("check"), TEXT("Check") }, { TEXT("context-map"), TEXT("Context map") }, { TEXT("seed"), TEXT("Seed") },
+		{ TEXT("product-tree"), TEXT("Product tree") }, { TEXT("events"), TEXT("History") }, { TEXT("measure"), TEXT("Measure") },
+		{ TEXT("judge"), TEXT("Judge") }, { TEXT("register"), TEXT("Register") },
+	};
+	const FString* Label = Labels.Find(Phase);
+	return Label ? *Label : Phase;
+}
+
 void FBpLinkModule::StartupModule()
 {
 	// A commandlet (the cook in BuildCookRun) has no use for Kettle and no server to ask (machine.md, reading 19's side
@@ -427,6 +600,8 @@ void FBpLinkModule::StartupModule()
 		ScanTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickScanPoll), 0.1f);
 		// The shared focus: hello, follow and the poll (FollowPollS), on the same core ticker.
 		FollowTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickFollow), 0.1f);
+		// The products and their onboarding (WP-V1), on the same core ticker.
+		OnboardingTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickOnboarding), 0.1f);
 	}
 }
 
@@ -434,11 +609,15 @@ void FBpLinkModule::ShutdownModule()
 {
 	FTSTicker::GetCoreTicker().RemoveTicker(ScanTicker);
 	FTSTicker::GetCoreTicker().RemoveTicker(FollowTicker);
+	FTSTicker::GetCoreTicker().RemoveTicker(OnboardingTicker);
 	GClient.Reset();
 	PlanDelegate.Clear();
 	PlanFailedDelegate.Clear();
 	ScanStateDelegate.Clear();
 	FollowDelegate.Clear();
+	ProductDelegate.Clear();
+	OnboardingDelegate.Clear();
+	MilestoneDelegate.Clear();
 }
 
 // ---- The scan side (spark vr-fidelity-40 FC1): the jobs, the store's tables and the waves, polled ----------------------
@@ -484,14 +663,17 @@ void FBpLinkModule::PollScan()
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
 	const FString Root = GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug();
+	const uint32 Gen = GProductGen;
 	for (int32 Part = 0; Part < 3; ++Part)
 	{
 		++ScanPartsOut;
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Root + ScanParts[Part], TEXT("application/json"));
-		Request->OnProcessRequestComplete().BindLambda([Part](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+		TrackProductRequest(Request);
+		Request->OnProcessRequestComplete().BindLambda([Part, Gen](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 		{
 			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
-			if (!Module) return;
+			// Another product's poll (SetProduct reset the count it was part of): dropped.
+			if (!Module || Gen != GProductGen) return;
 			if (!bConnected || !Response.IsValid() || Response->GetResponseCode() != 200)
 			{
 				--Module->ScanPartsOut;
@@ -518,7 +700,8 @@ void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
 	// snapshot) so one generated reader takes all three; /waves already answers { waves }.
 	if (Part == 0) Body = TEXT("{\"jobs\":") + Body + TEXT("}");
 	else if (Part == 1) Body = TEXT("{\"snapshot\":") + Body + TEXT("}");
-	Async(EAsyncExecution::ThreadPool, [Part, Body = MoveTemp(Body)]()
+	const uint32 Gen = GProductGen;
+	Async(EAsyncExecution::ThreadPool, [Part, Gen, Body = MoveTemp(Body)]()
 	{
 		TSharedPtr<FBpScanWire> Wire = MakeShared<FBpScanWire>();
 		TSharedPtr<FJsonObject> Json;
@@ -547,10 +730,10 @@ void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
 				if ((*Row)->TryGetNumberField(TEXT("expected_delta"), Delta)) Deltas.Add(Id, Delta);
 			}
 		}
-		AsyncTask(ENamedThreads::GameThread, [Part, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
+		AsyncTask(ENamedThreads::GameThread, [Part, Gen, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
 		{
 			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
-			if (!Module) return;
+			if (!Module || Gen != GProductGen) return;
 			--Module->ScanPartsOut;
 			if (!bOk)
 			{
@@ -633,9 +816,17 @@ void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, c
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/brief"));
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	const FString Slug = GetProductSlug();
-	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	const uint32 Gen = GProductGen;
+	TrackProductRequest(Request);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, ProposalId, Slug, Gen](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		FBpDecisionBrief Brief;
+		if (Gen != GProductGen)
+		{
+			// Another product's brief: never cached under the new one.
+			if (OnDone) OnDone(false, Brief);
+			return;
+		}
 		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
 		TSharedPtr<FJsonObject> Json;
 		const bool bOk = Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid()
@@ -873,10 +1064,13 @@ void FBpLinkModule::AddToDraft(const TArray<FString>& ProposalIds, TFunction<voi
 	FString Text;
 	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
 	bWaveWriteOut = true;
-	SendWave(Verb, Path, Text, [Done, Note](int32 Status, const FString& Answer)
+	const uint32 Gen = GProductGen;
+	SendWave(Verb, Path, Text, [Done, Note, Gen](int32 Status, const FString& Answer)
 	{
 		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
 		if (Module) Module->bWaveWriteOut = false;
+		// Written to the product the table has left: it stands there, but it is no longer the draft the table shows.
+		if (Gen != GProductGen) Module = nullptr;
 		// 201 { wave } for a new one, 200 { wave } for a patch.
 		TSharedPtr<FJsonObject> Json;
 		const TSharedPtr<FJsonObject>* Wave = nullptr;
@@ -1287,4 +1481,393 @@ void FBpLinkModule::ReceiveFollowView(const FString& Body)
 	FollowPlace = Place;
 	bHasFollowPlace = true;
 	FollowDelegate.Broadcast(FollowPlace);
+}
+
+// ---- Products and their onboarding (spark onboarding-vr WP-V1) -----------------------------------------------------------
+// An onboarding is started on the web (/projects -> the server's adopt job); the table only watches. It polls, as it polls
+// the scan side (UE's HTTP cannot read SSE, machine.md reading 13): GET /api/products for the list (Kettle is built in and
+// not listed), GET /api/onboarding for each product's latest adopt job, and, for a running job only, its
+// .../onboarding/feed from the last event read, for the progress count (`progress` n of N) the job record does not carry.
+// The build-up drawn from the feed is WP-V2's; nothing here draws.
+
+namespace
+{
+	/** contract.ts PHASES, in order: a job's phase index, -1 for none or an unknown one. */
+	int32 PhaseIndex(const FString& Phase)
+	{
+		static const TCHAR* const Phases[] = { TEXT("check"), TEXT("context-map"), TEXT("seed"), TEXT("product-tree"), TEXT("events"), TEXT("measure"), TEXT("judge"), TEXT("register") };
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Phases); ++Index)
+		{
+			if (Phase == Phases[Index]) return Index;
+		}
+		return -1;
+	}
+	const int32 ProductTreeIndex = 3;
+
+	FString SayPhase(const FString& Phase) { return FBpLinkModule::PhaseLabel(Phase).ToLower(); }
+
+	FAutoConsoleCommand GOnboardingCommand(TEXT("BpLink.Onboarding"), TEXT("Log the products and their onboarding as last polled (GET /api/products, /api/onboarding, a running job's feed)."),
+		FConsoleCommandDelegate::CreateLambda([]()
+		{
+			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+			if (!Module) return;
+			const FBpOnboardingState& State = Module->GetOnboarding();
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: onboarding products=%d (list read %d, onboarding read %d), open %s"), State.Products.Num(), State.bHasProducts, State.bHasOnboarding, *Module->GetProductSlug());
+			for (const FBpProductEntry& Entry : State.Products)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink:   %s \"%s\" map=%d %s phase=%s %d/%d (%s) job=%s%s"), *Entry.Slug, *Entry.Name, Entry.bHasMap, *Entry.State, *Entry.Phase,
+					Entry.N, Entry.Of, *Entry.ProgressPhase, *Entry.JobId, Entry.Error.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" error \"%s\""), *Entry.Error.Left(120)));
+			}
+		}));
+}
+
+bool FBpLinkModule::TickOnboarding(float)
+{
+	// The bundle has no server, so no other product and no onboarding.
+	if (GFromBundle) return true;
+	const double Now = FPlatformTime::Seconds();
+	if (!bProductsOut && Now >= NextProductsPollS)
+	{
+		NextProductsPollS = Now + ProductsPollS;
+		PollProducts();
+	}
+	if (!bOnboardingOut && Now >= NextOnboardingPollS)
+	{
+		const bool bBusy = Onboarding.Products.ContainsByPredicate([](const FBpProductEntry& E) { return E.IsBuilding(); });
+		NextOnboardingPollS = Now + (bBusy ? OnboardingBusyS : OnboardingPollS);
+		PollOnboarding();
+	}
+	return true;
+}
+
+void FBpLinkModule::PollProducts()
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	bProductsOut = true;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/products"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module) return;
+		Module->bProductsOut = false;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status != 200)
+		{
+			if (!Module->bProductsMissLogged) UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET /api/products answered %d; the wrist lists what it knows"), Status);
+			Module->bProductsMissLogged = true;
+			return;
+		}
+		Module->bProductsMissLogged = false;
+		Module->ReceiveProducts(Response->GetContentAsString());
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ReceiveProducts(const FString& Body)
+{
+	// ProductInfo[]: { slug, name, root, live, readiness: { map, ... } }; Kettle (built in) is not listed and leads.
+	TArray<TSharedPtr<FJsonValue>> Rows;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Rows))
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET /api/products did not read as a list: %.120s"), *Body);
+		return;
+	}
+	TArray<FBpProductEntry> Next;
+	const auto Keep = [this, &Next](const FString& Slug, const FString& Name, bool bMap)
+	{
+		FBpProductEntry Entry;
+		if (const FBpProductEntry* Known = FindProduct(Slug)) Entry = *Known;
+		Entry.Slug = Slug;
+		if (!Name.IsEmpty()) Entry.Name = Name;
+		Entry.bHasMap = bMap;
+		Next.Add(MoveTemp(Entry));
+	};
+	Keep(KettleSlug, TEXT("Kettle"), true);
+	for (const TSharedPtr<FJsonValue>& Value : Rows)
+	{
+		const TSharedPtr<FJsonObject>* Row = nullptr;
+		FString Slug, Name;
+		if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("slug"), Slug) || Slug == KettleSlug) continue;
+		(*Row)->TryGetStringField(TEXT("name"), Name);
+		bool bMap = false;
+		const TSharedPtr<FJsonObject>* Readiness = nullptr;
+		if ((*Row)->TryGetObjectField(TEXT("readiness"), Readiness)) (*Readiness)->TryGetBoolField(TEXT("map"), bMap);
+		Keep(Slug, Name, bMap);
+	}
+	// A product the onboarding list knows while it builds and this list does not (yet) stays.
+	for (const FBpProductEntry& Old : Onboarding.Products)
+	{
+		if (Old.IsBuilding() && !Next.ContainsByPredicate([&Old](const FBpProductEntry& E) { return E.Slug == Old.Slug; })) Next.Add(Old);
+	}
+	FString Was, Now;
+	for (const FBpProductEntry& E : Onboarding.Products) Was += FString::Printf(TEXT("%s:%s:%d;"), *E.Slug, *E.Name, E.bHasMap);
+	for (const FBpProductEntry& E : Next) Now += FString::Printf(TEXT("%s:%s:%d;"), *E.Slug, *E.Name, E.bHasMap);
+	const bool bFirst = !Onboarding.bHasProducts;
+	Onboarding.bHasProducts = true;
+	if (Was == Now && !bFirst) return;
+	Onboarding.Products = MoveTemp(Next);
+	++Onboarding.Serial;
+	TArray<FString> Names;
+	for (const FBpProductEntry& E : Onboarding.Products) Names.Add(E.Slug + (E.bHasMap ? TEXT("") : TEXT(" (no map)")));
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: products %d [%s]"), Onboarding.Products.Num(), *FString::Join(Names, TEXT(", ")));
+	OnboardingDelegate.Broadcast(Onboarding);
+}
+
+void FBpLinkModule::PollOnboarding()
+{
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	bOnboardingOut = true;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/onboarding"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module) return;
+		Module->bOnboardingOut = false;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status != 200)
+		{
+			if (!Module->bOnboardingMissLogged) UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET /api/onboarding answered %d; no onboarding is shown until it reads"), Status);
+			Module->bOnboardingMissLogged = true;
+			return;
+		}
+		Module->bOnboardingMissLogged = false;
+		Module->ReceiveOnboarding(Response->GetContentAsString());
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ReceiveOnboarding(const FString& Body)
+{
+	// { items: [{ slug, name, job: ScanJob | null }] } (the shared contract; WP-S's route).
+	TSharedPtr<FJsonObject> Json;
+	const TArray<TSharedPtr<FJsonValue>>* Items = nullptr;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) || !Json.IsValid() || !Json->TryGetArrayField(TEXT("items"), Items))
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET /api/onboarding did not read as { items }: %.120s"), *Body);
+		return;
+	}
+	bool bChanged = !Onboarding.bHasOnboarding;
+	Onboarding.bHasOnboarding = true;
+	// The running jobs' feeds are asked after the walk: a milestone may read the open product again, and the list must not
+	// move under the loop.
+	TArray<FBpProductEntry> Running;
+	for (const TSharedPtr<FJsonValue>& Value : *Items)
+	{
+		const TSharedPtr<FJsonObject>* Item = nullptr;
+		FString Slug;
+		if (!Value.IsValid() || !Value->TryGetObject(Item) || !(*Item)->TryGetStringField(TEXT("slug"), Slug) || Slug.IsEmpty()) continue;
+		int32 At = Onboarding.Products.IndexOfByPredicate([&Slug](const FBpProductEntry& E) { return E.Slug == Slug; });
+		if (At == INDEX_NONE)
+		{
+			// Not in the products list yet (it is read every ProductsPollS): known from here until then.
+			FBpProductEntry Fresh;
+			Fresh.Slug = Slug;
+			At = Onboarding.Products.Add(MoveTemp(Fresh));
+			bChanged = true;
+		}
+		FBpProductEntry& Entry = Onboarding.Products[At];
+		FString Name;
+		if ((*Item)->TryGetStringField(TEXT("name"), Name) && !Name.IsEmpty() && Name != Entry.Name) { Entry.Name = Name; bChanged = true; }
+		const FBpProductEntry Was = Entry;
+		const TSharedPtr<FJsonObject>* Job = nullptr;
+		if (!(*Item)->TryGetObjectField(TEXT("job"), Job))
+		{
+			Entry.State = TEXT("none");
+			Entry.JobId.Reset();
+			Entry.Phase.Reset();
+			Entry.Error.Reset();
+			Entry.N = Entry.Of = 0;
+			Entry.ProgressPhase.Reset();
+		}
+		else
+		{
+			FString Id, Status, Phase, Error;
+			(*Job)->TryGetStringField(TEXT("id"), Id);
+			(*Job)->TryGetStringField(TEXT("status"), Status);
+			(*Job)->TryGetStringField(TEXT("adopt_phase"), Phase);
+			(*Job)->TryGetStringField(TEXT("error"), Error);
+			if (Id != Entry.JobId)
+			{
+				// Another job: its count is its own.
+				Entry.N = Entry.Of = 0;
+				Entry.ProgressPhase.Reset();
+			}
+			Entry.JobId = Id;
+			Entry.State = Status.IsEmpty() ? FString(TEXT("none")) : Status;
+			// The feed may know a later phase than the record (a `phase` start): the later one stands while it builds.
+			if (Id != Was.JobId || PhaseIndex(Phase) >= PhaseIndex(Entry.Phase) || !Entry.IsBuilding()) Entry.Phase = Phase;
+			Entry.Error = Error;
+		}
+		if (Was.State != Entry.State || Was.JobId != Entry.JobId || Was.Phase != Entry.Phase || Was.Error != Entry.Error)
+		{
+			bChanged = true;
+			LogOnboardingEntry(Entry);
+		}
+		const FBpProductEntry Now = Entry;
+		if (!Now.JobId.IsEmpty())
+		{
+			const bool bFirstSight = !JobsSeen.Contains(Now.JobId);
+			const bool bSameJob = Was.JobId == Now.JobId;
+			JudgeMilestones(Now, bSameJob ? Was.State : FString(), bSameJob ? Was.Phase : FString(), bFirstSight);
+		}
+		// A running job's count, from its journal (only the running ones: an ended job's count no longer moves).
+		if (Now.State == TEXT("running")) Running.Add(Now);
+	}
+	for (const FBpProductEntry& Each : Running) PollFeed(Each);
+	if (!bChanged) return;
+	++Onboarding.Serial;
+	OnboardingDelegate.Broadcast(Onboarding);
+}
+
+void FBpLinkModule::LogOnboardingEntry(const FBpProductEntry& Entry) const
+{
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: onboarding %s %s%s%s%s"), *Entry.Slug, *Entry.State,
+		Entry.Phase.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" %s"), *Entry.Phase),
+		Entry.Of > 0 ? *FString::Printf(TEXT(" %d/%d (%s)"), Entry.N, Entry.Of, *Entry.ProgressPhase) : TEXT(""),
+		Entry.JobId.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" job %s"), *Entry.JobId));
+}
+
+void FBpLinkModule::JudgeMilestones(const FBpProductEntry& Entry, const FString& WasState, const FString& WasPhase, bool bFirstSight)
+{
+	FJobSeen& Seen = JobsSeen.FindOrAdd(Entry.JobId);
+	const bool bEnded = !Entry.IsBuilding();
+	const bool bPastTree = Entry.State == TEXT("done") || PhaseIndex(Entry.Phase) > ProductTreeIndex;
+	if (bFirstSight)
+	{
+		// The baseline: what stood when the table first saw the job is not news. A job already ended has nothing left to
+		// say; a running one past product-tree has drawn its plan already.
+		Seen.bEndSaid = bEnded;
+		Seen.bPlanSaid = bEnded || bPastTree;
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: onboarding %s job %s first seen %s %s (milestones from here)"), *Entry.Slug, *Entry.JobId, *Entry.State, *Entry.Phase);
+		return;
+	}
+	const FString Name = Entry.Name.IsEmpty() ? Entry.Slug : Entry.Name;
+	const auto Say = [this, &Entry](EBpOnboardingMilestone Kind, const FString& Line)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: onboarding milestone %s: \"%s\""), *Entry.Slug, *Line);
+		MilestoneDelegate.Broadcast(Entry, Kind, Line);
+	};
+	if (bEnded && !Seen.bEndSaid)
+	{
+		Seen.bEndSaid = true;
+		// The end says it all: a plan drawn on the way is not said after it.
+		Seen.bPlanSaid = true;
+		if (Entry.State == TEXT("done"))
+		{
+			Say(EBpOnboardingMilestone::Done, FString::Printf(TEXT("%s is in bp"), *Name));
+			// The open product's own job is done: its map is there now, and the table becomes the live table.
+			if (Entry.Slug == GetProductSlug())
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s finished onboarding while open: reading it again"), *Entry.Slug);
+				FetchProduct();
+				NextScanPollS = 0.0;
+			}
+		}
+		else if (Entry.IsStopped())
+		{
+			const FString Phase = Entry.Phase.IsEmpty() ? WasPhase : Entry.Phase;
+			Say(EBpOnboardingMilestone::Stopped, Phase.IsEmpty() ? FString::Printf(TEXT("%s stopped"), *Name) : FString::Printf(TEXT("%s stopped at %s"), *Name, *SayPhase(Phase)));
+		}
+		return;
+	}
+	if (!bEnded && bPastTree && !Seen.bPlanSaid)
+	{
+		Seen.bPlanSaid = true;
+		Say(EBpOnboardingMilestone::PlanDrawn, FString::Printf(TEXT("%s: the plan is drawn"), *Name));
+	}
+}
+
+void FBpLinkModule::PollFeed(const FBpProductEntry& Entry)
+{
+	if (Entry.JobId.IsEmpty() || FeedsOut.Contains(Entry.JobId)) return;
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const int32 After = FeedNext.FindRef(Entry.JobId);
+	const FString Url = FString::Printf(TEXT("%s/api/products/%s/onboarding/feed?after=%d&job=%s"), *GClient->GetBaseUrl(), *Entry.Slug, After,
+		*FGenericPlatformHttp::UrlEncode(Entry.JobId));
+	FeedsOut.Add(Entry.JobId);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url, TEXT("application/json"));
+	const FString Slug = Entry.Slug, JobId = Entry.JobId;
+	Request->OnProcessRequestComplete().BindLambda([Slug, JobId, After](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status != 200)
+		{
+			Module->FeedsOut.Remove(JobId);
+			return;
+		}
+		// Up to 500 events, structure chunks among them: read off the game thread, and only the count and phase come back.
+		Async(EAsyncExecution::ThreadPool, [Slug, JobId, After, Body = Response->GetContentAsString()]()
+		{
+			int32 Next = After, N = 0, Of = 0;
+			FString ProgressPhase, Phase;
+			TSharedPtr<FJsonObject> Json;
+			const TArray<TSharedPtr<FJsonValue>>* Events = nullptr;
+			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid())
+			{
+				Json->TryGetNumberField(TEXT("next"), Next);
+				if (Json->TryGetArrayField(TEXT("events"), Events))
+				{
+					for (const TSharedPtr<FJsonValue>& Value : *Events)
+					{
+						const TSharedPtr<FJsonObject>* Event = nullptr;
+						FString Type;
+						if (!Value.IsValid() || !Value->TryGetObject(Event) || !(*Event)->TryGetStringField(TEXT("type"), Type)) continue;
+						if (Type == TEXT("progress"))
+						{
+							(*Event)->TryGetNumberField(TEXT("n"), N);
+							(*Event)->TryGetNumberField(TEXT("of"), Of);
+							(*Event)->TryGetStringField(TEXT("phase"), ProgressPhase);
+						}
+						else if (Type == TEXT("phase"))
+						{
+							FString State;
+							(*Event)->TryGetStringField(TEXT("state"), State);
+							if (State == TEXT("start")) (*Event)->TryGetStringField(TEXT("phase"), Phase);
+						}
+					}
+				}
+			}
+			AsyncTask(ENamedThreads::GameThread, [Slug, JobId, Next, N, Of, ProgressPhase, Phase]()
+			{
+				if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
+				{
+					Module->FeedsOut.Remove(JobId);
+					Module->ReceiveFeed(Slug, JobId, Next, N, Of, ProgressPhase, Phase);
+				}
+			});
+		});
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ReceiveFeed(const FString& Slug, const FString& JobId, int32 Next, int32 N, int32 Of, const FString& ProgressPhase, const FString& Phase)
+{
+	FeedNext.Add(JobId, Next);
+	FBpProductEntry* Entry = Onboarding.Products.FindByPredicate([&Slug](const FBpProductEntry& E) { return E.Slug == Slug; });
+	if (!Entry || Entry->JobId != JobId) return;
+	bool bChanged = false;
+	if (Of > 0 && (N != Entry->N || Of != Entry->Of || ProgressPhase != Entry->ProgressPhase))
+	{
+		Entry->N = N;
+		Entry->Of = Of;
+		Entry->ProgressPhase = ProgressPhase;
+		bChanged = true;
+	}
+	FString WasPhase;
+	bool bPhaseMoved = false;
+	if (!Phase.IsEmpty() && Entry->IsBuilding() && PhaseIndex(Phase) > PhaseIndex(Entry->Phase))
+	{
+		WasPhase = Entry->Phase;
+		Entry->Phase = Phase;
+		bChanged = bPhaseMoved = true;
+	}
+	if (!bChanged) return;
+	LogOnboardingEntry(*Entry);
+	const FBpProductEntry Now = *Entry;
+	// The journal saw the phase move before the job record did: the milestone is said from here.
+	if (bPhaseMoved) JudgeMilestones(Now, Now.State, WasPhase, !JobsSeen.Contains(Now.JobId));
+	++Onboarding.Serial;
+	OnboardingDelegate.Broadcast(Onboarding);
 }

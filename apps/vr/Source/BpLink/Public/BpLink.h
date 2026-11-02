@@ -110,6 +110,54 @@ struct BPLINK_API FBpFollowPlace
 /** Fired on the game thread when the shared focus moved to a place another reader published, while BpLink follows. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpFollow, const FBpFollowPlace&);
 
+/** One product the table can show (spark onboarding-vr WP-V1): Kettle (built in), every product GET /api/products lists,
+ *  and its latest onboarding as GET /api/onboarding answers it (the adopt job; `job: null` reads as State "none"). */
+struct BPLINK_API FBpProductEntry
+{
+	FString Slug;
+	FString Name;
+	/** readiness.map from /api/products: the product has a map the table can draw (Kettle always). */
+	bool bHasMap = false;
+	/** The adopt job's status: queued, running, done, failed, cancelled; "none" when it was never onboarded through the app. */
+	FString State = TEXT("none");
+	FString JobId;
+	/** The build-up phase the job last started, or failed in (adopt_phase: check ... register); empty when none. */
+	FString Phase;
+	/** The last count the job's journal gave (a `progress` event read from .../onboarding/feed): N of Of in ProgressPhase;
+	 *  Of 0 while none is known. */
+	int32 N = 0;
+	int32 Of = 0;
+	FString ProgressPhase;
+	FString Error;
+	bool IsBuilding() const { return State == TEXT("running") || State == TEXT("queued"); }
+	bool IsStopped() const { return State == TEXT("failed") || State == TEXT("cancelled"); }
+};
+
+/** The products and their onboarding as last polled. bHas* says whether that route has answered 200 yet. */
+struct BPLINK_API FBpOnboardingState
+{
+	TArray<FBpProductEntry> Products;
+	bool bHasProducts = false;
+	bool bHasOnboarding = false;
+	/** Bumped on every poll that changed something. */
+	int32 Serial = 0;
+};
+
+/** A running onboarding's milestones, said once each (the lamp's lines): the plan is drawn (its phase passed
+ *  product-tree), it is in bp (done), it stopped (failed or cancelled). */
+enum class EBpOnboardingMilestone : uint8
+{
+	PlanDrawn,
+	Done,
+	Stopped,
+};
+
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpOnboarding, const FBpOnboardingState&);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnBpMilestone, const FBpProductEntry& /*Entry*/, EBpOnboardingMilestone, const FString& /*Line*/);
+/** Fired on the game thread when the table's product changed (SetProduct), after BpLink dropped the old product's state
+ *  and before the new product's read is answered. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpProduct, const FString& /*Slug*/);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -135,8 +183,31 @@ public:
 	/** The last plan that parsed, or null while none has. A later failed fetch keeps it and sets GetPlanState() Failed. */
 	const FBpPlan* GetPlan() const { return bHasPlan ? &Plan : nullptr; }
 	EBpPlanState GetPlanState() const { return PlanState; }
-	/** The product BpLink reads ("kettle"). */
+	/** The product BpLink reads ("kettle" at launch, unless -BpLinkProduct= or BP_LINK_PRODUCT names another; SetProduct
+	 *  changes it at runtime). */
 	FString GetProductSlug() const;
+
+	/** Retargets the table at runtime (spark onboarding-vr WP-V1; console `BpLink.Product <slug>`): every request still out
+	 *  for the old product is cancelled and its answer dropped, the old product's plan, structure, scan side, waves,
+	 *  briefs and draft are cleared, OnProduct fires, and the new product is read the way the startup read reads it (its
+	 *  plan arrives through OnPlan, or OnPlanFailed when it has no map yet). The same slug reads it again. Game thread. */
+	void SetProduct(const FString& Slug);
+	FOnBpProduct& OnProduct() { return ProductDelegate; }
+
+	/** The products and their onboarding (GET /api/products every ProductsPollS; GET /api/onboarding every OnboardingPollS,
+	 *  OnboardingBusyS while any job is queued or running; and, for each running job, its .../onboarding/feed from the last
+	 *  event read, for the progress count the job record lacks). Off while BpLink reads the bundle. */
+	const FBpOnboardingState& GetOnboarding() const { return Onboarding; }
+	const FBpProductEntry* FindProduct(const FString& Slug) const { return Onboarding.Products.FindByPredicate([&Slug](const FBpProductEntry& E) { return E.Slug == Slug; }); }
+	FOnBpOnboarding& OnOnboarding() { return OnboardingDelegate; }
+	FOnBpMilestone& OnMilestone() { return MilestoneDelegate; }
+	static constexpr float ProductsPollS = 30.f;
+	static constexpr float OnboardingPollS = 4.f;
+	static constexpr float OnboardingBusyS = 1.f;
+	/** contract.ts PHASE_LABEL: "judge" -> "Judge"; an unknown phase is returned as it is. */
+	static FString PhaseLabel(const FString& Phase);
+	/** The product's name as the products list or its structure gives it, else its slug. */
+	FString NameOf(const FString& Slug) const;
 	/** structure.project.name from the last structure that parsed; empty while none has. */
 	const FString& GetProductName() const { return ProductName; }
 	/** A feature's kind (structure.features[].kind: user_flow, capability, integration, ops) by its slug, which is the
@@ -251,6 +322,40 @@ public:
 	void SetPublishing(bool bOn);
 
 private:
+	FOnBpProduct ProductDelegate;
+	// ---- Products and onboarding (spark onboarding-vr WP-V1) ----
+	FBpOnboardingState Onboarding;
+	FOnBpOnboarding OnboardingDelegate;
+	FOnBpMilestone MilestoneDelegate;
+	FTSTicker::FDelegateHandle OnboardingTicker;
+	double NextProductsPollS = 0.0;
+	double NextOnboardingPollS = 0.0;
+	bool bProductsOut = false;
+	bool bOnboardingOut = false;
+	/** A route that answered other than 200 is logged once per outage. */
+	bool bProductsMissLogged = false;
+	bool bOnboardingMissLogged = false;
+	/** Each running job's feed: the index to ask from next (the answer's `next`), and whether a read is out. */
+	TMap<FString, int32> FeedNext;
+	TSet<FString> FeedsOut;
+	/** Each job seen, by id: the status and phase it had when first seen (the milestone baseline) and the milestones said. */
+	struct FJobSeen
+	{
+		bool bPlanSaid = false;
+		bool bEndSaid = false;
+	};
+	TMap<FString, FJobSeen> JobsSeen;
+	bool TickOnboarding(float DeltaSeconds);
+	void PollProducts();
+	void PollOnboarding();
+	void ReceiveProducts(const FString& Body);
+	void ReceiveOnboarding(const FString& Body);
+	void PollFeed(const FBpProductEntry& Entry);
+	void ReceiveFeed(const FString& Slug, const FString& JobId, int32 Next, int32 N, int32 Of, const FString& ProgressPhase, const FString& Phase);
+	/** Says each milestone a job just passed (once), and reads the open product again when its own job is done. */
+	void JudgeMilestones(const FBpProductEntry& Entry, const FString& WasState, const FString& WasPhase, bool bFirstSight);
+	void LogOnboardingEntry(const FBpProductEntry& Entry) const;
+
 	void SendPublish(const FBpFollowPlace& Place);
 	/** The shared focus as last read or published (product, kind, id): the echo rule's "already the shared one". */
 	FBpFollowPlace SharedSpot;

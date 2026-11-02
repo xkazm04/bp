@@ -6,6 +6,31 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-11-02: another product at runtime, the wrist's Projects tab, onboarding lines (spark onboarding-vr WP-V1)
+
+`BpLink.Product <slug>` (and a pinch on a Projects row) retargets the table without a relaunch: BpLink cancels what is
+still out for the old product, drops any answer of the old generation, clears its plan, structure, scan side, waves,
+briefs and draft, and reads the new one; the table clears what it drew and rebuilds through `ApplyPlan` (its rev
+early-out is per product). BpLink polls `GET /api/products` (30 s), `GET /api/onboarding` (4 s, 1 s while a job runs)
+and a running job's `.../onboarding/feed?after=<n>` (for `progress` n of N). The lamp says each running onboarding's
+milestones once, whatever is open. `BpLink.Onboarding` logs the model; `BpLink.After <s> <cmd>` times `-ExecCmds`.
+Runs against apps/server (`run-bplink.mjs --url`, new) with `scripts/buildup/fake-onboard.mjs`'s env and clones.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 41 | `--mode game --url ... --exec "BpLink.After 30 BpLink.Product pof,BpLink.After 55 BpLink.Product kettle,..."` | `product kettle -> pof (...)`, `BpTable: product -> pof: the old drawing is cleared (kettle ...: rooms=13 bays=29 tiles=133 pins=31)`, `BpTable: instances rooms=32 bays=43 tiles=106`; back: `product pof -> kettle`, `instances rooms=13 bays=29 tiles=133`, `pins=31` |
+| 42 | the same, then `BpRoom.Enter scheduling`, `BpDeck.Approve` / (run 2) `BpDeck.Decline` | `draft w-...: kf-051 composes a new draft (201)`; `decline kf-051: off this session's queue`. The store's approve answers 404 for Kettle's sample, as before |
+| 43 | a fake onboarding (dowser@414e6ed) while Kettle is open, then `BpWrist.Tap wrist:project:dowser-vr` | `onboarding milestone dowser-vr: "Dowser (fake onboarding): the plan is drawn"`; `running judge 1/3 (judge)`; after done: `"... is in bp"`, `finished onboarding while open: reading it again`, `instances rooms=7 bays=7 tiles=17`; with `--fail judge`: `"... stopped at judge"` |
+| 44 | CSV, `--xr-sim`, Kettle at the target pose (`-csvCaptureFrames=600`) | RHI draws p50 **162** (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2) |
+| 45 | CSV via `CsvProfile Start/Stop` after kettle -> pof -> kettle with the Projects tab open | p50 **162**, every pass identical: a switch leaves nothing behind, and the tab is one Slate widget as before |
+
+Captures (PIE, PoF `capture_viewport`, `mcp-steps/onb-v1-capture.jsonl`): [wrist Projects](captures/onb-v1-wrist-projects-kettle.jpg),
+[a building row](captures/onb-v1-wrist-building-dowser.jpg), [the lamp line at L0](captures/onb-v1-lamp-plan-drawn-kettle.jpg),
+[the empty sheet while onboarding](captures/onb-v1-being-onboarded-target.jpg), [done, the live table](captures/onb-v1-done-target.jpg).
+
+Not established: the 144 of reading 36 predates the pins, glyphs, deck and card sparks, so readings 44-45 are not a
+before/after of this change (none of its code adds a component to the Kettle scene); a headset pinch on a Projects row.
+
 ## Lynx, 2026-10-26: the headset session's code, checked in the flat view
 
 Commits `2d57f40`..`3c4860f` build items 1–6 of [`headset-plan.md`](headset-plan.md) ("Code to change"). No headset is

@@ -144,7 +144,12 @@ void ABpPawn::BeginPlay()
 
 void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (FBpLinkModule* Link = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Link->OnScanState().Remove(ScanHandle);
+	if (FBpLinkModule* Link = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
+	{
+		Link->OnScanState().Remove(ScanHandle);
+		Link->OnOnboarding().Remove(WristOnboardingHandle);
+		Link->OnProduct().Remove(WristProductHandle);
+	}
 	if (ABpTable* Table = WristTable.Get()) Table->OnRoomModeChanged().Remove(RoomHandle);
 	Super::EndPlay(EndPlayReason);
 }

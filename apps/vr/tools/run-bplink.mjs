@@ -5,7 +5,7 @@
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server | --bundle] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
-//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]]
+//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]] [--url <base>]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -30,6 +30,8 @@
 //               apps/vr/Saved/Profiling/CSV)
 // --hold        keep running this many seconds after the outcome line instead of 5 (a stat dump over many frames);
 //               LogStats lines are printed too
+// --url         start nothing; BpLink reads this base URL (a server, or a mock in front of one, started by the caller:
+//               spark onboarding-vr WP-V1's onboarding mock)
 // --product     the product BpLink reads (-BpLinkProduct=<slug>; default kettle). The server's empty cwd gets a copy of the
 //               repo's bp.products.local.json, which is where products.server.ts looks for live products.
 //
@@ -91,7 +93,9 @@ const killTree = (pid) => spawnSync('taskkill.exe', ['/PID', String(pid), '/T', 
 
 // apps/server, or a port nothing listens on
 let server = null, serverOut = '', port = 0;
-if (flag('--no-server') || flag('--bundle')) {
+if (opt('--url')) {
+  port = Number(new URL(opt('--url')).port) || 80;
+} else if (flag('--no-server') || flag('--bundle')) {
   port = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 } else {
   const cwd = path.join(out, 'server-cwd'); fs.mkdirSync(cwd, { recursive: true });
@@ -111,7 +115,7 @@ const stopServer = async () => {
   if (server) fs.writeFileSync(path.join(out, 'server.log'), serverOut);
 };
 if (!port) { await stopServer(); refuse(`apps/server did not print its port within 20 s (${path.join(out, 'server.log')})`); }
-const url = `http://127.0.0.1:${port}`;
+const url = opt('--url') ? opt('--url').replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
 
 const render = runtime ? [] : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
 const exec = opt('--exec');
@@ -124,7 +128,7 @@ const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
 if (runtimeJson) env.XR_RUNTIME_JSON = runtimeJson;
 const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : runtime ? `-${runtime}` : ''}.log`);
-console.log(`server  ${flag('--bundle') ? 'none (the bundled snapshot)' : flag('--no-server') ? `none (closed port ${port})` : url}`);
+console.log(`server  ${opt('--url') ? `${url} (the caller's)` : flag('--bundle') ? 'none (the bundled snapshot)' : flag('--no-server') ? `none (closed port ${port})` : url}`);
 console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${env.XR_RUNTIME_JSON && env.XR_RUNTIME_JSON !== process.env.XR_RUNTIME_JSON ? `   XR_RUNTIME_JSON=${env.XR_RUNTIME_JSON}` : ''}`);
 
 const OUTCOME = /BpLink: \w[\w-]* (wings|rooms)=|BpLink: GET .* failed|BpLink: the .* did not parse/;

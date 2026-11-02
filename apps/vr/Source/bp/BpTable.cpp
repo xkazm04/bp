@@ -579,6 +579,10 @@ void ABpTable::BeginPlay()
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpTable::ReceiveScanState);
 	// The shared focus (BpFollow.cpp): the place another surface published, now and whenever it moves.
 	FollowHandle = Link.OnFollow().AddUObject(this, &ABpTable::Follow);
+	// Another product at runtime (BpLink.Product, the wrist's Projects tab) and the onboarding's lamp lines (WP-V1).
+	ProductHandle = Link.OnProduct().AddUObject(this, &ABpTable::OnProductChanged);
+	OnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpTable::OnOnboardingState);
+	MilestoneHandle = Link.OnMilestone().AddUObject(this, &ABpTable::OnMilestone);
 	if (const FBpPlan* Plan = Link.GetPlan())
 	{
 		ApplyPlan(*Plan);
@@ -598,6 +602,9 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnPlanFailed().Remove(FailedHandle);
 		Link->OnScanState().Remove(ScanHandle);
 		Link->OnFollow().Remove(FollowHandle);
+		Link->OnProduct().Remove(ProductHandle);
+		Link->OnOnboarding().Remove(OnboardingHandle);
+		Link->OnMilestone().Remove(MilestoneHandle);
 	}
 	Super::EndPlay(EndPlayReason);
 }
@@ -1100,8 +1107,10 @@ FString ABpTable::GetBreadcrumb() const
 
 void ABpTable::ApplyPlan(const FBpPlan& Plan)
 {
-	// Once per plan rev: a second BpLink.Fetch of the same rev changes nothing.
-	if (Sheet && SheetPlan.IsValid() && Plan.rev == DrawnRev) return;
+	// Once per plan rev of one product: a second BpLink.Fetch of the same rev changes nothing; another product's plan
+	// (BpLink.Product) is another drawing, whatever its rev.
+	const FString Product = FBpLinkModule::Get().GetProductSlug();
+	if (Sheet && SheetPlan.IsValid() && Plan.rev == DrawnRev && Product == DrawnProduct) return;
 
 	TArray<const FBpPlanWing*> Wings;
 	for (const FBpPlanWing& Wing : Plan.wings) Wings.Add(&Wing);
@@ -1129,35 +1138,12 @@ void ABpTable::ApplyPlan(const FBpPlan& Plan)
 		PlanSize.X, PlanSize.Y, BpPlanUnitCm, BpPlanUnitMaxCm, PlanSize.X * BpPlanUnitCm, PlanSize.Y * BpPlanUnitCm);
 
 	// Draw the sheet: the render target's update calls DrawSheet once.
-	if (!Sheet)
-	{
-		Sheet = NewObject<UCanvasRenderTarget2D>(this);
-		Sheet->ClearColor = FLinearColor::Transparent;
-		Sheet->RenderTargetFormat = RTF_RGBA8;
-		// Mips, so the fine grid and thin outlines minify instead of shimmering at the far edge.
-		Sheet->bAutoGenerateMips = true;
-		// TF_Default takes the render-target group's filter, anisotropic (BaseDeviceProfiles.ini): the sheet is seen at
-		// a grazing angle toward the far edge, where trilinear blurred the far wings' text (r4 section 2).
-		Sheet->MipsSamplerFilter = TF_Trilinear;
-		Sheet->Filter = TF_Default;
-		Sheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawSheet);
-		Sheet->InitAutoFormat(SheetWidthPx(), SheetHeightPx());
-	}
-	else
-	{
-		Sheet->UpdateResource();
-	}
+	bEmptySheet = false;
+	const bool bNewSheet = !Sheet;
+	EnsureSheet();
+	if (!bNewSheet) Sheet->UpdateResource();
 	DrawnRev = Plan.rev;
-	if (bRealPaper)
-	{
-		PaperMid->SetTextureParameterValue(TEXT("Sheet"), Sheet);
-		PaperMid->SetScalarParameterValue(TEXT("SheetStrength"), 1.f);
-	}
-	else
-	{
-		OverlayMid->SetTextureParameterValue(TEXT("SlateUI"), Sheet);
-		SheetOverlay->SetVisibility(true);
-	}
+	DrawnProduct = Product;
 
 	// The wing titles are drawn in the sheet (DrawSheetText), from the plan and RefreshWingCounts.
 	TArray<FString> Order;
@@ -2035,6 +2021,18 @@ void ABpTable::ShowNoPlan()
 	// A table that already shows a plan keeps it; one that never had one says what it waits for.
 	if (SheetPlan.IsValid()) return;
 	ClearVolumes();
+	// After a product switch, or for a product being onboarded (WP-V1), the empty sheet names the product and why it is
+	// empty; at launch with no server it waits, as it always has.
+	const FBpLinkModule& Link = FBpLinkModule::Get();
+	const FBpProductEntry* Entry = Link.FindProduct(Link.GetProductSlug());
+	if (bEmptySheet || (Entry && (Entry->IsBuilding() || !Entry->bHasMap)))
+	{
+		bEmptySheet = true;
+		EnsureSheet();
+		SetTitle(EmptySheetLine(false), FString());
+		UE_LOG(LogBpTable, Log, TEXT("BpTable: no plan for %s: the empty sheet says \"%s\""), *Link.GetProductSlug(), *TitleWaitLine);
+		return;
+	}
 	SetTitle(TEXT("waiting for the server"), FString());
 	if (!bLoggedNoPlan)
 	{
@@ -2043,8 +2041,163 @@ void ABpTable::ShowNoPlan()
 	}
 }
 
+void ABpTable::EnsureSheet()
+{
+	if (Sheet) return;
+	Sheet = NewObject<UCanvasRenderTarget2D>(this);
+	Sheet->ClearColor = FLinearColor::Transparent;
+	Sheet->RenderTargetFormat = RTF_RGBA8;
+	// Mips, so the fine grid and thin outlines minify instead of shimmering at the far edge.
+	Sheet->bAutoGenerateMips = true;
+	// TF_Default takes the render-target group's filter, anisotropic (BaseDeviceProfiles.ini): the sheet is seen at
+	// a grazing angle toward the far edge, where trilinear blurred the far wings' text (r4 section 2).
+	Sheet->MipsSamplerFilter = TF_Trilinear;
+	Sheet->Filter = TF_Default;
+	Sheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawSheet);
+	Sheet->InitAutoFormat(SheetWidthPx(), SheetHeightPx());
+	if (bRealPaper)
+	{
+		PaperMid->SetTextureParameterValue(TEXT("Sheet"), Sheet);
+		PaperMid->SetScalarParameterValue(TEXT("SheetStrength"), 1.f);
+	}
+	else
+	{
+		OverlayMid->SetTextureParameterValue(TEXT("SlateUI"), Sheet);
+		SheetOverlay->SetVisibility(true);
+	}
+}
+
+FString ABpTable::EmptySheetLine(bool bLoading) const
+{
+	const FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Slug = Link.GetProductSlug();
+	const FString Name = Link.NameOf(Slug);
+	const FBpProductEntry* Entry = Link.FindProduct(Slug);
+	if (Entry && Entry->IsBuilding()) return FString::Printf(TEXT("%s · being onboarded"), *Name);
+	if (bLoading) return FString::Printf(TEXT("%s · loading"), *Name);
+	if (Entry && Entry->IsStopped())
+	{
+		return Entry->Phase.IsEmpty() ? FString::Printf(TEXT("%s · onboarding stopped"), *Name)
+			: FString::Printf(TEXT("%s · stopped at %s"), *Name, *FBpLinkModule::PhaseLabel(Entry->Phase).ToLower());
+	}
+	return FString::Printf(TEXT("%s · no map yet"), *Name);
+}
+
+void ABpTable::OnProductChanged(const FString& Slug)
+{
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: product -> %s: the old drawing is cleared%s"), *Slug,
+		SheetPlan.IsValid() ? *FString::Printf(TEXT(" (%s rev %s: rooms=%d bays=%d tiles=%d pins=%d)"), *DrawnProduct, *DrawnRev,
+			Rooms->GetInstanceCount(), Bays->GetInstanceCount(), Tiles->GetInstanceCount(), PinList.Num()) : TEXT(""));
+	// Room mode and its deck close (the deck and the wrist hear it through RoomModeChanged); the levels come home.
+	if (!RoomModeId.IsEmpty() || !ShownRoomMode.IsEmpty()) ResetRoomMode();
+	if (SheetPlan.IsValid()) ResetLevels();
+	// The card asks about the new product's findings, or nothing.
+	if (bCardShown) ShowCard(false);
+	CardAskId.Reset();
+	CardProposal.Reset();
+	CardShownId.Reset();
+	CardDecided.Reset();
+	DeckBriefAsked.Reset();
+	BriefFor.Reset();
+	// The scan line and any replay.
+	bScanLive = bScanReplay = false;
+	ScanJob.Reset();
+	ScanRun.Reset();
+	PendingReplayScope.Reset();
+	PendingReplayFeatures.Reset();
+	ScanStrength = 0.f;
+	WriteScanParams(0.f);
+	// The pins.
+	PinList.Reset();
+	PinsKey.Reset();
+	Pins->ClearInstances();
+	PinBeads->ClearInstances();
+	PinStems->ClearInstances();
+	PinHalos->ClearInstances();
+	// The drawing: with no plan every builder clears what it made (each takes the plan it builds from).
+	SheetPlan.Reset();
+	const FBpPlan None;
+	ClearVolumes();
+	BuildLevelLabels(None);
+	BuildRoomNames(None);
+	BuildGlyphs(None);
+	WingLabelSpecs.Reset();
+	WingLabelsKey.Reset();
+	bWingLabelsDirty = true;
+	DrawnRev.Reset();
+	DrawnProduct.Reset();
+	bFollowPending = false;
+	bLoggedNoPlan = false;
+	// The empty sheet, until the new plan lands.
+	bEmptySheet = true;
+	EnsureSheet();
+	SetTitle(EmptySheetLine(true), FString());
+	SetActorTickInterval(0.f);
+}
+
+void ABpTable::OnOnboardingState(const FBpOnboardingState&)
+{
+	// Only the empty sheet's line follows it (a drawn plan has its own title).
+	if (SheetPlan.IsValid() || !bEmptySheet) return;
+	const FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Line = EmptySheetLine(Link.GetPlanState() == EBpPlanState::Pending);
+	if (Line == TitleWaitLine) return;
+	SetTitle(Line, FString());
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: the empty sheet says \"%s\""), *Line);
+}
+
+void ABpTable::OnMilestone(const FBpProductEntry& Entry, EBpOnboardingMilestone, const FString& Line)
+{
+	// Whatever product is open, and in or out of room mode: one line, once (BpLink says each once).
+	SayLamp(Line, true);
+}
+
+void ABpTable::DrawEmptySheet(UCanvas* Canvas)
+{
+	// The paper reads the sheet's alpha as ink, and text writes alpha only when the canvas is told to.
+	if (Canvas->Canvas) Canvas->Canvas->SetWriteDestinationAlpha(true);
+	FSheetPen Pen;
+	const auto LineCm = [&Pen](double U0, double V0, double U1, double V1, float WidthPx, const FLinearColor& Color)
+	{
+		Pen.Line(PaperCmToSheetPx(FVector2D(U0, V0)), PaperCmToSheetPx(FVector2D(U1, V1)), WidthPx, Color);
+	};
+	// The border, as a drawn sheet has it: the paper is a drawing still to come.
+	const FLinearColor Border = CyanWhite.CopyWithNewOpacity(BorderOpacity);
+	const double BL = BorderInsetCm, BR = PaperWidthCm - BorderInsetCm, BT = BorderInsetCm, BB = PaperDepthCm - BorderInsetCm;
+	LineCm(BL, BT, BR, BT, 3.f, Border);
+	LineCm(BR, BT, BR, BB, 3.f, Border);
+	LineCm(BR, BB, BL, BB, 3.f, Border);
+	LineCm(BL, BB, BL, BT, 3.f, Border);
+	// The one line ("<name> · being onboarded"), centred across the paper a little nearer than its middle, in the title's
+	// recipe with its cap raised to BpType's floor where it stands; a rule under it, the title block's.
+	const FString Text = TitleWaitLine.ToUpper();
+	const double V = PaperDepthCm * 0.58;
+	const double Cap = FMath::Max(BpType::Title.CapCm, TextFloorCm(FVector2D(PaperWidthCm * 0.5, V)));
+	const FSlateFontInfo Font = SheetFont(BpType::Title.Face, Cap);
+	const float TrackPx = static_cast<float>(BpType::Title.TrackEm * Cap / BpType::CapPerEm * SheetPxPerCm());
+	const double WidthCm = (MeasureText(Text, Font).X + TrackPx * Text.Len()) / SheetPxPerCm();
+	const double Top = V - Cap - (BpType::AscPerEm - BpType::CapPerEm) * (Cap / BpType::CapPerEm);
+	const double U0 = PaperWidthCm * 0.5 - WidthCm * 0.5;
+	LineCm(U0, V + Cap * 0.6, U0 + WidthCm, V + Cap * 0.6, 2.f, CyanWhite.CopyWithNewOpacity(0.55f));
+	if (Pen.Tris.Num() > 0)
+	{
+		FCanvasTriangleItem Item(Pen.Tris, GWhiteTexture);
+		Item.BlendMode = SE_BLEND_AlphaBlend;
+		Canvas->DrawItem(Item);
+	}
+	FCanvasTextItem Item(PaperCmToSheetPx(FVector2D(U0, Top)), FText::FromString(Text), Font, WarmPaper);
+	Item.HorizSpacingAdjust = TrackPx;
+	Canvas->DrawItem(Item);
+	UE_LOG(LogBpTable, Log, TEXT("BpType: empty-sheet \"%s\" cap_cm=%.2f floor_cm=%.2f at=(%.1f,%.1f)"), *Text, Cap, TextFloorCm(FVector2D(PaperWidthCm * 0.5, V)), U0, V);
+}
+
 void ABpTable::DrawSheet(UCanvas* Canvas, int32 Width, int32 Height)
 {
+	if (Canvas && !SheetPlan.IsValid() && bEmptySheet)
+	{
+		DrawEmptySheet(Canvas);
+		return;
+	}
 	if (!Canvas || !SheetPlan.IsValid()) return;
 	FSheetPen Pen;
 	const auto Px = [this](double X, double Y) { return PaperCmToSheetPx(PlanToPaperCm(FVector2D(X, Y))); };

@@ -11,6 +11,7 @@
 class UBpHands;
 class UWidgetComponent;
 struct FBpScanState;
+struct FBpOnboardingState;
 class UCameraComponent;
 class UIsdkControllerRigComponent;
 class UIsdkHandRigComponent;
@@ -90,7 +91,11 @@ public:
 	 *  before) and ROOMS, the product's rooms by urgency (ABpTable::RoomsByUrgency) WristRoomsPerPage a page, the room shown
 	 *  marked; a tap on a row switches to that room. The hands find its tabs, rows and pager by ray (WristHit: an id
 	 *  "wrist:tab:rooms", "wrist:tab:packages", "wrist:room:<id>", "wrist:page:next" or "wrist:page:prev"), and the
-	 *  synthetic hand aims at them (WristAim). */
+	 *  synthetic hand aims at them (WristAim).
+	 *  Spark onboarding-vr WP-V1: a third tab, PROJECTS, always there: every product (Kettle, then the server's list), the
+	 *  open one marked HERE, an onboarding one reading "Building · <phase> n/N" (or "Stopped at <phase>"); a tap on a row
+	 *  ("wrist:project:<slug>") switches the table to that product (BpLink SetProduct): WATCH on a building one, OPEN on
+	 *  another. The tabs ("wrist:tab:projects" too) stand on the title's row whenever they are shown. */
 	static constexpr int32 WristRoomsPerPage = 5;
 	bool WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
 	/** The panel's centre in the world (BpView.Pose wrist aims at it). */
@@ -182,6 +187,12 @@ private:
 	/** The rooms tab: shown, its page, the room the table shows (empty on the site plan: no tabs), and each control's box in
 	 *  the panel's pixels as last laid out. */
 	bool bWristRooms = false;
+	/** The projects tab (WP-V1) is shown; it and the rooms tab share the pager. */
+	bool bWristProjects = false;
+	FDelegateHandle WristOnboardingHandle;
+	FDelegateHandle WristProductHandle;
+	void OnWristOnboarding(const FBpOnboardingState& State);
+	void OnWristProduct(const FString& Slug);
 	int32 WristPage = 0;
 	FString WristRoomMode;
 	struct FWristBox

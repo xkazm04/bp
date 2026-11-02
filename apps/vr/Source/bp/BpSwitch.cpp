@@ -490,9 +490,10 @@ void ABpTable::OnSwitchRoomChanged(const FString& InRoomId)
 
 // ---- The lamp's caption and its ring ----------------------------------------------------------------------------------
 
-void ABpTable::SayLamp(const FString& Line)
+void ABpTable::SayLamp(const FString& Line, bool bNotice)
 {
 	LampLine = Line;
+	bLampNotice = bNotice;
 	LampCaptionClock = FMath::Max(LampCaptionS, PendingSwitch.IsEmpty() ? 0.f : CVarLampSwitchDelayS.GetValueOnGameThread() + 1.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
 	if (LampCaption)
@@ -529,7 +530,7 @@ void ABpTable::ApplyLampWidgets()
 	const FVector Eye = EyeLocal();
 	if (LampCaption)
 	{
-		const bool bShow = !LampLine.IsEmpty() && !RoomModeId.IsEmpty();
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice);
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
 		const FVector At(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm);
 		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / CaptionPxPerCm)));
@@ -654,6 +655,7 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 		{
 			LampCaptionClock = 0.f;
 			LampLine.Reset();
+			bLampNotice = false;
 			LampLookTarget = 0.f;
 		}
 		ApplyLampWidgets();

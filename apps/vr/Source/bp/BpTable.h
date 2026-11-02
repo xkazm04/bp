@@ -47,6 +47,9 @@ class UWidgetComponent;
 class SWidget;
 struct FBpDecisionBrief;
 struct FBpPlan;
+struct FBpProductEntry;
+struct FBpOnboardingState;
+enum class EBpOnboardingMilestone : uint8;
 
 UCLASS()
 class BP_API ABpTable : public AActor
@@ -1424,7 +1427,8 @@ private:
 	float ShownHoldFill = -1.f;
 	FString PendingSwitch;
 	float PendingSwitchClock = 0.f;
-	void SayLamp(const FString& Line);
+	/** The lamp says Line on its caption for LampCaptionS; a notice (an onboarding milestone) shows outside room mode too. */
+	void SayLamp(const FString& Line, bool bNotice = false);
 	void ApplyLampWidgets();
 	/** The lasso: its stroke (paper cm), its length, whether it draws, how long the closed loop stays lit, BpRoom.Lasso's
 	 *  loop and its progress, the last outcome and the features it picked. */
@@ -1448,6 +1452,32 @@ private:
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
 	FDelegateHandle ScanHandle;
+
+	// ---- Another product at runtime, and the onboarding's lamp lines (spark onboarding-vr WP-V1) ----------------------
+	FDelegateHandle ProductHandle;
+	FDelegateHandle OnboardingHandle;
+	FDelegateHandle MilestoneHandle;
+	/** The product DrawnRev was drawn for: the same rev of another product is another plan. */
+	FString DrawnProduct;
+	/** BpLink moved to another product (SetProduct): everything drawn of the old one goes (the levels home, room mode and
+	 *  its deck closed, the volumes, labels, names, glyphs, pins, scan line and card cleared), and the empty sheet says
+	 *  which product it waits for, until the new plan lands through ApplyPlan (or ShowNoPlan, for one with no map yet). */
+	void OnProductChanged(const FString& Slug);
+	/** The empty sheet's line follows the open product's onboarding while it has no plan. */
+	void OnOnboardingState(const FBpOnboardingState& State);
+	/** A running onboarding's milestone, whatever product is open: said by the lamp (SayLamp's notice). */
+	void OnMilestone(const FBpProductEntry& Entry, EBpOnboardingMilestone Kind, const FString& Line);
+	/** The empty sheet's line for the open product: "<name> · being onboarded" while its job builds, "<name> · stopped at
+	 *  <phase>", "<name> · no map yet", or "<name> · loading" while its read is out. */
+	FString EmptySheetLine(bool bLoading) const;
+	/** The sheet's render target and the paper's binding to it, made on first need (the first plan, or the empty sheet). */
+	void EnsureSheet();
+	/** The sheet with no plan: the border and the one title line (TitleWaitLine), centred. */
+	void DrawEmptySheet(UCanvas* Canvas);
+	/** The empty sheet is shown (a product switch, or a product with no map yet); before the first plan it is not drawn. */
+	bool bEmptySheet = false;
+	/** The lamp's caption shows outside room mode too while it says an onboarding's milestone. */
+	bool bLampNotice = false;
 
 	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
 	FDelegateHandle FollowHandle;

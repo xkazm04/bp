@@ -3,7 +3,9 @@
 // and effort, and a ring for how many of its findings are built (done, accepted or released in the store; a draft's
 // rings say "draft"), all read from BpLink's scan state. With no wave it says so. Nothing here composes, dispatches or
 // computes a wave. In room mode (spark vr-room-layers WP3) two tabs switch it to the product's rooms by urgency, the
-// room shown marked; a tap on a row switches rooms (ABpTable::SwitchRoom, "the wrist").
+// room shown marked; a tap on a row switches rooms (ABpTable::SwitchRoom, "the wrist"). Spark onboarding-vr WP-V1: a third
+// tab, PROJECTS, always there, lists every product with its onboarding (BpLink's products and onboarding polls), the open
+// one marked; a tap on a row switches the table to that product at runtime (FBpLinkModule::SetProduct).
 #include "BpPawn.h"
 
 #include "BpGameMode.h"
@@ -38,6 +40,8 @@ namespace
 	/** FAF: the lit glass (from FR's 123366 at 0.88, the judges' "opaque slate") and the sub-lines nearer white. */
 	const FLinearColor GlassLit(FColor(0x15, 0x3C, 0x74));
 	const FLinearColor CyanText(FColor(0xEC, 0xF9, 0xFF));
+	/** A stopped onboarding (WP-V1): a warm red, apart from the amber of one still building. */
+	const FLinearColor Stopped(FColor(0xFF, 0x8E, 0x7E));
 
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
@@ -129,10 +133,15 @@ namespace
 	constexpr float WristH = ABpPawn::WristPanelHeightCm * ABpPawn::WristPanelPxPerCm;
 	constexpr float WristX0 = 29.f;
 	constexpr float WristX1 = WristW - 29.f;
-	const FBox2f WristTabPackages(FVector2f(WristX1 - 320.f, 16.f), FVector2f(WristX1 - 166.f, 60.f));
-	const FBox2f WristTabRooms(FVector2f(WristX1 - 154.f, 16.f), FVector2f(WristX1, 60.f));
-	/** With a headset, SEAT left of the tabs (BpHeadset.cpp: the table comes to the seated eye again). */
-	const FBox2f WristSeat(FVector2f(WristX1 - 430.f, 16.f), FVector2f(WristX1 - 332.f, 60.f));
+	/** The tabs' row (WP-V1: PROJECTS, PACKAGES and, in room mode, ROOMS, right-aligned, each as wide as its word and
+	 *  WristTabPadX either side, at least WristTabMinW), and with a headset SEAT left of them (BpHeadset.cpp: the table
+	 *  comes to the seated eye again). */
+	constexpr float WristTabTop = 16.f;
+	constexpr float WristTabBottom = 60.f;
+	constexpr float WristTabPadX = 16.f;
+	constexpr float WristTabMinW = 112.f;
+	constexpr float WristTabGap = 10.f;
+	constexpr float WristSeatW = 98.f;
 	constexpr float WristRowTop = 112.f;
 	constexpr float WristRowH = 60.f;
 	constexpr float WristRowStep = 66.f;
@@ -159,6 +168,16 @@ namespace
 		return FString();
 	}
 
+	/** The projects tab's order (WP-V1): the onboarding ones first (queued or running, so one started on the web is on the
+	 *  first page), then the rest as BpLink lists them (Kettle, then the server's list). */
+	TArray<const FBpProductEntry*> WristProjectOrder(const FBpOnboardingState& State)
+	{
+		TArray<const FBpProductEntry*> Out;
+		for (const FBpProductEntry& E : State.Products) if (E.IsBuilding()) Out.Add(&E);
+		for (const FBpProductEntry& E : State.Products) if (!E.IsBuilding()) Out.Add(&E);
+		return Out;
+	}
+
 	ABpPawn* WristPawn(UWorld* World)
 	{
 		APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
@@ -167,7 +186,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:rooms|wrist:tab:packages|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat>: what a hand's tap on that control of the wrist panel does (room mode shows the tabs, a headset SEAT)."),
+		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:project:<slug>|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -238,7 +257,23 @@ void ABpPawn::MakeWristPanel()
 	}
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpPawn::ReceiveScanState);
+	// The projects tab follows the products, their onboarding and the open product (WP-V1).
+	WristOnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpPawn::OnWristOnboarding);
+	WristProductHandle = Link.OnProduct().AddUObject(this, &ABpPawn::OnWristProduct);
 	ReceiveScanState(Link.GetScanState());
+}
+
+void ABpPawn::OnWristOnboarding(const FBpOnboardingState&)
+{
+	RefreshWrist();
+}
+
+void ABpPawn::OnWristProduct(const FString&)
+{
+	// Another product: its rooms are not this one's (the table left room mode), and the packages are its own.
+	WristRoomMode.Reset();
+	bWristRooms = false;
+	RefreshWrist();
 }
 
 void ABpPawn::OnWristRoomChanged(const FString& RoomId)
@@ -289,9 +324,33 @@ void ABpPawn::WristTap(const FString& Id)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s"), *Id);
 	ABpTable* Table = WristTable.Get();
-	if (Id == TEXT("wrist:tab:rooms") && !WristRoomMode.IsEmpty())
+	if (Id == TEXT("wrist:tab:projects"))
+	{
+		bWristProjects = true;
+		bWristRooms = false;
+		// The page with the open product.
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		const int32 At = WristProjectOrder(Link.GetOnboarding()).IndexOfByPredicate([&Link](const FBpProductEntry* E) { return E->Slug == Link.GetProductSlug(); });
+		WristPage = At == INDEX_NONE ? 0 : At / WristRoomsPerPage;
+	}
+	else if (Id.StartsWith(TEXT("wrist:project:")))
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		const FString Slug = Id.Mid(14);
+		if (Slug == Link.GetProductSlug())
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist project %s is open already"), *Slug);
+			return;
+		}
+		const FBpProductEntry* Entry = Link.FindProduct(Slug);
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist %s %s (the table switches product)"), Entry && Entry->IsBuilding() ? TEXT("watch") : TEXT("open"), *Slug);
+		Link.SetProduct(Slug);
+		return;
+	}
+	else if (Id == TEXT("wrist:tab:rooms") && !WristRoomMode.IsEmpty())
 	{
 		bWristRooms = true;
+		bWristProjects = false;
 		// The page with the room shown.
 		if (Table)
 		{
@@ -300,7 +359,7 @@ void ABpPawn::WristTap(const FString& Id)
 			WristPage = At == INDEX_NONE ? 0 : At / WristRoomsPerPage;
 		}
 	}
-	else if (Id == TEXT("wrist:tab:packages")) bWristRooms = false;
+	else if (Id == TEXT("wrist:tab:packages")) bWristRooms = bWristProjects = false;
 	else if (Id == TEXT("wrist:page:next")) ++WristPage;
 	else if (Id == TEXT("wrist:page:prev")) WristPage = FMath::Max(0, WristPage - 1);
 	else if (Id.StartsWith(TEXT("wrist:room:")) && Table)
@@ -332,6 +391,8 @@ void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 	Add(TEXT("wrist room counts"), 19.0);
 	Add(TEXT("wrist package"), 32.0);
 	Add(TEXT("wrist sub-line"), 21.0);
+	Add(TEXT("wrist project name"), 25.0);
+	Add(TEXT("wrist project state"), 19.0);
 }
 
 void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative)
@@ -395,8 +456,14 @@ void ABpPawn::RefreshWrist()
 	const bool bDraft = Wave && Wave->status == TEXT("draft");
 	// Room mode's tabs and the rooms tab (WP3): the ranks it shows are part of what it shows.
 	ABpTable* Table = WristTable.Get();
-	const bool bTabs = !WristRoomMode.IsEmpty() && Table;
-	const bool bRooms = bTabs && bWristRooms;
+	// The rooms tab in room mode (WP3); the projects tab always (WP-V1), so the tabs always stand.
+	const bool bRoomTab = !WristRoomMode.IsEmpty() && Table;
+	const bool bTabs = true;
+	const bool bRooms = bRoomTab && bWristRooms;
+	const bool bProjects = bWristProjects && !bRooms;
+	const FBpLinkModule& Link = FBpLinkModule::Get();
+	const FBpOnboardingState& Onboarding = Link.GetOnboarding();
+	const FString Open = Link.GetProductSlug();
 	TArray<ABpTable::FRoomRank> Ranks;
 	if (bRooms)
 	{
@@ -406,10 +473,14 @@ void ABpPawn::RefreshWrist()
 		Key += FString::Printf(TEXT("|rooms %s p%d|"), *WristRoomMode, WristPage);
 		for (const ABpTable::FRoomRank& Rank : Ranks) Key += FString::Printf(TEXT("%s:%d,%d,%d;"), *Rank.Id, Rank.T0, Rank.T1, Rank.Open);
 	}
-	else if (bTabs)
+	else if (bProjects)
 	{
-		Key += TEXT("|tabs");
+		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Onboarding.Products.Num(), WristRoomsPerPage));
+		WristPage = FMath::Clamp(WristPage, 0, Pages - 1);
+		Key += FString::Printf(TEXT("|projects %s p%d|"), *Open, WristPage);
+		for (const FBpProductEntry* P : WristProjectOrder(Onboarding)) Key += FString::Printf(TEXT("%s:%s:%d:%s:%s:%d/%d:%s;"), *P->Slug, *P->Name, P->bHasMap, *P->State, *P->Phase, P->N, P->Of, *P->ProgressPhase);
 	}
+	Key += bRoomTab ? TEXT("|tabs3") : TEXT("|tabs2");
 	const bool bSeat = IsHeadsetOn();
 	if (bSeat) Key += TEXT("|seat");
 	if (Key == WristKey) return;
@@ -523,35 +594,107 @@ void ABpPawn::RefreshWrist()
 	}
 	FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString(TEXT("Draft wave · none"));
 	FString Title = TEXT("PACKAGES");
-	// The tabs and the rooms tab (WP3), at fixed places in the panel (WristHit reads the same boxes).
+	// The tabs (WP3's two; WP-V1's PROJECTS), right-aligned on the title's row, each as wide as its word (WristHit reads the
+	// same boxes); SEAT left of them with a headset.
 	TSharedRef<SCanvas> Over = SNew(SCanvas);
 	const auto Put = [&Over](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
 		Over->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
+	float RowLeft = WristX1;
 	if (bTabs)
 	{
 		static const FSlateRoundedBoxBrush TabOn(Cyan.CopyWithNewOpacity(0.32f), 10.f, CyanEdge, 2.5f);
 		static const FSlateRoundedBoxBrush TabOff(Cyan.CopyWithNewOpacity(0.06f), 10.f, CyanEdge.CopyWithNewOpacity(0.5f), 2.f);
-		const auto Tab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
+		const FSlateFontInfo TabFont = CapFont(TEXT("Bold"), 20.f);
+		struct FTabSpec { const TCHAR* Text; bool bOn; const TCHAR* Id; };
+		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects, TEXT("wrist:tab:packages") } };
+		if (bRoomTab) Tabs.Add({ TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms") });
+		// Laid out from the right.
+		for (int32 Index = Tabs.Num() - 1; Index >= 0; --Index)
 		{
-			Put(Box, SNew(SBorder).BorderImage(bOn ? &TabOn : &TabOff).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			const FTabSpec& Spec = Tabs[Index];
+			const float W = FMath::Max(WristTabMinW, WristTextWidth(Spec.Text, TabFont) + 2.f * WristTabPadX);
+			const FBox2f Box(FVector2f(RowLeft - W, WristTabTop), FVector2f(RowLeft, WristTabBottom));
+			RowLeft -= W + WristTabGap;
+			Put(Box, SNew(SBorder).BorderImage(Spec.bOn ? &TabOn : &TabOff).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.8f)))
+					SNew(STextBlock).Text(FText::FromString(Spec.Text)).Font(TabFont).ColorAndOpacity(FSlateColor(Spec.bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.8f)))
 				]);
-			WristBoxes.Add({ Id, Box });
-		};
-		Tab(WristTabPackages, TEXT("PACKAGES"), !bRooms, TEXT("wrist:tab:packages"));
-		Tab(WristTabRooms, TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms"));
+			WristBoxes.Add({ Spec.Id, Box });
+		}
 	}
 	if (bSeat)
 	{
 		static const FSlateRoundedBoxBrush SeatBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
+		const FBox2f WristSeat(FVector2f(RowLeft - WristSeatW, WristTabTop), FVector2f(RowLeft, WristTabBottom));
+		RowLeft -= WristSeatW + WristTabGap;
 		Put(WristSeat, SNew(SBorder).BorderImage(&SeatBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
 				SNew(STextBlock).Text(FText::FromString(TEXT("SEAT"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
 			]);
 		WristBoxes.Add({ TEXT("wrist:seat"), WristSeat });
+	}
+	if (bProjects)
+	{
+		// Every product, a page of them: its name, its onboarding, and what a pinch does; the open one marked.
+		List = SNew(SVerticalBox);
+		Title = TEXT("PROJECTS");
+		int32 Building = 0;
+		for (const FBpProductEntry& E : Onboarding.Products) Building += E.IsBuilding() ? 1 : 0;
+		const TArray<const FBpProductEntry*> Order = WristProjectOrder(Onboarding);
+		Sub = FString::Printf(TEXT("%d projects · %s open"), Onboarding.Products.Num(), *Link.NameOf(Open));
+		if (Building > 0) Sub += FString::Printf(TEXT(" · %d onboarding"), Building);
+		if (!Onboarding.bHasProducts) Sub = TEXT("Reading the projects…");
+		static const FSlateRoundedBoxBrush ProjectRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+		static const FSlateRoundedBoxBrush ProjectHere(Cyan.CopyWithNewOpacity(0.30f), 10.f, Amber, 3.f);
+		static const FSlateRoundedBoxBrush ProjectBuilding(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
+		const FSlateFontInfo NameFont = CapFont(TEXT("Bold"), 25.f), StateFont = CapFont(TEXT("Bold"), 19.f);
+		for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
+		{
+			const int32 At = WristPage * WristRoomsPerPage + Index;
+			if (!Order.IsValidIndex(At)) break;
+			const FBpProductEntry& E = *Order[At];
+			const bool bHere = E.Slug == Open;
+			// The state: "Building · Judge 2/3" (the count only when the journal's count is this phase's), "Queued",
+			// "Stopped at Judge", else ready or no map yet.
+			FString Line2;
+			FLinearColor StateInk = CyanText.CopyWithNewOpacity(0.6f);
+			if (E.State == TEXT("queued")) { Line2 = TEXT("QUEUED"); StateInk = Amber; }
+			else if (E.IsBuilding())
+			{
+				Line2 = E.Phase.IsEmpty() ? FString(TEXT("BUILDING")) : FString::Printf(TEXT("BUILDING · %s"), *FBpLinkModule::PhaseLabel(E.Phase).ToUpper());
+				if (E.Of > 0 && (E.ProgressPhase.IsEmpty() || E.ProgressPhase == E.Phase)) Line2 += FString::Printf(TEXT(" %d/%d"), E.N, E.Of);
+				StateInk = Amber;
+			}
+			else if (E.IsStopped())
+			{
+				Line2 = E.Phase.IsEmpty() ? FString(TEXT("STOPPED")) : FString::Printf(TEXT("STOPPED AT %s"), *FBpLinkModule::PhaseLabel(E.Phase).ToUpper());
+				StateInk = Stopped;
+			}
+			else Line2 = E.bHasMap ? TEXT("READY") : TEXT("NO MAP YET");
+			const FString Action = bHere ? FString(TEXT("HERE")) : E.IsBuilding() ? FString(TEXT("WATCH")) : FString(TEXT("OPEN"));
+			const FLinearColor ActionInk = bHere ? Cyan : E.IsBuilding() ? Amber : CyanText.CopyWithNewOpacity(0.8f);
+			const float ActionW = WristTextWidth(Action, StateFont) + 8.f;
+			const float StateW = WristTextWidth(Line2, StateFont) + 8.f;
+			const FString Name = WristCut(E.Name.IsEmpty() ? E.Slug : E.Name, NameFont, WristX1 - WristX0 - 28.f - StateW - ActionW - 2.f * 14.f);
+			const FBox2f Box(FVector2f(WristX0, WristRowTop + Index * WristRowStep), FVector2f(WristX1, WristRowTop + Index * WristRowStep + WristRowH));
+			TSharedRef<SHorizontalBox> Line = SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(Name)).Font(NameFont).ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 14.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(Line2)).Font(StateFont).ColorAndOpacity(FSlateColor(StateInk))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(Action)).Font(StateFont).ColorAndOpacity(FSlateColor(ActionInk))
+				];
+			Put(Box, SNew(SBorder).BorderImage(bHere ? &ProjectHere : E.IsBuilding() ? &ProjectBuilding : &ProjectRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)[Line]);
+			WristBoxes.Add({ TEXT("wrist:project:") + E.Slug, Box });
+		}
 	}
 	if (bRooms)
 	{
@@ -563,7 +706,6 @@ void ABpPawn::RefreshWrist()
 		Sub = FString::Printf(TEXT("By urgency · %d rooms · draft %d %s"), Ranks.Num(), Findings, Findings == 1 ? TEXT("finding") : TEXT("findings"));
 		static const FSlateRoundedBoxBrush RoomRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
 		static const FSlateRoundedBoxBrush RoomHere(Cyan.CopyWithNewOpacity(0.30f), 10.f, Amber, 3.f);
-		static const FSlateRoundedBoxBrush Pager(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
 		const FSlateFontInfo NameFont = CapFont(TEXT("Bold"), 25.f), CountFont = CapFont(TEXT("Bold"), 19.f);
 		for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
 		{
@@ -599,11 +741,15 @@ void ABpPawn::RefreshWrist()
 			Put(Box, SNew(SBorder).BorderImage(bHere ? &RoomHere : &RoomRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)[Line]);
 			WristBoxes.Add({ TEXT("wrist:room:") + Rank.Id, Box });
 		}
-		// The pager.
-		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Ranks.Num(), WristRoomsPerPage));
+	}
+	// The pager: the rooms tab's always, the projects tab's once there is more than a page (WP-V1).
+	if (bRooms || (bProjects && Onboarding.Products.Num() > WristRoomsPerPage))
+	{
+		static const FSlateRoundedBoxBrush PagerBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
+		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(bRooms ? Ranks.Num() : Onboarding.Products.Num(), WristRoomsPerPage));
 		const auto PagerTab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
 		{
-			Put(Box, SNew(SBorder).BorderImage(&Pager).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			Put(Box, SNew(SBorder).BorderImage(&PagerBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.3f)))
 				]);
@@ -617,6 +763,9 @@ void ABpPawn::RefreshWrist()
 				SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("PAGE %d OF %d"), WristPage + 1, Pages))).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(CyanText))
 			]);
 	}
+	// The title where the tabs leave it room; else the lit tab names the panel (WP-V1: three tabs and SEAT fill the row).
+	const float TitleRight = WristX0 + WristTextWidth(Title, CapFont(TEXT("Bold"), 25.f)) + 12.f;
+	if (TitleRight > RowLeft + WristTabGap) Title.Reset();
 	WristPanel->SetSlateWidget(
 		SNew(SOverlay)
 		+ SOverlay::Slot()
@@ -660,5 +809,7 @@ void ABpPawn::RefreshWrist()
 		+ SOverlay::Slot()[Over]);
 	WristPanel->RequestRedraw();
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist wave=%s packages=%d%s"), Wave ? *Wave->id : TEXT("none"), Rows.Num(),
-		bRooms ? *FString::Printf(TEXT(" rooms tab page %d (%d rooms, here %s)"), WristPage + 1, Ranks.Num(), *WristRoomMode) : bTabs ? TEXT(" (tabs)") : TEXT(""));
+		bRooms ? *FString::Printf(TEXT(" rooms tab page %d (%d rooms, here %s)"), WristPage + 1, Ranks.Num(), *WristRoomMode)
+		: bProjects ? *FString::Printf(TEXT(" projects tab page %d (%d projects, here %s): %s"), WristPage + 1, Onboarding.Products.Num(), *Open, *Sub)
+		: bRoomTab ? TEXT(" (tabs)") : TEXT(""));
 }
