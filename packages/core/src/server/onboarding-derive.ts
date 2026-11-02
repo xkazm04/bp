@@ -1,9 +1,9 @@
 // What an onboarding run already knows between its big steps, turned into the anti-stale build-up events
-// (apps/web/src/buildup/contract.ts: survey, outline, activity, progress, provisional health).
+// (apps/web/src/buildup/contract.ts: survey, outline, activity, progress, provisional health, narration).
 // Pure: functions over the documents adopt-bp writes, shared by the server's adopt job (onboarding-feed.server.ts, reading files), the live
 // harness (scripts/buildup/onboard-live.ts) and the tape replayer (scripts/buildup/replay-tape.ts, reading the copies a
 // tape carries); scripts/buildup/derive.ts re-exports this file. docs/concepts/onboarding/feasibility.md section 5 is the design.
-import type { ActivityVerb, Health, OutlineDomain, SurveyArea } from '../scan/onboarding.ts';
+import { isBuildupPhase, type ActivityVerb, type BuildupPhase, type Health, type OutlineDomain, type SurveyArea } from '../scan/onboarding.ts';
 
 type Json = Record<string, unknown>;
 const arr = (v: unknown): Json[] => (Array.isArray(v) ? (v as Json[]) : []);
@@ -129,4 +129,88 @@ export function provisionalHealth(judgement: unknown): { id: string; general: He
     const watch = n(sec.findingsMedium) > 0 || n(dev.techDebt) >= 2 || n(dev.dupSites) >= 3 || n(des.undesignedStates) >= 3;
     return { id, general: bad ? 'bad' : watch ? 'watch' : 'good' };
   });
+}
+
+// ------------------------------------------------------------------------------------ the narration channel
+// adopt-bp (1.6.0) appends `work/progress.jsonl` as it works, one JSON object per line, never rewritten:
+//   {"kind":"domain","slug","name","summary","capabilities":[{"slug","name"}]}   the moment a domain is decided
+//   {"kind":"step","phase","text","next"}                                        what it is doing now, what comes next
+//   {"kind":"batch","n","of","features":[<slug>...]}                             a judgement batch dispatched
+// ProgressTail reads what was appended since the last look (a byte offset), so a watcher polling once a second sees each
+// line once; a last line without its newline is kept for the next look unless it already parses (an agent that writes
+// its last line without one). A file that shrank was rewritten: it is read again from the start, and a line seen before
+// is not reported twice (a model that rewrites the whole file instead of appending sends nothing twice).
+
+/** What one progress line says, in the build-up's words: a decided domain (an `outline`) or a narration line. */
+export type ProgressItem =
+  | { kind: 'domain'; domain: OutlineDomain }
+  | { kind: 'narration'; phase: BuildupPhase; text: string; next: string | null; features: string[] | null };
+
+const line1 = (v: unknown, max = 240): string | null => {
+  const s = str(v); if (!s) return null;
+  const t = s.replace(/\s+/g, ' ').trim();
+  return t.length > max ? t.slice(0, max - 1) + '…' : t;
+};
+
+/** One parsed progress record as a ProgressItem; null for a line it cannot use. `order`: the domain's place in the outline;
+ *  `phase`: the run's phase now, for a step line whose own phase is missing or not a contract phase. */
+export function progressItem(rec: unknown, order: number, phase: BuildupPhase): ProgressItem | null {
+  if (!rec || typeof rec !== 'object' || Array.isArray(rec)) return null;
+  const r = rec as Json;
+  if (r.kind === 'domain') {
+    const slug = str(r.slug); if (!slug) return null;
+    return { kind: 'domain', domain: outlineFrom(`${slug}.json`, { slug, name: r.name, summary: r.summary, capabilities: arr(r.capabilities).filter((c) => str(c.slug) || str(c.id)) }, order) };
+  }
+  if (r.kind === 'step') {
+    const text = line1(r.text); if (!text) return null;
+    return { kind: 'narration', phase: isBuildupPhase(r.phase) ? r.phase : phase, text, next: line1(r.next), features: null };
+  }
+  if (r.kind === 'batch') {
+    const n = num(r.n), of = num(r.of);
+    const features = arr(r.features as unknown).map((f) => (typeof f === 'string' ? f : str((f as Json)?.slug))).filter((f): f is string => !!f && !!f.trim()).slice(0, 64);
+    if (n === null && !features.length) return null;
+    return { kind: 'narration', phase: 'judge', text: n === null ? 'Judging a batch' : of !== null ? `Judging batch ${n} of ${of}` : `Judging batch ${n}`, next: null, features };
+  }
+  return null;
+}
+
+/** The unread tail of work/progress.jsonl. `offset`: bytes already read (start a job's tail at the file's size then, so an
+ *  earlier run's lines stay unread). */
+export class ProgressTail {
+  offset: number;
+  private seen = new Set<string>();
+  private domains = 0;
+  constructor(offset = 0) { this.offset = Math.max(0, offset); }
+  /**
+   * The items appended since the last call. `size`: the file's size now (0 when absent); `read(from, to)`: its bytes in
+   * [from, to). `phase`: the run's phase now (for a step line that names none).
+   */
+  next(size: number, read: (from: number, to: number) => Uint8Array, phase: BuildupPhase): ProgressItem[] {
+    if (size < this.offset) this.offset = 0; // rewritten shorter: read again, `seen` drops the repeats
+    if (size === this.offset) return [];
+    const buf = read(this.offset, size);
+    const nl = buf.lastIndexOf(0x0a) + 1; // up to the last whole line
+    const dec = new TextDecoder();
+    const whole = dec.decode(buf.subarray(0, nl)), tail = dec.decode(buf.subarray(nl)).trim();
+    let tailRec: unknown = undefined;
+    if (tail) { try { tailRec = JSON.parse(tail); } catch { /* half-written: the next look */ } }
+    this.offset += tailRec === undefined ? nl : buf.length;
+    const out: ProgressItem[] = [];
+    const take = (raw: string, rec: unknown) => {
+      const key = raw.trim();
+      if (!key || this.seen.has(key)) return;
+      this.seen.add(key);
+      const it = progressItem(rec, this.domains, phase);
+      if (!it) return;
+      if (it.kind === 'domain') this.domains++;
+      out.push(it);
+    };
+    for (const l of whole.split('\n')) {
+      if (!l.trim()) continue;
+      let rec: unknown; try { rec = JSON.parse(l); } catch { continue; } // a broken line in the middle: skipped
+      take(l, rec);
+    }
+    if (tailRec !== undefined) take(tail, tailRec);
+    return out;
+  }
 }

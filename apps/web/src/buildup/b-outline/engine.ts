@@ -18,6 +18,9 @@
 //   activity  -> the cursor line ("reading forge/src/core/app.mjs") and the lit parcel / survey row of its area
 //   progress  -> the judge header's count, and the judge list (every feature, boxed when its batch lands)
 //   health.provisional -> pencil (dashed) until the final reading inks it (solid)
+//   narration -> the agent's own words replace the cursor line while fresh (< 30 run-seconds; activity resumes after),
+//                its `next` a dimmer second line ("next: ..."); a batch's `features` are bracketed in pencil as "being
+//                judged now", in the judge list and on the sheet, until that batch's provisional reading lands
 // Once the build queue drains on such a run the camera returns to the whole plan, visits each judged batch, and leaves.
 // The engine's clock runs in run seconds: it follows the source's own clock (events carry `at`), so a lab speed of 4x
 // plays the prototype's x4. The animation clock (S.t) runs at the feed's pace but is its own: it waits for typing and
@@ -47,6 +50,9 @@ interface TileN extends NodeBase {
 type PNode = WingN | RoomN | BayN | TileN;
 interface SArea extends SurveyArea { ord: number; t0: number }
 interface Act { verb: ActivityVerb; path: string; area: string | null; t: number; run: number; wall: number; areaWall: number }
+interface Narr { text: string; next: string | null; run: number; wall: number }
+/** A judgement batch the agent dispatched: its feature slugs, from S.t `t` until its provisional reading lands. */
+interface Judging { slugs: Set<string>; t: number }
 interface Cam { x: number; y: number; s: number }
 interface Key extends Cam { t: number; d: number }
 interface Step { k: Phase; n: string; llm?: boolean; what: string; t0: number; t1: number }
@@ -69,6 +75,7 @@ const WEIGHT: Record<Kind, number> = { wing: 1.6, room: 1.2, bay: 1.0, tile: 0.6
 const K0 = 0.21, K_MIN = 0.06, DRAIN = 36; // a burst never takes longer than DRAIN run-seconds to type
 const DUR = { bay: 1.7, room: 1.5, wing: 1.25 };
 const LAG = 1.0, EV_DUR = 4.6, MS_DUR = 2.2, REG_DUR = 3.3, HEALTH_GAP = 0.05;
+const NARR_FRESH = 30; // run-seconds a narration line holds the cursor line before the activity takes it back
 
 const clamp = (v: number, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
 const lerp = (a: number, b: number, p: number) => a + (b - a) * p;
@@ -171,6 +178,8 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
   let surveyLayouts: { t: number; rects: Map<string, BBox> }[] = [];
   let act: Act | null = null, actPrev: Act | null = null;
   let progress: { n: number; of: number; t: number } | null = null; // the judge's batches
+  let narr: Narr | null = null, narrPrev: Narr | null = null; // what the agent said it is doing, and the line before
+  let judging: Judging[] = [];
   let batches: { t: number; tiles: TileN[] }[] = [];
   let firstTypeAt = Infinity, structAt = Infinity, treeDoneAt = Infinity;
   let wallNow = 0; // performance.now() of the frame: ambient motion (fades, the breath, the sweep) runs in wall time
@@ -180,7 +189,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     project = e.project; announced = e.extent;
     wings = []; rooms = []; bays = []; tiles = []; lines = []; byId = new Map();
     anti = false; wingsAll = []; areas = []; areaById = new Map(); surveyT0 = Infinity; surveyType = 0; surveyLayouts = [];
-    act = null; actPrev = null; progress = null; batches = []; firstTypeAt = Infinity; structAt = Infinity; treeDoneAt = Infinity;
+    act = null; actPrev = null; progress = null; batches = []; narr = null; narrPrev = null; judging = []; firstTypeAt = Infinity; structAt = Infinity; treeDoneAt = Infinity;
     typeEnd = 0; prevFly = -1e9; lastLand = 0; structTail = 0; treeDone = false;
     steps = STEP_DEF.map((s) => ({ ...s, t0: Infinity, t1: Infinity }));
     rail = PHASES.map(() => ({ t0: Infinity, t1: Infinity, failed: false, detail: null }));
@@ -435,7 +444,19 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
       } else if (!e.provisional && !fin(tl.inkAt)) { tl.inkAt = ink; ink += HEALTH_GAP; } // pencil inked over, in turn
     }
     if (e.provisional && batch.length) { batches.push({ t: batch[0].healthAt, tiles: batch }); buildKeys(); }
+    // a batch being judged is done when its reading lands (any of its features read), every one at the final reading
+    if (!e.provisional) judging = [];
+    else if (judging.length) {
+      const got = new Set<string>(); for (const h of e.tiles) { got.add(h.id); got.add(slugOf(h.id)); }
+      judging = judging.filter((j) => ![...j.slugs].some((x) => got.has(x)));
+    }
   }
+  const slugOf = (id: string) => id.slice(id.lastIndexOf(':') + 1);
+  /** Being judged now: in a dispatched batch whose reading has not landed (or not yet been drawn) at t. */
+  const judgedNow = (tl: TileN, t: number) => !(fin(tl.healthAt) && tl.healthAt <= t) && judging.some((j) => j.t <= t && (j.slugs.has(tl.id) || j.slugs.has(slugOf(tl.id))));
+  const narrShown = (): Narr | null => (narr && run - narr.run < NARR_FRESH ? narr : null);
+  /** Rows the cursor line takes: two while a fresh narration says what comes next. */
+  const actRows = () => (narrShown()?.next ? 2 : 1);
   /** A tile's reading as drawn at t: the batch's pencil until the final reading inks it. */
   const isPencil = (tl: TileN, t: number) => tl.pencil !== null && !(t >= tl.inkAt);
   const shownHealth = (tl: TileN, t: number): Health | null => (isPencil(tl, t) ? tl.pencil : tl.general);
@@ -487,6 +508,12 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     const same = act !== null && act.area === e.area;
     actPrev = act;
     act = { verb: e.verb, path: e.path, area: e.area, t: S.t, run, wall, areaWall: same && act ? act.areaWall : wall };
+  }
+  function onNarration(e: Extract<BuildupEvent, { type: 'narration' }>, past: boolean) {
+    anti = true;
+    narrPrev = narrShown();
+    narr = { text: e.text, next: e.next, run, wall: performance.now() - (past ? 1000 : 0) };
+    if (e.features?.length && !judgeDone) judging.push({ slugs: new Set(e.features), t: S.t });
   }
   function onProgress(e: Extract<BuildupEvent, { type: 'progress' }>) {
     anti = true;
@@ -542,7 +569,8 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     else if (e.type === 'outline') { anti = true; onOutline(e); }
     else if (e.type === 'activity') onActivity(e, past);
     else if (e.type === 'progress') onProgress(e);
-    else if (e.type === 'done') onDone();
+    else if (e.type === 'narration') onNarration(e, past);
+    else if (e.type === 'done') { judging = []; onDone(); }
     else if (e.type === 'failed') {
       failed = { phase: e.phase, message: e.message };
       const i = PHASES.indexOf(e.phase); if (i >= 0) { rail[i].failed = true; if (!fin(rail[i].t0)) rail[i].t0 = run; if (!fin(rail[i].t1)) rail[i].t1 = run; }
@@ -762,7 +790,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     const actY = y;
     const typing = cursor >= 0 && t < lines[cursor].t1;
     const visH = V.H - HDR - 14;
-    const focus = anti && !typing && (act || cursor < 0) ? actY + LH : cursor >= 0 ? ys[cursor] + LH : 0;
+    const focus = anti && !typing && (act || narr || cursor < 0) ? actY + LH * actRows() : cursor >= 0 ? ys[cursor] + LH : 0;
     const scroll = Math.max(0, focus - (visH - LH * 1.5));
     return { ys, scroll, cursor, typing, logA, surveyY, actY };
   }
@@ -835,7 +863,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
           const l = lines[lay.cursor], txt = lineText(l), p = S.reduced ? 1 : span(t, l.t0, l.t1 - l.t0);
           const cy2 = HDR + lay.ys[lay.cursor] - lay.scroll + LH / 2, cx2 = 16 + (l.prefix.length + Math.ceil(txt.length * p)) * V.cw + 2;
           ctx.fillStyle = C.accent; ctx.fillRect(cx2, cy2 - 8, Math.max(7, V.cw * 0.8), 16);
-        } else if (act || t >= steps[3].t0 || areas.length) drawActLine(t, cw, HDR + lay.actY - lay.scroll + LH / 2, true);
+        } else if (act || narr || t >= steps[3].t0 || areas.length) drawActLine(t, cw, HDR + lay.actY - lay.scroll + LH / 2, true);
       } else if (t >= steps[3].t0 && (!lastL || !treeDone || t < lastL.t1 + 4)) {
         let cy2 = HDR + LH / 2, cx2 = x0;
         if (lay.cursor >= 0) {
@@ -954,8 +982,26 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
       if (tail) { ctx.fillStyle = C['ink-3']; ctx.fillText(tail, x, y); x += tail.length * V.cw; }
       return x;
     };
+    // the agent's own words, while fresh: what it is doing (ink) and, a row down, what comes next (dimmer)
+    const say = (n: Narr, alpha: number) => {
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = C.accent; ctx.fillText('▸', x0, y);
+      const txt = fitMono(n.text, maxC + 2);
+      ctx.fillStyle = C.ink; ctx.fillText(txt, x0 + 2 * V.cw, y);
+      if (n.next) {
+        const nx = fitMono(n.next, maxC - 4);
+        ctx.fillStyle = C['ink-3']; ctx.fillText('next: ', x0 + 2 * V.cw, y + LH);
+        ctx.fillStyle = C['ink-2']; ctx.globalAlpha = alpha * 0.85; ctx.fillText(nx, x0 + 8 * V.cw, y + LH);
+      }
+      return x0 + (2 + txt.length) * V.cw;
+    };
     let cx = x0;
-    if (act) {
+    const n = narrShown();
+    if (n) {
+      const f = S.reduced ? 1 : span(wallNow, n.wall, 350);
+      if (f < 1) { if (narrPrev) say(narrPrev, 1 - f); else if (act) draw(act, 1 - f); }
+      cx = say(n, f) + 4;
+    } else if (act) {
       const f = S.reduced ? 1 : span(wallNow, act.wall, 350);
       if (actPrev && f < 1) draw(actPrev, 1 - f);
       cx = draw(act, f) + 4;
@@ -1022,13 +1068,13 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     let list: TileN[] | null = null, keyName: 'stampAt' | 'healthAt' = 'stampAt';
     if (step === 4) { list = stampOrder; keyName = 'stampAt'; }
     else if (step >= 6) { list = healthOrder; keyName = 'healthAt'; }
-    const actOn = anti && act !== null;
+    const actOn = anti && (act !== null || narrShown() !== null), ar = actOn ? actRows() : 0;
     if (actOn) { // the cursor line, pinned at the foot of the column while the later steps log above it
-      const ay = V.H - 12 - LH / 2;
+      const ay = V.H - 12 - LH / 2 - (ar - 1) * LH;
       ctx.fillStyle = C['ink-4']; ctx.fillRect(x0, ay - LH * 0.9, cw - 32, 1);
       drawActLine(t, cw, ay, !doneSeen);
     }
-    const top = HDR + 6, rows = Math.floor((V.H - top - 12 - (actOn ? LH * 1.6 : 0)) / LH);
+    const top = HDR + 6, rows = Math.floor((V.H - top - 12 - (actOn ? LH * (ar + 0.6) : 0)) / LH);
     if (step >= 6 && progress) { drawJudgeList(t, cw, top, rows); return; }
     if (step === 5) {
       const st = steps[5];
@@ -1079,7 +1125,8 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     ctx.fillStyle = C['ink-3']; ctx.fillText('ink · final reading', lx + 16, y);
     top += LH; rows -= 1;
     const landed = healthOrder.filter((x) => x.healthAt <= t), seen = new Set(landed);
-    const list = landed.concat(tiles.filter((x) => !seen.has(x)));
+    const now = tiles.filter((x) => !seen.has(x) && judgedNow(x, t)); for (const x of now) seen.add(x);
+    const list = landed.concat(now, tiles.filter((x) => !seen.has(x)));
     const hi = landed.length - 1;
     const from = list.length <= rows ? 0 : clamp(hi - Math.floor(rows * 0.6), 0, list.length - rows);
     ctx.font = `14px ${MONO}`;
@@ -1087,9 +1134,16 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
       const tl = list[i], yy = top + (i - from) * LH + LH / 2;
       const nameW = Math.floor((cw - 14 - 7 * V.cw - x0 - 18) / V.cw);
       if (i > hi) {
-        ctx.globalAlpha = 0.85;
-        ctx.strokeStyle = inkA(0.28); ctx.lineWidth = 1; ctx.setLineDash([1.5, 2.5]); ctx.strokeRect(x0 + 0.5, yy - 4.5, 9, 9); ctx.setLineDash([]);
-        ctx.fillStyle = C['ink-3']; ctx.fillText(fitMono(tl.name, nameW), x0 + 18, yy);
+        const busy = judgedNow(tl, t);
+        if (busy) { // being judged now: a soft band and a pencil bracket at the row's left, steady (no blink)
+          ctx.globalAlpha = 1; ctx.fillStyle = accA(0.08); ctx.fillRect(x0 - 8, yy - LH / 2 + 2, cw - x0 - 6, LH - 4);
+          ctx.strokeStyle = accA(0.8); ctx.lineWidth = 1.2; ctx.beginPath();
+          ctx.moveTo(x0 - 3, yy - 7); ctx.lineTo(x0 - 6, yy - 7); ctx.lineTo(x0 - 6, yy + 7); ctx.lineTo(x0 - 3, yy + 7); ctx.stroke();
+        }
+        ctx.globalAlpha = busy ? 1 : 0.85;
+        ctx.strokeStyle = busy ? accA(0.7) : inkA(0.28); ctx.lineWidth = 1; ctx.setLineDash([1.5, 2.5]); ctx.strokeRect(x0 + 0.5, yy - 4.5, 9, 9); ctx.setLineDash([]);
+        ctx.fillStyle = busy ? C.ink : C['ink-3']; ctx.fillText(fitMono(tl.name, nameW - (busy ? 7 : 0)), x0 + 18, yy);
+        if (busy) { ctx.font = `12px ${MONO}`; ctx.fillStyle = C.accent; ctx.textAlign = 'right'; ctx.fillText('judging', cw - 14, yy); ctx.textAlign = 'left'; ctx.font = `14px ${MONO}`; }
         continue;
       }
       const a = S.reduced ? 1 : span(t, tl.healthAt, 0.25), g = shownHealth(tl, t), pen = isPencil(tl, t);
@@ -1129,7 +1183,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     if (fin(ms.t1) && t >= ms.t1 - MS_DUR) return t - (ms.t1 - MS_DUR);
     return (t - ms.t0) % MS_DUR;
   }
-  interface TileState { a: number; la: number; k: number; sa: number; ha: number; fl: number; ma: number; g: Health | null; pen: boolean; ink: number }
+  interface TileState { a: number; la: number; k: number; sa: number; ha: number; fl: number; ma: number; g: Health | null; pen: boolean; ink: number; judging: boolean }
   function tileState(tl: TileN, t: number): TileState {
     const done = isDone(t);
     const b = tl.bay, Db = DUR.bay, f0 = tl.fly;
@@ -1151,7 +1205,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     }
     const pen = isPencil(tl, t);
     const ink = pen ? 0 : done || S.reduced ? 1 : span(t, tl.inkAt, 0.5);
-    return { a, la, k, sa, ha, fl: t >= tl.stampAt ? fl : 0, ma, g: shownHealth(tl, t), pen, ink };
+    return { a, la, k, sa, ha, fl: t >= tl.stampAt ? fl : 0, ma, g: shownHealth(tl, t), pen, ink, judging: !done && judgedNow(tl, t) };
   }
   function perim(x: number, y: number, w: number, h: number, p: number) { // trace a rectangle's walls from the top-left, clockwise
     const L = 2 * (w + h); let r = L * p;
@@ -1414,6 +1468,16 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
         ctx.setLineDash([]); ctx.lineWidth = 1;
       }
       if (!st.pen) { ctx.fillStyle = col; ctx.fillRect(X, Y + Hd - hh, Wd * easeOut(tl.pencil !== null ? st.ink : st.ha), hh); }
+    }
+    // being judged now (a dispatched batch, its reading not in): pencil corner brackets and a soft wash, steady
+    if (st.judging && st.k >= 1 && Wd > 6) {
+      ctx.globalAlpha = st.a; ctx.fillStyle = accA(0.1); ctx.fillRect(X, Y, Wd, Hd);
+      const L = Math.min(Wd, Hd) * 0.28, o = Math.max(2, 4 * s);
+      ctx.strokeStyle = accA(0.85); ctx.lineWidth = Math.max(1, 1.6 * s); ctx.beginPath();
+      for (const [cx2, cy2, dx, dy] of [[X - o, Y - o, 1, 1], [X + Wd + o, Y - o, -1, 1], [X - o, Y + Hd + o, 1, -1], [X + Wd + o, Y + Hd + o, -1, -1]] as const) {
+        ctx.moveTo(cx2 + dx * L, cy2); ctx.lineTo(cx2, cy2); ctx.lineTo(cx2, cy2 + dy * L);
+      }
+      ctx.stroke(); ctx.lineWidth = 1;
     }
     // label: only where it reads at 12 px or more
     if (showLabels && st.la > 0 && st.k >= 1) {

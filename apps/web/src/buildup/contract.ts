@@ -19,6 +19,14 @@
 //   product-tree (LLM)            -> `outline` per decided domain, before the boxes (ids match the later wings/rooms)
 //   any time                      -> `activity`: what the agent is reading or writing now, at most one a second
 //   judge (and measure)           -> `progress` n of N, with the batch's provisional `health`
+//
+// Narration (adopt-bp 1.6.0, feasibility.md section 6): the agent appends work/progress.jsonl as it works, so the run
+// itself says what it decided, what it is doing and what comes next. Optional to draw, like the four above.
+//   product-tree (LLM)            -> `outline` per `domain` line, the moment the domain is decided (deduped with the
+//                                    product-tree.d files: a domain is never sent twice)
+//   product-tree, judge (LLM)     -> `narration` per `step` line: one plain sentence now, and the next one (or null)
+//   judge (LLM)                   -> `narration` per `batch` line as it is dispatched: "Judging batch n of N", with the
+//                                    batch's feature slugs (`features`); its provisional `health` follows when it lands
 
 /** World units (bp's layout: a tile is 160 x 76). */
 export interface BBox { x: number; y: number; w: number; h: number }
@@ -92,6 +100,9 @@ export type BuildupEvent =
   | { type: 'activity'; at: number; verb: ActivityVerb; path: string; area: string | null }
   /** A long phase's count: judgement batches written, n of `of`. */
   | { type: 'progress'; at: number; phase: Phase; n: number; of: number; detail: string | null }
+  /** What the agent says it is doing (`text`, one sentence) and will do next (`next`, or null). `features`: the feature
+   *  slugs of a judgement batch it just dispatched (being judged now), else null. */
+  | { type: 'narration'; at: number; phase: Phase; text: string; next: string | null; features: string[] | null }
   | { type: 'done'; at: number }
   | { type: 'failed'; at: number; phase: Phase; message: string };
 

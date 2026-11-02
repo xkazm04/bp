@@ -65,6 +65,7 @@ export type BuildupEvent =
   | { type: 'outline'; at: number; domains: OutlineDomain[] }
   | { type: 'activity'; at: number; verb: ActivityVerb; path: string; area: string | null }
   | { type: 'progress'; at: number; phase: BuildupPhase; n: number; of: number; detail: string | null }
+  | { type: 'narration'; at: number; phase: BuildupPhase; text: string; next: string | null; features: string[] | null }
   | { type: 'done'; at: number }
   | { type: 'failed'; at: number; phase: BuildupPhase; message: string };
 

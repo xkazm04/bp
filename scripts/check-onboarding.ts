@@ -2,10 +2,14 @@
 //   1 wire     core's restated BuildupEvent (packages/core/src/scan/onboarding.ts) and the screen's contract
 //              (apps/web/src/buildup/contract.ts) are mutually assignable (compile time, under typecheck) and list the same
 //              phases; jobLabel says Onboard / Onboard · resume.
-//   2 pure     slugOf / uniqueSlug, the prompt (no test-only wording, the resume line), stream-json read into readable lines
-//              and tool calls, lastPhase.
+//   2 pure     slugOf / uniqueSlug, the prompt (no test-only wording, the resume line, the narration rule), stream-json
+//              read into readable lines and tool calls, lastPhase; the narration channel (ProgressTail over
+//              work/progress.jsonl): byte offsets across appends, a half-written last line kept for the next look, a whole
+//              one without its newline taken, a rewritten file read again without repeats, step and batch lines as
+//              narration, a step line's phase falling back to the run's, domain lines as outline domains in order.
 //   3 deriver  the feed driven by hand (poll) over the fixture directory sequence scripts/fixtures/fake-adopt.mjs writes
-//              (stages()): begin, check, context-map, survey, seed, outline before structure, history, judge progress with a
+//              (stages()): begin, check, context-map, survey, seed, outline before structure (from the progress.jsonl domain
+//              line, before its product-tree.d file, and sent once), narration from step and batch lines, history, judge progress with a
 //              provisional health, the final health, register at ADOPT.md, done; the journal holds exactly what was emitted;
 //              a subscriber that joins mid-run gets every event from begin, then the live ones; a run settled not-ok ends
 //              `failed` in the phase it was in; a resumed feed (a restart) does not resend what the journal has.
@@ -59,6 +63,7 @@ delete process.env.BP_RUNNER;
 const OJ = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/onboarding-job.server.ts')).href) as typeof import('../packages/core/src/server/onboarding-job.server.ts');
 const OS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/onboarding.server.ts')).href) as typeof import('../packages/core/src/server/onboarding.server.ts');
 const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
+const OD = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/onboarding-derive.ts')).href) as typeof import('../packages/core/src/server/onboarding-derive.ts');
 const FAKE = await import(pathToFileURL(path.join(ROOT, 'scripts/fixtures/fake-adopt.mjs')).href) as { stages(): { step: string; files: Record<string, unknown> }[]; writeStage(ls: string, s: { files: Record<string, unknown> }): void };
 
 check('2 slugOf kebabs a folder name', OS.slugOf('My Repo_v2') === 'my-repo-v2' && OS.slugOf('Žluťoučký kůň') === 'zlutoucky-kun' && OS.slugOf('___') === 'project', `${OS.slugOf('My Repo_v2')} ${OS.slugOf('Žluťoučký kůň')} ${OS.slugOf('___')}`);
@@ -73,6 +78,46 @@ check('2 stream-json: a tool call is a readable line and a tool', sl.lines[0] ==
 const res = OJ.readStreamLine(JSON.stringify({ type: 'result', subtype: 'error_during_execution', is_error: true, result: 'boom', num_turns: 3, total_cost_usd: 1.234, duration_ms: 61000 }));
 check('2 stream-json: an error result is a summary line and the error', res.lines[0] === '# result: error_during_execution · 3 turns · $1.23 · 61 s' && res.error === 'boom', JSON.stringify(res));
 check('2 stream-json: a line that is not JSON is kept, a user line is dropped', OJ.readStreamLine('plain words').lines[0] === 'plain words' && OJ.readStreamLine(JSON.stringify({ type: 'user', message: {} })).lines.length === 0);
+check('2 the prompt states the narration rule in one line', prompt.split('\n').filter((l) => /work\/progress\.jsonl/.test(l)).length === 1 && /the moment you decide each domain \(before you start the next\)/.test(prompt) && /never save them up/.test(prompt), prompt);
+{
+  // the narration channel, over an in-memory file that grows as an agent appends to it
+  const enc = new TextEncoder();
+  let file = new Uint8Array(0);
+  const append = (s: string) => { const b = enc.encode(s), n = new Uint8Array(file.length + b.length); n.set(file); n.set(b, file.length); file = n; };
+  const read = (from: number, to: number) => file.slice(from, to);
+  const tail = new OD.ProgressTail();
+  const next = (phase: 'product-tree' | 'judge' = 'product-tree') => tail.next(file.length, read, phase);
+  check('2 progress: an absent or empty file reads nothing', next().length === 0 && tail.offset === 0);
+  append(JSON.stringify({ kind: 'step', phase: 'product-tree', text: 'Reading  the billing\ncode', next: 'Decide Billing' }) + '\n');
+  const a = next();
+  check('2 progress: a step line is narration (text on one line, next kept, features null)', a.length === 1 && a[0].kind === 'narration' && a[0].text === 'Reading the billing code' && a[0].next === 'Decide Billing' && a[0].features === null && a[0].phase === 'product-tree' && tail.offset === file.length, JSON.stringify(a));
+  check('2 progress: nothing new, nothing read', next().length === 0);
+  const dom = JSON.stringify({ kind: 'domain', slug: 'billing', name: 'Billing', summary: 'Charge people.', capabilities: [{ slug: 'invoices', name: 'Invoices' }, { slug: 'dunning', name: 'Dunning' }] });
+  append(dom.slice(0, 30));
+  const before = tail.offset;
+  check('2 progress: a half-written last line is kept for the next look', next().length === 0 && tail.offset === before);
+  append(dom.slice(30) + '\n' + JSON.stringify({ kind: 'step', text: 'Judging', next: null }));
+  const b = next('judge');
+  const d0 = b[0]?.kind === 'domain' ? b[0].domain : null;
+  check('2 progress: the completed line is a domain (wing 0:<slug>, rooms = capability slugs, order 0)', !!d0 && d0.id === '0:billing' && d0.name === 'Billing' && d0.summary === 'Charge people.' && d0.order === 0 && d0.capabilities.map((c) => c.id + '=' + c.name).join() === 'invoices=Invoices,dunning=Dunning', JSON.stringify(b));
+  check('2 progress: a whole last line without its newline is taken; a step without a phase takes the run\'s', b.length === 2 && b[1].kind === 'narration' && b[1].phase === 'judge' && b[1].next === null && tail.offset === file.length, JSON.stringify(b));
+  append('\n' + JSON.stringify({ kind: 'batch', n: 2, of: 3, features: ['invoices-list', { slug: 'dunning-mail' }, 7] }) + '\nnot json\n' + JSON.stringify({ kind: 'step', phase: 'nonsense', text: 'Merging' }) + '\n' + JSON.stringify({ kind: 'domain', slug: 'admin', name: 'Admin', capabilities: [] }) + '\n');
+  const c = next('judge');
+  check('2 progress: a batch line is "Judging batch n of N" with its feature slugs', c[0]?.kind === 'narration' && c[0].text === 'Judging batch 2 of 3' && c[0].phase === 'judge' && JSON.stringify(c[0].features) === '["invoices-list","dunning-mail"]', JSON.stringify(c[0]));
+  check('2 progress: a broken line is skipped, an unknown phase falls back to the run\'s', c.length === 3 && c[1].kind === 'narration' && c[1].text === 'Merging' && c[1].phase === 'judge', JSON.stringify(c));
+  check('2 progress: domains count their order across looks', c[2]?.kind === 'domain' && c[2].domain.order === 1 && c[2].domain.id === '0:admin' && c[2].domain.summary === null);
+  // a model that rewrites the whole file (Write instead of append): read again, nothing repeated, the new line taken
+  const old = new TextDecoder().decode(file);
+  file = new Uint8Array(0); append(old.split('\n').slice(0, 2).join('\n') + '\n' + JSON.stringify({ kind: 'step', phase: 'judge', text: 'After the rewrite' }) + '\n');
+  const r = next('judge');
+  check('2 progress: a file rewritten shorter is read again without repeats', r.length === 1 && r[0].kind === 'narration' && r[0].text === 'After the rewrite', JSON.stringify(r));
+  // a tail started at the file's end skips an earlier run's lines
+  const t2 = new OD.ProgressTail(file.length);
+  append(JSON.stringify({ kind: 'step', phase: 'judge', text: 'This job' }) + '\n');
+  const n2 = t2.next(file.length, read, 'judge');
+  check('2 progress: a tail started at the end reads only what is appended after', n2.length === 1 && n2[0].kind === 'narration' && n2[0].text === 'This job');
+  check('2 progressItem refuses lines it cannot use', OD.progressItem({ kind: 'step' }, 0, 'judge') === null && OD.progressItem({ kind: 'domain' }, 0, 'judge') === null && OD.progressItem([1], 0, 'judge') === null && OD.progressItem({ kind: 'other', text: 'x' }, 0, 'judge') === null);
+}
 check('2 lastPhase: the latest started, else the latest seen, else check', OJ.lastPhase([{ type: 'phase', at: 0, phase: 'seed', state: 'start', detail: null }, { type: 'phase', at: 1, phase: 'seed', state: 'done', detail: null }, { type: 'phase', at: 2, phase: 'judge', state: 'start', detail: null }]) === 'judge'
   && OJ.lastPhase([{ type: 'phase', at: 0, phase: 'seed', state: 'done', detail: null }]) === 'seed' && OJ.lastPhase([]) === 'check');
 
@@ -103,6 +148,13 @@ check('2 lastPhase: the latest started, else the latest seen, else check', OJ.la
     .every((t, i, a) => idx(t) >= 0 && (i === 0 || idx(a[i - 1]) < idx(t))), types.join(' '));
   check('3 a survey from the supplement, then one with the inventory', types.filter((t) => t === 'survey').length >= 1 && evs.some((e) => e.type === 'survey' && e.areas.some((a) => a.lines !== null)));
   check('3 an outline per domain, before the structure', idx('outline') > 0 && idx('outline') < idx('structure'));
+  const outlines = evs.filter((e) => e.type === 'outline');
+  check('3 the domain is outlined once, from its progress.jsonl line (before its product-tree.d file), with its capabilities', outlines.length === 1 && outlines[0].type === 'outline' && outlines[0].domains[0].id === '0:subscriptions' && outlines[0].domains[0].capabilities.length > 0, JSON.stringify(outlines));
+  const narr = evs.filter((e) => e.type === 'narration');
+  check('3 narration from step lines (product-tree, then judge) and from the batch line (its features)', narr.length === 4 && narr[0].type === 'narration' && narr[0].phase === 'product-tree' && narr[0].text === 'Reading the inventory to name the product' && narr[0].next === 'Decide the first domain' && narr[0].features === null
+    && narr.some((e) => e.type === 'narration' && e.text === 'Judging batch 1 of 1' && e.phase === 'judge' && JSON.stringify(e.features) === '["recurring-billing-engine","failed-payment-dunning"]')
+    && narr.at(-1)?.type === 'narration' && narr.at(-1)?.phase === 'judge', JSON.stringify(narr));
+  check('3 the batch narration comes before its provisional health', types.indexOf('narration') >= 0 && evs.findIndex((e) => e.type === 'narration' && e.features !== null) < evs.findIndex((e) => e.type === 'health' && e.provisional));
   const st = evs.find((e) => e.type === 'structure');
   check('3 the structure: wings, rooms and tiles with stage', !!st && st.type === 'structure' && st.wings.length === 1 && st.tiles.length === 2 && st.tiles.every((t) => t.stage !== null), JSON.stringify(st).slice(0, 300));
   check('3 the outline ids match the wings they become', evs.some((e) => e.type === 'outline' && st?.type === 'structure' && e.domains[0].id === st.wings[0].id));
@@ -131,6 +183,7 @@ check('2 lastPhase: the latest started, else the latest seen, else check', OJ.la
   fr.poll();
   const r1 = OJ.readBuildup(root, 'j-feed-rerun');
   const has = (es: CoreEvent[], t: string) => es.some((e) => (e.type === 'phase' ? `${e.phase}:${e.state}` : e.type) === t);
+  check('3 a re-run does not narrate the earlier run\'s progress.jsonl', !r1.some((e) => e.type === 'narration'), r1.filter((e) => e.type === 'narration').map((e) => e.type === 'narration' ? e.text : '').join(' | '));
   check('3 a re-run draws what the repo already has (structure, history, provisional health)', has(r1, 'structure') && has(r1, 'history') && r1.some((e) => e.type === 'health' && e.provisional), r1.map((e) => e.type).join(' '));
   check('3 ...but old batches and judgements are no progress (no judge start, no final health, no register)', !has(r1, 'judge:start') && !r1.some((e) => e.type === 'health' && !e.provisional) && !has(r1, 'register:start'), r1.map((e) => e.type === 'phase' ? `${e.phase}:${e.state}` : e.type).join(' '));
   const judgementStage = stages.find((s) => s.step === 'judge')!, mergeStage = stages.find((s) => s.step === 'merge')!;

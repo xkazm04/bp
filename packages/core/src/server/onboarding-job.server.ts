@@ -4,8 +4,9 @@
 //
 // The feed watches the files adopt-bp writes under `<root>/.ai/lens-scan/` once a second, from the job's start to its
 // settle, and derives BuildupEvents (packages/core/src/scan/onboarding.ts, restating apps/web/src/buildup/contract.ts):
-// begin, phases, survey, outline (work/product-tree.d/), structure (projectPlan over the map), history, judge progress and
-// a provisional health per judgement file, the final health, then done or failed. Activity comes from the CLI's tool calls.
+// begin, phases, survey, outline (work/product-tree.d/ and the `domain` lines of work/progress.jsonl), narration (its
+// `step` and `batch` lines), structure (projectPlan over the map), history, judge progress and a provisional health per
+// judgement file, the final health, then done or failed. Activity comes from the CLI's tool calls.
 // Every event is appended to `<root>/.ai/lens-scan/work/bp-jobs/<job>.buildup.jsonl` (`at` = ms since the job started) and
 // fanned out to the subscribers of that job, so a reload, a second tab or a late subscriber catches up from the journal.
 // A server restart keeps the journal: a job whose process is still there gets its feed back (resumeFeed, seeded from the
@@ -18,7 +19,7 @@ import type { ScanJob } from '../scan/jobs.ts';
 import { isBuildupPhase, type BuildupEvent, type BuildupEventIn, type BuildupPhase, type OnboardCheckItem, type Stage } from '../scan/onboarding.ts';
 import { STAGES } from '../standard/schema-vocab.ts';
 import { projectPlan } from './plan-projection.ts';
-import { activityOf, areaOf, outlineFrom, provisionalHealth, surveyFrom, type AreaIndex } from './onboarding-derive.ts';
+import { activityOf, areaOf, outlineFrom, provisionalHealth, surveyFrom, ProgressTail, type AreaIndex } from './onboarding-derive.ts';
 import { warnOnce } from './products.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('onboarding-job.server.ts is server-only');
@@ -55,6 +56,7 @@ export function adoptPrompt(o: { skill: string; bp: string; slug: string; name: 
     `Use --slug ${o.slug} --name "${oneLine(o.name)}". Run the whole run (check, supplement if needed, seed, phase A product tree, events, measure, batches, phase B judgement for every batch, judge, validate, register, report).`,
     `The product is already registered in bp as ${o.slug}: the register step confirms it (and adds the ignore line when missing).`,
     ...(o.resume ? [`This resumes an onboarding that stopped part way: keep everything it already produced; check lists only what is missing, so produce only that.`] : []),
+    `Narrate as you go (SKILL.md "Narrate as you go"): append one JSON line to .ai/lens-scan/work/progress.jsonl the moment you decide each domain (before you start the next), whenever you start a step (what you do now, what comes next; at least every 2 minutes) and when you dispatch each judgement batch - never save them up for later.`,
     `Do not commit, do not push, do not edit files outside .ai/lens-scan/, .gitignore (or .git/info/exclude), .claude/lens-scan/ and the bp registry. Work without asking questions.`,
   ].join('\n');
 }
@@ -257,6 +259,11 @@ function makeFeed(o: FeedOpts, prior: BuildupEvent[]): { feed: Feed; emit: (e: B
   let sentStructure = false, sentHistory = false, sentHealth = false;
   const outlined = new Set<string>(), judgedDocs = new Set<string>();
   let batchFiles = 0;
+  // the narration channel: only what this job appends (an earlier run's lines are skipped; a resume after a restart starts
+  // at the file's end, so lines written while no server watched are not drawn)
+  const progressFile = path.join(WORK, 'progress.jsonl');
+  const fileSize = (p: string) => { try { return fs.statSync(p).size; } catch { return 0; } };
+  const progress = new ProgressTail(fileSize(progressFile));
   for (const e of prior) {
     if (e.type === 'phase' && e.state !== 'failed') phaseState.set(e.phase, e.state);
     else if (e.type === 'structure') sentStructure = true;
@@ -279,6 +286,11 @@ function makeFeed(o: FeedOpts, prior: BuildupEvent[]): { feed: Feed; emit: (e: B
   const readJson = (p: string): unknown => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
   const readText = (p: string) => { try { return fs.readFileSync(p, 'utf8'); } catch { return ''; } };
   const listDir = (d: string) => { try { return fs.readdirSync(d).sort(); } catch { return [] as string[]; } };
+  const readBytes = (p: string) => (from: number, to: number): Uint8Array => {
+    const b = Buffer.alloc(Math.max(0, to - from));
+    let fd: number | null = null;
+    try { fd = fs.openSync(p, 'r'); const n = fs.readSync(fd, b, 0, b.length, from); return b.subarray(0, n); } catch { return new Uint8Array(0); } finally { if (fd !== null) fs.closeSync(fd); }
+  };
 
   interface PlanDoc { wings: { id: string; name: string; order: number; letter: string; box: { x: number; y: number; w: number; h: number } }[]; rooms: { id: string; name: string; order: number; parentId: string; box: { x: number; y: number; w: number; h: number } }[]; bays: { id: string; name: string; order: number; parentId: string; box: { x: number; y: number; w: number; h: number } }[]; tiles: { id: string; name: string; order: number; parentId: string; box: { x: number; y: number; w: number; h: number }; general: 'good' | 'watch' | 'bad' | 'na' | 'unmeasured' }[] }
   interface Feature { id?: string; slug?: string; stage?: string; kind?: string; tier?: string; summary?: string; created?: string }
@@ -337,6 +349,13 @@ function makeFeed(o: FeedOpts, prior: BuildupEvent[]): { feed: Feed; emit: (e: B
       phase('product-tree', 'start');
     }
     survey();
+    // narration: the lines the agent appended since the last look; a `domain` line is an outline (once per domain)
+    for (const it of progress.next(fileSize(progressFile), readBytes(progressFile), lastPhase(live.events))) {
+      if (it.kind === 'narration') { emit({ type: 'narration', phase: it.phase, text: it.text, next: it.next, features: it.features }); continue; }
+      if (sentStructure || outlined.has(it.domain.id)) continue;
+      outlined.add(it.domain.id);
+      emit({ type: 'outline', domains: [it.domain] });
+    }
     // outline: one domain per work/product-tree.d file, until the whole structure has arrived
     const td = listDir(path.join(WORK, 'product-tree.d')).filter((n) => n.endsWith('.json'));
     if (!sentStructure) td.forEach((n, i) => {

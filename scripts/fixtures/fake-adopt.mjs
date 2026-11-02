@@ -6,6 +6,10 @@
 // spread over FAKE_ADOPT_MS (default 20000):
 //   context-supplement -> seed (map skeleton + inventory) -> product-tree.d/<NN>-<domain>.json, one per domain ->
 //   product tree merged into the map -> events.jsonl -> batches -> one judgement file per batch -> the judged map -> ADOPT.md
+// and, as adopt-bp 1.6.0 narrates, lines appended to work/progress.jsonl: a `step` line at each step, a `domain` line the
+// moment each domain is decided (before its product-tree.d file; in the REAL mode the files then land in one burst just
+// before the tree, as a real model wrote them on 2026-11-02, while the lines arrive seconds apart), a `batch` line as each
+// judgement batch is dispatched.
 // Two sources for the content:
 //   synthetic (default)  stages() below, from packages/schema/schema/fixtures/valid-map.json: hermetic, a few KB.
 //                        scripts/check-onboarding.ts drives the server's feed with the same stages.
@@ -43,25 +47,31 @@ export function stages() {
   const judgement = { batch: '01', features: Object.fromEntries(m.features.map((f, i) => [f.slug, { security: { findingsCritical: 0, findingsHigh: 0, findingsMedium: i }, development: { techDebt: 1 }, design: { undesignedStates: 0 } }])) };
   return [
     { step: 'supplement', files: { 'work/context-supplement.json': supplement } },
-    { step: 'seed', files: { 'app-structure.json': skeleton, 'work/inventory.json': inventory } },
+    { step: 'seed', files: { 'app-structure.json': skeleton, 'work/inventory.json': inventory, [PROGRESS]: [stepLine('product-tree', 'Reading the inventory to name the product', 'Decide the first domain')] } },
+    ...m.domains.map((d) => ({ step: 'decide', files: { [PROGRESS]: [domainLine(d, m.capabilities.filter((c) => c.domain === d.slug)), stepLine('product-tree', `Decided ${d.name}; placing its features`, 'Write the product tree')] } })),
     ...m.domains.map((d, i) => ({ step: 'outline', files: { [`work/product-tree.d/${String(i + 1).padStart(2, '0')}-${d.slug}.json`]: { domain: d, capabilities: m.capabilities.filter((c) => c.domain === d.slug) } } })),
     { step: 'tree', files: { 'work/product-tree.json': tree, 'app-structure.json': merged } },
     { step: 'events', files: { 'events.jsonl': events } },
-    { step: 'batches', files: { 'work/batches/01.json': batch } },
-    { step: 'judge', files: { 'work/judgement/01.json': judgement } },
+    { step: 'batches', files: { 'work/batches/01.json': batch, [PROGRESS]: [{ kind: 'batch', n: 1, of: 1, features: batch.features.map((f) => f.slug) }] } },
+    { step: 'judge', files: { 'work/judgement/01.json': judgement, [PROGRESS]: [stepLine('judge', 'Merging the judgements', 'Validate and register')] } },
     { step: 'merge', files: { 'app-structure.json': m } },
     { step: 'report', files: { 'ADOPT.md': '# Adopted\n\nA synthetic onboarding (scripts/fixtures/fake-adopt.mjs).\n' } },
   ];
 }
 
-/** Write one stage's files under `ls` (the repo's .ai/lens-scan). */
+/** Write one stage's files under `ls` (the repo's .ai/lens-scan). A string is written as it is; an array under a `.jsonl`
+ *  path is APPENDED, one JSON line per item (work/progress.jsonl); anything else is written as JSON. */
 export function writeStage(ls, stage) {
   for (const [rel, v] of Object.entries(stage.files)) {
     const f = path.join(ls, rel);
     fs.mkdirSync(path.dirname(f), { recursive: true });
-    fs.writeFileSync(f, typeof v === 'string' ? v : JSON.stringify(v, null, 1));
+    if (Array.isArray(v) && rel.endsWith('.jsonl')) fs.appendFileSync(f, v.map((x) => JSON.stringify(x) + '\n').join(''));
+    else fs.writeFileSync(f, typeof v === 'string' ? v : JSON.stringify(v, null, 1));
   }
 }
+const PROGRESS = 'work/progress.jsonl';
+const stepLine = (phase, text, next = null) => ({ kind: 'step', phase, text, next });
+const domainLine = (d, caps) => ({ kind: 'domain', slug: d.slug, name: d.name, summary: d.summary ?? null, capabilities: caps.map((c) => ({ slug: c.slug, name: c.name })) });
 
 // --------------------------------------------------------------------------------------------- the CLI
 async function main() {
@@ -108,9 +118,10 @@ async function main() {
   if (!REAL) {
     const st = stages();
     const marks = { supplement: 0.08, seed: 0.15, tree: 0.5, events: 0.55, batches: 0.62, judge: 0.85, merge: 0.92, report: 0.97 };
-    const outlines = st.filter((s) => s.step === 'outline');
+    const outlines = st.filter((s) => s.step === 'outline'), decides = st.filter((s) => s.step === 'decide');
     for (const s of st) {
-      const frac = s.step === 'outline' ? 0.25 + (0.2 * (outlines.indexOf(s) + 1)) / outlines.length : marks[s.step];
+      const frac = s.step === 'outline' ? 0.25 + (0.2 * (outlines.indexOf(s) + 1)) / outlines.length
+        : s.step === 'decide' ? 0.18 + (0.06 * (decides.indexOf(s) + 1)) / decides.length : marks[s.step];
       await until(frac);
       readSome(1);
       for (const rel of Object.keys(s.files)) tool('Write', { file_path: path.join(LS, rel) });
@@ -124,9 +135,25 @@ async function main() {
     fail('seed');
     const inv = JSON.parse(fs.readFileSync(path.join(LS, 'work', 'inventory.json'), 'utf8'));
     const tree = treeFrom(inv);
+    const narrate = (...lines) => { tool('Bash', { command: `echo '<line>' >> .ai/lens-scan/${PROGRESS}` }); writeStage(LS, { files: { [PROGRESS]: lines } }); };
+    await until(0.17);
+    narrate(stepLine('product-tree', `Reading the inventory: ${inv.contexts?.length ?? 0} code areas to name`, 'Decide the first domain'));
+    // each domain is decided over a few seconds: read its code, then its line (the files come later, in one burst)
     for (let i = 0; i < tree.domains.length; i++) {
-      await until(0.25 + (0.2 * (i + 1)) / tree.domains.length);
+      const d = tree.domains[i], next = tree.domains[i + 1];
+      const caps = tree.capabilities.filter((c) => c.domain === d.slug);
+      const from = 0.2 + (0.25 * i) / tree.domains.length, span = 0.25 / tree.domains.length;
+      await until(from);
+      narrate(stepLine('product-tree', `Reading the ${d.name.toLowerCase()} code to name it`, `Decide ${d.name} and its capabilities`));
       readSome(2);
+      await until(from + span * 0.7);
+      readSome(1);
+      narrate(domainLine(d, caps), stepLine('product-tree', `Decided ${d.name}: ${caps.length} capabilities`, next ? `Read the next code area (${next.name.toLowerCase()})` : 'Settle stages and write the product tree'));
+    }
+    await until(0.46);
+    narrate(stepLine('product-tree', 'Settling each feature’s stage from its entry points', 'Write the merged product tree'));
+    await until(0.48);
+    for (let i = 0; i < tree.domains.length; i++) { // the burst a real model wrote on 2026-11-02
       const d = tree.domains[i];
       const f = path.join(LS, 'work', 'product-tree.d', `${String(i + 1).padStart(2, '0')}-${d.slug}.json`);
       tool('Write', { file_path: f });
@@ -144,15 +171,19 @@ async function main() {
     const bdir = path.join(LS, 'work', 'batches');
     const batches = fs.existsSync(bdir) ? fs.readdirSync(bdir).filter((n) => n.endsWith('.json')).sort() : [];
     for (let i = 0; i < batches.length; i++) {
-      await until(0.65 + (0.25 * (i + 1)) / batches.length);
-      readSome(3);
       const b = JSON.parse(fs.readFileSync(path.join(bdir, batches[i]), 'utf8'));
       const feats = (b.features ?? []).map((f) => (typeof f === 'string' ? f : f.slug ?? f.id)).filter(Boolean);
+      await until(0.65 + (0.25 * i) / batches.length + 0.01);
+      narrate({ kind: 'batch', n: i + 1, of: batches.length, features: feats },
+        stepLine('judge', `Judging batch ${i + 1}: reading the largest files of ${feats.length} features`, i + 1 < batches.length ? `Judge batch ${i + 2} of ${batches.length}` : 'Merge the judgements'));
+      await until(0.65 + (0.25 * (i + 1)) / batches.length);
+      readSome(3);
       const j = { batch: batches[i].replace(/\.json$/, ''), features: Object.fromEntries(feats.map((s, k) => [s, { security: { findingsCritical: 0, findingsHigh: k % 5 === 4 ? 1 : 0, findingsMedium: k % 3 }, development: { techDebt: k % 4 }, design: { undesignedStates: k % 2 } }])) };
       tool('Write', { file_path: path.join(LS, 'work', 'judgement', batches[i]) });
       writeStage(LS, { files: { [`work/judgement/${batches[i]}`]: j } });
     }
     fail('judge');
+    narrate(stepLine('judge', 'Merging the judgements into the map', 'Validate, register and write the report'));
     await until(0.93);
     // the judge merge rewrites the map (the real one also writes facets; here the measured ones stay)
     const mf = path.join(LS, 'app-structure.json');

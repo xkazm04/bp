@@ -5,7 +5,9 @@
 // (file appearances, the agent's own tool calls and messages) goes to the tape beside the derived events, so the
 // silences can be measured and designed against. The documents the anti-stale events are read from (context map,
 // supplement, inventory, domain files, judgement files) are copied into the tape as `doc` records, so replay-tape.ts can
-// re-derive every event from the tape alone.
+// re-derive every event from the tape alone. The agent's narration (work/progress.jsonl, adopt-bp 1.6.0) is read with the
+// server's deriver (ProgressTail): `domain` lines are outlines, `step` and `batch` lines `narration` events; each line read
+// is also on the tape as a `progress-line` record.
 //
 //   node --import @bp/core/register scripts/buildup/onboard-live.ts --root <repo> --slug <s> --name <n>
 //        [--port 3300] [--tape <file.jsonl>] [--model <id>] [--hold-min 10]
@@ -16,7 +18,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { projectPlan } from '@bp/core/server/plan-projection';
-import { activityOf, areaOf, outlineFrom, provisionalHealth, surveyFrom, type AreaIndex } from './derive';
+import { activityOf, areaOf, outlineFrom, provisionalHealth, surveyFrom, ProgressTail, type AreaIndex } from './derive';
 
 const argv = process.argv.slice(2);
 const opt = (k: string, d?: string) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
@@ -106,7 +108,7 @@ const repoMap = readJson(path.join(ROOT, 'context-map.json'));
 if (repoMap) doc('context-map.json', repoMap);
 let areas: AreaIndex[] = [];
 let supM = 0, invM = 0;
-const outlined = new Set<string>();
+const outlined = new Set<string>(), outlinedIds = new Set<string>();
 const judgedDocs = new Set<string>();
 let pendingAct: { verb: 'read' | 'write' | 'run'; path: string } | null = null, lastAct = 0;
 const activity = (tool: string, input: unknown) => {
@@ -132,6 +134,17 @@ function survey() {
   areas = surveyFrom(repoMap, sup, inv);
   if (areas.length) emit({ type: 'survey', areas: areas.map((a) => a.area) });
 }
+
+// narration: the lines adopt-bp appends to work/progress.jsonl (an earlier run's lines are skipped), the server's deriver
+const PROGRESS = path.join(WORK, 'progress.jsonl');
+const fileSize = (p: string) => { try { return fs.statSync(p).size; } catch { return 0; } };
+const readBytes = (p: string) => (from: number, to: number): Uint8Array => {
+  const b = Buffer.alloc(Math.max(0, to - from));
+  let fd: number | null = null;
+  try { fd = fs.openSync(p, 'r'); return b.subarray(0, fs.readSync(fd, b, 0, b.length, from)); } catch { return new Uint8Array(0); } finally { if (fd !== null) fs.closeSync(fd); }
+};
+const progressTail = new ProgressTail(fileSize(PROGRESS));
+const phaseNow = (): Phase => ([...phaseState.entries()].reverse().find(([, s]) => s === 'start')?.[0] ?? [...phaseState.keys()].pop() ?? 'check');
 
 let sentStructure = false, sentHistory = false, sentHealth = false, finished = false;
 let mapM = 0, evM = 0, judgeFiles = 0, treeDFiles = 0, batchFiles = 0, mapMAtJudgeFiles = 0;
@@ -161,6 +174,13 @@ function poll() {
     phase('product-tree', 'start');
   }
   survey();
+  for (const it of progressTail.next(fileSize(PROGRESS), readBytes(PROGRESS), phaseNow())) {
+    raw('progress-line', it);
+    if (it.kind === 'narration') { emit({ type: 'narration', phase: it.phase, text: it.text, next: it.next, features: it.features }); continue; }
+    if (sentStructure || outlinedIds.has(it.domain.id)) continue;
+    outlinedIds.add(it.domain.id);
+    emit({ type: 'outline', domains: [it.domain] });
+  }
   const td = listDir(path.join(WORK, 'product-tree.d')).filter((n) => n.endsWith('.json'));
   if (td.length > treeDFiles) { treeDFiles = td.length; raw('tree-domain-files', td); }
   if (!sentStructure) td.forEach((n, i) => {
@@ -168,7 +188,10 @@ function poll() {
     const j = readJson(path.join(WORK, 'product-tree.d', n));
     if (!j) return; // half-written: next tick
     outlined.add(n); doc('work/product-tree.d/' + n, j);
-    emit({ type: 'outline', domains: [outlineFrom(n, j, i)] });
+    const d = outlineFrom(n, j, i);
+    if (outlinedIds.has(d.id)) return; // already outlined from its progress.jsonl line
+    outlinedIds.add(d.id);
+    emit({ type: 'outline', domains: [d] });
   });
 
   // product tree merged into the map: the whole structure, at once
@@ -246,6 +269,7 @@ const prompt = [
   `The skill is NOT installed for you: read ${SKILL}/SKILL.md and follow it exactly, with S=${SKILL} and --bp ${BP}.`,
   `Use --slug ${SLUG} --name "${NAME}". Run the whole run (check, supplement if needed, seed, phase A product tree, events, measure, batches, phase B judgement for every batch, judge, validate, register, report).`,
   `One addition for a timing test: while you write the product tree, ALSO write each domain to work/product-tree.d/<NN>-<domain-slug>.json as soon as you have decided it (the same shape as one entry of the tree), before you write work/product-tree.json.`,
+  `Narrate as you go (SKILL.md "Narrate as you go"): append one JSON line to .ai/lens-scan/work/progress.jsonl the moment you decide each domain (before you start the next), whenever you start a step (what you do now, what comes next; at least every 2 minutes) and when you dispatch each judgement batch - never save them up for later.`,
   `Do not commit, do not push, do not edit files outside .ai/lens-scan/, .gitignore (or .git/info/exclude), .claude/lens-scan/ and the bp registry. Work without asking questions.`,
 ].join('\n');
 const args = ['-p', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];

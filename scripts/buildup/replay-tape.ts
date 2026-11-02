@@ -114,7 +114,7 @@ const enriched = recs.some((r) => r.raw === 'doc');
 const events = (enriched ? recorded.map((e) => (e.type === 'health' && !('provisional' in e) ? { ...e, provisional: false } : e)) : enrich());
 if (DUMP) fs.writeFileSync(DUMP, JSON.stringify(events, null, 1));
 const count = (t: string) => events.filter((e) => e.type === t).length;
-console.log(`${enriched ? 'recorded' : 're-derived'} feed from ${path.basename(TAPE)}: ${events.length} events (survey ${count('survey')}, outline ${count('outline')}, activity ${count('activity')}, progress ${count('progress')}, health ${count('health')}), ${(events.at(-1)!.at / 60000).toFixed(1)} min at 1x, speed ${SPEED}`);
+console.log(`${enriched ? 'recorded' : 're-derived'} feed from ${path.basename(TAPE)}: ${events.length} events (survey ${count('survey')}, outline ${count('outline')}, activity ${count('activity')}, progress ${count('progress')}, narration ${count('narration')}, health ${count('health')}), ${(events.at(-1)!.at / 60000).toFixed(1)} min at 1x, speed ${SPEED}`);
 
 // ------------------------------------------------------------------ the feed
 const clients = new Set<http.ServerResponse>();
