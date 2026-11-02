@@ -215,3 +215,27 @@ Finding: with adopt-bp 1.5.0 the model wrote all `product-tree.d` files in one b
 outline arrived with the structure and bought no lead time (the test harness's prompt, which asked for the files
 explicitly, got 40-110 s). The skill's wording needs to make the per-domain write happen as each domain is decided, or
 the server needs another early signal of the domains.
+
+## 7. Second real onboarding: narration with a real model (2026-11-02)
+
+Same repo (dowser@414e6ed), same UI flow and recorder, adopt-bp **1.6.0** (per-domain `product-tree.d` writes and
+`work/progress.jsonl` narration), n=1. Recording, stills, journal and log: `.contest/arena/blueprint-buildup/runs/e2e-narrate/`
+(git-ignored, kept for the demo).
+
+| t | event |
+|---|---|
+| 10 s | onboarding screen |
+| 21 s | first narration ("context map covers 11 of 181 source files, drafting a supplement") |
+| 22 / 60 / 68 s | survey, enriched twice |
+| 111 / 116 / 121 / 125 s | outline, **one domain at a time**, each with a narration naming the next |
+| 182 s | structure (4 wings, 11 rooms, 15 features); history 188 s |
+| 202 s | both judge batches dispatched in parallel (two narration lines in the same second) |
+| 778 / 901 s | provisional health per batch; final health 931 s |
+| 968 s | done; "Open blueprint" band at 979 s |
+
+16.1 min, $9.67, 0 page or console errors. 27 narration lines, 97 activity events. The outline now leads the structure
+by 57-71 s (it arrived in the same second in section 6), so the burst finding above is fixed by the skill. Longest
+stretch with no event: 83 s (818-901 s, judging), down from 135 s.
+
+Finding: judge batches run in parallel, so `progress.n` counts batches **landed** ("0 of 2 judged"), never the batch
+being worked on. A surface that shows it as "batch n of N" misreads it.
