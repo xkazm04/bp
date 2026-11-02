@@ -3,7 +3,9 @@
 // (`?source=live&feed=http://127.0.0.1:<port>`). It is the test harness for docs/concepts/onboarding/feasibility.md:
 // the pipeline emits no events, so this watches the files each step leaves behind and derives them. Every raw signal
 // (file appearances, the agent's own tool calls and messages) goes to the tape beside the derived events, so the
-// silences can be measured and designed against.
+// silences can be measured and designed against. The documents the anti-stale events are read from (context map,
+// supplement, inventory, domain files, judgement files) are copied into the tape as `doc` records, so replay-tape.ts can
+// re-derive every event from the tape alone.
 //
 //   node --import @bp/core/register scripts/buildup/onboard-live.ts --root <repo> --slug <s> --name <n>
 //        [--port 3300] [--tape <file.jsonl>] [--model <id>] [--hold-min 10]
@@ -14,6 +16,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { projectPlan } from '@bp/core/server/plan-projection';
+import { activityOf, areaOf, outlineFrom, provisionalHealth, surveyFrom, type AreaIndex } from './derive';
 
 const argv = process.argv.slice(2);
 const opt = (k: string, d?: string) => { const i = argv.indexOf('--' + k); return i >= 0 ? argv[i + 1] : d; };
@@ -97,11 +100,45 @@ const firstSeen = (text: string) => {
   return m;
 };
 
+// ------------------------------------------------------------------ anti-stale events (derive.ts)
+const doc = (rel: string, json: unknown) => raw('doc', { path: rel, json });
+const repoMap = readJson(path.join(ROOT, 'context-map.json'));
+if (repoMap) doc('context-map.json', repoMap);
+let areas: AreaIndex[] = [];
+let supM = 0, invM = 0;
+const outlined = new Set<string>();
+const judgedDocs = new Set<string>();
+let pendingAct: { verb: 'read' | 'write' | 'run'; path: string } | null = null, lastAct = 0;
+const activity = (tool: string, input: unknown) => {
+  const hits = activityOf(tool, input, ROOT, (p) => fs.existsSync(path.join(ROOT, p)));
+  if (hits.length) pendingAct = hits[0];
+  flushActivity();
+};
+const flushActivity = () => {
+  if (!pendingAct || now() - lastAct < 1000) return;
+  lastAct = now();
+  emit({ type: 'activity', verb: pendingAct.verb, path: pendingAct.path, area: areaOf(pendingAct.path, areas) });
+  pendingAct = null;
+};
+function survey() {
+  const sp = path.join(WORK, 'context-supplement.json'), ip = path.join(WORK, 'inventory.json');
+  const sm = mtime(sp), im = mtime(ip);
+  if (sm === supM && im === invM) return;
+  const sup = sm ? readJson(sp) : null, inv = im ? readJson(ip) : null;
+  if ((sm && !sup) || (im && !inv)) return; // half-written: next tick
+  if (sm !== supM && sup) doc('work/context-supplement.json', sup);
+  if (im !== invM && inv) doc('work/inventory.json', inv);
+  supM = sm; invM = im;
+  areas = surveyFrom(repoMap, sup, inv);
+  if (areas.length) emit({ type: 'survey', areas: areas.map((a) => a.area) });
+}
+
 let sentStructure = false, sentHistory = false, sentHealth = false, finished = false;
 let mapM = 0, evM = 0, judgeFiles = 0, treeDFiles = 0, batchFiles = 0, mapMAtJudgeFiles = 0;
 const seen = new Set<string>();
 
 function poll() {
+  flushActivity();
   // raw: every new file under .ai/lens-scan (work/ included), with its size
   const walk = (d: string, rel = ''): void => {
     for (const n of listDir(d)) {
@@ -123,8 +160,16 @@ function poll() {
     phase('seed', 'done', n ? `${n} code contexts` : null);
     phase('product-tree', 'start');
   }
-  const td = listDir(path.join(WORK, 'product-tree.d'));
+  survey();
+  const td = listDir(path.join(WORK, 'product-tree.d')).filter((n) => n.endsWith('.json'));
   if (td.length > treeDFiles) { treeDFiles = td.length; raw('tree-domain-files', td); }
+  if (!sentStructure) td.forEach((n, i) => {
+    if (outlined.has(n)) return;
+    const j = readJson(path.join(WORK, 'product-tree.d', n));
+    if (!j) return; // half-written: next tick
+    outlined.add(n); doc('work/product-tree.d/' + n, j);
+    emit({ type: 'outline', domains: [outlineFrom(n, j, i)] });
+  });
 
   // product tree merged into the map: the whole structure, at once
   if (m && m !== mapM) {
@@ -157,7 +202,7 @@ function poll() {
   }
   // judge: batches appear, then one judgement file per batch; health lands in the map after the final merge
   const batches = listDir(path.join(WORK, 'batches')).filter((n) => n.endsWith('.json'));
-  if (batches.length && batches.length !== batchFiles) { batchFiles = batches.length; raw('batches', batches.length); }
+  if (batches.length && batches.length !== batchFiles) { batchFiles = batches.length; raw('batches', batches.length); emit({ type: 'progress', phase: 'judge', n: 0, of: batches.length, detail: null }); }
   if (batches.length && sentHistory) { phase('measure', 'done'); phase('judge', 'start'); }
   const judged = listDir(path.join(WORK, 'judgement')).filter((n) => n.endsWith('.json'));
   if (judged.length !== judgeFiles) {
@@ -165,12 +210,21 @@ function poll() {
     mapMAtJudgeFiles = mtime(path.join(LS, 'app-structure.json'));
     raw('judgement-files', { n: judged.length, of: batches.length });
   }
+  for (const n of judged) {
+    if (judgedDocs.has(n) || sentHealth) continue;
+    const j = readJson(path.join(WORK, 'judgement', n));
+    if (!j) continue; // half-written: next tick
+    judgedDocs.add(n); doc('work/judgement/' + n, j);
+    const tiles = provisionalHealth(j);
+    emit({ type: 'progress', phase: 'judge', n: judgedDocs.size, of: Math.max(batches.length, judgedDocs.size), detail: `batch ${n.replace(/\.json$/, '')}: ${tiles.length} features` });
+    if (tiles.length) emit({ type: 'health', provisional: true, tiles });
+  }
   if (!sentHealth && batches.length && judged.length >= batches.length && mtime(path.join(LS, 'app-structure.json')) > mapMAtJudgeFiles) {
     const p = planNow();
     if (p) {
       sentHealth = true;
       const tiles = p.plan.tiles.map((t) => ({ id: t.id, general: t.general }));
-      for (let i = 0; i < tiles.length; i += 8) emit({ type: 'health', tiles: tiles.slice(i, i + 8) });
+      emit({ type: 'health', provisional: false, tiles });
       phase('judge', 'done', `${tiles.filter((x) => x.general === 'bad').length} in trouble`);
       phase('register', 'start');
     }
@@ -209,7 +263,7 @@ child.stdout.on('data', (d: Buffer) => {
       const j = JSON.parse(line);
       // keep the agent's activity small: tool name + its first input field, assistant text heads
       if (j.type === 'assistant') for (const c of j.message?.content ?? []) {
-        if (c.type === 'tool_use') raw('tool', { name: c.name, input: JSON.stringify(c.input ?? {}).slice(0, 300) });
+        if (c.type === 'tool_use') { raw('tool', { name: c.name, input: JSON.stringify(c.input ?? {}).slice(0, 300) }); activity(c.name, c.input); }
         else if (c.type === 'text') raw('say', String(c.text).slice(0, 400));
       }
       else if (j.type === 'result') raw('result', { cost: j.total_cost_usd, turns: j.num_turns, ms: j.duration_ms, subtype: j.subtype });
@@ -222,7 +276,7 @@ child.on('close', (code) => {
   poll();
   clearInterval(timer);
   if (code === 0 && sentStructure) {
-    if (!sentHealth) { const p = planNow(); if (p) { const tiles = p.plan.tiles.map((t) => ({ id: t.id, general: t.general })); for (let i = 0; i < tiles.length; i += 8) emit({ type: 'health', tiles: tiles.slice(i, i + 8) }); phase('judge', 'done'); } }
+    if (!sentHealth) { const p = planNow(); if (p) { emit({ type: 'health', provisional: false, tiles: p.plan.tiles.map((t) => ({ id: t.id, general: t.general })) }); phase('judge', 'done'); } }
     phase('register', 'done', SLUG);
     emit({ type: 'done' });
   } else {
