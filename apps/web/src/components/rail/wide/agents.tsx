@@ -172,8 +172,8 @@ function JobDetail({ j, scan, total, now, live, focusCancel }: { j: ScanJob; sca
   const pr = httpUrl(x.rel?.pr_url);
   return (
     <>
-      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span>{x.stale && <span className="st stale">stale</span>}<span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : x.prepare ? 'Prepare' : 'Execute'}</span><span>{j.id}</span></div>
-      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' || x.prepare ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
+      <div className="wb-kick"><span className={'st ' + j.status}>{j.status}</span>{x.stale && <span className="st stale">stale</span>}<span>{x.measure ? 'Measure' : j.kind === 'release' ? 'Release' : x.prepare ? 'Prepare' : j.kind === 'adopt' ? 'Onboard' : 'Execute'}</span><span>{j.id}</span></div>
+      <h3 className="wb-title wb-glyph">{d?.glyph ? <ScanGlyph g={d.glyph} px={24} /> : null}{x.measure ? d?.name ?? j.lens ?? 'Scan' : j.kind === 'release' || j.kind === 'adopt' || x.prepare ? jobLabel(j) : 'Execute ' + (j.proposals?.length ?? 0) + ' approved finding' + (j.proposals?.length === 1 ? '' : 's')}</h3>
       <p className="wb-lede">{x.release ? (j.step === 'finish' ? 'Finish: tag the merged release and publish it on GitHub.' : 'Build: cherry-pick the accepted items, run the gates, open the pull request.')
         : x.prepare ? 'Make ' + lensName + ' measurable in this repo: probe scripts against a production build and the overlay’s ## Probes entries.'
         : x.measure ? 'Scope: ' + (j.scope?.label ?? 'everything') : (j.proposals ?? []).join(', ') || 'No proposals named.'}</p>

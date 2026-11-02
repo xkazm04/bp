@@ -6,28 +6,18 @@
 // stopped, one done, one never onboarded), a folder check that answers by the path typed (`...registered...` is already in
 // bp, `...bad...` is not a git work tree), and writes that change the fake list. The real fetches are the default.
 //
-// The onboarding wire types mirror the shared contract (packages/core/src/scan/onboarding.ts and the `adopt` job fields
-// on ScanJob, which the server half adds); they live here until that module lands, and are the same shapes.
+// The onboarding wire types are the shared contract's (packages/core/src/scan/onboarding.ts, the `adopt` fields on ScanJob).
 import type { ProductInfo } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import type { Readiness } from '@bp/core/scan/readiness';
-import type { Phase } from '@/buildup/contract';
+import type { OnboardCheck, OnboardCheckItem } from '@bp/core/scan/onboarding';
 import { addProject, patchProject, projectsError, refreshProjects, removeProject } from '@/lib/scan/projects';
 import { REQUEST_TIMEOUT_MS } from '@/lib/scan/client';
 import { causeWords } from '@/lib/scan/refusal';
 
-export interface OnboardCheckItem { id: string; state: 'ok' | 'missing' | 'stale' | 'partial' | string; detail: string | null }
-export interface OnboardCheck {
-  root: string;
-  git: boolean;
-  slug: string;
-  name: string;
-  registered: string | null;
-  items: OnboardCheckItem[];
-  need: number;
-}
+export type { OnboardCheck, OnboardCheckItem };
 /** An adopt job as GET /onboarding answers it: a ScanJob of kind `adopt`, with the phase it last started. */
-export type OnboardJob = Omit<ScanJob, 'kind'> & { kind: ScanJob['kind'] | 'adopt'; resume?: boolean; adopt_phase?: Phase | null };
+export type OnboardJob = ScanJob;
 export type PurgeWord = 'store' | 'companion';
 
 /** A refusal or failure, said in words a person reads (the route's own text when it sent one). */
