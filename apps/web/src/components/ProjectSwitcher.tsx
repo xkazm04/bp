@@ -1,14 +1,13 @@
 'use client';
 // The header's project control: the current project's name, and a popover that lists the Kettle sample
 // plus every product in bp.products.local.json with its readiness (an icon and a word, never colour
-// alone), and "Manage projects…". Choosing one navigates to `?product=<slug>` (or drops it for Kettle),
+// alone), and "Manage projects…" (a link to the /projects page). Choosing one navigates to `?product=<slug>` (or drops it for Kettle),
 // keeping the route and the other query parameters: a switch is a page load, so the model is rebuilt
 // from scratch and nothing of the previous product's engine survives. The control lives in the chrome
 // and holds its own state; opening it re-renders only itself, never the canvas.
 import { useEffect, useRef, useState } from 'react';
 import { LEVEL_LABEL, LEVEL_TITLE, readinessLevel, type ReadinessLevel } from '@bp/core/scan/readiness';
 import { projectHref, refreshProjects, useProductName, useProjects } from '@/lib/scan/projects';
-import { ProjectsDialog } from './ProjectsDialog';
 import './projects.css';
 
 /** The readiness level as a shape (outline, half, full; dashed = cannot be drawn). `sample` = the built-in Kettle. */
@@ -31,7 +30,6 @@ interface Item { slug: string | null; name: string; level: ReadinessLevel | 'sam
 export function ProjectSwitcher({ current, fallbackName }: { current: string | null; fallbackName?: string }) {
   const { list, loading, error, stale } = useProjects();
   const [open, setOpen] = useState(false);
-  const [manage, setManage] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), pop = useRef<HTMLDivElement>(null);
   useEffect(() => { void refreshProjects(); }, []);
 
@@ -63,7 +61,6 @@ export function ProjectSwitcher({ current, fallbackName }: { current: string | n
     setOpen(false);
     location.assign(projectHref(slug));
   };
-  const openManage = () => { setOpen(false); setManage(true); };
 
   // a click outside closes it (without stealing focus back from what was clicked)
   useEffect(() => {
@@ -118,10 +115,9 @@ export function ProjectSwitcher({ current, fallbackName }: { current: string | n
           })}
           {stale && <div className="projsw-err" role="status">{stale === 'removed' ? 'This project was removed from the list.' : 'This project’s root changed.'} <button type="button" className="projsw-rl" onClick={() => location.reload()}>Reload</button></div>}
           {error && <div className="projsw-err" role="alert">{error}</div>}
-          <button type="button" role="menuitem" tabIndex={-1} className="projsw-it mg" onClick={openManage}>Manage projects…</button>
+          <a role="menuitem" tabIndex={-1} className="projsw-it mg" href={'/projects' + (current ? '?product=' + encodeURIComponent(current) : '')}>Manage projects…</a>
         </div>
       )}
-      {manage && <ProjectsDialog current={current} onClose={() => { setManage(false); trigger.current?.focus(); }} />}
     </div>
   );
 }

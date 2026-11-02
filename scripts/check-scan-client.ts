@@ -76,7 +76,7 @@ expect(refusalText(err('that lens has no manifest scan block on disk', { status:
 expect(refusalText(err('Nothing to scan with: no live product and no sample sim', { status: 503 })).startsWith('Nothing to scan with'), 'actions.ts\' own 503 sentence was discarded');
 
 // --------------------------------------------- 1b. the project list's alert says the same things
-// `refreshProjects` built its own sentence from `(e as Error).message`, so ProjectsDialog's role="alert" and
+// `refreshProjects` built its own sentence from `(e as Error).message`, so the manage dialog's (now the /projects page's) alert and
 // the switcher's title read "Could not read the project list: Failed to fetch" - a third implementation of
 // the rule refusalText and saveFailWords already carry, and the one on the surface a reader reaches when
 // nothing else works. Both now come from refusal.ts' causeWords.

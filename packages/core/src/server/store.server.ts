@@ -87,6 +87,33 @@ export function openRead(file: string): DatabaseSync | null {
 export function close(db: DatabaseSync | null): void { try { db?.close(); } catch { /* already closed */ } }
 
 /**
+ * Long-lived holders of a store connection (the product stream keeps one read connection open for its whole life) say so
+ * here with a closer, so a purge can end them before it deletes the store: Windows will not delete an open scan.db. The
+ * short reads (open, read, close in one call) need no entry. On globalThis: Next bundles each route apart, and the
+ * stream route and the products route must share one table.
+ */
+type Closer = () => void;
+const HOLDERS = ((globalThis as typeof globalThis & { __bpStoreHolders?: Map<Closer, string> }).__bpStoreHolders ??= new Map<Closer, string>());
+/** Register `closer` as holding a connection to the store file `file`; returns the release (call it when the holder ends). */
+export function holdStore(file: string, closer: Closer): () => void {
+  HOLDERS.set(closer, path.resolve(file));
+  return () => { HOLDERS.delete(closer); };
+}
+/** Ends every registered holder of a store under `root` (its `.ai/lens-scan/`), and answers how many it ended. */
+export function closeStoresUnder(root: string): number {
+  const dir = path.resolve(root, '.ai', 'lens-scan') + path.sep;
+  const norm = (s: string) => (process.platform === 'win32' ? s.toLowerCase() : s);
+  let n = 0;
+  for (const [closer, file] of [...HOLDERS]) {
+    if (!norm(file).startsWith(norm(dir))) continue;
+    HOLDERS.delete(closer);
+    try { closer(); } catch { /* a holder that cannot close is already gone */ }
+    n++;
+  }
+  return n;
+}
+
+/**
  * One release's row as the store holds it, or WHY there is none - the four conditions a bare `undefined` used to blur:
  * `no-store` (no scan.db yet), `no-table` (a v1 store, no `releases` table), `absent` (the store has no such release),
  * `unreadable` (the file would not open or the read failed: a write lock past the busy timeout, a corrupt file, a

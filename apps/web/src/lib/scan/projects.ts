@@ -1,6 +1,6 @@
 // The client side of the project registry: the list (`GET /api/products`, with readiness) in a tiny
 // external store, and the writes (`POST /api/products`, `PATCH|DELETE /api/products/<slug>`). The header's
-// project switcher and the manage dialog read it; nothing here touches the engine or the canvas.
+// project switcher and the /projects page (apps/web/src/projects) read it; nothing here touches the engine or the canvas.
 import { useSyncExternalStore } from 'react';
 import type { ProductInfo } from '@bp/core/scan/types';
 import { REQUEST_TIMEOUT_MS } from './client.ts';
@@ -58,6 +58,9 @@ export const statusOfStore = (hasStore: boolean | undefined): 'loading' | 'live'
 /** Note that the open product's registry entry changed under the running page (shown with a Reload action). */
 export function markStale(s: Stale) { put({ stale: s }); }
 
+/** The last list read's failure in words, or null (the /projects page reads it after a failed refresh). */
+export const projectsError = (): string | null => state.error;
+
 export function useProjects(): ProjectsState {
   return useSyncExternalStore(subscribe, get, get);
 }
@@ -87,8 +90,9 @@ async function write(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: un
 const one = (slug: string) => '/api/products/' + encodeURIComponent(slug);
 export const addProject = (p: { slug: string; name: string; root: string }) => write('/api/products', 'POST', p);
 export const patchProject = (slug: string, p: { name?: string; root?: string }) => write(one(slug), 'PATCH', p);
-/** Unregisters only: the repo and its `.ai/lens-scan/` stay on disk. */
-export const removeProject = (slug: string) => write(one(slug), 'DELETE');
+/** Unregisters; with `purge`, also deletes the repo's `.ai/lens-scan/` (`store`) and the companion's records of it
+ *  (`companion`). The repo itself is never touched. */
+export const removeProject = (slug: string, purge: ('store' | 'companion')[] = []) => write(one(slug) + (purge.length ? '?purge=' + purge.join(',') : ''), 'DELETE');
 
 /** Open another product in place, without a reload: the page pushes the URL (projectHref's, plus `params`) and BlueprintApp
  *  swaps the product, so the engine rebuilds while the tab, its stream connections and its shared-focus reader stay. */

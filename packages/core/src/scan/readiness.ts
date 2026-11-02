@@ -1,6 +1,6 @@
 // How ready a registered product repo is to be drawn: the files under `<root>/.ai/lens-scan/` and what
 // they hold. The server computes it (readiness.server.ts, one per product in `GET /api/products`); this
-// file is pure and shared, so the project switcher and the manage dialog read the same verdict.
+// file is pure and shared, so the project switcher and the /projects page read the same verdict.
 
 export interface Readiness {
   /** The repo root exists and is a directory. */
