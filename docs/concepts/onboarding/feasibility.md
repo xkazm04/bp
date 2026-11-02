@@ -191,3 +191,27 @@ The silences are shorter, not gone: during judging the subagents' tool calls are
 event at all is 88-111 s depending on the run (measured on the replayed event lists). Each variant keeps a calm idle motion there (A a light line, B a breathing
 cursor and ticking clocks, E a circling pen) and shows no invented number. Both A and E's builders asked for one more
 link: which code areas each wing or feature covers, so activity could light the feature being judged, not a code area.
+
+## 6. First real onboarding through the app (2026-11-02)
+
+B won (contest verdict B/1); A and E are removed. The flow is built: `/projects` (add, manage, remove with purge), the
+server `adopt` job with its build-up journal and SSE feed, and `/projects/<slug>/onboarding` playing B live, ending
+with "Open blueprint". One real run on dowser@414e6ed, driven through the UI by Playwright and recorded
+(`.contest/arena/blueprint-buildup/runs/e2e/`: video, stills, the job's journal and log), n=1:
+
+| t | event |
+|---|---|
+| 13 s | Add project, Check, Start onboarding -> the onboarding screen |
+| 42 / 122 / 133 s | survey, enriched twice |
+| 132 s | seed (24 code contexts) |
+| 255 s | outline (5 domains) and the structure **in the same second**; history at 257 s |
+| 447 / 909 / 944 s | judgement batches, provisional health each |
+| 993 s | final health (1 in trouble), register 1014 s, done 1044 s; "Open blueprint" band at 1058 s |
+
+17.4 min, $11.00, 5 wings, 14 rooms, 17 features, 0 page or console errors; the blueprint opened on the new product.
+The longest stretch with no event was 135 s (773-913 s, judging), 120 activity events in all.
+
+Finding: with adopt-bp 1.5.0 the model wrote all `product-tree.d` files in one burst just before the merged tree, so the
+outline arrived with the structure and bought no lead time (the test harness's prompt, which asked for the files
+explicitly, got 40-110 s). The skill's wording needs to make the per-domain write happen as each domain is decided, or
+the server needs another early signal of the domains.
