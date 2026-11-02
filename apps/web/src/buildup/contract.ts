@@ -95,12 +95,18 @@ export type BuildupEvent =
   | { type: 'done'; at: number }
   | { type: 'failed'; at: number; phase: Phase; message: string };
 
-export type BuildupListener = (e: BuildupEvent) => void;
+/**
+ * `past`: the event is history being caught up, not news. A source sets it on what `subscribe` hands a late listener and
+ * on the burst a feed resends when it (re)connects (the server replays from `begin`: a page opened mid-run, a dropped
+ * connection). A variant draws a past event at its end state at once instead of animating it, so catching up on a
+ * 10-minute run takes a frame, not 10 minutes. Absent means live.
+ */
+export type BuildupListener = (e: BuildupEvent, past?: boolean) => void;
 
 /**
  * Where events come from. A variant subscribes once; `subscribe` first delivers, synchronously, every event since the
- * last `begin` (a variant that mounts late, or a screen opened mid-run, catches up), then live ones. `replay` restarts
- * from `begin` (listeners are kept).
+ * last `begin` (a variant that mounts late, or a screen opened mid-run, catches up), marked `past`, then live ones.
+ * `replay` restarts from `begin` (listeners are kept).
  */
 export interface BuildupSource {
   readonly kind: 'preset-demo' | 'preset-real' | 'live';

@@ -138,10 +138,10 @@
 
 .head {
   position: absolute; left: 58px; top: calc(var(--barH) + 10px); z-index: 3; display: none; background: var(--halo);
-  border: 1px solid var(--ink-4); border-radius: 3px; padding: 6px 12px; pointer-events: none;
+  border: 1px solid var(--ink-4); border-radius: 3px; padding: 6px 12px; pointer-events: none; max-width: calc(100% - 120px);
 }
 .head.on { display: block; }
-.head b { font: 600 20px var(--sans); letter-spacing: .06em; color: var(--ink-hi); margin-right: 12px; }
+.head b { font: 600 20px var(--sans); letter-spacing: .06em; color: var(--ink-hi); margin-right: 12px; overflow-wrap: anywhere; }
 .head span { font-size: 15px; color: var(--ink-2); margin-right: 10px; }
 .head .warn { color: var(--red-2); }
 

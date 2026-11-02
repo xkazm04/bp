@@ -101,7 +101,7 @@ export function presetSource(plan: BuildupPlan, mode: PresetMode, speed = 1): Bu
   };
   return {
     kind: mode === 'demo' ? 'preset-demo' : 'preset-real',
-    subscribe(fn) { for (const e of played) fn(e); listeners.add(fn); return () => { listeners.delete(fn); }; },
+    subscribe(fn) { for (const e of played) fn(e, true); listeners.add(fn); return () => { listeners.delete(fn); }; },
     start,
     replay: start,
     dispose() { clear(); listeners.clear(); },
