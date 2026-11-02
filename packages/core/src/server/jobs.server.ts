@@ -224,6 +224,9 @@ const jobId = () => 'j-' + Date.now().toString(36) + '-' + Math.random().toStrin
 
 /** The product's jobs, oldest first (queued and running ones always kept, finished ones down to the latest 50). */
 export function list(slug: string): ScanJob[] { ensure(slug); return (registry.get(slug)?.recs ?? []).map(copy); }
+/** The ids of the product's jobs whose process may still be there or that still wait (phase not `ended`): a cancelled job
+ *  reads `cancelled` at once but stays here until its process has gone (purge.server.ts waits on this before deleting). */
+export function unsettled(slug: string): string[] { return (registry.get(slug)?.recs ?? []).filter((r) => r.phase !== 'ended').map((r) => r.job.id); }
 
 /** Called with the whole list after each change (log lines coalesced to one call per 400 ms). Returns the unsubscribe. */
 export function subscribe(slug: string, fn: Listener): () => void {
