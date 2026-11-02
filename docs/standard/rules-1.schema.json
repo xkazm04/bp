@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/rules-1.schema.json",
+  "title": "Standing rules v1 (bp-rules.json)",
+  "description": "The owner's standing rules of one product, at <root>/.ai/lens-scan/work/bp-rules.json: orders (hold, only, cap) and grants. Normative text: docs/standard/rules-1.md. Types: packages/core/src/scan/rules.ts (Rule, RulesFile, HeldEntry). Required and optional fields follow the Rule interface; the per-kind requirements bp's write path adds (only needs lenses, cap needs maxEffort, a grant needs expiresAt) are stated in rules-1.md and not enforced here. Unknown keys are allowed: readers ignore them.",
+  "type": "object",
+  "required": ["version", "rules"],
+  "properties": {
+    "version": { "const": 1 },
+    "rules": {
+      "description": "Every rule ever set, newest last; revoked and expired rules stay as the record.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    }
+  },
+  "$defs": {
+    "datetime": { "type": "string", "format": "date-time" },
+    "safeId": { "type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,80}$" },
+    "rule": {
+      "type": "object",
+      "required": ["id", "kind", "text", "by", "at", "scope"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[OG]-[0-9]{1,6}$", "description": "O-n for an order (hold, only, cap), G-n for a grant; numbered per product, never reused." },
+        "kind": { "enum": ["hold", "only", "cap", "grant"] },
+        "text": { "type": "string", "minLength": 1, "maxLength": 200, "description": "The rule in the owner's words." },
+        "by": { "type": "string", "minLength": 1, "description": "Who set it: user:<gh login>, else user:blueprint." },
+        "at": { "$ref": "#/$defs/datetime", "description": "When it was set; live from this moment." },
+        "scope": { "$ref": "#/$defs/scope" },
+        "lenses": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "only: the lenses whose work may still start in the place." },
+        "maxEffort": { "enum": ["low", "medium", "high", "xhigh"], "description": "cap: the highest effort a build in the place may run at." },
+        "model": { "enum": ["sonnet", "opus"], "description": "cap: only builds on this model are capped; absent = every model." },
+        "minTier": { "enum": [0, 1, 2, 3], "description": "grant: findings of this tier or milder (0 stop-ship .. 3 backlog); absent = any tier." },
+        "cautious": { "const": true, "description": "grant: act only on a lens it has earned (90%+ agreement over 3+ of the owner's decisions in its place); absent = not cautious." },
+        "tools": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "grant: the agent tools it lets run without a card; absent = decision.answer and wave.dispatch." },
+        "expiresAt": { "$ref": "#/$defs/datetime", "description": "Absent = until revoked." },
+        "revokedAt": { "$ref": "#/$defs/datetime" },
+        "revokedBy": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "description": "What the replay said when the rule was set.",
+          "type": "object",
+          "required": ["decided", "matched", "differed", "abstained", "at"],
+          "properties": {
+            "decided": { "type": "integer", "minimum": 0 },
+            "matched": { "type": "integer", "minimum": 0 },
+            "differed": { "type": "integer", "minimum": 0 },
+            "abstained": { "type": "integer", "minimum": 0 },
+            "at": { "$ref": "#/$defs/datetime" }
+          }
+        }
+      }
+    },
+    "scope": {
+      "description": "A ScanScope: the place a rule governs, its features resolved when the rule was written.",
+      "type": "object",
+      "required": ["kind", "label", "features"],
+      "properties": {
+        "kind": { "enum": ["feature", "bay", "room", "wing", "all", "selection"] },
+        "id": { "$ref": "#/$defs/safeId", "description": "The place id (a feature slug, capability, domain or wing id); absent for all." },
+        "label": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "features": { "type": "array", "maxItems": 2000, "items": { "$ref": "#/$defs/safeId" }, "description": "Feature slugs; [] for all (every feature)." }
+      }
+    },
+    "heldEntry": {
+      "description": "One line of bp-rules-log.jsonl (HeldEntry): a door that held items under an order, or refused the act.",
+      "type": "object",
+      "required": ["at", "rule", "tool", "ids", "refused"],
+      "properties": {
+        "at": { "$ref": "#/$defs/datetime" },
+        "rule": { "type": "string", "pattern": "^[OG]-[0-9]{1,6}$" },
+        "tool": { "type": "string", "description": "wave.compose, wave.dispatch, dispatch, lens.execute or scan.place." },
+        "ids": { "type": "array", "items": { "type": "string" } },
+        "refused": { "type": "boolean" }
+      }
+    }
+  }
+}

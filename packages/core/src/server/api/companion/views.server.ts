@@ -20,6 +20,8 @@ import { readSnapshot } from '../../store.server.ts';
 import { gapScore, rankGaps, rankInbox, rankValue, type Ranked } from './rank.ts';
 import { worthOf } from '../../../scan/score.ts';
 import { readRecommendations } from './door.server.ts';
+import { decidedRows, listRules, trustedLenses } from '../../rules.server.ts';
+import { gate, grantFor, isLive } from '../../../scan/rules.ts';
 
 if (typeof window !== 'undefined') throw new Error('views.server.ts is server-only');
 
@@ -49,15 +51,21 @@ const ageOf = (iso: string, now: number): number => { const t = Date.parse(iso);
 export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; skipped: Skipped[] } {
   const { read, skipped } = snapshots(), recs = readRecommendations(), out: Ranked[] = [];
   for (const { p, scan } of read) {
-    const ev = rankValue(scan.proposals);
+    const ev = rankValue(scan.proposals), rules = listRules(p.root).filter((r) => isLive(r, now));
+    let rows: ReturnType<typeof decidedRows> | null = null; // read only when a cautious grant asks; unreadable = no trust
+    const record = () => (rows ??= (() => { try { return decidedRows(p); } catch { return []; } })());
     for (const x of scan.proposals) {
       const kind = x.status === 'proposed' ? 'proposal' : x.status === 'done' || x.status === 'failed' ? 'triage' : null;
       if (!kind) continue;
       const rec = recs[`${p.slug}:${x.id}`];
+      // the owner's standing rules mark what no door will build (an order) and what an agent may approve alone (a grant)
+      const held = kind === 'proposal' && rules.length ? gate(rules, { kind: 'build', tool: 'inbox.list', items: [{ id: x.id, feature: x.feature, lens: x.lens }] }, now).held[0]?.order.id : undefined;
+      const grant = kind === 'proposal' && rules.length && !held ? grantFor(rules, 'decision.answer', [{ feature: x.feature, lens: x.lens, ...(x.tier !== undefined ? { tier: x.tier } : {}) }], now, (r) => trustedLenses(r, record()))?.id : undefined;
       out.push({
         product: p.slug, id: x.id, kind, title: x.title, ...(x.tier !== undefined ? { tier: x.tier } : {}),
         ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), worth: worthOf(x, ev),
         ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why, ...(rec.brief ? { brief: rec.brief.lines } : {}) } } : {}),
+        ...(held ? { heldBy: held } : {}), ...(grant ? { grant } : {}),
       });
     }
   }

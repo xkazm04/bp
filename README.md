@@ -37,6 +37,7 @@ repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's wor
 | `?lenses=-security,+com.kettle.cost` | Switch lenses off or on for the session |
 | `?product=<slug>` | A live product: a repo listed in `bp.products.local.json`, read from its lens-scan store |
 | `?product=<slug>&page=ledger&tab=release` | That product's findings ledger at the Release tab (`tab=triage` / `matrix` for the others); the link Personas' Release card opens. bp reads it once into its hash state and drops it from the query |
+| `?product=<slug>&dock=orders&rule=O-1` | That product's standing rules (the Orders panel, on rule `O-1` when named): what a read-only reader of `bp-rules.json` (Personas' rail, `docs/concepts/rules-personas-adoption.md`) opens to set, lift or replay a rule. Read once, then dropped from the query |
 
 ## Live products
 

@@ -9,6 +9,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { AnimatePresence, motion } from 'motion/react';
 import type { LampProps } from '../index';
 import './lamp.css';
+import { RuleCardReplay } from '../../RuleCardReplay';
 
 type Pose = { l: [number, number]; r: [number, number]; head: number };
 const POSES: Record<string, Pose> = {
@@ -244,6 +245,7 @@ export function GlimLamp(p: LampProps) {
                         {p.caption && p.caption !== card.summary && <h3>{p.caption}</h3>}
                         <div className="lp-card-k">DECISION{card.product ? ` · ${card.product}` : ''} · <code>{card.tool}</code></div>
                         <p>{card.summary}</p>
+                        <RuleCardReplay card={card} />
                         <div className="lp-card-b">
                           <button type="button" className="lp-yes" onClick={() => decide(card.id, 'approve')}>Approve</button>
                           <button type="button" className="lp-no" onClick={() => decide(card.id, 'decline')}>Decline</button>

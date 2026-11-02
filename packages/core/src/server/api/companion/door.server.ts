@@ -27,6 +27,8 @@ import { bounded, isGated, productOf, toolOf, toolRequest } from './tool-call.ts
 import { findProduct, hasStore, storeFile, writeAtomic } from '../../products.server.ts';
 import { snapshotOf } from '../../store.server.ts';
 import { listWaves } from '../../waves.server.ts';
+import { decidedRows, itemsOf, listRules, trustedLenses } from '../../rules.server.ts';
+import { grantFor, type Rule } from '../../../scan/rules.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
 
@@ -38,6 +40,29 @@ export const humanToken = (): string => (g.__bpHumanToken ??= randomBytes(32).to
 export function isHuman(req: Request): boolean {
   const got = Buffer.from(req.headers.get(HUMAN_HEADER) ?? ''), want = Buffer.from(humanToken());
   return got.length === want.length && timingSafeEqual(got, want);
+}
+/** A card the owner's standing permission ran (a rule grant G-n in bp-rules.json, or a companion policy pol_..) carries
+ *  `x-bp-rule: <id>`, `x-bp-rule-tool: <tool>` and this per-process token, so the route it calls signs the decision
+ *  `rule:G-n` / `policy:pol_..` instead of the person's name: the store says who decided, and the record a rule is
+ *  replayed over is the owner's alone (rules.server.ts AGENT_SIGNS). Minted like the human token; never handed out.
+ *  Known exposure (shared with the human token): the card's request goes to the origin the filing request named, and a
+ *  local process that can set a Host header can name its own port; the server is loopback-only (a guard against the
+ *  agent, not against an attacker already on this machine). */
+const ruleToken = (): string => ((g as { __bpRuleToken?: string }).__bpRuleToken ??= randomBytes(32).toString('hex'));
+export const RULE_HEADER = 'x-bp-rule', RULE_TOOL_HEADER = 'x-bp-rule-tool', RULE_TOKEN_HEADER = 'x-bp-rule-token';
+const PERMIT_ID = /^(G-\d{1,6}|pol_[0-9a-z]{6,40})$/;
+/**
+ * Who signs a decision this request makes: `{ by: 'rule:G-n' | 'policy:pol_..' }` when it is this server's own call under
+ * a standing permission THAT STILL COVERS IT (re-checked here, at the moment it lands: a wave changed since the card was
+ * filed, or a grant revoked meanwhile, is refused 403); null for any other request (the route signs as the person).
+ */
+export function agentSigner(req: Request, args: Record<string, unknown>): { by: string } | { refuse: Response } | null {
+  const id = req.headers.get(RULE_HEADER), got = Buffer.from(req.headers.get(RULE_TOKEN_HEADER) ?? ''), want = Buffer.from(ruleToken());
+  if (!id || got.length !== want.length || !timingSafeEqual(got, want) || !PERMIT_ID.test(id)) return null;
+  const t = toolOf(req.headers.get(RULE_TOOL_HEADER));
+  const still = t ? (id.startsWith('G-') ? ruleGrantFor(t, args)?.id : policyFor(t, args)?.id) : undefined;
+  if (still !== id) return { refuse: Response.json({ error: `${id} no longer covers this call (${t?.name ?? 'unknown tool'}): it waits for the person` }, { status: 403 }) };
+  return { by: (id.startsWith('G-') ? 'rule:' : 'policy:') + id };
 }
 /** Only a browser on bp's own page sends both; neither can be set by a page on another origin. */
 export const fromOwnPage = (req: Request): boolean => req.headers.get('sec-fetch-site') === 'same-origin' && req.headers.get('sec-fetch-mode') === 'cors';
@@ -124,6 +149,27 @@ export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date
   return null;
 }
 
+/** The owner's standing grant (bp-rules.json, rules.server.ts) that lets this call run without a card: a decision.answer
+ *  that approves, or a wave.dispatch, every finding of it inside the grant's place and of its tier floor or milder. */
+export function ruleGrantFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now()): Rule | null {
+  const slug = productOf(args), p = slug ? findProduct(slug) : null;
+  if (!p) return null;
+  let ids: string[] = [];
+  if (t.name === 'decision.answer' && args.decision === 'approve' && typeof args.id === 'string') ids = [args.id];
+  else if (t.name === 'wave.dispatch') {
+    const w = listWaves(p.root).find((x) => x.id === args.wave), pk = Array.isArray(args.packages) ? new Set(args.packages) : null;
+    ids = w ? w.packages.filter((k) => !pk || pk.has(k.id)).flatMap((k) => k.ids) : [];
+  }
+  if (!ids.length) return null;
+  try {
+    const rules = listRules(p.root), items = itemsOf(p, ids);
+    if (items.length !== new Set(ids).size) return null; // an id the store lacks is never covered
+    // a cautious grant acts only in the lenses its replay over the owner's own decisions has earned
+    let rows: ReturnType<typeof decidedRows> | null = null;
+    return grantFor(rules, t.name, items, now, (r) => trustedLenses(r, (rows ??= decidedRows(p)))) ?? null;
+  } catch { return null; }
+}
+
 // ------------------------------------------------------------------------------------------------ cards
 export const CARD_TTL_MS = 24 * 3600000;
 export const CARD_LIST_MAX = 50;
@@ -157,6 +203,14 @@ export const listCards = (): Card[] => [...current().values()].sort((a, b) => (a
 export const getCard = (id: string): Card | undefined => current().get(id);
 
 const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
+  if (t.name === 'rule.propose') { // what approving it would set, in words: the agent's own text and label are quoted, never trusted alone
+    const sc = args.scope as { kind?: unknown; label?: unknown; features?: unknown } | undefined, text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : `a ${String(args.kind)} rule`;
+    const n = sc?.kind === 'all' ? 'every feature' : Array.isArray(sc?.features) ? `${sc.features.length} feature${sc.features.length === 1 ? '' : 's'}` : 'its features';
+    const what = args.kind === 'grant'
+      ? `a GRANT (${args.minTier === undefined || args.minTier === 0 ? 'any tier: it covers stop-ship findings' : `tier ${String(args.minTier)}+`}${args.cautious === true ? ', cautious' : ''})`
+      : `an ORDER (${String(args.kind)})`;
+    return bounded(`Proposes ${what} for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'} (${n})${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
+  }
   const shown = Object.entries(args).filter(([k]) => k !== 'slug' && k !== 'product').map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
   const product = productOf(args);
   return bounded(`${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`).slice(0, 300);
@@ -200,7 +254,10 @@ async function execute(c: Card, t: ToolSpec, o: Origin, human: boolean): Promise
   try {
     const res = await fetch(o.origin + r.path, {
       method: r.method,
-      headers: { 'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}) },
+      headers: {
+        'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}),
+        ...(!human && c.policy && PERMIT_ID.test(c.policy) ? { [RULE_HEADER]: c.policy, [RULE_TOOL_HEADER]: t.name, [RULE_TOKEN_HEADER]: ruleToken() } : {}),
+      },
       ...(r.body ? { body: JSON.stringify(r.body) } : {}),
       redirect: 'manual',
       signal: AbortSignal.timeout(60000),
@@ -223,9 +280,9 @@ export async function fileCard(tool: unknown, args: unknown, o: Origin): Promise
   if ('error' in req) return { ok: false, status: 400, error: req.error };
   const product = productOf(a);
   const card: Card = { id: sortableId('card_'), tool: t.name, args: a, summary: summaryOf(t, a), ...(product ? { product } : {}), state: 'pending', createdAt: new Date().toISOString() };
-  const grant = policyFor(t, a);
+  const grant = policyFor(t, a)?.id ?? ruleGrantFor(t, a)?.id;
   if (!grant) return { ok: true, card: put(card) };
-  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant.id });
+  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant });
   return { ok: true, card: await execute(approved, t, o, false) };
 }
 

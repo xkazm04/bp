@@ -15,6 +15,7 @@ import type { Engine } from '@/engine/Engine';
 import type { AppPage } from '@/engine/state';
 import './page-switch.css';
 import { GENERAL } from '@bp/core/data/types';
+import { RuleChips } from './RuleChips';
 
 function crumbLabel(E: ReturnType<typeof useEngine>, c: Crumb, short: boolean): string {
   const o = E.placeById(c.t, c.id);
@@ -299,6 +300,7 @@ export const Header = memo(function Header() {
       <div className="hdr-right">
         <Switcher current={E.M.live?.slug ?? null} fallbackName={E.M.P.name} />
         <LivePill />
+        <RuleChips />
         <LensTabs />
         <Theme />
       </div>

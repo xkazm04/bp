@@ -106,10 +106,20 @@ export function useWaves(ctx: ScanCtx, jobs: readonly ScanJob[]): WavesModel {
   }, [E, load]);
 
   const reload = useCallback(() => { void load({ on: true }); }, [load]);
-  const create = useCallback((body: WaveBody) => run('Wave not created', () => createWave(ctxRef.current, body)), [run]);
+  // the owner's standing orders (Rules) leave held findings out of a wave and skip them at dispatch (`held:O-n`): say so
+  const create = useCallback(async (body: WaveBody) => {
+    const w = await run('Wave not created', () => createWave(ctxRef.current, body));
+    const kept = new Set(w?.packages.flatMap((p) => p.ids) ?? []), out = w ? body.packages.flatMap((p) => p.ids).filter((id) => !kept.has(id)) : [];
+    if (out.length) E.toast('Held by a standing order', out.length + (out.length === 1 ? ' finding was' : ' findings were') + ' left out of ' + w!.name + ': an order holds ' + (out.length === 1 ? 'its place' : 'their places') + ' (Rules)', undefined, undefined, 'warn');
+    return w;
+  }, [run, E]);
   const update = useCallback((id: string, patch: Partial<WaveBody>) => run('Wave not saved', () => updateWave(ctxRef.current, id, patch)), [run]);
   const remove = useCallback(async (id: string) => (await run('Wave not deleted', () => deleteWave(ctxRef.current, id))) !== null, [run]);
-  const dispatch = useCallback((id: string, packages?: string[]) => run<WaveDispatchResult>('Wave not dispatched', () => dispatchWave(ctxRef.current, id, packages), (e) => {
+  const dispatch = useCallback((id: string, packages?: string[]) => run<WaveDispatchResult>('Wave not dispatched', () => dispatchWave(ctxRef.current, id, packages).then((r) => {
+    const held = r.skipped.filter((x) => x.status.startsWith('held:')), by = [...new Set(held.map((x) => x.status.slice(5)))];
+    if (held.length) E.toast('Held by ' + by.join(', '), held.length + (held.length === 1 ? ' finding was' : ' findings were') + ' skipped: a standing order holds ' + (held.length === 1 ? 'its place' : 'their places') + '; lift it in Rules to build ' + (held.length === 1 ? 'it' : 'them'), undefined, undefined, 'warn');
+    return r;
+  }), (e) => {
     // queue full midway: the jobs already queued stand (their approvals too), so this is a partial success
     const b = refusal(e).body;
     if (refusal(e).status !== 429 || !b?.wave) return undefined;
