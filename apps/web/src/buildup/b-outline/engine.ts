@@ -456,7 +456,16 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
   const judgedNow = (tl: TileN, t: number) => !(fin(tl.healthAt) && tl.healthAt <= t) && judging.some((j) => j.t <= t && (j.slugs.has(tl.id) || j.slugs.has(slugOf(tl.id))));
   const narrShown = (): Narr | null => (narr && run - narr.run < NARR_FRESH ? narr : null);
   /** Rows the cursor line takes: two while a fresh narration says what comes next. */
-  const actRows = () => (narrShown()?.next ? 2 : 1);
+  const actRows = () => { const n = narrShown(); return n ? wrapNarr(n.text, narrCols).length + (n.next ? 1 : 0) : 1; };
+  let narrCols = 60; // the cursor line's width in mono columns, as last drawn
+  /** The agent's words over at most two rows, broken at a space; a longer line is cut on the second. */
+  function wrapNarr(text: string, n: number): string[] {
+    if (text.length <= n) return [text];
+    let cut = text.lastIndexOf(' ', n);
+    if (cut < n * 0.5) cut = n;
+    const rest = text.slice(cut).trimStart();
+    return [text.slice(0, cut).trimEnd(), rest.length > n ? rest.slice(0, Math.max(1, n - 1)).trimEnd() + '…' : rest];
+  }
   /** A tile's reading as drawn at t: the batch's pencil until the final reading inks it. */
   const isPencil = (tl: TileN, t: number) => tl.pencil !== null && !(t >= tl.inkAt);
   const shownHealth = (tl: TileN, t: number): Health | null => (isPencil(tl, t) ? tl.pencil : tl.general);
@@ -967,6 +976,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
   // the cursor line: what the agent touched last, as a path; after 20 s without news it says how long ago
   function drawActLine(t: number, cw: number, y: number, cursorOn: boolean) {
     const x0 = 16, maxC = Math.floor((cw - 32) / V.cw) - 4;
+    narrCols = maxC + 2;
     ctx.font = `14px ${MONO}`; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     const draw = (a: Act, alpha: number) => {
       const age = run - a.run, fresh = age < 20;
@@ -986,21 +996,22 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     const say = (n: Narr, alpha: number) => {
       ctx.globalAlpha = alpha;
       ctx.fillStyle = C.accent; ctx.fillText('▸', x0, y);
-      const txt = fitMono(n.text, maxC + 2);
-      ctx.fillStyle = C.ink; ctx.fillText(txt, x0 + 2 * V.cw, y);
+      const rows = wrapNarr(n.text, maxC + 2);
+      ctx.fillStyle = C.ink;
+      rows.forEach((r, i) => ctx.fillText(r, x0 + 2 * V.cw, y + i * LH));
       if (n.next) {
-        const nx = fitMono(n.next, maxC - 4);
-        ctx.fillStyle = C['ink-3']; ctx.fillText('next: ', x0 + 2 * V.cw, y + LH);
-        ctx.fillStyle = C['ink-2']; ctx.globalAlpha = alpha * 0.85; ctx.fillText(nx, x0 + 8 * V.cw, y + LH);
+        const nx = fitMono(n.next, maxC - 4), ny = y + rows.length * LH;
+        ctx.fillStyle = C['ink-3']; ctx.fillText('next: ', x0 + 2 * V.cw, ny);
+        ctx.fillStyle = C['ink-2']; ctx.globalAlpha = alpha * 0.85; ctx.fillText(nx, x0 + 8 * V.cw, ny);
       }
-      return x0 + (2 + txt.length) * V.cw;
+      return { x: x0 + (2 + rows[rows.length - 1].length) * V.cw, y: y + (rows.length - 1) * LH };
     };
-    let cx = x0;
+    let cx = x0, cy = y;
     const n = narrShown();
     if (n) {
       const f = S.reduced ? 1 : span(wallNow, n.wall, 350);
       if (f < 1) { if (narrPrev) say(narrPrev, 1 - f); else if (act) draw(act, 1 - f); }
-      cx = say(n, f) + 4;
+      const end = say(n, f); cx = end.x + 4; cy = end.y;
     } else if (act) {
       const f = S.reduced ? 1 : span(wallNow, act.wall, 350);
       if (actPrev && f < 1) draw(actPrev, 1 - f);
@@ -1009,7 +1020,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     if (cursorOn) {
       // a slow breath, not a blink: the run is working even when nothing has arrived for a minute
       ctx.globalAlpha = S.reduced ? 1 : 0.3 + 0.7 * (0.5 + 0.5 * Math.cos((wallNow / 1000) * Math.PI * 1.25));
-      ctx.fillStyle = C.accent; ctx.fillRect(cx, y - 8, Math.max(7, V.cw * 0.8), 16);
+      ctx.fillStyle = C.accent; ctx.fillRect(cx, cy - 8, Math.max(7, V.cw * 0.8), 16);
     }
     ctx.globalAlpha = 1;
   }
