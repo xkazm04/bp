@@ -26,7 +26,7 @@ namespace
 {
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPinch(
 		TEXT("BpHands.Pinch"),
-		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:decline|card:decline|card:approve|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck or card control or a feature it taps: released where it closed), through the same judging as real hands."),
+		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:approveall|deck:decline|card:decline|card:approve|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck or card control or a feature it taps: released where it closed), through the same judging as real hands."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
 		{
 			if (Args.Num() == 0)

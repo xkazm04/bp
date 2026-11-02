@@ -895,6 +895,73 @@ void FBpLinkModule::SendDecision(const TCHAR* Verb, const FString& ProposalId, T
 	Request->ProcessRequest();
 }
 
+void FBpLinkModule::ApproveDecisions(const TArray<FString>& ProposalIds, TFunction<void(int32, const TArray<FString>&, const TArray<TPair<FString, FString>>&)> OnDone)
+{
+	// The set of D15: one pinch, several findings. The server judges each id (the one-finding approve per id) and answers which
+	// it approved and which it skipped; nothing else is sent through here.
+	const auto Refuse = [&OnDone](const TCHAR* Why)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused approve of a set: %s"), Why);
+		if (OnDone) OnDone(0, TArray<FString>(), TArray<TPair<FString, FString>>());
+	};
+	TArray<FString> Ids;
+	for (const FString& Id : ProposalIds) if (!Id.IsEmpty()) Ids.AddUnique(Id);
+	if (Ids.Num() < 1 || Ids.Num() > 50) { Refuse(*FString::Printf(TEXT("%d ids, the server takes 1 to 50"), Ids.Num())); return; }
+	if (GFromBundle) { Refuse(TEXT("the table reads the build's bundled snapshot, and no server keeps a decision")); return; }
+	for (const FString& Id : Ids) if (DecisionsOut.Contains(Id)) { Refuse(*FString::Printf(TEXT("%s has a write out"), *Id)); return; }
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	for (const FString& Id : Ids) DecisionsOut.Add(Id);
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	TArray<TSharedPtr<FJsonValue>> IdValues;
+	for (const FString& Id : Ids) IdValues.Add(MakeShared<FJsonValueString>(Id));
+	Body->SetArrayField(TEXT("ids"), IdValues);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	const FString Slug = GetProductSlug();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + Slug + TEXT("/proposals/approve"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetHeader(TEXT("x-bp-device"), DeviceId);
+	Request->SetContentAsString(Text);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST %s/proposals/approve (%d findings; the Morning Watch's Approve each, no build is queued)"), *Slug, Ids.Num());
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Ids, Slug](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Answer = Response.IsValid() ? Response->GetContentAsString() : FString();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: approve set %s (%d) answered %d %.300s"), *Slug, Ids.Num(), Status, *Answer);
+		TArray<FString> Approved;
+		TArray<TPair<FString, FString>> Skipped;
+		if (Status == 200)
+		{
+			TSharedPtr<FJsonObject> Json;
+			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Answer), Json) && Json.IsValid())
+			{
+				const TArray<TSharedPtr<FJsonValue>>* ApprovedValues = nullptr;
+				if (Json->TryGetArrayField(TEXT("approved"), ApprovedValues)) for (const TSharedPtr<FJsonValue>& V : *ApprovedValues) Approved.Add(V->AsString());
+				const TArray<TSharedPtr<FJsonValue>>* SkippedValues = nullptr;
+				if (Json->TryGetArrayField(TEXT("skipped"), SkippedValues))
+				{
+					for (const TSharedPtr<FJsonValue>& V : *SkippedValues)
+					{
+						const TSharedPtr<FJsonObject>* Row = nullptr;
+						if (V->TryGetObject(Row) && Row) Skipped.Add(TPair<FString, FString>((*Row)->GetStringField(TEXT("id")), (*Row)->GetStringField(TEXT("status"))));
+					}
+				}
+			}
+		}
+		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
+		{
+			for (const FString& Id : Ids) Module->DecisionsOut.Remove(Id);
+			// the store moved: the approved ones' briefs and the scan side are read again
+			if (Status == 200) { for (const FString& Id : Approved) Module->Briefs.Remove(Id); Module->NextScanPollS = 0.0; }
+		}
+		if (OnDone) OnDone(Status, Approved, Skipped);
+	});
+	Request->ProcessRequest();
+}
+
 void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
 	TFunction<void(int32, const FString&)> OnDone)
 {

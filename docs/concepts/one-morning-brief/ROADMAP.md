@@ -200,13 +200,13 @@ Duplicates are merged into one row. **Origin:**
 |---|---|---|---|---|
 | F1 | The brief on the table's decision card and on the room deck's decision screens. On `withdraw`, Decline becomes the primary answer | e2 (= A6) | L | S4 |
 | F2 | Add `briefs.json` to the offline bundle | e2 | S | S4 |
-| F3 | Parse the shared focus with generated structs instead of by hand. **Built 2026-10-31** (`roadmap/vr-f3-approve`): `ReceiveFollowView` reads `FBpSharedView` and its `shared` into `FBpSharedPlace` through `BpSchema::FromJson`; `SendPublish` and the follow ops write `FBpFocusPost` through `FJsonObjectConverter` (empty optionals dropped); `FBpFollowPlace` stays BpLink's in-engine type. Its UE compile (D5) waits for the main-checkout build | e3 | S | S4 (after S2) |
+| F3 | Parse the shared focus with generated structs instead of by hand. **Built 2026-10-31** (`roadmap/vr-f3-approve`): `ReceiveFollowView` reads `FBpSharedView` and its `shared` into `FBpSharedPlace` through `BpSchema::FromJson`; `SendPublish` and the follow ops write `FBpFocusPost` through `FJsonObjectConverter` (empty optionals dropped); `FBpFollowPlace` stays BpLink's in-engine type. Its UE compile (D5): **compiled 2026-11-02** (the main-checkout bpEditor build, exit 0) | e3 | S | S4 (after S2) |
 | F4 | An in-world Stop and Follow | e3 | M | S7 |
 | F5 | Follow history in the headset | e3 | S-M | S7 (after C2) |
 | F6 | Follow across products: load the followed product's plan. Today another product is only captioned | e3 (from the code: `BpFollow.cpp:78-80`) | M | S7 |
 | F7 | Put the brief route on the LAN door (`read` scope) | fused | S | S4 |
 | F8 | Whether a VR Decline writes the store. Today it is memory-only (`BpDeck.cpp:1117-1129`), and the door has no decide verb. **Built** 2026-10-30 (D8: a repeat's decline, `check:vr-decline`); **extended** 2026-10-31 (D12: a pinch on Approve approves the card's decision, `POST .../proposals/<id>/approve` on the same `decide` scope, `check:vr-approve`; BpLink `ApproveDecision`, the card's and the room deck's Approve) | fused, an owner decision | M | S4 |
-| F9 | Realign the main checkout's `apps/vr/Plugins/MetaXR` debug files (54 .pdb/.lib written by the host's setup build). Not run yet: it rides on the first main-checkout build, still blocked on 2026-10-31 (see S4) | host | S | S4 (the first main build) |
+| F9 | Realign the main checkout's `apps/vr/Plugins/MetaXR` debug files (54 .pdb/.lib written by the host's setup build). **Closed 2026-11-02**: after the main-checkout builds, 34 of the 35 `.pdb`/`.lib` under `apps/vr/Plugins/MetaXR` are dated today (this checkout's own plugin build products); the 35th is the vendor `OVRPlugin.lib`. Nothing to restore | host | S | S4 (the first main build) |
 
 ### G. Personas (detail in [`personas.md`](personas.md))
 
@@ -384,6 +384,14 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
     are still owed by the first main-checkout build after this branch. BuildCookRun is deferred (D13).
   - Merged as PR #12 (`16ea74a`). The editor was stopped at the session's end; the next session's plan, with D15, is
     [`vr-build-session.md`](vr-build-session.md).
+
+- **Closed 2026-11-02** (the build session, [`vr-build-session.md`](vr-build-session.md)): F3 and D12 compiled (bpEditor exit 0), F9 closed,
+  the Approve pinch seen on the card ([before](../one-morning/vr-approve-card-before.jpg), [after](../one-morning/vr-approve-card-after.jpg)) and the deck
+  ([before](../one-morning/vr-approve-deck-before.jpg), [after](../one-morning/vr-approve-deck-after.jpg)): 200, the store row `approved` (`user:...`, note `Morning Watch`),
+  one steering-log row, no job queued; an approve after another surface decided the finding: 409 logged, nothing written (the deck screen still advances and the
+  finding still goes to the draft, as before). D15 built (see its row). `run-bplink`: the editor line on `kettle-web` (against the demo server, `--url`),
+  `--mode game --bundle` with `briefs.json` ("10 briefs from the bundle's briefs.json"), and L0's unpaired `Kettle wings=5` line. Not run: the
+  `card:decline` regression pinch (the deck's DECLINE · REPEAT is first, seen in the captures).
 
 ### S5. The morning while it happens (bp web and core)
 
@@ -600,7 +608,7 @@ and S3 needs no UE turn. S4 and S7 can never run in parallel with each other or 
 | D12 | Does a pinch on Approve at the table write? (2026-10-31: "Pinching approve in VR should approve the target decisions") | Yes. A pinch on Approve at the table approves the target decision(s) through the device's `decide` scope (supersedes S4's "Approve writes nothing"): `POST .../proposals/<id>/approve`, the Morning Watch's own Approve (approved, signed, one steering-log row, no job queued), 409 once not open, 403 while `BP_WRITES=off`. The card and the room deck's decision screen each target one finding per pinch |
 | D13 | The Quest APK (2026-10-31) | The Quest APK / BuildCookRun staged run is deferred out of this session |
 | D14 | Personas' Enter (2026-10-31) | Personas' Enter takes the recommended answer (built in the Personas repo, S3/S6) |
-| D15 | One pinch, several findings (2026-10-31) | Yes: where an approval relates to several findings at once, one pinch approves all its open findings (a set route on the `decide` scope). Planned in [`vr-build-session.md`](vr-build-session.md) §4 |
+| D15 | One pinch, several findings (2026-10-31) | Yes: where an approval relates to several findings at once, one pinch approves all its open findings (a set route on the `decide` scope). **Built 2026-11-02**: `POST /api/products/<slug>/proposals/approve { ids }` (1..50, the `decide` scope, `check:vr-approve`, `check:lan-door`), BpLink `ApproveDecisions`, and APPROVE ALL (n) on the room deck's summary (n counts the room's open decisions; a repeat of a declined idea is left out). Seen: [before](../one-morning/vr-approve-all-before.jpg), [after](../one-morning/vr-approve-all-after.jpg). Planned in [`vr-build-session.md`](vr-build-session.md) §4 |
 | D16 | Personas after S6 (2026-10-31) | No node for bp's domain-group wings for now (they hold still and say so). Reading a Morning card does not move the drawing (O / Open does). Personas' TypeScript wire moves to store v5 |
 | D17 | Spend and the APK (2026-10-31) | Spend is not an issue (D11 stands). The Quest APK / BuildCookRun stays deferred (D13 stands) |
 

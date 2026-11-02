@@ -366,6 +366,13 @@ public:
 		SendDecision(TEXT("approve"), ProposalId, MoveTemp(OnDone));
 	}
 
+	/** POST .../proposals/approve { ids } (ROADMAP D15, owner 2026-10-31: where an approval relates to several findings, one
+	 *  pinch approves all of them): the server approves each id as ApproveDecision does (one steering-log row each, no build
+	 *  queued) and skips the ones it cannot, naming why (`unknown`, `in-job`, or the status they hold). 1..50 ids, each once.
+	 *  OnDone gets the HTTP status (0: refused or offline, nothing sent) and, on 200, the ids approved and the skipped ones as
+	 *  (id, status) pairs. Refused (status 0) while BpLink reads the bundle or while a write for any of the ids is out. */
+	void ApproveDecisions(const TArray<FString>& ProposalIds, TFunction<void(int32 Status, const TArray<FString>& Approved, const TArray<TPair<FString, FString>>& Skipped)> OnDone);
+
 	/** The draft the table last wrote to (AddToDraft); the wrist shows it first. Empty until one was written. */
 	const FString& GetFocusWaveId() const { return FocusWaveId; }
 

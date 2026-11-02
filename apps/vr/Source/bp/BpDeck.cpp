@@ -60,6 +60,9 @@ namespace
 	const FBox2f RepeatApproveBox(FVector2f(PadX + 420.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** The summary's NEXT ROOM button at the queue's end (WP3), where a decision's Approve and Decline stand. */
 	const FBox2f NextRoomBox(FVector2f(PadX, BarY), FVector2f(PadX + 680.f, BarY + BarH));
+	/** With open decisions left in the room (D15), the summary's bar holds APPROVE ALL (n) first and NEXT ROOM narrower after it. */
+	const FBox2f ApproveAllBox(FVector2f(PadX, BarY), FVector2f(PadX + 330.f, BarY + BarH));
+	const FBox2f NextRoomNarrowBox(FVector2f(PadX + 350.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** A spine (FAI): the next screens' edges right of the front, laid out on SW x SH px at the same density. */
 	constexpr float SW = ABpTable::DeckSpineWidthCm * DeckLayoutPxPerCm;
 	constexpr float SH = ABpTable::DeckHeightCm * 0.92f * DeckLayoutPxPerCm;
@@ -292,6 +295,8 @@ namespace
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdDeckApprove(TEXT("BpDeck.Approve"), TEXT("BpDeck.Approve: the front decision into the product's draft wave (never dispatched), then the next screen."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithDeckTables(World, TEXT("BpDeck.Approve"), [](ABpTable& T) { T.DeckApprove(); }); }));
+	FAutoConsoleCommandWithWorldAndArgs CmdDeckApproveAll(TEXT("BpDeck.ApproveAll"), TEXT("BpDeck.ApproveAll: the room's open decisions (a repeat of a declined idea excepted) approved in the store with one write (D15); only at the queue's end."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithDeckTables(World, TEXT("BpDeck.ApproveAll"), [](ABpTable& T) { T.DeckApproveAll(); }); }));
 	FAutoConsoleCommandWithWorldAndArgs CmdDeckDecline(TEXT("BpDeck.Decline"), TEXT("BpDeck.Decline: the front decision off this session's queue."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithDeckTables(World, TEXT("BpDeck.Decline"), [](ABpTable& T) { T.DeckDecline(); }); }));
 	FAutoConsoleCommandWithWorldAndArgs CmdDeckFocus(TEXT("BpDeck.Focus"), TEXT("BpDeck.Focus <feature id>: that feature's first screen (its decision, else its sheet) to the front."),
@@ -1173,6 +1178,57 @@ void ABpTable::DeckApprove()
 	if (DeckAt + 1 < DeckScreens.Num()) ShowDeckAt(DeckAt + 1, 0, 1);
 }
 
+TArray<FString> ABpTable::DeckOpenIds() const
+{
+	// The room's decisions still in the queue (proposed, not declined or decided this session). A repeat of a declined idea is
+	// left out: its primary answer is Decline, and a bulk approve must not say yes to it.
+	TArray<FString> Ids;
+	for (int32 Index = 0; Index < DeckScreens.Num(); ++Index)
+	{
+		if (DeckScreens[Index].Kind == KDecision && !DeckRepeat(Index)) Ids.AddUnique(DeckScreens[Index].Proposal);
+	}
+	return Ids;
+}
+
+void ABpTable::DeckApproveAll()
+{
+	const bool bEnd = !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
+	TArray<FString> Ids = DeckOpenIds();
+	if (!bEnd || Ids.Num() == 0)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: refused approve all (%s)"), DeckRoom.IsEmpty() ? TEXT("not in room mode") : !bEnd ? TEXT("not at the queue's end") : TEXT("no open decision"));
+		return;
+	}
+	if (Ids.Num() > 50) Ids.SetNum(50); // the server takes 50 a write; the rest stay for the next pinch
+	// D15 (owner 2026-10-31): one pinch approves all the findings the control stands for, in the store, as the card's and the
+	// deck's Approve do (the Morning Watch's Approve each, no build). The server names the ones it skipped; those stay in the queue.
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve all %d in %s -> the store (the Morning Watch's Approve each; no build is queued)"), Ids.Num(), *DeckRoom);
+	TWeakObjectPtr<ABpTable> Self(this);
+	FBpLinkModule::Get().ApproveDecisions(Ids, [Self, Ids](int32 Status, const TArray<FString>& Approved, const TArray<TPair<FString, FString>>& Skipped)
+	{
+		ABpTable* T = Self.Get();
+		if (!T) return;
+		if (Status != 200)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpDeck: approve all %d not written to the store (HTTP %d)"), Ids.Num(), Status);
+			return;
+		}
+		for (const TPair<FString, FString>& Skip : Skipped) UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve all skipped %s (%s)"), *Skip.Key, *Skip.Value);
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: approved %d of %d in the store, %d skipped"), Approved.Num(), Ids.Num(), Skipped.Num());
+		for (const FString& Id : Approved) T->CardDecided.Add(Id);
+		T->RefreshDeck();
+		// The approved ones into the draft wave in one write, as each deck Approve does (never dispatched).
+		if (Approved.Num() == 0) return;
+		FBpLinkModule::Get().AddToDraft(Approved, [Self, Approved](bool bOk, const FString& Wave, const FString&)
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpDeck: approve all %d %s"), Approved.Num(), bOk ? *FString::Printf(TEXT("in draft %s"), *Wave) : TEXT("not written to a draft"));
+			if (!bOk || !Self.IsValid()) return;
+			for (const FString& Id : Approved) Self->DeckInDraft.Add(Id);
+			Self->RefreshDeck();
+		});
+	});
+}
+
 void ABpTable::DeckDecline()
 {
 	if (DeckRoom.IsEmpty() || !DeckScreens.IsValidIndex(DeckAt) || DeckScreens[DeckAt].Kind != KDecision)
@@ -1230,6 +1286,7 @@ void ABpTable::DeckTap(const FString& Id)
 	else if (Id == TEXT("deck:approve")) DeckApprove();
 	else if (Id == TEXT("deck:decline")) DeckDecline();
 	else if (Id == TEXT("deck:nextroom")) DeckNextRoom();
+	else if (Id == TEXT("deck:approveall")) DeckApproveAll();
 	else if (Id.StartsWith(TEXT("feature:"))) DeckFocus(Id.Mid(8));
 }
 
@@ -1332,7 +1389,9 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	const bool bDecision = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KDecision;
 	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
 	FString Why;
-	if (bEnd && NextRoomBox.IsInside(Px) && !NextRoom(Why).IsEmpty()) OutId = TEXT("deck:nextroom");
+	const bool bAll = bEnd && DeckOpenIds().Num() > 0;
+	if (bAll && ApproveAllBox.IsInside(Px)) OutId = TEXT("deck:approveall");
+	else if (bEnd && (bAll ? NextRoomNarrowBox : NextRoomBox).IsInside(Px) && !NextRoom(Why).IsEmpty()) OutId = TEXT("deck:nextroom");
 	else if (bDecision && DeckRepeat(DeckAt) && RepeatDeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
 	else if (bDecision && DeckRepeat(DeckAt) && RepeatApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
 	else if (bDecision && !DeckRepeat(DeckAt) && ApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
@@ -1348,7 +1407,7 @@ bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 	if (DeckRoom.IsEmpty() || DeckCards.Num() < 4) return false;
 	const bool bRepeat = DeckRepeat(DeckAt);
 	const FBox2f* Box = Id == TEXT("deck:approve") ? (bRepeat ? &RepeatApproveBox : &ApproveBox) : Id == TEXT("deck:decline") ? (bRepeat ? &RepeatDeclineBox : &DeclineBox) : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox
-		: Id == TEXT("deck:nextroom") ? &NextRoomBox : nullptr;
+		: Id == TEXT("deck:nextroom") ? (DeckOpenIds().Num() > 0 ? &NextRoomNarrowBox : &NextRoomBox) : Id == TEXT("deck:approveall") ? &ApproveAllBox : nullptr;
 	if (!Box) return false;
 	const FVector2f Centre = Box->GetCenter();
 	const float Scale = DeckPxPerCm / DeckLayoutPxPerCm;
@@ -1532,14 +1591,21 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	}
 	FString Why;
 	const FBpPlanRoom* Next = Screen.Kind == KSummary ? FindRoom(NextRoom(Why)) : nullptr;
+	const int32 OpenCount = Screen.Kind == KSummary ? DeckOpenIds().Num() : 0;
+	if (OpenCount > 0)
+	{
+		// D15: the decisions this room still holds, approved with one pinch.
+		Place(ApproveAllBox, Button(&ApproveBrush, TEXT("✓"), FString::Printf(TEXT("APPROVE ALL (%d)"), OpenCount), Ink));
+	}
+	const FBox2f& NextBoxHere = OpenCount > 0 ? NextRoomNarrowBox : NextRoomBox;
 	if (Next)
 	{
 		// The queue's end (WP3): the next room by urgency, its name and why on the button.
-		Place(NextRoomBox, SNew(SBorder).BorderImage(&ApproveBrush).Padding(FMargin(22.f, 0.f)).VAlign(VAlign_Center)
+		Place(NextBoxHere, SNew(SBorder).BorderImage(&ApproveBrush).Padding(FMargin(22.f, 0.f)).VAlign(VAlign_Center)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()[Label(TEXT("NEXT ROOM  ›"), SControl, Ink)]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[Label(CutToWidth(FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why), SMeta, NextRoomBox.GetSize().X - 44.f), SMeta, Ink)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[Label(CutToWidth(FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why), SMeta, NextBoxHere.GetSize().X - 44.f), SMeta, Ink)]
 			]);
 	}
 

@@ -586,6 +586,11 @@ public:
 	bool DeckShow(int32 Place);
 	/** The current decision into the product's draft wave (BpLink AddToDraft: compose or PATCH, never dispatch); advances. */
 	void DeckApprove();
+	/** D15: at the queue's end, the room's open decisions (DeckOpenIds) approved in the store with one write (BpLink
+	 *  ApproveDecisions), then into the draft wave in one write; the ones the server skips stay in the queue. */
+	void DeckApproveAll();
+	/** The decisions left in the room's queue that APPROVE ALL stands for (a repeat of a declined idea is not among them). */
+	TArray<FString> DeckOpenIds() const;
 	/** The current decision off this session's queue (memory only); the next one comes forward. */
 	void DeckDecline();
 	/** A feature's first screen to the front: its most urgent decision, else its sheet. */
