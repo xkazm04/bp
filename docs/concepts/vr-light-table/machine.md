@@ -6,6 +6,38 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-11-02 (later): the build-up's structure frame, the judged batch, any count of domains (spark onboarding-vr WP-V3)
+
+The four items WP-V2 left open. The structure is committed by the tick, not the feed callback, and every heavy piece of a
+build-up's commit takes a frame of its own (`HeavyBusy`/`NoteHeavy` in `BpBuildup.cpp`): the structure's volumes, then the
+counts and title, the label map, the room names, the glyphs and the pins as steps, the level labels in 3 ms slices, the
+wing labels one a frame, the furniture kit loaded ahead during the survey (one mesh a frame, held), and every sheet redraw
+(`RedrawSheet` only marks the sheet while a build-up spreads its commit; the tick draws it in a free frame). The CSV has a
+`BpBuild/GameThread/TableTick` column. The batch being judged gets a pencil halo, wash, edge and heavier brackets in the
+sheet's render target (no new draw). The outline margin takes any count: past 12 domains the rows share the band and the
+type shrinks with them to the floor, past what fits at the floor the oldest scroll off. The title's count is the judge's
+`progress` (batches LANDED), shown as "n of N judged"; the narration's batch number is no longer read as one. Server:
+apps/server on 3197 with `fake-onboard.mjs env --dir .../bp-fake-onboard-v3`; 18+ domains from a pass-through proxy in
+scratch that adds 4 made-up domains to each `outline` event of one slug (20 in all; never placed, they recede at the
+structure).
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 51 | game xr-sim, CSV over a whole build-up (`dowser-v3b`), `BpBuild structure/risen/handover` events | idle before: FrameTime p50 8.7 p95 11.5, GameThread p95 6.5 max 8.6, draws p50 120; structure burst (structure to risen + 300): FrameTime p50 8.7 p95 11.4, **GameThread p95 6.9 max 9.7** (was 28.3, reading 49), draws p50 139 max 147; judging: draws p50 141 max 149; hand-over + 300: GameThread max 9.3, draws max 149 |
+| 52 | the same run's log | `the structure drawn ... in 0.5 ms (1.7 ms with its choreography ...)`, then a step a frame: `counts and title in 3.3 ms`, `labels ... in 0.2 ms`, `names in 5.7 ms`, `glyphs in 0.8 ms` (14.9 before: the kit was loaded at the step), `pins in 0.3 ms` on frames 8546-8550 |
+| 53 | the first spread (`dowser-v3a`, counts still in the structure's frame) | structure frame GameThread 14.5 ms (`heavy structure 8.5 ms`); moving counts and title to a step gave reading 51 |
+| 54 | Kettle, `--exec "BpView.Pose target"`, `-csvCaptureFrames=900` | RHI draws p50 **162** p95 164 (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2), as reading 46 |
+| 55 | PIE, `dowser-v3m`/`v3p` through the proxy, 20 domains | `domains=20`; four rows of six in the same band, names and one capability line at the floor, the rest `+n more`; judging: title `JUDGE · 1 OF 3 JUDGED` while the caption says `Judging batch 2: ...` (the fake's journal: `progress` n=1 at 111.6 s, then `Judging batch 2 of 3` at 112.6 s; a real run dispatches its batches in parallel, so `progress` counts landed batches) |
+
+Captures (PIE, `mcp-steps/onb-v3-capture.jsonl`): [judging, after](captures/onb-v3-judging.jpg) (before:
+[onb-v2-judging](captures/onb-v2-judging.jpg)), [20 domains in the margin](captures/onb-v3-margin-20.jpg), [the structure
+a second in, wing labels arriving one a frame](captures/onb-v3-structure.jpg), [built](captures/onb-v3-built.jpg).
+
+Not established: the survey's own sheet redraws still cost 6-12 ms of game thread at 15 Hz, one 30-33 ms (both runs,
+before the structure; text cut and measured per parcel each redraw); a render-thread spike at the structure frame in one
+run of two (166.6 ms RenderThreadTime, GameThread 6.0; reading 51), not seen in the other; the made-up domains are never
+placed, so a real 18-domain structure (its wings and rooms rising) is untested.
+
 ## Lynx, 2026-11-02: the table builds itself while a product onboards (spark onboarding-vr WP-V2)
 
 While the open product's adopt job runs, BpLink reads `.../onboarding/feed?after=<n>&job=<id>&layout=islands` every 0.5 s
