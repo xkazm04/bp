@@ -131,6 +131,8 @@ export function ProjectRow({ p, job, now, act, current }: { p: ProductInfo; job:
     { label: 'Remove…', run: act.remove, warn: true },
   ];
 
+  /** A repo already mapped by hand (adopt-bp run in a terminal) has no adopt job here but is onboarded all the same. */
+  const mapped = p.readiness.mapVersion === 3 && p.readiness.features > 0;
   let status: React.ReactNode;
   if (job.state === 'loading') status = <div className={s.job}><span className={s.jobLine}>Reading the onboarding job…</span></div>;
   else if (j && running) {
@@ -165,14 +167,14 @@ export function ProjectRow({ p, job, now, act, current }: { p: ProductInfo; job:
     status = (
       <div className={`${s.job}${j ? ' ' + s.done : ''}`}>
         <span className={s.jobWord}>
-          <b>{j ? 'Onboarded' : job.state === 'error' ? 'Onboarding state unknown' : 'Not onboarded in bp yet'}</b>
+          <b>{j || mapped ? 'Onboarded' : job.state === 'error' ? 'Onboarding state unknown' : 'Not onboarded in bp yet'}</b>
           {job.state === 'error' ? <span className={s.jobErr}>Could not read the onboarding job: {job.error}</span>
-            : <span className={s.jobLine}>{j ? `Finished ${when(j.ended_at)}` : 'Onboarding draws the map and takes the first readings.'}</span>}
+            : <span className={s.jobLine}>{j ? `Finished ${when(j.ended_at)}` : mapped ? 'Mapped outside this page (the adopt-bp skill or an earlier scan).' : 'Onboarding draws the map and takes the first readings.'}</span>}
         </span>
         <span className={s.acts}>
           <a className={`${s.bt}${p.readiness.map ? ' ' + s.go : ''}`} href={blueprintHref(p.slug)}>Open blueprint</a>
           <button type="button" className={`${s.bt}${p.readiness.map ? '' : ' ' + s.go}`} disabled={!!busy} onClick={() => void run('onboard', () => act.onboard(false))}>
-            {busy === 'onboard' ? 'Starting…' : j ? 'Re-run onboarding' : 'Start onboarding'}
+            {busy === 'onboard' ? 'Starting…' : j || mapped ? 'Re-run onboarding' : 'Start onboarding'}
           </button>
         </span>
       </div>
