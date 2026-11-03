@@ -41,7 +41,7 @@ check('steps: failed is -1, every other status indexes STEPS', RELEASE_STATE.fai
 check('every step has its word', STEPS.every((s: string) => typeof STEP_WORD[s] === 'string' && STEP_WORD[s].length > 0));
 check('only a draft is unlocked', STATUSES.every((s) => RELEASE_STATE[s].locked === (s !== 'draft')));
 check('each status offers its actions: draft build / pr-open pr+sampleMerge+finishAsk / merged finish / failed retry',
-  RELEASE_STATE.draft.actions.join() === 'build' && RELEASE_STATE['pr-open'].actions.join() === 'pr,sampleMerge,finishAsk' && RELEASE_STATE.merged.actions.join() === 'finish' && RELEASE_STATE.failed.actions.join() === 'retry');
+  RELEASE_STATE.draft.actions.join() === 'build,tag' && RELEASE_STATE['pr-open'].actions.join() === 'pr,sampleMerge,finishAsk' && RELEASE_STATE.merged.actions.join() === 'finish' && RELEASE_STATE.failed.actions.join() === 'retry,tag');
 check('building and tagged offer nothing, by design', RELEASE_STATE.building.actions.length === 0 && RELEASE_STATE.tagged.actions.length === 0);
 check('every offered action (bar the PR link) has a button label', STATUSES.every((s) => RELEASE_STATE[s].actions.every((a: string) => a === 'pr' || typeof ACTION[a]?.label('1.2.3') === 'string' && ACTION[a].label('1.2.3').length > 0)));
 check('draft hint counts its items (singular and plural)', RELEASE_STATE.draft.hint('1', 1).includes('1 item:') && RELEASE_STATE.draft.hint('1', 3).includes('3 items:'));

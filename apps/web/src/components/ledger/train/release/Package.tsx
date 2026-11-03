@@ -1,8 +1,8 @@
 // The Release tab's package: the accepted items with no release (before a draft) or the open release's items, grouped
 // by lens, each its commit, title, feature and before -> after; a flagged item (rules.ts isFlagged) carries its triage
 // note. Items git says are already on the base branch (releaseState.ts landedOutside) are listed apart, "landed outside
-// a release" with their landing commit, from the ones "to cut". Then the rework queue (a cherry-pick conflict's note
-// marked) and the descoped items with their notes. Undo is the reopen decision through the one decision path
+// a release" with their landing commit, from the ones "to cut" (all landed: Tag; some: the cut skips them).
+// Then the rework queue (a cherry-pick conflict's note marked) and the descoped items with their notes. Undo is the reopen decision through the one decision path
 // (Decide.tsx), offered while the planner (plan.ts planDecision) says it applies: not pending, the release still a
 // draft, the item not rebuilt by a newer attempt; otherwise it stays focusable with its why (Btn reason); Compare opens
 // the item's evidence in the triage table's compare panel. Each accepted item says how long it has waited (acceptedAge).
@@ -102,7 +102,7 @@ export function Package({ m, phone, pick }: { m: ReleaseModel; phone: boolean; p
       {landed.length ? (
         <>
           <h3>Landed outside a release · {landed.length}</h3>
-          <p className="tr-rel-hint">Already on {m.base} (read from git): a cut would cherry-pick {landed.length === 1 ? 'it' : 'them'} again.</p>
+          <p className="tr-rel-hint">Already on {m.base} (read from git): {cut.length ? `${landed.length === 1 ? 'it needs' : 'they need'} no pick (the cut skips ${landed.length === 1 ? 'it' : 'them'})` : `Tag tags ${landed.length === 1 ? 'it' : 'them'} there, nothing is cherry-picked`}.</p>
           <ul className="tr-pl" data-role="tr-rel-landed">{group(landed)}</ul>
           <h3>To cut · {cut.length}</h3>
           {cut.length ? <ul className="tr-pl">{group(cut)}</ul> : <p className="tr-rel-none">Nothing left to cut.</p>}

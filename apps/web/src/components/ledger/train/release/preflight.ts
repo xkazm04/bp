@@ -3,10 +3,11 @@
 // route's dry run, or the sample's) map to a list of checks the view renders as data. A `block` takes Build and Retry out
 // of the available actions (`gated`), so the button and the B key both start nothing while one stands; a `warn` is said
 // and never blocks. Which statuses are pre-flighted is RELEASE_STATE's data (the ones that offer a build), not a list of ids.
-//   commit-less items  block: lens-scan release.md - an item whose commit_sha is missing cannot ship, the run fails the
-//                      release naming it; an empty package blocks too (nothing to cut)
-//   landed items       block: git says their change is already on the base branch (releaseState.ts landedOutside), so
-//                      cherry-picking them again would be empty
+//   commit-less items  block: lens-scan release.md - an item whose commit_sha is missing cannot be cut, the run fails the
+//                      release naming it (an item already on the base branch needs none); an empty package blocks too
+//   landed items       git says their change is already on the base branch (releaseState.ts landedOutside): every item
+//                      -> ok, the release is tagged there (Tag, lens-scan --landed) and Build is not offered; some -> a
+//                      warn, the cut skips them (release.md step 2: an item whose Lens-Item commit is on the branch)
 //   flagged items      warn, with their triage notes (they ship flagged)
 //   unmeasured items   warn (the notes will say "unmeasured")
 //   the probe          ready -> ok; 412 -> block worded as the fix; any other refusal the build would give (409 state or
@@ -22,7 +23,7 @@ export interface PreCheck { id: string; verdict: Verdict; words: string }
  *  it has not answered (a pending probe never holds Build). */
 export type Probe = ReleaseReady | { status?: number; text: string } | null;
 
-const BUILDS: readonly RelAction[] = ['build', 'retry'];
+const BUILDS: readonly RelAction[] = ['build', 'retry', 'tag'];
 const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? one : many}`;
 
 /** Whether a release is pre-flighted at all: its status offers a build (draft, failed - RELEASE_STATE's data). */
@@ -36,14 +37,15 @@ export function preflightOf(rel: Pick<Release, 'status' | 'version'> | undefined
   if (!rel || !preflighted(rel)) return [];
   const out: PreCheck[] = [];
   if (!items.length) out.push({ id: 'empty', verdict: 'block', words: 'The package is empty: accept an item before building.' });
-  const noSha = items.filter((x) => !x.p.commit_sha);
+  const noSha = items.filter((x) => !x.p.commit_sha && !onBase?.landed.has(x.p.id));
   if (noSha.length) {
     out.push({ id: 'no-commit', verdict: 'block', words: `${plural(noSha.length, 'item has', 'items have')} no commit and cannot ship: ${noSha.map((x) => `"${x.p.title}"`).join(', ')}. Rework or descope ${noSha.length === 1 ? 'it' : 'them'}; the run would fail the release.` });
   }
   const landed = onBase ? items.filter((x) => onBase.landed.has(x.p.id)) : [];
   if (landed.length) {
-    const one = landed.length === 1;
-    out.push({ id: 'landed', verdict: 'block', words: `${plural(landed.length, 'item is', 'items are')} already on ${onBase!.base}; cherry-picking ${one ? 'it' : 'them'} again would be empty: ${named(landed, (x) => `"${x.p.title}" as ${onBase!.landed.get(x.p.id)!.sha.slice(0, 7)}`)}.` });
+    const one = landed.length === 1, which = named(landed, (x) => `"${x.p.title}" as ${onBase!.landed.get(x.p.id)!.sha.slice(0, 7)}`);
+    if (landed.length === items.length) out.push({ id: 'landed', verdict: 'ok', words: `${one ? 'The item is' : `All ${landed.length} items are`} already on ${onBase!.base}: Tag tags v${rel.version} there and cherry-picks nothing: ${which}.` });
+    else out.push({ id: 'landed', verdict: 'warn', words: `${plural(landed.length, 'item is', 'items are')} already on ${onBase!.base} and ${one ? 'needs' : 'need'} no pick (the cut skips ${one ? 'it' : 'them'}): ${which}.` });
   }
   const flagged = items.filter((x) => x.flagged);
   if (flagged.length) {
