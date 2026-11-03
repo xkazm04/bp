@@ -11,6 +11,8 @@
 //   5 record      priorRecord counts landed rows beside the released ones ("of 3 landed"), its entries say "Landed · held"
 //   6 morning     buildDeck turns the items that landed in the window into one card, held / short / not measured since,
 //                 counted in the product's confirmed and short
+//   7 M fan-out   measureScopes: one selection scan per lens over that lens's items' features, each once, capped (the jobs
+//                 themselves, on the sim and the live routes: check:train-parity 'measureItems over two lenses')
 // Also: node scripts/check-on-main.ts --root <repo> prints that repo's In-packs chips (Held / Short / Not measured since)
 // from its store (read-only) and the landings git gives, through the same functions, with the short ids.
 // Run: node scripts/check-on-main.ts   (Node type stripping; exit 1 on any failure)
@@ -23,6 +25,7 @@ const HOOKS = './lib/src-hooks.mjs';
 const core = (p: string) => pathToFileURL(path.join(ROOT, 'packages/core/src', p)).href;
 const TR = await import(core('scan/track.ts')) as typeof import('../packages/core/src/scan/track.ts');
 const RC = await import(core('scan/record.ts')) as typeof import('../packages/core/src/scan/record.ts');
+const JB = await import(core('scan/jobs.ts')) as typeof import('../packages/core/src/scan/jobs.ts');
 const MW = await import(core('companion/morning.ts')) as typeof import('../packages/core/src/companion/morning.ts');
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
@@ -135,6 +138,14 @@ check('4 held, unmeasured and released-short items start no note', TR.shortNote(
   check('6 the opening line counts it on the base branch', d.cards[0].lines.some((l) => l.text === 'Landed on the base branch: 0 items confirmed, 1 fell short.'), d.cards[0].lines.map((l) => l.text).join(' | '));
   const old = MW.buildDeck(facts({ ref: 'master', items: { 'p-1': { ...landing, at: h(1) } } }), [], since, now), none = MW.buildDeck(facts(), [], since, now);
   check('6 a landing before the window, or no landings: no card', !old.cards.some((c) => c.id === 'landed:bp') && !none.cards.some((c) => c.id === 'landed:bp'));
+}
+
+// ------------------------------------------------------------------ 7 M: one job per lens, scoped
+{
+  const items = [{ lens: 'design', feature: 'f-a' }, { lens: 'security', feature: 'f-a' }, { lens: 'design', feature: 'f-b' }, { lens: 'design', feature: 'f-a' }];
+  check('7 one scope per lens, over its own items\' features, each once', JSON.stringify(JB.measureScopes(items)) === JSON.stringify([{ lens: 'design', features: ['f-a', 'f-b'] }, { lens: 'security', features: ['f-a'] }]), JSON.stringify(JB.measureScopes(items)));
+  const many = Array.from({ length: JB.MAX_SELECTION + 5 }, (_, i) => ({ lens: 'design', feature: 'f-' + i }));
+  check('7 a scope is capped at MAX_SELECTION features; nothing selected, no job', JB.measureScopes(many)[0].features.length === JB.MAX_SELECTION && JB.measureScopes([]).length === 0);
 }
 
 console.log(`check-on-main: ${passed} passed, ${failed} failed`);

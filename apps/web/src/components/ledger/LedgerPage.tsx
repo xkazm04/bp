@@ -21,7 +21,8 @@
 //
 // Keys while the page has focus (it owns them: `data-keys="own"`, so the engine's plan keys stay out) come from one
 // table, train/keymap.ts, by scope: In packs J/K move, X/Space select, Enter compares (again: full width), A R S U
-// decide, the compare panel's L M W while it is open; Backlog D dispatches the selection and A the focused finding,
+// decide, E measures what the decision would act on (one selection scan per lens over its items' features: actions.ts
+// measureItems; a scan, so BP_WRITES=off leaves it on), the compare panel's L M W while it is open; Backlog D dispatches the selection and A the focused finding,
 // Enter opens its feature; Release B and F press the release view's Build and Finish (its `data-act` buttons). Every
 // scope: / filters, 1-3 switch the tab, ? shows every key. Esc is layered: a note being written, then full width, then
 // the compare panel, then the selection, then (Release) the table, else back to the drawing set.
@@ -57,7 +58,7 @@ import { DispatchBar, Triage } from './variants/Triage';
 import { WavesBar } from './waves/WavesBar';
 import { MvpStrip } from './variants/MvpStrip';
 import { TrustPanel } from './TrustPanel';
-import { refusalText, startAllLenses } from '@/lib/scan/actions';
+import { measureItems, refusalText, startAllLenses } from '@/lib/scan/actions';
 import { Matrix } from './variants/Matrix';
 import { PackTable } from './train/PackTable';
 import { DecisionBar } from './train/DecisionBar';
@@ -191,6 +192,17 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   }, [ui.sel, ui.open, ui.focus, itemIds]);
 
   const toRelease = () => { if (!phone) E.setPage('ledger', 'release'); };
+  const ctx = useScanCtx();
+  const measure = () => {
+    const items = targets.map((id) => L.byId.get(id)?.p).filter((p) => !!p).map((p) => ({ lens: p.lens, feature: p.feature }));
+    if (!items.length) { E.toast('Nothing to measure', 'Select items, or focus one, first'); return; }
+    measureItems(ctx, items).then(({ jobs, refused }) => {
+      const said = jobs.map((j) => { const k = j.scope?.features.length ?? 0; return j.lens + ' (' + k + (k === 1 ? ' feature' : ' features') + ')'; }).join(', ');
+      const why = refused.map((r) => r.lens + ': ' + refusalText(r.error)).join('; ');
+      if (!jobs.length) E.toast('Measure not started', why);
+      else E.toast('Measuring ' + jobs.length + (jobs.length === 1 ? ' lens' : ' lenses'), 'one scan per lens: ' + said + (why ? ' · not started: ' + why : ''));
+    }, (e) => E.toast('Measure not started', refusalText(e)));
+  };
   const onKey = (e: React.KeyboardEvent<HTMLElement>) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement, k = e.key;
@@ -220,6 +232,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       case 'rework': void decide(targets, 'rework'); return;
       case 'descope': void decide(targets, 'descope'); return;
       case 'undo': void decide(targets, 'reopen'); return;
+      case 'measure': measure(); return;
       case 'dispatch': void L.dispatchIds(); return;
       case 'dispatchFocused': void L.dispatchIds(under(current())); return;
       case 'filter': filter.current?.focus(); return;

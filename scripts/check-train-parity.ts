@@ -75,6 +75,8 @@ const skips = (l: unknown) => (Array.isArray(l) ? l.map((s: Any) => ({ id: s.id,
 const triageRefusal = (o: Out) => (o.ok ? { ok: true, triaged: o.value?.triaged } : { status: o.status, error: o.message, triaged: o.body?.triaged, skipped: skips(o.body?.skipped) });
 const pkg = (name: string, ids: string[], model = 'opus', effort = 'high') => ({ name, model, effort, ids });
 const FINDINGS = ['q1', 'q2', 'q3', 'q4'];
+/** What the ledger's E measures in the rows below: two design items on two features (one twice) and a performance item. */
+const MEASURE = [{ lens: 'design', feature: 'book-a-class' }, { lens: 'performance', feature: 'drag-and-drop-timetable-editor' }, { lens: 'design', feature: 'card-payments' }, { lens: 'design', feature: 'book-a-class' }];
 
 const MAIN: Row[] = [
   { name: 'listWaves at the start', call: (A, c) => A.listWaves(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
@@ -117,6 +119,11 @@ const MAIN: Row[] = [
     see: (o) => (o.ok ? { ok: true, jobs: o.value.jobs.length, status: o.value.wave.status } : refusal(o)), want: () => ({ ok: true, jobs: 2, status: 'dispatched' }) },
   { name: 'updateWave of a dispatched wave', needs: (r) => ({ waves: [r.wave.first] }), call: (A, c, r) => A.updateWave(c, r.wave.first, { name: 'z' }), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'deleteWave of a dispatched wave', needs: (r) => ({ waves: [r.wave.first] }), call: (A, c, r) => A.deleteWave(c, r.wave.first), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  // the ledger's E (measure the selection now): one selection scan per lens, over that lens's items' features, each once
+  { name: 'measureItems over two lenses', call: (A, c) => A.measureItems(c, MEASURE),
+    see: (o) => (o.ok ? { ok: true, refused: o.value.refused.length, jobs: o.value.jobs.map((j: Any) => ({ kind: j.kind, lens: j.lens, scope: j.scope.kind, features: j.scope.features })).sort((a: Any, b: Any) => (a.lens < b.lens ? -1 : 1)) } : refusal(o)),
+    want: () => ({ ok: true, refused: 0, jobs: [{ kind: 'measure', lens: 'design', scope: 'selection', features: ['book-a-class', 'card-payments'] }, { kind: 'measure', lens: 'performance', scope: 'selection', features: ['drag-and-drop-timetable-editor'] }] }) },
+  { name: 'measureItems with nothing selected', call: (A, c) => A.measureItems(c, []), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
 ];
 // the end of the train: every pack closed, des1-card descoped in closed k-des-1 (store.mjs refuses its reopen: pack-closed)
 const TAIL: Row[] = [

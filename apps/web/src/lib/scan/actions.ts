@@ -2,7 +2,7 @@
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
-import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
+import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
@@ -114,6 +114,17 @@ export async function readLandings(ctx: ScanCtx): Promise<Landings> {
   if (ctx.slug) return getLandings(ctx.slug);
   if (ctx.sim) return ctx.sim.landings();
   throw nowhere();
+}
+/** Measure where items stand now (the ledger's M): one `selection` scan per lens over that lens's items' features
+ *  (jobs.ts measureScopes), started together. Resolves with the jobs that started and, per lens, a refusal (its Error);
+ *  rejects 400 when there is nothing to measure. A scan, not a decision: BP_WRITES=off leaves it on (scan/writes.ts). */
+export async function measureItems(ctx: ScanCtx, items: readonly { lens: string; feature: string }[]): Promise<{ jobs: ScanJob[]; refused: { lens: string; error: unknown }[] }> {
+  const scopes = measureScopes(items);
+  if (!scopes.length) throw refused(400, 'nothing to measure: select items first');
+  const rs = await Promise.allSettled(scopes.map((s) => startSelectionScan(ctx, s.lens, s.features)));
+  const jobs: ScanJob[] = [], out: { lens: string; error: unknown }[] = [];
+  rs.forEach((r, i) => { if (r.status === 'fulfilled') jobs.push(r.value); else out.push({ lens: scopes[i].lens, error: r.reason }); });
+  return { jobs, refused: out };
 }
 /** A draft release of accepted items (default: every accepted item with no release). */
 export async function createRelease(ctx: ScanCtx, version: string, ids?: string[]): Promise<ReleaseCreated> {

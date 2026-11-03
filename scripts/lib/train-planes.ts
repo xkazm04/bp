@@ -2,9 +2,9 @@
 // (scripts/check-train-parity.ts):
 //   - sim: a ScanSim bound to the Kettle map (packages/core/data/kettle.app-structure.json), as check-train-sim binds it,
 //     with a fake clock and a Map standing in for localStorage (the sample waves);
-//   - live: a temp product whose lens-scan store is built from docs/standard/lens-scan-store.sql and written FROM a sim's
-//     snapshot (every runs, packs, releases, proposals, measurements, activity and shots row), so both planes start from
-//     the same rows; the routes behind it run over the fake Claude Code CLI (scripts/fixtures/fake-claude.mjs) and a fake
+//   - live: a temp product (Kettle's map beside its store) whose lens-scan store is built from
+//     docs/standard/lens-scan-store.sql and written FROM a sim's snapshot (every runs, packs, releases, proposals,
+//     measurements, activity and shots row), so both planes start from the same rows; the routes behind it run over the fake Claude Code CLI (scripts/fixtures/fake-claude.mjs) and a fake
 //     gh (BP_GH_BIN, signed out while FAKE_GH_OUT=1), store.mjs resolved as release.server.ts resolves it, and a fetch stub
 //     hands the client's requests (client.ts) to the route handlers, as the dev server would route them.
 // The caller registers scripts/overlays-loader.mjs before importing this (the routes import through '@/' and '@bp/core').
@@ -73,6 +73,7 @@ const ROUTES: [RegExp, string, string[]][] = [
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/build$/, 'products/[slug]/releases/[id]/build/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/finish$/, 'products/[slug]/releases/[id]/finish/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/commits\/([^/]+)$/, 'products/[slug]/commits/[sha]/route.ts', ['slug', 'sha']],
+  [/^\/api\/products\/([^/]+)\/scans$/, 'products/[slug]/scans/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/scans\/([^/]+)$/, 'products/[slug]/scans/[job]/route.ts', ['slug', 'job']],
   [/^\/api\/products\/([^/]+)\/waves$/, 'products/[slug]/waves/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/waves\/([^/]+)$/, 'products/[slug]/waves/[wave]/route.ts', ['slug', 'wave']],
@@ -117,6 +118,8 @@ export async function openPlanes(root: string): Promise<Planes> {
   const liveFrom = (slug: string, snap: Any): LivePlane => {
     const proot = path.join(dir, slug), file = path.join(proot, '.ai/lens-scan/scan.db');
     writeStore(root, file, snap);
+    // Kettle's map beside the store, as a registered product has one: the scans route reads its lenses and features
+    fs.copyFileSync(path.join(root, 'packages/core/data/kettle.app-structure.json'), path.join(path.dirname(file), 'app-structure.json'));
     // a git repository on main with one commit, as the sample's main stands before any merge: landings read it
     for (const a of [['init', '-q'], ['checkout', '-q', '-b', 'main'], ['commit', '-q', '--allow-empty', '-m', 'chore: the sample base']]) {
       const g = spawnSync('git', ['-c', 'user.name=bp-check', '-c', 'user.email=bp-check@localhost', '-c', 'commit.gpgsign=false', ...a], { cwd: proot, encoding: 'utf8' });

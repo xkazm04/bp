@@ -86,6 +86,17 @@ export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolea
 export const PROJECT_LENS_ID = /^[a-z]{2,}(?:\.[a-z0-9-]+){2,}$/;
 /** Most features one `selection` scan may name. */
 export const MAX_SELECTION = 200;
+/** What measuring a set of items takes: one `selection` scan per lens, over the features of that lens's items (first seen
+ *  first, each once, at most MAX_SELECTION), lenses in the order they first appear. */
+export function measureScopes(items: readonly { lens: string; feature: string }[]): { lens: string; features: string[] }[] {
+  const by = new Map<string, string[]>();
+  for (const x of items) {
+    let fs = by.get(x.lens);
+    if (!fs) by.set(x.lens, (fs = []));
+    if (!fs.includes(x.feature) && fs.length < MAX_SELECTION) fs.push(x.feature);
+  }
+  return [...by].map(([lens, features]) => ({ lens, features }));
+}
 /** The job registry's limits per product (jobs.server.ts enforces them; the Kettle scan sim mirrors them): at most this
  *  many jobs run at once, at most this many wait queued (the next is refused 429), at most this many proposals per execute job. */
 export const MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_PROPOSALS = 50;

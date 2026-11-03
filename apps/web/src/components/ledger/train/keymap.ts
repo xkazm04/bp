@@ -11,7 +11,7 @@ export type KeyScope = 'packs' | 'backlog' | 'compare' | 'release';
 /** What a key does; the scope's handler maps each action onto its own call. */
 export type KeyAction =
   | 'next' | 'prev' | 'select' | 'open'
-  | 'accept' | 'rework' | 'descope' | 'undo'
+  | 'accept' | 'rework' | 'descope' | 'undo' | 'measure'
   | 'dispatch' | 'dispatchFocused'
   | 'filter' | 'view1' | 'view2' | 'view3'
   | 'theme' | 'mode' | 'wide'
@@ -50,6 +50,8 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['r'], action: 'rework', label: 'send back to rework' },
     { keys: ['s'], action: 'descope', label: 'descope' },
     { keys: ['u'], action: 'undo', label: 'undo the last decision' },
+    // M is the compare panel's screen mode, which layers over this scope: E measures
+    { keys: ['e'], action: 'measure', label: 'measure the selection now · one scan per lens' },
     filter,
     ...views,
     help,
