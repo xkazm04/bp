@@ -12,7 +12,8 @@ import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Propo
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { ReleaseReady } from '@bp/core/model/scan-sim';
 import type { Landings } from '@bp/core/scan/landed';
-import { errorText, parseCommitDiff, parseJson, parseLandings, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
+import type { Watch } from '@bp/core/train/watch';
+import { errorText, parseCommitDiff, parseJson, parseLandings, parseWatch, parseWatches, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
 
 export { mergeScan, upsert } from '@bp/core/scan/merge';
@@ -316,6 +317,10 @@ export const getReleaseSuggestion = (slug: string, ids?: readonly string[]): Pro
   call(api(slug) + '/releases/suggest' + (ids?.length ? '?ids=' + encodeURIComponent(ids.join(',')) : ''), 'GET', parseVersionSuggestion);
 /** What already landed on the base branch, read from git (GET releases/landed). */
 export const getLandings = (slug: string): Promise<Landings> => call(api(slug) + '/releases/landed', 'GET', parseLandings);
+/** The outcome watches, after the server queued what is due (GET releases/watch). */
+export const getWatches = (slug: string): Promise<Watch[]> => call(api(slug) + '/releases/watch', 'GET', parseWatches);
+/** Turn release `id`'s outcome watch on or off (POST releases/watch). 404 unknown release; 409 not merged or tagged yet. */
+export const postWatch = (slug: string, id: string, on: boolean): Promise<Watch> => call(api(slug) + '/releases/watch', 'POST', parseWatch, { release: id, on });
 /** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */
 export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> =>
   call(api(slug) + '/releases', 'POST', parseReleaseCreated, ids === undefined ? { version } : { version, ids });

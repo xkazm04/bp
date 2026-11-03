@@ -14,6 +14,8 @@ import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX,
 import { NOTHING_TO_BUILD, admitForBuild, buildChunks, busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
+import { evidenceOpts, type TrackOpts } from '../scan/track.ts';
+import { checkpointPlan, newWatch, recordPlan, setWatchIn, type Watch } from '../train/watch.ts';
 import type { Model } from './index.ts';
 import { NUMERIC } from '../standard/present.ts';
 import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
@@ -305,6 +307,45 @@ export class ScanSim {
   landings(): Landings { return this.train.landings(!!this.toggles.landed); }
   /** A sample item commit's diff. */
   commitDiff(sha: string): CommitDiff { return this.train.diff(sha); }
+  /** The sample's outcome watches (packages/core/src/train/watch.ts, in memory), after queueing the checkpoints that are due, as GET
+   *  releases/watch does on a live product (watch.server.ts reconcileWatches): one selection scan per lens, labelled. */
+  watches(): Watch[] {
+    const now = this.now();
+    this.watchList = this.watchList.map((w) => {
+      const plans = checkpointPlan(w, now, this.jobs());
+      if (!plans.length) return w;
+      const queued = new Map<number, string[]>();
+      for (const pl of plans) for (const q of pl.queue) {
+        try { const j = this.startScan(q.lens, { kind: 'selection', label: q.label, features: q.features }); queued.set(pl.day, [...(queued.get(pl.day) ?? []), j.id]); } catch { /* refused: asked again on the next read */ }
+      }
+      return recordPlan(w, plans, queued);
+    });
+    return this.watchList.slice();
+  }
+  /** Turn release `id`'s watch on or off, as POST releases/watch: 400 a bad id, 404 unknown release (or no watch to turn
+   *  off), 409 a release not merged or tagged yet. */
+  setWatch(id: string, on: boolean): Watch {
+    if (typeof id !== 'string' || !SAFE_ID.test(id) || typeof on !== 'boolean') throw refuse(400, 'body must be { release: <release id>, on: true | false }');
+    const iso = new Date(this.now()).toISOString();
+    let w: Watch | null = null;
+    if (on && !this.watchList.some((x) => x.release === id)) {
+      const made = newWatch(this.snapshot(), id, this.watchOpts(), iso, 'user:sample');
+      if (!made.ok) throw refuse(made.status, made.error);
+      w = made.watch;
+    }
+    const r = setWatchIn(this.watchList, w, id, on, iso);
+    if (!r.ok) throw refuse(r.status, r.error);
+    this.watchList = r.watches;
+    this.changed();
+    return r.watch;
+  }
+  /** The sample's landings and its lenses' bounds, as trackOf takes them (the live plane: git and the map). */
+  watchOpts(): TrackOpts {
+    const fields = (lens: string) => (this.prod?.manifest(lens) ?? this.lensEntries().find((e) => e.id === lens)?.manifest)?.fields ?? [];
+    const lenses = [...new Set(this.props.map((p) => p.lens))].map((id) => ({ id, fields: fields(id) as { key?: string; min?: number; max?: number }[] }));
+    return evidenceOpts(this.landings(), lenses);
+  }
+  private watchList: Watch[] = [];
   /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */
   get trainToggles(): TrainToggles { return this.toggles; }
   setTrainToggles(t: TrainToggles): void { this.toggles = t; this.changed(); }

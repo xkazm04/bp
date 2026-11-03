@@ -120,6 +120,9 @@ const outside = (v: number, b?: Bounds) => !!b && ((b.min !== undefined && v < b
 /** "min 0", "min 0, max 100". */
 export const boundWords = (b: Bounds): string => [b.min !== undefined ? 'min ' + fmt(b.min) : '', b.max !== undefined ? 'max ' + fmt(b.max) : ''].filter(Boolean).join(', ');
 
+/** The one confirm rule: a value meets the expected one at or past it, in the expected delta's direction. */
+export const meetsTarget = (value: number, expected: number, d: number): boolean => (d > 0 ? value >= expected : value <= expected);
+
 /** Whether a reading taken after the release or landing may judge it: `by` how it earned that, or `why` not. */
 export type Eligibility = { ok: true; by: 'commit' | 'time' } | { ok: false; why: string };
 /** The one eligibility rule: method and unit as the baseline's (either unrecorded: compatible), and a recorded commit
@@ -250,7 +253,7 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
       const on = landedAt ? 'landed' : 'released';
       if (t.outOfBounds) { t.stage = 'unknown'; t.label = on + ' · target out of bounds (expected ' + fmt(expected!) + u + ', ' + boundWords(t.outOfBounds) + ')'; }
       else if (!ev || expected === undefined || !d) { t.stage = 'unknown'; t.label = ev ? on + ' · measured ' + fmt(ev.value) + u : bad ? on + ' · not counted: ' + bad.why : on + ' · not measured since'; t.next = 'measure'; }
-      else if (d > 0 ? ev.value >= expected : ev.value <= expected) { t.stage = 'confirmed'; t.label = (landedAt ? 'landed · held · measured ' : 'confirmed · measured ') + fmt(ev.value) + exp; }
+      else if (meetsTarget(ev.value, expected, d)) { t.stage = 'confirmed'; t.label = (landedAt ? 'landed · held · measured ' : 'confirmed · measured ') + fmt(ev.value) + exp; }
       else { t.stage = 'not-confirmed'; t.label = (landedAt ? 'landed · short of expected · measured ' : 'measured ') + fmt(ev.value) + ', expected ' + fmt(expected); t.next = 'measure'; }
       break;
     }

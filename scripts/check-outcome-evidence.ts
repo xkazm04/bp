@@ -12,6 +12,14 @@
 //   6 readers     priorRecord and the Morning Watch read the same eligibility: a wrong-branch reading confirms in neither
 //   7 git         on a temp repo, landings() answers `ancestry` for the store's readings: a descendant of the landing
 //                 contains it, a commit on another branch does not, an unknown sha is left out (never "contains")
+//   8 watch       train/watch.ts on a release with a fixed target of 80 from 100: the branch reading 78 and a pre-merge 78
+//                 cannot satisfy it (pending); 95 at day 1 is a shortfall, 78 at day 7 meets it, 97 at day 30 is a
+//                 regression; a wrong-branch or changed-method reading judges no checkpoint; an out-of-bounds target is
+//                 unresolved; checkpointPlan queues one labelled scan per lens, adopts a job already under its label, and
+//                 marks a checkpoint whose window passed missed
+//   9 restart     watch.server.ts reconcileWatches in three processes over one root: the first queues the due checkpoint
+//                 and dies before the sidecar records it; the second adopts the journalled job and queues none; a third
+//                 queues nothing more; a corrupt sidecar reads as no watches and a read does not write it
 // Run: node scripts/check-outcome-evidence.ts   (Node type stripping; exit 1 on any failure)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -158,6 +166,85 @@ try {
   check('7 containsOf is the lookup trackOf takes', !!c && c(land, after) === true && c(land, side) === false && c(land, b0) === undefined);
   check('7 ancestryAsks: nothing to ask without readings', LD.ancestryAsks(l.state === 'known' ? l.items : {}, { proposals: scan.proposals }).length === 0);
 } catch (e) { check('7 git fixture', false, String(e)); } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+
+// ------------------------------------------------------------------ 8 the outcome watch
+const WT = await import(core('train/watch.ts')) as typeof import('../packages/core/src/train/watch.ts');
+{
+  const P = (value: number, measured_at: string, x: Any = {}) => ({ ...M(value, measured_at, x), lens: 'performance', metric: 'p95', unit: 'ms', method: 'probe', ...x });
+  const rel = { id: 'rel-1.0.0', version: '1.0.0', branch: 'release/1.0.0', status: 'tagged', created_at: h(4), updated_at: h(5) };
+  const w1 = item('p-w', { lens: 'performance', metric: 'p95', expected_delta: -20, status: 'released', release_id: rel.id });
+  const w2 = item('p-oob', { lens: 'performance', metric: 'jank', expected_delta: -200, status: 'released', release_id: rel.id });
+  const fixed = [P(100, h(0.5)), P(100, h(1.5), { proposal_id: 'p-w', phase: 'before' }), P(78, h(3), { proposal_id: 'p-w', phase: 'after', commit_sha: 'b'.repeat(40) }), P(78, h(4)), P(150, h(0.5), { metric: 'jank' })];
+  const scanW = (extra: Any[]) => ({ packs: [pack], releases: [rel], measurements: [...fixed, ...extra], proposals: [w1, w2] }) as Any;
+  const opts = { landed: { 'p-w': { ...landing, at: h(5) } }, contains, bounds: TR.boundsOf([{ id: 'performance', fields: [{ key: 'jank', min: 0 }] }]) };
+  const made = WT.newWatch(scanW([]), rel.id, opts, h(6), 'user:owner');
+  check('8 a watch freezes target 80 (down) and the landing receipt; the out-of-bounds item is unresolved', made.ok && made.watch.items[0].target === 80 && made.watch.items[0].better === 'down' && made.watch.items[0].landing?.sha === LAND
+    && /^target out of bounds: expected -50/.test(made.watch.items[1].unresolved ?? '') && made.watch.checkpoints.map((c) => c.day).join() === '1,7,30', JSON.stringify(made));
+  check('8 a draft release cannot be watched (409), an unknown one 404', (WT.newWatch({ ...scanW([]), releases: [{ ...rel, status: 'draft' }] }, rel.id, opts, h(6), 'u') as Any).status === 409 && (WT.newWatch(scanW([]), 'rel-9', opts, h(6), 'u') as Any).status === 404);
+  if (made.ok) {
+    const w = made.watch, st = (extra: Any[], at: number) => WT.watchState(w, scanW(extra), opts, Date.parse(h(at))).items[0];
+    const a = st([], 31);
+    check('8 the branch reading and a pre-merge reading cannot satisfy it: pending', a.state === 'pending' && /^pending: target 80 ms/.test(a.words), JSON.stringify(a));
+    const day1 = P(95, h(30.5), { commit_sha: MAIN }), day7 = P(78, h(175), { commit_sha: MAIN }), day30 = P(97, h(727), { commit_sha: MAIN });
+    const b = st([day1], 31), c = st([day1, day7], 176), d = st([day1, day7, day30], 728);
+    check('8 95 at day 1: shortfall', b.state === 'shortfall' && b.words === 'shortfall: 95 ms on day 1 (target 80 ms)', b.words);
+    check('8 78 at day 7: target met', c.state === 'met' && c.words === 'target met: 78 ms on day 7 (target 80 ms)', c.words);
+    check('8 97 at day 30: regression, the earlier evidence kept', d.state === 'regression' && d.words === 'regression: met on day 7, 97 ms on day 30 (target 80 ms)' && d.checkpoints.map((x) => x.met).join() === 'false,true,false', JSON.stringify(d));
+    check('8 a wrong-branch or changed-method reading judges no checkpoint', st([P(78, h(30.5), { commit_sha: OTHER })], 31).state === 'pending' && st([P(78, h(30.5), { method: 'judgement' })], 31).state === 'pending');
+    const v = WT.watchState(w, scanW([day1, day7, day30]), opts, Date.parse(h(728)));
+    check('8 the view counts each state; unresolved stays unresolved', v.counts.regression === 1 && v.counts.unresolved === 1 && v.items[1].state === 'unresolved', JSON.stringify(v.counts));
+    const due = WT.checkpointPlan(w, Date.parse(h(31)), []);
+    check('8 a due checkpoint queues one labelled scan per lens over the items it can judge', JSON.stringify(due) === JSON.stringify([{ day: 1, adopt: [], queue: [{ lens: 'performance', features: ['f-a'], label: 'Watch v1.0.0 · day 1' }] }]), JSON.stringify(due));
+    const adopt = WT.checkpointPlan(w, Date.parse(h(31)), [{ id: 'j-9', kind: 'measure', lens: 'performance', scope: { kind: 'selection', label: 'Watch v1.0.0 · day 1', features: ['f-a'] } }]);
+    check('8 a job already under the label is adopted, none queued', JSON.stringify(adopt) === JSON.stringify([{ day: 1, adopt: ['j-9'], queue: [] }]), JSON.stringify(adopt));
+    const rec = WT.recordPlan(w, adopt, new Map());
+    check('8 a recorded checkpoint plans nothing more; a passed window is missed, the current one queued', WT.checkpointPlan(rec, Date.parse(h(31)), []).length === 0
+      && JSON.stringify(WT.checkpointPlan(w, Date.parse(h(200)), []).map((p) => [p.day, !!p.missed, p.queue.length])) === '[[1,true,0],[7,false,1]]');
+    check('8 an off watch plans nothing', WT.checkpointPlan({ ...w, off_at: h(7) }, Date.parse(h(31)), []).length === 0);
+  }
+}
+
+// ------------------------------------------------------------------ 9 restart reconciliation, in real processes
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-watch-'));
+  try {
+    const root = path.join(tmp, 'prod'), work = path.join(root, '.ai/lens-scan/work');
+    fs.mkdirSync(work, { recursive: true });
+    // the item's lens is the fake CLI's `fail` (it exits at once): the job ends on its own in every process
+    const w = { release: 'rel-1.0.0', version: '1.0.0', enabled_at: h(0), by: 'user:owner', checkpoints: [{ day: 1, due: h(24) }, { day: 7, due: h(168) }, { day: 30, due: h(720) }],
+      items: [{ id: 'p-w', title: 'w', feature: 'f-a', lens: 'fail', metric: 'p95', target: 80, better: 'down' }] };
+    fs.writeFileSync(path.join(work, 'bp-watch.json'), JSON.stringify({ version: 1, watches: [w] }));
+    const child = path.join(tmp, 'child.mjs'), url = (p: string) => JSON.stringify(pathToFileURL(path.join(ROOT, p)).href);
+    fs.writeFileSync(child, [
+      'const [root, mode, now] = process.argv.slice(2);',
+      `const { registerSrcHooks } = await import(${url('scripts/lib/src-hooks.mjs')});`,
+      `registerSrcHooks(${JSON.stringify(ROOT)});`,
+      `process.env.BP_CLAUDE_BIN = ${JSON.stringify(path.join(ROOT, 'scripts/fixtures/fake-claude.mjs'))};`,
+      `const W = await import(${url('packages/core/src/server/watch.server.ts')});`,
+      `const J = await import(${url('packages/core/src/server/jobs.server.ts')});`,
+      'const fs = await import("node:fs");',
+      'const ws = W.reconcileWatches("evid", root, Date.parse(now));',
+      'for (let i = 0; i < 200 && J.list("evid").some((j) => j.status === "queued" || j.status === "running"); i++) await new Promise((r) => setTimeout(r, 50));',
+      // a crash between the enqueue (journalled) and the sidecar write: the sidecar never recorded the job
+      'if (mode === "crash") { const f = W.watchFile(root), x = JSON.parse(fs.readFileSync(f, "utf8")); for (const c of x.watches[0].checkpoints) delete c.jobs; fs.writeFileSync(f, JSON.stringify(x)); }',
+      'console.log(JSON.stringify({ jobs: ws[0].checkpoints.map((c) => c.jobs ?? []), registry: J.list("evid").map((j) => j.id + ":" + (j.scope && j.scope.label)) }));',
+      'process.exit(0);',
+    ].join('\n'));
+    const run = (mode: string): { jobs: string[][]; registry: string[] } => {
+      const r = spawnSync(process.execPath, [child, root, mode, h(30)], { encoding: 'utf8', timeout: 60000 });
+      try { return JSON.parse(r.stdout.trim().split('\n').pop() ?? ''); } catch { return { jobs: [], registry: [], err: r.stderr + r.stdout } as Any; }
+    };
+    const first = run('crash');
+    check('9 the first process queues the due checkpoint (one job, labelled)', first.jobs[0]?.length === 1 && first.registry.length === 1 && first.registry[0].endsWith(':Watch v1.0.0 · day 1'), JSON.stringify(first));
+    const second = run('ok');
+    check('9 after the crash, the restarted process adopts the journalled job and queues none', second.jobs[0]?.join() === first.jobs[0]?.join() && second.registry.length === 1, JSON.stringify(second));
+    const third = run('ok');
+    check('9 a later read queues nothing more', third.registry.length === 1 && third.jobs[0]?.join() === first.jobs[0]?.join(), JSON.stringify(third));
+    const WS = await import(core('server/watch.server.ts')) as typeof import('../packages/core/src/server/watch.server.ts');
+    fs.writeFileSync(path.join(work, 'bp-watch.json'), '{ torn');
+    check('9 a corrupt sidecar reads as no watches, and a read does not write it', WS.readWatches(root).length === 0 && WS.reconcileWatches('evid2', root).length === 0 && fs.readFileSync(path.join(work, 'bp-watch.json'), 'utf8') === '{ torn');
+  } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* a child still holds a file */ } }
+}
 
 console.log(`check-outcome-evidence: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
