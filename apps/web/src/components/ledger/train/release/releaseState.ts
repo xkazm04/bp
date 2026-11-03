@@ -12,6 +12,7 @@ import { conflictsIn, fmtValue, isConflict, noteItem, releaseNotes, type NoteIte
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
 import { landedIn, type Landing, type Landings } from '@bp/core/scan/landed';
+import { ago } from '@bp/core/scan/liveness';
 
 /** The five steps a release walks, in order; `failed` is shown at the step it failed on. */
 export const STEPS: readonly Exclude<ReleaseStatus, 'failed'>[] = ['draft', 'building', 'pr-open', 'merged', 'tagged'];
@@ -163,6 +164,22 @@ export function byLens<T extends { p: Proposal }>(xs: readonly T[]): [string, T[
 }
 
 export { isConflict };
+
+/** The items a new draft takes: the chosen ones, in package order, or every item while nothing is chosen. */
+export const chosenOf = <T extends { p: Proposal }>(items: readonly T[], sel: ReadonlySet<string>): T[] =>
+  sel.size ? items.filter((x) => sel.has(x.p.id)) : [...items];
+
+/** How long an accepted item has waited, from its triaged_at: "accepted 4 d ago"; with no readable time, said so. */
+export function acceptedAge(p: Pick<Proposal, 'triaged_at'>, now: number): string {
+  const t = p.triaged_at ? Date.parse(p.triaged_at) : NaN;
+  return Number.isNaN(t) ? 'accepted, when is not recorded' : 'accepted ' + ago(now - t);
+}
+
+/** What a create answer did with the ids asked for, in words: every one added, or how many and what was left out. */
+export function draftWords(asked: number, added: number, skipped: readonly { id: string; why: string }[]): string {
+  const left = skipped.length ? ` Left out: ${skipped.map((s) => s.id + ' (' + s.why + ')').join(', ')}.` : '';
+  return (added === asked ? `Drafted all ${added} ${asked === 1 ? 'item' : 'items'}.` : `Drafted ${added} of the ${asked} asked for.`) + left;
+}
 
 /**
  * The notes the release run will write, as a preview from the package: notes.ts releaseNotes in mode "preview", the

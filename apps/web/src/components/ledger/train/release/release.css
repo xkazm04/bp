@@ -50,6 +50,9 @@
 .tr-pl li .t small { display: block; font-size: var(--fs-13); color: var(--ink-2); }
 .tr-pl li .t small.fl { color: var(--red); }
 .tr-pl li .t small.warn { color: var(--amber); }
+.tr-pl li.on { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.tr-pl li.fx { outline: 1px solid var(--accent); outline-offset: -1px; }
+.tr-pl li .sha input { margin: 0 var(--sp-4) 0 0; vertical-align: middle; }
 .tr-pl .lgrp { display: block; padding: var(--sp-8) var(--sp-4) var(--sp-4); border-bottom: 0; font: 600 var(--fs-12) var(--mono); letter-spacing: var(--ls-4); text-transform: uppercase; color: var(--ink-2); }
 .tr-pl .lgrp .tr-lens { color: var(--ink-2); letter-spacing: var(--ls-4); }
 

@@ -71,11 +71,14 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['w'], action: 'wide', label: 'full width' },
   ],
   release: [
+    { keys: ['j', 'ArrowDown'], action: 'next', label: 'next item (before a draft)' },
+    { keys: ['k', 'ArrowUp'], action: 'prev', label: 'previous item (before a draft)' },
+    { keys: ['x', ' '], action: 'select', label: 'choose it for the draft' },
     { keys: ['b'], action: 'build', label: 'build the release' },
     { keys: ['f'], action: 'finish', label: 'finish after the merge' },
     ...views,
     help,
-    { keys: ['Escape'], action: 'escape', label: 'back to triage' },
+    { keys: ['Escape'], action: 'escape', label: 'clear the chosen items, then back to triage' },
   ],
 };
 

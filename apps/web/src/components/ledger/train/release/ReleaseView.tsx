@@ -6,7 +6,8 @@
 // Also the header's summary strip and the phone's one-line release status. What a status allows is releaseState.ts's
 // table; the progress comes only from the stream (the release rows and the jobs list), never from polling. Before Build,
 // the pre-flight (preflight.ts) lists what will refuse or fail; the probe behind it is asked when the tab opens on a
-// release that offers a build, when its package, jobs or sample switches change - never on a timer.
+// release that offers a build, when its package, jobs or sample switches change - never on a timer. Before a draft the
+// tab owns a choice of package items (J/K, X or Space, Esc clears it first): Create draft and the suggestion take it.
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
@@ -20,7 +21,7 @@ import { KEYMAP } from '../keymap';
 import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
-  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
+  ACTION, RELEASE_STATE, chosenOf, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
   safeUrl, standOf, STATUS_WORD, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
@@ -175,8 +176,25 @@ function Failures({ m, a }: { m: ReleaseModel; a: ReleaseActions }) {
   );
 }
 
+/** The pre-draft choice: the chosen ids and the focused row, kept to the package's items (an item that left is dropped). */
+function useChoice(m: ReleaseModel) {
+  const [st, setSt] = useState<{ sel: ReadonlySet<string>; focus: string | null }>({ sel: new Set(), focus: null });
+  const ids = useMemo(() => (m.rel ? [] : m.items.map((x) => x.p.id)), [m.rel, m.items]);
+  const here = useMemo(() => new Set(ids), [ids]);
+  const sel = useMemo(() => new Set([...st.sel].filter((id) => here.has(id))), [st.sel, here]);
+  const focus = st.focus && here.has(st.focus) ? st.focus : null;
+  const toggle = (id: string) => setSt((s) => { const n = new Set(s.sel); if (!n.delete(id)) n.add(id); return { ...s, sel: n, focus: id }; });
+  const move = (d: number) => {
+    if (!ids.length) return;
+    const i = focus ? ids.indexOf(focus) : -1, j = i < 0 ? (d > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, i + d));
+    setSt((s) => ({ ...s, focus: ids[j] }));
+  };
+  const chosen = sel.size ? chosenOf(m.items, sel).map((x) => x.p.id) : undefined;
+  return { sel, focus, chosen, ids, toggle, move, clear: () => setSt({ sel: new Set(), focus: null }) };
+}
+
 export function ReleaseView({ phone }: ReleaseViewProps) {
-  const m = useReleaseModel(), a = useReleaseActions(m, phone);
+  const m = useReleaseModel(), a = useReleaseActions(m, phone), ch = useChoice(m);
   const root = useRef<HTMLDivElement>(null);
   // the tab holds the focus so B and F reach it (the rest bubble to the page: 1-3, ? and Esc): on opening, and after a
   // render that dropped it (a button that went away) to the body or the page itself; focus anywhere else is left alone
@@ -189,8 +207,17 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
     if (phone || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement;
     if ((t.tagName === 'INPUT' && (t as HTMLInputElement).type !== 'checkbox') || t.closest('textarea, select')) return;
-    const b = KEYMAP.release.find((k) => k.keys.some((x) => x.toLowerCase() === e.key.toLowerCase()));
-    if (!b || (b.action !== 'build' && b.action !== 'finish')) return;
+    const b = KEYMAP.release.find((k) => k.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === (e.key.length === 1 ? e.key.toLowerCase() : e.key)));
+    if (!b) return;
+    // the choice keys stay here (the page would move its own table's focus); Esc clears a choice before it leaves the tab
+    if (b.action === 'next' || b.action === 'prev' || b.action === 'select' || (b.action === 'escape' && ch.sel.size)) {
+      if (b.action === 'select' && e.key === ' ' && t.closest('button, a, input')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (b.action === 'escape') ch.clear();
+      else if (!m.rel) { if (b.action === 'select') { const id = ch.focus ?? ch.ids[0]; if (id) ch.toggle(id); } else ch.move(b.action === 'next' ? 1 : -1); }
+      return;
+    }
+    if (b.action !== 'build' && b.action !== 'finish') return;
     e.preventDefault(); e.stopPropagation();
     const x = a.available.find((y) => y !== 'pr' && ACTION[y].key === b.action);
     if (x) a.run(x);
@@ -200,8 +227,8 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
     <div ref={root} className={'tr-rel' + (phone ? ' phone' : '')} data-role="tr-rel" tabIndex={-1} onKeyDown={onKey}>
       <section aria-label="Package">
         <h3>Package · {m.landed.size ? `${n - m.landed.size} to cut · ${m.landed.size} landed outside a release${m.rel ? ' · v' + m.rel.version : ''}` : `${n} ${m.rel ? 'in v' + m.rel.version : 'accepted'}`}</h3>
-        <VersionBox m={m} phone={phone} />
-        <Package m={m} phone={phone} />
+        <VersionBox m={m} phone={phone} {...(ch.chosen ? { chosen: ch.chosen } : {})} onMade={ch.clear} />
+        <Package m={m} phone={phone} pick={{ sel: ch.sel, focus: ch.focus, toggle: ch.toggle }} />
       </section>
       <section aria-label="Build">
         <h3>Build · Claude Code on your machine, your gh login</h3>
