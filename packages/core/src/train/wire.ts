@@ -104,7 +104,7 @@ const RELEASE_STATUS: Members<ReleaseStatus> = { draft: true, building: true, 'p
 const TRIAGED: Members<TriageResult['decision']> = { accepted: true, rework: true, descoped: true, reopened: true };
 const JOB_KIND: Members<JobKind> = { measure: true, execute: true, release: true, prepare: true, propose: true, adopt: true };
 const JOB_STATUS: Members<JobStatus> = { queued: true, running: true, done: true, failed: true, cancelled: true };
-const RELEASE_STEP: Members<ReleaseStep> = { build: true, finish: true };
+const RELEASE_STEP: Members<ReleaseStep> = { build: true, finish: true, tag: true };
 const SCOPE_KIND: Members<ScanScopeKind> = { feature: true, bay: true, room: true, wing: true, all: true, selection: true };
 
 // ------------------------------------------------------------------------------------------- shapes

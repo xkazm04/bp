@@ -477,13 +477,17 @@ export function enqueueExecute(slug: string, root: string, ids: string[], opts: 
   return enqueue(slug, root, job, prompt);
 }
 
-/** Queue a release run: `build` cuts it (`/lens-scan release --id <rel>`), `finish` tags it (`--finish`). The route checked the
- *  release's status and `gh auth status`; one release has at most one queued or running job (409 otherwise). */
+/** Queue a release run: `build` cuts it (`/lens-scan release --id <rel>`), `finish` tags it (`--finish`), `tag` tags a draft
+ *  of landed items (`--landed`). The route checked the release's status and `gh auth status`; one release has at most one
+ *  queued or running job (409 otherwise). */
+/** Each step's flag on the release prompt. */
+const FLAG: Readonly<Record<ReleaseStep, string>> = { build: '', finish: ' --finish', tag: ' --landed' };
+
 export function enqueueRelease(slug: string, root: string, release: string, version: string, step: ReleaseStep): Enqueued | { ok: false; status: 409; error: string } {
-  if (!RELEASE_ID.test(release) || release !== 'rel-' + version || (step !== 'build' && step !== 'finish')) return { ok: false, status: 400, error: 'bad-release' };
+  if (!RELEASE_ID.test(release) || release !== 'rel-' + version || !(step in FLAG)) return { ok: false, status: 400, error: 'bad-release' };
   ensure(slug, root);
   if (releaseBusy(slug, release)) return { ok: false, status: 409, error: `a release job for ${release} is already queued or running` };
-  const prompt = `/lens-scan release --id ${release}` + (step === 'finish' ? ' --finish' : '');
+  const prompt = `/lens-scan release --id ${release}` + FLAG[step];
   return enqueue(slug, root, { id: jobId(), kind: 'release', release, version, step, status: 'queued', queued_at: now() }, prompt);
 }
 

@@ -26,8 +26,9 @@ export interface ScanScope {
 export type JobKind = 'measure' | 'execute' | 'release' | 'prepare' | 'propose' | 'adopt';
 /** The lens id of a measure or propose job over every enabled lens at once (`--lens all`): ONE job, one MAX_RUNNING slot. */
 export const ALL_LENSES = 'all';
-/** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge (`--finish`). */
-export type ReleaseStep = 'build' | 'finish';
+/** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge
+ *  (`--finish`), `tag` tags a draft whose every item already landed on the default branch (`--landed`, lens-scan 1.15.0). */
+export type ReleaseStep = 'build' | 'finish' | 'tag';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface ScanJob {

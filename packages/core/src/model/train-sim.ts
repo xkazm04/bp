@@ -21,7 +21,9 @@ import type { Landing, Landings } from '../scan/landed.ts';
 const GATES = ['tsc', 'vitest'] as const;
 
 /** Kettle only: what the sample release job runs into. */
-export interface TrainToggles { ghOff: boolean; conflict: boolean; gateFails: boolean }
+/** `landed`: every accepted item is already on the sample's main (committed straight to it, bp's own way), so a draft of
+ *  them is tagged there (the tag step) instead of cut. */
+export interface TrainToggles { ghOff: boolean; conflict: boolean; gateFails: boolean; landed?: boolean }
 
 /** What the train needs of the scan sim: its clock, the tables it shares (mutated in place), id counters and notify. */
 export interface TrainHost {
@@ -193,7 +195,7 @@ const round = (v: number) => Math.round(v * 100) / 100;
 const semverDesc = (a: string, b: string) => { const x = a.split(/[.+-]/).map(Number), y = b.split(/[.+-]/).map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return y[i] - x[i]; return 0; };
 
 /** A release job's plan, fixed when it starts. */
-interface Plan { rel: string; step: ReleaseStep; conflict?: string; gateFails: boolean; error?: string }
+interface Plan { rel: string; step: ReleaseStep; conflict?: string; gateFails: boolean; error?: string; landed?: Record<string, Landing>; unlanded?: string[] }
 
 export class TrainSim {
   readonly packs: Pack[] = [];
@@ -406,8 +408,13 @@ export class TrainSim {
     this.head = sha;
   }
 
-  /** What landed on the sample's main, as GET releases/landed answers it (always known: the sample is its own git). */
-  landings(): Landings { return { state: 'known', ref: MAIN_REF, head: this.head, items: { ...this.landed } }; }
+  /** What landed on the sample's main, as GET releases/landed answers it (always known: the sample is its own git). With
+   *  `direct` (the "already on main" toggle) every accepted item landed too, at its own sample commit. */
+  landings(direct = false): Landings {
+    const items: Record<string, Landing> = { ...this.landed };
+    if (direct) for (const p of this.h.props) if (p.status === 'accepted' && !items[p.id]) items[p.id] = { sha: sha40('kettle direct|' + p.id), at: p.triaged_at ?? p.updated_at, by: 'trailer' };
+    return { state: 'known', ref: MAIN_REF, head: this.head, items };
+  }
 
   /** A release job starts: the release moves to building (a build adds its run, note `bp-job:<id> · release <rel> at <sha>`).
    *  Answers the job's steps, one per sim step; [] when the release is no longer in a state for it. */
@@ -417,6 +424,15 @@ export class TrainSim {
     if (!r || !canStart(step, r.status)) { plan.error = r ? `${id} is ${r.status}; ${step} cannot start` : `no release ${id}`; return []; }
     if (step === 'finish') return ['fetch', 'tag', 'publish'];
     const items = this.items(id), at = this.iso();
+    if (step === 'tag') {
+      // lens-scan release --landed: building, every item checked on main's HEAD, gates there, notes, tag; nothing is cut
+      const l = this.landings(!!toggles.landed);
+      plan.landed = l.state === 'known' ? { ...l.items } : {};
+      plan.unlanded = items.filter((p) => p.status === 'accepted' && !plan.landed![p.id]).map((p) => p.id);
+      this.setRel(id, { status: 'building', base_sha: this.head }, ['error']);
+      this.h.runs.push({ id: run, started_at: at, updated_at: at, phase: 'measure', status: 'running', lenses: [...new Set(items.map((p) => p.lens))], scope: { release: id }, model: 'sample', note: `bp-job:${job.id} · release ${id} at ${this.head.slice(0, 7)} (landed)` });
+      return plan.unlanded.length ? ['verify'] : ['verify', 'gate', ...(toggles.gateFails ? [] : ['notes', 'tag', 'publish'])];
+    }
     this.setRel(id, { status: 'building', base_sha: BASE_SHA }, ['error']);
     this.h.runs.push({ id: run, started_at: at, updated_at: at, phase: 'measure', status: 'running', lenses: [...new Set(items.map((p) => p.lens))], scope: { release: id }, model: 'sample', note: `bp-job:${job.id} · release ${id} at ${BASE_SHA.slice(0, 7)}` });
     if (toggles.conflict && items.length) plan.conflict = items.reduce((a, b) => (this.files(b).length > this.files(a).length ? b : a)).id;
@@ -428,6 +444,12 @@ export class TrainSim {
     const plan = this.plans.get(job.id)!, r = this.rel(plan.rel)!, v = r.version, at = this.iso();
     const line = (kind: ActivityKind, text: string, p?: Proposal) => { if (job.step !== 'finish') this.log(run, kind, text, at, p?.feature, p?.lens); return text; };
     if (s === 'cut') return line('note', `cut ${r.branch} from ${MAIN_REF} at ${BASE_SHA.slice(0, 7)} (sample)`);
+    if (s === 'verify') {
+      const out = plan.unlanded ?? [];
+      if (!out.length) return line('note', `every item landed on ${MAIN_REF} at ${this.head.slice(0, 7)} (sample)`);
+      this.setRel(r.id, { status: 'failed', error: `not landed on ${MAIN_REF} at ${this.head.slice(0, 7)}: ${out.join(', ')} (sample)` });
+      return line('error', `not landed: ${out.join(', ')} - ship them with the cut (sample)`);
+    }
     if (s.startsWith('pick:')) {
       const p = this.prop(s.slice(5));
       if (!p || p.release_id !== r.id) return line('note', `skipped ${s.slice(5)}: no longer in ${r.id} (sample)`);
@@ -441,7 +463,7 @@ export class TrainSim {
       this.setRel(r.id, { status: 'failed', error: 'gate failed: vitest (sample)' });
       return line('error', 'gate failed: vitest (sample)');
     }
-    if (s === 'notes') { const items = this.items(r.id); this.setRel(r.id, { notes: this.notes(r, items) }); return line('note', `release notes written: ${items.length} item${items.length === 1 ? '' : 's'} (sample)`); }
+    if (s === 'notes') { const items = this.items(r.id); this.setRel(r.id, { notes: this.notes(r, items, plan.landed) }); return line('note', `release notes written: ${items.length} item${items.length === 1 ? '' : 's'} (sample)`); }
     if (s === 'pr') {
       if (!this.items(r.id).length) { this.setRel(r.id, { status: 'failed', error: 'nothing left to ship: every item went back to rework (sample)' }); return line('error', 'nothing left to ship (sample)'); }
       const url = `https://github.com/sample/kettle/pull/${40 + this.releases.indexOf(r)}`;
@@ -454,6 +476,8 @@ export class TrainSim {
       // store.mjs release-update merged -> tagged: the accepted items ship, and packs left with only settled items close
       const items = this.items(r.id).filter((p) => p.status === 'accepted');
       this.setRel(r.id, { status: 'tagged', tag: 'v' + v });
+      // a tag over landed items keeps their landings: main still has them once the toggle is off
+      if (plan.landed) for (const p of items) if (plan.landed[p.id] && !this.landed[p.id]) this.landed[p.id] = plan.landed[p.id];
       for (const p of items) this.put({ ...p, status: 'released', updated_at: at });
       const closed = this.closePacks(items.map((p) => p.id), at);
       return `tagged v${v}: ${items.length} item${items.length === 1 ? '' : 's'} released${closed.length ? ', closed ' + closed.join(', ') : ''} (sample)`;
@@ -496,14 +520,14 @@ export class TrainSim {
   // ----------------------------------------------------------------------------------------- notes and commits
   /** The stored notes: notes.ts releaseNotes in mode "sample", the writer the tab's preview calls too, with the items
    *  this run's conflict sent back and the gates it logged (the notes step runs only after they passed). */
-  private notes(r: Release, items: Proposal[]): string {
+  private notes(r: Release, items: Proposal[], landed?: Record<string, Landing>): string {
     const lenses = (lens: string): LensFields[] => [{ id: lens, manifest: { fields: [this.h.field(lens, items.find((p) => p.lens === lens)?.metric ?? '')].filter((f): f is LensField => !!f) } }];
     const evidence = items.map((p) => {
       const before: Measurement[] = [], after: Measurement[] = [];
       for (const m of this.h.ms) if (m.proposal_id === p.id) (m.phase === 'after' ? after : before).push(m);
       return noteItem(p, before, after, lenses(p.lens));
     });
-    return releaseNotes({ product: 'Kettle', version: r.version, mode: 'sample', items: evidence, conflicts: conflictsIn(this.h.props, r.branch), gates: GATES.map((name) => ({ name, passed: true })) });
+    return releaseNotes({ product: 'Kettle', version: r.version, mode: 'sample', items: evidence, conflicts: landed ? [] : conflictsIn(this.h.props, r.branch), gates: GATES.map((name) => ({ name, passed: true })), ...(landed ? { landed: { items: landed, ref: MAIN_REF, head: this.head } } : {}) });
   }
 
   private files(p: Proposal): CommitDiff['files'] { const it = this.spec.get(p.id); return it ? it.files.map((f, i) => ({ path: f, ...counts(hunk(it, f, i)) })) : []; }

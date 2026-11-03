@@ -323,13 +323,15 @@ export const postRelease = (slug: string, version: string, ids?: string[]): Prom
 export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseScanJob, {});
 /** The build's pre-flight (POST build `{"dry":true}`): 200 `{ ready: true }` with nothing queued, else the refusal the
  *  build would give (409 state or busy, 429 queue full). It never checks gh: the dry run reads local state only. */
-export const postReleaseBuildDry = (slug: string, id: string): Promise<ReleaseReady> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseReady, { dry: true });
+export const postReleaseBuildDry = (slug: string, id: string, step: 'build' | 'tag' = 'build'): Promise<ReleaseReady> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/' + step, 'POST', parseReady, { dry: true });
 const parseReady = (x: unknown): Parsed<ReleaseReady> => {
   const o = (x ?? {}) as { ready?: unknown; gh?: unknown };
   return o.ready === true && (o.gh === 'signed-in' || o.gh === 'unchecked') ? { ok: true, value: { ready: true, gh: o.gh } } : { ok: false, error: 'ready: not true, or gh: not signed-in | unchecked' };
 };
 /** Start the release job that finishes `id` after its PR merged (202 = the job). 412 / 409 as build. */
 export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/finish', 'POST', parseScanJob, {});
+/** Start the release job that tags `id` over items already on the default branch (202 = the job). 412 / 409 as build. */
+export const postReleaseTag = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/tag', 'POST', parseScanJob, {});
 /** One item commit's diff (GET commits/[sha]). 400 = not a sha; 404 = not an item commit of this store. */
 export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => call(api(slug) + '/commits/' + encodeURIComponent(sha), 'GET', parseCommitDiff);
 

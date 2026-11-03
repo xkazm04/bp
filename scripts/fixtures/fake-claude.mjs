@@ -9,12 +9,16 @@
 //                   *prep-refuse* answers `lens-scan refused: ...`, one named *prep-noop* claims success and writes nothing)
 //   --lens mdrefuse the refusal as a markdown reply writes it (`**lens-scan refused: ...**`, more lines after), exits 0
 //   --lens absent   answers as a CLI without the skill did (`/lens-scan` isn't installed ... a closing question), exits 0
-//   /lens-scan release --id rel-<v> [--finish]   acts on the release as store.mjs would (lens-scan references/release.md):
+//   /lens-scan release --id rel-<v> [--finish|--landed]   acts on the release as store.mjs would (lens-scan references/release.md):
 //                   a cut moves it draft|failed -> building, writes the release-head measure run (note
 //                   `bp-job:<BP_JOB_ID> · release rel-<v> at <sha>`), then -> pr-open with a PR url; a version with `-fail`
 //                   in it ends failed instead (`lens-scan release failed: gate ...`). --finish moves pr-open -> merged ->
 //                   tagged (tag v<v>), its accepted items -> released and every pack left with only settled items
-//                   (released, descoped, declined, or a rework whose rebuild is settled) -> closed, with no run. An unknown release: `lens-scan refused: ...`, exit 0.
+//                   (released, descoped, declined, or a rework whose rebuild is settled) -> closed, with no run. --landed
+//                   (lens-scan 1.15.0) moves draft|failed -> building, reads each accepted item's `Lens-Item: <id>` commit on
+//                   the cwd's git HEAD: any missing -> failed (`lens-scan release failed: not landed: <ids> ...`); else the
+//                   release-head run (note `... at <HEAD> (landed)`) and building -> tagged as --finish tags. An unknown
+//                   release: `lens-scan refused: ...`, exit 0.
 //   anything else   writes a run with note `bp-job:<BP_JOB_ID>` into <cwd>/.ai/lens-scan/scan.db, exits 0
 // With `--output-format json` it answers like `claude -p --output-format json` running `/lens-scan onboard --draft-only`
 // (the lens-draft chat):
@@ -26,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -107,9 +112,9 @@ db.exec('BEGIN IMMEDIATE');
 if (db.prepare('PRAGMA user_version').get().user_version === 0) db.exec(fs.readFileSync(path.join(ROOT, 'docs/standard/lens-scan-store.sql'), 'utf8'));
 db.exec('COMMIT');
 const now = new Date().toISOString(), id = 'run-' + process.env.BP_JOB_ID;
-const rel = /^\/lens-scan release --id (\S+)( --finish)?\s*$/m.exec(input);
+const rel = /^\/lens-scan release --id (\S+)( --finish| --landed)?\s*$/m.exec(input);
 if (rel) {
-  const [, rid, fin] = rel, at = () => new Date().toISOString();
+  const [, rid, flag] = rel, fin = flag === ' --finish', landed = flag === ' --landed', at = () => new Date().toISOString();
   const r = db.prepare('SELECT * FROM releases WHERE id = ?').get(rid);
   // each move a compare-and-set on the status read, as store.mjs release-update makes it
   const move = (to, from, extra = {}) => {
@@ -117,11 +122,10 @@ if (rel) {
     if (!db.prepare(`UPDATE releases SET status = ?, updated_at = ?${cols} WHERE id = ? AND status = ?`).run(to, at(), ...Object.values(extra), rid, from).changes) throw new Error(`${rid} moved on`);
   };
   if (!r) { console.log(`lens-scan refused: release ${rid} does not exist`); db.close(); process.exit(0); }
-  if (fin) {
-    if (r.status !== 'pr-open' && r.status !== 'merged') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
-    if (r.status === 'pr-open') move('merged', 'pr-open');
+  // store.mjs release-update --status tagged: the accepted items released, settled packs closed, in one transaction
+  const tagIt = (from) => {
     db.exec('BEGIN IMMEDIATE');
-    move('tagged', 'merged', { tag: 'v' + r.version });
+    move('tagged', from, { tag: 'v' + r.version });
     const items = db.prepare("SELECT id, pack_id FROM proposals WHERE release_id = ? AND status = 'accepted'").all(rid);
     db.prepare("UPDATE proposals SET status = 'released', updated_at = ? WHERE release_id = ? AND status = 'accepted'").run(at(), rid);
     // store.mjs closePacks: a rework item counts as settled once its rebuild (attempt_of = it) is, and the packs looked
@@ -138,6 +142,26 @@ if (rel) {
     }
     db.exec('COMMIT');
     console.log(`lens-scan release ${rid} tagged v${r.version}`);
+  };
+  if (fin) {
+    if (r.status !== 'pr-open' && r.status !== 'merged') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
+    if (r.status === 'pr-open') move('merged', 'pr-open');
+    tagIt('merged');
+  } else if (landed) {
+    if (r.status !== 'draft' && r.status !== 'failed') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
+    move('building', r.status);
+    const git = (...a) => spawnSync('git', a, { cwd: process.cwd(), encoding: 'utf8' });
+    const head = git('rev-parse', 'HEAD').stdout?.trim() || 'none';
+    const items = db.prepare("SELECT id FROM proposals WHERE release_id = ? AND status = 'accepted' ORDER BY id").all(rid);
+    const out = items.filter((p) => !git('log', 'HEAD', '--format=%H', '-E', '--grep', `^Lens-Item: ${p.id}[[:space:]]*$`).stdout?.trim()).map((p) => p.id);
+    if (out.length) {
+      move('failed', 'building', { error: `not landed on main at ${head.slice(0, 7)}: ${out.join(', ')}` });
+      console.log(`lens-scan release failed: not landed: ${out.join(', ')} - ship them with the cut (no --landed)`);
+    } else {
+      db.prepare("INSERT INTO runs (id, started_at, updated_at, ended_at, phase, status, lenses, note) VALUES (?, ?, ?, ?, 'measure', 'done', '[]', ?)")
+        .run(id, now, now, now, `bp-job:${process.env.BP_JOB_ID} · release ${rid} at ${head} (landed)`);
+      tagIt('building');
+    }
   } else {
     if (r.status !== 'draft' && r.status !== 'failed') { console.log(`lens-scan refused: ${rid} is ${r.status}`); db.close(); process.exit(0); }
     move('building', r.status);

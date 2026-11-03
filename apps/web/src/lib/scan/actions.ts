@@ -4,7 +4,7 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import type { Landings } from '@bp/core/scan/landed';
@@ -129,17 +129,24 @@ export async function buildRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
   throw nowhere();
 }
 export type { ReleaseReady };
-/** The build's pre-flight: every refusal the build would give, with nothing started (live: the route's dry run, which
- *  never spawns gh; Kettle: the sim's, which reads its gh toggle). Rejects as buildRelease does. */
-export async function preflightRelease(ctx: ScanCtx, id: string): Promise<ReleaseReady> {
-  if (ctx.slug) return postReleaseBuildDry(ctx.slug, id);
-  if (ctx.sim) return ctx.sim.preflightRelease(id);
+/** The build's (or the tag's) pre-flight: every refusal that step would give, with nothing started (live: the route's dry
+ *  run, which never spawns gh; Kettle: the sim's, which reads its gh toggle). Rejects as buildRelease does. */
+export async function preflightRelease(ctx: ScanCtx, id: string, step: 'build' | 'tag' = 'build'): Promise<ReleaseReady> {
+  if (ctx.slug) return postReleaseBuildDry(ctx.slug, id, step);
+  if (ctx.sim) return ctx.sim.preflightRelease(id, step);
   throw nowhere();
 }
 /** Start the job that finishes a release after its PR merged (tag, GitHub release). Rejects 412 as build. */
 export async function finishRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
   if (ctx.slug) return postReleaseFinish(ctx.slug, id);
   if (ctx.sim) return ctx.sim.finishRelease(id);
+  throw nowhere();
+}
+/** Start the job that tags a draft whose every item already landed on the base branch (lens-scan `--landed`: gates on its
+ *  HEAD, notes, tag, GitHub release, items released; nothing cherry-picked). Rejects 412 as build. */
+export async function tagRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
+  if (ctx.slug) return postReleaseTag(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.tagRelease(id);
   throw nowhere();
 }
 /** One item commit's stat and patch. */

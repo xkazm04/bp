@@ -279,7 +279,8 @@ export class ScanSim {
 
   // ----------------------------------------------------------------------------------------- the sample train
   // Kettle's release train (train-sim.ts): sample packs over Kettle features, triage and reopen, a version
-  // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer.
+  // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer, or
+  // (items already on main) draft -> building -> tagged.
   // Same results and refusals as the routes (Error + status + body). Everything it makes is labelled sample.
 
   /** Triage built items, as POST triage: 409 with the result as `body` when none moved. */
@@ -292,13 +293,16 @@ export class ScanSim {
   buildRelease(id: string): ScanJob { return this.queueRelease(id, 'build'); }
   /** The sample job that finishes a merged release (tag, items released, settled packs closed). */
   finishRelease(id: string): ScanJob { return this.queueRelease(id, 'finish'); }
-  /** The build's pre-flight, as POST build `{"dry":true}`: every refusal the build would give (400, 404, 409, 412 when
-   *  the gh toggle is off, 429), then `{ ready: true }` with no job queued and nothing notified. */
-  preflightRelease(id: string): ReleaseReady { this.queueRelease(id, 'build', true); return { ready: true, gh: 'signed-in' }; }
+  /** The sample job that tags a draft whose items all landed on the sample's main (the "already on main" toggle). */
+  tagRelease(id: string): ScanJob { return this.queueRelease(id, 'tag'); }
+  /** The build's (or tag's) pre-flight, as POST build `{"dry":true}`: every refusal that step would give (400, 404, 409,
+   *  412 when the gh toggle is off, 429), then `{ ready: true }` with no job queued and nothing notified. */
+  preflightRelease(id: string, step: 'build' | 'tag' = 'build'): ReleaseReady { this.queueRelease(id, step, true); return { ready: true, gh: 'signed-in' }; }
   /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
   sampleMerge(id: string): void { this.train.merge(id); }
-  /** What landed on the sample's main (each merged release's items), as GET releases/landed. */
-  landings(): Landings { return this.train.landings(); }
+  /** What landed on the sample's main (each merged release's items; with the "already on main" toggle, every accepted
+   *  item too), as GET releases/landed. */
+  landings(): Landings { return this.train.landings(!!this.toggles.landed); }
   /** A sample item commit's diff. */
   commitDiff(sha: string): CommitDiff { return this.train.diff(sha); }
   /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */
