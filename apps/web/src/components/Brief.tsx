@@ -49,7 +49,7 @@ const adviceChip = (b: Brief): string | null => (b.advice.say === 'withdraw' ? '
   : b.advice.say === 'ask' ? (b.declines.length ? 'Like a declined idea' : b.precedent.declined <= b.precedent.approved && outcomeAsks(b.precedent.outcome) ? 'Like approvals fell short on main' : 'Mostly declined before') : null);
 
 /** What an approval came to, in the row's verdict place: track.ts's words (held, short of expected, not measured since). */
-const OUTCOME_WORDS: Record<NonNullable<BriefDecided['outcome']>, string> = { held: 'held on main', short: 'short on main', unmeasured: 'not measured since', descoped: 'descoped', failed: 'build failed' };
+const OUTCOME_WORDS: Record<NonNullable<BriefDecided['outcome']>, string> = { held: 'held on main', short: 'short on main', unmeasured: 'not measured since', 'out-of-bounds': 'target out of bounds', descoped: 'descoped', failed: 'build failed' };
 function Decided({ r }: { r: BriefDecided }) {
   return (
     <li className={'v-' + r.verdict + (r.outcome ? ' o-' + r.outcome : '')}>

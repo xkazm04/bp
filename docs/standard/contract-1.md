@@ -121,6 +121,9 @@ The place the owner is looking at, which any surface publishes and any other fol
     and short is at least as common as held; the precedent fact's evidence ids are then the short ids. A port with no
     readings or landings computes none of it, and its brief reads as before; a port that does not copy
     `scan/outcome.ts` (and the `track.ts` it reads) marks its import as an edit with `outcomeAt` answering null.
+  - A target outside the metric's declared bounds is unresolved, never short (rev 7): the row's `outcome` is
+    `out-of-bounds` and `precedent.outcome.outOfBounds` counts it. The track options come from `evidenceOpts`
+    (`scan/track.ts`: the landings, git's ancestry and the lenses' bounds), the one way every reader builds them.
   - `lines` is at most 5 lines of at most 120 characters, the one rendering every small surface shares.
   - `scan/brief.ts` is the source. A port computes the brief locally over its own copy of the store and the map, with
     no call to bp.

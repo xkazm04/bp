@@ -73,7 +73,7 @@ function TrustBody({ L, proposals }: { L: Ledger; proposals: Proposal[] }) {
           <Deciders head="Outcome on main, by who accepted it" rows={out.accepted} />
           <Deciders head="By who approved it for building" rows={out.approved} />
         </>
-      ) : <p className="lg-trust-n">{landed ? 'Nothing accepted is on main yet: no outcome to grade a decider by.' : 'Reading what landed on main…'}</p>}
+      ) : <p className="lg-trust-n">{T.landed ? 'Nothing accepted is on main yet: no outcome to grade a decider by.' : 'Reading what landed on main…'}</p>}
       {predictor ? <p className="lg-trust-n">{predictor}.</p> : null}
       {latest.length ? (
         <>
