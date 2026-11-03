@@ -201,6 +201,12 @@ try {
   check('build: a pr-open release does not build again -> 409', err(() => sim.buildRelease('rel-0.1.0')).status === 409);
   sim.sampleMerge('rel-0.1.0');
   check('sampleMerge: pr-open -> merged; again -> 409', rel('rel-0.1.0').status === 'merged' && err(() => sim.sampleMerge('rel-0.1.0')).status === 409);
+  {
+    const l = sim.landings(), inRelNow = snap().proposals.filter((p) => p.release_id === 'rel-0.1.0').map((p) => p.id).sort();
+    const ids = l.state === 'known' ? Object.keys(l.items).sort() : [], shas = l.state === 'known' ? new Set(Object.values(l.items).map((x) => x.sha)) : new Set();
+    check("sampleMerge: the release's items land on main at one merge commit (landings known, ref main, head = that commit)",
+      l.state === 'known' && l.ref === 'main' && ids.join() === inRelNow.join() && ids.length > 0 && shas.size === 1 && shas.has(l.head), JSON.stringify(l));
+  }
   sim.setTrainToggles({ ghOff: true, conflict: false, gateFails: false });
   check('finish: gh off -> 412', err(() => sim.finishRelease('rel-0.1.0')).status === 412);
   sim.setTrainToggles({ ghOff: false, conflict: false, gateFails: false });

@@ -15,6 +15,7 @@ import { RELEASE_ID, bump, bumpOf, isVersion } from '../scan/release.ts';
 import { ABANDONED_TO, abandonable, canStart, reached, startRefusal } from '../scan/release-steps.ts';
 import type { LensFields } from '../scan/compare.ts';
 import { conflictsIn, noteItem, releaseNotes } from '../train/notes.ts';
+import type { Landing, Landings } from '../scan/landed.ts';
 
 /** The gates the sample release job runs, in its log and its notes. */
 const GATES = ['tsc', 'vitest'] as const;
@@ -202,6 +203,9 @@ export class TrainSim {
   /** Proposal id -> its sample item (commits, notes, conflicts). */
   private spec = new Map<string, SampleItem>();
   private plans = new Map<string, Plan>();
+  /** What landed on the sample's main: each merged release's items, at its merge commit (the live plane reads git). */
+  private landed: Record<string, Landing> = {};
+  private head = BASE_SHA;
 
   private h: TrainHost;
 
@@ -387,9 +391,20 @@ export class TrainSim {
     const r = this.rel(id);
     if (!r) throw refuse(404, `no release ${id}`);
     if (r.status !== 'pr-open') throw refuse(409, `${id} is ${r.status}; only an open PR merges`);
-    this.setRel(id, { status: 'merged' });
+    this.land(r);
     this.h.changed();
   }
+
+  /** The release's PR merged into the sample's main: the release moves to merged and its items land at the merge commit. */
+  private land(r: Release): void {
+    const at = this.iso(), sha = sha40('kettle merge|' + r.id + '|' + at);
+    this.setRel(r.id, { status: 'merged' });
+    for (const p of this.items(r.id)) if (!this.landed[p.id]) this.landed[p.id] = { sha, at, by: 'trailer' };
+    this.head = sha;
+  }
+
+  /** What landed on the sample's main, as GET releases/landed answers it (always known: the sample is its own git). */
+  landings(): Landings { return { state: 'known', ref: MAIN_REF, head: this.head, items: { ...this.landed } }; }
 
   /** A release job starts: the release moves to building (a build adds its run, note `bp-job:<id> · release <rel> at <sha>`).
    *  Answers the job's steps, one per sim step; [] when the release is no longer in a state for it. */
@@ -431,7 +446,7 @@ export class TrainSim {
       return line('note', `opened ${url} (sample PR)`);
     }
     // as the live --finish from pr-open: it checks the PR is merged first (the sample's PR always is, once Finish runs)
-    if (s === 'fetch') { if (r.status === 'pr-open') this.setRel(r.id, { status: 'merged' }); return `fetched ${MAIN_REF}: ${r.branch} merged (sample)`; }
+    if (s === 'fetch') { if (r.status === 'pr-open') this.land(r); return `fetched ${MAIN_REF}: ${r.branch} merged (sample)`; }
     if (s === 'tag') {
       // store.mjs release-update merged -> tagged: the accepted items ship, and packs left with only settled items close
       const items = this.items(r.id).filter((p) => p.status === 'accepted');

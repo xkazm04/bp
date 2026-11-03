@@ -7,6 +7,7 @@
 // the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer.
 import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { ReleaseStep, ScanJob, ScanScope } from '@bp/core/scan/jobs';
+import type { Landings } from '@bp/core/scan/landed';
 import type { LensExecuteResult } from '@bp/core/scan/jobs';
 import type { LensEntry, LensField, LensManifest } from '@bp/core/standard/types';
 import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
@@ -296,6 +297,8 @@ export class ScanSim {
   preflightRelease(id: string): ReleaseReady { this.queueRelease(id, 'build', true); return { ready: true, gh: 'signed-in' }; }
   /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
   sampleMerge(id: string): void { this.train.merge(id); }
+  /** What landed on the sample's main (each merged release's items), as GET releases/landed. */
+  landings(): Landings { return this.train.landings(); }
   /** A sample item commit's diff. */
   commitDiff(sha: string): CommitDiff { return this.train.diff(sha); }
   /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */

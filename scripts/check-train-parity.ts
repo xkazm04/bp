@@ -78,6 +78,7 @@ const FINDINGS = ['q1', 'q2', 'q3', 'q4'];
 
 const MAIN: Row[] = [
   { name: 'listWaves at the start', call: (A, c) => A.listWaves(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
+  { name: 'readLandings before any merge', call: (A, c) => A.readLandings(c), see: (o) => (o.ok ? { ok: true, state: o.value.state, ref: o.value.ref, n: Object.keys(o.value.items ?? {}).length } : refusal(o)), want: () => ({ ok: true, state: 'known', ref: 'main', n: 0 }) },
   { name: 'suggestRelease with no tag', call: (A, c) => A.suggestRelease(c), see: (o) => (o.ok ? { ok: true, version: o.value.version, from: o.value.from } : refusal(o)), want: () => ({ ok: true, version: '0.1.0', from: 'none' }) },
   { name: 'triageItems accept a failed item with no note', needs: (r) => ({ proposals: [r.id('des1-waiver')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-waiver')], 'accept'),
     see: triageRefusal, want: (r) => ({ status: 409, error: 'nothing moved', triaged: [], skipped: [{ id: r.id('des1-waiver'), status: 'failed', reason: 'note-required' }] }) },

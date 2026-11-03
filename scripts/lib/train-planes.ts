@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -68,6 +69,7 @@ const ROUTES: [RegExp, string, string[]][] = [
   [/^\/api\/products\/([^/]+)\/triage$/, 'products/[slug]/triage/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases$/, 'products/[slug]/releases/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases\/suggest$/, 'products/[slug]/releases/suggest/route.ts', ['slug']],
+  [/^\/api\/products\/([^/]+)\/releases\/landed$/, 'products/[slug]/releases/landed/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/build$/, 'products/[slug]/releases/[id]/build/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/finish$/, 'products/[slug]/releases/[id]/finish/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/commits\/([^/]+)$/, 'products/[slug]/commits/[sha]/route.ts', ['slug', 'sha']],
@@ -115,6 +117,11 @@ export async function openPlanes(root: string): Promise<Planes> {
   const liveFrom = (slug: string, snap: Any): LivePlane => {
     const proot = path.join(dir, slug), file = path.join(proot, '.ai/lens-scan/scan.db');
     writeStore(root, file, snap);
+    // a git repository on main with one commit, as the sample's main stands before any merge: landings read it
+    for (const a of [['init', '-q'], ['checkout', '-q', '-b', 'main'], ['commit', '-q', '--allow-empty', '-m', 'chore: the sample base']]) {
+      const g = spawnSync('git', ['-c', 'user.name=bp-check', '-c', 'user.email=bp-check@localhost', '-c', 'commit.gpgsign=false', ...a], { cwd: proot, encoding: 'utf8' });
+      if (g.status !== 0) throw new Error(`git ${a.join(' ')} in ${proot}: ${g.stderr}`);
+    }
     products.push({ slug, name: slug, root: proot });
     fs.writeFileSync(path.join(dir, 'bp.products.local.json'), JSON.stringify({ products }));
     return { slug, root: proot, file, ctx: { slug, sim: null } };

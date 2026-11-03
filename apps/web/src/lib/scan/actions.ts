@@ -4,9 +4,10 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
+import type { Landings } from '@bp/core/scan/landed';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens.ts';
 
@@ -105,6 +106,13 @@ export async function triageItems(ctx: ScanCtx, ids: string[], decision: TriageD
 export async function suggestRelease(ctx: ScanCtx): Promise<VersionSuggestion> {
   if (ctx.slug) return getReleaseSuggestion(ctx.slug);
   if (ctx.sim) return ctx.sim.suggestRelease();
+  throw nowhere();
+}
+/** What already landed on the base branch: read from git live (unknown with why when it cannot be read), the sample's
+ *  merges on Kettle. */
+export async function readLandings(ctx: ScanCtx): Promise<Landings> {
+  if (ctx.slug) return getLandings(ctx.slug);
+  if (ctx.sim) return ctx.sim.landings();
   throw nowhere();
 }
 /** A draft release of accepted items (default: every accepted item with no release). */

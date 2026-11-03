@@ -11,7 +11,8 @@ import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { ReleaseReady } from '@bp/core/model/scan-sim';
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
+import type { Landings } from '@bp/core/scan/landed';
+import { errorText, parseCommitDiff, parseJson, parseLandings, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
 
 export { mergeScan, upsert } from '@bp/core/scan/merge';
@@ -312,6 +313,8 @@ async function call<T>(url: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
 export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => call(api(slug) + '/triage', 'POST', parseTriageResult, body);
 /** The suggested next version (GET releases/suggest). */
 export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => call(api(slug) + '/releases/suggest', 'GET', parseVersionSuggestion);
+/** What already landed on the base branch, read from git (GET releases/landed). */
+export const getLandings = (slug: string): Promise<Landings> => call(api(slug) + '/releases/landed', 'GET', parseLandings);
 /** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */
 export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> =>
   call(api(slug) + '/releases', 'POST', parseReleaseCreated, ids === undefined ? { version } : { version, ids });
