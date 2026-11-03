@@ -1797,7 +1797,7 @@ struct BPLINK_API FBpScanScope
 	TArray<FString> features;
 };
 
-/** A lens scan, an execute run, a release run (cut or finish), a prepare run or an onboarding (adopt) the blueprint started. */
+/** A lens scan, an execute run, a release run (cut, finish or tag), a prepare run or an onboarding (adopt) the blueprint started. */
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpScanJob
 {
@@ -1829,7 +1829,7 @@ struct BPLINK_API FBpScanJob
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString version;
 
-	/** build cuts the release, finish tags it after the merge. one of: build, finish */
+	/** build cuts the release, finish tags it after the merge, tag tags a draft whose items already landed on the default branch. one of: build, finish, tag */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString step;
 

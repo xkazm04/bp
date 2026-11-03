@@ -240,8 +240,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       case 'theme': set((u) => ({ ...u, cmp: { ...u.cmp, theme: cycle(THEMES, u.cmp.theme) } })); return;
       case 'mode': set((u) => ({ ...u, cmp: { ...u.cmp, mode: cycle(MODES, u.cmp.mode) } })); return;
       case 'wide': set((u) => ({ ...u, wide: !u.wide })); return;
-      // the release view owns B and F (its root's handler runs them with their confirmations); nothing to do here
-      case 'build': case 'finish': return;
+      // the release view owns B, F and T (its root's handler runs them with their confirmations); nothing to do here
+      case 'build': case 'finish': case 'tag': return;
       case 'help': setKeys(true); return;
       case 'escape':
         if (ui.note) set((u) => ({ ...u, note: null }));

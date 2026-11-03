@@ -292,7 +292,7 @@
       }
     },
     "scanJob": {
-      "description": "A lens scan, an execute run, a release run (cut or finish), a prepare run or an onboarding (adopt) the blueprint started.",
+      "description": "A lens scan, an execute run, a release run (cut, finish or tag), a prepare run or an onboarding (adopt) the blueprint started.",
       "type": "object",
       "required": ["id", "kind", "status", "queued_at"],
       "additionalProperties": false,
@@ -304,7 +304,7 @@
         "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
         "release": { "type": "string", "description": "A release job's release id (rel-<version>)." },
         "version": { "type": "string" },
-        "step": { "enum": ["build", "finish"], "description": "build cuts the release, finish tags it after the merge." },
+        "step": { "enum": ["build", "finish", "tag"], "description": "build cuts the release, finish tags it after the merge, tag tags a draft whose items already landed on the default branch." },
         "model": { "$ref": "#/$defs/waveModel" },
         "effort": { "$ref": "#/$defs/waveEffort" },
         "wave": { "type": "string" },

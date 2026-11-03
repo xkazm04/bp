@@ -15,7 +15,7 @@ export type KeyAction =
   | 'dispatch' | 'dispatchFocused'
   | 'filter' | 'view1' | 'view2' | 'view3'
   | 'theme' | 'mode' | 'wide'
-  | 'build' | 'finish'
+  | 'build' | 'finish' | 'tag'
   | 'help' | 'escape';
 
 /** One action and the keys that trigger it; `label` is the words the footer and the `?` sheet show. */
@@ -73,11 +73,15 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['w'], action: 'wide', label: 'full width' },
   ],
   release: [
+    { keys: ['j', 'ArrowDown'], action: 'next', label: 'next item (before a draft)' },
+    { keys: ['k', 'ArrowUp'], action: 'prev', label: 'previous item (before a draft)' },
+    { keys: ['x', ' '], action: 'select', label: 'choose it for the draft' },
     { keys: ['b'], action: 'build', label: 'build the release' },
     { keys: ['f'], action: 'finish', label: 'finish after the merge' },
+    { keys: ['t'], action: 'tag', label: 'tag what already landed' },
     ...views,
     help,
-    { keys: ['Escape'], action: 'escape', label: 'back to triage' },
+    { keys: ['Escape'], action: 'escape', label: 'clear the chosen items, then back to triage' },
   ],
 };
 
@@ -99,5 +103,5 @@ export const SHORT: Readonly<Record<KeyScope, readonly KeyAction[]>> = {
   packs: ['next', 'select', 'open', 'help'],
   backlog: ['next', 'select', 'open', 'help'],
   compare: ['theme', 'mode', 'wide'],
-  release: ['build', 'finish', 'help'],
+  release: ['build', 'tag', 'finish', 'help'],
 };

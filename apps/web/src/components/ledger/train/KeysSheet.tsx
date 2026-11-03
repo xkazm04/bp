@@ -47,7 +47,7 @@ export function KeysSheet({ scopes, onClose }: { scopes: readonly KeyScope[]; on
   );
 }
 
-const WORD: Partial<Record<KeyAction, string>> = { next: 'move', select: 'select', open: 'open', accept: 'accept', rework: 'rework', descope: 'descope', undo: 'undo', help: 'keys', dispatch: 'dispatch', dispatchFocused: 'dispatch this', build: 'build', finish: 'finish', theme: 'theme', mode: 'mode', wide: 'wide' };
+const WORD: Partial<Record<KeyAction, string>> = { next: 'move', select: 'select', open: 'open', accept: 'accept', rework: 'rework', descope: 'descope', undo: 'undo', help: 'keys', dispatch: 'dispatch', dispatchFocused: 'dispatch this', build: 'build', finish: 'finish', tag: 'tag', theme: 'theme', mode: 'mode', wide: 'wide' };
 
 /** The footer's reminder: the scope's few keys, "J/K move · X select · Enter compare · A accept · ? keys". */
 export function KeyLine({ scope }: { scope: KeyScope }) {

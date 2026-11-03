@@ -1,18 +1,21 @@
 // Checks the one release step table (packages/core/src/scan/release-steps.ts): where a build or finish may start, where it
 // lands, and what an abandoned cut becomes, said once and read by the route, the job runner, the Kettle sim and the UI table.
-//   (1) canStart(step, status) over the 6 statuses: build exactly from draft and failed, finish exactly from pr-open and merged;
-//   (2) reached(step, status): build exactly at pr-open, merged and tagged, finish exactly at tagged;
-//   (3) 12 cells (step x status): TrainSim.startable and the live route (release-job.ts startRelease) refuse 409 exactly
+//   (1) canStart(step, status) over the 6 statuses: build and tag exactly from draft and failed, finish exactly from pr-open
+//       and merged;
+//   (2) reached(step, status): build exactly at pr-open, merged and tagged, finish and tag exactly at tagged;
+//   (3) 18 cells (step x status): TrainSim.startable and the live route (release-job.ts startRelease) refuse 409 exactly
 //       where canStart is false, both with the words "<id> is <s>; <step> starts from ..." (gh is signed out on the live
 //       side, so a cell that may start answers 412 rather than queueing a job);
 //   (4) a release job whose CLI leaves the row at s and exits 0 (s = building, pr-open, merged, tagged, failed; step build
-//       and finish) ends done iff reached(step, s), and TrainSim.end agrees on the same (step, s);
+//       finish and tag) ends done iff reached(step, s), and TrainSim.end agrees on the same (step, s); a tag job's prompt
+//       carries --landed;
 //   (5) a cancelled build job whose row is building -> the row failed with a reason, written by store.mjs
 //       `release-update --status failed --from building` (a logging shim in front of the real store.mjs proves the door);
 //       when store.mjs refuses (the row moved on to pr-open) the row is left as it is and nothing is warned;
 //   (6) no `UPDATE releases` anywhere in packages/core/src: the blueprint never writes a release transition itself;
 //   (7) releaseState.ts RELEASE_STATE: statuses whose actions include build or retry -> exactly STEP_FROM.build; statuses
-//       whose actions include finish or finishAsk -> exactly STEP_FROM.finish.
+//       whose actions include finish or finishAsk -> exactly STEP_FROM.finish; statuses whose actions include tag ->
+//       exactly STEP_FROM.tag; and onPath offers tag instead of build/retry exactly when every item landed.
 // The live half runs the real job registry over stand-in Claude Code CLIs written here; (5) needs lens-scan's store.mjs
 // (resolved as release.server.ts resolves it): missing is a FAILURE when CI or BP_REQUIRE_LENS_SCAN=1 says so, else a SKIP
 // that says so. Run: node scripts/check-release-steps.ts (Node's type stripping). Exit 1 on any failure.
@@ -35,7 +38,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(pred: () => boolean, ms = 20000): Promise<boolean> { const t = Date.now() + ms; while (Date.now() < t) { if (pred()) return true; await sleep(50); } return pred(); }
 
 const STATUSES = ['draft', 'building', 'pr-open', 'merged', 'tagged', 'failed'] as const;
-const STEPS = ['build', 'finish'] as const;
+const STEPS = ['build', 'finish', 'tag'] as const;
+const FROM: Record<string, string[]> = { build: ['draft', 'failed'], finish: ['pr-open', 'merged'], tag: ['draft', 'failed'] };
+const LAND_AT: Record<string, string[]> = { build: ['pr-open', 'merged', 'tagged'], finish: ['tagged'], tag: ['tagged'] };
 const set = (xs: readonly string[]) => [...xs].sort().join(',');
 
 let S: Any = null;
@@ -44,7 +49,7 @@ const { TrainSim } = await load('packages/core/src/model/train-sim.ts');
 const J = await load('packages/core/src/server/jobs.server.ts');
 const RS = await load('packages/core/src/server/release.server.ts');
 const RJ = await load('packages/core/src/server/api/products/[slug]/releases/[id]/release-job.ts');
-const { RELEASE_STATE } = await load('apps/web/src/components/ledger/train/release/releaseState.ts');
+const { RELEASE_STATE, onPath } = await load('apps/web/src/components/ledger/train/release/releaseState.ts');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-release-steps-'));
 const cwd0 = process.cwd(), env0 = { ...process.env };
@@ -57,9 +62,9 @@ try {
   if (S) {
     for (const step of STEPS) {
       const can = STATUSES.filter((s) => S.canStart(step, s)), at = STATUSES.filter((s) => S.reached(step, s));
-      check(`canStart ${step} -> exactly ${step === 'build' ? 'draft, failed' : 'pr-open, merged'}`, set(can) === set(step === 'build' ? ['draft', 'failed'] : ['pr-open', 'merged']), can.join());
+      check(`canStart ${step} -> exactly ${FROM[step].join(', ')}`, set(can) === set(FROM[step]), can.join());
       check(`STEP_FROM.${step} is canStart's set`, set(S.STEP_FROM[step]) === set(can), String(S.STEP_FROM[step]));
-      check(`reached ${step} -> exactly ${step === 'build' ? 'pr-open, merged, tagged' : 'tagged'}`, set(at) === set(step === 'build' ? ['pr-open', 'merged', 'tagged'] : ['tagged']), at.join());
+      check(`reached ${step} -> exactly ${LAND_AT[step].join(', ')}`, set(at) === set(LAND_AT[step]), at.join());
     }
   }
 
@@ -67,8 +72,8 @@ try {
   const host = () => ({ now: () => Date.parse('2026-10-15T12:00:00.000Z'), runs: [], ms: [], act: [], props: [], pAt: new Map(), nextMeasurement: () => 1, nextActivity: () => 1, field: () => undefined, changed: () => {} });
   const relRow = (id: string, status: string): Any => ({ id, version: id.slice(4), branch: 'release/' + id.slice(4), status, created_at: '2026-10-15T12:00:00.000Z', updated_at: '2026-10-15T12:00:00.000Z' });
 
-  // ------------------------------------------------------------------ (3) 12 cells: the sim and the live route
-  const words = (id: string, s: string, step: string) => `${id} is ${s}; ${step} starts from ${(step === 'build' ? ['draft', 'failed'] : ['pr-open', 'merged']).join(' or ')}`;
+  // ------------------------------------------------------------------ (3) 18 cells: the sim and the live route
+  const words = (id: string, s: string, step: string) => `${id} is ${s}; ${step} starts from ${FROM[step].join(' or ')}`;
   const ghFake = path.join(dir, 'fake-gh.mjs');
   fs.writeFileSync(ghFake, "if (process.env.FAKE_GH_OUT === '1') { console.error('You are not logged into any GitHub hosts.'); process.exit(1); }\nif (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
   process.env.BP_GH_BIN = ghFake;
@@ -94,7 +99,7 @@ try {
   const sim = new TrainSim(host());
   for (const s of STATUSES) sim.releases.push(relRow(`rel-1.0.0-${s}`, s));
   for (const step of STEPS) for (const s of STATUSES) {
-    const id = `rel-1.0.0-${s}`, may = S ? !!S.canStart(step, s) : step === 'build' ? s === 'draft' || s === 'failed' : s === 'pr-open' || s === 'merged';
+    const id = `rel-1.0.0-${s}`, may = S ? !!S.canStart(step, s) : FROM[step].includes(s);
     let simErr: Any = null;
     try { sim.startable(id, step); } catch (e) { simErr = e; }
     const live = await RJ.startRelease(new Request('http://localhost:3000/x', { method: 'POST' }), Promise.resolve({ slug: 'cells', id }), step);
@@ -112,6 +117,7 @@ try {
   fs.writeFileSync(fake, [
     "import { DatabaseSync } from 'node:sqlite';",
     "let input = ''; process.stdin.setEncoding('utf8'); for await (const c of process.stdin) input += c;",
+    "console.log('stdin ' + input.trim());",
     "const rid = /--id (\\S+)/.exec(input)?.[1] ?? '';",
     "const to = /-to-([a-z-]+?)(?:-hang)?$/.exec(rid)?.[1] ?? 'draft';",
     "const db = new DatabaseSync(process.cwd() + '/.ai/lens-scan/scan.db', { timeout: 5000 });",
@@ -128,7 +134,7 @@ try {
     let n = 0;
     for (const step of STEPS) for (const s of LANDS) {
       const v = `2.${n++}.0-${step}-to-${s}`, id = 'rel-' + v;
-      insert(db, id, step === 'build' ? 'draft' : 'pr-open');
+      insert(db, id, step === 'finish' ? 'pr-open' : 'draft');
       cells.push({ step, s, id, v });
     }
     db.close();
@@ -138,16 +144,17 @@ try {
   await until(() => started.every(({ e }) => e.ok && ['done', 'failed'].includes(jobOf(e.job.id)?.status)), 60000);
   for (const { c, e } of started) {
     const j = e.ok ? jobOf(e.job.id) : undefined;
-    const want = c.step === 'build' ? ['pr-open', 'merged', 'tagged'].includes(c.s) : c.s === 'tagged';
+    const want = LAND_AT[c.step].includes(c.s);
     const reachedSays = S ? !!S.reached(c.step, c.s) : want;
     check(`live ${c.step} left at ${c.s} -> ${want ? 'done' : 'failed'}, as reached says`, (j?.status === 'done') === want && reachedSays === want && ['done', 'failed'].includes(j?.status), `${j?.status} ${j?.error ?? ''}`);
     const ts = new TrainSim(host());
-    ts.releases.push(relRow(c.id, c.step === 'build' ? 'draft' : 'pr-open'));
+    ts.releases.push(relRow(c.id, c.step === 'finish' ? 'pr-open' : 'draft'));
     const sjob = { id: 'j-sim-' + c.v, kind: 'release', release: c.id, version: c.v, step: c.step, status: 'running', queued_at: '' };
     ts.begin(sjob, 'run-x', { ghOff: false, conflict: false, gateFails: false });
     ts.releases[0] = { ...ts.releases[0], status: c.s };
     const end = ts.end(sjob);
     check(`sim ${c.step} left at ${c.s} -> ${want ? 'done' : 'an error'}, agreeing with the live job`, !end.error === want && (j?.status === 'done') === !end.error, JSON.stringify(end));
+    if (c.step === 'tag') check(`live tag job ${c.s}: the prompt is /lens-scan release --id ${c.id} --landed`, new RegExp(`stdin /lens-scan release --id ${c.id.replace(/\./g, '\\.')} --landed`).test(J.list('jobs').find((x: Any) => x.id === e.job?.id)?.log_tail ?? '') || !e.ok, String(J.list('jobs').find((x: Any) => x.id === e.job?.id)?.log_tail));
   }
 
   // ------------------------------------------------------------------ (5) a cancelled build fails its row through store.mjs
@@ -203,6 +210,10 @@ try {
   const offering = (acts: string[]) => STATUSES.filter((s) => (RELEASE_STATE[s].actions as string[]).some((x) => acts.includes(x)));
   check('RELEASE_STATE: statuses offering build or retry -> exactly STEP_FROM.build (draft, failed)', !!S && set(offering(['build', 'retry'])) === set(S.STEP_FROM.build), offering(['build', 'retry']).join());
   check('RELEASE_STATE: statuses offering finish or finishAsk -> exactly STEP_FROM.finish (pr-open, merged)', !!S && set(offering(['finish', 'finishAsk'])) === set(S.STEP_FROM.finish), offering(['finish', 'finishAsk']).join());
+  check('RELEASE_STATE: statuses offering tag -> exactly STEP_FROM.tag (draft, failed)', !!S && set(offering(['tag'])) === set(S.STEP_FROM.tag), offering(['tag']).join());
+  const shownAt = (s: string, landed: boolean) => (RELEASE_STATE[s].actions as string[]).filter((a) => onPath(a, landed)).join();
+  check('onPath: a draft of landed items offers Tag instead of Build; any other draft Build, never Tag', shownAt('draft', true) === 'tag' && shownAt('draft', false) === 'build', shownAt('draft', true) + ' / ' + shownAt('draft', false));
+  check('onPath: a failed release retries the cut, or tags again when every item landed', shownAt('failed', true) === 'tag' && shownAt('failed', false) === 'retry', shownAt('failed', true) + ' / ' + shownAt('failed', false));
 } finally {
   for (const slug of ['cells', 'jobs', 'cancel']) for (const j of J.list(slug)) if (j.status === 'queued' || j.status === 'running') J.cancel(slug, j.id);
   console.warn = warn0;

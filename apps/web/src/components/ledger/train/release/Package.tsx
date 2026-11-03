@@ -1,12 +1,14 @@
 // The Release tab's package: the accepted items with no release (before a draft) or the open release's items, grouped
 // by lens, each its commit, title, feature and before -> after; a flagged item (rules.ts isFlagged) carries its triage
 // note. Items git says are already on the base branch (releaseState.ts landedOutside) are listed apart, "landed outside
-// a release" with their landing commit, from the ones "to cut". Then the rework queue (a cherry-pick conflict's note
-// marked) and the descoped items with their notes. Undo is the reopen decision through the one decision path
+// a release" with their landing commit, from the ones "to cut" (all landed: Tag; some: the cut skips them).
+// Then the rework queue (a cherry-pick conflict's note marked) and the descoped items with their notes. Undo is the reopen decision through the one decision path
 // (Decide.tsx), offered while the planner (plan.ts planDecision) says it applies: not pending, the release still a
 // draft, the item not rebuilt by a newer attempt; otherwise it stays focusable with its why (Btn reason); Compare opens
-// the item's evidence in the triage table's compare panel.
-import { memo, useMemo } from 'react';
+// the item's evidence in the triage table's compare panel. Each accepted item says how long it has waited (acceptedAge).
+// Before a draft, the person may choose a slice (ReleaseView owns the choice: J/K move, X or Space chooses, a click on
+// the box too): a chosen item is boxed, the focused one outlined, and Create draft takes only the chosen ones.
+import { memo, useMemo, useState } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
 import { useEngine, useWritesOn } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
@@ -14,7 +16,7 @@ import { useDecide } from '../Decide';
 import { planDecision, type PlanData } from '../plan';
 import { LensTag } from '../ui/Marks.tsx';
 import { Btn, Callout } from '../ui/Controls';
-import { byLens, isConflict, moveText, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
+import { acceptedAge, byLens, isConflict, moveText, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
 import type { Landing } from '@bp/core/scan/landed';
 
 interface RowCtl {
@@ -25,6 +27,10 @@ interface RowCtl {
   pending: ReadonlySet<string>;
   undo(id: string): void;
   compare(id: string): void;
+  /** Read once per render: an item's acceptance age. */
+  now: number;
+  /** The pre-draft choice (absent once a release is open, and on the phone). */
+  pick?: { sel: ReadonlySet<string>; focus: string | null; toggle(id: string): void };
 }
 
 const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : 'no sha');
@@ -37,12 +43,15 @@ const UndoBtn = ({ p, c }: { p: Proposal; c: RowCtl }) => {
 };
 
 const PkgRow = memo(function PkgRow({ x, c, on }: { x: PkgItem; c: RowCtl; on?: Landing }) {
-  const p = x.p, why = p.triaged_from === 'failed' ? 'failed' : x.verdict;
+  const p = x.p, why = p.triaged_from === 'failed' ? 'failed' : x.verdict, k = c.pick, chosen = !!k?.sel.has(p.id);
   return (
-    <li data-fid={p.id}>
-      <span className="sha" title={on ? 'its commit on the base branch (read from git)' : undefined}>{on ? on.sha.slice(0, 7) : short(p.commit_sha)}</span>
+    <li data-fid={p.id} className={(chosen ? 'on' : '') + (k?.focus === p.id ? ' fx' : '') || undefined}>
+      <span className="sha" title={on ? 'its commit on the base branch (read from git)' : undefined}>
+        {k ? <input type="checkbox" checked={chosen} onChange={() => k.toggle(p.id)} aria-label={'Choose for the draft: ' + p.title} /> : null}
+        {on ? on.sha.slice(0, 7) : short(p.commit_sha)}
+      </span>
       <span className="t">{p.title}
-        <small className={x.flagged ? 'fl' : undefined}>{p.feature} · {p.metric ? p.metric + ' ' : ''}{moveText(x)}{on ? ` · landed ${on.at.slice(0, 10)}${on.by === 'patch-id' ? ' (by its patch)' : ''}` : ''}{x.flagged ? ` · ⚑ accepted ${why}${p.triage_note ? ': “' + p.triage_note + '”' : ''}` : ''}</small>
+        <small className={x.flagged ? 'fl' : undefined}>{p.feature} · {p.metric ? p.metric + ' ' : ''}{moveText(x)}{p.status === 'accepted' ? ' · ' + acceptedAge(p, c.now) : ''}{on ? ` · landed ${on.at.slice(0, 10)}${on.by === 'patch-id' ? ' (by its patch)' : ''}` : ''}{x.flagged ? ` · ⚑ accepted ${why}${p.triage_note ? ': “' + p.triage_note + '”' : ''}` : ''}</small>
       </span>
       <Btn size="row" title="Compare its before and after" onClick={() => c.compare(p.id)}>Compare</Btn>
       <UndoBtn p={p} c={c} />
@@ -64,15 +73,18 @@ const NoteRow = memo(function NoteRow({ p, c, struck }: { p: Proposal; c: RowCtl
   );
 });
 
-export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
+export function Package({ m, phone, pick }: { m: ReleaseModel; phone: boolean; pick?: RowCtl['pick'] }) {
   const E = useEngine(), d = useDecide(), { pending, decide } = d, writes = useWritesOn();
+  const choosing = !m.rel && !phone ? pick : undefined;
+  // the ages are read against the time the tab opened (they move in days, not while one looks)
+  const [now] = useState(() => Date.now());
   const c = useMemo<RowCtl>(() => {
     return {
-      T: m.T, phone, writes, pending,
+      T: m.T, phone, writes, pending, now, ...(choosing ? { pick: choosing } : {}),
       undo: (id) => void decide([id], 'reopen'),
       compare: (id) => { setLedgerUi((u) => ({ ...u, open: id, scope: 'packs' })); E.setPage('ledger', 'triage'); },
     };
-  }, [m.T, phone, writes, pending, decide, E]);
+  }, [m.T, phone, writes, pending, decide, E, choosing, now]);
   const props = m.T.proposals;
   const landed = m.items.filter((x) => m.landed.has(x.p.id)), cut = m.landed.size ? m.items.filter((x) => !m.landed.has(x.p.id)) : m.items;
   const group = (xs: readonly PkgItem[]) => byLens(xs).map(([lens, ys]) => [
@@ -80,12 +92,17 @@ export function Package({ m, phone }: { m: ReleaseModel; phone: boolean }) {
     ...ys.map((x) => <PkgRow key={x.p.id} x={x} c={c} on={m.landed.get(x.p.id)} />),
   ]);
   const rework = props.filter((p) => p.status === 'rework'), descoped = props.filter((p) => p.status === 'descoped' && p.pack_id);
+  const n = choosing?.sel.size ?? 0;
   return (
     <div className="tr-rel-pkg" data-role="tr-rel-pkg">
+      {choosing && m.items.length ? (
+        <p className="tr-rel-hint" data-role="tr-rel-chosen">{n ? `${n} of ${m.items.length} chosen: the draft takes only ${n === 1 ? 'it' : 'them'}, the rest stay accepted. Esc clears. Chosen items are untested together until the build runs.`
+          : 'Nothing chosen: the draft takes every item. J and K move, X or Space chooses a slice.'}</p>
+      ) : null}
       {landed.length ? (
         <>
           <h3>Landed outside a release · {landed.length}</h3>
-          <p className="tr-rel-hint">Already on {m.base} (read from git): a cut would cherry-pick {landed.length === 1 ? 'it' : 'them'} again.</p>
+          <p className="tr-rel-hint">Already on {m.base} (read from git): {cut.length ? `${landed.length === 1 ? 'it needs' : 'they need'} no pick (the cut skips ${landed.length === 1 ? 'it' : 'them'})` : `Tag tags ${landed.length === 1 ? 'it' : 'them'} there, nothing is cherry-picked`}.</p>
           <ul className="tr-pl" data-role="tr-rel-landed">{group(landed)}</ul>
           <h3>To cut · {cut.length}</h3>
           {cut.length ? <ul className="tr-pl">{group(cut)}</ul> : <p className="tr-rel-none">Nothing left to cut.</p>}

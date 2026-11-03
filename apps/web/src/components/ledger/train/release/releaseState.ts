@@ -12,6 +12,7 @@ import { conflictsIn, fmtValue, isConflict, noteItem, releaseNotes, type NoteIte
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
 import { landedIn, type Landing, type Landings } from '@bp/core/scan/landed';
+import { ago } from '@bp/core/scan/liveness';
 
 /** The five steps a release walks, in order; `failed` is shown at the step it failed on. */
 export const STEPS: readonly Exclude<ReleaseStatus, 'failed'>[] = ['draft', 'building', 'pr-open', 'merged', 'tagged'];
@@ -26,37 +27,49 @@ export const STATUS_WORD: Readonly<Record<ReleaseStatus, string>> = {
 };
 
 /** What the actions row offers: build a draft, retry a failed one, the PR link, the sample merge (Kettle), finish with
- *  an inline confirm (from pr-open: the store only learns "merged" when Finish runs), finish outright (merged). */
-export type RelAction = 'build' | 'retry' | 'pr' | 'sampleMerge' | 'finishAsk' | 'finish';
+ *  an inline confirm (from pr-open: the store only learns "merged" when Finish runs), finish outright (merged), tag a
+ *  draft (or a failed tag) whose every item already landed on the base branch. Which of build/retry and tag a release
+ *  is offered is `onPath`'s call, from whether every item landed. */
+export type RelAction = 'build' | 'retry' | 'pr' | 'sampleMerge' | 'finishAsk' | 'finish' | 'tag';
 
 export interface RelState {
   /** Index into STEPS; -1 for failed (the step comes from the job: failedStep). */
   step: number;
-  /** The one line under the actions about where the release stands. */
-  hint: (v: string, n: number) => string;
+  /** The one line under the actions about where the release stands (`landed`: how many of the n are on the base branch). */
+  hint: (v: string, n: number, landed: number) => string;
   actions: readonly RelAction[];
   /** Items can no longer leave the release (reopen, rework, descope are refused once it left draft). */
   locked: boolean;
 }
 
 export const RELEASE_STATE: Readonly<Record<ReleaseStatus, RelState>> = {
-  draft: { step: 0, actions: ['build'], locked: false,
-    hint: (v, n) => `A draft of ${n} item${n === 1 ? '' : 's'}: a decision on them can still be undone. Build when the package is right.` },
+  draft: { step: 0, actions: ['build', 'tag'], locked: false,
+    hint: (v, n, landed) => `A draft of ${n} item${n === 1 ? '' : 's'}: a decision on them can still be undone. ` + (n && landed === n
+      ? `Every one is already on the base branch: Tag tags v${v} there, nothing is cherry-picked.`
+      : landed ? `Build when the package is right; the ${landed} already on the base branch need no pick.` : 'Build when the package is right.') },
   building: { step: 1, actions: [], locked: true, hint: () => 'Claude Code is working… the page follows its live stream.' },
   'pr-open': { step: 2, actions: ['pr', 'sampleMerge', 'finishAsk'], locked: true, hint: () => 'Merge the PR on GitHub, then Finish.' },
   merged: { step: 3, actions: ['finish'], locked: true, hint: (v) => `Merged. Finish tags v${v} and publishes the GitHub release.` },
   tagged: { step: 4, actions: [], locked: true, hint: (v) => `Tagged v${v} and published.` },
-  failed: { step: -1, actions: ['retry'], locked: true, hint: () => 'Retry the build once the cause is fixed; the package stays as it is.' },
+  failed: { step: -1, actions: ['retry', 'tag'], locked: true, hint: (v, n, landed) => (n && landed === n ? 'Tag again once the cause is fixed; the package stays as it is.' : 'Retry the build once the cause is fixed; the package stays as it is.') },
 };
 
 /** Each action's button words and the keymap action whose keys it shows (B, F). */
-export const ACTION: Readonly<Record<Exclude<RelAction, 'pr'>, { label: (v: string) => string; key?: KeyAction; go?: boolean }>> = {
+export const ACTION: Readonly<Record<Exclude<RelAction, 'pr'>, { label: (v: string, n: number) => string; key?: KeyAction; go?: boolean }>> = {
   build: { label: (v) => `Build release v${v}`, key: 'build', go: true },
   retry: { label: () => 'Retry build', key: 'build', go: true },
   sampleMerge: { label: () => 'Merge (sample)' },
   finishAsk: { label: (v) => `Finish · tag v${v} and publish`, key: 'finish' },
   finish: { label: (v) => `Finish · tag v${v} and publish`, key: 'finish', go: true },
+  tag: { label: (v, n) => `Tag v${v} over ${n} landed item${n === 1 ? '' : 's'}`, key: 'tag', go: true },
 };
+
+/** Whether an action fits the release's path: a package whose every item already landed on the base branch is tagged
+ *  there (tag), any other is cut (build, retry); the rest fit both. The actions row and the T/B keys read it. */
+export const onPath = (a: RelAction, allLanded: boolean): boolean => (a === 'tag' ? allLanded : a === 'build' || a === 'retry' ? !allLanded : true);
+
+/** Every package item is on the base branch outside a release (landedOutside), and there is at least one. */
+export const allLanded = (m: Pick<ReleaseModel, 'items' | 'landed'>): boolean => m.items.length > 0 && m.items.every((x) => m.landed.has(x.p.id));
 
 /** The keys bound to a keymap action in the release scope (shown as the button's kbd). */
 export const keysOf = (a: KeyAction | undefined): string => (a ? KEYMAP.release.find((b) => b.action === a)?.keys[0]?.toUpperCase() ?? '' : '');
@@ -114,14 +127,15 @@ export function standOf(rel: Pick<Release, 'status'> | undefined, last: ScanJob 
 }
 
 /** The line under the actions: RELEASE_STATE's words, except for a stall, which names what stopped and what is left. */
-export function standLine(stand: Stand, rel: Pick<Release, 'status' | 'version'> | undefined, last: ScanJob | undefined, n: number): string {
+export function standLine(stand: Stand, rel: Pick<Release, 'status' | 'version'> | undefined, last: ScanJob | undefined, n: number, landed = 0): string {
   if (!rel) return '';
-  if (stand !== 'stalled') return RELEASE_STATE[rel.status].hint(rel.version, n);
-  const what = !last ? 'No build job is running'
-    : last.status === 'cancelled' ? 'The build job was cancelled'
-      : last.status === 'failed' ? 'The build job failed'
-        : 'The build job ended without moving the release on';
-  return `${what} and v${rel.version} is still marked building, so nothing is running. A build starts again from draft or failed.`;
+  if (stand !== 'stalled') return RELEASE_STATE[rel.status].hint(rel.version, n, landed);
+  const job = last?.step === 'tag' ? 'tag' : 'build';
+  const what = !last ? `No ${job} job is running`
+    : last.status === 'cancelled' ? `The ${job} job was cancelled`
+      : last.status === 'failed' ? `The ${job} job failed`
+        : `The ${job} job ended without moving the release on`;
+  return `${what} and v${rel.version} is still marked building, so nothing is running. A ${job} starts again from draft or failed.`;
 }
 
 /** `12 s`, `3 m 05 s`: a job's run time, to its end or to now. */
@@ -164,12 +178,28 @@ export function byLens<T extends { p: Proposal }>(xs: readonly T[]): [string, T[
 
 export { isConflict };
 
+/** The items a new draft takes: the chosen ones, in package order, or every item while nothing is chosen. */
+export const chosenOf = <T extends { p: Proposal }>(items: readonly T[], sel: ReadonlySet<string>): T[] =>
+  sel.size ? items.filter((x) => sel.has(x.p.id)) : [...items];
+
+/** How long an accepted item has waited, from its triaged_at: "accepted 4 d ago"; with no readable time, said so. */
+export function acceptedAge(p: Pick<Proposal, 'triaged_at'>, now: number): string {
+  const t = p.triaged_at ? Date.parse(p.triaged_at) : NaN;
+  return Number.isNaN(t) ? 'accepted, when is not recorded' : 'accepted ' + ago(now - t);
+}
+
+/** What a create answer did with the ids asked for, in words: every one added, or how many and what was left out. */
+export function draftWords(asked: number, added: number, skipped: readonly { id: string; why: string }[]): string {
+  const left = skipped.length ? ` Left out: ${skipped.map((s) => s.id + ' (' + s.why + ')').join(', ')}.` : '';
+  return (added === asked ? `Drafted all ${added} ${asked === 1 ? 'item' : 'items'}.` : `Drafted ${added} of the ${asked} asked for.`) + left;
+}
+
 /**
  * The notes the release run will write, as a preview from the package: notes.ts releaseNotes in mode "preview", the
  * one writer Kettle's sample run also calls, so the stored notes repeat these lines (scripts/check-release-notes.ts).
  */
-export const notesPreview = (product: string, version: string, items: readonly PkgItem[], conflicts: readonly Proposal[]): string =>
-  releaseNotes({ product, version, mode: 'preview', items, conflicts });
+export const notesPreview = (product: string, version: string, items: readonly PkgItem[], conflicts: readonly Proposal[], landed?: Landings | null): string =>
+  releaseNotes({ product, version, mode: 'preview', items, conflicts, ...(landed?.state === 'known' ? { landed: { items: landed.items, ref: landed.ref, head: landed.head } } : {}) });
 
 /** `before → after unit` for a package line ("unmeasured" when a side is missing). */
 export function moveText(x: Pick<PkgItem, 'from' | 'to'>): string {

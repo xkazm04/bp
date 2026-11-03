@@ -54,6 +54,7 @@ const SPECS: Spec[] = [
   { file: 'products/[slug]/lenses/[id]/execute', verb: 'POST', params: { id: 'development' }, body: {} },
   { file: 'products/[slug]/releases', verb: 'POST', params: {}, body: { version: '1.0.0' }, store: true },
   { file: 'products/[slug]/releases/[id]/finish', verb: 'POST', params: { id: 'rel-1.0.0' }, body: {}, store: true },
+  { file: 'products/[slug]/releases/[id]/tag', verb: 'POST', params: { id: 'rel-1.0.0' }, body: {}, store: true },
 ];
 const FILES = [...new Set(SPECS.map((s) => s.file))];
 // what each file exported before the migration (5: mount parity)

@@ -1,16 +1,17 @@
 // The ledger's Release tab: the version (suggested, with its reason), the package of accepted items by lens (flagged
 // ones with their notes), the stepper draft -> building -> pr-open -> merged -> tagged driven by the release row and its
 // job from the stream, the job log, the notes the release will publish, the failure states, and the history of past
-// releases. Build and Finish start the Claude Code job (a live product: the CLI with the user's gh login; Kettle: the
+// releases. Build, Tag and Finish start the Claude Code job (a live product: the CLI with the user's gh login; Kettle: the
 // scan sim's sample job through the same actions); nothing here simulates a step. On the phone the tab is read-only.
 // Also the header's summary strip and the phone's one-line release status. What a status allows is releaseState.ts's
 // table; the progress comes only from the stream (the release rows and the jobs list), never from polling. Before Build,
 // the pre-flight (preflight.ts) lists what will refuse or fail; the probe behind it is asked when the tab opens on a
-// release that offers a build, when its package, jobs or sample switches change - never on a timer.
+// release that offers a build, when its package, jobs or sample switches change - never on a timer. Before a draft the
+// tab owns a choice of package items (J/K, X or Space, Esc clears it first): Create draft and the suggestion take it.
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
-import { buildRelease, finishRelease, preflightRelease, refusalText, type ScanCtx } from '@/lib/scan/actions';
+import { buildRelease, finishRelease, preflightRelease, refusalText, tagRelease, type ScanCtx } from '@/lib/scan/actions';
 import { releaseItems, unreleased, verdictOf } from '@bp/core/scan/compare';
 import { isWaiting } from '@bp/core/train/rules';
 import { landingOf } from '@bp/core/scan/landed';
@@ -20,7 +21,7 @@ import { KEYMAP } from '../keymap';
 import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
-  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
+  ACTION, RELEASE_STATE, allLanded, chosenOf, evidenceOf, onPath, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
   safeUrl, standOf, STATUS_WORD, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
@@ -77,10 +78,10 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const [sent, setSent] = useState<{ rel: string; job: string } | null>(null);
   const [err, setErr] = useState<{ status?: number; text: string } | null>(null);
   const busy = sending || (!!sent && sent.rel === rel?.id && !m.jobs.some((j) => j.id === sent.job)) || isActive(m.last);
-  const st = rel ? RELEASE_STATE[rel.status] : undefined;
+  const st = rel ? RELEASE_STATE[rel.status] : undefined, landedAll = allLanded(m);
   const shown: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
-    : st.actions.filter((a) => (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
-  const probe = useProbe(m, phone || busy);
+    : st.actions.filter((a) => onPath(a, landedAll) && (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
+  const probe = useProbe(m, phone || busy, landedAll ? 'tag' : 'build');
   const checks = useMemo(() => (phone ? [] : preflightOf(rel, m.items, probe, m)), [phone, rel, m, probe]);
   const available = gated(shown, checks), blocked = firstBlock(checks);
   const go = async (id: string, start: () => Promise<ScanJob>) => {
@@ -93,6 +94,7 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const run = (a: RelAction) => {
     if (!rel || !available.includes(a)) return;
     if (a === 'build' || a === 'retry') void go(rel.id, () => buildRelease(ctx, rel.id));
+    else if (a === 'tag') void go(rel.id, () => tagRelease(ctx, rel.id));
     else if (a === 'finish') void go(rel.id, () => finishRelease(ctx, rel.id));
     else if (a === 'finishAsk') { setErr(null); setAsking(true); }
     else if (a === 'sampleMerge') {
@@ -106,20 +108,21 @@ const noSub = () => () => {};
 /** The sample's switches as the sim holds them (null live), so a toggle re-asks the probe. */
 const useToggles = (ctx: ScanCtx) => useSyncExternalStore(ctx.sim?.subscribe ?? noSub, () => ctx.sim?.trainToggles ?? null, () => ctx.sim?.trainToggles ?? null);
 
-/** The build's dry run, asked once per change of what it reads (the release, its package, its jobs, the sample switches). */
-function useProbe(m: ReleaseModel, off: boolean): Probe {
+/** The build's (or tag's) dry run, asked once per change of what it reads (the release, its package, its jobs, the
+ *  sample switches, the step its path takes). */
+function useProbe(m: ReleaseModel, off: boolean, step: 'build' | 'tag'): Probe {
   const ctx = m.T.ctx, rel = m.rel, relId = rel?.id, toggles = useToggles(ctx);
-  const key = off || !rel || !preflighted(rel) ? '' : [rel.id, STATUS_WORD[rel.status], m.items.map((x) => x.p.id + ':' + (x.p.commit_sha ?? '')).join(), m.jobs.map((j) => j.id + ':' + j.status).join(), JSON.stringify(toggles)].join('|');
+  const key = off || !rel || !preflighted(rel) ? '' : [rel.id, step, STATUS_WORD[rel.status], m.items.map((x) => x.p.id + ':' + (x.p.commit_sha ?? '')).join(), m.jobs.map((j) => j.id + ':' + j.status).join(), JSON.stringify(toggles)].join('|');
   const [probe, setProbe] = useState<{ key: string; v: Probe }>({ key: '', v: null });
   useEffect(() => {
     if (!key || !relId) return;
     let on = true;
-    preflightRelease(ctx, relId).then((v) => { if (on) setProbe({ key, v }); }, (e: unknown) => {
+    preflightRelease(ctx, relId, step).then((v) => { if (on) setProbe({ key, v }); }, (e: unknown) => {
       const s = (e as { status?: number }).status;
       if (on) setProbe({ key, v: s === undefined ? { text: refusalText(e) } : { status: s, text: refusalText(e) } });
     });
     return () => { on = false; };
-  }, [key, ctx, relId]);
+  }, [key, ctx, relId, step]);
   return probe.key === key ? probe.v : null;
 }
 
@@ -149,9 +152,9 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
           </span>
         ) : a.shown.map((x) => x === 'pr'
           ? <a key={x} className="tr-rel-pr" href={safeUrl(rel.pr_url) ?? undefined} target="_blank" rel="noopener noreferrer">⇱ {prName(rel.pr_url)}{m.T.ctx.sim ? ' · sample' : ''}</a>
-          : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} reason={a.available.includes(x) ? undefined : a.blocked}>{ACTION[x].label(v)}</Btn>)}
+          : <Btn key={x} tone={ACTION[x].go ? 'go' : undefined} kbd={keysOf(ACTION[x].key)} onClick={() => a.run(x)} reason={a.available.includes(x) ? undefined : a.blocked}>{ACTION[x].label(v, m.items.length)}</Btn>)}
       </div>
-      <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : standLine(standOf(rel, m.last), rel, m.last, m.items.length)}</p>
+      <p className="tr-rel-hint">{a.busy && !isActive(m.last) ? 'Starting the release job…' : standLine(standOf(rel, m.last), rel, m.last, m.items.length, m.landed.size)}</p>
     </>
   );
 });
@@ -175,8 +178,25 @@ function Failures({ m, a }: { m: ReleaseModel; a: ReleaseActions }) {
   );
 }
 
+/** The pre-draft choice: the chosen ids and the focused row, kept to the package's items (an item that left is dropped). */
+function useChoice(m: ReleaseModel) {
+  const [st, setSt] = useState<{ sel: ReadonlySet<string>; focus: string | null }>({ sel: new Set(), focus: null });
+  const ids = useMemo(() => (m.rel ? [] : m.items.map((x) => x.p.id)), [m.rel, m.items]);
+  const here = useMemo(() => new Set(ids), [ids]);
+  const sel = useMemo(() => new Set([...st.sel].filter((id) => here.has(id))), [st.sel, here]);
+  const focus = st.focus && here.has(st.focus) ? st.focus : null;
+  const toggle = (id: string) => setSt((s) => { const n = new Set(s.sel); if (!n.delete(id)) n.add(id); return { ...s, sel: n, focus: id }; });
+  const move = (d: number) => {
+    if (!ids.length) return;
+    const i = focus ? ids.indexOf(focus) : -1, j = i < 0 ? (d > 0 ? 0 : ids.length - 1) : Math.max(0, Math.min(ids.length - 1, i + d));
+    setSt((s) => ({ ...s, focus: ids[j] }));
+  };
+  const chosen = sel.size ? chosenOf(m.items, sel).map((x) => x.p.id) : undefined;
+  return { sel, focus, chosen, ids, toggle, move, clear: () => setSt({ sel: new Set(), focus: null }) };
+}
+
 export function ReleaseView({ phone }: ReleaseViewProps) {
-  const m = useReleaseModel(), a = useReleaseActions(m, phone);
+  const m = useReleaseModel(), a = useReleaseActions(m, phone), ch = useChoice(m);
   const root = useRef<HTMLDivElement>(null);
   // the tab holds the focus so B and F reach it (the rest bubble to the page: 1-3, ? and Esc): on opening, and after a
   // render that dropped it (a button that went away) to the body or the page itself; focus anywhere else is left alone
@@ -189,8 +209,17 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
     if (phone || e.ctrlKey || e.metaKey || e.altKey) return;
     const t = e.target as HTMLElement;
     if ((t.tagName === 'INPUT' && (t as HTMLInputElement).type !== 'checkbox') || t.closest('textarea, select')) return;
-    const b = KEYMAP.release.find((k) => k.keys.some((x) => x.toLowerCase() === e.key.toLowerCase()));
-    if (!b || (b.action !== 'build' && b.action !== 'finish')) return;
+    const b = KEYMAP.release.find((k) => k.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === (e.key.length === 1 ? e.key.toLowerCase() : e.key)));
+    if (!b) return;
+    // the choice keys stay here (the page would move its own table's focus); Esc clears a choice before it leaves the tab
+    if (b.action === 'next' || b.action === 'prev' || b.action === 'select' || (b.action === 'escape' && ch.sel.size)) {
+      if (b.action === 'select' && e.key === ' ' && t.closest('button, a, input')) return;
+      e.preventDefault(); e.stopPropagation();
+      if (b.action === 'escape') ch.clear();
+      else if (!m.rel) { if (b.action === 'select') { const id = ch.focus ?? ch.ids[0]; if (id) ch.toggle(id); } else ch.move(b.action === 'next' ? 1 : -1); }
+      return;
+    }
+    if (b.action !== 'build' && b.action !== 'finish' && b.action !== 'tag') return;
     e.preventDefault(); e.stopPropagation();
     const x = a.available.find((y) => y !== 'pr' && ACTION[y].key === b.action);
     if (x) a.run(x);
@@ -200,8 +229,8 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
     <div ref={root} className={'tr-rel' + (phone ? ' phone' : '')} data-role="tr-rel" tabIndex={-1} onKeyDown={onKey}>
       <section aria-label="Package">
         <h3>Package · {m.landed.size ? `${n - m.landed.size} to cut · ${m.landed.size} landed outside a release${m.rel ? ' · v' + m.rel.version : ''}` : `${n} ${m.rel ? 'in v' + m.rel.version : 'accepted'}`}</h3>
-        <VersionBox m={m} phone={phone} />
-        <Package m={m} phone={phone} />
+        <VersionBox m={m} phone={phone} {...(ch.chosen ? { chosen: ch.chosen } : {})} onMade={ch.clear} />
+        <Package m={m} phone={phone} pick={{ sel: ch.sel, focus: ch.focus, toggle: ch.toggle }} />
       </section>
       <section aria-label="Build">
         <h3>Build · Claude Code on your machine, your gh login</h3>

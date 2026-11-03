@@ -677,7 +677,7 @@ export interface ErrorEvent {
   message: string;
 }
 
-/** A lens scan, an execute run, a release run (cut or finish), a prepare run or an onboarding (adopt) the blueprint started. */
+/** A lens scan, an execute run, a release run (cut, finish or tag), a prepare run or an onboarding (adopt) the blueprint started. */
 export interface ScanJob {
   id: string;
   /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. adopt: onboard the product with the adopt-bp skill. */
@@ -690,8 +690,8 @@ export interface ScanJob {
   /** A release job's release id (rel-<version>). */
   release?: string;
   version?: string;
-  /** build cuts the release, finish tags it after the merge. */
-  step?: 'build' | 'finish';
+  /** build cuts the release, finish tags it after the merge, tag tags a draft whose items already landed on the default branch. */
+  step?: 'build' | 'finish' | 'tag';
   /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
   model?: 'sonnet' | 'opus';
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
