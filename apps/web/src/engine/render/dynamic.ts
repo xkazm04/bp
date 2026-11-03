@@ -105,7 +105,7 @@ function roomsOfBlast(E: Engine, id: string): string[] {
 function outlineIf(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, ga: boolean, key: string | null, col: string) {
   ctx.strokeStyle = col; ctx.lineWidth = 1.6;
   for (const f of E.M.P.features) {
-    if (ga) { if (f.milestone !== GA_MILESTONE) continue; } else { const h = f.lens[key!]?.h; if (h !== 'bad' && h !== 'watch') continue; }
+    if (ga) { if (!E.dimFn || !E.dimFn(f)) continue; } else { const h = f.lens[key!]?.h; if (h !== 'bad' && h !== 'watch') continue; }
     const r = featRect(E, v, f.id, lod, sr1); if (r && onView(v, r, 0)) ctx.strokeRect(r.x - 2, r.y - 2, r.w + 4, r.h + 4);
   }
 }

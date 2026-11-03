@@ -205,6 +205,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 #callout .row { display: flex; justify-content: space-between; border-top: 1px solid var(--ink-4); padding: 3px 0; }
 #callout .row b { font: 500 14px var(--mono); }
 #callout .x { position: absolute; right: 8px; top: 8px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); color: var(--ink-2); padding: 1px 6px; }
+#callout .ready-line { margin: 0 0 8px; font: 500 14px/1.4 var(--mono); color: var(--ink-hi); }
 #callout .sub { margin-top: 8px; font: 500 12px var(--mono); letter-spacing: 0.1em; color: var(--ink-2); }
 #callout .lnk { background: none; border: 0; padding: 2px 0; color: var(--ink); font-size: 14px; text-align: left; display: block; width: 100%; }
 #callout .lnk:hover { color: var(--ink-hi); text-decoration: underline; }

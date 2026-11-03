@@ -126,10 +126,10 @@ export function PreviewBox() {
 
 // ------------------------------------------------------------------------------------------ plan
 export const HINT_LIVE = (
-  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> proposals · <b>1–2</b> answer<br /><b>P</b> person · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>A</b> compare · <b>← →</b> next room · <b>N</b> next trouble · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> proposals · <b>1–2</b> answer<br /><b>P</b> person · <b>G</b> readiness · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>A</b> compare · <b>← →</b> next room · <b>N</b> next trouble · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
 );
 export const HINT = (
-  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> GA · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>A</b> compare · <b>, .</b> speed · <b>← →</b> next room · <b>N</b> next trouble · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
+  <div className="hint"><b>Scroll</b> zoom · <b>drag</b> pan · <b>click</b> go in · <b>Esc</b> back<br /><b>Shift-drag</b> box-select · <b>Shift-click</b> target · <b>S</b> target mode<br /><b>/</b> find · <b>1–9</b> sheets · <b>J K</b> questions · <b>1–3</b> answer · <b>Space</b> pause swarm<br /><b>M</b> morning watch · <b>P</b> person · <b>G</b> readiness · <b>B</b> blast · <b>\</b> rail<br /><b>T</b> timeline · <b>[ ]</b> week · <b>A</b> compare · <b>, .</b> speed · <b>← →</b> next room · <b>N</b> next trouble · <b>↑ ↓</b> zoom · <b>0</b> home · <b>Enter</b> open</div>
 );
 
 export function TitleBlock() {

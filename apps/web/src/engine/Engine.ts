@@ -8,14 +8,14 @@ import {
 } from '@bp/core/model';
 import { LIVE_VERB_LABEL, SAMPLE_REFUSED, commitSample, runLivePlan, type LivePlan } from '@/lib/model/live-steer';
 import type { ScanJob } from '@bp/core/scan/jobs';
-import type { ScanSnapshot } from '@bp/core/scan/types';
+import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { drawTracks } from './render/tracks';
 import { Camera, WheelIntent, clamp, type Cam, type Pad, type Region } from './camera';
 import type { ChannelAggregate, FeatureLive, LensChannel, LensExpression } from './lens/contract';
 import { MixDriver, type MixState } from './lens/mix';
 import { createStore, type Store } from './store';
 import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
-import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type UIState } from './state';
+import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type ReadyScope, type UIState } from './state';
 import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
 import { saveFailWords, unknownFeatureWords } from './copy';
@@ -32,6 +32,7 @@ import { SimWatch } from './render/simwatch';
 import { TroubleIndex } from './trouble';
 import { ReplayIndex } from './replay';
 import { changedIn, compareDates, type Comparison } from '@bp/core/model/compare';
+import { readiness, type Readiness } from '@bp/core/model/ready';
 import { captureRoute, newMembers, routeRank, routeWords, stepRoute, type TroubleRoute } from './trouble-route';
 import { placeSentence, placeWords } from './place-words';
 import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
@@ -60,6 +61,7 @@ const PADS: Record<'site' | 'bld' | 'wing' | 'room' | 'bay', Pad> = {
 const OVER: Record<string, number> = { bld: 1, wing: 1.8, room: 1.3, bay: 1 };
 type Chain = { t: Crumb['t']; o: PlaceNode }[];
 const NO_FLAGS: Flag[] = [];
+const NO_PROPOSALS: readonly Proposal[] = [];
 const PIN_KINDS: readonly HitKind[] = ['pin', 'cluster'], TRACK_KINDS: readonly HitKind[] = ['track'], AGENT_KINDS: readonly HitKind[] = ['agent'];
 /** A 2D context that draws nothing: re-runs the target layers for their hit regions when the camera moved since the last frame. */
 let MUTE: CanvasRenderingContext2D | null = null;
@@ -448,14 +450,14 @@ export class Engine {
   private staticKey(): number {
     const S = this.S, k = this.sk;
     if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV || k.rv !== this.replay.version || k.cv !== S.cmpV
-      || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view) {
+      || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.scope !== S.scope || k.key !== S.key || k.who !== S.who || k.view !== S.view) {
       k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV; k.rv = this.replay.version; k.cv = S.cmpV;
-      k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view;
+      k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.scope = S.scope; k.key = S.key; k.who = S.who; k.view = S.view;
       k.ver++;
     }
     return k.ver;
   }
-  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, rv: -1, cv: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
+  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, rv: -1, cv: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, scope: null as ReadyScope | null, key: null as string | null, who: null as string | null, view: '' as string };
   private wake = () => { this.settleArmed = false; this.dirty(); };
   /** One wake-up for the settle window, armed once per gesture (not per frame): it fires when the camera has been still for ~150 ms. */
   private armSettle() {
@@ -511,7 +513,7 @@ export class Engine {
     this.perf.frames++;
     ctx.setTransform(this.RES, 0, 0, this.RES, 0, 0);
     ctx.clearRect(0, 0, this.FW, this.FH);
-    if (!this.modeSeen || S.ga !== this.modeSeen.ga || S.key !== this.modeSeen.key || S.blast !== this.modeSeen.blast) this.syncModeFilters(S);
+    if (!this.modeSeen || S.ga !== this.modeSeen.ga || S.scope !== this.modeSeen.scope || S.key !== this.modeSeen.key || S.blast !== this.modeSeen.blast) this.syncModeFilters(S);
     // static layer: transform the cached raster during gestures, re-raster when it settles
     const key = this.staticKey();
     const st = this.cache.check(c, key, this.FW, this.FH, this.lod());
@@ -580,11 +582,11 @@ export class Engine {
   /** Set by a sim tick (see frame): the next draw patches the raster instead of re-rastering it. */
   private simPatch = false;
   /** The GA / lens-key / blast filters the layers read, rebuilt when one of the three changes, not per frame. */
-  private modeSeen: { ga: boolean; key: string | null; blast: string | null } | null = null;
+  private modeSeen: { ga: boolean; scope: ReadyScope | null; key: string | null; blast: string | null } | null = null;
   private syncModeFilters(S: UIState) {
-    this.modeSeen = { ga: S.ga, key: S.key, blast: S.blast };
-    const k = S.key;
-    this.dimFn = S.ga ? (f) => f.milestone === GA_MILESTONE : k ? (f) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; } : null;
+    this.modeSeen = { ga: S.ga, scope: S.scope, key: S.key, blast: S.blast };
+    const k = S.key, inScope = S.ga && S.scope ? new Set(S.scope.ids) : null;
+    this.dimFn = inScope ? (f) => inScope.has(f.id) : k ? (f) => { const h = f.lens[k]?.h; return h === 'bad' || h === 'watch'; } : null;
     this.blastSet = S.blast ? new Set(this.M.closure.of(S.blast)) : null;
   }
   private afterFrame(now: number) {
@@ -834,19 +836,69 @@ export class Engine {
     this.placeKey = ''; this.writeHashSoon(true);
     if (focus) this.cv.focus({ preventScroll: true });
   }
-  setMode(m: { ga?: boolean; blast?: string | null }) {
+  setMode(m: { ga?: boolean; blast?: string | null; scope?: ReadyScope | null }) {
     const patch: Partial<UIState> = { ...m, info: false };
+    // the readiness mode reads what the reader is looking at, resolved as it opens (before the page closes)
+    if (m.ga === true) patch.scope = m.scope ?? this.readyScope();
+    else if (m.ga === false) patch.scope = null;
+    if (patch.scope === null && m.ga) patch.ga = false; // nothing to read (an empty map)
     if (this.S.open && (m.blast || m.ga)) patch.open = null;
     this.set(patch);
     const S = this.S;
-    const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga ? this.M.P.features.filter((f) => f.milestone === GA_MILESTONE).map((f) => f.id) : null;
+    const ids = S.blast ? this.M.closure.of(S.blast).concat([S.blast]) : S.ga && S.scope ? S.scope.ids : null;
     const b = ids && (m.blast || m.ga) ? this.tilesBox(ids) : null;
     if (b) this.cam.flyTo(this.fitCam(b, { t: 40, r: CALLOUT_PAD, b: 56, l: 30 }));
     this.placeKey = ''; this.writeHashSoon();
   }
-  /** The GA readiness mode needs the sample's GA milestone in the map (a live product's map may not have it: then the mode, its key and its overlay do not exist). */
-  get hasGA(): boolean { return !!this.M.P.MS[GA_MILESTONE]; }
+  /** The readiness mode works on any map with features (a live product without milestones included). */
+  get hasGA(): boolean { return this.M.P.features.length > 0; }
   toggleGA() { if (this.hasGA || this.S.ga) this.setMode({ ga: !this.S.ga, blast: null }); }
+  /** Days a good reading stays proof (older: unproven). One setting for now; the callout names it. */
+  readonly readyMaxAge = 30;
+  /**
+   * What G reads: the lasso / Mark selection, else the open feature, else the room the camera is in (else its wing, else
+   * its building), else a milestone (the sample's GA one first, else the first not done), else the whole product.
+   */
+  readyScope(): ReadyScope | null {
+    const S = this.S, P = this.M.P, L = this.M.L;
+    if (S.tgt.n) return { kind: 'tgt', id: Object.keys(S.tgt.ids).join(','), label: S.tgt.label || S.tgt.n + ' selected', ids: Object.keys(S.tgt.ids).filter((id) => P.F[id]) };
+    if (S.open && P.F[S.open]) return { kind: 'tgt', id: S.open, label: P.F[S.open].name, ids: [S.open] };
+    // the room in view (a bay is a part of a room), else the wing, else the building
+    const p = this.place.find((c) => c.t === 'room') ?? this.place.find((c) => c.t === 'wing') ?? this.place.find((c) => c.t === 'bld');
+    if (p) {
+      const name = p.t === 'wing' ? (p.o as WingNode).def.name + ' wing' : p.t === 'room' ? (p.o as RoomNode).name : p.t === 'bay' ? (p.o as BayNode).name : (p.o as BldNode).name;
+      return { kind: p.t, id: p.o.id, label: name, ids: p.o.feats.map((f) => f.id) };
+    }
+    const ms = P.MS[GA_MILESTONE] ?? P.milestones.find((m) => m.state !== 'done') ?? P.milestones[0];
+    if (ms) { const ids = P.features.filter((f) => f.milestone === ms.id).map((f) => f.id); if (ids.length) return { kind: 'ms', id: ms.id, label: ms.name, ids }; }
+    if (!P.features.length) return null;
+    return { kind: 'all', id: '', label: L.blds.length === 1 ? L.blds[0].name : 'The whole product', ids: P.features.map((f) => f.id) };
+  }
+  /** A scope named in the hash (`ready=<kind>:<id>`), resolved against this map; null when it names nothing here. */
+  private scopeOf(v: string): ReadyScope | null {
+    const i = v.indexOf(':'), kind = (i < 0 ? v : v.slice(0, i)) as ReadyScope['kind'], id = i < 0 ? '' : v.slice(i + 1), P = this.M.P;
+    if (kind === 'all') return P.features.length ? { kind, id: '', label: this.M.L.blds.length === 1 ? this.M.L.blds[0].name : 'The whole product', ids: P.features.map((f) => f.id) } : null;
+    if (kind === 'ms') { const m = P.MS[id]; const ids = m ? P.features.filter((f) => f.milestone === id).map((f) => f.id) : []; return ids.length ? { kind, id, label: m.name, ids } : null; }
+    if (kind === 'tgt') { const ids = id.split(',').filter((x) => P.F[x]); return ids.length ? { kind, id: ids.join(','), label: ids.length === 1 ? P.F[ids[0]].name : ids.length + ' selected', ids } : null; }
+    if (kind === 'bld' || kind === 'wing' || kind === 'room' || kind === 'bay') {
+      const o = this.placeById(kind, id); if (!o) return null;
+      const name = kind === 'wing' ? (o as WingNode).def.name + ' wing' : kind === 'room' ? (o as RoomNode).name : kind === 'bay' ? (o as BayNode).name : (o as BldNode).name;
+      return { kind, id, label: name, ids: o.feats.map((f) => f.id) };
+    }
+    return null;
+  }
+  private readyKey: unknown[] = []; private readyVal: Readiness | null = null;
+  /** The readiness of the mode's scope (core readiness), recomputed when the scope, health, the scan or the findings move. */
+  readinessNow(): Readiness | null {
+    const S = this.S, sc = S.scope; if (!S.ga || !sc) return null;
+    const props = this.scanSnap?.proposals ?? this.M.findings ?? NO_PROPOSALS;
+    const key = [sc, this.M.sim.healthV, this.scanSnap, props];
+    if (this.readyVal && key.every((x, i) => x === this.readyKey[i])) return this.readyVal;
+    const now = this.M.live ? new Date().toISOString().slice(0, 10) : this.M.P.asOf;
+    this.readyKey = key;
+    this.readyVal = readiness(this.M.P, this.scanSnap, sc.ids, { maxAgeDays: this.readyMaxAge, now: now > this.M.P.asOf ? now : this.M.P.asOf }, props);
+    return this.readyVal;
+  }
   toggleBlast(id?: string) {
     if (this.S.blast) { this.setMode({ blast: null }); return; }
     const S = this.S, sf = this.M.P.scale > 1 ? '-S' : '';
@@ -1543,7 +1595,7 @@ export class Engine {
     if (!this.isNow) p.push('t=' + S.t);
     if (S.cmpA) p.push('cmp=' + S.cmpA);
     if (S.blast) p.push('blast=' + S.blast);
-    if (S.ga) p.push('ga=1');
+    if (S.ga && S.scope) p.push('ready=' + S.scope.kind + (S.scope.id ? ':' + encodeURIComponent(S.scope.id) : ''));
     if (S.delta !== 7) p.push('d=' + S.delta);
     if (S.who) p.push('who=' + S.who);
     if (S.page === 'ledger') { p.push('page=ledger'); if (S.lv !== 'triage') p.push('lv=' + S.lv); }
@@ -1606,7 +1658,7 @@ export class Engine {
     if (h.t && /^\d{4}-\d\d-\d\d$/.test(h.t)) this.setTime(h.t);
     if (h.cmp) this.setCompare(h.cmp);
     if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
-    if (h.ga === '1' && this.hasGA) this.store.set({ ga: true });
+    { const sc = h.ready ? this.scopeOf(h.ready) : h.ga === '1' ? this.scopeOf('ms:' + GA_MILESTONE) : null; if (sc) this.store.set({ ga: true, scope: sc }); } // ga=1: an older link to the sample's GA milestone
     if (h.blast && this.M.P.F[h.blast]) this.store.set({ blast: h.blast });
     if (h.page === 'ledger') { this.store.set({ page: 'ledger', lv: ledgerVariant(h.lv) }); this.lightSim(true); }
     if (h.at) {
@@ -1632,9 +1684,10 @@ export class Engine {
       this.setCompare(h.cmp || null);
       const who = h.who && this.M.P.P[h.who] ? h.who : null;
       if (who !== this.S.who) this.store.set({ who });
-      const blast = h.blast && this.M.P.F[h.blast] ? h.blast : null, ga = h.ga === '1' && this.hasGA;
-      const moded = !!(blast || ga);
-      if (blast !== this.S.blast || ga !== this.S.ga) this.setMode({ blast, ga });
+      const blast = h.blast && this.M.P.F[h.blast] ? h.blast : null;
+      const sc = h.ready ? this.scopeOf(h.ready) : h.ga === '1' ? this.scopeOf('ms:' + GA_MILESTONE) : null, ga = !!sc;
+      const moded = !!(blast || ga), cur = this.S.scope;
+      if (blast !== this.S.blast || ga !== this.S.ga || (sc && (!cur || cur.kind !== sc.kind || cur.id !== sc.id))) this.setMode(ga ? { blast, ga, scope: sc } : { blast, ga });
       if (h.page === 'ledger') this.setPage('ledger', ledgerVariant(h.lv)); else this.setPage('plan');
       if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
       if (h.open) this.openFeature(h.open); // not on this map: toasts once, then the plan as if it were absent

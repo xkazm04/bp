@@ -11,6 +11,8 @@ export interface Crumb { t: 'bld' | 'wing' | 'room' | 'bay'; id: string }
 /** `track`: a live answer's marker on its tile (`id` = the proposal id). `scan`: a scan's chip on the plan (`id` = the job id). */
 export interface HoverInfo { type: 'tile' | 'bld' | 'wing' | 'room' | 'bay' | 'agent' | 'pin' | 'track' | 'scan'; id: string; ids?: string[] }
 export interface ToastItem extends SimToast { n: number }
+/** What the readiness mode (G) reads: a selection, a place, a milestone or the whole product, with its features. */
+export interface ReadyScope { kind: 'tgt' | 'bld' | 'wing' | 'room' | 'bay' | 'ms' | 'all'; id: string; label: string; ids: readonly string[] }
 
 export interface UIState {
   ready: boolean;
@@ -42,7 +44,9 @@ export interface UIState {
   t: string;
   delta: 1 | 7 | 14;
   who: string | null;
+  /** The readiness mode is on (G); `scope` is what it reads. */
   ga: boolean;
+  scope: ReadyScope | null;
   blast: string | null;
   /** A lens id: highlight the features in trouble under it. */
   key: string | null;
@@ -106,7 +110,7 @@ export function initialState(scale: number, asOf: string): UIState {
   return {
     ready: false, scale, phone: false, compact: false, view: GENERAL, place: [], levelNames: [], level: 0,
     open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, track: null,
-    t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, scanJob: null, selMode: false, dockHidden: false,
+    t: asOf, delta: 7, who: null, ga: false, scope: null, blast: null, key: null, dtab: null, scanJob: null, selMode: false, dockHidden: false,
     morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0, troubleV: 0, replayed: 0, cmpA: null, cmpN: 0, cmpV: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
     page: 'plan', lv: 'triage', menu: null, said: '', failedLenses: [],
