@@ -8,7 +8,8 @@
 // Stages are read through trackOf, never re-derived, so its honesty rules hold here too: `unknown` is never good, a
 // branch reading is not the product, and only `confirmed` + `not confirmed` are judged. The lens is a key into the
 // rows, never a branch on its id. Pure and free of '@/' value imports: Node runs it as-is.
-import { mainOutcome, trackOf, type Track, type TrackOpts, type TrackStage } from './track.ts';
+import { mainOutcome, type TrackOpts, type TrackStage } from './track.ts';
+import { trackAt as track } from './outcome.ts';
 import type { Proposal, ScanSnapshot } from './types.ts';
 
 type Scan = Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases'>;
@@ -45,20 +46,6 @@ export interface PriorRecord { same: PriorEntry[]; lens: LensRecord }
 const day = (iso?: string) => (iso ? iso.slice(0, 10) : '');
 const decided = (p: Proposal) => p.status !== 'proposed';
 const when = (p: Proposal) => p.triaged_at ?? p.decided_at ?? p.updated_at;
-
-/** trackOf once per row per snapshot and landings (the Review list asks for every open row's record); not cached under
- *  pending decisions or jobs. */
-const TRACKS = new WeakMap<Scan, Map<object | undefined, Map<string, Track | null>>>();
-function track(scan: Scan, id: string, opts: TrackOpts): Track | null {
-  if (opts.pending?.size || opts.jobs?.length) return trackOf(scan, id, opts);
-  let byLanded = TRACKS.get(scan);
-  if (!byLanded) TRACKS.set(scan, (byLanded = new Map()));
-  let m = byLanded.get(opts.landed);
-  if (!m) { if (byLanded.size > 4) byLanded.clear(); byLanded.set(opts.landed, (m = new Map())); }
-  let t = m.get(id);
-  if (t === undefined) m.set(id, (t = trackOf(scan, id, opts)));
-  return t;
-}
 
 function entry(scan: Scan, p: Proposal, opts: TrackOpts): PriorEntry | null {
   const t = track(scan, p.id, opts);
