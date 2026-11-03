@@ -2,7 +2,9 @@
 // pure (scan/brief.ts); this reads a product's store and map the way the other routes do and hands them over.
 //   Kettle: the hosted ScanSim's snapshot (apps/server) and the sample map, read-only. A process without the sim (apps/web)
 //           answers unknownProduct's 405, as Kettle's scan routes do: the browser's own sim computes the brief there.
-//   live:   the product's scan.db (read-only connection) and its .ai/lens-scan/app-structure.json (+ events.jsonl).
+//   live:   the product's scan.db (read-only connection) and its .ai/lens-scan/app-structure.json (+ events.jsonl), and
+//           what git says landed on its base branch (briefOpts: release.server.ts landings), so an agent reading
+//           plan.brief hears what like approvals came to on main. Git unreadable: no landings, the brief as before.
 // Either map goes through the loader the browser uses (loadMap -> briefMapOfStructure), so both count the same blast radius.
 // The trail: an agent's call that names its conversation (x-bp-conversation, as the MCP door sends it) is appended to
 // companionHome()/agent-trail.jsonl - a brief it read (what, and the advice) and what it filed after (a recommendation, a
@@ -18,10 +20,20 @@ import { companionHome } from './companion/home.server.ts';
 import { findProduct, hasStore, kettleRead, kettleSample, storeDir, storeFile, unknownProduct } from './products.server.ts';
 import { kettleSim } from './kettle-sim.server.ts';
 import { snapshotOf } from './store.server.ts';
+import { landings } from './release.server.ts';
+import type { TrackOpts } from '../scan/track.ts';
 
 if (typeof window !== 'undefined') throw new Error('brief.server.ts is server-only');
 
-export interface BriefSource { scan: ScanSnapshot; map: BriefMap }
+/** `root`: a live product's checkout (Kettle has none: its sim's releases are its record). */
+export interface BriefSource { scan: ScanSnapshot; map: BriefMap; root?: string }
+
+/** The brief's TrackOpts: a live product's landings when git knows them, else none. */
+export async function briefOpts(src: BriefSource): Promise<TrackOpts> {
+  if (!src.root) return {};
+  const l = await landings(src.root, src.scan).catch(() => null);
+  return l?.state === 'known' ? { landed: l.items } : {};
+}
 
 /** The map through the loader the browser uses (standard/load.ts), so the routes and the card count the same places, codes
  *  and dependents; a map the loader refuses gives no places (the brief says 'not on the plan', never refuses). */
@@ -43,7 +55,7 @@ export function briefSource(slug: string): BriefSource | Response {
   let events = '';
   try { events = fs.readFileSync(path.join(storeDir(p), 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
   const map = raw ? mapOf(raw, events) : briefMapOf({});
-  try { return { scan: snapshotOf(storeFile(p)), map }; } catch (e) {
+  try { return { scan: snapshotOf(storeFile(p)), map, root: p.root }; } catch (e) {
     return Response.json({ error: `cannot read the scan store: ${(e as Error).message}` }, { status: 503 });
   }
 }

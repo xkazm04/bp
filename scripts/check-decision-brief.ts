@@ -26,6 +26,11 @@
 //  16. the golden file (packages/schema/golden/decision-brief.json and its mirror at the old path
 //      docs/concepts/decision-brief/golden.json, the contract a port reproduces) is what brief.ts
 //      computes now, and its briefs validate too.
+//  21. outcome: on a store shaped like bp's (17 like accepts landed on main - 9 held, 3 short, 5 not measured since -
+//      and 8 descoped, one row proposed), the precedent counts what each approval came to, equal to trackOf +
+//      mainOutcome row by row; a descoped row is never an approval; judgement counted apart; the advice asks when at
+//      least 3 are measured and short >= held, naming the short ids as the precedent fact's evidence (never decline);
+//      without landings the accepted rows are open and the line reads as before; briefAdvice agrees with the brief.
 // Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,7 +39,8 @@ import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
 import { loadMap } from '../packages/core/src/data/index.ts';
 import { GOLDEN, MIRRORS, golden } from './brief-golden.ts';
 import { TRAIL_WINDOW_MS, trailSessions, type TrailRow } from '../packages/core/src/companion/trail.ts';
-import { emptyScan, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
+import { emptyScan, type Measurement, type Pack, type Proposal, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
+import { mainOutcome, trackOf } from '../packages/core/src/scan/track.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const failures: string[] = [];
@@ -268,6 +274,58 @@ const sec = [
   ok(20, pair('Add retries to checkout payment calls', 'Retry the payment webhook on timeout', 'reliability/retry-backoff') === 'ask', 'a like idea under the same standard: ask, never a stand');
   const missed = real.filter(([a, b, s]) => pair(a, b, s) !== 'withdraw');
   ok(20, missed.length === 0, `each of ${real.length} re-filings (the same idea words) stands`, missed);
+}
+// 21. what like approvals came to on main
+{
+  const mapD = briefMapOf({ domains: [{ slug: 'd', name: 'D' }], capabilities: [{ slug: 'c', name: 'C', domain: 'd' }], features: [], lenses: [{ id: 'design', name: 'Design' }] });
+  const landedAt = day(10), ms: Measurement[] = [], landed: Record<string, { sha: string; at: string; by: 'trailer' }> = {};
+  let mid = 0;
+  const read = (f: string, value: number, at: string, method: 'judgement' | 'static' = 'judgement') => ms.push({ id: ++mid, run_id: 'r0', feature: f, lens: 'design', metric: 'standardsPct', value, unit: '%', method, measured_at: at });
+  /** A design accept on its own feature, baseline 50 expected 100, landed; `now` read after the landing (or not at all). */
+  const acc = (id: string, now?: number, method?: 'judgement' | 'static') => {
+    const f = 'f-' + id; read(f, 50, day(25)); if (now !== undefined) read(f, now, day(5), method);
+    landed[id] = { sha: 'c'.repeat(40), at: landedAt, by: 'trailer' };
+    return P({ id, feature: f, lens: 'design', metric: 'standardsPct', expected_delta: 50, status: 'accepted', triaged_by: 'agent:director' });
+  };
+  const rows: Proposal[] = [];
+  for (let i = 0; i < 9; i++) rows.push(acc('H' + i, 100, i > 2 ? 'judgement' : 'static'));
+  for (let i = 0; i < 3; i++) rows.push(acc('S' + i, 60));
+  for (let i = 0; i < 5; i++) rows.push(acc('U' + i));
+  for (let i = 0; i < 8; i++) rows.push(P({ id: 'X' + i, feature: 'f-x' + i, lens: 'design', status: 'descoped', triaged_by: 'human:kazdan' }));
+  const open = P({ id: 'OPEN', feature: 'f-open', lens: 'design', title: 'Cover the empty state', status: 'proposed' });
+  const scan = { ...scanOf([...rows, open]), measurements: ms };
+  const b = briefFor(subjectOf(open), scan, mapD, { landed }), pf = fact(b, 'precedent'), o = b.precedent.outcome;
+  const truth: Record<string, number> = { held: 0, short: 0, unmeasured: 0 };
+  for (const r of rows) { const t = trackOf(scan, r.id, { landed }), m = t && mainOutcome(t); if (m) truth[m]++; }
+  ok(21, !!o && o.held === truth.held && o.short === truth.short && o.unmeasured === truth.unmeasured && truth.held === 9 && truth.short === 3 && truth.unmeasured === 5,
+    'the precedent tally equals trackOf + mainOutcome row by row (9 held, 3 short, 5 not measured since)', [o, truth]);
+  ok(21, b.precedent.approved === 17 && b.precedent.descoped === 8 && b.precedent.rows.filter((r) => r.outcome === 'descoped').length === 8,
+    'a descoped row is never an approval: 17 approved, 8 descoped', b.precedent);
+  ok(21, pf?.text === 'You approved 17 of 25 similar decisions under Design · on main 9 held, 3 short (9 judged), 5 unmeasured · descoped 8', 'the line: counts, the judgement split, descoped apart', pf?.text);
+  ok(21, o?.byJudgement.held === 6 && o?.byJudgement.short === 3 && !/%/.test(pf?.text ?? ''), 'judgement counted apart; no rate under 10 measured per method', o?.byJudgement);
+  ok(21, b.advice.say === 'proceed' && pf?.ids.length === b.precedent.rows.length, 'held outnumbers short: proceed, the rows are the evidence', b.advice);
+  ok(21, b.lines.every((l) => l.length <= BRIEF_WIDTH) && b.lines.length <= BRIEF_LINES, 'the budget holds');
+  // short as common as held among >= 3 measured: ask, the short ids as evidence; never decline or withdraw
+  const shortHeavy = rows.filter((r) => !/^H[3-8]$/.test(r.id)); // 3 held, 3 short
+  const a = briefFor(subjectOf(open), { ...scanOf([...shortHeavy, open]), measurements: ms }, mapD, { landed });
+  ok(21, a.advice.say === 'ask' && /^3 of 6 like approvals measured on main fell short \(3 held, 3 by judgement\): S0, S1, S2$/.test(a.advice.why) && JSON.stringify(fact(a, 'precedent')?.ids) === '["S0","S1","S2"]',
+    "short >= held over 6 measured: ask, naming the short ids as the fact's evidence", [a.advice, fact(a, 'precedent')?.ids]);
+  const few = briefFor(subjectOf(open), { ...scanOf([rows[0], rows[9], open]), measurements: ms }, mapD, { landed });
+  ok(21, few.advice.say === 'proceed', 'under 3 measured (1 held, 1 short): no ask', few.advice);
+  const lean = briefAdvice(subjectOf(open), { ...scanOf([...shortHeavy, open]), measurements: ms }, { landed });
+  ok(21, lean.say === a.advice.say && lean.why === a.advice.why, 'briefAdvice (the live feed) agrees with the brief', lean);
+  // a rate from 10 measured by one method
+  const many = [...rows, acc('J0', 100), acc('J1', 100)];
+  const r10 = briefFor(subjectOf(open), { ...scanOf([...many, open]), measurements: ms }, mapD, { landed });
+  const t10 = fact(r10, 'precedent')?.text ?? '';
+  ok(21, r10.precedent.outcome?.byJudgement.held === 8 && (/, judgement 73%/.test(t10) || t10.endsWith('…')),
+    'from 10 measured by judgement, its rate is said (the budget may cut it)', fact(r10, 'precedent')?.text);
+  // no landings (pof, a legacy store): the accepted rows are open, no outcome, the words as before (descoped apart)
+  const legacy = briefFor(subjectOf(open), scan, mapD);
+  ok(21, !legacy.precedent.outcome && !legacy.precedent.rows.some((r) => r.outcome && r.outcome !== 'descoped') && fact(legacy, 'precedent')?.text === 'You approved 17 of 25 similar decisions under Design · descoped 8',
+    'no landings: no outcome, the line reads as before', fact(legacy, 'precedent')?.text);
+  const noDesc = briefFor(subjectOf(open), { ...scanOf([...rows.filter((r) => r.status !== 'descoped'), open]), measurements: [] }, mapD);
+  ok(21, fact(noDesc, 'precedent')?.text === 'You approved 17 of 17 similar decisions under Design' && noDesc.advice.why === '17 of 17 similar decisions were approvals', "no landings, no descope: today's words exactly", fact(noDesc, 'precedent')?.text);
 }
 // 14b. one map, two reads, on a rough non-Kettle map: long ids, a capability with an unknown domain, a dangling and a
 //      self depends_on, a feature with no capability (the loader's Unplaced)

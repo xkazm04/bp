@@ -2119,6 +2119,57 @@ struct BPLINK_API FBpBriefDecided
 	/** one of: same idea, same standard, similar words, same lens. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString match;
+
+	/** What an approval came to: held, short of expected or not measured since on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. one of: held, short, unmeasured, descoped, failed */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString outcome;
+};
+
+// carried by BpSchema::FixUp (BpSchemaFixups.h): short -> Short_
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefTallyByJudgement
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 held = 0;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 Short_ = 0;
+};
+
+/** The approvals on main that have an expected value, by outcome; byJudgement counts the held and short ones read by judgement (a model's read, noisy). */
+// carried by BpSchema::FixUp (BpSchemaFixups.h): short -> Short_
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpBriefTally
+{
+	GENERATED_BODY()
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 held = 0;
+
+	/** JSON key "short" (a C++ keyword or Unreal macro): filled by BpSchema::FixUp, not by FJsonObjectConverter. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 Short_ = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 unmeasured = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 noTarget = 0;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefTallyByJudgement byJudgement;
+
+	/** required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FString> shortIds;
 };
 
 USTRUCT(BlueprintType)
@@ -2130,13 +2181,25 @@ struct BPLINK_API FBpBriefPrecedent
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FBpBriefDecided> rows;
 
-	/** required */
+	/** Matched rows not declined and not descoped. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	int32 approved = 0;
 
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	int32 declined = 0;
+
+	/** Matched approvals descoped at judging: never counted as approvals. Omitted when none */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 descoped = 0;
+
+	/** Matched approvals whose build failed (counted in approved). Omitted when none */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 failed = 0;
+
+	/** What the matched approvals came to on main; present only when one is on main with an expected value */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FBpBriefTally outcome;
 
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")

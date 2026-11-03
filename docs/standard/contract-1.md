@@ -114,6 +114,13 @@ The place the owner is looking at, which any surface publishes and any other fol
   - A card flips to Decline only on identity: the attempt chain, the same external item, or the same proposal filed
     again on the same feature.
   - A likeness only asks: it shows the quote, and Approve stays the default.
+  - A descoped row is never an approval: `precedent.approved` leaves it out and `precedent.descoped` counts it (rev 6).
+  - What approvals came to on main only asks, never declines (rev 6): each matched approval carries its `outcome`
+    (held, short or not measured since on main, read through `scan/track.ts` with the product's landings; descoped;
+    failed), `precedent.outcome` tallies them, judgement apart, and the advice is `ask` when at least 3 are measured
+    and short is at least as common as held; the precedent fact's evidence ids are then the short ids. A port with no
+    readings or landings computes none of it, and its brief reads as before; a port that does not copy
+    `scan/outcome.ts` (and the `track.ts` it reads) marks its import as an edit with `outcomeAt` answering null.
   - `lines` is at most 5 lines of at most 120 characters, the one rendering every small surface shares.
   - `scan/brief.ts` is the source. A port computes the brief locally over its own copy of the store and the map, with
     no call to bp.

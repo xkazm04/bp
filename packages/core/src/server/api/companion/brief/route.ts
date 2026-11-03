@@ -6,16 +6,17 @@
 // `id` briefs a stored proposal instead. `slug` is accepted for `product`. The answer is the Brief, bounded by its own
 // budget (lines x width; precedent rows capped at BRIEF_ROWS for the wire). 400 for a bad query; 404 for an unknown
 // product, store or proposal; Kettle answers from apps/server's hosted sim. Localhost only. An agent's read (it names its
-// conversation in x-bp-conversation, as the MCP door does) is kept on the agent trail for the cards slip.
+// conversation in x-bp-conversation, as the MCP door does) is kept on the agent trail for the cards slip. A live product's
+// precedent counts what like approvals came to on main, with git's landings (briefOpts), so an agent hears what slipped.
 import { localHost } from '../../../../scan/local-only.ts';
 import { briefFor, subjectOf, type Brief, type BriefSubject } from '../../../../scan/brief.ts';
-import { briefRow, briefSource, trail } from '../../../brief.server.ts';
+import { briefOpts, briefRow, briefSource, trail } from '../../../brief.server.ts';
 
 /** The precedent rows an agent gets on the wire (the counts stay whole). */
 export const BRIEF_ROWS = 8;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
-export function GET(req: Request): Response {
+export async function GET(req: Request): Promise<Response> {
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const q = new URL(req.url).searchParams, product = q.get('product') ?? q.get('slug') ?? '';
@@ -31,7 +32,7 @@ export function GET(req: Request): Response {
     if (!p) return Response.json({ error: `no proposal ${id}` }, { status: 404 });
     sub = subjectOf(p);
   } else sub = { feature, title: title || feature, ...(lens ? { lens } : {}) };
-  const b: Brief = briefFor(sub, src.scan, src.map);
+  const b: Brief = briefFor(sub, src.scan, src.map, await briefOpts(src));
   trail(req, briefRow(product, b));
   return Response.json({ ...b, precedent: { ...b.precedent, rows: b.precedent.rows.slice(0, BRIEF_ROWS) } });
 }

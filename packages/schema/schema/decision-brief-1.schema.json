@@ -74,7 +74,27 @@
         "by": { "type": "string" },
         "note": { "type": "string", "description": "The decline note (or the triage note): the owner's own words." },
         "standard": { "type": "string" },
-        "match": { "type": "string", "enum": ["same idea", "same standard", "similar words", "same lens"] }
+        "match": { "type": "string", "enum": ["same idea", "same standard", "similar words", "same lens"] },
+        "outcome": { "type": "string", "enum": ["held", "short", "unmeasured", "descoped", "failed"], "description": "What an approval came to: held, short of expected or not measured since on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved." }
+      }
+    },
+    "briefTally": {
+      "description": "The approvals on main that have an expected value, by outcome; byJudgement counts the held and short ones read by judgement (a model's read, noisy).",
+      "type": "object",
+      "required": ["held", "short", "unmeasured", "noTarget", "byJudgement", "shortIds"],
+      "additionalProperties": false,
+      "properties": {
+        "held": { "type": "integer" },
+        "short": { "type": "integer" },
+        "unmeasured": { "type": "integer" },
+        "noTarget": { "type": "integer" },
+        "byJudgement": {
+          "type": "object",
+          "required": ["held", "short"],
+          "additionalProperties": false,
+          "properties": { "held": { "type": "integer" }, "short": { "type": "integer" } }
+        },
+        "shortIds": { "type": "array", "items": { "type": "string" } }
       }
     },
     "briefPrecedent": {
@@ -83,8 +103,11 @@
       "additionalProperties": false,
       "properties": {
         "rows": { "type": "array", "items": { "$ref": "#/$defs/briefDecided" } },
-        "approved": { "type": "integer" },
+        "approved": { "type": "integer", "description": "Matched rows not declined and not descoped." },
         "declined": { "type": "integer" },
+        "descoped": { "type": "integer", "description": "Matched approvals descoped at judging: never counted as approvals. Omitted when none." },
+        "failed": { "type": "integer", "description": "Matched approvals whose build failed (counted in approved). Omitted when none." },
+        "outcome": { "$ref": "#/$defs/briefTally", "description": "What the matched approvals came to on main; present only when one is on main with an expected value." },
         "basis": { "type": "string" }
       }
     },

@@ -32,6 +32,9 @@ namespace BpSchema
 	inline bool FixUp(const FJsonObject& Json, FBpStructureEnvelope& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpScanWire& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpDecisionBrief& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpBriefPrecedent& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpBriefTally& Out);
+	inline bool FixUp(const FJsonObject& Json, FBpBriefTallyByJudgement& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpSharedFocus& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpFocusPlace& Out);
 	inline bool FixUp(const FJsonObject& Json, FBpSharedView& Out);
@@ -239,8 +242,31 @@ namespace BpSchema
 
 	inline bool FixUp(const FJsonObject& Json, FBpDecisionBrief& Out)
 	{
-		(void)Json; (void)Out;
-		return true; // nothing carried
+		bool bOk = true;
+		bOk &= FixUpOne(Json, TEXT("precedent"), Out.precedent);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpBriefPrecedent& Out)
+	{
+		bool bOk = true;
+		bOk &= FixUpOne(Json, TEXT("outcome"), Out.outcome);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpBriefTally& Out)
+	{
+		bool bOk = true;
+		bOk &= CopyKey(Json, TEXT("short"), GET_MEMBER_NAME_CHECKED(FBpBriefTally, Short_), Out);
+		bOk &= FixUpOne(Json, TEXT("byJudgement"), Out.byJudgement);
+		return bOk;
+	}
+
+	inline bool FixUp(const FJsonObject& Json, FBpBriefTallyByJudgement& Out)
+	{
+		bool bOk = true;
+		bOk &= CopyKey(Json, TEXT("short"), GET_MEMBER_NAME_CHECKED(FBpBriefTallyByJudgement, Short_), Out);
+		return bOk;
 	}
 
 	inline bool FixUp(const FJsonObject& Json, FBpSharedFocus& Out)

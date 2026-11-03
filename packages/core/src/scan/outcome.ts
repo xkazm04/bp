@@ -129,18 +129,20 @@ export function outcomeOf(scan: Scan, opts: TrackOpts = {}): OutcomeReport {
 
 const pct = (x: number) => Math.round(x * 100) + '%';
 /** A tally in words: "14 held · 6 short (5 by judgement) · 7 not measured since", zero terms left out; a rate per method
- *  only from RATE_N measured ("judgement 74% held"). Nothing on main: "nothing on main yet". */
-export function tallyWords(t: Tally): string {
+ *  only from RATE_N measured ("judgement 74% held"). Nothing on main: "nothing on main yet". `sep` joins the terms;
+ *  `terse` (the brief's 120-character line) says "unmeasured" and "judged" for "by judgement". */
+export function tallyWords(t: Tally, sep = ' · ', terse = false): string {
   if (!onMain(t)) return 'nothing on main yet';
   const j = measured(t.byJudgement), r = ratesOf(t), out: string[] = [];
   if (t.held) out.push(t.held + ' held');
   if (t.short) out.push(t.short + ' short');
-  const m = out.join(' · ') + (j && measured(t) ? (j === measured(t) ? ' (all by judgement)' : ` (${j} by judgement)`) : '');
+  const by = terse ? 'judged' : 'by judgement';
+  const m = out.join(sep) + (j && measured(t) ? (j === measured(t) ? (terse ? ' (judged)' : ' (all by judgement)') : ` (${j} ${by})`) : '');
   const parts = m ? [m] : [];
-  if (t.unmeasured) parts.push(t.unmeasured + ' not measured since');
+  if (t.unmeasured) parts.push(t.unmeasured + (terse ? ' unmeasured' : ' not measured since'));
   if (t.noTarget) parts.push(t.noTarget + ' no expected value');
   const rate = [r.measured !== undefined ? 'static/probe ' + pct(r.measured) + ' held' : '', r.judgement !== undefined ? 'judgement ' + pct(r.judgement) + ' held' : ''].filter(Boolean).join(', ');
-  return parts.join(' · ') + (rate ? ' · ' + rate : '');
+  return parts.join(sep) + (rate ? sep + rate : '');
 }
 
 /** The predictor line: "Predicted accept on 49 of 49 predicted rows; 6 of those were not accepted (3 descoped, 2 failed,

@@ -808,8 +808,15 @@ export interface BriefRef {
 
 export interface BriefPrecedent {
   rows: BriefDecided[];
+  /** Matched rows not declined and not descoped. */
   approved: number;
   declined: number;
+  /** Matched approvals descoped at judging: never counted as approvals. Omitted when none. */
+  descoped?: number;
+  /** Matched approvals whose build failed (counted in approved). Omitted when none. */
+  failed?: number;
+  /** What the matched approvals came to on main; present only when one is on main with an expected value. */
+  outcome?: BriefTally;
   basis: string;
 }
 
@@ -826,6 +833,23 @@ export interface BriefDecided {
   note?: string;
   standard?: string;
   match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
+  /** What an approval came to: held, short of expected or not measured since on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. */
+  outcome?: 'held' | 'short' | 'unmeasured' | 'descoped' | 'failed';
+}
+
+/** The approvals on main that have an expected value, by outcome; byJudgement counts the held and short ones read by judgement (a model's read, noisy). */
+export interface BriefTally {
+  held: number;
+  short: number;
+  unmeasured: number;
+  noTarget: number;
+  byJudgement: BriefTallyByJudgement;
+  shortIds: string[];
+}
+
+export interface BriefTallyByJudgement {
+  held: number;
+  short: number;
 }
 
 export interface BriefReversible {
