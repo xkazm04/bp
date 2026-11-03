@@ -31,6 +31,7 @@ import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
 import { TroubleIndex } from './trouble';
 import { ReplayIndex } from './replay';
+import { changedIn, compareDates, type Comparison } from '@bp/core/model/compare';
 import { captureRoute, newMembers, routeRank, routeWords, stepRoute, type TroubleRoute } from './trouble-route';
 import { placeSentence, placeWords } from './place-words';
 import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
@@ -246,8 +247,46 @@ export class Engine {
   get scan(): ScanSnapshot | undefined { return this.scanSnap; }
   /** Rebuild the replayed health for the travelled date and scan (never per frame); the raster and the store follow. */
   private syncReplay() {
+    this.syncCompare();
     if (!this.replay.sync(this.S.t, this.M.P.asOf, this.scanSnap)) return;
     this.store.set({ replayed: this.replay.pairs }); this.dirty();
+  }
+
+  // ---------------------------------------------------------------- compare two dates (baseline A, endpoint B = the travelled date)
+  /** What changed between the pinned baseline and the travelled date (core compareDates); null with no baseline or A = B. */
+  cmp: Comparison | null = null;
+  private cmpKey = ''; private cmpScan: ScanSnapshot | undefined = undefined; private cmpCounts = new Map<string, number>();
+  /** Rebuilt when an endpoint or the scan changes (never per frame); the raster and the store follow. */
+  private syncCompare() {
+    const A = this.S.cmpA, B = this.S.t, key = A && A !== B ? A + '|' + B : '';
+    if (key === this.cmpKey && this.cmpScan === this.scanSnap) return;
+    this.cmpKey = key; this.cmpScan = this.scanSnap; this.cmpCounts.clear();
+    this.cmp = key ? compareDates(this.M.P.features, this.M.P.lenses, this.scanSnap, A!, B, this.M.P.asOf) : null;
+    this.store.set({ cmpN: this.cmp?.ids.length ?? 0, cmpV: this.S.cmpV + 1 }); this.dirty();
+  }
+  /** How many features of a place changed between the dates (a label's count), cached per comparison. */
+  cmpCount(id: string, fs: readonly Feature[]): number {
+    const c = this.cmp; if (!c) return 0;
+    let n = this.cmpCounts.get(id);
+    if (n === undefined) { n = changedIn(c, fs); this.cmpCounts.set(id, n); }
+    return n;
+  }
+  /** Pin the baseline A (a date in the timeline's range); null unpins. The endpoint B is the travelled date. */
+  setCompare(a: string | null) {
+    if (a !== null) {
+      if (!/^\d{4}-\d\d-\d\d$/.test(a)) return;
+      const W = this.M.P.weeks, asOf = this.M.P.asOf;
+      if (a > asOf) a = asOf; if (W.length && a < W[0]) a = W[0];
+    }
+    if (a === this.S.cmpA) return;
+    this.set({ cmpA: a }); this.syncCompare(); this.writeHashSoon();
+  }
+  /** A: pin the travelled date as the baseline (then travel to compare with it), or unpin. */
+  toggleCompare() {
+    if (this.S.cmpA) { this.setCompare(null); this.toast('Comparison off.', ''); return; }
+    const t = this.S.t;
+    this.setCompare(t);
+    this.toast('Baseline pinned: ' + (this.isNow ? 'now (' + t + ')' : t) + '.', 'Travel to another date ([ ] or the timeline) to see what changed since; A again unpins.');
   }
   setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.hitsAt.k = NaN; this.dirty(); }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
@@ -408,15 +447,15 @@ export class Engine {
   /** The static raster's content version: a counter that moves when any field it depends on does (compared field by field, no string built). */
   private staticKey(): number {
     const S = this.S, k = this.sk;
-    if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV || k.rv !== this.replay.version
+    if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV || k.rv !== this.replay.version || k.cv !== S.cmpV
       || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view) {
-      k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV; k.rv = this.replay.version;
+      k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV; k.rv = this.replay.version; k.cv = S.cmpV;
       k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view;
       k.ver++;
     }
     return k.ver;
   }
-  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, rv: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
+  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, rv: -1, cv: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
   private wake = () => { this.settleArmed = false; this.dirty(); };
   /** One wake-up for the settle window, armed once per gesture (not per frame): it fires when the camera has been still for ~150 ms. */
   private armSettle() {
@@ -710,6 +749,7 @@ export class Engine {
     if (S.blast) { this.setMode({ blast: null }); return; }
     if (S.ga) { this.setMode({ ga: false }); return; }
     if (S.key) { this.set({ key: null }); return; }
+    if (S.cmpA) { this.setCompare(null); return; }
     const p = this.place;
     if (!p.length) {
       if (!this.cam.near(this.HOME, 0.02, 4)) this.goHome();
@@ -1428,7 +1468,7 @@ export class Engine {
     const k = e.key;
     // the findings ledger is a page over the plan: no plan key fires under it, wherever focus is (Esc only closes what overlays it)
     if (S.page === 'ledger') { if (k === 'Escape') { e.preventDefault(); this.goUp(); } return; }
-    if (S.open && k.length === 1 && '/mMpPsStT\\'.includes(k)) return; // the feature page is modal: no flyout, timeline, mode or search opens under it (Esc and the lens digits still work)
+    if (S.open && k.length === 1 && '/aAmMpPsStT\\'.includes(k)) return; // the feature page is modal: no flyout, timeline, mode or search opens under it (Esc and the lens digits still work)
     if (k === '/') { e.preventDefault(); this.focusSearch(); return; }
     if (k === 'Escape') { e.preventDefault(); this.goUp(); return; }
     if (NAV_KEYS.has(k) && (e.defaultPrevented || isControl(tgt) || tgt?.closest?.(OWN_ZONES))) return;
@@ -1447,6 +1487,7 @@ export class Engine {
     if (k === 'k' || k === 'K') { this.stepDecision(-1); return; }
     if (!S.open && (k === 'n' || k === 'N')) { this.stepTrouble(e.shiftKey ? -1 : 1); return; }
     if (k === 'm' || k === 'M') { this.toggleMorning(); return; }
+    if (k === 'a' || k === 'A') { this.toggleCompare(); return; }
     if (k === 'p' || k === 'P') { this.setDockTab('view'); return; }
     if (k === 's' || k === 'S') { this.toggleSelMode(); return; }
     if (k === '\\') { this.toggleDock(); return; }
@@ -1500,6 +1541,7 @@ export class Engine {
     if (S.view !== GENERAL) p.push('lens=' + S.view);
     if (place) p.push(place);
     if (!this.isNow) p.push('t=' + S.t);
+    if (S.cmpA) p.push('cmp=' + S.cmpA);
     if (S.blast) p.push('blast=' + S.blast);
     if (S.ga) p.push('ga=1');
     if (S.delta !== 7) p.push('d=' + S.delta);
@@ -1562,6 +1604,7 @@ export class Engine {
     if (h.lens && h.lens !== GENERAL && lensOf(this.M.P, h.lens)) { this.store.set({ view: h.lens }); this.mix.to(h.lens, true); }
     if (h.d && ['1', '7', '14'].includes(h.d)) this.store.set({ delta: +h.d as 1 | 7 | 14 });
     if (h.t && /^\d{4}-\d\d-\d\d$/.test(h.t)) this.setTime(h.t);
+    if (h.cmp) this.setCompare(h.cmp);
     if (h.who && this.M.P.P[h.who]) this.store.set({ who: h.who });
     if (h.ga === '1' && this.hasGA) this.store.set({ ga: true });
     if (h.blast && this.M.P.F[h.blast]) this.store.set({ blast: h.blast });
@@ -1586,6 +1629,7 @@ export class Engine {
       if (view !== this.S.view && isView(this.M.P, view)) this.setView(view);
       this.setDelta(h.d && ['1', '7', '14'].includes(h.d) ? (+h.d as 1 | 7 | 14) : 7);
       this.setTime(h.t && /^\d{4}-\d\d-\d\d$/.test(h.t) ? h.t : this.M.P.asOf);
+      this.setCompare(h.cmp || null);
       const who = h.who && this.M.P.P[h.who] ? h.who : null;
       if (who !== this.S.who) this.store.set({ who });
       const blast = h.blast && this.M.P.F[h.blast] ? h.blast : null, ga = h.ga === '1' && this.hasGA;

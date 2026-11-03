@@ -346,6 +346,27 @@ deviation). Now the plan has a voice and a way through its trouble.
   region exactly twice and never mid-flight, that N visits every troubled feature once in walk order, Shift+N, Enter / Esc
   keeping the position, and the "1 new" count with the route unchanged.
 
+## Compare two dates (2026-11-03)
+
+- **A pins a baseline.** A pins the travelled date (or now) as baseline A; the endpoint B is the travelled date, so the
+  reader then travels (`[ ]`, the timeline) and the plan shows what changed between A and B. A again, Esc, or UNPIN A on
+  the timeline strip unpins; PIN A on the strip does what the key does. The feature page is modal: A does nothing under it.
+  The hash carries `cmp=<A>` beside `t=<B>`, so a copied URL restores the comparison.
+- **What is compared** (`packages/core/src/model/compare.ts`, `compareDates`, rebuilt only when an endpoint or the scan
+  changes): the stage on each date (`stageAt`; at now the map's stage; a feature with no revisions has no dated stage and is
+  never "changed"); each numeric metric's last current reading on or before each date (a pack's `after` readings and
+  readings after the date never count); a metric read by B but not by A is a **first observation**, never a move from
+  zero; and lens health where both dates are past and `healthAsOf` replays both.
+- **On the plan** nothing moves and nothing is recoloured: the fill stays B's stage. Wing and room labels add "N changed" in
+  the accent beside "in trouble"; a tile carries a paper chip at its bottom-left with a diamond (stage change), a triangle
+  (a numeric move, pointing the way the first moved metric went), a ring (a first observation) and a bar (a replayed health
+  move). The comparison is part of the static raster's content key (`cmpV`), so it costs one re-raster per change.
+- **On the page** the General tab opens with "Changed between A and B": the stage on each date, each move with both values
+  and the day each was read, each first observation labelled as such (`compareLines`).
+- `npm run check:compare` pins a 3-feature fixture (a stage change with 120 -> 180, a first observation, an unchanged
+  feature: exactly 2 marked; after-phase and future readings excluded) and, on an Engine in Node, that endpoint changes
+  leave every world rect and the camera unchanged, the hash round-trip, A and Esc.
+
 ## Lens fill and unknowns (2026-10-13)
 
 The owner's rules: a progress rail as a thin line is unreadable at its size, so a lens view fills the

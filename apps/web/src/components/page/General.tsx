@@ -14,6 +14,7 @@ import { plainLine, revLabel } from '../sheet/words';
 import { useEngine } from '../hooks';
 import { HWORD, Val, useAsOf, useLensAt, useSimSig } from './bits';
 import { CodeTree } from './CodeTree';
+import { CompareSection } from './Compare';
 import { Sec, Stagger } from './motion';
 
 function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
@@ -59,6 +60,7 @@ export function GeneralTab({ f }: { f: Feature }) {
     </div>
     <div className="pg-cols">
       <Stagger className="pg-main">
+        <CompareSection f={f} />
         <Sec label="Lens headlines"><h4 className="pg-h">Every lens at a glance · {P.lenses.length}</h4><StatTiles f={f} M={M} /></Sec>
         <Sec label="Swarm"><SwarmSection f={f} /></Sec>
         <Sec label="Business"><BusinessSection f={f} /></Sec>

@@ -100,6 +100,7 @@ function Hairline() {
 export const Strip = forwardRef<HTMLButtonElement, { open: boolean }>(function Strip({ open }, toggleRef) {
   const E = useEngine(), M = E.M;
   const t = useBp((s) => s.t), now = t === M.P.asOf, rev = revAt(M.P.weeks, t), replayed = useBp((s) => s.replayed);
+  const cmpA = useBp((s) => s.cmpA), cmpN = useBp((s) => s.cmpN);
   return (
     <div id="base" className={'tl-strip' + (now ? '' : ' travel') + (open ? ' open' : '')} onClick={() => E.setTimeline()}>
       <button ref={toggleRef} type="button" className="tl-exp" aria-expanded={open} aria-controls="tlpanel" title={(open ? 'Collapse' : 'Expand') + ' the timeline (T)'}
@@ -115,6 +116,14 @@ export const Strip = forwardRef<HTMLButtonElement, { open: boolean }>(function S
             <button type="button" className="tl-back" onClick={(e) => { e.stopPropagation(); E.setTime(M.P.asOf); }} title="Back to now (Esc on the hairline)">BACK TO NOW ▸</button>
           </span>
         )}
+      {cmpA
+        ? (
+          <span className="tl-pos tl-cmp" role="status">
+            <span className="tl-dim">SINCE {cmpA >= M.P.asOf ? 'NOW' : fmtD(cmpA)} · {cmpN} CHANGED</span>
+            <button type="button" className="tl-back" onClick={(e) => { e.stopPropagation(); E.setCompare(null); }} title="Stop comparing (A)">UNPIN A</button>
+          </span>
+        )
+        : <button type="button" className="tl-back" onClick={(e) => { e.stopPropagation(); E.toggleCompare(); }} title="Pin this date as the baseline, then travel to compare (A)">PIN A</button>}
       <StripClock />
       <Hairline />
     </div>

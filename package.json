@@ -102,6 +102,7 @@
     "check:trouble-index": "node scripts/check-trouble-index.ts",
     "check:place-words": "node scripts/check-place-words.ts",
     "check:replay-flags": "node scripts/check-replay-flags.ts",
+    "check:compare": "node scripts/check-compare.ts",
     "check:sim-blockers": "node scripts/check-sim-blockers.ts",
     "check:morning-cursor": "node scripts/check-morning-cursor.ts",
     "check:sim-answers": "node scripts/check-sim-answers.ts",

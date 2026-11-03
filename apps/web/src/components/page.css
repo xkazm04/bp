@@ -186,6 +186,10 @@
 .pg-asof { display: flex; align-items: center; gap: 14px; margin: 0 0 10px; padding: 7px 12px; border: 1px solid var(--ink-2); border-left: 5px solid var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); font-size: 13px; color: var(--ink-2); }
 .pg-asof b { font: 600 14px var(--mono); letter-spacing: 0.04em; color: var(--ink-hi); white-space: nowrap; }
 .pg-asof span { flex: 1; min-width: 0; line-height: 1.35; }
+.pg-cmp { margin: 0 0 12px; padding: 8px 12px; border: 1px solid var(--ink-3); border-left: 5px solid var(--accent); }
+.pg-cmp ul { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.pg-cmp li { font: 400 14px/1.4 var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.pg-cmp li.first { color: var(--ink-2); }
 .pg-nr { margin: 0; font-size: 14px; line-height: 1.4; color: var(--ink-2); }
 
 /* Lives in code */

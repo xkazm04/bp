@@ -168,6 +168,36 @@ function lampLight(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: numbe
   ctx.globalAlpha = ga;
 }
 
+/**
+ * What changed on this feature between the pinned baseline and the travelled date (Engine.cmp), as distinct marks in
+ * the accent ink on a paper chip at the tile's bottom-left: a diamond for a stage change, a triangle for a numeric move
+ * (pointing the way the first moved metric went), a ring for a first observation. Never a fill: the tile keeps its
+ * stage colour and its place. Tiles too small for the chip carry none (the place's label counts them).
+ */
+function compareMarks(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number, y: number, w: number, h: number) {
+  const c = E.cmp?.byId.get(f.id); if (!c) return;
+  const u = E.U, th = E.th, s = clamp(w / 11, 8 * u, 12 * u), gap = s * 0.45;
+  const n = (c.stage ? 1 : 0) + (c.moves.length ? 1 : 0) + (c.firsts.length ? 1 : 0) + (c.health.length ? 1 : 0);
+  const cw = n * s + (n + 1) * gap, ch = s + 2 * gap;
+  if (w < cw + 6 * u || h < ch + 6 * u) return;
+  const x0 = x + 3 * u, y0 = y + h - ch - 3 * u, ga = ctx.globalAlpha;
+  ctx.fillStyle = th.paper; ctx.strokeStyle = th.accent; ctx.lineWidth = Math.max(1, 1.2 * u);
+  ctx.beginPath(); ctx.roundRect(x0, y0, cw, ch, ch / 2); ctx.fill(); ctx.stroke();
+  let gx = x0 + gap; const cy = y0 + ch / 2, r = s / 2;
+  ctx.fillStyle = th.accent;
+  if (c.stage) { ctx.beginPath(); ctx.moveTo(gx + r, cy - r); ctx.lineTo(gx + s, cy); ctx.lineTo(gx + r, cy + r); ctx.lineTo(gx, cy); ctx.closePath(); ctx.fill(); gx += s + gap; }
+  if (c.moves.length) {
+    const up = c.moves[0].b.value > c.moves[0].a.value;
+    ctx.beginPath();
+    if (up) { ctx.moveTo(gx + r, cy - r); ctx.lineTo(gx + s, cy + r); ctx.lineTo(gx, cy + r); } else { ctx.moveTo(gx, cy - r); ctx.lineTo(gx + s, cy - r); ctx.lineTo(gx + r, cy + r); }
+    ctx.closePath(); ctx.fill(); gx += s + gap;
+  }
+  if (c.firsts.length) { ctx.beginPath(); ctx.arc(gx + r, cy, r * 0.78, 0, 6.2832); ctx.lineWidth = Math.max(1.5, 1.8 * u); ctx.stroke(); gx += s + gap; }
+  // a replayed health move: a short bar (the plan's health marks are bars too), in the accent, never red or amber
+  if (c.health.length) { ctx.fillRect(gx, cy - s * 0.18, s, s * 0.36); }
+  ctx.globalAlpha = ga;
+}
+
 function healthMarks(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: number, y: number, w: number, hh: number, compact: boolean, a: number) {
   const u = E.U, th = E.th, ga = ctx.globalAlpha;
   ctx.globalAlpha = ga * a;
@@ -296,6 +326,7 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   }
   lensMarks(E, ctx, g, f, st);
   ctx.globalAlpha = a;
+  compareMarks(E, ctx, f, x, y, w, h);
   if (unk > 0.004) unknownFill(ctx, th, g.body.x, g.body.y, g.body.w, g.body.h, u, a * Math.min(1, unk));
   ctx.textBaseline = 'alphabetic';
   if (!g.text) { ctx.globalAlpha = 1; return; }
@@ -607,12 +638,14 @@ function drawWingLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View, B: Bl
     const ag = aggParts(E, W.id, W.feats, false);
     fadePair(ctx, a, ag.D, () => drawStageBar(ctx, th, x, base - 6 * u, wdt, 7 * u, ag.c), ag.lens ? () => drawHealthBar(ctx, th, x, base - 6 * u, wdt, 7 * u, E.M.agg.healthOf(W.id, W.feats, ag.top!)) : null);
     const af = tx.f(13, 500), tf = tx.f(13, 600);
+    const cm = E.cmpCount(W.id, W.feats), cmT = cm ? cm + ' changed' : '';
     const line = (parts: string[], shortParts: string[], trouble: number, col: string) => () => {
-      const tr = trouble ? tx.w(trouble + ' in trouble', tf) + 10 * u : 0;
+      const tw = trouble ? tx.w(trouble + ' in trouble', tf) + 10 * u : 0, tr = tw + (cm ? tx.w(cmT, tf) + 10 * u : 0);
       let s = tx.fit(parts, wdt - tr, af);
       if (s && !s.includes('·')) s = tx.fit(shortParts, wdt - tr, af) ?? s;
       if (s) drawText(ctx, s, x, base - 14 * u, af, col, th.halo);
       if (trouble) { ctx.textAlign = 'right'; drawText(ctx, trouble + ' in trouble', x + wdt, base - 14 * u, tf, th.red2, th.halo); ctx.textAlign = 'left'; }
+      if (cm) { ctx.textAlign = 'right'; drawText(ctx, cmT, x + wdt - tw, base - 14 * u, tf, th.accent, th.halo); ctx.textAlign = 'left'; }
     };
     fadePair(ctx, a, ag.D, line(ag.general, ag.generalShort, ag.gTrouble, th.ink), ag.lens ? line(ag.lens, ag.lensShort!, ag.lTrouble, E.accentOf(ag.top!)) : null);
     ctx.globalAlpha = a;
@@ -719,12 +752,14 @@ export function drawRoomLabels(E: Engine, ctx: CanvasRenderingContext2D, v: View
       if (y === r.y + 8 * u) R.labelBox = { x: (x - 6 * u - ox) / k, y: (y - 3 * u - oy) / k, w: (pw + 12 * u) / k, h: (blockH + 8 * u) / k };
       lines.forEach((l, i) => drawText(ctx, l, x, y + lh * (i + 0.8), tx.f(fs, 600), th.inkHi, null, ls));
       if (inHeader && hh >= blockH + 34 * u && y === r.y + 8 * u) {
-        const ag = aggParts(E, R.id, R.feats, false), af = tx.f(13, 500);
-        const avail = (trouble: number) => r.w - 28 * u - (trouble ? 92 * u : 0) - (r.w > 420 * u && hh > 70 * u ? 110 * u : 0) - (hasSw ? 38 * u : 0);
+        const ag = aggParts(E, R.id, R.feats, false), af = tx.f(13, 500), cm = E.cmpCount(R.id, R.feats);
+        const avail = (trouble: number) => r.w - 28 * u - (trouble ? 92 * u : 0) - (cm ? 92 * u : 0) - (r.w > 420 * u && hh > 70 * u ? 110 * u : 0) - (hasSw ? 38 * u : 0);
         const line = (parts: string[], trouble: number, col: string) => () => {
           const s = tx.fit(parts, avail(trouble), af);
           if (s) drawText(ctx, s, x, y + blockH + 17 * u, af, col);
-          if (trouble && s) drawText(ctx, trouble + ' in trouble', x + tx.w(s, af) + 12 * u, y + blockH + 17 * u, tx.f(13, 600), th.red2);
+          let tx0 = s ? x + tx.w(s, af) + 12 * u : x;
+          if (trouble && s) { const t0 = trouble + ' in trouble'; drawText(ctx, t0, tx0, y + blockH + 17 * u, tx.f(13, 600), th.red2); tx0 += tx.w(t0, tx.f(13, 600)) + 12 * u; }
+          if (cm && s) drawText(ctx, cm + ' changed', tx0, y + blockH + 17 * u, tx.f(13, 600), th.accent);
         };
         fadePair(ctx, aa, ag.D, line(ag.general, ag.gTrouble, th.inkA(0.8)), ag.lens ? line(ag.lens, ag.lTrouble, E.accentOf(ag.top!)) : null);
       }
