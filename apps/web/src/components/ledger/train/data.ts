@@ -1,10 +1,13 @@
 // The release train's data for the ledger: packs, releases, the pack items and their evidence, jobs and lenses, from
 // the live store (useLive) or Kettle's sample train (the scan sim), through the same hook the findings use. Each
 // array keeps its identity until its source changes, so memoised rows and panels re-render only on a real change.
-import { useMemo } from 'react';
+// What already landed on the base branch is read from git (actions.ts readLandings: the route, or the sim's merges),
+// asked again when the store moves; an equal answer keeps its identity.
+import { useEffect, useMemo, useState } from 'react';
 import type { Measurement, Pack, Proposal, Release, Shot } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
-import type { ScanCtx } from '@/lib/scan/actions';
+import { readLandings, type ScanCtx } from '@/lib/scan/actions';
+import type { Landings } from '@bp/core/scan/landed';
 import type { LensDef } from '@bp/core/standard/load';
 import { useEngine, useLive, useScanCtx } from '../../hooks';
 import { useFindings } from '../useLedger';
@@ -23,6 +26,9 @@ export interface TrainData {
   jobs: readonly ScanJob[];
   /** The product's lenses (each carries its manifest: a metric's `better` direction, units, targets). */
   lenses: readonly LensDef[];
+  /** What git says already landed on the base branch, or why it cannot say; null until it answers (nothing reads as
+   *  landed then). A refused read keeps the last answer. */
+  landed: Landings | null;
   /** The scan snapshot has arrived. Before it, the empty arrays below mean "not answered yet", NOT "none": a surface
    *  that cannot tell the two apart tells a person who has packs that they have none while the snapshot loads. */
   arrived: boolean;
@@ -30,16 +36,33 @@ export interface TrainData {
 
 const NONE: readonly never[] = [];
 
+/** The landings for this product, asked on open and whenever the store's rows move (the snapshot, or the proposals:
+ *  the sample's change in place behind one snapshot). */
+function useLandings(ctx: ScanCtx, scan: unknown, proposals: unknown): Landings | null {
+  const [got, setGot] = useState<{ ctx: ScanCtx; v: Landings; key: string } | null>(null);
+  useEffect(() => {
+    let on = true;
+    readLandings(ctx).then((v) => {
+      if (!on) return;
+      const key = JSON.stringify(v);
+      setGot((g) => (g && g.ctx === ctx && g.key === key ? g : { ctx, v, key }));
+    }, () => { /* a refused read keeps the last answer */ });
+    return () => { on = false; };
+  }, [ctx, scan, proposals]);
+  return got && got.ctx === ctx ? got.v : null;
+}
+
 export function useTrain(): TrainData {
   const M = useEngine().M, ctx = useScanCtx(), slug = useLive()?.slug ?? null;
   const { proposals, jobs, scan } = useFindings();
   const lenses = M.P.lenses;
+  const landed = useLandings(ctx, scan, proposals);
   return useMemo(() => ({
-    slug, ctx, proposals, jobs, lenses, arrived: scan !== undefined,
+    slug, ctx, proposals, jobs, lenses, landed, arrived: scan !== undefined,
     byId: new Map(proposals.map((p) => [p.id, p])),
     packs: scan?.packs ?? NONE,
     releases: scan?.releases ?? NONE,
     measurements: scan?.measurements ?? NONE,
     shots: scan?.shots ?? NONE,
-  }), [slug, ctx, proposals, jobs, scan, lenses]);
+  }), [slug, ctx, proposals, jobs, scan, lenses, landed]);
 }

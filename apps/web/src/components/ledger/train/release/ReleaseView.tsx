@@ -13,13 +13,14 @@ import type { ScanJob } from '@bp/core/scan/jobs';
 import { buildRelease, finishRelease, preflightRelease, refusalText, type ScanCtx } from '@/lib/scan/actions';
 import { releaseItems, unreleased, verdictOf } from '@bp/core/scan/compare';
 import { isWaiting } from '@bp/core/train/rules';
+import { landingOf } from '@bp/core/scan/landed';
 import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { KEYMAP } from '../keymap';
 import { useTrain } from '../data';
 import { Callout } from '../ui/Controls';
 import {
-  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, openRelease, readingsBy, standLine,
+  ACTION, RELEASE_STATE, evidenceOf, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
   safeUrl, standOf, STATUS_WORD, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
@@ -44,7 +45,7 @@ export function useReleaseModel(): ReleaseModel {
     // the compare.ts helpers only read the array (it is the stream's, never changed in place)
     const scan = { proposals: T.proposals as Proposal[] }, free = unreleased(scan);
     const items = (rel ? releaseItems(scan, rel.id) : free).map((p) => evidenceOf(p, by, T.lenses));
-    const m: ReleaseModel = { T, jobs, items, free: free.length, history: historyOf(T.releases, rel) };
+    const m: ReleaseModel = { T, jobs, items, free: free.length, history: historyOf(T.releases, rel), landed: landedOutside(items, rel, T.landed), base: T.landed?.state === 'known' ? T.landed.ref : 'main' };
     if (rel) m.rel = rel;
     if (jobs.length) m.last = jobs[jobs.length - 1];
     return m;
@@ -80,7 +81,7 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const shown: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
     : st.actions.filter((a) => (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
   const probe = useProbe(m, phone || busy);
-  const checks = useMemo(() => (phone ? [] : preflightOf(rel, m.items, probe)), [phone, rel, m.items, probe]);
+  const checks = useMemo(() => (phone ? [] : preflightOf(rel, m.items, probe, m)), [phone, rel, m, probe]);
   const available = gated(shown, checks), blocked = firstBlock(checks);
   const go = async (id: string, start: () => Promise<ScanJob>) => {
     setErr(null); setSending(true);
@@ -198,7 +199,7 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
   return (
     <div ref={root} className={'tr-rel' + (phone ? ' phone' : '')} data-role="tr-rel" tabIndex={-1} onKeyDown={onKey}>
       <section aria-label="Package">
-        <h3>Package · {n} {m.rel ? 'in v' + m.rel.version : 'accepted'}</h3>
+        <h3>Package · {m.landed.size ? `${n - m.landed.size} to cut · ${m.landed.size} landed outside a release${m.rel ? ' · v' + m.rel.version : ''}` : `${n} ${m.rel ? 'in v' + m.rel.version : 'accepted'}`}</h3>
         <VersionBox m={m} phone={phone} />
         <Package m={m} phone={phone} />
       </section>
@@ -218,24 +219,35 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
 }
 
 // ------------------------------------------------------------------------------------------- the header strip
-/** The header band's three counters: Changed (items built), Waiting for you (done + failed), Will ship (the draft). */
+/** The waiting items git says are already on the base branch, in words: "1 failed item already on master: 86fb968". */
+export function onBaseWords(xs: readonly { status: string; sha: string }[], base: string): string {
+  if (!xs.length) return '';
+  const kind = xs.every((x) => x.status === 'failed') ? 'failed ' : xs.every((x) => x.status === 'done') ? 'built ' : '';
+  const shas = xs.slice(0, 3).map((x) => x.sha.slice(0, 7)).join(', ') + (xs.length > 3 ? ` and ${xs.length - 3} more` : '');
+  return `${xs.length} ${kind}item${xs.length === 1 ? '' : 's'} already on ${base}: ${shas}`;
+}
+
+/** The header band's three counters: Changed (items built), Waiting for you (done + failed, less what already landed on
+ *  the base branch: named instead), Will ship (the draft). */
 export function SummaryStrip() {
   const E = useEngine(), m = useReleaseModel(), T = m.T;
   const sug = useSuggestion(T.ctx, suggestKey(m));
   const c = useMemo(() => {
     const by = readingsBy(T.measurements);
     let built = 0, moved = 0, waiting = 0, failed = 0, rework = 0;
+    const onBase: { status: string; sha: string }[] = [];
     for (const p of T.proposals) {
       if (!p.pack_id) continue;
-      if (p.status === 'failed') failed++;
+      const on = isWaiting(p) ? landingOf(T.landed, p.id) : undefined;
+      if (on) onBase.push({ status: p.status, sha: on.sha });
+      else if (isWaiting(p)) { waiting++; if (p.status === 'failed') failed++; }
       if (p.status === 'rework') rework++;
-      if (isWaiting(p)) waiting++;
       if (p.status === 'released' || p.status === 'executing') continue;
       built++;
       const e = by.get(p.id);
       if (e && verdictOf(p, e.before, e.after, T.lenses).verdict === 'moved') moved++;
     }
-    return { built, moved, waiting, failed, rework };
+    return { built, moved, waiting, failed, rework, onBase: onBaseWords(onBase, T.landed?.state === 'known' ? T.landed.ref : 'main') };
   }, [T]);
   const v = m.rel?.version ?? sug.s?.version, n = m.items.length;
   const toPacks = () => { setLedgerUi((u) => (u.scope === 'packs' ? u : { ...u, scope: 'packs' })); E.setPage('ledger', 'triage'); };
@@ -245,7 +257,7 @@ export function SummaryStrip() {
         <small>Changed</small><strong>{c.built}<em>items · {c.moved} moved</em></strong>
       </button>
       <button type="button" className="w" onClick={toPacks} title="Show what waits for a decision">
-        <small>Waiting for you</small><strong>{c.waiting}<em>{c.failed} failed · {c.rework} in rework</em></strong>
+        <small>Waiting for you</small><strong>{c.waiting}<em>{c.failed} failed · {c.rework} in rework{c.onBase ? ' · ' + c.onBase : ''}</em></strong>
       </button>
       <button type="button" className="s" onClick={() => E.setPage('ledger', 'release')} title="Open the release (3)">
         <small>Will ship</small><strong>{v ? 'v' + v : '–'}<em>{n} item{n === 1 ? '' : 's'} · {m.rel ? STATUS_WORD[m.rel.status] : 'no draft'}</em></strong>

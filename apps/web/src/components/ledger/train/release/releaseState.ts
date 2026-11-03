@@ -11,6 +11,7 @@ import type { LensFields } from '@bp/core/scan/compare';
 import { conflictsIn, fmtValue, isConflict, noteItem, releaseNotes, type NoteItem } from '@bp/core/train/notes';
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
+import { landedIn, type Landing, type Landings } from '@bp/core/scan/landed';
 
 /** The five steps a release walks, in order; `failed` is shown at the step it failed on. */
 export const STEPS: readonly Exclude<ReleaseStatus, 'failed'>[] = ['draft', 'building', 'pr-open', 'merged', 'tagged'];
@@ -190,6 +191,18 @@ export interface ReleaseModel {
   /** Accepted items with no release (what a new draft takes). */
   free: number;
   history: Release[];
+  /** The package items already on the base branch outside a release (landedOutside), by id, and that branch's name. */
+  landed: ReadonlyMap<string, Landing>;
+  base: string;
+}
+
+/** The package items whose change git says is already on the base branch while no merged release carried it there: a
+ *  cut would cherry-pick them again. None while git is unread or cannot say, and none once the open release merged. */
+export function landedOutside(items: readonly Pick<PkgItem, 'p'>[], rel: Pick<Release, 'status'> | undefined, landed: Landings | null): Map<string, Landing> {
+  const out = new Map<string, Landing>();
+  if (landed?.state !== 'known' || rel?.status === 'merged' || rel?.status === 'tagged') return out;
+  for (const x of items) { const l = landedIn(landed.items, x.p.id); if (l) out.set(x.p.id, l); }
+  return out;
 }
 
 /** Rework items a release's cherry-pick conflict sent back (all of them with no open release). */

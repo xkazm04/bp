@@ -5,11 +5,14 @@
 // and never blocks. Which statuses are pre-flighted is RELEASE_STATE's data (the ones that offer a build), not a list of ids.
 //   commit-less items  block: lens-scan release.md - an item whose commit_sha is missing cannot ship, the run fails the
 //                      release naming it; an empty package blocks too (nothing to cut)
+//   landed items       block: git says their change is already on the base branch (releaseState.ts landedOutside), so
+//                      cherry-picking them again would be empty
 //   flagged items      warn, with their triage notes (they ship flagged)
 //   unmeasured items   warn (the notes will say "unmeasured")
 //   the probe          ready -> ok; 412 -> block worded as the fix; any other refusal the build would give (409 state or
 //                      busy, 429 queue full) -> block in the route's words; a probe that could not be asked -> warn
 import type { Release } from '@bp/core/scan/types';
+import type { Landing } from '@bp/core/scan/landed';
 import type { ReleaseReady } from '@/lib/scan/actions';
 import { RELEASE_STATE, type PkgItem, type RelAction } from './releaseState';
 
@@ -25,13 +28,22 @@ const plural = (n: number, one: string, many = one + 's') => `${n} ${n === 1 ? o
 /** Whether a release is pre-flighted at all: its status offers a build (draft, failed - RELEASE_STATE's data). */
 export const preflighted = (rel: Pick<Release, 'status'> | undefined): boolean => !!rel && RELEASE_STATE[rel.status].actions.some((a) => BUILDS.includes(a));
 
-export function preflightOf(rel: Pick<Release, 'status' | 'version'> | undefined, items: readonly PkgItem[], probe: Probe): PreCheck[] {
+/** The most items a check names before it says "and n more". */
+const NAMED = 3;
+const named = <T,>(xs: readonly T[], say: (x: T) => string) => xs.slice(0, NAMED).map(say).join(', ') + (xs.length > NAMED ? ` and ${xs.length - NAMED} more` : '');
+
+export function preflightOf(rel: Pick<Release, 'status' | 'version'> | undefined, items: readonly PkgItem[], probe: Probe, onBase?: { landed: ReadonlyMap<string, Landing>; base: string }): PreCheck[] {
   if (!rel || !preflighted(rel)) return [];
   const out: PreCheck[] = [];
   if (!items.length) out.push({ id: 'empty', verdict: 'block', words: 'The package is empty: accept an item before building.' });
   const noSha = items.filter((x) => !x.p.commit_sha);
   if (noSha.length) {
     out.push({ id: 'no-commit', verdict: 'block', words: `${plural(noSha.length, 'item has', 'items have')} no commit and cannot ship: ${noSha.map((x) => `"${x.p.title}"`).join(', ')}. Rework or descope ${noSha.length === 1 ? 'it' : 'them'}; the run would fail the release.` });
+  }
+  const landed = onBase ? items.filter((x) => onBase.landed.has(x.p.id)) : [];
+  if (landed.length) {
+    const one = landed.length === 1;
+    out.push({ id: 'landed', verdict: 'block', words: `${plural(landed.length, 'item is', 'items are')} already on ${onBase!.base}; cherry-picking ${one ? 'it' : 'them'} again would be empty: ${named(landed, (x) => `"${x.p.title}" as ${onBase!.landed.get(x.p.id)!.sha.slice(0, 7)}`)}.` });
   }
   const flagged = items.filter((x) => x.flagged);
   if (flagged.length) {
