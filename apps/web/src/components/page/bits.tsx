@@ -43,7 +43,7 @@ export function AsOfBar() {
   return (
     <div className="pg-asof" role="status">
       <b>As of {t}</b>
-      <span>The stage and measured readings are those of that date; what has no history is marked not recorded. Other sections show the current record.</span>
+      <span>The stage and measured readings are those of that date. Lens health is replayed by today&apos;s rules where every reading it needs was taken by then; what has no history is marked not recorded. Other sections show the current record.</span>
       <button type="button" className="btn" onClick={() => E.setTime(E.M.P.asOf)}>Back to now</button>
     </div>
   );

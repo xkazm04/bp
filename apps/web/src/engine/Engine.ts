@@ -30,6 +30,7 @@ import {
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
 import { TroubleIndex } from './trouble';
+import { ReplayIndex } from './replay';
 import { captureRoute, newMembers, routeRank, routeWords, stepRoute, type TroubleRoute } from './trouble-route';
 import { placeSentence, placeWords } from './place-words';
 import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
@@ -165,6 +166,10 @@ export class Engine {
   readonly watch = new SimWatch();
   /** The features in trouble, overall and per lens, rebuilt when a reading re-judges health (engine/trouble.ts). */
   readonly trouble: TroubleIndex;
+  /** Lens health replayed on the travelled date (engine/replay.ts): the plan's marks and flags off now. */
+  readonly replay: ReplayIndex;
+  /** A live product's scan snapshot (setScan); Kettle passes none, so nothing is replayed there. */
+  private scanSnap: ScanSnapshot | undefined;
 
   constructor(o: EngineOptions) {
     this.M = o.model; this.expr = o.expression; this.cv = o.canvas; this.ui = o.ui; this.root = o.root;
@@ -177,6 +182,7 @@ export class Engine {
     this.tx = new Text('sans-serif', 'monospace');
     this.lensIds = this.M.P.lenses.map((l) => l.id);
     this.trouble = new TroubleIndex(this.M.P.features, this.M.sim);
+    this.replay = new ReplayIndex(this.M.P.features, this.M.P.lenses);
     this.mix = new MixDriver(this.lensIds, GENERAL, () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
     this.mixS = this.mix.state;
     this.cache = new StaticCache();
@@ -234,6 +240,15 @@ export class Engine {
   /** The scans to draw (a discrete change: a job moved, a reading came in). The loop runs while one of them runs. */
   /** Tiles with dispatched work pending: a pulsing dot each (render/scans.ts). */
   setBusy(ids: readonly string[]) { if (this.destroyed) return; this.scans.setBusy(ids); this.dirty(); }
+  /** A live product's scan snapshot (a discrete change): a travelled date replays its lens health from these readings. */
+  setScan(scan: ScanSnapshot | undefined) { if (this.destroyed || scan === this.scanSnap) return; this.scanSnap = scan; this.syncReplay(); }
+  /** The scan snapshot the plan replays past health from (undefined on Kettle). */
+  get scan(): ScanSnapshot | undefined { return this.scanSnap; }
+  /** Rebuild the replayed health for the travelled date and scan (never per frame); the raster and the store follow. */
+  private syncReplay() {
+    if (!this.replay.sync(this.S.t, this.M.P.asOf, this.scanSnap)) return;
+    this.store.set({ replayed: this.replay.pairs }); this.dirty();
+  }
   setScans(views: readonly ScanView[]) { if (this.destroyed) return; this.scans.set(views, this); this.hitsAt.k = NaN; this.dirty(); }
   counts(id: string, fs: readonly Feature[]): Counts { return this.M.agg.countsOf(id, fs, this.S.t, this.S.delta); }
   lensAgg(id: string, l: string, fs: readonly Feature[]): ChannelAggregate {
@@ -393,15 +408,15 @@ export class Engine {
   /** The static raster's content version: a counter that moves when any field it depends on does (compared field by field, no string built). */
   private staticKey(): number {
     const S = this.S, k = this.sk;
-    if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV
+    if (k.themeV !== this.themeV || k.fontsV !== this.fontsV || k.U !== this.U || k.FW !== this.FW || k.FH !== this.FH || k.safeR !== this.SAFE.r || k.mixV !== this.mixV || k.rv !== this.replay.version
       || k.t !== S.t || k.delta !== S.delta || k.blast !== S.blast || k.ga !== S.ga || k.key !== S.key || k.who !== S.who || k.view !== S.view) {
-      k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV;
+      k.themeV = this.themeV; k.fontsV = this.fontsV; k.U = this.U; k.FW = this.FW; k.FH = this.FH; k.safeR = this.SAFE.r; k.mixV = this.mixV; k.rv = this.replay.version;
       k.t = S.t; k.delta = S.delta; k.blast = S.blast; k.ga = S.ga; k.key = S.key; k.who = S.who; k.view = S.view;
       k.ver++;
     }
     return k.ver;
   }
-  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
+  private sk = { ver: 0, themeV: -1, fontsV: -1, U: -1, FW: -1, FH: -1, safeR: -1, mixV: -1, rv: -1, t: '' as string, delta: 0 as number, blast: null as string | null, ga: false, key: null as string | null, who: null as string | null, view: '' as string };
   private wake = () => { this.settleArmed = false; this.dirty(); };
   /** One wake-up for the settle window, armed once per gesture (not per frame): it fires when the camera has been still for ~150 ms. */
   private armSettle() {
@@ -635,7 +650,7 @@ export class Engine {
     const W = this.M.P.weeks, asOf = this.M.P.asOf;
     if (d > asOf) d = asOf; if (d < W[0]) d = W[0];
     if (d === this.S.t) return;
-    this.set({ t: d }); this.placeKey = ''; this.writeHashSoon();
+    this.set({ t: d }); this.syncReplay(); this.placeKey = ''; this.writeHashSoon();
   }
   stepWeek(dir: number) {
     const W = this.M.P.weeks; let i = W.indexOf(this.S.t); if (i < 0) i = revAt(W, this.S.t) - 1;

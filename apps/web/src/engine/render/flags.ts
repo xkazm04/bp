@@ -6,13 +6,18 @@
 // count), the way map markers do, so the site plan shows a few large flags rather than a hundred
 // specks, and zooming in splits them back into one flag per feature and lens.
 //
+// On a travelled date a flag stands only where lens health was replayed by today's rules from that date's readings
+// (engine/replay.ts); a pair with an input not read by then raises none (not recorded), never today's.
+//
 // Where a flag stands says which lens it is: over a tile, flags stand in registry order across its top
 // edge (the order of General's strip); on a ribbon segment (site and wing plans), over its middle.
 // A lens fades its flags with its presence in the mix, so a lens view keeps only its own.
 //
 // A click on a flag opens its feature in its lens; on a cluster of one feature, in its worst lens; on a
 // cluster of several, flies to them so they split. The engine hit-tests the flags of the last frame.
+import type { Feature } from '@bp/core/data';
 import type { RoomNode, WingNode } from '@bp/core/model';
+import type { PastRow } from '../replay';
 import type { Engine } from '../Engine';
 import { RH } from '@bp/core/model';
 import { clamp } from '../camera';
@@ -99,17 +104,21 @@ const byPlace = (p: Flag, q: Flag) => Number(q.bad) - Number(p.bad) || q.a - p.a
 /** Lay out this frame's flags (clustered), in draw order reversed: index 0 is drawn last, on top. */
 export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
   const out = OUT; out.length = 0;
-  if (!flagsOn() || !E.isNow) return out;
+  if (!flagsOn()) return out;
+  // on a past date only replayed health raises a flag (engine/replay.ts): today's rules over that date's readings
+  const now = E.isNow, src = now ? E.trouble.all() : E.replay.troubled;
+  if (!src.length) return out;
   const u = E.U, m = E.mixS, ids = E.lensIds, n = ids.length, tile = lod > 0.5;
   // merge distance: generous on the site and wing plans (a few markers per room), tight over tiles
   const gap = (tile ? 4 : 4 + 22 * (1 - lod / 0.5)) * u;
   const cands = CANDS; cands.length = 0; nPool = 0;
-  for (const f of E.trouble.all()) {
+  for (let fi = 0; fi < src.length; fi++) {
+    const it = src[fi], f = now ? (it as Feature) : (it as PastRow).f, troubles = now ? f.trouble : (it as PastRow).trouble;
     if (E.dimFn && !E.dimFn(f)) continue;
     const r = featRect(E, v, f.id, lod, sr); if (!r) continue;
     if (r.x > v.FW + 60 || r.x + r.w < -60 || r.y > v.FH + 80 || r.y < -80) continue;
     const S = sizeOf(E, r, tile);
-    for (const t of f.trouble) {
+    for (const t of troubles) {
       const a = m.p[t.lens] ?? 0; if (a < 0.04) continue;
       const li = ids.indexOf(t.lens); if (li < 0) continue;
       const s = t.h === 'bad' ? S : S * 0.8, w = s * 1.1, tip = tipOf(s);

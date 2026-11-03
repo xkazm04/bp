@@ -266,6 +266,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   useEffect(() => {
     if (!engine?.M.live || !live.scan) return;
     applyScan(engine.M, live.scan);
+    engine.setScan(live.scan); // a travelled date replays lens health from these readings
     engine.feed(liveSwarm(engine.M.P, live.scan));
   }, [engine, live.scan]);
   // the answer tracks read the snapshot and the jobs (an execute job holding a proposal reads "building")

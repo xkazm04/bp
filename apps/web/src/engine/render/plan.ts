@@ -281,9 +281,11 @@ function paintTile(E: Engine, ctx: CanvasRenderingContext2D, v: View, T: TileNod
   if (shape) ctx.stroke(shape); else ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   ctx.setLineDash(NO_DASH); ctx.globalAlpha = a;
   if (S.blast === f.id) { ctx.strokeStyle = th.red; ctx.lineWidth = 3; ctx.strokeRect(x, y, w, h); }
-  // trouble marks: general health crossfades into the dominant lens's health
-  if (st && now) {
-    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
+  // trouble marks: general health crossfades into the dominant lens's health; on a past date, the health replayed by
+  // today's rules from that date's readings (engine/replay.ts), where every rule input was read by then, else none
+  const past = st && !now ? E.replay.row(f.id) : null;
+  if (st && (now || past)) {
+    const D = E.mixS.topD, top = E.mixS.top, hg = past ? past.health : f.health, hl = top ? (past ? E.replay.healthUnder(past, top) : healthUnder(f, top)) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, false, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, false, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, false, D); }
     lampLight(E, ctx, D < 0.5 ? hg : hl, x, y, w, h, 1);
@@ -371,8 +373,9 @@ function ribSeg(E: Engine, ctx: CanvasRenderingContext2D, f: Feature, x: number,
   if (!st || st === 'specified' || st === 'idea') { stageStroke(ctx, th, st, aa, 1); ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); ctx.setLineDash(NO_DASH); ctx.globalAlpha = aa; }
   // a feature that exists is a slab of glass on the table: its lit top edge (the table's white bevel)
   else { ctx.fillStyle = th.alpha(th.glassEdge, th.mode === 'dark' ? 0.6 : 0.35); ctx.fillRect(x, y, w, h >= 8 ? 1.5 : 1); }
-  if (st && E.isNow) {
-    const D = E.mixS.topD, top = E.mixS.top, hg = f.health, hl = top ? healthUnder(f, top) : hg;
+  const past = st && !E.isNow ? E.replay.row(f.id) : null;
+  if (st && (E.isNow || past)) {
+    const D = E.mixS.topD, top = E.mixS.top, hg = past ? past.health : f.health, hl = top ? (past ? E.replay.healthUnder(past, top) : healthUnder(f, top)) : hg;
     if (hg === hl || D <= 0.001) healthMarks(E, ctx, D > 0.999 ? hl : hg, x, y, w, h, true, 1);
     else { healthMarks(E, ctx, hg, x, y, w, h, true, 1 - D); healthMarks(E, ctx, hl, x, y, w, h, true, D); }
     lampLight(E, ctx, D < 0.5 ? hg : hl, x, y, w, h * 3, 0.8);

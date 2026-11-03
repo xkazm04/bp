@@ -63,6 +63,8 @@ export interface UIState {
   simV: number;
   /** The health version the engine's trouble index was last built at: moves when a reading turns a feature good, watch or bad. */
   troubleV: number;
+  /** Lens-health pairs replayed by today's rules on the travelled date (engine/replay.ts); 0 at now or with no readings. */
+  replayed: number;
   playing: boolean;
   speed: number;
   over: boolean;
@@ -100,7 +102,7 @@ export function initialState(scale: number, asOf: string): UIState {
     ready: false, scale, phone: false, compact: false, view: GENERAL, place: [], levelNames: [], level: 0,
     open: null, dec: null, hover: null, sel: null, hl: null, hlDec: null, hlOpt: null, tgt: { ids: {}, n: 0, label: '' }, prev: null, lprev: null, track: null,
     t: asOf, delta: 7, who: null, ga: false, blast: null, key: null, dtab: null, scanJob: null, selMode: false, dockHidden: false,
-    morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0, troubleV: 0,
+    morning: false, info: false, ordHi: null, crew: null, askAll: false, ordMenu: false, whoMenu: false, simV: 0, troubleV: 0, replayed: 0,
     playing: true, speed: 8, over: false, toast: null, ticker: null, intro: false, tl: false,
     page: 'plan', lv: 'triage', menu: null, said: '', failedLenses: [],
   };

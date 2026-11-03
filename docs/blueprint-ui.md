@@ -750,8 +750,11 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     recorded". A replayed lens reads its health and reason with the label "Replayed by today's rules
     from N readings up to <newest reading's date>" on the lens tab, the General tile and the phone
     panel. `replayTable` gives every replayable pair's health for one date (feature → lens → health,
-    a missing entry is not recorded) for the plan to draw flags and trouble marks on a past date; the
-    plan does not read it yet, so on a past date it still draws no flags. In practice few pairs
+    a missing entry is not recorded). The plan draws from it on a past date (`engine/replay.ts`,
+    rebuilt when the travelled date or the live scan changes, never per frame; Kettle hands the engine
+    no scan, so nothing is replayed there): trouble marks and flags stand only on replayed bad / watch
+    pairs, General marks the worst replayed lens, the fill stays the stage, and the timeline strip adds
+    "HEALTH REPLAYED BY TODAY'S RULES" while any pair is replayed (`check:replay-flags`). In practice few pairs
     qualify: every built-in lens has a rule on a hand-judged field (on bp's own store, 0 of 147 pairs
     on 2026-10-26), so replay pays off for metric-only lenses (custom manifests).
     The rule has one home, the presenter `recordAsOf` (stage line, flags, lede) and `lensAsOf` (a

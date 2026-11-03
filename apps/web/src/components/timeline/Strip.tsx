@@ -99,7 +99,7 @@ function Hairline() {
 /** The strip itself. `open` = the panel is expanded above it. */
 export const Strip = forwardRef<HTMLButtonElement, { open: boolean }>(function Strip({ open }, toggleRef) {
   const E = useEngine(), M = E.M;
-  const t = useBp((s) => s.t), now = t === M.P.asOf, rev = revAt(M.P.weeks, t);
+  const t = useBp((s) => s.t), now = t === M.P.asOf, rev = revAt(M.P.weeks, t), replayed = useBp((s) => s.replayed);
   return (
     <div id="base" className={'tl-strip' + (now ? '' : ' travel') + (open ? ' open' : '')} onClick={() => E.setTimeline()}>
       <button ref={toggleRef} type="button" className="tl-exp" aria-expanded={open} aria-controls="tlpanel" title={(open ? 'Collapse' : 'Expand') + ' the timeline (T)'}
@@ -111,6 +111,7 @@ export const Strip = forwardRef<HTMLButtonElement, { open: boolean }>(function S
         : (
           <span className="tl-pos" role="status">
             <b>VIEWING {fmtD(t)}</b><span className="tl-dim">REV {rev} of {M.P.weeks.length}</span>
+            {replayed > 0 && <span className="tl-dim" title="Flags and trouble marks on this date: today's lens rules over the readings taken by then. Pairs with an input not read by then show none.">HEALTH REPLAYED BY TODAY&apos;S RULES</span>}
             <button type="button" className="tl-back" onClick={(e) => { e.stopPropagation(); E.setTime(M.P.asOf); }} title="Back to now (Esc on the hairline)">BACK TO NOW ▸</button>
           </span>
         )}
