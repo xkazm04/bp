@@ -3,7 +3,7 @@
 // with an unknown extra field left out and an absent one still absent; and refuses a bad one, naming the field
 // (`<field>: <what>`). Plus parseJson (the train's only JSON.parse) and errorText.
 // Run: node scripts/check-train-wire.ts  (Node's type stripping; no build step). Exit 1 on any failure.
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWave, parseWaveBody, parseWaveDispatch, parseWavePackage, parseWaves, type Parsed } from '../packages/core/src/train/wire.ts';
+import { errorText, parseCommitDiff, parseJson, parseLandings, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWave, parseWaveBody, parseWaveDispatch, parseWavePackage, parseWaves, type Parsed } from '../packages/core/src/train/wire.ts';
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
@@ -57,6 +57,13 @@ const DIFF = {
 }
 
 // ---- VersionSuggestion
+const LANDED = { state: 'known', ref: 'master', head: '63b2922'.padEnd(40, '0'), items: { 'p-9c4a44': { sha: '86fb968'.padEnd(40, '0'), at: '2026-11-02T10:00:00+01:00', by: 'trailer', extra: 1 } } };
+good('parseLandings', parseLandings({ ...LANDED, extra: 1 }), (v) => v.state === 'known' && v.ref === 'master' && v.items['p-9c4a44']?.by === 'trailer' && !('extra' in v) && !('extra' in v.items['p-9c4a44']));
+good('parseLandings (unknown)', parseLandings({ state: 'unknown', why: 'not a git repository' }), (v) => v.state === 'unknown' && v.why === 'not a git repository');
+good('parseLandings (an id named __proto__ stays a key)', parseLandings({ ...LANDED, items: JSON.parse('{"__proto__":{"sha":"a","at":"b","by":"patch-id"}}') }), (v) => v.state === 'known' && Object.keys(v.items).join() === '__proto__' && ({} as Record<string, unknown>).sha === undefined);
+bad('parseLandings (state)', parseLandings({ ...LANDED, state: 'maybe' }), /^state: expected known or unknown/);
+bad('parseLandings (by)', parseLandings({ ...LANDED, items: { a: { sha: 'x', at: 'y', by: 'guess' } } }), /^items\.a\.by: expected one of trailer, patch-id/);
+bad('parseLandings (why)', parseLandings({ state: 'unknown' }), /^why: missing/);
 good('parseVersionSuggestion', parseVersionSuggestion({ ...SUGGEST, extra: 1 }), (v) => v.version === '2.3.0' && !('extra' in v));
 bad('parseVersionSuggestion (version)', parseVersionSuggestion({ ...SUGGEST, version: 230 }), /^version: expected a string/);
 

@@ -45,6 +45,7 @@ const SPECS: Spec[] = [
   { file: 'products/[slug]/proposals/[id]/veto', verb: 'POST', params: { id: 'p1' }, body: { reason: 'not this one' }, store: true },
   { file: 'products/[slug]/triage', verb: 'POST', params: {}, body: { ids: ['p1'], decision: 'accept' }, store: true },
   { file: 'products/[slug]/releases/suggest', verb: 'GET', params: {} },
+  { file: 'products/[slug]/releases/landed', verb: 'GET', params: {} },
   { file: 'products/[slug]/commits/[sha]', verb: 'GET', params: { sha: 'abcdef1' }, store: true },
   { file: 'products/[slug]/dispatch', verb: 'POST', params: {}, body: { ids: ['p1'] }, store: true, kettle: { job: { id: 'j1' }, approved: ['p1'], skipped: [] }, kettleStatus: 202 },
   { file: 'products/[slug]/lenses', verb: 'POST', params: {}, body: { manifest: { id: 'com.example.x' } } },

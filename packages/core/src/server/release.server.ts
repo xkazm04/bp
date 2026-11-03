@@ -11,15 +11,17 @@
 //               and `gh auth status` before a release job starts. BP_GH_BIN overrides the binary (a .mjs runs on this
 //               Node: the checks' fake).
 //   git         `git tag --list v* --sort=-v:refname` in the product root, for the version suggestion; `git show` of one
-//               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route.
+//               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route; the base
+//               branch's log (and, for item commits no message names, their patch-ids) for what already landed.
 // Server-only: route handlers import it.
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CommitDiff, TriageBody, TriageResult } from '../scan/types';
+import type { CommitDiff, ScanSnapshot, TriageBody, TriageResult } from '../scan/types';
 import { MAX_TRIAGE } from '../scan/types';
+import { LOG_CAP, LOG_FORMAT, baseOf, landedOf, parseLog, parsePatchIds, patchCandidates, type LogCommit, type Landings } from '../scan/landed';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
 
@@ -30,13 +32,14 @@ export const FALLBACK_BY = 'user:blueprint';
 
 interface Out { code: number; stdout: string; stderr: string; missing?: boolean }
 /** execFile, never rejecting: the exit code (-1 when it could not start or timed out) and both streams. */
-function run(file: string, args: string[], opts: { cwd?: string; timeout: number }): Promise<Out> {
+function run(file: string, args: string[], opts: { cwd?: string; timeout: number; input?: string }): Promise<Out> {
   return new Promise((resolve) => {
-    execFile(file, args, { cwd: opts.cwd, timeout: opts.timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile(file, args, { cwd: opts.cwd, timeout: opts.timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (NodeJS.ErrnoException & { code?: number | string }) | null;
       const code = !e ? 0 : typeof e.code === 'number' ? e.code : -1;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') || (e && typeof e.code !== 'number' ? e.message : ''), missing: e?.code === 'ENOENT' });
     });
+    if (opts.input !== undefined) { child.stdin?.on('error', () => { /* the child left early: its exit code says so */ }); child.stdin?.end(opts.input); }
   });
 }
 
@@ -269,6 +272,64 @@ export async function commitDiff(root: string, sha: string): Promise<DiffAnswer>
 export async function versionTags(root: string): Promise<string[]> {
   const r = await run('git', ['tag', '--list', 'v*', '--sort=-v:refname'], { cwd: root, timeout: GIT_MS });
   return r.code === 0 ? r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+}
+
+/** One root's last answer: the base it was read at, its log and trailer landings, and the patch-id pass over them. */
+interface LandedCache { head: string; since: string; commits: LogCommit[]; base?: Map<string, string>; patchKey?: string; value?: Landings }
+const LANDED = ((globalThis as typeof globalThis & { __bpLanded?: Map<string, LandedCache> }).__bpLanded ??= new Map<string, LandedCache>());
+
+/**
+ * What already landed on the product's base branch (scan/landed.ts): `git rev-parse <base_ref>` on every ask, and the
+ * rest only when that sha (or the item commits to patch-id) moved. The log runs from the oldest pack's base_sha, at
+ * most LOG_CAP commits. Item commits no message names are matched by `git patch-id --stable` against the base commits;
+ * a failed patch-id pass leaves the trailer landings standing. No git, not a repository, or no such ref -> `unknown`.
+ */
+export async function landings(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'>): Promise<Landings> {
+  const git = (args: string[], input?: string) => run('git', ['-c', 'core.quotepath=off', '--no-pager', ...args], { cwd: root, timeout: GIT_MS, ...(input === undefined ? {} : { input }) });
+  const { ref, since } = baseOf(scan.packs);
+  const h = await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}']);
+  if (h.code !== 0) {
+    const why = h.missing ? 'git is not installed' : /not a git repository/i.test(h.stderr) ? 'not a git repository' : h.code === 1 ? `no ${ref} in this repository` : h.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `git exit ${h.code}`;
+    return { state: 'unknown', why };
+  }
+  const head = h.stdout.trim();
+  let c = LANDED.get(root);
+  if (!c || c.head !== head || c.since !== (since ?? '')) {
+    const from = since && (await git(['rev-parse', '--verify', '--quiet', since + '^{commit}'])).code === 0 ? since : '';
+    const range = from ? [from + '..' + head] : [head];
+    const log = await git(['log', '--no-color', '--max-count=' + LOG_CAP, '--format=' + LOG_FORMAT, ...range]);
+    if (log.code !== 0) return { state: 'unknown', why: log.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `git log exit ${log.code}` };
+    c = { head, since: since ?? '', commits: parseLog(log.stdout) };
+    LANDED.set(root, c);
+  }
+  const byTrailer = landedOf(c.commits);
+  const want = patchCandidates(scan.proposals, byTrailer), patchKey = want.map((x) => x.id + ':' + x.sha).join();
+  if (c.value && c.patchKey === patchKey) return c.value;
+  let items = byTrailer;
+  if (want.length && c.commits.length) {
+    const ids = await patchIdsOf(git, want.map((x) => x.sha));
+    const base = (c.base ??= await patchIdsOf(git, c.commits.map((x) => x.sha)));
+    const mine = new Map<string, string>();
+    for (const x of want) { const pid = ids.get(x.sha) ?? [...ids].find(([s]) => s.startsWith(x.sha))?.[1]; if (pid) mine.set(x.id, pid); }
+    if (mine.size && base.size) items = landedOf(c.commits, { items: mine, base });
+  }
+  c.patchKey = patchKey;
+  c.value = { state: 'known', ref, head, items };
+  return c.value;
+}
+
+const NL = '\n';
+/** commit sha -> `git patch-id --stable`, for the commits of `shas` this repository has (a merge or an empty commit has none). */
+async function patchIdsOf(git: (args: string[], input?: string) => Promise<Out>, shas: readonly string[]): Promise<Map<string, string>> {
+  if (!shas.length) return new Map();
+  const have = await git(['cat-file', '--batch-check'], shas.join(NL) + NL);
+  if (have.code !== 0) return new Map();
+  const found = have.stdout.split(/\r?\n/).map((l) => /^([0-9a-f]{40}) commit /i.exec(l)?.[1]).filter((x): x is string => !!x);
+  if (!found.length) return new Map();
+  const diff = await git(['diff-tree', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--stdin'], found.join(NL) + NL);
+  if (diff.code !== 0 || !diff.stdout) return new Map();
+  const pid = await git(['patch-id', '--stable'], diff.stdout);
+  return pid.code === 0 ? parsePatchIds(pid.stdout) : new Map();
 }
 
 /** Where a manifest version is looked for, in order: the root, src-tauri, app, desktop, then each `apps/<x>` (and its src-tauri). */

@@ -5,6 +5,7 @@
 import type { Band, CommitDiff, Confidence, FindingCategory, MvpRule, PredictedVerdict, Proof, ProofVerdict, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, ScoreParts, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
+import type { Landing, Landings } from '../scan/landed.ts';
 import { isObj } from '../scan/guards.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -210,6 +211,22 @@ export function parseVersionSuggestion(x: unknown): Parsed<VersionSuggestion> {
   return door(() => {
     const o = obj(x, '');
     return { version: str(o, 'version', ''), from: str(o, 'from', ''), reason: str(o, 'reason', '') };
+  });
+}
+
+/** `GET releases/landed`: what git says already landed on the base branch, or why it cannot say. */
+const LANDING_BY: Members<Landing['by']> = { trailer: true, 'patch-id': true };
+export function parseLandings(x: unknown): Parsed<Landings> {
+  return door(() => {
+    const o = obj(x, '');
+    if (o.state === 'unknown') return { state: 'unknown', why: str(o, 'why', '') };
+    if (o.state !== 'known') fail('state', `expected known or unknown (got ${JSON.stringify(o.state)})`);
+    const raw = obj(o.items, 'items'), items = Object.create(null) as Record<string, Landing>; // ids are keys: no prototype to write through
+    for (const id of Object.keys(raw)) {
+      const at = 'items.' + id, l = obj(raw[id], at);
+      items[id] = { sha: str(l, 'sha', at), at: str(l, 'at', at), by: member(LANDING_BY, l, 'by', at) };
+    }
+    return { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
   });
 }
 
