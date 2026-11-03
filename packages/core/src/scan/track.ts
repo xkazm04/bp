@@ -11,6 +11,7 @@
 // reading after the release that meets the expected value (baseline + expected_delta, in the delta's direction).
 import { isCurrent, metricKey } from './derive.ts';
 import type { ScanJob } from './jobs.ts';
+import { landedIn, type Landing, type LandedMap } from './landed.ts';
 import type { Measurement, Proposal, ProposalStatus, ScanSnapshot } from './types.ts';
 
 export type TrackStage = 'saving' | 'approved' | 'declined' | 'building' | 'failed' | 'built' | 'rework' | 'accepted' | 'descoped' | 'confirmed' | 'not-confirmed' | 'unknown';
@@ -43,6 +44,8 @@ export interface Track {
   job?: string;
   commit?: string;
   release?: string;
+  /** Where its change already is on the base branch (read from git: TrackOpts.landed), whatever the store's status. */
+  landed?: Landing;
   decidedAt?: string;
   decidedBy?: string;
   next: TrackNext | null;
@@ -57,6 +60,8 @@ export type Pending = { state: 'saving'; decision: 'approve' | 'decline' } | { s
 export interface TrackOpts {
   jobs?: readonly ScanJob[];
   pending?: ReadonlyMap<string, Pending>;
+  /** What git says already landed on the base branch (scan/landed.ts), by proposal id: carried on the track as `landed`. */
+  landed?: LandedMap;
 }
 
 const FINAL: ReadonlySet<TrackStage> = new Set(['confirmed', 'declined', 'descoped']);
@@ -116,6 +121,8 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
   if (p.decided_by) t.decidedBy = p.decided_by;
   if (p.result_sha ?? p.commit_sha) t.commit = (p.result_sha ?? p.commit_sha)!.slice(0, 7);
   if (p.release_id) t.release = p.release_id;
+  const landing = landedIn(opts.landed, p.id);
+  if (landing) t.landed = landing;
   const pack = p.pack_id ? scan.packs.find((x) => x.id === p.pack_id) : undefined;
   if (after) { t.branch = after.value; t.branchName = pack?.branch ?? 'its branch'; }
   const exp = expected !== undefined ? ' (expected ' + fmt(expected) + ')' : '';
@@ -161,6 +168,7 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
   } else L.push('No metric: there is no number to confirm it by');
   if (job) L.push(`Build job ${job.id} (${job.status})`);
   if (t.commit) L.push('Commit ' + t.commit);
+  if (landing) L.push(`Landed as ${landing.sha.slice(0, 7)} on ${day(landing.at)} (read from git${landing.by === 'patch-id' ? ', by its patch' : ''})`);
   if (p.release_id) L.push('Release ' + (rel?.version ?? p.release_id) + (rel ? ' (' + rel.status + ')' : ''));
   if (t.stage === 'confirmed') L.push('Confirmed: a reading taken after the release meets the expected value');
   else if (t.stage === 'not-confirmed') L.push('Not confirmed: the reading after the release falls short of the expected value');
