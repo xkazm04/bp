@@ -20,7 +20,7 @@ import type { ScanSnapshot } from '@bp/core/scan/types';
 import { BusinessSection } from '../sheet/Business';
 import { ScreensStrip } from '../sheet/Screens';
 import { SwarmSection } from '../sheet/SheetBody';
-import { ClearSteps, MoveArrow, Spark, metricMove, metricRows, nfmt } from '../sheet/LensPanel';
+import { ClearSteps, MoveArrow, Spark, metricMove, metricRows, nfmt, useProposals } from '../sheet/LensPanel';
 import { useDensity, useEngine, useLive, useVariant } from '../hooks';
 import { HWORD, KpiRows, Val, useAsOf, useLensAt, useSimSig } from './bits';
 import { Sec, Stagger } from './motion';
@@ -75,6 +75,7 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
 
 const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density; sig: string }) {
   const d = M.P.LENS[lens], fl = f.lens[lens], sim = M.sim, { t, past } = useAsOf(), la = useLensAt(f, d);
+  const proposals = useProposals();
   // on a past date health has no history (the presenter's); the headline is the scan's reading by then, else nothing
   const h = la.health, then = la.at === 'then' ? la : null;
   const val = (k: string) => sim.liveValue(f, lens, k);
@@ -99,7 +100,7 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
           <p className="why">{past ? (then ? la.why : la.why + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : la.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
           {/* what clears it: every matching rule as a step, at now only (on a past date health is not recorded) */}
-          {past ? null : <ClearSteps def={d} fl={fl} />}
+          {past ? null : <ClearSteps def={d} fl={fl} cover={{ feature: baseId(f.id), proposals }} />}
         </div>
       </Sec>
       {/* the KPIs are named here because the KPI section is dropped on a past date (LensTab:165): without
