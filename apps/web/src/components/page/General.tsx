@@ -21,16 +21,18 @@ function Tile({ f, M, d }: { f: Feature; M: Model; d: LensDef }) {
   const hf = d.headline, v = hf ? M.sim.liveValue(f, d.id, hf.key) : undefined;
   // on a past date health has no history (the presenter's): the tile says so and shows only a reading the scan recorded then
   const h = la.health, why = la.why;
-  const then = la.at === 'then' ? la : null;
+  const then = la.at === 'then' ? la : null, rp = la.at === 'replayed' ? la : null;
+  // a replayed health (today's rules over that date's readings) leads with its label, so the clamp never cuts it
+  const said = rp ? rp.label.charAt(0).toUpperCase() + rp.label.slice(1) + (rp.why ? '. ' + rp.why : '.') : null;
   // more than one rule to clear: the reason names the first, the lens tab lists them all
   const fl = f.lens[d.id], n = !past && fl && (h === 'watch' || h === 'bad') ? clearPath(d.manifest, fl.v).steps.length : 0;
   return (
     <Sec as="div" className={'pg-tile ' + h}>
       <button type="button" onClick={() => E.setView(d.id)} title={'Open the ' + d.name + ' tab'}>
-        <span className="top"><span className="sh">{d.short}</span><span className="nm">{d.name}</span><span className="hw">{past ? 'Not recorded' : h === 'na' ? 'N/A' : HWORD[h]}</span></span>
+        <span className="top"><span className="sh">{d.short}</span><span className="nm">{d.name}</span><span className="hw">{past && !rp ? 'Not recorded' : h === 'na' ? 'N/A' : HWORD[h]}</span></span>
         <span className="lab">{hf ? hf.label : 'No headline field'}</span>
-        <b className="big">{hf && (past ? then : h !== 'na') ? <Val k={f.id + ':' + d.id + ':' + hf.key} field={hf} v={then ? then.value : v} /> : '—'}</b>
-        <span className="why">{past ? (then ? la.why : la.why + '.') : h === 'na' ? 'This lens does not apply here.' : (why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')) + (n > 1 ? ' · ' + n + ' steps to clear' : '')}</span>
+        <b className="big">{hf && (past ? then || rp?.value != null : h !== 'na') ? <Val k={f.id + ':' + d.id + ':' + hf.key} field={hf} v={then ? then.value : rp ? rp.value ?? undefined : v} /> : '—'}</b>
+        <span className="why" title={said ?? undefined}>{said ?? (past ? (then ? la.why : la.why + '.') : h === 'na' ? 'This lens does not apply here.' : (why ?? (h === 'unmeasured' ? 'Nothing measured yet.' : 'No rule raised anything.')) + (n > 1 ? ' · ' + n + ' steps to clear' : ''))}</span>
       </button>
     </Sec>
   );

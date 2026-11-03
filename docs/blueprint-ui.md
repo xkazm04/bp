@@ -727,11 +727,33 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
     watch or good reading it adds the margin to the next worse bound. Under an override the list is
     headed "The rules alone ask for"; on a past date it is absent. The General tile adds "· N steps
     to clear" when N > 1; the phone's expanded panel carries the list, cut by density.
+    Each step carries one proposal chip (`standard/cover.ts` `coverStep`, `check:clear-cover`): the
+    proposals on the same feature, lens and metric (proposed, approved, executing; built: done, accepted,
+    released), each judged by applying now + expected delta (the queue's arithmetic) and re-running the
+    step's own rule with the rest of the path taken: "approved fix → 340, clears", "proposed fix → 410,
+    short by 10", "makes it worse", or "no proposal". A built item with an after value is judged on it
+    ("measured 390 after: cleared"); that value was read on the pack's branch, so it is evidence about the
+    proposal and never the feature's reading. Read side only: there is no "Propose a fix" button (it needs
+    `/lens-scan` to take a feature scope and a target).
   - **Time travel on the page** (`lib/model/timeview.ts`, `check:timeview`). When the plan is travelled
     back, the header carries an "As of <date> / Back to now" marker. The stage ladder and the lede
     show the stage on that date (`stageAt`, replayed from the events log); a headline or metric shows
-    the scan's last reading on or before that date. Health, evidence, other fields and KPIs have no
-    history and read "Not recorded for that date": a now-value is never shown for a past date.
+    the scan's last reading on or before that date. Evidence, other fields and KPIs have no history and
+    read "Not recorded for that date": a now-value is never shown for a past date.
+    **Health is replayed where it can be, and says so** (`healthAsOf`). No health is stored by date, so
+    a past health is today's rules re-run over that date's readings, never what the page said then.
+    The facet is built fresh: each numeric field's last reading on or before the date (a pack's
+    `after` readings never count) plus stage-bound fields at the replayed stage. Today's facet values,
+    overrides, applicability marks and KPIs are never carried back. A pair is replayed only when every
+    field its usable rules and `applies_when` read is such a reading or the stage; a rule on a judged
+    enum or boolean, a KPI, another feature field or a metric not yet read by then leaves it "Not
+    recorded". A replayed lens reads its health and reason with the label "Replayed by today's rules
+    from N readings up to <newest reading's date>" on the lens tab, the General tile and the phone
+    panel. `replayTable` gives every replayable pair's health for one date (feature → lens → health,
+    a missing entry is not recorded) for the plan to draw flags and trouble marks on a past date; the
+    plan does not read it yet, so on a past date it still draws no flags. In practice few pairs
+    qualify: every built-in lens has a rule on a hand-judged field (on bp's own store, 0 of 147 pairs
+    on 2026-10-26), so replay pays off for metric-only lenses (custom manifests).
     The rule has one home, the presenter `recordAsOf` (stage line, flags, lede) and `lensAsOf` (a
     lens's health, reason and dated headline), and every feature-detail surface reads it: the General
     and lens tabs, and the phone document, whose lens panels and metric rows are dated too. On a past

@@ -69,6 +69,49 @@ const ep = P.F['email-password-sign-in'], T0 = '2026-04-27';
   expect(nw?.at === 'now' && nw.health === 'bad' && nw.why === 'rule says', 'lensAsOf at now: the lens health and its reason, unchanged (got ' + JSON.stringify(nw) + ')');
 }
 
+// ------------------------------------------------------------------ replayed health: today's rules over that date's readings
+// healthAsOf builds a FRESH facet from the readings in force on t (and the replayed stage) and re-runs the rules; a pair
+// whose rules read anything else stays not recorded. The current facet, its override and its applicability never leak in.
+{
+  const { healthAsOf, replayTable } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/timeview.ts')).href)) as Any;
+  const NOW = '2026-10-31';
+  const lat = { key: 'latency', label: 'Latency', type: 'number', unit: 'ms', metric: { method: 'static', better: 'lower' } };
+  const mk = (rules: Any[], extra: Any[] = []) => ({ fields: [lat, ...extra], health: { default: 'good', rules } });
+  const gt = { when: { field: 'latency', gt: 100 }, health: 'bad', reason: 'Latency {latency} ms is over 100' };
+  const dl = { id: 'l', name: 'L', headline: lat, manifest: mk([gt]) };
+  // the enum is judged by hand (no history): its lens cannot be replayed even with latency readings
+  const de = { id: 'e', name: 'E', headline: null, manifest: mk([{ when: { field: 'grade', eq: 'poor' }, health: 'bad', reason: 'Graded poor' }, gt], [{ key: 'grade', label: 'Grade', type: 'enum', values: ['poor', 'fine'] }]) };
+  // a stage-bound rule reads the stage of THAT date (beta until 10-15), not today's (live)
+  const ds = { id: 's', name: 'S', headline: lat, manifest: mk([{ when: { all: [{ field: 'stage', eq: 'live' }, { field: 'latency', gt: 100 }] }, health: 'bad', reason: 'Live and slow' }], [{ key: 'stage', label: 'Stage', type: 'enum', values: ['beta', 'live'], source: { feature: 'stage' } }]) };
+  const r = (id: number, lens: string, at: string, value: number, x: Any = {}) => ({ id, run_id: 'r', feature: 'f', lens, metric: 'latency', value, measured_at: at + 'T10:00:00Z', ...x });
+  const rscan = { measurements: [
+    r(1, 'l', '2026-10-01', 120), r(2, 'l', '2026-10-20', 60), r(3, 'l', '2026-10-05', 50, { phase: 'after', proposal_id: 'p' }),
+    r(4, 'e', '2026-10-01', 120), r(5, 'e', '2026-10-20', 60), r(6, 's', '2026-10-01', 120),
+  ] };
+  // today: held good by an override, the facet's current value 60, and the lens marked not applicable on another pair
+  const ov = { health: 'good', until: '2026-12-31', by: 'owner', why: 'accepted' };
+  const rf = { id: 'f', stage: 'live', revs: [{ stage: 'beta', date: '2026-09-01' }, { stage: 'live', date: '2026-10-15' }],
+    lens: { l: { h: 'good', why: null, ov, whyFields: [], facet: { values: { latency: 60 }, override: ov } }, e: { h: 'good', facet: { applicable: false } }, s: { h: 'good', facet: { values: { latency: 60 } } } } };
+  const ha = (d: Any, t: string) => tryCall(() => healthAsOf(rf, d, rscan, t, NOW));
+  const la = (d: Any, t: string) => (typeof lensAsOf === 'function' ? tryCall(() => lensAsOf(rf, d, rscan, t, NOW)) : undefined);
+  const a = la(dl, '2026-10-10'), b = la(dl, '2026-10-25');
+  expect(a?.at === 'replayed' && a.health === 'bad' && a.why === 'Latency 120 ms is over 100' && a.label === "replayed by today's rules from 1 reading up to 2026-10-01" && a.value === 120,
+    "replay at 10-10: 120 (10-01) against 'gt 100 -> bad' reads bad with the rule's reason and the label (got " + JSON.stringify(a) + ')');
+  expect(b?.at === 'replayed' && b.health === 'good' && b.why === null && b.label === "replayed by today's rules from 1 reading up to 2026-10-20", 'replay at 10-25: 60 (10-20) reads good (got ' + JSON.stringify(b) + ')');
+  expect(ha(dl, '2026-10-10')?.health === 'bad', "the current good override and the facet's current 60 do not reach the replay: still bad at 10-10");
+  expect(ha(dl, '2026-10-06')?.values?.latency === 120, "a pack's after reading (50 on 10-05) is branch evidence, never the reading in force");
+  expect(ha(dl, '2026-09-20') === null && la(dl, '2026-09-20')?.at === 'none', 'before the first reading: nothing to replay, not recorded');
+  const e1 = la(de, '2026-10-10'), e2 = la(de, '2026-10-25');
+  expect(ha(de, '2026-10-10') === null && ha(de, '2026-10-25') === null && e1?.at === 'none' && e1.why === NOT_RECORDED && e2?.at === 'none' && e2.why === NOT_RECORDED,
+    'a lens whose rule reads an enum field stays not recorded on both dates (got ' + JSON.stringify([e1, e2]) + ')');
+  const s1 = ha(ds, '2026-10-10'), s2 = ha(ds, '2026-10-20');
+  expect(s1?.health === 'good' && s2?.health === 'bad', 'a stage-bound rule reads the replayed stage: beta on 10-10 (good), live on 10-20 (bad) (got ' + JSON.stringify([s1?.health, s2?.health]) + ')');
+  expect(ha(dl, NOW) === null && la(dl, NOW)?.at === 'now' && la(dl, NOW)?.health === 'good', 'at now nothing is replayed: the live health (the override) stands');
+  const tab = tryCall(() => replayTable([rf], [dl, de, ds], rscan, '2026-10-10', NOW));
+  expect(tab?.get('f')?.get('l') === 'bad' && tab.get('f').get('s') === 'good' && !tab.get('f').has('e') && replayTable([rf], [dl], rscan, NOW, NOW) === null,
+    'replayTable on 10-10: f -> {l: bad, s: good}, no entry for the enum lens; null at now (got ' + JSON.stringify(tab && [...tab].map(([k, v]: Any) => [k, [...v]])) + ')');
+}
+
 // ------------------------------------------------------------------ the phone and the lens tab, server-rendered on a past date
 {
   const { createRequire } = await import('node:module');
@@ -131,6 +174,26 @@ const ep = P.F['email-password-sign-in'], T0 = '2026-04-27';
   const ln = render(() => React.createElement(LensTab, { lens: 'development', f: fe }), { view: 'development' }, 'bold');
   expect(!/bd-panel/.test(lp) && /pg-hero/.test(lp), 'bold lens tab on ' + T0 + ': the dated body, not the variant panel (' + lp.slice(0, 80) + ')');
   expect(/bd-panel/.test(ln), 'guard: the bold lens tab at now mounts the variant panel (' + ln.slice(0, 80) + ')');
+
+  // a replayed lens on the page: the lens tab and the General tile say the health with its label. Kettle's lenses all
+  // read a field with no history, so this swaps one metric-only manifest in for the render and puts it back.
+  {
+    const { LiveCtx } = await imp('components/hooks.ts');
+    const { GeneralTab } = await imp('components/page/General.tsx');
+    const { baseId } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/product.ts')).href)) as Any;
+    const d = M.P.LENS.performance, keepM = d.manifest;
+    const pscan = { measurements: [{ id: 1, run_id: 'r', feature: baseId(fe.id), lens: 'performance', metric: 'frameP95Ms', value: 80, measured_at: '2026-04-01T10:00:00Z' }], proposals: [], shots: [], runs: [], activity: [] };
+    const withLive = (el: () => Any) => () => React.createElement(LiveCtx.Provider, { value: { product: { scan: pscan, jobs: [] } } }, el());
+    let lt = '', gt = '';
+    try {
+      d.manifest = { ...keepM, health: { default: 'good', rules: [{ when: { field: 'frameP95Ms', gt: 50 }, health: 'bad', reason: 'Frames take {frameP95Ms} ms' }] } };
+      lt = render(withLive(() => React.createElement(LensTab, { lens: 'performance', f: fe })), { t: T0, view: 'performance' }).replace(/<!-- -->/g, '');
+      gt = render(withLive(() => React.createElement(GeneralTab, { f: fe })), { t: T0, view: 'general' }).replace(/<!-- -->/g, '');
+    } finally { d.manifest = keepM; }
+    const lbl = 'Replayed by today&#x27;s rules from 1 reading up to 2026-04-01';
+    expect(/<span class="hw">Bad<\/span>/.test(lt) && lt.includes('Frames take 80 ms') && lt.includes(lbl), 'lens tab on ' + T0 + ': a replayed lens reads Bad, its reason and the label (' + (lt.match(/<div class="hh">.*?<\/div>/)?.[0] ?? lt.slice(0, 120)) + ')');
+    expect(gt.includes(lbl + '. Frames take 80 ms'), 'General tile on ' + T0 + ': the replayed tile leads with the label, then the reason');
+  }
 }
 
 // ------------------------------------------------------------------ consumption: who reads the as-of model

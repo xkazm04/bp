@@ -15,10 +15,12 @@ import { GENERAL } from '@bp/core/data/types';
 import type { LensField } from '@bp/core/standard/types';
 import { DENSITY_COUNT, HEALTH_TEXT, hotHealth } from '@bp/core/standard/present';
 import { clearPath } from '@bp/core/standard/clear';
-import type { ScanSnapshot } from '@bp/core/scan/types';
+import { coverStep, type Coverage } from '@bp/core/standard/cover';
+import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { baseId, fmtValue, metricHistory, pname, type Model } from '@bp/core/model';
 import type { LensAsOf } from '@bp/core/model/timeview';
 import type { SheetPanelProps } from '@/variants/types';
+import { useEngine, useLive } from '../hooks';
 
 export interface Row { k: string; v: string; c?: 'bad' | 'watch' | ''; tier: 0 | 1 | 2 }
 
@@ -135,7 +137,7 @@ export function MetricRows({ def, f, model, scan, all, fl, on }: { def: LensDef;
  * already the worst. Under an override it is what the rules alone ask for. At now only: health has no history.
  * `limit` cuts the list (the phone, by density). Nothing here names a lens.
  */
-export function ClearSteps({ def, fl, limit }: { def: LensDef; fl: FeatureLens | undefined; limit?: number }) {
+export function ClearSteps({ def, fl, limit, cover }: { def: LensDef; fl: FeatureLens | undefined; limit?: number; cover?: { feature: string; proposals: readonly Proposal[] } }) {
   if (!fl || !(fl.h === 'good' || fl.h === 'watch' || fl.h === 'bad')) return null;
   const cp = clearPath(def.manifest, fl.v);
   const steps = limit === undefined ? cp.steps : cp.steps.slice(0, limit), cut = cp.steps.length - steps.length;
@@ -148,7 +150,7 @@ export function ClearSteps({ def, fl, limit }: { def: LensDef; fl: FeatureLens |
         <ol className="pg-clr">
           {steps.map((s, i) => {
             const x = def.F[s.field];
-            return <li key={i}>{x.label}: {fmtValue(x, s.now)} → {s.op === 'set to' ? '' : s.op + ' '}{fmtValue(x, s.target)}<em className={s.rule}>clears {HEALTH_TEXT[s.rule].label}</em></li>;
+            return <li key={i}>{x.label}: {fmtValue(x, s.now)} → {s.op === 'set to' ? '' : s.op + ' '}{fmtValue(x, s.target)}<em className={s.rule}>clears {HEALTH_TEXT[s.rule].label}</em>{cover ? <CoverChip c={coverStep(s, cover.proposals, fl.v, def.manifest, { feature: cover.feature, lens: def.id })} x={x} /> : null}</li>;
           })}
         </ol>
       ) : null}
@@ -157,6 +159,27 @@ export function ClearSteps({ def, fl, limit }: { def: LensDef; fl: FeatureLens |
       {wf && cp.worse ? <p className="wrs">{wf.label} is {fmtValue(wf, cp.worse.margin)} from {HEALTH_TEXT[cp.worse.health].label} (past {fmtValue(wf, cp.worse.bound)})</p> : null}
     </div>
   );
+}
+/** One step's proposal coverage (standard/cover.ts) as a chip: none, or the best proposal's verdict - on its expected
+ *  change, or on the value measured after it was built (on its branch: evidence, never the current reading). */
+function CoverChip({ c, x }: { c: Coverage; x: LensField }) {
+  if (!c.covered) return <span className="cov none">no proposal</span>;
+  const b = c.best, more = c.all.length > 1 ? ' · +' + (c.all.length - 1) + ' more' : '';
+  const v = b.value === null ? '' : fmtValue(x, b.value);
+  const says = b.verdict === 'clears' ? 'clears' : b.verdict === 'short' ? 'short by ' + fmtValue(x, b.short) : b.verdict === 'worse' ? 'makes it worse' : '';
+  const text = b.phase === 'delivered' ? 'measured ' + v + ' after: ' + (b.verdict === 'clears' ? 'cleared' : says)
+    : b.phase === 'expected' ? b.status + ' fix → ' + v + ', ' + says
+    : b.status + ' fix, no expected change';
+  const cls = b.verdict === 'clears' ? 'ok' : b.verdict === 'worse' ? 'worse' : b.verdict === 'short' ? 'short' : 'none';
+  const tip = c.all.map((p) => p.id + ' (' + p.status + '): ' + p.title).join(' · ');
+  return <span className={'cov ' + cls} title={tip}>{text}{more}</span>;
+}
+
+/** The proposals "what clears it" checks its steps against: a live product's store, else Kettle's scan sim (its
+ *  findings as they stand), else the sample's findings. */
+export function useProposals(): readonly Proposal[] {
+  const M = useEngine().M, live = useLive();
+  return live ? live.product.scan?.proposals ?? [] : M.scanSim?.snapshot().proposals ?? M.findings ?? [];
 }
 // ------------------------------------------------------------------------------------ end what clears it
 
@@ -169,14 +192,15 @@ export function DatedLensPanel({ def, la }: { def: LensDef; la: LensAsOf }) {
   return (
     <>
       <h5><span>{def.short} · {def.name}</span><span className="h">{hmark(la.health)}</span></h5>
-      {la.at === 'then' && hf ? <div className="r key"><span>{hf.label}</span><b>{fmtValue(hf, la.value)}</b></div> : null}
-      <div className="note">{la.why}</div>
+      {(la.at === 'then' || la.at === 'replayed') && hf && la.value !== null ? <div className="r key"><span>{hf.label}</span><b>{fmtValue(hf, la.value)}</b></div> : null}
+      {la.at === 'replayed' ? <div className="note">{la.why ? la.why + ' · ' : ''}{la.label}</div> : <div className="note">{la.why}</div>}
     </>
   );
 }
 
 export function DefaultLensPanel({ lens, def, f, model, density, expanded, view }: SheetPanelProps) {
   const fl = f.lens[lens];
+  const proposals = useProposals();
   const rows = lensRows(def, fl, (k) => model.sim.liveValue(f, lens, k));
   const limit = expanded ? DENSITY_COUNT.drawer[density] : view === GENERAL ? 3 : 1;
   const shown = rows.slice(0, limit), hidden = rows.length - shown.length;
@@ -189,7 +213,7 @@ export function DefaultLensPanel({ lens, def, f, model, density, expanded, view 
       {shown.map((r) => <div key={r.k} className={r.tier === 0 ? 'r key' : 'r'}><span>{r.k}</span><b className={r.c || ''}>{r.v}</b></div>)}
       {limit > 1 && fl?.ov ? <div className="note ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(model.P, fl.ov.by)} until {fl.ov.until}: {fl.ov.why}</div> : null}
       {limit > 1 && fl?.why ? <div className="note">{fl.ov ? 'The rules say: ' : 'Why: '}{fl.why}</div> : null}
-      {expanded ? <ClearSteps def={def} fl={fl} limit={DENSITY_COUNT.drawer[density]} /> : null}
+      {expanded ? <ClearSteps def={def} fl={fl} limit={DENSITY_COUNT.drawer[density]} cover={{ feature: baseId(f.id), proposals }} /> : null}
       {hidden > 0 && expanded && <div className="more">{hidden} more in the dense reading</div>}
     </>
   );
