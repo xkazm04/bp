@@ -1,0 +1,437 @@
+{
+  "proposals": [
+    {
+      "id": "P01",
+      "seat": "claude-claude-opus-5-5_xhigh",
+      "round": 1,
+      "title": "Read what already landed: match Lens-Item trailers on main to the train",
+      "kind": "connect",
+      "outcome": "Each built item says 'on master as 326d970, 30 Oct' when it is. The ledger stops claiming 44 items await a release and 2 failed items await triage when 45 of them are already on master, and the Release tab stops offering to cherry-pick changes main already has.",
+      "builds_on": "The ledger's rule that the store's state beats the UI's, plus the Lens-Item / Lens-Pack lines that lens-scan's item commits and the Kettle sim already write into commit messages.",
+      "mechanism": "A pure landedOf(log) in packages/core/src/scan parses `git log <base_ref> --format=%H%x1f%cI%x1f%B%x1e` back to the oldest pack's base_sha. It matches `^Lens-Item:\\s*(\\S+)` anywhere in the message body, not only through %(trailers), because 86fb968 carries the line in a paragraph git's trailer parser skips. For a commit whose message was rewritten, it falls back to matching the item's commit_sha by git patch-id. A later Revert of the landing commit clears the landing. release.server.ts gets one git read next to versionTags, cached by `git rev-parse <base_ref>`, and the product payload carries landed: {id -> {sha, at}}, derived on read with no store write and no new column. Consumers: (1) preflightOf gains a 'landed' block ('N items are already on master; cherry-picking them again would be empty'), which also holds Build back; (2) the Package splits 'landed outside a release' from 'to cut'; (3) the SummaryStrip's Waiting-for-you count leaves landed items out and names them ('1 failed item already on master: 86fb968'); (4) trackOf takes opts.landed, used by the held-or-short proposal. On Kettle, the sim records a landing when sampleMerge runs, so check:train-parity still covers both the sample and live products.",
+      "anchors": [
+        "packages/core/src/scan/compare.ts:132-133",
+        "apps/web/src/components/ledger/train/release/preflight.ts:28-51",
+        "packages/core/src/server/release.server.ts:268-272",
+        "apps/web/src/components/ledger/train/release/ReleaseView.tsx:222-239",
+        "packages/core/src/train/rules.ts:11-14",
+        "packages/core/src/model/train-sim.ts:502",
+        "scripts/check-scan-jobs.ts:990",
+        "packages/core/src/scan/track.ts:125-128"
+      ],
+      "evidence": "Observed read-only at 63b2922 against bp's live scan.db. 45 master commits carry `Lens-Item:`. 44 map one-to-one to the 44 accepted items: every subject matches its pack commit, and the 18 I checked by git patch-id match too. 33 say 'cherry picked from commit'. All landed within about 10 minutes of their triage on 30-31 Oct. The 45th, 86fb968 (PR #16, 2 Nov), is p-9c4a44: still `failed` in the store, still counted under Waiting for you, its pack k-per-1 still open. No pack/* branch exists locally. So the dossier's 'never merged' premise is false: the last mile runs, but outside the train, and the train cannot see it. Unverified, because it lives outside this repo: what lens-scan's release run does when asked to cherry-pick a commit main already has (empty picks, or 44 'conflict on release/' reworks).",
+      "effort": "S",
+      "risk": "A landing can be missed (a squash that rewrote the message) or be stale (reverted later). Mitigation: the patch-id fallback; a later Revert of the landing commit clears it; the landing is labelled 'read from git' and never written to the store; a root with no git reads 'unknown', never 'not landed'.",
+      "verify": "On bp at 63b2922 the derivation returns 45 landings (the 44 accepted items plus p-9c4a44). The Release package reads '0 to cut · 44 landed outside a release'. A draft over those ids shows the 'landed' pre-flight block, with Build and the B key held back. Waiting for you drops from 2 to 1 and names the landed failed item. A new check builds a temp repo, as scripts/check-scan-jobs.ts:990 does, with four cases: a normal trailer commit, a trailer in a body paragraph, a cherry-pick whose message lost the trailer (caught by patch-id), and a revert. It pins all four, and check:train-parity stays green.",
+      "why_groundbreaking": "The train stops describing a workflow nobody runs and starts describing the one that does. git becomes a second witness beside the store, so every downstream count (Morning Watch, Review's record, the plan tiles) becomes true at once.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 8,
+        "total": 8,
+        "bad": []
+      }
+    },
+    {
+      "id": "P02",
+      "seat": "claude-claude-opus-5-5_xhigh",
+      "round": 1,
+      "title": "Judge every landed item on main: held, short, or not measured since",
+      "kind": "deepen",
+      "outcome": "For each item on main, the ledger says whether the product meets its expected value now. On bp today that is 20 held, 7 short (named) and 17 not measured since landing. One key re-measures the unmeasured; one key sends a short item to rework with the evidence already written into its note.",
+      "builds_on": "The single verdict in compare.ts and track.ts's honest confirm rule (confirmed only on a reading taken after the change landed that meets baseline + expected_delta), the evidence panel's Before/After lines, and the single decision planner.",
+      "mechanism": "trackOf gains TrackOpts.landed. For an accepted item with a landing, releasedAt becomes the landing time and the existing confirm rule runs unchanged (still one owner), labelled 'landed · held / short / not measured since'. record.ts priorRecord and morning.ts already take TrackOpts or tracksOf, so Review's 'Before you decide' and the Morning Watch release card count landed items without a second copy of the rule. In the ledger: In-packs chips Held / Short / Not measured since, read from trackOf stages; a third line 'Main now' in Measurement.tsx beside Before and After (the latest current reading, its date, its method, and whether it is evidence or an observation); M on a selection queues one measure job per lens, scoped to the selection's features (enqueueMeasure's --scope already exists); R on a short accepted item opens the note editor prefilled 'Short on master: standardsPct 100 on pack/des-2 -> 50 on 2026-10-30, expected 100'. Rework from accepted is already in TRIAGE_FROM and allowed while no non-draft release holds the item.",
+      "anchors": [
+        "packages/core/src/scan/track.ts:57-60",
+        "packages/core/src/scan/track.ts:130-149",
+        "packages/core/src/scan/record.ts:78-95",
+        "packages/core/src/companion/morning.ts:142-144",
+        "apps/web/src/components/ledger/train/compare/Measurement.tsx:22-33",
+        "apps/web/src/components/ledger/useLedger.ts:46",
+        "packages/core/src/server/jobs.server.ts:411-417",
+        "packages/core/src/train/rules.ts:22-27"
+      ],
+      "evidence": "Observed: I applied track.ts's rule to the 44 landed items, using proof.before as the baseline and current readings taken after triage time. 20 meet the expected value, 7 fall short, and 17 have no reading since (they landed at 13:46 on 31 Oct, after the last measure run at 12:49). The short ones include p-24dd2b (standardsPct 100 on branch, 50 now, baseline 50), p-a3edc8 (untestedPaths 0 on branch, 2 now, baseline 2) and p-1e6e34 (findingsLow 0 on branch, 2 now, baseline 1). Today all 44 read 'accepted · awaiting release' forever (track.ts:140), and record.ts counts 0 released for every lens. Hypothesis: some short items are judge noise on `judgement`-method metrics rather than code regressions, so the panel must show the method. Current readings carry no commit_sha, so 'after landing' is judged by time.",
+      "effort": "M",
+      "risk": "Causation: a later reading can move for other reasons (another change on the same feature, judge variance). Mitigation: keep track.ts's words ('short of expected', never 'regressed by'); show the method (judgement, static or probe) and runStats noise where there are several baseline runs; make Measure the default next step and leave rework to the person, with an editable note.",
+      "verify": "On bp's store the In-packs chips read Held 20 · Short 7 · Not measured since 17, and the 7 short ids match the list above. Review's lens record for design changes from 0 released to counts that include landed items. M on the 17 queues exactly one measure job per lens, scoped to their features; when the jobs finish, the 'not measured since' count drops. A check pins trackOf's landed branch to the same stage the released branch gives on identical readings.",
+      "why_groundbreaking": "The ledger's core question, 'did the built item actually move its metric?', gets answered on main instead of on a branch that never ships. The loop closes where the decision was made.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 8,
+        "total": 8,
+        "bad": []
+      }
+    },
+    {
+      "id": "P03",
+      "seat": "claude-claude-opus-5-5_xhigh",
+      "round": 1,
+      "title": "Grade every decider by what held on main, and let trust follow outcomes",
+      "kind": "leap",
+      "outcome": "The Trust panel and the decision brief show, for each decider (human:kazdan, agent:director, machine:lens-scan) and each slice, how many accepts held on main, fell short or are unmeasured. The autonomy ladder can then be argued from outcomes instead of agreement with a person, which is the number §7 says is missing before standing rules can be un-parked.",
+      "builds_on": "Signed decisions (triaged_by, decided_by, predicted_by), the read-only Trust panel over trust_events, the decision brief's precedent line (already shown on the plan card, Review, the phone, VR, and to agents through plan.brief), and the held/short verdicts from the proposal above.",
+      "mechanism": "A pure outcomeOf(scan, opts) in packages/core/src/scan groups trackOf stages by decider and by sliceOf(p) into held, short and unmeasured. It also reports how well the predictor called it: predicted_verdict against the final status and against held. TrustPanel gets an Outcome column beside Agreement: counts always, a rate only from n>=10. The brief's precedent fact gets outcome wording when outcomes exist ('You accepted 9 like items here; 7 held on main, 2 fell short'), so an agent that reads plan.brief before proposing hears what slipped. Cross-repo (ai-registry): propose that store.mjs `trust` accept an outcome-based demotion reason, 'demote: short <id>', next to the existing 'demote: not-better <id>', computed by lens-scan. bp never writes trust.",
+      "anchors": [
+        "packages/core/src/scan/trust.ts:47-61",
+        "apps/web/src/components/ledger/TrustPanel.tsx:41",
+        "packages/core/src/scan/types.ts:178-194",
+        "packages/core/src/scan/types.ts:140-145",
+        "packages/core/src/scan/brief.ts:288-289",
+        "packages/core/src/scan/record.ts:65-95"
+      ],
+      "evidence": "Observed on bp: agent:director made 27 of the 44 accepts and human:kazdan 17. Of the measured ones, the director's held 14 and fell short 6 (70%); the owner's held 6 and fell short 1 (86%). The sample is small, so this is a hypothesis, but it bears directly on the owner's question. The predictor said 'accept' on 49 of 50 predicted rows, including 3 later descoped, 2 failed and 1 rework, so promotion based on agreement would read near 100% while 7 of 27 measured accepts fell short. trust_events has 0 rows: nothing has been promoted yet, so this can land before the first promotion. Prior art: DORA's change failure rate judges delivery by what failed after it shipped, not by approvals (https://dora.dev/).",
+      "effort": "M",
+      "risk": "Small samples and noisy judged metrics can promote a decider by luck or shame one unfairly. Mitigation: counts always and a rate only from n>=10; judgement-method outcomes shown apart from static and probe ones; the ladder itself stays lens-scan's (bp only displays it and proposes the reason).",
+      "verify": "On bp's current store, the Trust panel shows human:kazdan 6 held / 1 short / 10 unmeasured and agent:director 14 / 6 / 7, and the predictor line reads 'predicted accept on 49 of 50; 6 of those were not accepted'. The brief for an open design proposal on a feature with landed items includes the outcome clause, and check:decision-brief stays green within the 5-line, 120-character budget. After the next measure run the panel's counts move without code changes.",
+      "why_groundbreaking": "The ledger becomes the product's measure of how much autonomy each agent has earned, judged by what shipped and held. The parked standing-rules question becomes a number that moves.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 6,
+        "total": 6,
+        "bad": []
+      }
+    },
+    {
+      "id": "P04",
+      "seat": "claude-claude-opus-5-5_xhigh",
+      "round": 1,
+      "title": "Release what landed: version and notes from main, not a second cherry-pick",
+      "kind": "extend",
+      "outcome": "The owner can cut bp's first real release (0.1.0, from package.json, since there is no v* tag) over the items that already landed: one keystroke, notes that give each item's before, branch and main-now readings with its landing commit, and a tag. There is no release branch re-applying commits main already has.",
+      "builds_on": "The single notes writer (per item: metric before -> after, commit, pack, gates), suggestVersion from the latest v* tag or the manifest, the release step table that every route, job, sim and view reads, and the Release tab's pre-flight.",
+      "mechanism": "A draft whose items have all landed takes a 'landed' path. release-create and release-add run as today (the route is unchanged). Then a new step, tag, starts from draft and lands on tagged: STEP_FROM / STEP_LANDS gain one row, RELEASE_STATE one action ('Tag v0.1.0 over N landed items'), and the job runs `/lens-scan release --id rel-<v> --landed`. Cross-repo (ai-registry): lens-scan must accept --landed: check each landing commit is an ancestor of base_ref, run the gates on base_ref HEAD, write the notes, tag, and mark the items released, with no cut and no PR. releaseNotes gets a 'landed' item line (commit = the landing commit, plus the main-now reading). A package that mixes landed and unlanded items keeps today's cut for the unlanded ones.",
+      "anchors": [
+        "packages/core/src/scan/release-steps.ts:11-13",
+        "apps/web/src/components/ledger/train/release/releaseState.ts:41-49",
+        "packages/core/src/train/notes.ts:59-78",
+        "packages/core/src/scan/release.ts:31-38",
+        "packages/core/src/server/jobs.server.ts:480-487",
+        "packages/core/src/server/api/products/[slug]/releases/route.ts:34-51"
+      ],
+      "evidence": "Observed: 0 releases in either store, no v* tag in the repo, package.json at 0.1.0, and all 44 accepted items already on master. The cut path assumes unshipped commits on pack branches, which bp's real workflow never produces. Hypothesis: Build was never pressed partly because nothing could ship that hadn't already shipped.",
+      "effort": "M",
+      "risk": "Depends on a lens-scan change (--landed), and tagging main skips the release-branch gates. Mitigation: gates run on base_ref HEAD before the tag, the job stays behind the gh-auth 412, checks run on fake claude and fake gh (D11), and the Kettle sim implements the tag step from the same step table so check:release-steps pins both.",
+      "verify": "On a temp-repo fixture with fake gh, a draft of landed items offers Tag instead of Build. The job ends done only when the store row reaches tagged (the existing settle rule), and every item reads released. On bp, the first release lists 44 items with their landing commits, and the next Morning Watch shows a release card with held and short counts. check:release-steps pins the new row against RELEASE_STATE.",
+      "why_groundbreaking": "A release becomes a version stamp over measured, landed work, where every line carries its proof from main. That matches how the product actually ships, instead of a branch ritual nobody runs.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 6,
+        "total": 6,
+        "bad": []
+      }
+    },
+    {
+      "id": "P05",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 1,
+      "title": "Ship a small slice of the accepted queue",
+      "kind": "deepen",
+      "outcome": "The owner can release three ready items while leaving the other accepted items queued, and see how long each has waited.",
+      "builds_on": "The train already identifies accepted, unreleased items and supports drafting an explicit subset through both the live API and Kettle.",
+      "mechanism": "Add keyboard selection to the pre-draft package and pass the selected IDs through createRelease. Show acceptance age from triaged_at, with unknown age stated explicitly. Calculate the version suggestion from the selected items using the existing version rules. Keep unselected items accepted and free, and reconcile the draft against the server's added/skipped response. This is a bp-only change, approximately 2–4 engineer-days, with no store schema or verb dependency.",
+      "anchors": [
+        "apps/web/src/components/ledger/train/release/VersionBox.tsx:57-80",
+        "apps/web/src/components/ledger/train/release/Package.tsx:64-90",
+        "apps/web/src/lib/scan/actions.ts:110-114",
+        "packages/core/src/server/api/products/[slug]/releases/route.ts:34-51",
+        "packages/core/src/scan/compare.ts:127-133",
+        "packages/core/src/scan/release.ts:13-15",
+        "packages/core/src/scan/types.ts:96-109"
+      ],
+      "evidence": "Observed: VersionBox calls createRelease without IDs, although the action, simulator and route accept them. The dossier reports 44 accepted items, 19 packs and zero releases. Large default batches are a plausible source of hesitation, but the cause of the shipping gap is unmeasured.",
+      "effort": "S",
+      "risk": "A selected commit may depend on an omitted change. Show pack membership and order, retain the existing build gates and conflict handling, and describe selections as untested until built or rehearsed.",
+      "verify": "In a 44-item fixture, selecting three creates a draft containing exactly those three and leaves 41 accepted without a release. An unselected new-capability item does not force the selected fixes' version suggestion to minor. Concurrent changes appear as explicit skips. Exercise the scenario on Kettle and the fake live runner; BP_WRITES=off hides every mutation control.",
+      "why_groundbreaking": "It gives the owner a practical route to the first shipment and makes small releases repeatable. The aging queue exposes accepted work that has stopped progressing.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 7,
+        "total": 7,
+        "bad": []
+      }
+    },
+    {
+      "id": "P06",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 1,
+      "title": "Decide backlog findings with the brief beside them",
+      "kind": "connect",
+      "outcome": "The owner can approve a finding for later or decline it with a reason directly in the ledger, while seeing precedent, quoted declines, reversibility and build duration.",
+      "builds_on": "The product already has signed approve/decline decisions and a shared decision brief with inspectable evidence. The ledger supplies fast keyboard navigation and authoritative settlement of pending writes.",
+      "mechanism": "Add a focused finding drawer that computes briefFor only for the current item and reuses BriefFacts. Offer explicit Approve for later and Decline actions through the existing proposal decision route; Dispatch remains the action that starts work. Register shortcuts in the shared keymap and settle pending actions through the ledger's intent mechanism. Show the same brief in pack comparison, preserving the distinction between historical approval and demonstrated success. No new store verbs or columns are required.",
+      "anchors": [
+        "apps/web/src/components/ledger/variants/Triage.tsx:2-12",
+        "apps/web/src/components/ledger/train/keymap.ts:58-66",
+        "packages/core/src/scan/brief.ts:185-235",
+        "packages/core/src/scan/brief.ts:276-309",
+        "apps/web/src/components/Brief.tsx:83-108",
+        "packages/core/src/server/api/products/[slug]/proposals/[id]/route.ts:13-29",
+        "apps/web/src/components/ledger/train/compare/ComparePanel.tsx:104-115",
+        "apps/web/src/components/ledger/intents.ts:24-42"
+      ],
+      "evidence": "Observed: backlog shortcuts currently offer dispatch and feature navigation, while the existing decision route approves or declines without enqueuing a job. The brief already distinguishes identical ideas from similar wording and exposes evidence IDs. The dossier reports 51 untouched proposed findings in pof. Reduced decision friction is a hypothesis; keyboard intake actions have prior art in [Linear Triage](https://linear.app/docs/triage).",
+      "effort": "M",
+      "risk": "A final decline could be mistaken for temporary deferral, and precedent includes agent decisions. Label decline as final, preserve the reason editor on refusal, expose decision signers, and keep brief advice advisory.",
+      "verify": "Using a legacy-store fixture without scan-finding/1 fields, approve one finding and decline another entirely by keyboard. Neither action creates a job; both survive reload with their signer and reason. A repeated declined idea shows its exact prior quote, while a merely similar idea remains distinguishable. A concurrent decision returns the authoritative row. J/K still changes only the two affected table rows.",
+      "why_groundbreaking": "The ledger becomes a complete decision workspace. Each recorded reason also enriches the brief used by future human and agent decisions.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 8,
+        "total": 8,
+        "bad": []
+      }
+    },
+    {
+      "id": "P07",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 1,
+      "title": "Rehearse release candidates before opening a PR",
+      "kind": "extend",
+      "outcome": "The owner can learn whether a chosen set integrates with today's target branch, which commits conflict, and which gates fail before changing release membership or publishing anything.",
+      "builds_on": "The existing release process already cherry-picks accepted commits, runs gates and measures the release head. Its pre-flight honestly checks local admission, while the job queue supplies execution limits and logs.",
+      "mechanism": "Add an explicit Rehearse job over selected accepted IDs and a pinned target SHA. In an isolated worktree, invoke the same assembly and gate implementation used by Build, returning per-item conflicts and gate results without opening a PR or changing proposal states. Cache the report under .ai/lens-scan/work/, keyed by target SHA, ordered commit set and gate configuration. Recheck freshness at Build. Cross-repo dependency: ai-registry's lens-scan release implementation needs a non-publishing rehearsal mode and structured report; bp must not implement a second cherry-pick or transition policy.",
+      "anchors": [
+        "apps/web/src/components/ledger/train/release/preflight.ts:28-49",
+        "packages/core/src/server/api/products/[slug]/releases/[id]/release-job.ts:35-48",
+        "packages/core/src/server/jobs.server.ts:480-487",
+        "packages/core/src/scan/types.ts:225-250",
+        "packages/core/src/train/notes.ts:32-37",
+        "packages/core/src/train/notes.ts:70-76",
+        "packages/core/src/server/jobs.server.ts:397-407"
+      ],
+      "evidence": "Observed: the dry route returns gh='unchecked' after local state and queue checks; it does not assemble a candidate. Build already performs real integration, so the added value is an earlier, non-publishing comparison of subsets. The dossier's zero real releases makes integration difficulty a hypothesis, not an established cause. [GitHub merge queues](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue) provide prior art for validating combined changes against the latest target.",
+      "effort": "M",
+      "risk": "A rehearsal could differ from Build or become stale. Share the execution implementation, invalidate results when inputs change, and retain Build's actual gates. Missing dependencies must produce an incomplete assessment.",
+      "verify": "A fixture contains one cherry-pick conflict and two individually valid commits that fail a gate when combined. Rehearsal identifies both failures while leaving every proposal and release row unchanged and making zero publishing calls. Advancing the target invalidates the report. Removing the conflicting subset produces a passing rehearsal whose gate results agree with Build on identical inputs. All automated checks use fake claude and gh.",
+      "why_groundbreaking": "The owner can compare concrete release candidates before committing to one. Individually accepted branch changes become an integration plan that can be examined and adjusted.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 7,
+        "total": 7,
+        "bad": []
+      }
+    },
+    {
+      "id": "P08",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 1,
+      "title": "Make the train deliver verified outcomes",
+      "kind": "leap",
+      "outcome": "The owner can delegate checking whether shipped improvements reached their promised values on main and held through a chosen observation window, with unresolved shortfalls remaining visible.",
+      "builds_on": "trackOf already distinguishes branch evidence, stale observations, unknown outcomes and post-release confirmation. The product also has scoped measurement jobs, restart recovery and a Morning Watch that consumes the same tracking rules.",
+      "mechanism": "At Finish, offer an owner-enabled outcome watch derived from stored expected_delta, baseline readings and proof metadata. Persist its fixed target, merge receipt, checkpoints and evidence references in a bp work sidecar; keep shipping status authoritative in scan.db. Reconcile due checks through the existing journalled queue, grouping measurements by lens and feature. Strengthen evidence eligibility once in shared core: comparable method/unit, a reading after the fixed merge time, and a recorded commit on the target branch containing that merge. Render pending, target met, shortfall and later regression in release history and Morning Watch through the shared tracking logic. Missing targets or provenance remain unknown. Scheduling metadata needs no new store verb or column; measurements continue through lens-scan.",
+      "anchors": [
+        "packages/core/src/scan/track.ts:95-128",
+        "packages/core/src/scan/track.ts:140-167",
+        "packages/core/src/scan/compare.ts:43-53",
+        "packages/core/src/scan/types.ts:48-65",
+        "apps/web/src/components/ledger/train/release/History.tsx:11-39",
+        "packages/core/src/server/jobs.server.ts:410-417",
+        "packages/core/src/server/jobs.server.ts:284-335",
+        "packages/core/src/companion/morning.ts:20-25"
+      ],
+      "evidence": "Observed: trackOf already checks expected values and rejects pre-release observations, but its current eligibility uses timestamps without checking method or commit ancestry. Release history shows shipping state and branch flags. Nine read-only core scenarios confirmed existing behavior, including confirmation reverting to not-confirmed on a later shortfall. No real post-merge benefit is established because the dossier reports zero releases. [Argo Rollouts analysis](https://argoproj.github.io/argo-rollouts/features/analysis/) provides prior art for bounded measurement and explicit inconclusive outcomes.",
+      "effort": "L",
+      "risk": "A later reading does not establish causality, a main checkout does not establish deployed behavior, and shared metrics can double-count benefits. Label the observed environment, group shared outcomes, preserve method and commit provenance, and describe targets as observed rather than attributed. Use bounded, owner-enabled checkpoints; shortfalls open evidence for investigation without automatically rebuilding or reverting.",
+      "verify": "For a fixed target of 80 from baseline 100, branch value 78 and pre-merge value 78 cannot satisfy the watch. Comparable post-merge value 95 shows a shortfall; 78 meets the target; a later checkpoint at 97 raises regression. Wrong-branch or changed-method readings remain unknown. Restarting between scheduling and completion creates no duplicate checkpoint job. Release history and Morning Watch agree, and missing measurements never count as success.",
+      "why_groundbreaking": "The train takes responsibility for following an improvement through delivery and observation. The owner gains an enduring account of which agent-built promises were fulfilled, remained unmeasured or stopped holding.",
+      "parents": [],
+      "anchor_check": {
+        "ok": 8,
+        "total": 8,
+        "bad": []
+      }
+    },
+    {
+      "id": "P09",
+      "seat": "claude-claude-opus-5-5_xhigh",
+      "round": 2,
+      "title": "Decide backlog findings beside what similar accepts did on main",
+      "kind": "connect",
+      "outcome": "In the ledger's Backlog the focused finding shows its decision brief. Its precedent now reads by outcome, e.g. 'Under design here: 17 accepted - 9 held on main, 3 fell short, 5 not measured since; 8 descoped', with the short ids inspectable. The owner can approve a finding for later or decline it with a reason by keyboard, with no job queued. Pack judging (accept / rework) shows the same line, and so does every agent that reads plan.brief.",
+      "builds_on": "The single decision brief (briefFor: precedent, quoted declines, undo, cost, within the 5-line and 120-character budget) and its shared BriefFacts renderer; track.ts's one confirm rule; P01's landings read from git; the signed approve/decline route that queues no job; the ledger's keymap and intent store.",
+      "mechanism": "(1) One outcome tally, owned once in core. precedentOf already walks the matched rows (brief.ts:185-235) but has only two buckets: everything not declined counts as 'approved' (brief.ts:218). Give it TrackOpts carrying P01's landings and bucket each matched row by its trackOf stage: held, short, not measured since, descoped, failed, declined. Use the same track() that record.ts priorRecord already calls (record.ts:64-95), so Review's 'Before you decide', the brief and the Trust panel share one rule. (2) The precedent wording (brief.ts:288-289) and adviceOf (brief.ts:263-270) read the tally. Advice becomes 'ask' when, with at least 3 like accepts measured, short is at least as common as held, and it names the short ids as the fact's evidence ids. Show counts always, add a rate only from n>=10 (P03), and keep judgement-method outcomes apart from static and probe ones. (3) In the ledger Backlog, add a focused-row drawer that renders BriefFacts from briefOfDecision's live branch (briefFor(subjectOf(p)), Brief.tsx:20-29) for the focused row only. That is one briefFor per J/K step, so the 2-row re-render holds. y (approve for later) and n (decline, reason editor) are free in the backlog list (keymap.ts:58-66); they post through proposals/[id] (route.ts:13-29) and settle through intents.ts. (4) Mount the same drawer in pack judging. TrustPanel gets P03's Outcome column from the same tally, grouped by decider. No store verb or column; P01 is a prerequisite.",
+      "anchors": [
+        "packages/core/src/scan/brief.ts:185-235",
+        "packages/core/src/scan/brief.ts:263-270",
+        "packages/core/src/scan/brief.ts:288-289",
+        "packages/core/src/scan/record.ts:64-95",
+        "packages/core/src/scan/track.ts:125-149",
+        "apps/web/src/components/Brief.tsx:20-29",
+        "apps/web/src/components/ledger/train/keymap.ts:58-66",
+        "packages/core/src/server/api/products/[slug]/proposals/[id]/route.ts:13-29",
+        "apps/web/src/components/ledger/TrustPanel.tsx:36-46"
+      ],
+      "evidence": "Observed read-only on bp's store at 63b2922: 0 declined rows, so every brief precedent there reads all-approved, and adviceOf returns 'proceed' by construction. The 8 design and 9 development descopes are counted as approvals. Meanwhile track.ts's rule over the 44 landed accepts gives 20 held, 7 short and 17 not measured since: the director 14/6/7, the owner 6/1/10. The predictor said accept on all 49 rows it predicted, and 6 of those were not accepted. So at decision time, both the owner and agents reading plan.brief hear agreement, never outcomes. Also observed: no ledger file references briefFor, and pof's 51 findings were never decided. Hypothesis, untested: outcome wording changes which findings get approved.",
+      "effort": "M",
+      "risk": "Small samples and judge noise could flip advice to 'ask' by luck, or overstate a lens's record. Mitigation: show counts with the method split, add a rate only from n>=10, let advice reach only 'ask' (never 'decline'), and keep the brief within check:decision-brief's budget. Where nothing has landed or been tracked (pof, Kettle), the clause falls back to today's wording. Scope risk, since this fuses four ideas: land the core tally and wording first (S), then the ledger drawer.",
+      "verify": "A check over a fixture shaped like bp's store, with one design row left proposed: the brief's precedent reads 17 accepted (9 held / 3 short / 5 unmeasured, matching trackOf) and 8 descoped, no descoped row is counted as approved, and the advice turns 'ask' when the short-vs-held condition is met. On pof (legacy store, no landings) the brief reads as today. In the ledger, j to a row then y approves it with the jobs list unchanged, and n opens the reason editor; both survive a reload signed user:<login>, and J/K still re-renders 2 rows. The Trust panel's outcome counts equal the brief's for the same slice. check:decision-brief, check:train-parity and check:ledger-intents stay green, and BP_WRITES=off removes y/n with a 403 on the route.",
+      "why_groundbreaking": "Every yes, the owner's in the ledger and an agent's through plan.brief, is argued from what similar work did on main rather than from how often someone said yes. The 'see' and 'do' halves meet at the row where the decision is made, and the brief stops advising 'proceed' on a record that has never been allowed to say no.",
+      "parents": [
+        "P06",
+        "P03",
+        "P02",
+        "P01"
+      ],
+      "anchor_check": {
+        "ok": 9,
+        "total": 9,
+        "bad": []
+      }
+    },
+    {
+      "id": "P10",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 2,
+      "title": "Certify the exact Git snapshot that a version will tag",
+      "kind": "connect",
+      "outcome": "The owner can examine and release a candidate containing both previously landed and newly accepted work, with an inspectable record proving which commit passed the gates and became the version tag.",
+      "builds_on": "Git already records item identities, the release runner owns assembly and gates, and the train shares lifecycle rules and authoritative job settlement.",
+      "mechanism": "Create a candidate manifest binding the target SHA, previous tag, ordered item commits, landing evidence and gate configuration. Reconcile landings using reachable message markers and verified patch identity; ambiguous mappings or reverts require review. Keep Git landing and store judgment separate: the failed item already on main remains an unresolved judgment and appears among the snapshot's included changes. Rehearsal uses lens-scan's shared assembly implementation, picks only changes absent from the candidate, and records gates against the exact resulting SHA without publishing or changing proposal states. An entirely landed candidate requires no picks; mixed candidates follow the same pipeline. Finalization seals draft membership through lens-scan before execution, rejects stale inputs, and tags the exact tested SHA. Notes distinguish selected items, other included commits and unresolved judgments. Cross-repo dependency: ai-registry must provide shared rehearsal/finalization execution and extend store.mjs with an atomic membership seal and legal transitions for an already landed candidate; bp writes only work receipts.",
+      "anchors": [
+        "packages/core/src/scan/compare.ts:127-133",
+        "packages/core/src/scan/release-steps.ts:10-19",
+        "apps/web/src/components/ledger/train/release/releaseState.ts:37-48",
+        "packages/core/src/server/api/products/[slug]/releases/[id]/release-job.ts:35-48",
+        "packages/core/src/server/jobs.server.ts:737-748",
+        "packages/core/src/train/notes.ts:59-76"
+      ],
+      "evidence": "Observed: all 44 accepted items have patch-identical landings, one failed item also landed, and there are no v* tags or release rows; current dry preflight performs admission checks without assembling or testing a candidate. Hypothesis: a single snapshot contract makes both the existing workflow and future mixed releases easier to trust.",
+      "effort": "L",
+      "risk": "Git or draft membership could change between rehearsal and publication, or a retry could publish twice; bind receipts to immutable commits and membership digests, seal membership atomically, and make finalization idempotent while rejecting an existing tag at another SHA.",
+      "verify": "Fake-runner fixtures cover entirely landed, entirely unlanded and mixed candidates; landed commits are never picked again, combined gate failures are reported before publication, and advancing the target or changing membership invalidates approval. Rehearsal leaves store rows unchanged. A successful finalization tags exactly the gate-tested SHA, and retries neither move the tag nor duplicate publication. The landed failed item remains visible until explicitly judged. Kettle parity and BP_WRITES=off checks pass.",
+      "why_groundbreaking": "A release becomes a verifiable statement about one repository snapshot across either delivery workflow. The same record connects what landed, what was tested and what the version actually contains.",
+      "parents": [
+        "P01",
+        "P04",
+        "P07"
+      ],
+      "anchor_check": {
+        "ok": 6,
+        "total": 6,
+        "bad": []
+      }
+    },
+    {
+      "id": "P11",
+      "seat": "codex-gpt-6.1-sol_xhigh",
+      "round": 2,
+      "title": "Make every outcome claim earn its evidence",
+      "kind": "leap",
+      "outcome": "The owner can inspect the evidence behind every held or short claim, distinguish shared observations from independent successes, and use outcome history in decisions without rewarding several agents for the same reading.",
+      "builds_on": "trackOf already owns target evaluation, measurements have optional commit and method fields, lens fields support numeric bounds, and signed decisions preserve the distinct approval and acceptance actors.",
+      "mechanism": "Introduce an outcome case containing the original baseline and target, metric contract, landing witness, eligible reading IDs and contributing items. Freeze these inputs in a bp work sidecar when a watch is enabled. Validate targets against declared bounds; an impossible target requires a signed correction that preserves the original promise. Extend shared tracking eligibility to require compatible method, unit and contract plus a measurement commit containing the landing; legacy timestamp-only readings remain inspectable observations. Cross-repo dependency: lens-scan measurement execution must populate the existing commit_sha field from the measured checkout and emit contract provenance, without new database columns. Owner-enabled checkpoints reuse scoped jobs and restart reconciliation. Preserve each item's target result, but group evaluations consuming the same reading into one observation cohort for trust reporting, exposing mixed contributors instead of assigning independent causal credit. Explicitly update priorRecord counters and cache keys, Morning Watch's release-only selection, and brief evidence references so every consumer uses the same case revision.",
+      "anchors": [
+        "packages/core/src/scan/track.ts:95-108",
+        "packages/core/src/scan/track.ts:125-147",
+        "packages/core/src/scan/record.ts:43-50",
+        "packages/core/src/scan/record.ts:78-95",
+        "packages/core/src/scan/types.ts:48-65",
+        "packages/core/src/standard/types.ts:43-64",
+        "packages/core/src/companion/morning.ts:142-164",
+        "packages/core/src/server/jobs.server.ts:410-417"
+      ],
+      "evidence": "Observed: timestamp-based replay reproduces 20 held, 7 short and 17 unknown, but every unlinked current measurement lacks commit_sha. Four accepted design items share one feature/lens/metric, and several other shared groups contain both human and agent acceptances. Item p-dfee71 promises a target of -10 jankFrames. These are concrete reasons that raw item totals cannot establish independent, credible decider success.",
+      "effort": "L",
+      "risk": "Stricter eligibility could leave much of the historical record unknown, while grouping could obscure different promises; retain historical observations and per-item targets, explain each missing evidence condition, and offer scoped remeasurement with descriptive cohort counts rather than automatic trust changes.",
+      "verify": "A wrong-branch, missing-SHA or changed-method reading cannot confirm an outcome; a compatible descendant reading can. Four items consuming one reading retain four target evaluations but contribute one shared observation cohort. An out-of-bounds target remains unresolved until explicitly corrected. A later shortfall reopens the watch without erasing earlier evidence. Ledger, Review, Morning Watch and brief references agree after a landing-only update, and checkpoint recovery creates no duplicate jobs.",
+      "why_groundbreaking": "Outcome history becomes an auditable chain from promise through landing to observation. That provides a stronger foundation for earned autonomy than approval agreement or repeated credit from shared measurements.",
+      "parents": [
+        "P01",
+        "P02",
+        "P03",
+        "P08"
+      ],
+      "anchor_check": {
+        "ok": 8,
+        "total": 8,
+        "bad": []
+      }
+    }
+  ],
+  "ratings": [
+    {
+      "id": "P01",
+      "score": 9,
+      "why": "Confirmed read-only: the 45 distinct Lens-Item ids on HEAD are exactly the 44 accepted rows plus failed p-9c4a44 (86fb968, Lens-Pack k-per-1), 33 say cherry-picked, no pack/* branch or v* tag exists, and core only writes Lens-Item in train-sim.ts:502, so the dossier's 'never merged' premise is false and this S change corrects every count that depends on it.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P02",
+      "score": 8,
+      "why": "I recomputed track.ts:125-149's confirm rule over bp's store and got exactly 20 held / 7 short / 17 unmeasured (the same by triage time or landing commit time); TrackOpts (track.ts:57-60), enqueueMeasure --scope (jobs.server.ts:409-417) and rework-from-accepted (rules.ts TRIAGE_FROM) all exist, but it needs P01 first and 769 of 1555 current readings are judgement-method, so not a 9.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P03",
+      "score": 7,
+      "why": "Director 14/6/7 and owner 6/1/10 reproduce exactly, and the predictor said accept on all 49 rows it predicted (the pool says 49 of 50) with 6 not accepted, but TrustPanel.tsx:41 has only the agreement column, the owner has n=7 measured so the panel shows counts rather than rates for a while, and the demotion reason is a cross-repo ask.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P06",
+      "score": 6,
+      "why": "The gap is real: the backlog keymap (keymap.ts:58-66) offers only dispatch, the proposals/[id] route decides without a job, and no ledger file imports briefFor; but the brief it would show counts every non-declined decided row, descoped included, as 'approved' (brief.ts:218), and bp has 0 declined rows, so on bp it would advise 'proceed' by construction.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P04",
+      "score": 5,
+      "why": "STEP_FROM/STEP_LANDS (release-steps.ts:11-13) and suggestVersion's manifest fallback (package.json 0.1.0, no v* tag) are as stated, but all the value depends on a lens-scan --landed mode bp cannot build, and once P01+P02 judge landed items the tag adds a version stamp and notes rather than new knowledge.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P08",
+      "score": 4,
+      "why": "reconcileJobs (jobs.server.ts:284-335) does recover journalled jobs as claimed, but the watch starts at Finish, which has never run, and its commit-on-target rule cannot be met today because 0 of 1555 current readings carry commit_sha and runs has no sha column, so at L effort it would read unknown everywhere without a lens-scan change.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P05",
+      "score": 3,
+      "why": "VersionBox.tsx:68 does call createRelease without ids while actions.ts:111 accepts them, but all 44 accepted items are already on master, so a smaller cherry-pick batch optimises a step the product does not use; only the waiting-age display carries over.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P07",
+      "score": 2,
+      "why": "preflight.ts:43-44 does stop at gh='unchecked', but rehearsing cherry-picks onto a release branch would replay 44 commits main already has (verified via Lens-Item on HEAD), and it needs a new non-publishing lens-scan mode.",
+      "by": "claude-claude-opus-5-5_xhigh"
+    },
+    {
+      "id": "P01",
+      "score": 9,
+      "why": "Git at 63b2922 contains 45 Lens-Item landings, all 44 accepted items match their landing commits by patch-id, and compare.ts:132-133 ignores them, but removing the landed failed item from pending judgment would conceal an unresolved decision.",
+      "by": "codex-gpt-6.1-sol_xhigh"
+    },
+    {
+      "id": "P02",
+      "score": 7,
+      "why": "Replaying trackOf with actual landing times reproduced 20 held, 7 short and 17 unknown, but record.ts:86-90 explicitly checks released status and morning.ts:143-153 requires release records, so passing landed options alone cannot deliver the promised propagation.",
+      "by": "codex-gpt-6.1-sol_xhigh"
+    },
+    {
+      "id": "P03",
+      "score": 3,
+      "why": "trust.ts:47-61 confirms the outcome display is missing, but the store contains 49 predicted rows rather than 50 and several accepts share one metric reading, undermining per-item success rates as evidence for decider demotion.",
+      "by": "codex-gpt-6.1-sol_xhigh"
+    },
+    {
+      "id": "P04",
+      "score": 6,
+      "why": "The absence of version tags and releases supports this workflow, but releaseState.ts:42-44 leaves drafts mutable and jobs.server.ts:482-486 supports only build and finish, so the proposed shortcut needs explicit locking and commit binding to ensure the tagged snapshot actually passed its gates.",
+      "by": "codex-gpt-6.1-sol_xhigh"
+    }
+  ],
+  "seats": {
+    "claude-claude-opus-5-5_xhigh": {
+      "letter": "A",
+      "spec": "claude:claude-opus-5-5@xhigh"
+    },
+    "codex-gpt-6.1-sol_xhigh": {
+      "letter": "B",
+      "spec": "codex:gpt-6.1-sol@xhigh"
+    }
+  },
+  "problems": {}
+}

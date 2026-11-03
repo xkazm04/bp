@@ -33,3 +33,29 @@ Follow-ups found while building:
 - S1: chips do not link to the proposal (the only existing link, `openTrack`, opens behind the page).
 - `scripts/overlays-loader.mjs` breaks on a long arrow function in a JSX attribute.
 - The browser gate cannot run from a builder worktree (`next build` and a `node_modules/next` junction). No visual or perf.py check has been run on this run's UI.
+
+## From 2026-11-03-release-ledger ([run](hunts/2026-11-03-release-ledger/verdict.md))
+
+Kept, not chosen:
+- **L2 Certify the exact snapshot a version tags** (P10): a candidate manifest binding target sha, items, landings
+  and gates; tag exactly the tested sha; idempotent finish. Needs a store membership seal in lens-scan.
+
+Dropped: P07 (rehearse before PR): nothing is left to cherry-pick.
+
+Follow-ups found while building:
+- **Ship lens-scan 1.15.0**: ai-registry branch `tiger/bp-release-ledger` (823498d27, 3a618c966) is unpushed.
+  Until it is installed, no measurement carries `commit_sha`. L1's ancestry rule then never runs on real data, and
+  all 27 deciding readings on bp are judged by time.
+- **bp's first real release**: Tag v0.1.0 over the 44 landed items has only run on fake gh and claude.
+- The plan's track glyphs, the plan card and the Review brief still build without landings, so they read "accepted
+  · awaiting release" (C2, C3).
+- `useTrain()` fetches landings once per caller, about 6 per ledger render (C1, C2). The server caches them; share
+  the answer client-side.
+- A watch attaches only to a release, so landed items with no release cannot be watched. A refused checkpoint scan
+  is not retried. Correcting an out-of-bounds target with a signed note is not built (L1).
+- The cross-repo trust reason `demote: short <id>` for store.mjs `trust` (S1).
+- The brief's 120-char line can cut the "descoped N" tail when a tier and an outcome clause are both present (C3).
+- The decision-brief golden has no outcome case; add one together with Personas (C3).
+- 6 of 7 short items on bp are judgement-method readings; whether they are judge noise is not measured (C2).
+- docs/blueprint-ui.md:595 still says pack branches are "never merged to main".
+- `check:scan-jobs`' lens-draft 504 timeout assertion failed once under full-gate load and passed alone.

@@ -1,0 +1,87 @@
+{
+  "thesis": "Make the ledger see what landed on main, judge each landed item there as held, short or unmeasured, and bring that outcome to the row where the next decision is made.",
+  "judge": "claude:claude-opus-5-5 (caller)",
+  "kept": [
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P08",
+    "P09",
+    "P10",
+    "P11"
+  ],
+  "approved": [
+    "P01",
+    "P02",
+    "P09",
+    "P06",
+    "P03",
+    "P04",
+    "P05",
+    "P11",
+    "P08"
+  ],
+  "dropped": [
+    "P07"
+  ],
+  "items": {
+    "C1": [
+      "P01"
+    ],
+    "C2": [
+      "P02"
+    ],
+    "C3": [
+      "P09",
+      "P06"
+    ],
+    "S1": [
+      "P03"
+    ],
+    "S2": [
+      "P04"
+    ],
+    "S3": [
+      "P05"
+    ],
+    "L1": [
+      "P11",
+      "P08"
+    ],
+    "L2": [
+      "P10"
+    ]
+  },
+  "approved_items": [
+    "C1",
+    "C2",
+    "C3",
+    "S1",
+    "S2",
+    "S3",
+    "L1"
+  ],
+  "landed": [
+    "P01",
+    "P02",
+    "P09",
+    "P06",
+    "P03",
+    "P04",
+    "P05",
+    "P11",
+    "P08"
+  ],
+  "landed_items": [
+    "C1",
+    "C2",
+    "C3",
+    "S1",
+    "S2",
+    "S3",
+    "L1"
+  ]
+}
