@@ -12,14 +12,15 @@ export type KeyScope = 'packs' | 'backlog' | 'compare' | 'release';
 export type KeyAction =
   | 'next' | 'prev' | 'select' | 'open'
   | 'accept' | 'rework' | 'descope' | 'undo' | 'measure'
-  | 'dispatch' | 'dispatchFocused'
+  | 'dispatch' | 'dispatchFocused' | 'approveLater' | 'decline'
   | 'filter' | 'view1' | 'view2' | 'view3'
   | 'theme' | 'mode' | 'wide'
   | 'build' | 'finish' | 'tag'
   | 'help' | 'escape';
 
-/** One action and the keys that trigger it; `label` is the words the footer and the `?` sheet show. */
-export interface KeyBinding { keys: readonly string[]; action: KeyAction; label: string }
+/** One action and the keys that trigger it; `label` is the words the footer and the `?` sheet show. `write`: a decision
+ *  key, bound and shown only while decisions are on (BP_WRITES=off hides it: keyAction's `writes`). */
+export interface KeyBinding { keys: readonly string[]; action: KeyAction; label: string; write?: true }
 
 const move: readonly KeyBinding[] = [
   { keys: ['j', 'ArrowDown'], action: 'next', label: 'next item' },
@@ -62,6 +63,9 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['Enter'], action: 'open', label: 'open the feature' },
     { keys: ['d'], action: 'dispatch', label: 'dispatch the selection' },
     { keys: ['a'], action: 'dispatchFocused', label: 'dispatch this finding' },
+    // decided beside the focused row's brief (BriefDrawer), through proposals/[id]: no job is queued
+    { keys: ['y'], action: 'approveLater', label: 'approve this finding for later (no build yet)', write: true },
+    { keys: ['n'], action: 'decline', label: 'decline this finding, with a reason (final)', write: true },
     filter,
     ...views,
     help,
@@ -86,12 +90,15 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
 };
 
 /** The action `key` triggers in the first of `scopes` that binds it (a layered scope first: compare over packs), or
- *  null. Letters compare case-insensitively; every other key (Enter, Escape, the arrows, '?', ' ') as it is. */
-export function keyAction(scopes: readonly KeyScope[], key: string): KeyAction | null {
+ *  null. Letters compare case-insensitively; every other key (Enter, Escape, the arrows, '?', ' ') as it is. With
+ *  `writes` false (BP_WRITES=off) a decision key binds nothing. */
+export function keyAction(scopes: readonly KeyScope[], key: string, writes = true): KeyAction | null {
   const k = key.length === 1 ? key.toLowerCase() : key;
-  for (const s of scopes) for (const b of KEYMAP[s]) if (b.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === k)) return b.action;
+  for (const s of scopes) for (const b of KEYMAP[s]) if ((writes || !b.write) && b.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === k)) return b.action;
   return null;
 }
+/** A scope's bindings as shown: without the decision keys while decisions are off. */
+export const shownKeys = (scope: KeyScope, writes: boolean): readonly KeyBinding[] => (writes ? KEYMAP[scope] : KEYMAP[scope].filter((b) => !b.write));
 
 const NAMES: Readonly<Record<string, string>> = { ' ': 'Space', ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc', Enter: 'Enter' };
 /** A key as the footer and the `?` sheet print it: letters uppercase, Space, the arrows as arrows, Esc. */

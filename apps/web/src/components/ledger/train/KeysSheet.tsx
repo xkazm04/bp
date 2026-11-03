@@ -3,15 +3,15 @@
 // the `?` sheet (contest A/1's `.keys`: every binding of the scope in focus, then the compare panel's while it is open)
 // and the footer's short reminder line (SHORT). The sheet closes on Esc or ? (LedgerPage's handler) or a click outside.
 import { useEffect, useRef } from 'react';
-import { KEYMAP, SHORT, keyName, type KeyAction, type KeyBinding, type KeyScope } from './keymap';
+import { KEYMAP, SHORT, keyName, shownKeys, type KeyAction, type KeyBinding, type KeyScope } from './keymap';
 import './DecisionBar.css';
 
 const TITLE: Record<KeyScope, string> = { packs: 'In packs', backlog: 'Backlog', compare: 'Compare panel', release: 'Release' };
 const keysOf = (b: KeyBinding) => b.keys.map(keyName).join(' ');
 
 /** Bindings with the same label folded (J K ↓ ↑ read as one line: next and previous). */
-function lines(scope: KeyScope): { keys: string; label: string }[] {
-  const out: { keys: string; label: string }[] = [], bs = KEYMAP[scope];
+function lines(scope: KeyScope, writes: boolean): { keys: string; label: string }[] {
+  const out: { keys: string; label: string }[] = [], bs = shownKeys(scope, writes);
   for (let i = 0; i < bs.length; i++) {
     const b = bs[i], nx = bs[i + 1];
     if (b.action === 'next' && nx?.action === 'prev') { out.push({ keys: [b.keys[0], nx.keys[0], b.keys[1], nx.keys[1]].filter(Boolean).map(keyName).join(' '), label: 'move through items' }); i++; continue; }
@@ -21,7 +21,8 @@ function lines(scope: KeyScope): { keys: string; label: string }[] {
   return out;
 }
 
-export function KeysSheet({ scopes, onClose }: { scopes: readonly KeyScope[]; onClose(): void }) {
+/** `writes` false (BP_WRITES=off): the decision keys are not listed (they are not bound either). */
+export function KeysSheet({ scopes, onClose, writes = true }: { scopes: readonly KeyScope[]; onClose(): void; writes?: boolean }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const back = document.activeElement as HTMLElement | null;
@@ -38,7 +39,7 @@ export function KeysSheet({ scopes, onClose }: { scopes: readonly KeyScope[]; on
         {scopes.map((s, i) => (
           <section key={s}>
             {i ? <h4>{TITLE[s]}</h4> : null}
-            <dl>{lines(s).map((l) => <div key={l.keys} style={{ display: 'contents' }}><dt>{l.keys}</dt><dd>{l.label}</dd></div>)}</dl>
+            <dl>{lines(s, writes).map((l) => <div key={l.keys} style={{ display: 'contents' }}><dt>{l.keys}</dt><dd>{l.label}</dd></div>)}</dl>
           </section>
         ))}
         <p>Esc or ? to close.</p>
@@ -47,7 +48,7 @@ export function KeysSheet({ scopes, onClose }: { scopes: readonly KeyScope[]; on
   );
 }
 
-const WORD: Partial<Record<KeyAction, string>> = { next: 'move', select: 'select', open: 'open', accept: 'accept', rework: 'rework', descope: 'descope', undo: 'undo', help: 'keys', dispatch: 'dispatch', dispatchFocused: 'dispatch this', build: 'build', finish: 'finish', tag: 'tag', theme: 'theme', mode: 'mode', wide: 'wide' };
+const WORD: Partial<Record<KeyAction, string>> = { next: 'move', select: 'select', open: 'open', accept: 'accept', rework: 'rework', descope: 'descope', undo: 'undo', help: 'keys', dispatch: 'dispatch', dispatchFocused: 'dispatch this', approveLater: 'approve for later', decline: 'decline', build: 'build', finish: 'finish', tag: 'tag', theme: 'theme', mode: 'mode', wide: 'wide' };
 
 /** The footer's reminder: the scope's few keys, "J/K move · X select · Enter compare · A accept · ? keys". */
 export function KeyLine({ scope }: { scope: KeyScope }) {

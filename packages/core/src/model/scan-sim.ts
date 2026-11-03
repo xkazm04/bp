@@ -165,6 +165,19 @@ export class ScanSim {
     return this.recOf(id)!.job;
   }
 
+  /** Approve (for later: no job) or decline a proposed finding, as POST proposals/[id] does: the updated row; 400 for a
+   *  bad body, 404 for an unknown id, 409 (the current row as `proposal`) when it is no longer proposed. Signed 'blueprint'. */
+  decide(id: string, body: { decision: 'approve' | 'decline'; note?: string }): Proposal {
+    if (!body || (body.decision !== 'approve' && body.decision !== 'decline') || (body.note !== undefined && typeof body.note !== 'string')) throw refuse(400, 'bad-body');
+    const p = this.prop(id);
+    if (!p) throw refuse(404, `no proposal ${id}`);
+    if (p.status !== 'proposed') throw Object.assign(refuse(409, `proposal ${id} was already decided (${p.status})`), { proposal: p });
+    const at = this.iso();
+    this.setProp(id, { status: body.decision === 'approve' ? 'approved' : 'declined', decided_by: 'blueprint', decided_at: at, updated_at: at, ...(body.note !== undefined ? { decision_note: body.note } : {}) });
+    this.changed();
+    return this.prop(id)!;
+  }
+
   dispatch(ids: string[], opts: ExecOpts = {}): { job: ScanJob; approved: string[]; skipped: { id: string; status: string }[] } {
     if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
     if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))

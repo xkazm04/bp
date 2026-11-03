@@ -4,8 +4,8 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
-import type { CommitDiff, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
+import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import type { CommitDiff, DecisionBody, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import type { Landings } from '@bp/core/scan/landed';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
@@ -41,6 +41,14 @@ export async function startAllLenses(ctx: ScanCtx, phase: 'measure' | 'propose')
 export async function vetoDecision(ctx: ScanCtx, id: string, reason: string): Promise<Proposal> {
   if (ctx.slug) return postVeto(ctx.slug, id, reason);
   throw Object.assign(new Error('the sample has no machine decisions to veto'), { status: 400 });
+}
+
+/** Approve one proposed finding for later (no job) or decline it, signed: the updated row. 409 (the current row as
+ *  `proposal`) when it is no longer proposed; 403 while decisions are off. */
+export async function decideFinding(ctx: ScanCtx, id: string, body: DecisionBody): Promise<Proposal> {
+  if (ctx.slug) return decideProposal(ctx.slug, id, body);
+  if (ctx.sim) return ctx.sim.decide(id, body);
+  throw nowhere();
 }
 
 /** Approve the proposed ones among `ids` and start one execute run over all of them. */

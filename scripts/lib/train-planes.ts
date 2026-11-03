@@ -79,6 +79,7 @@ const ROUTES: [RegExp, string, string[]][] = [
   [/^\/api\/products\/([^/]+)\/waves$/, 'products/[slug]/waves/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/waves\/([^/]+)$/, 'products/[slug]/waves/[wave]/route.ts', ['slug', 'wave']],
   [/^\/api\/products\/([^/]+)\/waves\/([^/]+)\/dispatch$/, 'products/[slug]/waves/[wave]/dispatch/route.ts', ['slug', 'wave']],
+  [/^\/api\/products\/([^/]+)\/proposals\/([^/]+)$/, 'products/[slug]/proposals/[id]/route.ts', ['slug', 'id']],
 ];
 
 export async function openPlanes(root: string): Promise<Planes> {

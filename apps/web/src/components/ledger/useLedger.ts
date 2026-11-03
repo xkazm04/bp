@@ -25,7 +25,7 @@ import { SIZE_W, byWorth, estValue, worthOf, type Worth } from '@bp/core/scan/sc
 import type { ScanJob } from '@bp/core/scan/jobs';
 import type { MainOutcome } from '@bp/core/scan/track';
 import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
-import { dispatch } from '@/lib/scan/actions';
+import { decideFinding, dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
 import type { COMPARE_MODES } from './train/keymap';
@@ -277,6 +277,9 @@ export interface Ledger {
   setFocus(id: string | null): void;
   /** Dispatch `ids` (default: the selection) as one execute run. Only the dispatchable ones go. */
   dispatchIds(ids?: readonly string[]): Promise<void>;
+  /** Approve one proposed finding for later (no job queued) or decline it with a reason (final), through proposals/[id];
+   *  in flight on the intent store until the store shows the row moved. Resolves true when the store took it. */
+  decideOne(id: string, decision: 'approve' | 'decline', note?: string): Promise<boolean>;
   /** The matrix's drill-down: the triage table, showing only this feature's findings (the other filters stay). */
   showInTable(slug: string): void;
   /** Switch to the drawing set and open the finding's feature on its lens's tab. */
@@ -446,9 +449,9 @@ export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string,
 
   // one send over the intent store: paint `ids` (each reads approved and cannot be sent again while in flight), arm the
   // bound, and hand back the withdrawal (compare-and-swap: only this send's entries the store has not moved, or `only`)
-  const sendIntent = useCallback((ids: readonly string[]) => {
+  const sendIntent = useCallback((ids: readonly string[], shows: ProposalStatus = 'approved') => {
     const attempt = nextAttempt();
-    setLedgerUi((u) => ({ ...u, intents: paint(u.intents, ids, statusRef.current, { attempt, at: Date.now(), shows: 'approved' }) }));
+    setLedgerUi((u) => ({ ...u, intents: paint(u.intents, ids, statusRef.current, { attempt, at: Date.now(), shows }) }));
     setTimeout(() => {
       let expired: string[] = [];
       setLedgerUi((u) => {
@@ -492,6 +495,25 @@ export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string,
       setSending((n) => n - 1);
     }
   }, [ui.sel, byId, ctx, E, set, sendIntent]);
+
+  // one decision beside the brief: no job, the same in-flight rule as a dispatch (it shows approved or declined until the
+  // store says otherwise); a refusal withdraws it, and a 409 names what the row already is
+  const decideOne = useCallback(async (id: string, decision: 'approve' | 'decline', note?: string): Promise<boolean> => {
+    if (E.refuseReadOnly()) return false;
+    const f = byId.get(id);
+    if (!f || f.status !== 'proposed') { E.toast('Nothing to decide', (f ? id + ' is ' + f.status : 'no finding ' + id) + ': only a proposed finding takes approve or decline'); return false; }
+    const withdraw = sendIntent([id], decision === 'approve' ? 'approved' : 'declined');
+    try {
+      const p = await decideFinding(ctx, id, note === undefined ? { decision } : { decision, note });
+      E.toast(decision === 'approve' ? 'Approved for later' : 'Declined (final)', id + (decision === 'approve' ? ': no build queued; D dispatches it' : note ? ': ' + note : '') + (p.decided_by ? ' · ' + p.decided_by : ''));
+      return true;
+    } catch (err) {
+      withdraw();
+      const e = err as Error & { status?: number; proposal?: Proposal };
+      E.toast(decision === 'approve' ? 'Not approved' : 'Not declined', e.status === 409 && e.proposal ? id + ' is already ' + e.proposal.status : e.message);
+      return false;
+    }
+  }, [byId, ctx, E, sendIntent]);
 
   const waveTags = useMemo(() => {
     const byWave = new Map(waves.waves.map((w) => [w.id, w]));
@@ -551,7 +573,7 @@ export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string,
   // the scopes' status chips differ, so a status filter does not cross a scope switch; focus and compare start over
   const setScope = useCallback((scope: LedgerScope) => set((u) => switchScope(u, scope)), [set]);
 
-  return { ui, set, all, byId, rows, reserve, toggleReserve, mvps, lenses, counts, ready, effort, busy, writes, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
+  return { ui, set, all, byId, rows, reserve, toggleReserve, mvps, lenses, counts, ready, effort, busy, writes, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, decideOne, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
 }
 
 // ------------------------------------------------------------------------------------------- the matrix's rows

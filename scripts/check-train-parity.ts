@@ -74,7 +74,7 @@ const skips = (l: unknown) => (Array.isArray(l) ? l.map((s: Any) => ({ id: s.id,
 /** A triage refusal: the Error's text (client.ts makes it the route's `error`), what moved and what was skipped. */
 const triageRefusal = (o: Out) => (o.ok ? { ok: true, triaged: o.value?.triaged } : { status: o.status, error: o.message, triaged: o.body?.triaged, skipped: skips(o.body?.skipped) });
 const pkg = (name: string, ids: string[], model = 'opus', effort = 'high') => ({ name, model, effort, ids });
-const FINDINGS = ['q1', 'q2', 'q3', 'q4'];
+const FINDINGS = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'];
 /** What the ledger's E measures in the rows below: two design items on two features (one twice) and a performance item. */
 const MEASURE = [{ lens: 'design', feature: 'book-a-class' }, { lens: 'performance', feature: 'drag-and-drop-timetable-editor' }, { lens: 'design', feature: 'card-payments' }, { lens: 'design', feature: 'book-a-class' }];
 
@@ -131,6 +131,14 @@ const MAIN: Row[] = [
     see: (o) => (o.ok ? { ok: true, refused: o.value.refused.length, jobs: o.value.jobs.map((j: Any) => ({ kind: j.kind, lens: j.lens, scope: j.scope.kind, features: j.scope.features })).sort((a: Any, b: Any) => (a.lens < b.lens ? -1 : 1)) } : refusal(o)),
     want: () => ({ ok: true, refused: 0, jobs: [{ kind: 'measure', lens: 'design', scope: 'selection', features: ['book-a-class', 'card-payments'] }, { kind: 'measure', lens: 'performance', scope: 'selection', features: ['drag-and-drop-timetable-editor'] }] }) },
   { name: 'measureItems with nothing selected', call: (A, c) => A.measureItems(c, []), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
+  // the Backlog's Y and N beside the brief (proposals/[id]): approve for later, decline with a reason; signed, no job
+  { name: 'decideFinding approve for later', needs: () => ({ proposals: ['q5'] }), call: (A, c) => A.decideFinding(c, 'q5', { decision: 'approve' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status, signed: !!o.value.decided_by, job: o.value.status === 'executing' } : refusal(o)), want: () => ({ ok: true, status: 'approved', signed: true, job: false }) },
+  { name: 'decideFinding decline with a reason', needs: () => ({ proposals: ['q6'] }), call: (A, c) => A.decideFinding(c, 'q6', { decision: 'decline', note: 'Not this quarter.' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status, note: o.value.decision_note, signed: !!o.value.decided_by } : refusal(o)), want: () => ({ ok: true, status: 'declined', note: 'Not this quarter.', signed: true }) },
+  { name: 'decideFinding of a decided finding', needs: () => ({ proposals: ['q5'] }), call: (A, c) => A.decideFinding(c, 'q5', { decision: 'decline', note: 'x' }),
+    see: (o) => (o.ok ? { ok: true } : { status: o.status, error: !!o.message }), want: () => ({ status: 409, error: true }) },
+  { name: 'decideFinding unknown finding', call: (A, c) => A.decideFinding(c, 'q-none', { decision: 'approve' }), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
 ];
 // the end of the train: every pack closed, des1-card descoped in closed k-des-1 (store.mjs refuses its reopen: pack-closed)
 const TAIL: Row[] = [
