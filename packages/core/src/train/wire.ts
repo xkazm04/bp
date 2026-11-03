@@ -226,7 +226,18 @@ export function parseLandings(x: unknown): Parsed<Landings> {
       const at = 'items.' + id, l = obj(raw[id], at);
       items[id] = { sha: str(l, 'sha', at), at: str(l, 'at', at), by: member(LANDING_BY, l, 'by', at) };
     }
-    return { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
+    const out: Landings = { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
+    if (o.ancestry !== undefined) {
+      // measured sha -> landing sha -> contains: shas are keys, so no prototype to write through either
+      const a = obj(o.ancestry, 'ancestry'), ancestry = Object.create(null) as Record<string, Record<string, boolean>>;
+      for (const m of Object.keys(a)) {
+        const at = 'ancestry.' + m, r = obj(a[m], at), row = Object.create(null) as Record<string, boolean>;
+        for (const l of Object.keys(r)) row[l] = bool(r, l, at);
+        ancestry[m] = row;
+      }
+      out.ancestry = ancestry;
+    }
+    return out;
   });
 }
 
