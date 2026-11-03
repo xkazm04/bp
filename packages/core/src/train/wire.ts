@@ -6,6 +6,7 @@ import type { Band, CommitDiff, Confidence, FindingCategory, MvpRule, PredictedV
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
 import type { Landing, Landings } from '../scan/landed.ts';
+import type { Checkpoint, Watch, WatchItem } from './watch.ts';
 import { isObj } from '../scan/guards.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -226,9 +227,46 @@ export function parseLandings(x: unknown): Parsed<Landings> {
       const at = 'items.' + id, l = obj(raw[id], at);
       items[id] = { sha: str(l, 'sha', at), at: str(l, 'at', at), by: member(LANDING_BY, l, 'by', at) };
     }
-    return { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
+    const out: Landings = { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
+    if (o.ancestry !== undefined) {
+      // measured sha -> landing sha -> contains: shas are keys, so no prototype to write through either
+      const a = obj(o.ancestry, 'ancestry'), ancestry = Object.create(null) as Record<string, Record<string, boolean>>;
+      for (const m of Object.keys(a)) {
+        const at = 'ancestry.' + m, r = obj(a[m], at), row = Object.create(null) as Record<string, boolean>;
+        for (const l of Object.keys(r)) row[l] = bool(r, l, at);
+        ancestry[m] = row;
+      }
+      out.ancestry = ancestry;
+    }
+    return out;
   });
 }
+
+/** `GET releases/watch` `{ watches }` and `POST releases/watch` `{ watch }`: the outcome watches (train/watch.ts). */
+const BETTER: Members<NonNullable<WatchItem['better']>> = { up: true, down: true };
+function watchItem(x: unknown, at: string): WatchItem {
+  const o = obj(x, at);
+  const it: WatchItem = { id: str(o, 'id', at), title: str(o, 'title', at), feature: str(o, 'feature', at), lens: str(o, 'lens', at) };
+  put(it, 'metric', optStr(o, 'metric', at)); put(it, 'unit', optStr(o, 'unit', at));
+  put(it, 'baseline', optNum(o, 'baseline', at)); put(it, 'target', optNum(o, 'target', at)); put(it, 'better', optMember(BETTER, o, 'better', at));
+  if (o.landing !== undefined) { const l = obj(o.landing, join(at, 'landing')), lt = join(at, 'landing'); it.landing = { at: str(l, 'at', lt) }; put(it.landing, 'sha', optStr(l, 'sha', lt)); }
+  put(it, 'unresolved', optStr(o, 'unresolved', at));
+  return it;
+}
+function checkpoint(x: unknown, at: string): Checkpoint {
+  const o = obj(x, at), c: Checkpoint = { day: num(o, 'day', at), due: str(o, 'due', at) };
+  put(c, 'jobs', optList(o, 'jobs', at, aString));
+  if (o.missed !== undefined) { if (o.missed !== true) fail(join(at, 'missed'), 'expected true'); c.missed = true; }
+  return c;
+}
+function watch(x: unknown, at: string): Watch {
+  const o = obj(x, at);
+  const w: Watch = { release: str(o, 'release', at), version: str(o, 'version', at), enabled_at: str(o, 'enabled_at', at), by: str(o, 'by', at), items: list(o, 'items', at, watchItem), checkpoints: list(o, 'checkpoints', at, checkpoint) };
+  put(w, 'off_at', optStr(o, 'off_at', at));
+  return w;
+}
+export function parseWatches(x: unknown): Parsed<Watch[]> { return door(() => list(obj(x, ''), 'watches', '', watch)); }
+export function parseWatch(x: unknown): Parsed<Watch> { return door(() => watch(obj(x, '').watch, 'watch')); }
 
 /** `POST releases` (201): the draft with its items, what was added and what was left out. */
 export function parseReleaseCreated(x: unknown): Parsed<ReleaseCreated> {

@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
 import { briefMapOf, briefMapOfStructure, type BriefMap } from '../../../scan/brief.ts';
+import { evidenceOpts } from '../../../scan/track.ts';
 import type { ProductEntry } from '../../../scan/types.ts';
 import { writesOff } from '../../../scan/writes.ts';
 import { loadMap } from '../../../data/index.ts';
@@ -32,17 +33,19 @@ const mdFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'stee
 
 /** feature -> its room and wing on the product's plan, the lens manifests' metric labels, and the plan as the decision brief
  *  reads it (through the loader the browser uses, as brief.server.ts does), cached per map rev. */
-interface MapFacts { where: Map<string, Where>; labels: Map<string, string>; map: BriefMap }
+interface MapFacts { where: Map<string, Where>; labels: Map<string, string>; map: BriefMap; lenses: MapLens[] }
+type MapLens = { id?: string; manifest?: { fields?: { key?: string; label?: string; min?: number; max?: number }[] } };
 const g = globalThis as unknown as { __bpMorningMaps?: Map<string, { rev: string; facts: MapFacts }> };
 function whereOf(p: ProductEntry): MapFacts {
   const cache = (g.__bpMorningMaps ??= new Map()), dir = storeDir(p), rev = mapRev(dir), hit = cache.get(p.root);
   if (hit && hit.rev === rev) return hit.facts;
   const where = new Map<string, Where>(), labels = new Map<string, string>();
-  let brief: BriefMap = briefMapOf({});
+  let brief: BriefMap = briefMapOf({}), lenses: MapLens[] = [];
   try {
     let events = '';
     try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-    const map = JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')) as { lenses?: { id?: string; manifest?: { fields?: { key?: string; label?: string }[] } }[] };
+    const map = JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')) as { lenses?: MapLens[] };
+    lenses = map.lenses ?? [];
     for (const l of map.lenses ?? []) for (const f of l.manifest?.fields ?? []) if (l.id && f.key && f.label) labels.set(l.id + '|' + f.key, f.label);
     const plan = projectPlan(map, events, rev);
     const wings = new Map(plan.wings.map((w) => [w.id, w])), rooms = new Map(plan.rooms.map((r) => [r.id, r])), bays = new Map(plan.bays.map((b) => [b.id, b]));
@@ -52,7 +55,7 @@ function whereOf(p: ProductEntry): MapFacts {
     }
     try { brief = briefMapOfStructure(loadMap(map, events)); } catch (e) { warnOnce('morning brief map ' + p.slug, e); }
   } catch (e) { warnOnce('morning plan ' + p.slug, e); }
-  const facts = { where, labels, map: brief };
+  const facts = { where, labels, map: brief, lenses };
   cache.set(p.root, { rev, facts });
   return facts;
 }
@@ -79,7 +82,8 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
   const landed = await Promise.all(read.map(({ p, scan }) => landings(p.root, scan).catch(() => null)));
   for (const [i, { p, scan }] of read.entries()) {
     const l = landed[i];
-    facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p), ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
+    const { lenses, ...mf } = whereOf(p), { contains, bounds } = evidenceOpts(l, lenses);
+    facts.push({ slug: p.slug, name: p.name, scan, ...mf, evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
     const rows = readSteer(p);
     steer.push(...rows);
     renderOnRead(p, rows, now);

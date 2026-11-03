@@ -4,7 +4,8 @@
 import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
 import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import type { Watch } from '@bp/core/train/watch';
+import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, DecisionBody, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import type { Landings } from '@bp/core/scan/landed';
@@ -122,6 +123,19 @@ export async function suggestRelease(ctx: ScanCtx, ids?: readonly string[]): Pro
 export async function readLandings(ctx: ScanCtx): Promise<Landings> {
   if (ctx.slug) return getLandings(ctx.slug);
   if (ctx.sim) return ctx.sim.landings();
+  throw nowhere();
+}
+/** The outcome watches (train/watch.ts): live, after the server queued the checkpoints that are due; the sample's on
+ *  Kettle. A read the Release tab makes; not a decision (BP_WRITES=off leaves it on). */
+export async function readWatches(ctx: ScanCtx): Promise<Watch[]> {
+  if (ctx.slug) return getWatches(ctx.slug);
+  if (ctx.sim) return ctx.sim.watches();
+  throw nowhere();
+}
+/** Turn release `id`'s outcome watch on (at or after Finish or Tag) or off. */
+export async function watchRelease(ctx: ScanCtx, id: string, on: boolean): Promise<Watch> {
+  if (ctx.slug) return postWatch(ctx.slug, id, on);
+  if (ctx.sim) return ctx.sim.setWatch(id, on);
   throw nowhere();
 }
 /** Measure where items stand now (the ledger's M): one `selection` scan per lens over that lens's items' features

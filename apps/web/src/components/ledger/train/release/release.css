@@ -108,6 +108,12 @@
 /* a shipped-flagged item's reason, as .tr-pl li .t small.fl states it in the package (never hover-only) */
 .tr-rel-hist .hist small { display: block; font-size: var(--fs-13); color: var(--ink-2); }
 .tr-rel-hist .hist small.fl { color: var(--red); }
+/* the outcome watch: its control beside the version, its one line, each item's standing as a word (never colour alone) */
+.tr-rel-hist .tr-rel-watch { margin-left: auto; }
+.tr-rel-hist .tr-rel-watchline { margin: var(--sp-6) 0 0; font: var(--fs-13) var(--mono); color: var(--ink-2); }
+.tr-rel-hist .hist small.w.met { color: var(--mint); }
+.tr-rel-hist .hist small.w.shortfall, .tr-rel-hist .hist small.w.regression { color: var(--red); }
+.tr-rel-hist .hist small.w.unresolved { color: var(--amber); }
 
 /* the phone ledger's one line */
 .tr-rel-line { margin: 0; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--accent); }

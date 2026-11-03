@@ -56,13 +56,15 @@ export function ratesOf(t: Tally): { judgement?: number; measured?: number } {
 
 /** One cached track per row, per snapshot and landings (the brief asks for every open row's precedent, the Review for
  *  every open row's record); not cached under pending decisions or jobs. The one way the tallies read a track. */
-const TRACKS = new WeakMap<Scan, Map<object | undefined, Map<string, Track | null>>>();
+/** keyed by every option that changes what a reading may decide: landings, git ancestry, field bounds */
+const TRACKS = new WeakMap<Scan, { key: unknown[]; m: Map<string, Track | null> }[]>();
 export function trackAt(scan: Scan, id: string, opts: TrackOpts = {}): Track | null {
   if (opts.pending?.size || opts.jobs?.length) return trackOf(scan, id, opts);
-  let byLanded = TRACKS.get(scan);
-  if (!byLanded) TRACKS.set(scan, (byLanded = new Map()));
-  let m = byLanded.get(opts.landed);
-  if (!m) { if (byLanded.size > 4) byLanded.clear(); byLanded.set(opts.landed, (m = new Map())); }
+  let byOpts = TRACKS.get(scan);
+  if (!byOpts) TRACKS.set(scan, (byOpts = []));
+  const key = [opts.landed, opts.contains, opts.bounds];
+  let m = byOpts.find((x) => x.key.every((k, i) => k === key[i]))?.m;
+  if (!m) { if (byOpts.length > 4) byOpts.length = 0; byOpts.push({ key, m: (m = new Map()) }); }
   let t = m.get(id);
   if (t === undefined) m.set(id, (t = trackOf(scan, id, opts)));
   return t;

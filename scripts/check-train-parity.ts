@@ -78,6 +78,8 @@ const FINDINGS = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'];
 /** What the ledger's E measures in the rows below: two design items on two features (one twice) and a performance item. */
 const MEASURE = [{ lens: 'design', feature: 'book-a-class' }, { lens: 'performance', feature: 'drag-and-drop-timetable-editor' }, { lens: 'design', feature: 'card-payments' }, { lens: 'design', feature: 'book-a-class' }];
 
+/** The finished release's six items as its outcome watch freezes them (target, direction, unresolved), sorted. */
+const WATCHED: [number | null, string | null, boolean][] = [[1, 'down', false], [1, 'down', false], [1, 'down', false], [1, 'down', false], [70, 'down', false], [78, 'down', false]];
 const MAIN: Row[] = [
   { name: 'listWaves at the start', call: (A, c) => A.listWaves(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
   { name: 'readLandings before any merge', call: (A, c) => A.readLandings(c), see: (o) => (o.ok ? { ok: true, state: o.value.state, ref: o.value.ref, n: Object.keys(o.value.items ?? {}).length } : refusal(o)), want: () => ({ ok: true, state: 'known', ref: 'main', n: 0 }) },
@@ -91,6 +93,7 @@ const MAIN: Row[] = [
     see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'createRelease 0.1.0', call: (A, c) => A.createRelease(c, '0.1.0'),
     see: (o) => (o.ok ? { ok: true, id: o.value.release.id, status: o.value.release.status, added: o.value.added } : refusal(o)), want: (r) => ({ ok: true, id: 'rel-0.1.0', status: 'draft', added: [r.id('des1-booking')] }) },
+  { name: 'watchRelease on a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', true), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'triageItems accept a second item', needs: (r) => ({ proposals: [r.id('des1-waitlist')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-waitlist')], 'accept'),
     see: (o) => (o.ok ? { ok: true, triaged: o.value.triaged } : refusal(o)), want: (r) => ({ ok: true, triaged: [r.id('des1-waitlist')] }) },
   { name: 'createRelease of a version that has a release', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.createRelease(c, '0.1.0'), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
@@ -142,6 +145,17 @@ const MAIN: Row[] = [
 ];
 // the end of the train: every pack closed, des1-card descoped in closed k-des-1 (store.mjs refuses its reopen: pack-closed)
 const TAIL: Row[] = [
+  // the outcome watch (train/watch.ts) on the finished release: what History judges is frozen here, the same on both planes
+  { name: 'readWatches before any', call: (A, c) => A.readWatches(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
+  { name: 'watchRelease bad id', call: (A, c) => A.watchRelease(c, 'rel-x;calc', true), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
+  { name: 'watchRelease unknown release', call: (A, c) => A.watchRelease(c, 'rel-9.9.9', true), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'watchRelease off with no watch', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', false), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'watchRelease on the finished release', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', true),
+    see: (o) => (o.ok ? { ok: true, release: o.value.release, on: !o.value.off_at, days: o.value.checkpoints.map((x: Any) => x.day), items: o.value.items.map((x: Any) => [x.target ?? null, x.better ?? null, !!x.unresolved]).sort((a: Any, b: Any) => (json(a) < json(b) ? -1 : 1)) } : refusal(o)),
+    want: () => ({ ok: true, release: 'rel-0.1.0', on: true, days: [1, 7, 30], items: WATCHED }) },
+  { name: 'readWatches after enabling', call: (A, c) => A.readWatches(c), see: (o) => (o.ok ? { ok: true, n: o.value.length, jobs: o.value.flatMap((w: Any) => w.checkpoints.flatMap((x: Any) => x.jobs ?? [])).length } : refusal(o)), want: () => ({ ok: true, n: 1, jobs: 0 }) },
+  { name: 'watchRelease off keeps the record', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', false),
+    see: (o) => (o.ok ? { ok: true, off: !!o.value.off_at, items: o.value.items.length } : refusal(o)), want: () => ({ ok: true, off: true, items: WATCHED.length }) },
   { name: 'triageItems reopen in a closed pack', needs: (r) => ({ proposals: [r.id('des1-card')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-card')], 'reopen'),
     see: triageRefusal, want: (r) => ({ status: 409, error: 'nothing moved', triaged: [], skipped: [{ id: r.id('des1-card'), status: 'descoped', reason: 'pack-closed' }] }) },
 ];

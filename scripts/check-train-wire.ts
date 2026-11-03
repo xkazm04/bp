@@ -64,6 +64,8 @@ good('parseLandings (an id named __proto__ stays a key)', parseLandings({ ...LAN
 bad('parseLandings (state)', parseLandings({ ...LANDED, state: 'maybe' }), /^state: expected known or unknown/);
 bad('parseLandings (by)', parseLandings({ ...LANDED, items: { a: { sha: 'x', at: 'y', by: 'guess' } } }), /^items\.a\.by: expected one of trailer, patch-id/);
 bad('parseLandings (why)', parseLandings({ state: 'unknown' }), /^why: missing/);
+good('parseLandings (ancestry rides along)', parseLandings({ ...LANDED, ancestry: { d1: { c1: true, c2: false } } }), (v) => v.state === 'known' && v.ancestry?.d1?.c1 === true && v.ancestry?.d1?.c2 === false);
+bad('parseLandings (ancestry)', parseLandings({ ...LANDED, ancestry: { d1: { c1: 'yes' } } }), /^ancestry\.d1\.c1: expected true or false/);
 good('parseVersionSuggestion', parseVersionSuggestion({ ...SUGGEST, extra: 1 }), (v) => v.version === '2.3.0' && !('extra' in v));
 bad('parseVersionSuggestion (version)', parseVersionSuggestion({ ...SUGGEST, version: 230 }), /^version: expected a string/);
 

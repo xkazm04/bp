@@ -9,7 +9,7 @@
 //             restores it. A revert's own message never lands anything.
 // An id lands at its earliest commit still in effect. A root with no git, or a base git cannot read, is `unknown`:
 // never "nothing landed".
-import type { Pack, Proposal } from './types.ts';
+import type { Measurement, Pack, Proposal } from './types.ts';
 
 /** The `git log` format landedOf parses: sha, committer date, message; fields split by US, commits by RS. */
 export const LOG_FORMAT = '%H%x1f%cI%x1f%B%x1e';
@@ -28,7 +28,12 @@ export interface Landing {
 export type LandedMap = Readonly<Record<string, Landing>>;
 /** What git says landed: `known` with the base ref, the sha it was read at and the landings by proposal id, or `unknown`
  *  with why (no git, not a repository, no such ref). */
-export type Landings = { state: 'known'; ref: string; head: string; items: LandedMap } | { state: 'unknown'; why: string };
+export type Landings = { state: 'known'; ref: string; head: string; items: LandedMap; ancestry?: Ancestry } | { state: 'unknown'; why: string };
+/** Measured commit -> landing commit -> whether the first contains the second (`git merge-base --is-ancestor`), for the
+ *  readings that could judge a landed item (ancestryAsks). A pair git could not answer is absent: never "contains". */
+export type Ancestry = Readonly<Record<string, Readonly<Record<string, boolean>>>>;
+/** The most ancestry pairs asked of git per answer (each answer is cached for good: ancestry never changes). */
+export const ANCESTRY_CAP = 400;
 /** Pre-computed patch-ids: proposal id -> its item commit's, and base commit sha -> its own. */
 export interface PatchIds { items: ReadonlyMap<string, string>; base: ReadonlyMap<string, string> }
 
@@ -114,6 +119,36 @@ export function parsePatchIds(text: string): Map<string, string> {
     if (m) out.set(m[2].toLowerCase(), m[1].toLowerCase());
   }
   return out;
+}
+
+/** The (landing, measured) commit pairs worth asking git about: each landed item's metric's current readings that record
+ *  a commit (any reading on its feature + lens + metric with no proposal of its own), at most ANCESTRY_CAP, deduplicated. */
+export function ancestryAsks(items: LandedMap, scan: { proposals: readonly Pick<Proposal, 'id' | 'feature' | 'lens' | 'metric'>[]; measurements?: readonly Pick<Measurement, 'feature' | 'lens' | 'metric' | 'commit_sha' | 'proposal_id'>[] }): { landing: string; measured: string }[] {
+  if (!scan.measurements?.length) return [];
+  const shas = new Map<string, Set<string>>();
+  for (const m of scan.measurements) {
+    if (!m.commit_sha || m.proposal_id || !/^[0-9a-f]{7,40}$/i.test(m.commit_sha)) continue;
+    const k = m.feature + '|' + m.lens + '|' + m.metric;
+    let s = shas.get(k); if (!s) shas.set(k, (s = new Set())); s.add(m.commit_sha.toLowerCase());
+  }
+  const out: { landing: string; measured: string }[] = [], seen = new Set<string>();
+  for (const p of scan.proposals) {
+    const l = landedIn(items, p.id), s = p.metric ? shas.get(p.feature + '|' + p.lens + '|' + p.metric) : undefined;
+    if (!l || !s) continue;
+    for (const measured of s) {
+      const k = measured + ' ' + l.sha;
+      if (seen.has(k)) continue;
+      seen.add(k); out.push({ landing: l.sha, measured });
+      if (out.length >= ANCESTRY_CAP) return out;
+    }
+  }
+  return out;
+}
+/** The ancestry an answer carries as trackOf's lookup (TrackOpts.contains); undefined when it carries none. */
+export function containsOf(l: Landings | null | undefined): ((landing: string, measured: string) => boolean | undefined) | undefined {
+  const a = l?.state === 'known' ? l.ancestry : undefined;
+  if (!a) return undefined;
+  return (landing, measured) => { const r = a[measured.toLowerCase()]; return r && Object.prototype.hasOwnProperty.call(r, landing) ? r[landing] : undefined; };
 }
 
 /** Where an item landed in a map of landings (an own key only: ids are keys). */

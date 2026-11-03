@@ -70,6 +70,7 @@ const ROUTES: [RegExp, string, string[]][] = [
   [/^\/api\/products\/([^/]+)\/releases$/, 'products/[slug]/releases/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases\/suggest$/, 'products/[slug]/releases/suggest/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases\/landed$/, 'products/[slug]/releases/landed/route.ts', ['slug']],
+  [/^\/api\/products\/([^/]+)\/releases\/watch$/, 'products/[slug]/releases/watch/route.ts', ['slug']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/build$/, 'products/[slug]/releases/[id]/build/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/finish$/, 'products/[slug]/releases/[id]/finish/route.ts', ['slug', 'id']],
   [/^\/api\/products\/([^/]+)\/releases\/([^/]+)\/tag$/, 'products/[slug]/releases/[id]/tag/route.ts', ['slug', 'id']],

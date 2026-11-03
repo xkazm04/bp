@@ -14,7 +14,8 @@
 //   7 M fan-out   measureScopes: one selection scan per lens over that lens's items' features, each once, capped (the jobs
 //                 themselves, on the sim and the live routes: check:train-parity 'measureItems over two lenses')
 // Also: node scripts/check-on-main.ts --root <repo> prints that repo's In-packs chips (Held / Short / Not measured since)
-// from its store (read-only) and the landings git gives, through the same functions, with the short ids.
+// from its store (read-only), the landings and ancestry git gives and its map's lens bounds, through the same functions,
+// with the short ids, the out-of-bounds targets, how many were judged by commit or by time, and the observation cohorts.
 // Run: node scripts/check-on-main.ts   (Node type stripping; exit 1 on any failure)
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -38,19 +39,27 @@ if (at >= 0) {
   const scan = S.snapshotOf(path.join(root, '.ai/lens-scan/scan.db'));
   const l = await R.landings(root, scan);
   if (l.state !== 'known') { console.log(`landings on ${root}: unknown (${l.why})`); process.exit(0); }
-  const tally: Record<string, string[]> = {};
+  let lenses: Any[] = [];
+  try { lenses = JSON.parse((await import('node:fs')).readFileSync(path.join(root, '.ai/lens-scan/app-structure.json'), 'utf8')).lenses ?? []; } catch { /* no map: no bounds */ }
+  const opts = TR.evidenceOpts(l, lenses);
+  const tally: Record<string, string[]> = {}, judged: Any[] = [];
   for (const p of scan.proposals) {
     if (!p.pack_id) continue;
-    const t = TR.trackOf(scan, p.id, { landed: l.items }), o = t && TR.mainOutcome(t);
+    const t = TR.trackOf(scan, p.id, opts), o = t && TR.mainOutcome(t);
     if (o) (tally[o] ??= []).push(p.id);
+    if (o && t!.evidence) judged.push(t);
   }
   const n = (k: string) => tally[k]?.length ?? 0;
-  console.log(`In packs on ${root} (${l.ref} at ${l.head.slice(0, 7)}): Held ${n('held')} · Short ${n('short')} · Not measured since ${n('unmeasured')}${n('no-target') ? ' · No expected value ' + n('no-target') : ''}`);
+  console.log(`In packs on ${root} (${l.ref} at ${l.head.slice(0, 7)}): Held ${n('held')} · Short ${n('short')} · Not measured since ${n('unmeasured')}${n('no-target') ? ' · No expected value ' + n('no-target') : ''}${n('out-of-bounds') ? ' · Target out of bounds ' + n('out-of-bounds') : ''}`);
+  const cohorts = TR.cohortsOf(judged), shared = [...cohorts.values()].filter((x) => x.length > 1);
+  console.log(`  judged by a reading: ${judged.length} (by commit ${judged.filter((t) => t.by === 'commit').length}, by time ${judged.filter((t) => t.by === 'time').length}) in ${cohorts.size} observation cohort${cohorts.size === 1 ? '' : 's'}${shared.length ? '; shared: ' + shared.map((x) => x.join('+')).join(', ') : ''}; ancestry pairs ${Object.values(l.ancestry ?? {}).reduce((a, r) => a + Object.keys(r).length, 0)}`);
   for (const id of tally.short ?? []) {
-    const t = TR.trackOf(scan, id, { landed: l.items })!;
+    const t = TR.trackOf(scan, id, opts)!;
     console.log(`  short ${id}: ${t.label} (${t.currentMethod ?? 'method not recorded'}) · ${TR.shortNote(t, l.ref)}`);
   }
-  for (const id of tally['no-target'] ?? []) console.log(`  no expected value ${id}: ${TR.trackOf(scan, id, { landed: l.items })!.label}`);
+  for (const id of tally['out-of-bounds'] ?? []) console.log(`  out of bounds ${id}: ${TR.trackOf(scan, id, opts)!.label}`);
+  for (const id of tally['no-target'] ?? []) console.log(`  no expected value ${id}: ${TR.trackOf(scan, id, opts)!.label}`);
+  for (const id of tally.unmeasured ?? []) { const t = TR.trackOf(scan, id, opts)!; if (t.ineligible) console.log(`  not counted ${id}: ${t.ineligible}`); }
   process.exit(0);
 }
 

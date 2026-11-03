@@ -23,7 +23,7 @@
 // that meets its expected value (scan/track.ts); anything else is "not measured since", never good.
 import type { FocusPlace } from '../session/focus.ts';
 import type { Proposal, ScanSnapshot } from '../scan/types.ts';
-import { mainOutcome, trackOf, tracksOf, type Track } from '../scan/track.ts';
+import { boundWords, mainOutcome, trackOf, tracksOf, type Track, type TrackOpts } from '../scan/track.ts';
 import type { LandedMap } from '../scan/landed.ts';
 import type { Brief, BriefMap } from '../scan/brief.ts';
 import { cardBrief, clip, type CardBrief } from './card-brief.ts';
@@ -52,6 +52,8 @@ export interface ProductFacts {
   map?: BriefMap;
   /** What git says already landed on the base branch `ref` (server: release.server.ts landings); absent or unknown -> none. */
   landed?: { ref: string; items: LandedMap };
+  /** git's ancestry for the readings and the lenses' bounds (track.ts evidenceOpts): the ledger's eligibility, here too. */
+  evidence?: Pick<TrackOpts, 'contains' | 'bounds'>;
 }
 /** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
@@ -150,7 +152,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     }
     // releases merged in the window, read through the answer tracks
     const rels = p.scan.releases.filter((r) => (r.status === 'merged' || r.status === 'tagged') && inWindow(r.updated_at, since, cut));
-    const tracks = tracksOf(p.scan, now);
+    const ev: TrackOpts = { ...p.evidence, ...(p.landed ? { landed: p.landed.items } : {}) };
+    const tracks = tracksOf(p.scan, now, ev);
     // a tile on the plan says its NEWEST track (live-tracks.ts; tracksOf is newest first): the card flies to an item whose
     // tile shows this release's reading, and names it first, so the card and the tile agree (the demo pass found the card
     // on Card payments, whose tile showed a later build, while the "confirmed · measured 190" sat on Class packs)
@@ -162,7 +165,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     const L = p.landed, lts: Track[] = [];
     if (L) for (const id of Object.keys(L.items)) {
       if (!inWindow(utc(L.items[id].at), since, cut)) continue;
-      const t = trackOf(p.scan, id, { landed: L.items });
+      const t = trackOf(p.scan, id, ev);
       if (t && t.status === 'accepted' && mainOutcome(t)) lts.push(t);
     }
     if (lts.length) {
@@ -327,6 +330,8 @@ export function trackWords(t: Track, where: ReadonlyMap<string, Where>): string 
   const head = t.title + (room ? ' · ' + room : ''), since = t.landed && t.status === 'accepted' ? 'it landed' : 'the release';
   if (t.stage === 'confirmed' && t.current !== undefined) return `${head}: measured ${fmt(t.current)}${u} after ${since}, as expected`;
   if (t.stage === 'not-confirmed' && t.current !== undefined && t.expected !== undefined) return `${head}: expected ${fmt(t.expected)}${u}, measured ${fmt(t.current)}${u}`;
+  if (t.outOfBounds && t.expected !== undefined) return `${head}: target out of bounds (expected ${fmt(t.expected)}${u}, ${boundWords(t.outOfBounds)})`;
+  if (t.ineligible && !t.evidence) return `${head}: no eligible reading since ${since} (${t.ineligible})`;
   return `${head}: not measured since ${since}`;
 }
 

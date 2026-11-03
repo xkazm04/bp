@@ -21,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CommitDiff, ScanSnapshot, TriageBody, TriageResult } from '../scan/types';
 import { MAX_TRIAGE } from '../scan/types';
-import { LOG_CAP, LOG_FORMAT, baseOf, landedOf, parseLog, parsePatchIds, patchCandidates, type LogCommit, type Landings } from '../scan/landed';
+import { LOG_CAP, LOG_FORMAT, ancestryAsks, baseOf, landedOf, parseLog, parsePatchIds, patchCandidates, type LogCommit, type Landings } from '../scan/landed';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
 
@@ -283,8 +283,31 @@ const LANDED = ((globalThis as typeof globalThis & { __bpLanded?: Map<string, La
  * rest only when that sha (or the item commits to patch-id) moved. The log runs from the oldest pack's base_sha, at
  * most LOG_CAP commits. Item commits no message names are matched by `git patch-id --stable` against the base commits;
  * a failed patch-id pass leaves the trailer landings standing. No git, not a repository, or no such ref -> `unknown`.
+ * With the store's measurements, the answer carries `ancestry`: for each reading that records its commit and could judge
+ * a landed item, whether that commit contains the landing (`git merge-base --is-ancestor`, cached for good per pair).
  */
-export async function landings(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'>): Promise<Landings> {
+export async function landings(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'> & Partial<Pick<ScanSnapshot, 'measurements'>>): Promise<Landings> {
+  const l = await landingsOf(root, scan);
+  if (l.state !== 'known' || !scan.measurements?.length) return l;
+  const asks = ancestryAsks(l.items, scan);
+  if (!asks.length) return l;
+  const ancestry: Record<string, Record<string, boolean>> = {};
+  for (const { landing, measured } of asks) {
+    const k = root + '\0' + landing + '\0' + measured;
+    let v: boolean | null | undefined = ANCESTRY.get(k);
+    if (v === undefined) {
+      const r = await run('git', ['merge-base', '--is-ancestor', landing, measured], { cwd: root, timeout: GIT_MS });
+      v = r.code === 0 ? true : r.code === 1 ? false : null; // 128: git does not have one of them; never "contains"
+      if (v !== null) ANCESTRY.set(k, v); // an unknown commit may arrive with a fetch: asked again
+    }
+    if (v !== null) (ancestry[measured] ??= {})[landing] = v;
+  }
+  return { ...l, ancestry };
+}
+/** root + landing + measured -> contains . Ancestry never changes, so it is never dropped. */
+const ANCESTRY = ((globalThis as typeof globalThis & { __bpAncestry?: Map<string, boolean> }).__bpAncestry ??= new Map<string, boolean>());
+
+async function landingsOf(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'>): Promise<Landings> {
   const git = (args: string[], input?: string) => run('git', ['-c', 'core.quotepath=off', '--no-pager', ...args], { cwd: root, timeout: GIT_MS, ...(input === undefined ? {} : { input }) });
   const { ref, since } = baseOf(scan.packs);
   const h = await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}']);
