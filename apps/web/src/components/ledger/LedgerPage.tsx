@@ -23,7 +23,8 @@
 // table, train/keymap.ts, by scope: In packs J/K move, X/Space select, Enter compares (again: full width), A R S U
 // decide, E measures what the decision would act on (one selection scan per lens over its items' features: actions.ts
 // measureItems; a scan, so BP_WRITES=off leaves it on), the compare panel's L M W while it is open; Backlog D dispatches the selection and A the focused finding,
-// Enter opens its feature; Release B and F press the release view's Build and Finish (its `data-act` buttons). Every
+// Y approves the focused finding for later and N declines it with a reason (BriefDrawer.tsx, the focused row's brief docked
+// beside the table; no job queued; BP_WRITES=off binds neither), Enter opens its feature; Release B and F press the release view's Build and Finish (its `data-act` buttons). Every
 // scope: / filters, 1-3 switch the tab, ? shows every key. Esc is layered: a note being written, then full width, then
 // the compare panel, then the selection, then (Release) the table, else back to the drawing set.
 // On a phone the page is the table alone (Phone.tsx hosts it with `phone`): pack items as cards over the decision
@@ -58,6 +59,7 @@ import { DispatchBar, Triage } from './variants/Triage';
 import { WavesBar } from './waves/WavesBar';
 import { MvpStrip } from './variants/MvpStrip';
 import { TrustPanel } from './TrustPanel';
+import { BriefDrawer } from './BriefDrawer';
 import { measureItems, refusalText, startAllLenses } from '@/lib/scan/actions';
 import { Matrix } from './variants/Matrix';
 import { PackTable } from './train/PackTable';
@@ -106,6 +108,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   const name = useProductName(E.M.live?.slug ?? null, E.M.P.name);
   const root = useRef<HTMLElement>(null), filter = useRef<HTMLInputElement>(null);
   const [keys, setKeys] = useState(false);
+  // the finding whose decline reason is being written in the brief drawer (null: none)
+  const [declining, setDeclining] = useState<string | null>(null);
   const scope: KeyScope = lv === 'release' ? 'release' : ui.scope, packs = scope === 'packs';
   const cmpOpen = packs && !!ui.open;
   // the order "next waiting" walks after a decision: the table's kept rows
@@ -172,6 +176,9 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   }, [sheet, set]);
 
   const current = (): string | null => { const ord = L.order(lv); return ui.focus && ord.includes(ui.focus) ? ui.focus : ord[0] ?? null; };
+  // the Backlog table's focused finding (the row Triage marks focused: the focus, else the first row) has its brief docked beside it
+  const briefId = !phone && !packs && lv === 'triage' ? (ui.focus && L.byId.has(ui.focus) ? ui.focus : L.rows[0]?.p.id ?? null) : null;
+  const decline = async (id: string, reason: string) => { if (await L.decideOne(id, 'decline', reason)) setDeclining(null); };
   const step = (d: number) => {
     const ord = L.order(lv); if (!ord.length) return;
     const i = ui.focus ? ord.indexOf(ui.focus) : -1, j = i < 0 ? (d > 0 ? 0 : ord.length - 1) : Math.max(0, Math.min(ord.length - 1, i + d)), id = ord[j];
@@ -212,7 +219,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       return;
     }
     if (t.closest('.lg-side, .lg-pop, .lg-waves, .lg-trust')) return; // the Lenses panel, the lens menus, the wave strip and the trust panel keep their own keys
-    const ctl = isControl(t), a = keyAction(cmpOpen ? ['compare', scope] : [scope], k);
+    const ctl = isControl(t), a = keyAction(cmpOpen ? ['compare', scope] : [scope], k, L.writes);
     if (!a || ((a === 'select' && k === ' ') || a === 'open') && ctl) return;
     if (phone && (a === 'view1' || a === 'view2' || a === 'view3')) return;
     e.preventDefault();
@@ -235,6 +242,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       case 'measure': measure(); return;
       case 'dispatch': void L.dispatchIds(); return;
       case 'dispatchFocused': void L.dispatchIds(under(current())); return;
+      case 'approveLater': { const id = current(); if (id && !id.startsWith('feat:')) void L.decideOne(id, 'approve'); return; }
+      case 'decline': { const id = current(); if (id && !id.startsWith('feat:') && L.byId.get(id)?.status === 'proposed') setDeclining(id); return; }
       case 'filter': filter.current?.focus(); return;
       case 'view1': case 'view2': case 'view3': E.setPage('ledger', LEDGER_VARIANTS[+a.slice(4) - 1]); return;
       case 'theme': set((u) => ({ ...u, cmp: { ...u.cmp, theme: cycle(THEMES, u.cmp.theme) } })); return;
@@ -244,7 +253,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       case 'build': case 'finish': case 'tag': return;
       case 'help': setKeys(true); return;
       case 'escape':
-        if (ui.note) set((u) => ({ ...u, note: null }));
+        if (declining) setDeclining(null);
+        else if (ui.note) set((u) => ({ ...u, note: null }));
         else if (cmpOpen && ui.wide) set((u) => ({ ...u, wide: false }));
         else if (cmpOpen) set((u) => ({ ...u, open: null, wide: false }));
         else if (ui.sel.size) L.clear();
@@ -298,10 +308,17 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
       <div className="lg-main">
         <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{mvpStrip}{waveStrip}{view}</div>
         {cmp}
+        {briefId ? (
+          <BriefDrawer id={briefId} decide={L.writes ? {
+            status: L.byId.get(briefId)?.status ?? 'proposed', declining: declining === briefId,
+            approve: () => void L.decideOne(briefId, 'approve'), startDecline: () => setDeclining(briefId),
+            decline: (r) => void decline(briefId, r), cancel: () => { setDeclining(null); root.current?.focus({ preventScroll: true }); },
+          } : undefined} />
+        ) : null}
         {lensPanel ? <aside className="lg-side" aria-label="Lenses">{lensPanel}</aside> : null}
       </div>
       {bar}
-      {keys ? <KeysSheet scopes={cmpOpen ? [scope, 'compare'] : [scope]} onClose={() => setKeys(false)} /> : null}
+      {keys ? <KeysSheet scopes={cmpOpen ? [scope, 'compare'] : [scope]} onClose={() => setKeys(false)} writes={L.writes} /> : null}
     </DecideOrder.Provider>
   );
   const cls = 'lg-page' + (cmp && ui.wide ? ' wide' : '');

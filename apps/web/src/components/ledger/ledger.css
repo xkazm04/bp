@@ -73,6 +73,15 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 /* the compare panel at full width: the table hides behind it (Esc or W gives it back) */
 .lg-page.wide .lg-body { display: none; }
 .lg-side { flex: none; max-width: 420px; overflow: auto; border-left: 1px solid var(--ink-3); background: var(--card); }
+/* the focused finding's brief (BriefDrawer.tsx), docked right of the Backlog table */
+.lg-brief { flex: none; width: clamp(280px, 28%, 400px); overflow: auto; padding: 10px 12px; border-left: 1px solid var(--ink-3); background: var(--card); font-size: 13px; }
+.lg-brief h4, .tr-brief h4 { margin: 0 0 6px; font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.lg-brief-n { margin: 0; font-size: 12px; color: var(--ink-2); }
+.lg-brief-b { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.lg-brief-b small { flex-basis: 100%; font-size: 12px; color: var(--ink-2); }
+.lg-brief-d { margin-top: 10px; }
+.lg-brief-d label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--ink-2); }
+.lg-brief-d textarea { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card-hi); border: 1px solid var(--ink-3); padding: 4px 6px; resize: vertical; }
 .lg-side:empty { display: none; }
 
 .lg-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 18px; border-top: 1px solid var(--ink-3); background: var(--card-hi); min-height: 52px; font-size: 14px; }

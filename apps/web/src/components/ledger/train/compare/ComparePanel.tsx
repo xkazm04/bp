@@ -2,7 +2,8 @@
 // the item (lens, id, pack and place in it, feature, title) with prev / next, Wide and close; the body holds the metric
 // line or, for an item measured in baseline runs, the performance table, the screens (light / dark / both x side by
 // side / slider / blink / change map), what the measurement says (before, after and the reading on main now: trackOf with
-// git's landings), the commit and its diff, and the item's own text; the
+// git's landings), the commit and its diff, the decision brief (BriefDrawer: precedent by what like approvals came to on
+// main) and the item's own text; the
 // footer carries the state mark over its triage note (or what the state means) and the decision strip (Decide,
 // compact). It docks right at clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a
 // full-screen sheet on the phone. Full width takes the keyboard focus when it hides the table's focused row.
@@ -19,6 +20,7 @@ import { byPackAge, isFlagged } from '@bp/core/train/rules';
 import { setLedgerUi, useLedgerUi, type CompareTheme, type CompareView } from '../../useLedger';
 import { useTrain, type TrainData } from '../data';
 import { Decide } from '../Decide';
+import { BriefDrawer } from '../../BriefDrawer';
 import { LensTag, SampleTag, StateMark } from '../ui/Marks.tsx';
 import { STATE } from '../ui/tables';
 import { Btn, Callout } from '../ui/Controls';
@@ -171,6 +173,8 @@ const Body = memo(function Body({ c, now, T, scan, lens, nameOf, view, onView, w
       {p.commit_sha ? <CommitDiff ctx={T.ctx} product={T.slug ?? 'kettle'} sha={p.commit_sha} initiallyOpen={wide} /> : (
         <section className="tr-sec"><h4>Commit</h4><p className="tr-dim">{p.status === 'failed' ? 'No commit: the build did not get that far.' : 'No commit recorded for this item.'}</p></section>
       )}
+      {/* the brief beside the judgement: how like approvals fared on main, the owner's declines, undo, cost */}
+      <BriefDrawer id={p.id} className="tr-sec tr-brief" />
       <section className="tr-sec"><h4>The item · {p.standard}</h4><ItemText body={p.body ?? p.title} /></section>
     </div>
   );

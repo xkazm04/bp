@@ -14,6 +14,8 @@
 .brief .bf-ev li.more button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline dotted; }
 .brief .bf-ev .vd { font: 500 12px/1.6 var(--mono); text-transform: uppercase; color: var(--mint-2); }
 .brief .bf-ev .v-declined .vd { color: var(--amber-2); }
+.brief .bf-ev .o-short .vd, .brief .bf-ev .o-failed .vd { color: var(--amber-2); }
+.brief .bf-ev .o-unmeasured .vd, .brief .bf-ev .o-descoped .vd { color: var(--ink-2); }
 .brief .bf-ev q { display: block; margin-top: 1px; font-style: italic; color: var(--ink-2); }
 .brief .bf-deps li { grid-template-columns: 1fr auto; }
 .brief .bf-deps li small { grid-column: auto; }

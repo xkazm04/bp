@@ -185,7 +185,8 @@ const noop = () => {};
 const BUDGETS: [string, number, () => string, number][] = [
   ['In packs table, 120 items in 10 packs', 120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'packs' })), 3300],
   ['Backlog table, 1,120 findings', 1120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'backlog' }, what: 'backlog' })), 24600],
-  ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 110],
+  // the compare panels carry the decision brief since 2026-11-03 (BriefDrawer: 11 elements; measured 121)
+  ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 133],
   ['compare panel, a perf item (runs table), diff closed', 1, () => render(h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 270],
   // the decision surface: the bar with a target (the Decide buttons and the package pill), and with its note editor open
   ['decision bar, one target', 1, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] })), 24],

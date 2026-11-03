@@ -158,6 +158,8 @@ function allowedUi(spec, t) {
   if (/\.server(\.|$)/.test(t)) return false;
   const b = noExt(t);
   if (under(b, UI) || under(b, LIB)) return true;
+  // the brief drawer: pack judging shows the same decision brief as the Backlog (one component, BriefDrawer.tsx)
+  if (b === 'apps/web/src/components/ledger/BriefDrawer') return true;
   if (['apps/web/src/components/ledger/useLedger', 'apps/web/src/components/ledger/variants/bits', 'apps/web/src/components/hooks', 'apps/web/src/engine/state', 'packages/core/src/standard/types', 'packages/core/src/standard/load'].includes(b)) return true;
   return (under(b, 'packages/core/src/scan') && spec.startsWith('@bp/core/')) || (under(b, 'apps/web/src/lib/scan') && spec.startsWith('@/'));
 }

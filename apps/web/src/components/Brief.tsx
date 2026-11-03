@@ -9,19 +9,25 @@
 // builds the cost comes from). `compact` (the plan's decision card) keeps the evidence lists short.
 import { useMemo, useState } from 'react';
 import { baseId, type Model, type SimDecision } from '@bp/core/model';
-import { briefFor, briefMapOfStructure, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap, type FactKey } from '@bp/core/scan/brief';
-import type { ScanSnapshot } from '@bp/core/scan/types';
+import { briefFor, briefMapOfStructure, outcomeAsks, subjectOf, type Brief, type BriefDecided, type BriefFact, type BriefMap, type FactKey } from '@bp/core/scan/brief';
+import type { TrackOpts } from '@bp/core/scan/track';
+import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { useBp, useEngine, useLive } from './hooks';
 import './decision-brief.css';
 
 const QUESTION_FACTS: readonly FactKey[] = ['blast', 'declined', 'precedent'];
 
+/** A stored proposal's whole brief over its store (`opts.landed`: what git says landed, so like approvals count by what
+ *  they came to on main). The live branch of briefOfDecision, and the ledger's drawer (either plane: its findings are rows). */
+export const briefOfProposal = (p: Proposal, scan: Pick<ScanSnapshot, 'proposals' | 'runs' | 'packs' | 'measurements' | 'releases'>, map: BriefMap, opts: TrackOpts = {}): Brief =>
+  briefFor(subjectOf(p), scan, map, opts);
+
 /** The brief of a decision: a live proposal's over `scan` (the live product's), or a Kettle question's over the sample's
  *  ScanSim (fewer facts); null without data. The one recipe the card, the Review and the crossing's VR stand-in share. */
-export function briefOfDecision(M: Model, d: SimDecision, scan: ScanSnapshot | undefined, map: BriefMap = briefMapOfStructure(M.P.base)): Brief | null {
+export function briefOfDecision(M: Model, d: SimDecision, scan: ScanSnapshot | undefined, map: BriefMap = briefMapOfStructure(M.P.base), opts: TrackOpts = {}): Brief | null {
   if (M.sim.live) {
     const p = scan?.proposals.find((x) => x.id === d.base);
-    return p && scan ? briefFor(subjectOf(p), scan, map) : null;
+    return p && scan ? briefOfProposal(p, scan, map, opts) : null;
   }
   const s = M.scanSim?.snapshot();
   if (!s) return null;
@@ -37,13 +43,17 @@ export function useBrief(d: SimDecision | null | undefined): Brief | null {
   return useMemo(() => (d ? briefOfDecision(M, d, scan, map) : null), [d, M, scan, map, simV]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** The card's chip: a repeat; a like idea declined elsewhere; a lens mostly declined; nothing when it may proceed. */
-const adviceChip = (b: Brief): string | null => (b.advice.say === 'withdraw' ? 'Repeats a decline' : b.advice.say === 'ask' ? (b.declines.length ? 'Like a declined idea' : 'Mostly declined before') : null);
+/** The card's chip: a repeat; a like idea declined elsewhere; a lens mostly declined; like approvals short on main as often
+ *  as they held; nothing when it may proceed. */
+const adviceChip = (b: Brief): string | null => (b.advice.say === 'withdraw' ? 'Repeats a decline'
+  : b.advice.say === 'ask' ? (b.declines.length ? 'Like a declined idea' : b.precedent.declined <= b.precedent.approved && outcomeAsks(b.precedent.outcome) ? 'Like approvals fell short on main' : 'Mostly declined before') : null);
 
+/** What an approval came to, in the row's verdict place: track.ts's words (held, short of expected, not measured since). */
+const OUTCOME_WORDS: Record<NonNullable<BriefDecided['outcome']>, string> = { held: 'held on main', short: 'short on main', unmeasured: 'not measured since', descoped: 'descoped', failed: 'build failed' };
 function Decided({ r }: { r: BriefDecided }) {
   return (
-    <li className={'v-' + r.verdict}>
-      <span className="vd">{r.verdict}</span>
+    <li className={'v-' + r.verdict + (r.outcome ? ' o-' + r.outcome : '')}>
+      <span className="vd">{r.outcome ? OUTCOME_WORDS[r.outcome] : r.verdict}</span>
       <span className="tt">{r.title}{r.note && <q>{r.note}</q>}</span>
       <small>{r.at} · {r.match} · {r.id}</small>
     </li>
@@ -57,7 +67,8 @@ function Evidence({ b, f, max: cap, line }: { b: Brief; f: BriefFact; max: numbe
   const [all, setAll] = useState(false), max = all ? Infinity : cap;
   const more = (n: number) => (n > max ? <li className="more"><button type="button" onClick={() => setAll(true)} title="Show every one">and {n - max} more</button></li> : null);
   if (f.key === 'precedent' || f.key === 'declined') {
-    const rows = f.key === 'declined' ? b.declines : b.precedent.rows;
+    // the precedent opens the rows its ids name: every matched row, or the short ones when the advice asks on them
+    const ids = new Set(f.ids), rows = f.key === 'declined' ? b.declines : b.precedent.rows.filter((r) => ids.has(r.id));
     return <ol className="bf-ev">{rows.slice(0, max).map((r) => <Decided key={r.id} r={r} />)}{more(rows.length)}</ol>;
   }
   if (f.key === 'blast') {
@@ -81,9 +92,10 @@ export function BriefStand({ d }: { d: SimDecision }) {
 }
 
 /** The brief's facts, each opening its evidence. `d`: the decision it is for, so a dependent flies to the tile on the same
- *  product line (at ?scale > 1 every tile id carries its line's suffix; the brief names base slugs). */
-export function BriefFacts({ b, d, compact = false }: { b: Brief; d: SimDecision; compact?: boolean }) {
-  const line = d.f.slice(baseId(d.f).length);
+ *  product line (at ?scale > 1 every tile id carries its line's suffix; the brief names base slugs); none (the ledger's
+ *  drawer): base slugs. */
+export function BriefFacts({ b, d, compact = false }: { b: Brief; d?: SimDecision; compact?: boolean }) {
+  const line = d ? d.f.slice(baseId(d.f).length) : '';
   const [open, setOpen] = useState<string | null>(null);
   const advice = adviceChip(b);
   return (
