@@ -9,9 +9,13 @@
 // Honesty rules: a branch reading is never the product's state (derive.ts isCurrent); a current reading taken before
 // the release is an observation, not evidence (a later reading is not caused by the change); `confirmed` needs a
 // reading after the release that meets the expected value (baseline + expected_delta, in the delta's direction).
+// Landed: an `accepted` item git says is already on the base branch (TrackOpts.landed) is judged by the same rule, with
+// its landing time standing in for the release's: 'landed · held', 'landed · short of expected' or 'landed · not measured
+// since' (stages confirmed / not-confirmed / unknown, so every reader of a stage counts it as it counts a release's).
 import { isCurrent, metricKey } from './derive.ts';
 import type { ScanJob } from './jobs.ts';
 import { landedIn, type Landing, type LandedMap } from './landed.ts';
+import type { MetricMethod } from '../standard/types.ts';
 import type { Measurement, Proposal, ProposalStatus, ScanSnapshot } from './types.ts';
 
 export type TrackStage = 'saving' | 'approved' | 'declined' | 'building' | 'failed' | 'built' | 'rework' | 'accepted' | 'descoped' | 'confirmed' | 'not-confirmed' | 'unknown';
@@ -40,6 +44,8 @@ export interface Track {
   /** The product's latest current reading of the metric, and whether it was taken after the release (evidence) or not (an observation). */
   current?: number;
   currentAt?: string;
+  /** How that reading was taken (judgement, static, probe): a judged metric is noisy. */
+  currentMethod?: MetricMethod;
   evidence?: boolean;
   job?: string;
   commit?: string;
@@ -60,7 +66,8 @@ export type Pending = { state: 'saving'; decision: 'approve' | 'decline' } | { s
 export interface TrackOpts {
   jobs?: readonly ScanJob[];
   pending?: ReadonlyMap<string, Pending>;
-  /** What git says already landed on the base branch (scan/landed.ts), by proposal id: carried on the track as `landed`. */
+  /** What git says already landed on the base branch (scan/landed.ts), by proposal id: carried on the track as `landed`,
+   *  and for an `accepted` item its landing time stands in for the release's (judged by the same confirm rule). */
   landed?: LandedMap;
 }
 
@@ -129,10 +136,13 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
   const job = (opts.jobs ?? []).find((j) => j.kind === 'execute' && (j.status === 'queued' || j.status === 'running') && j.proposals?.includes(p.id));
   if (job) t.job = job.id;
 
-  // released: when its release was merged or tagged (else the row's own time)
+  // released: when its release was merged or tagged (else the row's own time); an accepted item already on the base
+  // branch: when it landed there (git's committer time, as UTC like the store's times)
   const rel = p.release_id ? scan.releases.find((r) => r.id === p.release_id) : undefined;
-  const releasedAt = p.status === 'released' ? (rel && (rel.status === 'tagged' || rel.status === 'merged') ? rel.updated_at : p.updated_at) : undefined;
-  if (now) { t.current = now.value; t.currentAt = now.measured_at; t.evidence = !!releasedAt && now.measured_at > releasedAt; }
+  const landedAt = p.status === 'accepted' && landing ? utc(landing.at) : undefined;
+  const releasedAt = p.status === 'released' ? (rel && (rel.status === 'tagged' || rel.status === 'merged') ? rel.updated_at : p.updated_at) : landedAt;
+  const since = landedAt ? 'it landed' : 'the release';
+  if (now) { t.current = now.value; t.currentAt = now.measured_at; if (now.method) t.currentMethod = now.method; t.evidence = !!releasedAt && now.measured_at > releasedAt; }
 
   switch (p.status) {
     case 'proposed': t.stage = 'saving'; t.label = 'saving · ' + (pend?.state === 'saving' ? pend.decision : 'decision') + '…'; break;
@@ -144,14 +154,16 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
     case 'failed': t.stage = 'failed'; t.label = 'build failed'; break;
     case 'done': t.stage = 'built'; t.label = after ? 'built on branch ' + fmt(after.value) + exp : 'built on branch' + exp; break;
     case 'rework': t.stage = 'rework'; t.label = 'sent back for rework'; break;
-    case 'accepted': t.stage = 'accepted'; t.label = 'accepted · awaiting release'; break;
     case 'descoped': t.stage = 'descoped'; t.label = 'descoped'; break;
     case 'declined': t.stage = 'declined'; t.label = 'declined'; break;
+    case 'accepted':
+      if (!landedAt) { t.stage = 'accepted'; t.label = 'accepted · awaiting release'; break; }
+    // falls through: an accepted item on the base branch is judged as a released one, from its landing
     case 'released': {
-      const ev = t.evidence ? now : undefined;
-      if (!ev || expected === undefined || !d) { t.stage = 'unknown'; t.label = ev ? 'released · measured ' + fmt(ev.value) + u : 'released · not measured since'; t.next = 'measure'; }
-      else if (d > 0 ? ev.value >= expected : ev.value <= expected) { t.stage = 'confirmed'; t.label = 'confirmed · measured ' + fmt(ev.value) + exp; }
-      else { t.stage = 'not-confirmed'; t.label = 'measured ' + fmt(ev.value) + ', expected ' + fmt(expected); t.next = 'measure'; }
+      const ev = t.evidence ? now : undefined, on = landedAt ? 'landed' : 'released';
+      if (!ev || expected === undefined || !d) { t.stage = 'unknown'; t.label = ev ? on + ' · measured ' + fmt(ev.value) + u : on + ' · not measured since'; t.next = 'measure'; }
+      else if (d > 0 ? ev.value >= expected : ev.value <= expected) { t.stage = 'confirmed'; t.label = (landedAt ? 'landed · held · measured ' : 'confirmed · measured ') + fmt(ev.value) + exp; }
+      else { t.stage = 'not-confirmed'; t.label = (landedAt ? 'landed · short of expected · measured ' : 'measured ') + fmt(ev.value) + ', expected ' + fmt(expected); t.next = 'measure'; }
       break;
     }
   }
@@ -163,19 +175,39 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
   if (p.metric) {
     L.push(expected !== undefined && before ? `Expected ${p.metric}: ${fmt(expected)}${u} (${fmt(before.value)} ${d! > 0 ? '+' : '−'} ${fmt(Math.abs(d!))})` : `Expected: not stated as a number`);
     if (after) L.push(`Built on ${t.branchName}: ${fmt(after.value)}${unit(after)}${after.commit_sha ? ' at ' + after.commit_sha.slice(0, 7) : ''} (a branch reading, not the product)`);
-    if (now) L.push(t.evidence ? `Product now: ${fmt(now.value)}${unit(now)}, measured ${day(now.measured_at)} after the release` : `Product now: ${fmt(now.value)}${unit(now)}, measured ${day(now.measured_at)} (an observation${releasedAt ? ' from before the release' : ': the change is not released'})`);
+    if (now) L.push(t.evidence ? `Product now: ${fmt(now.value)}${unit(now)}, measured ${day(now.measured_at)} after ${since}` : `Product now: ${fmt(now.value)}${unit(now)}, measured ${day(now.measured_at)} (an observation${releasedAt ? ' from before ' + since : ': the change is not released'})`);
     else L.push('Product now: not measured');
   } else L.push('No metric: there is no number to confirm it by');
   if (job) L.push(`Build job ${job.id} (${job.status})`);
   if (t.commit) L.push('Commit ' + t.commit);
   if (landing) L.push(`Landed as ${landing.sha.slice(0, 7)} on ${day(landing.at)} (read from git${landing.by === 'patch-id' ? ', by its patch' : ''})`);
   if (p.release_id) L.push('Release ' + (rel?.version ?? p.release_id) + (rel ? ' (' + rel.status + ')' : ''));
-  if (t.stage === 'confirmed') L.push('Confirmed: a reading taken after the release meets the expected value');
-  else if (t.stage === 'not-confirmed') L.push('Not confirmed: the reading after the release falls short of the expected value');
-  else if (t.stage === 'unknown') L.push('Unknown: ' + (expected === undefined ? 'no expected value to compare with' : 'no reading of the product since the release'));
+  if (t.stage === 'confirmed') L.push((landedAt ? 'Held' : 'Confirmed') + `: a reading taken after ${since} meets the expected value`);
+  else if (t.stage === 'not-confirmed') L.push((landedAt ? 'Short of expected' : 'Not confirmed') + `: the reading after ${since} falls short of the expected value`);
+  else if (t.stage === 'unknown') L.push('Unknown: ' + (expected === undefined ? 'no expected value to compare with' : `no reading of the product since ${since}`));
   return t;
 }
 const title = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** An ISO time as UTC ('…Z'), so it compares as text with the store's; unparseable stays as it is. */
+const utc = (iso: string) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toISOString() : iso; };
+
+/** Where a change on the base branch stands, read from its track's stage (never re-judged): held (confirmed), short of
+ *  expected (not confirmed), not measured since, or no expected value to judge by. Null for a track not on main (neither
+ *  released nor an accepted item git says landed). */
+export type MainOutcome = 'held' | 'short' | 'unmeasured' | 'no-target';
+export function mainOutcome(t: Pick<Track, 'status' | 'stage' | 'landed' | 'expected'>): MainOutcome | null {
+  if (t.status !== 'released' && !(t.status === 'accepted' && t.landed)) return null;
+  return t.stage === 'confirmed' ? 'held' : t.stage === 'not-confirmed' ? 'short' : t.expected === undefined ? 'no-target' : 'unmeasured';
+}
+
+/** The rework note a short landed item starts from: "Short on master: standardsPct 100 on pack/des-2 -> 50 on 2026-10-30,
+ *  expected 100" (its branch reading, the reading on main and its day, the expected value). Null unless short on main. */
+export function shortNote(t: Track, base: string): string | null {
+  if (!t.landed || mainOutcome(t) !== 'short' || t.current === undefined || t.expected === undefined) return null;
+  const u = t.unit ? ' ' + t.unit : '';
+  const from = t.branch !== undefined ? fmt(t.branch) + u + ' on ' + (t.branchName ?? 'its branch') + ' -> ' : '';
+  return `Short on ${base}: ${t.metric ?? 'the metric'} ${from}${fmt(t.current)}${u} on ${day(t.currentAt)}, expected ${fmt(t.expected)}${u}`;
+}
 
 /** Every track to show: decided in the last TRACK_DAYS days, or not finished (not confirmed, declined or descoped), plus the
  *  decisions made here that the snapshot has not caught up with. Newest first. */

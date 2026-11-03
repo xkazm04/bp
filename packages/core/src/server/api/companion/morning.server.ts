@@ -16,7 +16,7 @@ import { loadMap } from '../../../data/index.ts';
 import { findProduct, hasStore, storeDir, storeFile, warnOnce } from '../../products.server.ts';
 import { decide, mapRev } from '../../store.server.ts';
 import { projectPlan } from '../../plan-projection.ts';
-import { triageBy } from '../../release.server.ts';
+import { landings, triageBy } from '../../release.server.ts';
 import { readTrail } from '../../brief.server.ts';
 import { snapshots } from './views.server.ts';
 
@@ -69,14 +69,17 @@ export function readSteer(p: ProductEntry): SteerRow[] {
 }
 
 /** The deck for the window [since, now]; products that cannot be read are named in `skipped`, never dropped silently.
- *  `opened`: when the reader first read this morning's deck; what landed after it comes as news, at the end. */
-export function morningDeck(since: string | undefined, now = Date.now(), opened?: string): MorningDeck & { skipped: { product: string; why: string }[] } {
+ *  `opened`: when the reader first read this morning's deck; what landed after it comes as news, at the end. Each
+ *  product's landings are read from git (release.server.ts landings); one git cannot read lands nothing there. */
+export async function morningDeck(since: string | undefined, now = Date.now(), opened?: string): Promise<MorningDeck & { skipped: { product: string; why: string }[] }> {
   const from = since && Number.isFinite(Date.parse(since)) ? new Date(Date.parse(since)).toISOString() : new Date(now - WINDOW_MS).toISOString();
   const cut = opened && Number.isFinite(Date.parse(opened)) ? new Date(Date.parse(opened)).toISOString() : undefined;
   const { read, skipped } = snapshots();
   const facts: ProductFacts[] = [], steer: SteerRow[] = [];
-  for (const { p, scan } of read) {
-    facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p) });
+  const landed = await Promise.all(read.map(({ p, scan }) => landings(p.root, scan).catch(() => null)));
+  for (const [i, { p, scan }] of read.entries()) {
+    const l = landed[i];
+    facts.push({ slug: p.slug, name: p.name, scan, ...whereOf(p), ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
     const rows = readSteer(p);
     steer.push(...rows);
     renderOnRead(p, rows, now);

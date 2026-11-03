@@ -4,7 +4,9 @@
 // card is read the deck publishes it to the shared focus and every following surface flies there.
 //   open      the portfolio in one line: built, failed, releases that moved their lens or fell short, decisions waiting
 //   built     per product: what agents built overnight (and what failed), at the room where most of it landed
-//   release   per product: a release merged in the window, and whether readings taken after it confirm its items
+//   release   per product: a release merged in the window, and whether readings taken after it confirm its items; and
+//             the accepted items git says landed on the base branch in the window (ProductFacts.landed), judged by the
+//             same rule from their landing (scan/track.ts): held, short of expected, or not measured since
 //   quiet     per product with nothing in the window: said once, calmly, so silence is never mistaken for "not read"
 //   agents    what agents did with the owner's decisions overnight (the agent trail, companion/trail.ts): the briefs they
 //             read before proposing, the declines they heard back, what they withdrew and what they recommended
@@ -21,7 +23,8 @@
 // that meets its expected value (scan/track.ts); anything else is "not measured since", never good.
 import type { FocusPlace } from '../session/focus.ts';
 import type { Proposal, ScanSnapshot } from '../scan/types.ts';
-import { tracksOf, type Track } from '../scan/track.ts';
+import { mainOutcome, trackOf, tracksOf, type Track } from '../scan/track.ts';
+import type { LandedMap } from '../scan/landed.ts';
 import type { Brief, BriefMap } from '../scan/brief.ts';
 import { cardBrief, clip, type CardBrief } from './card-brief.ts';
 export { cardBrief, type CardBrief };
@@ -47,6 +50,8 @@ export interface ProductFacts {
   labels?: ReadonlyMap<string, string>;
   /** The plan as the decision brief reads it (briefMapOfStructure); absent -> every brief says 'not on the plan'. */
   map?: BriefMap;
+  /** What git says already landed on the base branch `ref` (server: release.server.ts landings); absent or unknown -> none. */
+  landed?: { ref: string; items: LandedMap };
 }
 /** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
@@ -93,6 +98,8 @@ function busiestRoom(fs: readonly string[], where: ReadonlyMap<string, Where>): 
 const roomPlace = (product: string, w: Where | undefined, say: string): FocusPlace | undefined => (w ? { product, target: { kind: 'room', id: w.room }, level: 'L2', say } : undefined);
 const featurePlace = (product: string, feature: string, say: string): FocusPlace => ({ product, target: { kind: 'feature', id: feature }, level: 'L4', say });
 const inWindow = (iso: string | undefined, since: string, until: string) => !!iso && iso >= since && iso <= until;
+/** git's committer time (an offset) as UTC, comparable as text with the window. */
+const utc = (iso: string) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toISOString() : iso; };
 
 /** A decision on the morning's table. `today`: steered in this window, so it keeps its slot (marked) and the deck does not
  *  reshuffle as the owner decides; `held`: held on an earlier morning, still waiting. */
@@ -122,6 +129,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   const decisions: (Choice & { p: ProductFacts })[] = [], fresh: (Choice & { p: ProductFacts })[] = [], newsCards: MorningCard[] = [];
   let newsCount = 0;
   const perProduct: MorningCard[][] = [];
+  // products where something landed on the base branch in the window (a landed card)
+  const landedIn = new Set<string>();
   for (const p of products) {
     const mine: MorningCard[] = [];
     const built = p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && inWindow(x.updated_at, since, cut));
@@ -149,6 +158,26 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     for (const t of tracks) if (!tileTop.has(t.feature)) tileTop.set(t.feature, t.id);
     const onTile = (t: Track) => tileTop.get(t.feature) === t.id;
     let confirmed = 0, short = 0;
+    // accepted items that landed on the base branch in the window, with no release behind them: judged as a release's
+    const L = p.landed, lts: Track[] = [];
+    if (L) for (const id of Object.keys(L.items)) {
+      if (!inWindow(utc(L.items[id].at), since, cut)) continue;
+      const t = trackOf(p.scan, id, { landed: L.items });
+      if (t && t.status === 'accepted' && mainOutcome(t)) lts.push(t);
+    }
+    if (lts.length) {
+      const good = lts.filter((t) => t.stage === 'confirmed'), fell = lts.filter((t) => t.stage === 'not-confirmed'), unk = lts.length - good.length - fell.length;
+      confirmed += good.length; short += fell.length; landedIn.add(p.slug);
+      const headline = fell.length ? `${p.name}: ${fell.length} of ${n(lts.length, 'item')} that landed on ${L!.ref} ${fell.length === 1 ? 'is' : 'are'} short of what was expected.`
+        : unk ? `${p.name}: ${n(lts.length, 'item')} landed on ${L!.ref}; ${unk} not measured since.`
+          : `${p.name}: ${n(lts.length, 'item')} landed on ${L!.ref}; ${lts.length === 1 ? 'it' : 'all ' + lts.length} held.`;
+      const focus = fell.find(onTile) ?? fell[0] ?? good[0] ?? lts[0];
+      mine.push({
+        id: `landed:${p.slug}`, kind: 'release', product: p.slug, productName: p.name, headline, tone: fell.length ? 'bad' : unk ? 'warn' : 'good',
+        lines: [focus, ...lts.filter((t) => t !== focus)].map((t) => ({ text: trackWords(t, p.where), tone: t.stage === 'confirmed' ? 'good' as Tone : t.stage === 'not-confirmed' ? 'bad' as Tone : 'warn' as Tone })).slice(0, 5),
+        place: featurePlace(p.slug, focus.feature, headline),
+      });
+    }
     for (const r of rels) {
       const ts = tracks.filter((t) => t.release === r.id);
       const good = ts.filter((t) => t.stage === 'confirmed'), fell = ts.filter((t) => t.stage === 'not-confirmed'), unk = ts.filter((t) => t.stage !== 'confirmed' && t.stage !== 'not-confirmed');
@@ -185,13 +214,14 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   newsCount += fresh.length;
   const top = [...decisions.filter((d) => !d.held).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.held).slice(0, HELD_SHOWN)];
   const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
-  const moved = sums.filter((s) => s.built || s.failed || s.releases).length;
+  const moved = sums.filter((s) => s.built || s.failed || s.releases || landedIn.has(s.slug)).length;
+  const shipped = !landedIn.size ? 'Releases' : sums.some((s) => s.releases) ? 'Releases and landings' : 'Landed on the base branch';
   const openLine = products.length
     ? `Overnight, ${moved ? n(moved, 'product') + ' of ' + products.length + ' moved' : 'none of your ' + n(products.length, 'product') + ' moved'}${S.built ? `: ${n(S.built, 'item')} built` : ''}${S.failed ? `, ${S.failed} failed` : ''}.`
     : 'No live products are registered, so there is nothing to brief.';
   cards.push({
     id: 'open', kind: 'open', headline: 'Good morning.', tone: 'calm',
-    lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `Releases: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
+    lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `${shipped}: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
       { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} ${Math.min(TOP_DECISIONS, S.waiting) === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
   });
   // the agent trail of the window: one line on the opening card, and a card of its own with what they heard and did
@@ -291,13 +321,13 @@ export function agentDeck(d: MorningDeck): AgentDeck {
   };
 }
 
-/** One release item in words: "Split the X bundle · Checkout: expected 41 KB, measured 44 KB after the release". */
+/** One release (or landed) item in words: "Split the X bundle · Checkout: expected 41 KB, measured 44 KB". */
 export function trackWords(t: Track, where: ReadonlyMap<string, Where>): string {
   const room = where.get(t.feature)?.roomName, u = t.unit ? ' ' + t.unit : '';
-  const head = t.title + (room ? ' · ' + room : '');
-  if (t.stage === 'confirmed' && t.current !== undefined) return `${head}: measured ${fmt(t.current)}${u} after the release, as expected`;
+  const head = t.title + (room ? ' · ' + room : ''), since = t.landed && t.status === 'accepted' ? 'it landed' : 'the release';
+  if (t.stage === 'confirmed' && t.current !== undefined) return `${head}: measured ${fmt(t.current)}${u} after ${since}, as expected`;
   if (t.stage === 'not-confirmed' && t.current !== undefined && t.expected !== undefined) return `${head}: expected ${fmt(t.expected)}${u}, measured ${fmt(t.current)}${u}`;
-  return `${head}: not measured since the release`;
+  return `${head}: not measured since ${since}`;
 }
 
 /** A decision taken this morning somewhere other than the deck: on the plan, in the ledger, or in Personas (which writes the

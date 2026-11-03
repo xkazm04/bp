@@ -139,13 +139,13 @@ const built = TR.trackOf({ ...base, proposals: [c1] }, 'c1');
 expect(built?.stage === 'built' && built.label === 'built on branch 46 (expected 52)', '(c) built on branch 46 (expected 52)', built?.label);
 expect(built.current === 42 && built.evidence === false && built.branch === 46 && built.branchName === 'pack/dev-1', '(c) the product\'s current reading stays 42; the branch reading is labelled with its branch', JSON.stringify([built.current, built.branch, built.branchName]));
 expect(built.lines.some((l: string) => /Built on pack\/dev-1: 46 .*not the product/.test(l)) && built.lines.some((l: string) => /Product now: 42.*observation/.test(l)), '(c) the record keeps branch and product apart, the current one an observation', built.lines.join(' | '));
-{ // the landing read from git rides on the track (TrackOpts.landed); the stage stays the store's until C2 reads it
+{ // the landing read from git rides on the track (TrackOpts.landed); an accepted item is judged from it (check:on-main)
   const accepted = { ...c1, status: 'accepted', commit_sha: 'b'.repeat(40) }, on = { sha: 'c'.repeat(40), at: h(3.5), by: 'trailer' };
   const plain = TR.trackOf({ ...base, proposals: [accepted] }, 'c1'), landed = TR.trackOf({ ...base, proposals: [accepted] }, 'c1', { landed: { c1: on } });
   expect(landed?.landed?.sha === on.sha && landed.lines.some((l: string) => l === `Landed as ccccccc on ${h(3.5).slice(0, 10)} (read from git)`) && plain?.landed === undefined,
     '(c) opts.landed: the track carries the landing and says it in words; without it, no landing', JSON.stringify([landed?.landed, landed?.lines]));
-  expect(landed?.stage === plain?.stage && landed?.label === plain?.label && TR.trackOf({ ...base, proposals: [accepted] }, 'c1', { landed: Object.create({ c1: on }) })?.landed === undefined,
-    '(c) opts.landed changes no stage or label (yet), and an inherited key is no landing', JSON.stringify([landed?.stage, landed?.label]));
+  expect(plain?.label === 'accepted · awaiting release' && landed?.stage === 'unknown' && landed?.label === 'landed · not measured since' && TR.trackOf({ ...base, proposals: [accepted] }, 'c1', { landed: Object.create({ c1: on }) })?.label === 'accepted · awaiting release',
+    '(c) opts.landed: an accepted item with no reading since it landed reads "landed · not measured since"; an inherited key is no landing', JSON.stringify([landed?.stage, landed?.label]));
 }
 const rel = { id: 'rel-1.0.0', version: '1.0.0', branch: 'release/1.0.0', status: 'tagged', tag: 'v1.0.0', created_at: h(4), updated_at: h(5) };
 const released = { ...c1, status: 'released', release_id: 'rel-1.0.0', updated_at: h(5) };

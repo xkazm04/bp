@@ -78,11 +78,11 @@ d = await deck();
 const ids = (x: Deck) => x.cards.filter((c) => c.kind === 'decision').map((c) => c.id).join(' ');
 check('this morning the deck keeps its three in place, each marked with its verdict', ids(d) === dec.map((c) => c.id).join(' ') && d.cards.filter((c) => c.kind === 'decision').every((c) => !!c.decision?.steered), ids(d));
 const { morningDeck } = await import('../packages/core/src/server/api/companion/morning.server.ts');
-const later = morningDeck(undefined, Date.now() + 18 * 3600e3);
+const later = await morningDeck(undefined, Date.now() + 18 * 3600e3);
 check('the next morning the approved one is gone and the deferred one is still off the deck', !later.cards.some((c) => c.decision?.proposal === d0.decision!.proposal || c.decision?.proposal === d1.decision!.proposal));
 const held = later.cards.find((c) => c.decision?.proposal === d2.decision!.proposal);
 check('...the held one is still there, marked held, after the top three', !!held && held.lines.some((l) => /^Held since/.test(l.text)) && later.cards.filter((c) => c.kind === 'decision').pop()?.id === held.id, ids(later));
-check('...and the morning after that the deferred one is back', morningDeck(undefined, Date.now() + 22 * 3600e3).cards.some((c) => c.decision?.proposal === d1.decision!.proposal));
+check('...and the morning after that the deferred one is back', (await morningDeck(undefined, Date.now() + 22 * 3600e3)).cards.some((c) => c.decision?.proposal === d1.decision!.proposal));
 const close = d.cards[d.cards.length - 1];
 check('the close card says what was decided', /1 approved, 1 deferred to tomorrow, 1 held/.test(close.lines[0]?.text ?? ''), close.lines.map((l) => l.text).join(' | '));
 // a decision taken this morning on the plan (or by Personas through its own path) is counted on the close card

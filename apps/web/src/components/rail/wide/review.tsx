@@ -17,6 +17,7 @@ import { vetoDecision } from '@/lib/scan/actions';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
 import { BriefFacts, useBrief } from '../../Brief';
 import { RuleChip, RuleNote, useRuleMark } from './rule-mark';
+import { useLandings } from '@/lib/scan/landings';
 
 
 /** The list key prefix of a machine decision row (v5): `veto:<proposal id>`. */
@@ -232,6 +233,7 @@ function PlaceActions({ d }: { d: SimDecision }) {
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
+  const landed = useLandings(useScanCtx(), scan, scan?.proposals);
   const brief = useBrief(d);
   const mark = useRuleMark(p); // the owner's standing rules over this finding (rule-mark.tsx)
   const f = M.P.F[d.f];
@@ -246,8 +248,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const ev = last ? [last.evidence, last.method && 'measured by ' + last.method, last.measured_at && 'on ' + last.measured_at.slice(0, 10), h.length > 1 ? h.length + ' readings' : ''].filter(Boolean) : [];
   const meta = p ? [p.parent_id && 'follows ' + p.parent_id, p.after_value !== undefined && 'after the change: ' + fmtN(p.after_value), 'proposed ' + p.created_at.slice(0, 10)].filter(Boolean) : [];
   const cancel = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
-  // what earlier decisions on this feature + lens (and the attempts this one follows) came to; live only
-  const rec = useMemo(() => (scan && p ? priorRecord(scan, p) : null), [scan, p]);
+  // what earlier decisions on this feature + lens (and the attempts this one follows) came to, landed items judged from
+  // their landing (git's answer; none until it comes); live only
+  const rec = useMemo(() => (scan && p ? priorRecord(scan, p, landed?.state === 'known' ? { landed: landed.items } : {}) : null), [scan, p, landed]);
   const rw = rec && p ? recordWords(rec, M.P.LENS[p.lens]?.name ?? p.lens, (st) => STAGE_WORDS[st]) : null;
   return (
     <>

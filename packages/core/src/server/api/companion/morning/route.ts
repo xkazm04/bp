@@ -14,10 +14,10 @@ import { morningDeck, steer } from '../morning.server.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
-export function GET(req: Request): Response {
+export async function GET(req: Request): Promise<Response> {
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
-  const q = new URL(req.url).searchParams, deck = morningDeck(q.get('since') ?? undefined, Date.now(), q.get('opened') ?? undefined);
+  const q = new URL(req.url).searchParams, deck = await morningDeck(q.get('since') ?? undefined, Date.now(), q.get('opened') ?? undefined);
   return Response.json(q.get('view') === 'agent' ? agentDeck(deck) : deck, { headers: NO_STORE });
 }
 
