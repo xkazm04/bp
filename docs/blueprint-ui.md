@@ -314,6 +314,38 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
   bad after load had no flag and no count until a reload. `npm run check:trouble-index` feeds a scan that turns one
   healthy feature bad and pins its flag, the count rising by one and `troubleV` moving.
 
+## The spoken plan and the trouble route (2026-11-03)
+
+The canvas used to announce nothing: a keyboard walk only flew the camera (the recorded `canvas-graph/canvas-accessibility`
+deviation). Now the plan has a voice and a way through its trouble.
+
+- **What a place says** is one pure function, `placeWords` in `apps/web/src/engine/place-words.ts`: the place's kind and
+  name, its feature count, the lens's own place parts (the channel's `aggregate`, so any manifest lens such as
+  `com.kettle.cost` is spoken with no code) or the stage parts under General and on past dates, and how many are bad under
+  the view with the first one's reason. The hover card's place summary renders from it, and `placeSentence` turns it into
+  the spoken line: "Room Booking & Attendance · wing B · 10 features · 7 live · 2 building · 1 on paper · 3 in trouble:
+  Waitlist with auto-promote, Operations: 2 incidents in 30 days".
+- **The live region** (`PlaceVoice` in `Overlays.tsx`, `#bp-said`) is visually hidden, `role="status"`,
+  `aria-live="polite"`, and its text is replaced, never appended (the store's `said`). The engine fills it only once the
+  camera has rested 600 ms, the same rest a place needs before it earns a browser history entry (`Engine.PUSH_MS`), so a
+  fly-through or a run of arrow keys speaks only where it stopped. It speaks on room walks (the room's sentence, even when
+  the room's fit also enters a bay), on any other arrival at a new place, and on a lens switch (the same place, through the
+  new lens). The page load and an open feature page say nothing. The canvas's accessible name is the short "Product floor
+  plan"; it is described by the live region and by a hidden key list (`#bp-keys`).
+- **N / Shift+N, the trouble route.** N steps forward (Shift+N back) through the features the current lens marks bad or
+  watch, under General every lens's, in `M.L.walk` room order and then bay and tile order (`engine/trouble-route.ts`). Each
+  arrival flies to the tile with the highlight (`flyToFeature(id, true)`) and, at rest, says "3 of 8 · Payments › Card vault
+  · Security bad: 2 secrets found". The route is read from the trouble index and **frozen** while it is read: a feature
+  that turns bad meanwhile is said as "1 new" and joins when the route is captured again (stepping past either end, or
+  under another lens). Health stays live and separate from the route: a member that recovered says "Security now good".
+  Enter opens the arrival's page; Esc closes it and the route keeps its position. J / K stay with the questions.
+  "No feature is in trouble under <lens> now" when there is none.
+- No frame work: the sentence is built on the timer that fires after the rest, and React reads only the `said` string.
+- `npm run check:place-words` pins the sentences for three places under General, one under Security and one under
+  `com.kettle.cost`, that the hover card reads `placeWords`, and, on an Engine in Node, that ArrowRight twice changes the
+  region exactly twice and never mid-flight, that N visits every troubled feature once in walk order, Shift+N, Enter / Esc
+  keeping the position, and the "1 new" count with the route unchanged.
+
 ## Lens fill and unknowns (2026-10-13)
 
 The owner's rules: a progress rail as a thin line is unreadable at its size, so a lens view fills the

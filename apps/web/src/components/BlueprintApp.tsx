@@ -34,7 +34,7 @@ import { FollowHost } from './focus/FollowHost';
 import { MorningWatch } from './focus/MorningWatch';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
-import { Callout, DecisionCard, HoverCard, Ladder, LensFailNotice, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
+import { Callout, DecisionCard, HoverCard, Ladder, LensFailNotice, Morning, PlaceVoice, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
 import { FeatureSheet } from './FeatureSheet';
 import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
@@ -71,6 +71,7 @@ const Chrome = memo(function Chrome() {
       <Callout />
       <EmptyPlan />
       <HoverCard />
+      <PlaceVoice />
       <DecisionCard />
       <Toast />
       <FeatureSheet />
@@ -323,8 +324,8 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     <MotionConfig reducedMotion="user">
     <div className="bp" ref={root} data-variant={variantId} data-view={GENERAL}>
       <div className="bp-paper" />
-      <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
-        aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
+      <canvas ref={cv} className="bp-map" tabIndex={0} role="application" aria-label="Product floor plan" aria-describedby="bp-said bp-keys" />
+      <p id="bp-keys" className="bp-vh">{'The ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' works over the plan. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, N and Shift+N step through the features in trouble under the lens, Enter opens, Escape goes back. Shift-drag draws a selection. Where the plan rests is read out in the status line.'}</p>
       <div className="bp-vig" />
       <div className="bp-sheen" />
       <div className="bp-frame" />

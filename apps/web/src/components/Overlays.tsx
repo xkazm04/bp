@@ -5,12 +5,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, cursorFor, dnum, fmtWait, isAgentId, isLiveSt, kindWords, lensOf,
-  morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
+  morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type OrderTemplate,
 } from '@bp/core/model';
 import { overlayRight } from '@/engine/chrome';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
-import { lensFailed } from '@/engine/render/plan';
 import { steerVerbs } from '@/lib/model/live-steer';
 import { altLabel } from '@bp/core/scan/live-plan';
 import { selbarStepsAside } from '@/lib/model/preview-seat';
@@ -20,6 +19,7 @@ import { STAGE_WORDS, TrackRecord } from './TrackRecord';
 import { proposalSummary } from './Queue';
 import { BriefFacts, useBrief } from './Brief';
 import { lensWords } from './sheet/words';
+import { placeWords } from '@/engine/place-words';
 
 // ---------------------------------------------------------------------------------- ladder, scale
 export function Ladder() {
@@ -100,13 +100,6 @@ function SwarmLines({ fs }: { fs: readonly import('@bp/core/data').Feature[] }) 
       {ss.asks ? <div className="sw q">{ss.asks} open question{ss.asks > 1 ? 's' : ''}{ss.mine ? ', ' + ss.mine + ' for ' + (S.who ? pname(E.M.P, S.who).split(' ')[0] : 'this sheet') : ''}</div> : null}
     </>
   );
-}
-/**
- * A lens whose aggregate throws costs that lens's line on the card, not the chrome: the card falls back to the
- * general counts and the failure is logged once per engine and lens through the SAME set the canvas labels use (plan.ts lensFailed).
- */
-function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@bp/core/data').Feature[]): string[] | null {
-  try { return E.lensAgg(id, l, fs).parts; } catch (err) { lensFailed(E, l, 'aggregate', err); return null; }
 }
 function HoverBody() {
   const E = useEngine(), M = E.M, sim = M.sim;
@@ -191,16 +184,8 @@ function HoverBody() {
       </>
     );
   }
-  const o = E.placeById(h.type, h.id); if (!o) return null;
-  let title = '', kick = '', sub = '', art: string | null = null;
-  if (h.type === 'wing') { const w = o as WingNode; title = w.def.name; kick = 'Wing ' + w.def.letter + (M.P.scale > 1 ? ' · ' + w.bld.name : ''); sub = w.def.plain + '. ' + w.rooms.length + ' rooms: ' + w.rooms.map((r) => r.name).join(', ') + '.'; art = w.def.art; }
-  else if (h.type === 'room') { const r = o as RoomNode; title = r.name; kick = 'Room · wing ' + r.wing.def.letter + ' ' + r.wing.def.name; sub = r.summary; art = r.d.base; }
-  else if (h.type === 'bay') { const b = o as BayNode; title = b.name; kick = 'Bay · ' + b.room.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
-  else { const b = o as BldNode; title = b.name; kick = 'Building'; sub = b.wings.length + ' wings, ' + b.wings.reduce((n, w) => n + w.rooms.length, 0) + ' rooms'; }
-  const c = M.agg.countsOf(o.id, o.feats, s.t, s.delta);
-  const lp = lensOf(M.P, s.view) && now ? lensParts(E, o.id, s.view, o.feats) : null;
-  const parts = lp ? [o.feats.length + ' features', ...lp] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
-  const bad = now ? M.agg.healthOf(o.id, o.feats, s.view).bad : 0, tot = Math.max(1, c.n);
+  const w = placeWords(E, h.type, h.id, s.view, s.t, s.delta); if (!w) return null;
+  const { title, kick, sub, art, counts: c, parts, bad } = w, o = E.placeById(h.type, h.id)!, tot = Math.max(1, c.n);
   return (
     <>
       {art && <div className="art" dangerouslySetInnerHTML={{ __html: illoSVG(art, 'currentColor') }} style={{ color: 'var(--lens)' }} />}
@@ -215,6 +200,15 @@ function HoverBody() {
       <div className="h">Click or scroll to go inside · Shift-click to target</div>
     </>
   );
+}
+/**
+ * The plan's spoken voice: a visually hidden polite status region whose text the engine replaces (never appends) once the
+ * camera has rested on a place (a room walk, a zoom, a lens switch) or on a trouble-route arrival (N / Shift+N). The
+ * canvas's accessible description points here. It re-renders only when the sentence changes.
+ */
+export function PlaceVoice() {
+  const said = useBp((s) => s.said);
+  return <div id="bp-said" className="bp-vh" role="status" aria-live="polite" aria-atomic="true">{said}</div>;
 }
 export function HoverCard() {
   const E = useEngine();

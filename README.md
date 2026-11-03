@@ -48,7 +48,7 @@ drives the swarm layer live, its proposals wait in the queue for Approve or Decl
 metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`kettle-live`) without a real
 scan, every reading projected from the Kettle map and its lens manifests, with Kettle's sample release train (three packs, built items to triage, a draft release); `node scripts/smoke-live.mjs [base]` seeds it and walks every product route against a running server. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
 
-Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
+Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · `N` / `Shift+N` step through the features in trouble under the lens · Enter opens · Esc goes back.
 
 ## Running under Personas
 

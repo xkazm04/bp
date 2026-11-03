@@ -30,6 +30,8 @@ import {
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
 import { TroubleIndex } from './trouble';
+import { captureRoute, newMembers, routeRank, routeWords, stepRoute, type TroubleRoute } from './trouble-route';
+import { placeSentence, placeWords } from './place-words';
 import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
 import { HitList, TOUCH, type Hit, type HitKind } from './render/hits';
 import { ScanLayer, type ScanView } from './render/scans';
@@ -619,6 +621,7 @@ export class Engine {
     this.mix.to(v, quiet || this.cam.reduced || !!this.S.open);
     this.syncRootView();
     this.writeHashSoon();
+    if (!this.S.open) this.saySoon(null); // the same place, said through the new lens
   }
   setWho(id: string | null) {
     this.store.set({ who: id || null, whoMenu: false, dtab: this.S.dtab ? 'asks' : null });
@@ -708,7 +711,10 @@ export class Engine {
     let i = cur ? W.indexOf(cur.t === 'bay' ? (cur.o as BayNode).room : (cur.o as RoomNode)) : -1;
     if (i < 0) { const w = this.chainBest().find((c) => c.t === 'wing'); i = w ? W.indexOf((w.o as WingNode).rooms[0]) - (dir > 0 ? 1 : 0) : dir > 0 ? -1 : W.length; }
     i = (i + dir + W.length) % W.length;
-    this.cam.flyTo(this.fitCam(W[i], PADS.room, OVER.room));
+    // the ROOM's sentence once the camera rests there (its fit can also enter a bay, whose sentence the place would give)
+    const R = W[i];
+    this.saySoon(() => { const S = this.S, w = placeWords(this, 'room', R.id, S.view, S.t, S.delta); return w ? placeSentence(w) : ''; });
+    this.cam.flyTo(this.fitCam(R, PADS.room, OVER.room));
   }
   flyToFeature(id: string, highlight = true) {
     const T = this.M.L.TILE[id]; if (!T) return;
@@ -1054,6 +1060,74 @@ export class Engine {
     const names = this.levelNames();
     this.store.set({ place: pl.map((c) => ({ t: c.t, id: c.o.id })), level: open ? names.length - 1 : pl.length });
     this.writeHashSoon();
+    if (this.placeSeen) this.saySoon(); // a new place speaks once it rests (not the one the page loaded at)
+    this.placeSeen = true;
+  }
+
+  // ============================================================================ the spoken plan (a polite live region)
+  /** What the live region says next (a route arrival's words); null: the place's own sentence. */
+  private sayNext: (() => string) | null = null; private sayTimer = 0; private placeSeen = false;
+  /**
+   * Speak once the camera has rested PUSH_MS (the same rest a place needs to earn a history entry), so a fly-through
+   * or a run of arrow keys says only where it stopped. The text replaces what the region said; nothing queues.
+   * `next`: the words to say instead of the place's sentence (undefined keeps a pending one, null drops it).
+   */
+  private saySoon(next?: (() => string) | null) {
+    if (next !== undefined) this.sayNext = next;
+    clearTimeout(this.sayTimer);
+    this.sayTimer = window.setTimeout(this.sayNow, Engine.PUSH_MS);
+  }
+  private sayNow = () => {
+    if (this.destroyed) return;
+    const still = performance.now() - this.lastCamMove;
+    if (this.cam.moving || still < Engine.PUSH_MS) { this.sayTimer = window.setTimeout(this.sayNow, Math.max(16, Engine.PUSH_MS - still)); return; }
+    const S = this.S, f = this.sayNext; this.sayNext = null;
+    if (S.phone || S.page === 'ledger' || (S.open && !f)) return; // the page speaks for itself
+    const text = f ? f() : this.placeSaid();
+    if (text) this.store.set({ said: text });
+  };
+  /** The sentence for where the camera is: the deepest place, else the site (its one building, or how many). */
+  placeSaid(): string {
+    const p = this.place[this.place.length - 1], S = this.S;
+    if (p) { const w = placeWords(this, p.t, p.o.id, S.view, S.t, S.delta); return w ? placeSentence(w) : ''; }
+    const B = this.M.L.blds;
+    if (B.length === 1) { const w = placeWords(this, 'bld', B[0].id, S.view, S.t, S.delta); return w ? placeSentence(w) : ''; }
+    return 'Site plan · ' + B.length + ' buildings · ' + this.M.P.features.length + ' features';
+  }
+
+  // ============================================================================ the trouble route (N / Shift+N)
+  private route: TroubleRoute | null = null; private rank: Map<string, number> | null = null;
+  /** The features in trouble under the view: the lens's bad and watch, or under General every lens's. */
+  private troubleOf(view: ViewId): readonly Feature[] { return view === GENERAL ? this.trouble.all() : this.trouble.of(view); }
+  /** The route's current feature, while there is one. */
+  get routeAt(): string | null { const r = this.route; return r && r.i >= 0 ? r.ids[r.i] ?? null : null; }
+  /**
+   * Step the trouble route: fly to the next (dir 1) or previous (-1) feature in trouble under the view, highlight it, and
+   * once the camera rests say "3 of 8 · Payments › Card vault · Security bad: …". Stepping past either end, or under
+   * another view, captures the route afresh (so features that went bad meanwhile join then, not mid-read).
+   */
+  stepTrouble(dir: 1 | -1) {
+    const view = this.S.view, members = this.troubleOf(view);
+    let r = this.route, j = r && r.view === view ? stepRoute(r, dir) : null;
+    if (!r || j === null) {
+      r = this.route = captureRoute(view, members, (this.rank ??= routeRank(this.M.L)));
+      j = stepRoute(r, dir);
+    }
+    if (j === null) {
+      const lens = view === GENERAL ? '' : ' under ' + (this.M.P.LENS[view]?.name ?? view);
+      this.store.set({ said: 'No feature is in trouble' + lens + ' now' });
+      return;
+    }
+    r.i = j;
+    const id = r.ids[j], route = r;
+    this.flyToFeature(id, true);
+    this.saySoon(() => routeWords(this.M.P, this.M.L, this.M.P.F[id], route.view, j!, route.ids.length, newMembers(route, this.troubleOf(route.view))));
+  }
+  /** The route's feature when its tile is on screen and large enough to open: what Enter opens after an arrival. */
+  private routeTarget(): string | null {
+    const id = this.routeAt; if (!id) return null;
+    const r = this.tileRect(id), U = this.U, S = this.SAFE; if (!r) return null;
+    return r.w * U >= 48 && r.x * U >= S.l && r.y * U >= S.t && (r.x + r.w) * U <= S.r && (r.y + r.h) * U <= S.b ? id : null;
   }
 
   // ============================================================================ hit testing
@@ -1356,6 +1430,7 @@ export class Engine {
     if (k === 'u' || k === 'U') { this.undoLast(); return; }
     if (k === 'j' || k === 'J') { this.stepDecision(1); return; }
     if (k === 'k' || k === 'K') { this.stepDecision(-1); return; }
+    if (!S.open && (k === 'n' || k === 'N')) { this.stepTrouble(e.shiftKey ? -1 : 1); return; }
     if (k === 'm' || k === 'M') { this.toggleMorning(); return; }
     if (k === 'p' || k === 'P') { this.setDockTab('view'); return; }
     if (k === 's' || k === 'S') { this.toggleSelMode(); return; }
@@ -1373,6 +1448,7 @@ export class Engine {
     if (k === '0' || k === 'Home') { this.goHome(); return; }
     if (k === 'Enter') {
       if (ctl) return;
+      const rt = this.routeTarget(); if (rt) { this.openFeature(rt); return; } // a trouble-route arrival opens its feature
       const T = this.nearestTile(), cx = (this.SAFE.l + this.SAFE.r) / 2, cy = (this.SAFE.t + this.SAFE.b) / 2;
       if (T && T.w * this.cam.k >= 96 * this.U && this.lod() > 0.5) this.openFeature(T.id); else this.clickAt(cx, cy);
       return;
@@ -1511,7 +1587,7 @@ export class Engine {
   }
   destroy() {
     this.destroyed = true;
-    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.pushTimer); clearInterval(this.phoneTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer);
+    cancelAnimationFrame(this.raf); clearTimeout(this.settleTimer); this.settleArmed = false; clearTimeout(this.simSyncTimer); clearTimeout(this.hashTimer); clearTimeout(this.pushTimer); clearInterval(this.phoneTimer); clearTimeout(this.hlTimer); clearTimeout(this.resizeTimer); clearTimeout(this.sayTimer);
     this.cam.stopFly(); this.mix.destroy(); this.M.sim.listen(null);
     for (const d of this.disposers) d();
     const w = window as unknown as { __bp?: Engine }; if (w.__bp === this) delete w.__bp;
