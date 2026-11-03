@@ -1109,6 +1109,10 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   L0 propose .. L3 auto-merge with the word, its ceiling (`max L1` for secret / authz / money and for every product slice: only technical findings are ever machine-built), the latest event's agreement
   and n and when, or `start` for a slice with no event yet (technical 2, product 0, capped); then the six latest events
   (from → to, reason, agreement of n, when). The blueprint never writes trust: lens-scan's `store.mjs trust` does.
+  Beside agreement, an **Outcome** column (`packages/core/src/scan/outcome.ts` outcomeOf, `check:outcome`): what the slice's
+  items on main came to (held / short / not measured since, each a track.ts stage), and the same by who accepted it
+  (`triaged_by`) and who approved it for building (`decided_by`), with the predictor's calls against the final status.
+  Counts always; a rate only from 10 measured, judgement outcomes apart from static and probe. Landings are read while open.
 - **Every lens** (a live product; the top bar). One menu, two items: Measure every lens (`/lens-scan measure --lens all`)
   and Propose for every lens (`/lens-scan propose --lens all`), each ONE job in one running slot (`POST scans` with
   `lens: 'all'`). Single-lens scans stay on the lens chips.
