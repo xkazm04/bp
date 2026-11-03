@@ -298,13 +298,21 @@ unreadable when zoomed out, so flags are not part of any tile. They are an engin
 - **Drawn on top, each frame**, after every dynamic layer, so they stay crisp at one size during a
   gesture. On the Kettle sample about 100 candidates are laid out per frame, and the layout holds the rule of
   allocating nothing in the frame loop: the `Flag` records come from a pool reused frame to frame, each one's
-  `fids` and `lenses` arrays are truncated and refilled rather than replaced, the troubled-feature list and
-  the upper-cased names are cached, and the two recomputed title boxes are written into one shared record. A
+  `fids` and `lenses` arrays are truncated and refilled rather than replaced, the troubled-feature list (the
+  trouble index, below) and the upper-cased names are cached, and the two recomputed title boxes are written into one shared record. A
   plain pan allocates nothing. Still profile before `?scale=4` sign-off.
 - **The lens glyph set** (`glyph()`) lives in `apps/web/src/engine/render/lens-glyph.ts` so the engine can draw
   it. The subtle variant re-exports it from `marks.ts`, and its ribbon no longer draws its own glyph
   knockout while flags are on.
 - `?flags=0` turns the layer off, to compare against the plan without it.
+- **Which features are in trouble** comes from one engine-owned index (`apps/web/src/engine/trouble.ts`,
+  `Engine.trouble`): every troubled feature, the members per lens and the bad / watch counts per lens. Live readings
+  re-judge health in place (the same Feature objects; `applyScan` and `sim.restamp` bump `sim.healthV`), so the index
+  is rebuilt when `healthV` moves, never keyed by the feature list's identity (which never changes). The flags, the
+  Overview's "Trouble by lens", the Plan list's trouble groups and the title block read it or re-read on the store's
+  `troubleV`, which the frame loop sets when it sees the new health version. Before 2026-11-03 a feature that turned
+  bad after load had no flag and no count until a reload. `npm run check:trouble-index` feeds a scan that turns one
+  healthy feature bad and pins its flag, the count rising by one and `troubleV` moving.
 
 ## Lens fill and unknowns (2026-10-13)
 

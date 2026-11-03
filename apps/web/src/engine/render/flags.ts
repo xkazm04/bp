@@ -12,7 +12,6 @@
 //
 // A click on a flag opens its feature in its lens; on a cluster of one feature, in its worst lens; on a
 // cluster of several, flies to them so they split. The engine hit-tests the flags of the last frame.
-import type { Feature } from '@bp/core/data';
 import type { RoomNode, WingNode } from '@bp/core/model';
 import type { Engine } from '../Engine';
 import { RH } from '@bp/core/model';
@@ -38,14 +37,6 @@ export interface Flag {
   fids: string[]; lenses: string[];
   /** Presence 0..1 (the lens's weight in the mix). */
   a: number;
-}
-
-// features with any trouble, per product (the list never changes after load)
-const TROUBLED = new WeakMap<readonly Feature[], Feature[]>();
-function troubled(fs: readonly Feature[]): Feature[] {
-  let t = TROUBLED.get(fs);
-  if (!t) { t = fs.filter((f) => f.trouble.length > 0); TROUBLED.set(fs, t); }
-  return t;
 }
 
 /** Bad flag size over a feature rect: the floor everywhere, larger over a big tile. */
@@ -113,7 +104,7 @@ export function layoutFlags(E: Engine, v: View, lod: number): Flag[] {
   // merge distance: generous on the site and wing plans (a few markers per room), tight over tiles
   const gap = (tile ? 4 : 4 + 22 * (1 - lod / 0.5)) * u;
   const cands = CANDS; cands.length = 0; nPool = 0;
-  for (const f of troubled(E.M.P.features)) {
+  for (const f of E.trouble.all()) {
     if (E.dimFn && !E.dimFn(f)) continue;
     const r = featRect(E, v, f.id, lod, sr); if (!r) continue;
     if (r.x > v.FW + 60 || r.x + r.w < -60 || r.y > v.FH + 80 || r.y < -80) continue;

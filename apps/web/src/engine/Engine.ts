@@ -29,6 +29,7 @@ import {
 } from './render/dynamic';
 import { KeyPlan } from './render/keyplan';
 import { SimWatch } from './render/simwatch';
+import { TroubleIndex } from './trouble';
 import { drawFlags, flagKey, layoutFlags, type Flag } from './render/flags';
 import { HitList, TOUCH, type Hit, type HitKind } from './render/hits';
 import { ScanLayer, type ScanView } from './render/scans';
@@ -160,6 +161,8 @@ export class Engine {
   perf = { frames: 0, rasters: 0, lastRasterMs: 0, patches: 0, lastPatchMs: 0 };
   /** What the static raster read from the simulation (render/simwatch.ts). */
   readonly watch = new SimWatch();
+  /** The features in trouble, overall and per lens, rebuilt when a reading re-judges health (engine/trouble.ts). */
+  readonly trouble: TroubleIndex;
 
   constructor(o: EngineOptions) {
     this.M = o.model; this.expr = o.expression; this.cv = o.canvas; this.ui = o.ui; this.root = o.root;
@@ -171,6 +174,7 @@ export class Engine {
     this.cam.reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.tx = new Text('sans-serif', 'monospace');
     this.lensIds = this.M.P.lenses.map((l) => l.id);
+    this.trouble = new TroubleIndex(this.M.P.features, this.M.sim);
     this.mix = new MixDriver(this.lensIds, GENERAL, () => { this.mixV++; this.mixS = this.mix.state; this.dirty(); }, this.expr.spring);
     this.mixS = this.mix.state;
     this.cache = new StaticCache();
@@ -424,7 +428,12 @@ export class Engine {
     this.lastDraw = now;
     this.dashT = (now / 40) % 1000;
     // a live reading or map refresh re-judged health (tile fills, marks, troubles): the cached plan is stale everywhere
-    if (sim.healthV !== this.healthSeenV) { if (this.healthSeenV >= 0) { this.cache.invalidate(); this.aggLensCache.clear(); } this.healthSeenV = sim.healthV; }
+    if (sim.healthV !== this.healthSeenV) {
+      if (this.healthSeenV >= 0) { this.cache.invalidate(); this.aggLensCache.clear(); }
+      this.healthSeenV = sim.healthV;
+      // the trouble index (flags, the Overview counts, the trouble route) follows; React re-reads the counts on troubleV
+      this.trouble.sync(); this.store.set({ troubleV: sim.healthV });
+    }
     // throttle static changes driven by the simulation
     if (sim.version !== this.simSeenV || (live && Math.floor(sim.t / 15) !== this.simT10)) {
       if (!live || now - this.simStaticAt > 900) { this.simSeenV = sim.version; this.simT10 = Math.floor(sim.t / 15); this.simStaticV++; this.simStaticAt = now; this.simPatch = true; }
