@@ -4,7 +4,7 @@
 // since), their filter, R's prefilled rework note and the compare panel's "Main now" line all read these tracks, so
 // the confirm rule has one owner. Unread or unknown landings land nothing: an accepted item then reads as before.
 import { useMemo } from 'react';
-import { mainOutcome, shortNote, trackOf, type MainOutcome, type Track, type TrackOpts } from '@bp/core/scan/track';
+import { evidenceOpts, mainOutcome, shortNote, trackOf, type MainOutcome, type Track, type TrackOpts } from '@bp/core/scan/track';
 import type { ScanSnapshot } from '@bp/core/scan/types';
 import { useTrain, type TrainData } from './data';
 
@@ -14,14 +14,16 @@ export const MAIN_CHIPS: readonly { outcome: MainOutcome; label: string; hint: s
   { outcome: 'short', label: 'Short', hint: 'the reading after it landed falls short of the expected value' },
   { outcome: 'unmeasured', label: 'Not measured since', hint: 'no reading of the product since it landed' },
   { outcome: 'no-target', label: 'No expected value', hint: 'no expected value to judge it by' },
+  { outcome: 'out-of-bounds', label: 'Target out of bounds', hint: 'the expected value lies outside the metric’s declared bounds: unresolved until corrected' },
 ];
 
 type Scan = Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases'>;
 /** The train's tables as trackOf reads them (it only reads). */
 export const scanOfTrain = (T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases'>): Scan =>
   ({ proposals: [...T.proposals], measurements: [...T.measurements], packs: [...T.packs], releases: [...T.releases] });
-/** The landings as trackOf takes them: none until git answered and knew. */
-export const landedOpts = (T: Pick<TrainData, 'landed'>): TrackOpts => (T.landed?.state === 'known' ? { landed: T.landed.items } : {});
+/** The landings (with git's ancestry) and the lenses' bounds as trackOf takes them (track.ts evidenceOpts): no landing
+ *  until git answered and knew. */
+export const landedOpts = (T: Pick<TrainData, 'landed'> & Partial<Pick<TrainData, 'lenses'>>): TrackOpts => evidenceOpts(T.landed, T.lenses);
 
 export interface OnMain {
   /** Pack item id -> its outcome on the base branch (only the items on it). */
@@ -34,7 +36,7 @@ export interface OnMain {
   note(id: string): string | undefined;
 }
 
-export function onMainOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases' | 'landed'>): OnMain {
+export function onMainOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases' | 'landed'> & Partial<Pick<TrainData, 'lenses'>>): OnMain {
   const scan = scanOfTrain(T), opts = landedOpts(T), base = T.landed?.state === 'known' ? T.landed.ref : null;
   const outcome = new Map<string, MainOutcome>(), tracks = new Map<string, Track | null>();
   const track = (id: string) => { let t = tracks.get(id); if (t === undefined) tracks.set(id, (t = trackOf(scan, id, opts))); return t; };
@@ -48,7 +50,7 @@ export function onMainOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'pack
 
 const noteOf = (t: Track | null, base: string | null): string | undefined => (t && base && shortNote(t, base)) || undefined;
 /** The rework note one item starts from (track.ts shortNote: short of expected on the base branch), else undefined. */
-export function reworkDraft(T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases' | 'landed'>, id: string): string | undefined {
+export function reworkDraft(T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases' | 'landed'> & Partial<Pick<TrainData, 'lenses'>>, id: string): string | undefined {
   return T.landed?.state === 'known' ? noteOf(trackOf(scanOfTrain(T), id, landedOpts(T)), T.landed.ref) : undefined;
 }
 

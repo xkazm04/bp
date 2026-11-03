@@ -24,14 +24,14 @@ function Line({ label, m }: { label: string; m: Reading }) {
   );
 }
 
-const OUTCOME = { held: 'held', short: 'short of expected', unmeasured: 'not measured since', 'no-target': 'no expected value' } as const;
+const OUTCOME = { held: 'held', short: 'short of expected', unmeasured: 'not measured since', 'no-target': 'no expected value', 'out-of-bounds': 'target out of bounds' } as const;
 
 /** The reading on main in words: "50 % on 2026-10-30 · judgement · evidence, after it landed · short of expected 100 %". */
 export function mainNow(t: Track): string | null {
   if (t.current === undefined || !t.currentAt) return null;
   const u = t.unit ? ' ' + t.unit : '', o = mainOutcome(t), landed = !!t.landed && t.status === 'accepted';
-  const kind = t.evidence ? 'evidence, after ' + (landed ? 'it landed' : 'the release') : 'an observation' + (landed ? ', from before it landed' : o ? ', from before the release' : '');
-  const out = o === 'held' || o === 'short' ? ' · ' + OUTCOME[o] + (t.expected !== undefined ? ' ' + num(t.expected) + u : '') : '';
+  const kind = t.evidence ? 'evidence, after ' + (landed ? 'it landed' : 'the release') + (t.by === 'commit' ? ' (by commit)' : ' (by time; commit not recorded)') : 'an observation' + (landed ? ', from before it landed' : o ? ', from before the release' : '');
+  const out = o === 'held' || o === 'short' || o === 'out-of-bounds' ? ' · ' + OUTCOME[o] + (t.expected !== undefined ? ' ' + num(t.expected) + u : '') : '';
   return `${num(t.current)}${u} on ${t.currentAt.slice(0, 10)} · ${t.currentMethod ?? 'method not recorded'} · ${kind}${out}`;
 }
 

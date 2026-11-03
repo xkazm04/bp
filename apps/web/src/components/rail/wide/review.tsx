@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { dayHhmmUTC, fmtWait, hhmmUTC, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import { priorRecord, recordWords } from '@bp/core/scan/record';
+import { evidenceOpts } from '@bp/core/scan/track';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
@@ -250,7 +251,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const cancel = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
   // what earlier decisions on this feature + lens (and the attempts this one follows) came to, landed items judged from
   // their landing (git's answer; none until it comes); live only
-  const rec = useMemo(() => (scan && p ? priorRecord(scan, p, landed?.state === 'known' ? { landed: landed.items } : {}) : null), [scan, p, landed]);
+  const rec = useMemo(() => (scan && p ? priorRecord(scan, p, evidenceOpts(landed, M.P.lenses)) : null), [scan, p, landed, M.P.lenses]);
   const rw = rec && p ? recordWords(rec, M.P.LENS[p.lens]?.name ?? p.lens, (st) => STAGE_WORDS[st]) : null;
   return (
     <>

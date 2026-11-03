@@ -325,7 +325,7 @@ function Filters({ L, main, filter, menus }: { L: Ledger; main: OnMain; filter: 
     if (!packs) return [];
     const n = new Map<string, number>();
     for (const f of L.items) { const o = main.outcome.get(f.p.id); if (o) n.set(o, (n.get(o) ?? 0) + 1); }
-    return n.size ? MAIN_CHIPS.filter((c) => c.outcome !== 'no-target' || n.has(c.outcome)).map((c) => ({ ...c, n: n.get(c.outcome) ?? 0 })) : [];
+    return n.size ? MAIN_CHIPS.filter((c) => (c.outcome !== 'no-target' && c.outcome !== 'out-of-bounds') || n.has(c.outcome)).map((c) => ({ ...c, n: n.get(c.outcome) ?? 0 })) : [];
   }, [packs, L.items, main.outcome]);
   // a lens chip counts the scope's rows: the pack items' lenses in packs, every lens with findings in the backlog
   const lenses = useMemo(() => {
