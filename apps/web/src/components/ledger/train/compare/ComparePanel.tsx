@@ -1,7 +1,8 @@
 // The compare panel: one pack item's evidence beside the table (the contest winner A/1's side sheet). The header names
 // the item (lens, id, pack and place in it, feature, title) with prev / next, Wide and close; the body holds the metric
 // line or, for an item measured in baseline runs, the performance table, the screens (light / dark / both x side by
-// side / slider / blink / change map), what the measurement says, the commit and its diff, and the item's own text; the
+// side / slider / blink / change map), what the measurement says (before, after and the reading on main now: trackOf with
+// git's landings), the commit and its diff, and the item's own text; the
 // footer carries the state mark over its triage note (or what the state means) and the decision strip (Decide,
 // compact). It docks right at clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a
 // full-screen sheet on the phone. Full width takes the keyboard focus when it hides the table's focused row.
@@ -24,6 +25,8 @@ import { Btn, Callout } from '../ui/Controls';
 import { CommitDiff } from './CommitDiff';
 import { ItemText } from './ItemText';
 import { Measurement } from './Measurement';
+import { trackOf, type Track } from '@bp/core/scan/track';
+import { landedOpts, scanOfTrain } from '../onMain';
 import { MetricStrip } from './MetricStrip';
 import { PerfKey, PerfTable, hasRuns, perfItem, perfReason } from './PerfTable';
 import { Screens, shownPairs } from './Screens';
@@ -72,6 +75,7 @@ function stateLine(p: Proposal): string {
 export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }: ComparePanelProps) {
   const T = useTrain(), P = useEngine().M.P, scan = useScan(T), pending = useLedgerUi(T.slug ?? 'kettle').pending;
   const c = useMemo(() => compareOf(scan, id, T.lenses), [scan, id, T.lenses]);
+  const now = useMemo(() => trackOf(scanOfTrain(T), id, landedOpts(T)), [T, id]);
   const order = useMemo(() => packOrder(T), [T]);
   const at = order.indexOf(id), nextId = at >= 0 ? order[at + 1] : undefined;
   const next = useMemo(() => (nextId ? compareOf(scan, nextId, T.lenses) : null), [scan, nextId, T.lenses]);
@@ -104,7 +108,7 @@ export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }:
   return (
     <aside ref={box} tabIndex={-1} className={cls} data-role="tr-cmp" aria-label={'Compare ' + p.title}>
       <Head title={p.title} meta={meta} prev={go(at > 0 ? order[at - 1] : undefined)} next={go(nextId)} wide={wide} phone={phone} onWide={onWide} onClose={onClose} />
-      <Body key={p.id} c={c} T={T} scan={scan} lens={P.LENS[p.lens]} nameOf={nameOf} view={view} onView={onView} wide={wide} />
+      <Body key={p.id} c={c} now={now} T={T} scan={scan} lens={P.LENS[p.lens]} nameOf={nameOf} view={view} onView={onView} wide={wide} />
       <footer className="tr-cmp-d">
         {/* the state mark (deciding while a decision is on its way) over its triage note, or what the state means */}
         <span className="st">
@@ -136,8 +140,8 @@ function Head({ title, meta, prev, next, wide, phone, onWide, onClose }: { title
   );
 }
 
-interface BodyProps { c: Comparison; T: TrainData; scan: Scan; lens: LensDef | undefined; nameOf(slug: string): string; view: CompareView; onView(v: CompareView): void; wide: boolean }
-const Body = memo(function Body({ c, T, scan, lens, nameOf, view, onView, wide }: BodyProps) {
+interface BodyProps { c: Comparison; now: Track | null; T: TrainData; scan: Scan; lens: LensDef | undefined; nameOf(slug: string): string; view: CompareView; onView(v: CompareView): void; wide: boolean }
+const Body = memo(function Body({ c, now, T, scan, lens, nameOf, view, onView, wide }: BodyProps) {
   const p = c.p, runs = hasRuns(c), fname = nameOf(p.feature);
   const perf = useMemo(() => {
     if (!runs) return null;
@@ -163,7 +167,7 @@ const Body = memo(function Body({ c, T, scan, lens, nameOf, view, onView, wide }
         <div className="tr-sec"><Callout tone="flag"><b>✕ Build failed.</b><span>This item did not build, broke a gate or did not move its metric. Accepting it is allowed only with a note, and it ships flagged.</span></Callout></div>
       ) : null}
       {!perf || c.shots.length ? <Screens c={c} slug={T.slug} view={view} onView={onView} fname={fname} stateLine={stateLine(p)} /> : null}
-      <Measurement c={c} />
+      <Measurement c={c} now={now} />
       {p.commit_sha ? <CommitDiff ctx={T.ctx} product={T.slug ?? 'kettle'} sha={p.commit_sha} initiallyOpen={wide} /> : (
         <section className="tr-sec"><h4>Commit</h4><p className="tr-dim">{p.status === 'failed' ? 'No commit: the build did not get that far.' : 'No commit recorded for this item.'}</p></section>
       )}

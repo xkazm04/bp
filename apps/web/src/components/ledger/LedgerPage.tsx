@@ -8,7 +8,9 @@
 //              (train/DecisionBar.tsx) accepts, sends to rework, descopes or undoes (train/Decide.tsx, the one control);
 //   Backlog    every finding of every lens (variants/Triage.tsx), selected and dispatched as before.
 // The matrix shows where findings (or, in packs, pack items by their state marks) sit and picks them by area; a
-// matrix row's Table (or Enter) opens the table on that feature alone, a removable chip. The selection and the filters
+// matrix row's Table (or Enter) opens the table on that feature alone, a removable chip. In packs, the items already on
+// the base branch get outcome chips beside the status chips (train/onMain.ts, from trackOf with git's landings): Held,
+// Short, Not measured since, each a filter with its count; they show once something has landed. The selection and the filters
 // are shared by the views; a scope switch drops the status filter (the scopes' chips differ). The contest winner A/1
 // (release-manager) is the look: its type, density and palette (ledger-theme.css).
 //
@@ -65,6 +67,7 @@ import { COMPARE_MODES, keyAction, type KeyScope } from './train/keymap';
 import { Seg } from './train/ui/Controls';
 import { StateMark } from './train/ui/Marks.tsx';
 import { ComparePanel } from './train/compare/ComparePanel';
+import { MAIN_CHIPS, useOnMain, type OnMain } from './train/onMain';
 import { ReleaseStatusLine, ReleaseView, SummaryStrip } from './train/release/ReleaseView';
 import './ledger.css';
 import './ledger-theme.css';
@@ -98,7 +101,7 @@ const isTyping = (t: HTMLElement) => (t.tagName === 'INPUT' && (t as HTMLInputEl
 const isControl = (t: HTMLElement) => !!t.closest('button, a, summary, input, select, textarea');
 
 function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set: SetUi; lv: LedgerVariant; phone: boolean; lensButton: ReactNode; lensPanel: ReactNode }) {
-  const E = useEngine(), L = useLedger(ui, set), live = useLive();
+  const E = useEngine(), main = useOnMain(), L = useLedger(ui, set, main.outcome), live = useLive();
   const name = useProductName(E.M.live?.slug ?? null, E.M.P.name);
   const root = useRef<HTMLElement>(null), filter = useRef<HTMLInputElement>(null);
   const [keys, setKeys] = useState(false);
@@ -278,7 +281,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
         {!phone ? <TrustPanel L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
       </header>
-      {lv !== 'release' ? <Filters L={L} filter={filter} menus={!phone} /> : null}
+      {lv !== 'release' ? <Filters L={L} main={main} filter={filter} menus={!phone} /> : null}
       <div className="lg-main">
         <div className="lg-body" role={phone ? undefined : 'tabpanel'} aria-label={NAMES[lv]}>{mvpStrip}{waveStrip}{view}</div>
         {cmp}
@@ -300,10 +303,17 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
 
 /** The scope (In packs | Backlog), the status chips of the scope (each with its state mark and count), lens chips
  *  (glyph, short, count in the scope), the matrix's feature drill-down and the text filter. */
-function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTMLInputElement | null>; menus: boolean }) {
+function Filters({ L, main, filter, menus }: { L: Ledger; main: OnMain; filter: React.RefObject<HTMLInputElement | null>; menus: boolean }) {
   const { ui, set } = L, packs = ui.scope === 'packs';
   const flip = <T,>(xs: ReadonlySet<T>, x: T) => { const s = new Set(xs); if (!s.delete(x)) s.add(x); return s; };
-  const any = ui.lens.size || ui.status.size || ui.feat.size || ui.q;
+  const any = ui.lens.size || ui.status.size || ui.main.size || ui.feat.size || ui.q;
+  // the outcome chips count the pack items on the base branch (no filter applied), as the status chips count theirs
+  const onMain = useMemo(() => {
+    if (!packs) return [];
+    const n = new Map<string, number>();
+    for (const f of L.items) { const o = main.outcome.get(f.p.id); if (o) n.set(o, (n.get(o) ?? 0) + 1); }
+    return n.size ? MAIN_CHIPS.filter((c) => c.outcome !== 'no-target' || n.has(c.outcome)).map((c) => ({ ...c, n: n.get(c.outcome) ?? 0 })) : [];
+  }, [packs, L.items, main.outcome]);
   // a lens chip counts the scope's rows: the pack items' lenses in packs, every lens with findings in the backlog
   const lenses = useMemo(() => {
     if (!packs) return L.lenses.filter((l) => l.n);
@@ -324,6 +334,16 @@ function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTML
           </button>
         ))}
       </div>
+      {onMain.length ? (
+        <div className="lg-chips" role="group" aria-label={'On ' + (main.base ?? 'the base branch')} data-role="tr-main-chips">
+          {onMain.map((c) => (
+            <button key={c.outcome} type="button" className={'lg-chip m-' + c.outcome} aria-pressed={ui.main.has(c.outcome)} title={c.label + ' on ' + (main.base ?? 'the base branch') + ': ' + c.hint}
+              onClick={() => set((u) => ({ ...u, main: flip(u.main, c.outcome) }))}>
+              {c.label}<b>{c.n}</b>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <div className="lg-chips" role="group" aria-label="Lens">
         {lenses.map((l) => (
           <span key={l.id} className="lg-lchip">
@@ -344,7 +364,7 @@ function Filters({ L, filter, menus }: { L: Ledger; filter: React.RefObject<HTML
         </div>
       ) : null}
       <input ref={filter} className="lg-q" type="search" value={ui.q} placeholder={packs ? 'Filter items…  /' : 'Filter findings…  /'} aria-label={packs ? 'Filter pack items by text' : 'Filter findings by text'} onChange={(e) => { const q = e.target.value; set((u) => ({ ...u, q })); }} />
-      {any ? <button type="button" className="lg-x" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), feat: new Set(), q: '' }))}>Clear filters</button> : null}
+      {any ? <button type="button" className="lg-x" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), main: new Set(), feat: new Set(), q: '' }))}>Clear filters</button> : null}
     </div>
   );
 }

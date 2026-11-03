@@ -52,7 +52,7 @@ export function PackTable({ L, sample, onLenses }: PackTableProps) {
   if (!L.scoped.length) return (
     <div className="tr-pt-empty">
       <Callout tone="empty">
-        No item matches these filters. <button type="button" className="tr-lnk" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), feat: new Set(), q: '' }))}>Clear the filters</button>
+        No item matches these filters. <button type="button" className="tr-lnk" onClick={() => set((u) => ({ ...u, lens: new Set(), status: new Set(), main: new Set(), feat: new Set(), q: '' }))}>Clear the filters</button>
       </Callout>
     </div>
   );

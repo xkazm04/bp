@@ -23,6 +23,7 @@ import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSiz
 import { isCurrent, tierRank } from '@bp/core/scan/derive';
 import { SIZE_W, byWorth, estValue, worthOf, type Worth } from '@bp/core/scan/score';
 import type { ScanJob } from '@bp/core/scan/jobs';
+import type { MainOutcome } from '@bp/core/scan/track';
 import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
 import { dispatch } from '@/lib/scan/actions';
 import type { ScanSim } from '@bp/core/model/scan-sim';
@@ -146,6 +147,8 @@ export interface LedgerUi {
   sel: ReadonlySet<string>;
   lens: ReadonlySet<string>;
   status: ReadonlySet<ProposalStatus>;
+  /** In packs: the outcome chips on the base branch (Held / Short / Not measured since; empty: every item). */
+  main: ReadonlySet<MainOutcome>;
   /** Feature slugs: the matrix's "Table" drill-down (empty: every feature). */
   feat: ReadonlySet<string>;
   q: string;
@@ -188,14 +191,14 @@ export type CompareTheme = 'light' | 'dark' | 'both';
 export type CompareMode = (typeof COMPARE_MODES)[number]['value'];
 export interface CompareView { theme: CompareTheme; mode: CompareMode }
 export const EMPTY_UI: LedgerUi = {
-  sel: new Set(), lens: new Set(), status: new Set(['proposed']), feat: new Set(), q: '', focus: null,
+  sel: new Set(), lens: new Set(), status: new Set(['proposed']), main: new Set(), feat: new Set(), q: '', focus: null,
   scope: 'backlog', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null, reserve: new Set(),
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 /** The page state in another scope: its per-scope fields start over (the last decision too: Undo never reaches into a
  *  scope the person left). The same object when the scope is already that one. */
 export const switchScope = (u: LedgerUi, scope: LedgerScope): LedgerUi =>
-  u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null, last: null, composer: null };
+  u.scope === scope ? u : { ...u, scope, status: new Set(), main: new Set(), focus: null, open: null, wide: false, note: null, last: null, composer: null };
 
 // The page state, one per tab: a module store, so the ledger (desktop or phone), the Lenses panel and the plan's
 // right-click menu read the same selection. `product` resets it when another product is shown.
@@ -300,8 +303,11 @@ export function lensMeta(P: ReturnType<typeof useEngine>['M']['P'], id: string):
   return d ? { id, short: d.short, name: d.name, glyph: d.glyph, enabled: d.i >= 0 } : { id, short: id.replace(/^.*\./, '').slice(0, 4).toUpperCase(), name: id, glyph: null, enabled: false };
 }
 const tidy = (s: string) => s.toLowerCase();
+/** An item's outcome on the base branch is one of the chips pressed (an item not on it is none of them). */
+const onMain = (on: ReadonlySet<MainOutcome>, o: MainOutcome | undefined) => o !== undefined && on.has(o);
 
-export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
+/** `mainOf`: each pack item's outcome on the base branch (train/onMain.ts), for the In packs outcome chips' filter. */
+export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string, MainOutcome>): Ledger {
   const E = useEngine(), M = E.M, P = M.P, ctx = useScanCtx();
   const src = useFindings();
   // the dispatches in flight live in the module store (they outlive this component); `busy` only labels the buttons
@@ -357,8 +363,9 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
 
   const q = tidy(ui.q.trim());
   const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? '', f.p.pack_id ?? ''].join(' ')).includes(q), [q, P]);
-  const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature)) && textOk(f),
-    [ui.lens, ui.status, ui.feat, textOk]);
+  const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature))
+    && (!ui.main.size || onMain(ui.main, mainOf?.get(f.p.id))) && textOk(f),
+    [ui.lens, ui.status, ui.main, mainOf, ui.feat, textOk]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
   // the selected wave tab keeps its findings only (a wave the list does not have, yet or any more, filters nothing)
   const waveIds = useMemo(() => {
