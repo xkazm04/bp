@@ -12,7 +12,8 @@
 // another status: no optimistic flip, the row says "deciding" until the stream says what happened. A single decision on
 // the focused (or open) item moves the focus, and the open compare, to the next waiting item of the order DecideOrder
 // provides (LedgerPage: the table's visible rows). A decision the store never answers is released after
-// PENDING_BOUND_MS with a toast saying it may still have landed (boundPending).
+// PENDING_BOUND_MS with a toast saying it may still have landed (boundPending). R on one item short of expected on the
+// base branch opens its note already written from the evidence, editable (draftFor: onMain.ts reworkDraft).
 import { createContext, useCallback, useContext, useEffect, useMemo } from 'react';
 import type { Proposal, ProposalStatus, TriageDecision, TriageResult } from '@bp/core/scan/types';
 import { triageItems, refusalText } from '@/lib/scan/actions';
@@ -21,6 +22,7 @@ import { parseTriageResult } from '@bp/core/train/wire';
 import { useEngine, useWritesOn } from '../../hooks';
 import { setLedgerUi, settle, useLedgerUi, type LastDecision, type NoteAsk, type SetUi } from '../useLedger';
 import { useTrain } from './data';
+import { reworkDraft } from './onMain';
 import { decidable, decisionCounts, planDecision, undoPlan, type PlanData } from './plan';
 import { NoteEditor } from './NoteEditor';
 import { Btn, type BtnTone } from './ui/Controls';
@@ -75,6 +77,10 @@ const REASON: Record<string, string> = {
 export const skippedText = (s: TriageResult['skipped']): string =>
   s.map((x) => x.id + ' (' + (x.reason ? REASON[x.reason] ?? x.reason : x.status === 'not-found' ? 'not found' : 'is ' + x.status) + ')').join(', ');
 
+/** What an asked note starts from: a rework of one item short of expected on the base branch, its evidence. */
+export const draftFor = (T: Parameters<typeof reworkDraft>[0]) => (ids: readonly string[], d: NoteAsk['decision']): string | undefined =>
+  (d === 'rework' && ids.length === 1 ? reworkDraft(T, ids[0]) : undefined);
+
 /** `own`: the next-waiting order for a caller outside the DecideOrder provider (LedgerPage, which provides it). */
 export function useDecide(own?: () => readonly string[]): DecideApi {
   const E = useEngine(), T = useTrain(), ui = useLedgerUi(T.slug ?? 'kettle'), ctx = useContext(DecideOrder), order = own ?? ctx;
@@ -90,6 +96,7 @@ export function useDecide(own?: () => readonly string[]): DecideApi {
 
   const decide = useCallback((raw: readonly string[], decision: TriageDecision, note?: string, at: NoteAsk['at'] = 'bar') => E.refuseReadOnly() ? Promise.resolve() : runDecision(T, pending, raw, decision, note, at, {
     triage: (ids, d, n) => triageItems(T.ctx, ids, d, n),
+    draft: draftFor(T),
     toast: (t, b, _a, _f, tone) => E.toast(t, b, undefined, undefined, tone),
     set: setLedgerUi, later: (f, ms) => setTimeout(f, ms), order: order ?? undefined, last: ui.last,
   }), [E, T, pending, order, ui.last]);
@@ -109,6 +116,8 @@ export interface DecideIo {
   /** The last decision (LedgerUi.last): given, a reopen resolves through it (plan.ts undoTargets), so U after the focus
    *  advanced undoes what was just decided; absent, a reopen acts on what was asked. */
   last?: LastDecision | null;
+  /** What an asked note starts from (onMain.ts reworkDraft: one item short of expected on the base branch), if anything. */
+  draft?(ids: readonly string[], decision: NoteAsk['decision']): string | undefined;
 }
 
 /** The decision path: the planner says what the decision does (planDecision), this carries it out. Only a `send`
@@ -121,7 +130,7 @@ export async function runDecision(T: PlanData, pending: ReadonlySet<string>, raw
     case 'empty': case 'pending': io.toast('Nothing to decide', plan.why, undefined, undefined, 'warn'); return;
     case 'over-cap': io.toast('Too many items', plan.why + ': select fewer', undefined, undefined, 'warn'); return;
     case 'none-can': io.toast(WORD[decision] + ' does not apply', plan.why, undefined, undefined, 'warn'); return;
-    case 'ask-note': { const { ids, decision: d } = plan; io.set((u) => ({ ...u, note: { ids, decision: d, at } })); return; }
+    case 'ask-note': { const { ids, decision: d } = plan, draft = io.draft?.(ids, d); io.set((u) => ({ ...u, note: { ids, decision: d, at, ...(draft ? { draft } : {}) } })); return; }
     case 'send': break;
   }
   const ids = plan.ids;

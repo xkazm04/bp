@@ -43,8 +43,13 @@ export function onMainOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'pack
     const t = track(p.id), o = t && mainOutcome(t);
     if (o) outcome.set(p.id, o);
   }
-  const note = (id: string) => { const t = track(id); return (t && base && shortNote(t, base)) ?? undefined; };
-  return { outcome, base, track, note };
+  return { outcome, base, track, note: (id) => noteOf(track(id), base) };
+}
+
+const noteOf = (t: Track | null, base: string | null): string | undefined => (t && base && shortNote(t, base)) || undefined;
+/** The rework note one item starts from (track.ts shortNote: short of expected on the base branch), else undefined. */
+export function reworkDraft(T: Pick<TrainData, 'proposals' | 'measurements' | 'packs' | 'releases' | 'landed'>, id: string): string | undefined {
+  return T.landed?.state === 'known' ? noteOf(trackOf(scanOfTrain(T), id, landedOpts(T)), T.landed.ref) : undefined;
 }
 
 /** The pack items' standing on the base branch, recomputed when the train's data changes. */

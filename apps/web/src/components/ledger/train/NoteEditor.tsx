@@ -2,7 +2,8 @@
 // The note a decision asks for (contest A/1's `.note-ed`): rework (the note is the next attempt's brief), descope (why
 // it is dropped) and accepting a flagged item (why it ships anyway, packages/core/src/train/rules.ts). A text field with three
 // quick notes per decision, Enter confirms, Esc cancels; an empty note is refused in place. It shows where it was asked:
-// in the decision bar, or in the compare footer (`compact`).
+// in the decision bar, or in the compare footer (`compact`). A draft (R on an item short of expected on the base branch:
+// "Short on master: standardsPct 100 on pack/des-2 -> 50 on 2026-10-30, expected 100") fills the field, editable.
 import { useEffect, useRef, useState } from 'react';
 import { setLedgerUi, type NoteAsk } from '../useLedger';
 import { Btn, type BtnTone } from './ui/Controls';
@@ -28,9 +29,9 @@ export interface NoteEditorProps {
 }
 
 export function NoteEditor({ ask, can, flagged, onSend, compact = false }: NoteEditorProps) {
-  const [text, setText] = useState(''), [empty, setEmpty] = useState(false);
+  const [text, setText] = useState(ask.draft ?? ''), [empty, setEmpty] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => { input.current?.focus({ preventScroll: true }); }, [ask]);
+  useEffect(() => { if (ask.draft) setText(ask.draft); input.current?.focus({ preventScroll: true }); }, [ask]);
 
   const n = can, rest = ask.ids.length - can, d = ask.decision, verb = VERB[d];
   const why = d === 'accept'

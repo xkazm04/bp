@@ -4,7 +4,8 @@
 //   1. U on a waiting item is refused locally ("Nothing to undo") and decide() makes no triage call;
 //   2. Undo on a rework item another proposal rebuilt is refused ("Rebuilt as <id>") by the planner, and the bar's
 //      Undo carries that reason (before: only the Release tab knew the rule, the bar sent and the store refused);
-//   3. accept over a moved + a failed item asks a note (can 2, flagged 1); with the note it sends both;
+//   3. accept over a moved + a failed item asks a note (can 2, flagged 1); with the note it sends both; rework of one
+//      item short of expected on the base branch asks its note already written from the evidence (Decide.tsx draftFor);
 //   4. pending items are dropped from a send; all pending is `pending` (no call);
 //   5. past the triage cap is `over-cap` in triageCapText's own words;
 //   6. decisionCounts gives the bar's numbers, and a server render of DecisionBar prints them;
@@ -120,6 +121,23 @@ const none = new Set<string>();
   ok(c?.kind === 'send', 'guard: accepting a moved item needs no note (' + JSON.stringify(c) + ')');
   const r = has('planDecision') ? P.planDecision(T, ['p-locked'], 'reopen', { pending: none }) : null;
   ok(r?.kind === 'none-can', 'guard: undo of an item in a building release is refused (' + JSON.stringify(r) + ')');
+}
+{ // R on an accepted item that landed and reads short on the base branch: the note starts from its evidence
+  const p = { id: 'p-short', run_id: 'r-exec', feature: 'kettle', lens: LENS, metric: 'mx', title: 'Short one', body: '', standard: 'house:x', expected_delta: -5, kind: 'fix', status: 'accepted', triaged_from: 'done', pack_id: 'k-1', created_at: at(1), updated_at: at(2) };
+  const m = (id: number, value: number, i: number, x: Any = {}) => ({ id, run_id: 'r-exec', feature: 'kettle', lens: LENS, metric: 'mx', value, unit: 'ms', method: 'probe', measured_at: at(i), ...x });
+  const pack = { id: 'k-1', lens: LENS, n: 1, branch: 'pack/x', base_ref: 'master', base_sha: 'a'.repeat(40), status: 'open', created_at: at(0), updated_at: at(0) };
+  const landed = (items: Any) => ({ state: 'known', ref: 'master', head: 'b'.repeat(40), items });
+  const T2: Any = { ...T, proposals: [p], byId: new Map([[p.id, p]]), packs: [pack], releases: [], measurements: [m(1, 10, 3, { proposal_id: 'p-short', phase: 'before' }), m(2, 5, 4, { proposal_id: 'p-short', phase: 'after' }), m(3, 9, 400)],
+    landed: landed({ 'p-short': { sha: 'c'.repeat(40), at: at(300), by: 'trailer' } }) };
+  let seen: Any = null;
+  if (typeof D.runDecision === 'function' && typeof D.draftFor === 'function') {
+    await D.runDecision(T2, none, ['p-short'], 'rework', undefined, 'bar', { triage: async () => ({ decision: 'rework', triaged: [], skipped: [] }), toast: () => {}, set: setLedgerUi, later: () => 0, draft: D.draftFor(T2) });
+    setLedgerUi((u: Any) => { seen = u.note; return { ...u, note: null }; });
+  }
+  caseOk(3, seen?.decision === 'rework' && seen.draft === 'Short on master: mx 5 ms on pack/x -> 9 ms on 2026-10-01, expected 5 ms', 'rework of a short landed item asks its note, written from the evidence (' + JSON.stringify(seen) + ')');
+  const held = typeof D.draftFor === 'function' ? D.draftFor({ ...T2, measurements: [...T2.measurements, m(4, 4, 500)] })(['p-short'], 'rework') : 'x';
+  const unlanded = typeof D.draftFor === 'function' ? D.draftFor({ ...T2, landed: landed({}) })(['p-short'], 'rework') : 'x';
+  ok(held === undefined && unlanded === undefined && D.draftFor?.(T2)(['p-short'], 'descope') === undefined, 'guard: held, not landed, or not a rework: no draft (' + JSON.stringify([held, unlanded]) + ')');
 }
 
 // ------------------------------------------------------------------------------------------- 4. pending

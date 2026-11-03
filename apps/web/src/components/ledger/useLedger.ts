@@ -182,7 +182,11 @@ export interface LedgerUi {
 /** What the wave composer opened for: `edit` the draft wave being changed (absent: a new wave), `ids` the findings it starts with. */
 export interface ComposerAsk { edit?: string; ids: readonly string[] }
 /** A decision that needs a note before it is sent (src/lib/train/rules.ts noteRequired). */
-export interface NoteAsk { ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare' }
+export interface NoteAsk {
+  ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare';
+  /** What the note starts from, editable: R on an item short of expected on the base branch writes its evidence. */
+  draft?: string;
+}
 /** A triage decision the store answered: the items it moved and how (a reopen is not one: it clears `last`). */
 export interface LastDecision { ids: readonly string[]; decision: Exclude<TriageResult['decision'], 'reopened'> }
 export type LedgerScope = 'packs' | 'backlog';
