@@ -311,8 +311,9 @@ async function call<T>(url: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
 }
 /** Triage built items (POST triage). 409 = nothing moved (the result is in `body`). */
 export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => call(api(slug) + '/triage', 'POST', parseTriageResult, body);
-/** The suggested next version (GET releases/suggest). */
-export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => call(api(slug) + '/releases/suggest', 'GET', parseVersionSuggestion);
+/** The suggested next version (GET releases/suggest), bumped by the chosen items (`ids`) or every free accepted one. */
+export const getReleaseSuggestion = (slug: string, ids?: readonly string[]): Promise<VersionSuggestion> =>
+  call(api(slug) + '/releases/suggest' + (ids?.length ? '?ids=' + encodeURIComponent(ids.join(',')) : ''), 'GET', parseVersionSuggestion);
 /** What already landed on the base branch, read from git (GET releases/landed). */
 export const getLandings = (slug: string): Promise<Landings> => call(api(slug) + '/releases/landed', 'GET', parseLandings);
 /** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */

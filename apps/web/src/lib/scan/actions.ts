@@ -102,10 +102,11 @@ export async function triageItems(ctx: ScanCtx, ids: string[], decision: TriageD
   if (ctx.sim) return ctx.sim.triage(body);
   throw nowhere();
 }
-/** The suggested next version, with what it came from and why. */
-export async function suggestRelease(ctx: ScanCtx): Promise<VersionSuggestion> {
-  if (ctx.slug) return getReleaseSuggestion(ctx.slug);
-  if (ctx.sim) return ctx.sim.suggestRelease();
+/** The suggested next version, with what it came from and why: bumped by the chosen items (`ids`), else by every
+ *  accepted item with no release. */
+export async function suggestRelease(ctx: ScanCtx, ids?: readonly string[]): Promise<VersionSuggestion> {
+  if (ctx.slug) return getReleaseSuggestion(ctx.slug, ids);
+  if (ctx.sim) return ctx.sim.suggestRelease(ids);
   throw nowhere();
 }
 /** What already landed on the base branch: read from git live (unknown with why when it cannot be read), the sample's

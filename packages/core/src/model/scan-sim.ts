@@ -284,8 +284,8 @@ export class ScanSim {
 
   /** Triage built items, as POST triage: 409 with the result as `body` when none moved. */
   triage(body: TriageBody): TriageResult { return this.train.triage(body); }
-  /** The next version for the accepted items with no release, as GET releases/suggest. */
-  suggestRelease(): VersionSuggestion { return this.train.suggest(); }
+  /** The next version for the accepted items with no release (only the chosen `ids` among them), as GET releases/suggest. */
+  suggestRelease(ids?: readonly string[]): VersionSuggestion { return this.train.suggest(ids); }
   /** A draft release, as POST releases. */
   createRelease(version: string, ids?: string[]): ReleaseCreated { return this.train.create(version, ids); }
   /** The sample job that builds a release (draft or failed); 412 'gh not authenticated' when the gh toggle is off. */

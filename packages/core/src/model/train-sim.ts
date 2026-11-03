@@ -339,9 +339,12 @@ export class TrainSim {
   private free(): Proposal[] { return this.h.props.filter((p) => p.status === 'accepted' && !p.release_id).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1)); }
   private items(rel: string): Proposal[] { return this.h.props.filter((p) => p.release_id === rel).sort((a, b) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1)); }
 
-  /** The next version, as GET releases/suggest over the sample's tagged releases (it has no git tags of its own). */
-  suggest(): VersionSuggestion {
-    const tags = this.releases.filter((r) => r.status === 'tagged').map((r) => r.version).sort(semverDesc), items = this.free();
+  /** The next version, as GET releases/suggest over the sample's tagged releases (it has no git tags of its own), bumped
+   *  by the chosen `ids` among the free accepted items (400 as the route for ids that are not 1..MAX_IDS safe ids). */
+  suggest(ids?: readonly string[]): VersionSuggestion {
+    if (ids && (!ids.length || ids.length > MAX_IDS || ids.some((i) => typeof i !== 'string' || !SAFE_ID.test(i)))) throw refuse(400, `ids must be 1..${MAX_IDS} item ids, comma-separated`);
+    const chosen = ids ? new Set(ids) : null;
+    const tags = this.releases.filter((r) => r.status === 'tagged').map((r) => r.version).sort(semverDesc), items = this.free().filter((p) => !chosen || chosen.has(p.id));
     let s: VersionSuggestion;
     if (!tags.length) s = { version: '0.1.0', from: 'none', reason: 'no v* tag yet in the sample' };
     else {
