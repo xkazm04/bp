@@ -281,9 +281,9 @@ const sec = [
   const landedAt = day(10), ms: Measurement[] = [], landed: Record<string, { sha: string; at: string; by: 'trailer' }> = {};
   let mid = 0;
   const read = (f: string, value: number, at: string, method: 'judgement' | 'static' = 'judgement') => ms.push({ id: ++mid, run_id: 'r0', feature: f, lens: 'design', metric: 'standardsPct', value, unit: '%', method, measured_at: at });
-  /** A design accept on its own feature, baseline 50 expected 100, landed; `now` read after the landing (or not at all). */
+  /** A design accept on its own feature, baseline 50 expected 100, landed; `now` read after the landing (or not at all), by the baseline's own method (a changed method cannot decide an outcome, track.ts eligibility). */
   const acc = (id: string, now?: number, method?: 'judgement' | 'static') => {
-    const f = 'f-' + id; read(f, 50, day(25)); if (now !== undefined) read(f, now, day(5), method);
+    const f = 'f-' + id; read(f, 50, day(25), method); if (now !== undefined) read(f, now, day(5), method);
     landed[id] = { sha: 'c'.repeat(40), at: landedAt, by: 'trailer' };
     return P({ id, feature: f, lens: 'design', metric: 'standardsPct', expected_delta: 50, status: 'accepted', triaged_by: 'agent:director' });
   };
