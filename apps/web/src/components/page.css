@@ -103,6 +103,7 @@
 .pg-hero .why { margin: 10px 0 0; font-size: 19px; line-height: 1.38; color: var(--ink); }
 .pg-hero .ov { margin: 10px 0 0; font-size: 14px; line-height: 1.4; color: var(--ink); border-left: 2px solid var(--amber); padding-left: 8px; }
 .pg-hero .ov b { color: var(--amber-2); font-weight: 600; }
+.pg-hero .rpl { margin: 10px 0 0; font-size: var(--fs-14); line-height: 1.4; color: var(--ink-2); border-left: 2px solid var(--line); padding-left: 8px; }
 /* what clears it (ClearSteps): every matching rule as a step, under the health; the phone's expanded panel reuses it */
 .pg-clrs { margin: 12px 0 0; }
 .pg-clrs h4 { margin: 0 0 4px; font: 500 var(--fs-12) var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); }

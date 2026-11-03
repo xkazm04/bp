@@ -76,8 +76,9 @@ const Metrics = memo(function Metrics({ lens, f, M, scan, all, sig }: { lens: st
 const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feature; M: Model; density: Density; sig: string }) {
   const d = M.P.LENS[lens], fl = f.lens[lens], sim = M.sim, { t, past } = useAsOf(), la = useLensAt(f, d);
   const proposals = useProposals();
-  // on a past date health has no history (the presenter's); the headline is the scan's reading by then, else nothing
-  const h = la.health, then = la.at === 'then' ? la : null;
+  // on a past date health has no history (the presenter's) unless every rule input is a reading by then: then it is
+  // replayed by today's rules and labelled so; the headline is the scan's reading by then, else nothing
+  const h = la.health, then = la.at === 'then' ? la : null, rp = la.at === 'replayed' ? la : null;
   const val = (k: string) => sim.liveValue(f, lens, k);
   // core feature-bound fields (stage, priority) live in the page header, not here
   const own = (x: (typeof d.fields)[number]) => !(x.source && 'feature' in x.source);
@@ -92,12 +93,13 @@ const Body = memo(function Body({ lens, f, M, density }: { lens: string; f: Feat
       <Sec className={'pg-hero ' + h} label="Headline and health">
         <div className="hl">
           <span className="lab">{hf ? hf.label : d.name}</span>
-          <b className={'big ' + (hf && !past ? hot(hf.key) : '')}>{hf && (past ? then : fl?.h !== 'na') ? <Val k={f.id + ':' + lens + ':' + hf.key} field={hf} v={then ? then.value : val(hf.key)} /> : '—'}</b>
+          <b className={'big ' + (hf && !past ? hot(hf.key) : '')}>{hf && (past ? then || rp?.value != null : fl?.h !== 'na') ? <Val k={f.id + ':' + lens + ':' + hf.key} field={hf} v={then ? then.value : rp ? rp.value ?? undefined : val(hf.key)} /> : '—'}</b>
           {d.description ? <span className="desc">{d.description}</span> : null}
         </div>
         <div className="hh">
-          <span className="hw">{past ? 'Not recorded' : HWORD[h]}</span>
-          <p className="why">{past ? (then ? la.why : la.why + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : la.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
+          <span className="hw">{past && !rp ? 'Not recorded' : HWORD[h]}</span>
+          <p className="why">{rp ? (h === 'na' ? 'This lens did not apply to this feature then.' : rp.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.') : past ? (then ? la.why : la.why + ' (' + t + ').') : h === 'na' ? 'This lens does not apply to this feature.' : h === 'unmeasured' && !fl?.facet ? 'No ' + d.name.toLowerCase() + ' reading for this feature yet.' : la.why ?? 'No rule raised anything: it reads ' + HWORD[h].toLowerCase() + '.'}</p>
+          {rp ? <p className="rpl">{rp.label.charAt(0).toUpperCase() + rp.label.slice(1)}. What the page said on {t} is not stored.</p> : null}
           {!past && fl?.ov ? <p className="ov"><b>Held at {fl.ov.health.toUpperCase()}</b> by {pname(M.P, fl.ov.by)} until {fl.ov.until}{fl.why ? '. The rules say: ' + fl.why : ''}</p> : null}
           {/* what clears it: every matching rule as a step, at now only (on a past date health is not recorded) */}
           {past ? null : <ClearSteps def={d} fl={fl} cover={{ feature: baseId(f.id), proposals }} />}

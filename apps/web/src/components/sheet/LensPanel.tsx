@@ -192,8 +192,8 @@ export function DatedLensPanel({ def, la }: { def: LensDef; la: LensAsOf }) {
   return (
     <>
       <h5><span>{def.short} · {def.name}</span><span className="h">{hmark(la.health)}</span></h5>
-      {la.at === 'then' && hf ? <div className="r key"><span>{hf.label}</span><b>{fmtValue(hf, la.value)}</b></div> : null}
-      <div className="note">{la.why}</div>
+      {(la.at === 'then' || la.at === 'replayed') && hf && la.value !== null ? <div className="r key"><span>{hf.label}</span><b>{fmtValue(hf, la.value)}</b></div> : null}
+      {la.at === 'replayed' ? <div className="note">{la.why ? la.why + ' · ' : ''}{la.label}</div> : <div className="note">{la.why}</div>}
     </>
   );
 }
