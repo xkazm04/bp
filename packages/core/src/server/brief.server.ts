@@ -21,18 +21,20 @@ import { findProduct, hasStore, kettleRead, kettleSample, storeDir, storeFile, u
 import { kettleSim } from './kettle-sim.server.ts';
 import { snapshotOf } from './store.server.ts';
 import { landings } from './release.server.ts';
-import type { TrackOpts } from '../scan/track.ts';
+import { evidenceOpts, type TrackOpts } from '../scan/track.ts';
+import { mapLenses } from './watch.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('brief.server.ts is server-only');
 
 /** `root`: a live product's checkout (Kettle has none: its sim's releases are its record). */
 export interface BriefSource { scan: ScanSnapshot; map: BriefMap; root?: string }
 
-/** The brief's TrackOpts: a live product's landings when git knows them, else none. */
+/** The brief's TrackOpts: a live product's landings, git's ancestry and the map's bounds (evidenceOpts, the one way every
+ *  reader builds them) when git knows them, else none. */
 export async function briefOpts(src: BriefSource): Promise<TrackOpts> {
   if (!src.root) return {};
   const l = await landings(src.root, src.scan).catch(() => null);
-  return l?.state === 'known' ? { landed: l.items } : {};
+  return l?.state === 'known' ? evidenceOpts(l, mapLenses(src.root)) : {};
 }
 
 /** The map through the loader the browser uses (standard/load.ts), so the routes and the card count the same places, codes

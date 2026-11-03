@@ -31,7 +31,9 @@ if (at >= 0) {
   const R = await import(core('server/release.server.ts')) as typeof import('../packages/core/src/server/release.server.ts');
   const scan = S.snapshotOf(path.join(root, '.ai/lens-scan/scan.db'));
   const l = await R.landings(root, scan);
-  const r = O.outcomeOf(scan, l.state === 'known' ? { landed: l.items } : {});
+  let lenses: { id?: string; manifest?: { fields?: { key?: string; min?: number; max?: number }[] } }[] = [];
+  try { lenses = JSON.parse(fs.readFileSync(path.join(root, '.ai/lens-scan/app-structure.json'), 'utf8')).lenses ?? []; } catch { /* no map: no bounds */ }
+  const r = O.outcomeOf(scan, TR.evidenceOpts(l, lenses));
   console.log(`Outcome on main for ${root}${l.state === 'known' ? ` (${l.ref} at ${l.head.slice(0, 7)})` : ` (landings unknown: ${l.why})`}: ${O.tallyWords(r.all)}`);
   for (const d of r.accepted) console.log(`  accepted by ${d.by}: ${O.tallyWords(d.tally)}`);
   for (const d of r.approved) console.log(`  approved by ${d.by}: ${O.tallyWords(d.tally)}`);
@@ -125,7 +127,16 @@ const r = O.outcomeOf(scan, { landed });
 {
   const src = fs.readFileSync(path.join(ROOT, 'apps/web/src/components/ledger/TrustPanel.tsx'), 'utf8');
   check('6 TrustPanel: an Outcome column from outcomeOf, deciders both ways, the predictor line', /outcomeOf\(/.test(src) && /<th scope="col">Outcome<\/th>/.test(src) && /out\.accepted/.test(src) && /out\.approved/.test(src) && /predictorWords\(/.test(src));
-  check('6 TrustPanel reads landings only while open (TrustBody mounts on open)', /\{open \? <TrustBody/.test(src) && /useLandings\(/.test(src.slice(src.indexOf('function TrustBody'))));
+  check('6 TrustPanel reads landings only while open (TrustBody mounts on open)', /\{open \? <TrustBody/.test(src) && /useTrain\(/.test(src.slice(src.indexOf('function TrustBody'))));
+  check('6 TrustPanel builds its options as the chips do (landedOpts: landings, ancestry, bounds)', /outcomeOf\(\{ \.\.\.scan, proposals \}, opts\)/.test(src) && /landedOpts\(T\)/.test(src) && !/\{ landed: /.test(src));
+}
+
+// ------------------------------------------------------------------ 7 out of bounds, and every reader's options
+{
+  const t = { ...O.emptyTally(), held: 1, outOfBounds: 1 };
+  check("7 an out-of-bounds target is its own count, on main, in words (never 'no expected value')", O.onMain(t) === 2 && /1 target out of bounds/.test(O.tallyWords(t)) && !/no expected value/.test(O.tallyWords(t)) && /1 out of bounds/.test(O.tallyWords(t, ' · ', true)), O.tallyWords(t));
+  const bs = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/brief.server.ts'), 'utf8');
+  check("7 the server brief builds its options with evidenceOpts and the map's lenses", /evidenceOpts\(l, mapLenses\(src\.root\)\)/.test(bs) && !/\{ landed: l\.items \}/.test(bs));
 }
 
 console.log(`check-outcome: ${passed} passed, ${failed} failed`);

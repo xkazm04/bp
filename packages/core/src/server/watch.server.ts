@@ -53,7 +53,7 @@ function save(root: string, watches: Watch[]): void {
 }
 
 /** The lens manifests of the product's map, for the bounds a target is checked against. */
-function mapLenses(root: string): { id?: string; manifest?: { fields?: { key?: string; min?: number; max?: number }[] } }[] {
+export function mapLenses(root: string): { id?: string; manifest?: { fields?: { key?: string; min?: number; max?: number }[] } }[] {
   try { return (JSON.parse(fs.readFileSync(path.join(root, '.ai', 'lens-scan', 'app-structure.json'), 'utf8')) as { lenses?: [] }).lenses ?? []; } catch { return []; }
 }
 

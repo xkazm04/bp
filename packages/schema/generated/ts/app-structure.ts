@@ -833,8 +833,8 @@ export interface BriefDecided {
   note?: string;
   standard?: string;
   match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
-  /** What an approval came to: held, short of expected or not measured since on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. */
-  outcome?: 'held' | 'short' | 'unmeasured' | 'descoped' | 'failed';
+  /** What an approval came to: held, short of expected, not measured since, or a target out of the metric's declared bounds (unresolved) on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. */
+  outcome?: 'held' | 'short' | 'unmeasured' | 'out-of-bounds' | 'descoped' | 'failed';
 }
 
 /** The approvals on main that have an expected value, by outcome; byJudgement counts the held and short ones read by judgement (a model's read, noisy). */
@@ -843,6 +843,8 @@ export interface BriefTally {
   short: number;
   unmeasured: number;
   noTarget: number;
+  /** Unresolved: the expected value lies outside the metric's declared bounds. */
+  outOfBounds: number;
   byJudgement: BriefTallyByJudgement;
   shortIds: string[];
 }

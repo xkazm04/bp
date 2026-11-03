@@ -2120,7 +2120,7 @@ struct BPLINK_API FBpBriefDecided
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString match;
 
-	/** What an approval came to: held, short of expected or not measured since on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. one of: held, short, unmeasured, descoped, failed */
+	/** What an approval came to: held, short of expected, not measured since, or a target out of the metric's declared bounds (unresolved) on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. one of: held, short, unmeasured, out-of-bounds, descoped, failed */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString outcome;
 };
@@ -2162,6 +2162,10 @@ struct BPLINK_API FBpBriefTally
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	int32 noTarget = 0;
+
+	/** Unresolved: the expected value lies outside the metric's declared bounds. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	int32 outOfBounds = 0;
 
 	/** required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")

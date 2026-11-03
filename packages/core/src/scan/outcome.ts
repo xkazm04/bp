@@ -26,12 +26,14 @@ export interface Tally {
   short: number;
   unmeasured: number;
   noTarget: number;
+  /** Unresolved: the expected value lies outside the metric's declared bounds (track.ts eligibility). */
+  outOfBounds: number;
   /** Of held and short: those whose reading was taken by judgement (a model's read, noisy). */
   byJudgement: { held: number; short: number };
   /** The short items, so a number opens its list. */
   shortIds: string[];
 }
-export const emptyTally = (): Tally => ({ held: 0, short: 0, unmeasured: 0, noTarget: 0, byJudgement: { held: 0, short: 0 }, shortIds: [] });
+export const emptyTally = (): Tally => ({ held: 0, short: 0, unmeasured: 0, noTarget: 0, outOfBounds: 0, byJudgement: { held: 0, short: 0 }, shortIds: [] });
 /** Count one track's outcome on main into `t`; false when the track is not on main. */
 export function addOutcome(t: Tally, tr: Track): boolean {
   const o = mainOutcome(tr);
@@ -40,11 +42,12 @@ export function addOutcome(t: Tally, tr: Track): boolean {
   if (o === 'held') { t.held++; if (j) t.byJudgement.held++; }
   else if (o === 'short') { t.short++; t.shortIds.push(tr.id); if (j) t.byJudgement.short++; }
   else if (o === 'unmeasured') t.unmeasured++;
+  else if (o === 'out-of-bounds') t.outOfBounds++;
   else t.noTarget++;
   return true;
 }
 export const measured = (t: Pick<Tally, 'held' | 'short'>): number => t.held + t.short;
-export const onMain = (t: Tally): number => t.held + t.short + t.unmeasured + t.noTarget;
+export const onMain = (t: Tally): number => t.held + t.short + t.unmeasured + t.noTarget + t.outOfBounds;
 
 /** The share held, by method: judgement apart from static and probe, each only from RATE_N measured outcomes. */
 export function ratesOf(t: Tally): { judgement?: number; measured?: number } {
@@ -143,6 +146,7 @@ export function tallyWords(t: Tally, sep = ' · ', terse = false): string {
   const parts = m ? [m] : [];
   if (t.unmeasured) parts.push(t.unmeasured + (terse ? ' unmeasured' : ' not measured since'));
   if (t.noTarget) parts.push(t.noTarget + ' no expected value');
+  if (t.outOfBounds) parts.push(t.outOfBounds + (terse ? ' out of bounds' : ' target out of bounds'));
   const rate = [r.measured !== undefined ? 'static/probe ' + pct(r.measured) + ' held' : '', r.judgement !== undefined ? 'judgement ' + pct(r.judgement) + ' held' : ''].filter(Boolean).join(', ');
   return parts.join(sep) + (rate ? sep + rate : '');
 }

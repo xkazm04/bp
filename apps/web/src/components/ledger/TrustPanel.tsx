@@ -13,8 +13,8 @@ import { useMemo, useState } from 'react';
 import { LEVEL_WORDS, latestEvents, trustSlices } from '@bp/core/scan/trust';
 import { onMain, outcomeOf, predictorWords, ratesOf, tallyWords, type DeciderOutcome, type Tally } from '@bp/core/scan/outcome';
 import { dayHhmmUTC } from '@bp/core/model';
-import { useLandings } from '@/lib/scan/landings';
-import { useScanCtx } from '../hooks';
+import { useTrain } from './train/data';
+import { landedOpts } from './train/onMain';
 import type { Proposal } from '@bp/core/scan/types';
 import type { Ledger } from './useLedger';
 
@@ -26,7 +26,7 @@ const when = (iso: string | undefined) => (iso ? dayHhmmUTC(iso) : '');
 function OutcomeCell({ t }: { t: Tally | undefined }) {
   if (!t || !onMain(t)) return <td className="lg-trust-s">none on main</td>;
   const r = ratesOf(t), rate = r.measured ?? r.judgement;
-  const terms = [[t.held, 'held'], [t.short, 'short'], [t.unmeasured, 'unmeasured'], [t.noTarget, 'no target']] as const;
+  const terms = [[t.held, 'held'], [t.short, 'short'], [t.unmeasured, 'unmeasured'], [t.noTarget, 'no target'], [t.outOfBounds, 'target out of bounds']] as const;
   return <td className="lg-trust-oc" title={tallyWords(t)}>{terms.filter(([n]) => n).map(([n, w]) => n + ' ' + w).join(' · ')}{rate !== undefined ? ' · ' + pct(rate) + ' held' + (r.measured === undefined ? ' by judgement' : '') : ''}</td>;
 }
 
@@ -42,11 +42,11 @@ function Deciders({ head, rows }: { head: string; rows: DeciderOutcome[] }) {
 
 function TrustBody({ L, proposals }: { L: Ledger; proposals: Proposal[] }) {
   const events = L.scan?.trust_events, scan = L.scan;
-  const landed = useLandings(useScanCtx(), scan, proposals);
+  const T = useTrain();
   const slices = useMemo(() => trustSlices(events ?? [], proposals), [events, proposals]);
   const latest = useMemo(() => latestEvents(events ?? []), [events]);
-  const items = landed?.state === 'known' ? landed.items : undefined;
-  const out = useMemo(() => (scan ? outcomeOf({ ...scan, proposals }, { landed: items }) : null), [scan, proposals, items]);
+  const opts = useMemo(() => landedOpts(T), [T.landed, T.lenses]); // landings, ancestry and bounds, as the chips read them
+  const out = useMemo(() => (scan ? outcomeOf({ ...scan, proposals }, opts) : null), [scan, proposals, opts]);
   const predictor = out ? predictorWords(out.predictor) : null;
   return (
     <div id="lg-trust-panel" className="lg-trust-p" role="region" aria-label="Autonomy by slice">
