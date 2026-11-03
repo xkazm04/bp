@@ -1,0 +1,89 @@
+{
+  "judge": "claude-opus-5-5",
+  "thesis": "The plan already shows where every feature stands now; make it answer what's wrong, since when, and what will clear it - for any reader, by ear or keyboard, on any past date and for any part of any product - from the lens manifests and readings bp already has.",
+  "kept": [
+    "P09",
+    "P02",
+    "P05",
+    "P01",
+    "P11",
+    "P03",
+    "P06",
+    "P10",
+    "P04",
+    "P08",
+    "P12"
+  ],
+  "items": {
+    "C1": [
+      "P09",
+      "P05"
+    ],
+    "C2": [
+      "P09",
+      "P02",
+      "P05"
+    ],
+    "C3": [
+      "P01",
+      "P11"
+    ],
+    "S1": [
+      "P03"
+    ],
+    "S2": [
+      "P06"
+    ],
+    "L1": [
+      "P10",
+      "P04",
+      "P08",
+      "P12"
+    ]
+  },
+  "approved_items": [
+    "C1",
+    "C2",
+    "C3",
+    "S1",
+    "S2",
+    "L1"
+  ],
+  "approved": [
+    "P09",
+    "P05",
+    "P02",
+    "P01",
+    "P11",
+    "P03",
+    "P06",
+    "P10",
+    "P04",
+    "P08",
+    "P12"
+  ],
+  "dropped": [
+    "P07"
+  ],
+  "landed_items": [
+    "C1",
+    "C2",
+    "C3",
+    "S1",
+    "S2",
+    "L1"
+  ],
+  "landed": [
+    "P09",
+    "P05",
+    "P02",
+    "P01",
+    "P11",
+    "P03",
+    "P06",
+    "P10",
+    "P04",
+    "P08",
+    "P12"
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "id": "2026-11-03-blueprint-canvas",
+  "area": [
+    "apps/web/src/engine",
+    "apps/web/src/components/sheet",
+    "apps/web/src/components/page",
+    "apps/web/src/components/timeline",
+    "apps/web/src/components/BlueprintApp.tsx",
+    "apps/web/src/components/FeatureSheet.tsx",
+    "apps/web/src/components/Legend.tsx"
+  ],
+  "head": "466353624d0e491307637478f826cd4b736a4e55",
+  "created": "2026-11-03T10:44:03.453Z",
+  "rounds": {
+    "1": {
+      "started": "2026-11-03T10:48:02.246Z",
+      "seats": {},
+      "finished": "2026-11-03T10:59:29.924Z",
+      "stray_changes": 0
+    },
+    "2": {
+      "started": "2026-11-03T10:59:39.640Z",
+      "seats": {},
+      "finished": "2026-11-03T11:05:37.128Z",
+      "stray_changes": 0
+    }
+  },
+  "seats": "codex:gpt-6.1-sol@xhigh,claude:claude-opus-5-5@xhigh"
+}
