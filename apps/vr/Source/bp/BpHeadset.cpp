@@ -79,6 +79,34 @@ namespace
 		return Height ? Height->GetFloat() : ABpTable::DefaultTableHeightCm;
 	}
 
+	/** The world's own tick (actors, components, their tick groups) in ms, start to post-actor-tick: the game thread's work
+	 *  without the frame pacing. GGameThreadTime (the meter's GAME) also holds OpenXR's xrWaitFrame, which UE calls on the
+	 *  game thread outside its idle accounting, so on a headset GAME reads near the frame time whatever the game costs. */
+	struct FTickClock { double StartedAt = 0.0; float LastMs = 0.f; bool bHooked = false; };
+	FTickClock& TickClock()
+	{
+		static FTickClock Clock;
+		if (!Clock.bHooked)
+		{
+			Clock.bHooked = true;
+			FWorldDelegates::OnWorldTickStart.AddLambda([](UWorld* World, ELevelTick, float) { if (World && World->IsGameWorld()) TickClock().StartedAt = FPlatformTime::Seconds(); });
+			FWorldDelegates::OnWorldPostActorTick.AddLambda([](UWorld* World, ELevelTick, float)
+			{
+				FTickClock& Each = TickClock();
+				if (World && World->IsGameWorld() && Each.StartedAt > 0.0) Each.LastMs = static_cast<float>((FPlatformTime::Seconds() - Each.StartedAt) * 1000.0);
+			});
+		}
+		return Clock;
+	}
+
+	/** The render thread's and the world tick's samples over the meter's window (the log line's render_ms and tick_ms). */
+	struct FThreadSample { double At; float RenderMs; float TickMs; };
+	TArray<FThreadSample>& ThreadSamples()
+	{
+		static TArray<FThreadSample> Samples;
+		return Samples;
+	}
+
 	FString RuntimeName()
 	{
 		return GEngine && GEngine->XRSystem.IsValid() ? GEngine->XRSystem->GetVersionString() : FString(TEXT("none (flat)"));
@@ -334,6 +362,9 @@ void ABpPawn::TickFrameMeter(float DeltaSeconds)
 	const double Now = FPlatformTime::Seconds();
 	FrameSamples.Add({ Now, static_cast<float>(FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles())), static_cast<float>(FPlatformTime::ToMilliseconds(GGameThreadTime)), DeltaSeconds * 1000.f });
 	FrameSamples.RemoveAll([Now](const FFrameSample& Each) { return Now - Each.At > FrameWindowS; });
+	TArray<FThreadSample>& Threads = ThreadSamples();
+	Threads.Add({ Now, static_cast<float>(FPlatformTime::ToMilliseconds(GRenderThreadTime)), TickClock().LastMs });
+	Threads.RemoveAll([Now](const FThreadSample& Each) { return Now - Each.At > FrameWindowS; });
 	if (Now - FrameShownAt < 0.25) return;
 	const bool bLog = FMath::FloorToInt(Now / 10.0) != FMath::FloorToInt(FrameShownAt / 10.0);
 	FrameShownAt = Now;
@@ -363,7 +394,15 @@ void ABpPawn::TickFrameMeter(float DeltaSeconds)
 	FrameMeter->RequestRedraw();
 	if (bLog)
 	{
-		UE_LOG(LogBpTable, Log, TEXT("BpFrame: p50 over %.0f s gpu_ms=%.2f game_ms=%.2f frame_ms=%.2f (bar %.1f) samples=%d runtime=%s"),
-			FrameWindowS, Gpu, Game, Frame, FrameBarMs, FrameSamples.Num(), *RuntimeName());
+		const auto ThreadP50 = [&Threads](float FThreadSample::*Field)
+		{
+			TArray<float> Values;
+			for (const FThreadSample& Each : Threads) Values.Add(Each.*Field);
+			Values.Sort();
+			return Values.Num() ? Values[Values.Num() / 2] : 0.f;
+		};
+		// game_ms holds xrWaitFrame on a headset (TickClock); tick_ms is the world's own tick, render_ms the render thread's.
+		UE_LOG(LogBpTable, Log, TEXT("BpFrame: p50 over %.0f s gpu_ms=%.2f game_ms=%.2f frame_ms=%.2f render_ms=%.2f tick_ms=%.2f (bar %.1f) samples=%d runtime=%s"),
+			FrameWindowS, Gpu, Game, Frame, ThreadP50(&FThreadSample::RenderMs), ThreadP50(&FThreadSample::TickMs), FrameBarMs, FrameSamples.Num(), *RuntimeName());
 	}
 }
