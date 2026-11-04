@@ -11,13 +11,14 @@
 // so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
 // bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
 // an existing briefs.json is left as it is.
-// Each file is the route's body exactly as the server answered. Config/DefaultGame.ini stages the BpData directory into
+// Each file is the route's body as the server answered, with brand names reworded (bundle-words.mjs, compliance.md P4). Config/DefaultGame.ini stages the BpData directory into
 // the pak as UFS files. Only Kettle (the sample) is committed; a live product's bundle stays local (.gitignore).
 // Exit 0 written, 1 a route failed, 2 refused.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { neutralize } from './bundle-words.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VR = path.resolve(HERE, '..');
@@ -60,7 +61,8 @@ fs.mkdirSync(dir, { recursive: true });
 let failed = 0, rev = null;
 for (const [file, route] of PARTS) {
   const res = await fetch(`${url}/api/products/${slug}${route}`).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
-  const body = await res.text();
+  // Neutral words (bundle-words.mjs): the bundle rides in the competition APK, which may name no brand.
+  const body = neutralize(await res.text());
   if (!res.ok) { failed++; console.log(`FAIL  ${route}: ${res.status} ${body.slice(0, 200)}`); continue; }
   fs.writeFileSync(path.join(dir, file), body);
   if (file === 'structure.json') rev = JSON.parse(body).rev ?? null;
@@ -75,7 +77,7 @@ if (args.includes('--briefs') && !failed) {
     if (!res.ok) { failed++; console.log(`FAIL  brief ${id}: ${res.status} ${body.slice(0, 200)}`); continue; }
     briefs[id] = JSON.parse(body);
   }
-  const text = JSON.stringify(briefs);
+  const text = neutralize(JSON.stringify(briefs));
   fs.writeFileSync(path.join(dir, 'briefs.json'), text);
   const repeats = Object.values(briefs).filter((b) => b.advice?.say === 'withdraw').length;
   console.log(`ok    ${open.length} briefs -> ${path.relative(REPO, path.join(dir, 'briefs.json')).replace(/\\/g, '/')} (${(text.length / 1024).toFixed(1)} KB, ${repeats} repeat${repeats === 1 ? '' : 's'})`);
