@@ -787,11 +787,11 @@ void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, c
 		if (ReadBundleFile(GetProductSlug(), TEXT("briefs.json"), Text) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json) && Json.IsValid())
 		{
 			int32 Read = 0, Bad = 0;
-			for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Json->Values)
+			for (const auto& Pair : Json->Values)
 			{
 				const TSharedPtr<FJsonObject>* One = nullptr;
 				FBpDecisionBrief Brief;
-				if (Pair.Value.IsValid() && Pair.Value->TryGetObject(One) && BpSchema::FromJson(One->ToSharedRef(), Brief)) { Briefs.Add(Pair.Key, MoveTemp(Brief)); ++Read; }
+				if (Pair.Value.IsValid() && Pair.Value->TryGetObject(One) && BpSchema::FromJson(One->ToSharedRef(), Brief)) { Briefs.Add(FString(*Pair.Key), MoveTemp(Brief)); ++Read; }
 				else ++Bad;
 			}
 			UE_LOG(LogBpLink, Log, TEXT("BpLink: %d briefs from the bundle's briefs.json%s"), Read, Bad ? *FString::Printf(TEXT(" (%d did not parse)"), Bad) : TEXT(""));
@@ -1262,18 +1262,18 @@ namespace
 	void DropEmpty(FJsonObject& Json)
 	{
 		TArray<FString> Gone;
-		for (const TPair<FString, TSharedPtr<FJsonValue>>& Pair : Json.Values)
+		for (const auto& Pair : Json.Values)
 		{
 			const TSharedPtr<FJsonValue>& Value = Pair.Value;
 			if (!Value.IsValid() || Value->IsNull() || (Value->Type == EJson::String && Value->AsString().IsEmpty()))
 			{
-				Gone.Add(Pair.Key);
+				Gone.Add(FString(*Pair.Key));
 			}
 			else if (Value->Type == EJson::Object)
 			{
 				const TSharedPtr<FJsonObject> Inner = Value->AsObject();
 				if (Inner.IsValid()) DropEmpty(*Inner);
-				if (!Inner.IsValid() || Inner->Values.Num() == 0) Gone.Add(Pair.Key);
+				if (!Inner.IsValid() || Inner->Values.Num() == 0) Gone.Add(FString(*Pair.Key));
 			}
 		}
 		for (const FString& Key : Gone) Json.RemoveField(Key);
