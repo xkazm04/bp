@@ -23,6 +23,9 @@
 //               (link: Meta Horizon Link's; steamvr and alvr: SteamVR's; vd: Virtual Desktop's VDXR), so the system-wide
 //               HKLM runtime (the Simulator's on Lynx) is never read or written. --runtime-json overrides the known path.
 //               The run lasts until the app is closed (--hold defaults to 4 h); the LogHMD line names the runtime it got.
+// --window      game and staged: render the flat view in a 1600x900 window instead of -nullrhi (a capture, a look at the
+//               lamp's tour; record-demo.mjs --window grabs it)
+// --sound       keep the engine's audio (runs are -nosound otherwise): the tour's voice, heard on the PC
 // --vr          game and staged: -vr, so the app opens an XR session (with --xr-sim, the Simulator's; its window and the
 //               hands only come alive with one). Without it a -game run never calls xrCreateSession.
 // --exec        console commands at startup (-ExecCmds), comma-separated, e.g. "stat scenerendering,stat dumpave -num=600 -ms=0"
@@ -117,11 +120,11 @@ const stopServer = async () => {
 if (!port) { await stopServer(); refuse(`apps/server did not print its port within 20 s (${path.join(out, 'server.log')})`); }
 const url = opt('--url') ? opt('--url').replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
 
-const render = runtime ? [] : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
+const render = runtime || flag('--window') ? (flag('--window') ? ['-windowed', '-ResX=1600', '-ResY=900'] : []) : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
 const exec = opt('--exec');
 const holdS = Number(opt('--hold', runtime ? '14400' : '5'));
 const vr = flag('--vr') || runtime ? ['-vr'] : [];
-const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
+const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', ...(flag('--sound') ? [] : ['-nosound']), '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
   ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
