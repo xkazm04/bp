@@ -666,6 +666,24 @@ public:
 	/** The caption's centre in the world (BpView.Pose lamp aims at it). */
 	FVector GetCaptionWorld() const;
 
+	// ---- The tour (BpTour.cpp; standalone-plan.md S6, the competition's "first five minutes") ------------------------------
+	/** The lamp teaches the table by asking for each gesture and waiting for it: lift a wing, lift its most urgent room, step
+	 *  inside, ask about a feature, take a decision, step back out. A step the person leaves alone for TourIdleS is shown
+	 *  once by the lamp doing it; a write (Approve, Decline) is never done for them. It never takes a move away from the
+	 *  hands: their gestures always act, and the tour reads where they went. It plays once at a cold start when the table
+	 *  reads the bundled snapshot (bp.Tour -1, the default; 1 any source, 0 never), and again from BpTour.Start or the wrist. */
+	void StartTour();
+	void StopTour(const TCHAR* Why);
+	bool IsTourRunning() const { return TourStep >= 0; }
+	/** For checks: "<step> <waiting|shown>" while it runs, "" otherwise. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Tour")
+	FString GetTourLine() const;
+	/** The hands report each gesture they fired (pull, push, tap, hold): the tour counts the person as active. */
+	void NoteHand(const TCHAR* Kind);
+	static constexpr float TourIdleS = 14.f;
+	static constexpr float TourWelcomeS = 7.f;
+	static constexpr float TourStartDelayS = 2.5f;
+
 	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
 	/** Moves the table and what stands on it (the lamp and its group) to a new transform in one step. Nothing is rebuilt,
 	 *  so the pins, the card, the deck and the map keep their places on it; lowered, its legs pass under the floor.
@@ -1435,6 +1453,42 @@ private:
 	/** The lamp says Line on its caption for LampCaptionS; a notice (an onboarding milestone) shows outside room mode too. */
 	void SayLamp(const FString& Line, bool bNotice = false);
 	void ApplyLampWidgets();
+	/** The tour's state (BpTour.cpp): the step (-1 not running), when it began and when the person last acted (world
+	 *  seconds), whether the lamp already showed this step, the line it keeps on the caption, what it points at, and the
+	 *  asks and decisions counted since the step began. TickTour runs from TickSwitch at the actor's tick rate. */
+	int32 TourStep = -1;
+	double TourStepAt = 0.0;
+	double TourHandAt = 0.0;
+	double TourPlanAt = -1.0;
+	bool bTourShown = false;
+	bool bTourPlayed = false;
+	FString TourLine;
+	FString TourProduct;
+	FString TourWing;
+	FString TourRoom;
+	FString TourFeature;
+	int32 TourAsks = 0;
+	int32 TourTaps = 0;
+	void TickTour();
+	void EnterTourStep(int32 Step);
+	/** The step's line in Glim's voice at the lamp's head (Content/BpData/voice/tour/<Clip>.wav, apps/vr/tools/tour-voice.ts);
+	 *  a line still playing stops first. Silent when the clip is missing or bp.TourVoice is 0. */
+	void SpeakTour(const TCHAR* Clip);
+	TWeakObjectPtr<class UAudioComponent> TourVoice;
+	UPROPERTY(Transient)
+	TObjectPtr<class USoundAttenuation> TourVoiceFalloff;
+	TMap<FString, TArray<uint8>> TourClips;
+	/** The clip playing, and a step line waiting for "shown" (the lamp's "Like this.") to finish before it speaks. */
+	FString TourVoiceClip;
+	FString TourVoiceNext;
+	/** When the clip's samples run out (world seconds): a procedural wave plays silence after them, so this, not IsPlaying,
+	 *  says when a line is done, and the component is stopped there. */
+	double TourVoiceEndsAt = 0.0;
+	void SayTour(const FString& Line);
+	/** The tour's picks from the plan and the scan: the most urgent room in a wing (any wing when empty), and the room's
+	 *  feature with the most open findings (its first on the map when none has any). */
+	FString TourRoomIn(const FString& InWingId) const;
+	FString TourFeatureIn(const FString& InRoomId) const;
 	/** The lasso: its stroke (paper cm), its length, whether it draws, how long the closed loop stays lit, BpRoom.Lasso's
 	 *  loop and its progress, the last outcome and the features it picked. */
 	TArray<FVector2D> LassoPath;

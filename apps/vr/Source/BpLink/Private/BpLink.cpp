@@ -474,6 +474,11 @@ FBpLinkModule& FBpLinkModule::Get()
 	return FModuleManager::LoadModuleChecked<FBpLinkModule>(TEXT("BpLink"));
 }
 
+bool FBpLinkModule::IsFromBundle() const
+{
+	return GFromBundle;
+}
+
 FString FBpLinkModule::GetProductSlug() const
 {
 	return ProductSlug();

@@ -186,7 +186,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:project:<slug>|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT)."),
+		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:project:<slug>|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat|wrist:tour>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -370,6 +370,11 @@ void ABpPawn::WristTap(const FString& Id)
 	else if (Id == TEXT("wrist:seat"))
 	{
 		Seat();
+		return;
+	}
+	else if (Id == TEXT("wrist:tour") && Table)
+	{
+		Table->StartTour();
 		return;
 	}
 	else
@@ -634,6 +639,18 @@ void ABpPawn::RefreshWrist()
 				SNew(STextBlock).Text(FText::FromString(TEXT("SEAT"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
 			]);
 		WristBoxes.Add({ TEXT("wrist:seat"), WristSeat });
+	}
+	// TOUR on the site plan (BpTour.cpp): the lamp's tour again, by hand; room mode's third tab leaves the row no room.
+	if (!bRoomTab && Table && Table->HasPlan())
+	{
+		static const FSlateRoundedBoxBrush TourBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
+		const FBox2f WristTour(FVector2f(RowLeft - WristSeatW, WristTabTop), FVector2f(RowLeft, WristTabBottom));
+		RowLeft -= WristSeatW + WristTabGap;
+		Put(WristTour, SNew(SBorder).BorderImage(&TourBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(FText::FromString(TEXT("TOUR"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
+			]);
+		WristBoxes.Add({ TEXT("wrist:tour"), WristTour });
 	}
 	if (bProjects)
 	{

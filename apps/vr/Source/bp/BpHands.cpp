@@ -367,6 +367,7 @@ void UBpHands::PinchStarted(FSlot& S, const FSample& Sample)
 {
 	S.bPinch = true;
 	S.bFired = false;
+	if (ABpTable* T = FindTable()) T->NoteHand(TEXT("pinch"));
 	S.Onset = Sample.PinchPoint;
 	S.PullDir = TowardEye(S.Onset);
 	S.TargetKind = S.HoverKind;
@@ -386,6 +387,8 @@ void UBpHands::PinchEnded(FSlot& S)
 {
 	S.bPinch = false;
 	ABpTable* T = FindTable();
+	// The tour (BpTour.cpp) counts the person as active, and a tap on the deck or the card as a decision.
+	if (T && !S.bFired) T->NoteHand((S.HoverKind == TEXT("deck") || S.HoverKind == TEXT("card")) ? TEXT("tap") : TEXT("pinch"));
 	// A pinch that drew a lasso closes it; one that never moved far enough is a tap (WP3).
 	if (S.bLasso)
 	{
@@ -445,6 +448,7 @@ void UBpHands::Pull(FSlot& S)
 	S.bFired = true;
 	ABpTable* T = FindTable();
 	if (!T) return;
+	T->NoteHand(TEXT("pull"));
 	if (S.TargetKind == TEXT("wing"))
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-pull -> enter wing=%s"), *S.TargetId);
@@ -472,6 +476,7 @@ void UBpHands::Push(FSlot& S)
 	S.bFired = true;
 	ABpTable* T = FindTable();
 	if (!T) return;
+	T->NoteHand(TEXT("push"));
 	if (!T->GetRoomModeId().IsEmpty())
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-push -> exit room mode"));
@@ -552,6 +557,7 @@ void UBpHands::UpdateHold(float DeltaTime)
 	}
 	if (Id.IsEmpty() || bHoldFired) return;
 	HeldS += DeltaTime;
+	T->NoteHand(TEXT("hold"));
 	if (Kind == TEXT("lamp")) T->SetLampHold(FMath::Min(1.f, HeldS / ABpTable::HoldS));
 	if (HeldS < ABpTable::HoldS) return;
 	bHoldFired = true;

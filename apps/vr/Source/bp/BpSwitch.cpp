@@ -630,12 +630,15 @@ void ABpTable::AskLamp(const FString& FeatureId)
 	LampLookAt = WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(Slot->GlyphBox.GetCenter(), 0.f));
 	LampLookTarget = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: ask %s"), *FeatureId);
+	++TourAsks;
 	SayLamp(FString::Printf(TEXT("%s:\n%s · %s · %s"), *Tile.name, *Findings, *Health, *Scan));
 }
 
 bool ABpTable::TickSwitch(float DeltaSeconds)
 {
 	bool bBusy = false;
+	// The lamp's tour (BpTour.cpp) reads where the table is, at whatever rate the actor ticks.
+	TickTour();
 	const bool bReduced = SwitchReduced();
 	// The lamp to its place and turn.
 	const float WasAway = LampAway, WasLook = LampLook;

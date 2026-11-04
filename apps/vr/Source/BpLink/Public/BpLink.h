@@ -315,6 +315,9 @@ public:
 	/** Whether the product read is Kettle, whose scans and waves apps/server simulates. Any other product is live: its
 	 *  scans and dispatches would run real agents on a real repo, so the table only shows what they left (FAD). */
 	bool IsKettle() const { return GetProductSlug() == TEXT("kettle"); }
+	/** Whether the session reads the build's bundled snapshot (no server: -BpLinkUrl=bundle, or the fallback when the server
+	 *  did not answer). Every write is refused then. */
+	bool IsFromBundle() const;
 
 	/** POST .../scans { lens, scope }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
 	 *  OnDone gets the HTTP status (202 when queued) and the body. Refused for a live product (IsKettle): nothing is sent,
