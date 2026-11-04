@@ -9,10 +9,12 @@
 #include "BpTable.h"
 
 #include "BpLink.h"
+#include "BpPawn.h"
 #include "Components/AudioComponent.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Sound/SoundAttenuation.h"
@@ -31,6 +33,21 @@ namespace
 		1,
 		TEXT("1: the lamp's tour speaks each step's line in Glim's voice (the bundled clips); 0: captions only."),
 		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarTourFocus(
+		TEXT("bp.TourFocus"),
+		-1,
+		TEXT("-1: the tour pauses when a headset is on and the app has lost its XR focus (the Quest menu, the headset off); 0: act as if the focus were lost (a check in the flat view); 1: never pause."),
+		ECVF_Default);
+
+	/** Whether the person is in the app: no headset (the flat view), or the OpenXR session is FOCUSED (FApp::HasVRFocus
+	 *  is false while the runtime's menu shows, VISIBLE, and once the session stops with the headset off). */
+	bool TourHasFocus()
+	{
+		const int32 Forced = CVarTourFocus.GetValueOnGameThread();
+		if (Forced >= 0) return Forced != 0;
+		return !ABpPawn::IsHeadsetOn() || FApp::HasVRFocus();
+	}
 
 	/** A 16-bit PCM WAV's samples: its rate, channels and the data chunk's bytes. False for any other shape. */
 	bool ReadWav(const TArray<uint8>& File, int32& OutRate, int32& OutChannels, int32& OutOffset, int32& OutBytes)
@@ -313,6 +330,33 @@ void ABpTable::TickTour()
 	if (!World || !SheetPlan.IsValid()) return;
 	const double Now = World->GetTimeSeconds();
 	FBpLinkModule& Link = FBpLinkModule::Get();
+	// Away (no focus): nothing advances. A cold start counts its delay from the focus; a running step holds.
+	if (!TourHasFocus())
+	{
+		TourPlanAt = Now;
+		if (TourStep >= 0 && !bTourAway)
+		{
+			bTourAway = true;
+			TourAwayAt = Now;
+			if (UAudioComponent* Voice = TourVoice.Get()) Voice->Stop();
+			TourVoiceNext.Reset();
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: paused at %s (the app lost its focus)"), StepName(TourStep));
+		}
+		return;
+	}
+	if (bTourAway)
+	{
+		bTourAway = false;
+		const double Away = Now - TourAwayAt;
+		TourStepAt += Away;
+		TourHandAt += Away;
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: resumed at %s after %.1f s away"), StepName(TourStep), Away);
+		if (TourStep >= 0)
+		{
+			SayTour(TourLine);
+			SpeakTour(StepName(TourStep));
+		}
+	}
 	// Not running: the cold start's tour, once the plan has stood TourStartDelayS (the build-up and the seat go first).
 	if (TourStep < 0)
 	{

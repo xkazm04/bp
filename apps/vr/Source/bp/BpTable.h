@@ -1484,6 +1484,11 @@ private:
 	/** When the clip's samples run out (world seconds): a procedural wave plays silence after them, so this, not IsPlaying,
 	 *  says when a line is done, and the component is stopped there. */
 	double TourVoiceEndsAt = 0.0;
+	/** Pause and resume (the competition's "easy to get into and out of"): while a headset is on and the app has lost its
+	 *  focus (the Quest menu, the headset off), the tour holds still, and from when it comes back its clocks run on as if
+	 *  no time had passed; the step's line is said again. A cold start waits for the focus too. */
+	bool bTourAway = false;
+	double TourAwayAt = 0.0;
 	void SayTour(const FString& Line);
 	/** The tour's picks from the plan and the scan: the most urgent room in a wing (any wing when empty), and the room's
 	 *  feature with the most open findings (its first on the map when none has any). */
