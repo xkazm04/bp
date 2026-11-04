@@ -154,6 +154,58 @@ namespace
 			Classes.Append(Wrist);
 			Table->ShowTextCard(bShow, Eye, Classes);
 		}));
+
+	/** The competition's FoV-aware design: essential UI inside the narrower view of every Quest (3S about 96 deg across, 3
+	 *  about 110), so nothing that matters needs a head turn from the seated rest gaze. The rest gaze is the eye toward the
+	 *  paper's centre; each element is read as its yaw (right +) and pitch (up +) off it. In view: within FovComfortDeg both
+	 *  ways; edge: within FovEdgeDeg (seen, but at the lens's soft rim); beyond: a head turn. */
+	constexpr double FovComfortDeg = 30.0;
+	constexpr double FovEdgeDeg = 42.0;
+	FAutoConsoleCommandWithWorld CmdFov(
+		TEXT("BpView.Fov"),
+		TEXT("BpView.Fov: logs every text class, the deck's front screen and the lamp's caption as yaw/pitch degrees off the seated rest gaze (the eye toward the paper's centre), with in view (30 deg), edge (42) or beyond."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			ABpPawn* Pawn = nullptr;
+			ABpTable* Table = nullptr;
+			if (!FindPlay(World, Pawn, Table))
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpView: BpView.Fov needs a playing world with the bp pawn and a table"));
+				return;
+			}
+			const FVector Eye = Pawn->GetPawnViewLocation();
+			const FVector Centre = Table->PaperToWorld(FVector2D(ABpTable::PaperWidthCm * 0.5, ABpTable::PaperDepthCm * 0.5));
+			const FVector Fwd = (Centre - Eye).GetSafeNormal();
+			const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd).GetSafeNormal();
+			const FVector Up = FVector::CrossProduct(Fwd, Right);
+			struct FMark { FString Name; FVector At; };
+			TArray<FMark> Marks;
+			TArray<BpType::FClassSample> Classes;
+			Table->TextClasses(Classes);
+			for (const BpType::FClassSample& Each : Classes) Marks.Add({ Each.Name, Each.Foot });
+			Marks.Add({ TEXT("deck front screen"), Table->GetDeckFrontWorld() });
+			Marks.Add({ TEXT("lamp caption (centre)"), Table->GetCaptionWorld() });
+			const double W = ABpTable::PaperWidthCm, D = ABpTable::PaperDepthCm;
+			Marks.Add({ TEXT("paper far-left corner"), Table->PaperToWorld(FVector2D(0.0, 0.0)) });
+			Marks.Add({ TEXT("paper far-right corner"), Table->PaperToWorld(FVector2D(W, 0.0)) });
+			Marks.Add({ TEXT("paper near-left corner"), Table->PaperToWorld(FVector2D(0.0, D)) });
+			Marks.Add({ TEXT("paper near-right corner"), Table->PaperToWorld(FVector2D(W, D)) });
+			int32 Beyond = 0, Edge = 0;
+			UE_LOG(LogBpTable, Log, TEXT("BpView: fov rest gaze pitch %.1f deg (eye %.0f cm from the paper's centre); in view <= %.0f deg, edge <= %.0f"),
+				FMath::RadiansToDegrees(FMath::Asin(Fwd.Z)), FVector::Dist(Eye, Centre), FovComfortDeg, FovEdgeDeg);
+			for (const FMark& Mark : Marks)
+			{
+				const FVector Dir = (Mark.At - Eye).GetSafeNormal();
+				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dir, Right), FVector::DotProduct(Dir, Fwd)));
+				const double Pitch = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dir, Up), FVector::DotProduct(Dir, Fwd)));
+				const double Worst = FMath::Max(FMath::Abs(Yaw), FMath::Abs(Pitch));
+				const TCHAR* Band = Worst <= FovComfortDeg ? TEXT("in view") : Worst <= FovEdgeDeg ? TEXT("edge") : TEXT("beyond");
+				Edge += Worst > FovComfortDeg && Worst <= FovEdgeDeg ? 1 : 0;
+				Beyond += Worst > FovEdgeDeg ? 1 : 0;
+				UE_LOG(LogBpTable, Log, TEXT("BpView: fov %-34s yaw %+6.1f pitch %+6.1f  %s"), *Mark.Name, Yaw, Pitch, Band);
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpView: fov %d marks, %d at the edge, %d beyond"), Marks.Num(), Edge, Beyond);
+		}));
 }
 
 // ---- Seated calibration ----------------------------------------------------------------------------------------------------
