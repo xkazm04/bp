@@ -42,9 +42,28 @@ $uatArgs = "BuildCookRun `"-project=$project`" -platform=Android -cookflavor=AST
 # Prism emulation; UBT's plain local executor links it.
 # WaitForExit, not -Wait: -Wait also waits for every descendant, and UAT leaves an adb server running.
 $p = Start-Process -FilePath $uat -ArgumentList $uatArgs -RedirectStandardOutput $log -RedirectStandardError "$log.err" -NoNewWindow -PassThru
+# Hold the handle: without it PowerShell 5.1 reports no ExitCode for a -PassThru process, and `exit $null` is 0, so a
+# failed UAT run (2026-11-04: BUILD FAILED, ExitCode=6) came back as success.
+$null = $p.Handle
 $p.WaitForExit()
 $code = $p.ExitCode
+if ($null -eq $code) { $code = if (Select-String -Path $log -Pattern 'BUILD SUCCESSFUL' -Quiet) { 0 } else { 1 } }
 Select-String -Path $log, "$log.err" -Pattern 'BUILD (SUCCESSFUL|FAILED)|Error:|error:|AutomationTool exiting' | ForEach-Object { $_.Line }
+# What went in (compliance.md): the staged file list must hold the bundle, the tour's voice and what the C++ loads by path,
+# and nothing of MetaHuman. A miss fails the package before anything is installed.
+if ($code -eq 0) {
+    $manifest = Join-Path $VrRoot 'Saved\StagedBuilds\Android_ASTC\Manifest_UFSFiles_Android.txt'
+    if (-not (Test-Path $manifest)) { Write-Host "FAIL: no staged file list at $manifest"; exit 1 }
+    $staged = Get-Content $manifest
+    $need = @('bp/Content/BpData/kettle/plan.json', 'bp/Content/BpData/voice/tour/welcome.wav', 'bp/Content/Bp/Fonts/', 'bp/Content/Bp/Materials/M_BlueprintPaper',
+        'bp/Content/Bp/Art/SurveyPin/', 'bp/Content/Bp/Art/FixtureKit/', 'bp/Content/Bp/Art/LightTableFrame/', 'bp/Content/Maps/LightTable')
+    foreach ($n in $need) {
+        if (-not ($staged | Where-Object { $_ -like "*$n*" })) { Write-Host "FAIL: the package has no $n"; $code = 1 }
+    }
+    $mh = $staged | Where-Object { $_ -like '*Bp/Art/MetaHuman*' }
+    if ($mh) { Write-Host "FAIL: MetaHuman content is in the package ($($mh.Count) files, e.g. $($mh[0]))"; $code = 1 }
+    if ($code -eq 0) { Write-Host "staged: $($staged.Count) files; the bundle, the voice and the code-loaded assets are in, no MetaHuman" }
+}
 if ($code -eq 0) {
     $apk = Get-ChildItem $Out -Recurse -Filter *.apk | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     Write-Host "APK=$($apk.FullName) ($([math]::Round($apk.Length / 1MB)) MB)"
