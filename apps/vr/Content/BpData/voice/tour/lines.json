@@ -1,0 +1,24 @@
+{
+  "voice": {
+    "voiceId": "SVlo1tpEuzf5ilPRxsRZ",
+    "modelId": "eleven_v3",
+    "seed": 4242,
+    "settings": {
+      "stability": 1,
+      "similarity_boost": 0.8
+    },
+    "fx": "highpass=f=110,equalizer=f=2400:t=q:w=1.2:g=3,aecho=0.85:0.8:7|13:0.35|0.25,tremolo=f=55:d=0.22",
+    "rate": 24000
+  },
+  "lines": {
+    "welcome": "Welcome to the light table. Every block on this paper is a part of the code.",
+    "lift-wing": "Pinch a wing, and pull it toward you.",
+    "lift-room": "Now pinch the glowing room, and pull it up.",
+    "step-in": "Pull it once more, to step inside.",
+    "ask": "Hold a feature, to ask me about it.",
+    "decide": "Each screen on the deck is one decision. Tap approve, or decline.",
+    "step-out": "Push away, to step back out.",
+    "hand-off": "That's the morning round. The table is yours.",
+    "shown": "Like this."
+  }
+}
