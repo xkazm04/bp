@@ -111,7 +111,11 @@ FRONT = unreal.Color(r=225, g=232, b=255, a=255)
 # The MetaHuman assets are not in git (bp is public; the owner's licence ruling, 2026-10-26), so a checkout that has not
 # built them locally (apps/vr/README.md, "MetaHuman hands") falls back to the MakeHuman pair.
 MH_HAND_L = "/Game/Bp/Art/MetaHumanHands/hands_metahuman/StaticMeshes/hand_l"
-HANDS = "metahuman" if unreal.EditorAssetLibrary.does_asset_exist(MH_HAND_L) else "hands-capture"
+# The MetaHuman pair is opt-in (BP_HANDS=metahuman in the editor's environment): the Quest APK must never carry it (owner,
+# 2026-11-04; docs/concepts/vr-light-table/compliance.md), and DefaultGame.ini never cooks its folders, so a map that placed
+# it would ship with no hands. The default is the MakeHuman pair on every machine.
+import os
+HANDS = "metahuman" if os.environ.get("BP_HANDS") == "metahuman" and unreal.EditorAssetLibrary.does_asset_exist(MH_HAND_L) else "hands-capture"
 unreal.log(f"studio_level: hands={HANDS}")
 HANDS_MESHES = {
     "metahuman": (MH_HAND_L,
