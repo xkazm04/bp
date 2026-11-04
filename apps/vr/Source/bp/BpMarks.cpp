@@ -5,6 +5,7 @@
 #include "BpTable.h"
 
 #include "BpGameMode.h"
+#include "BpTier.h"
 #include "BpLink.h"
 #include "BpType.h"
 #include "BpWords.h"
@@ -916,10 +917,11 @@ void ABpTable::WriteScanParams(float Strength)
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanAxis"), FLinearColor(Axis.X, Axis.Y, Axis.Z, Strength));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanSide"), FLinearColor(Side.X, Side.Y, Side.Z, HalfLength));
-	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it.
+	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it. The Quest
+	// tier (BpTier.h) draws the line alone: no second translucent sheet over the paper.
 	if (ScanVeil && ScanVeilMid)
 	{
-		const bool bVeil = Strength > 0.01f && HalfLength > 0.0;
+		const bool bVeil = Strength > 0.01f && HalfLength > 0.0 && !BpTier::IsOn(World);
 		ScanVeil->SetVisibility(bVeil);
 		if (bVeil)
 		{

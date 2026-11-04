@@ -3,6 +3,7 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpTier.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "CanvasItem.h"
@@ -641,6 +642,8 @@ void ABpTable::Tick(float DeltaSeconds)
 	// The table's own game-thread cost a frame, a column of a CSV capture (WP-V3: the build-up's frames read apart).
 	CSV_SCOPED_TIMING_STAT(BpBuild, TableTick);
 	Super::Tick(DeltaSeconds);
+	// The Quest tier (BpTier.h) follows bp.QuestTier at the tick's rate; nothing happens while it stays as it is.
+	BpTier::Apply(GetWorld());
 	const float Height = HeightCvarCm();
 	if (!FMath::IsNearlyEqual(Height, PlacedHeightCm, 0.01f))
 	{
@@ -718,19 +721,26 @@ void ABpTable::StartHandShadow()
 	HandCapture->PrimitiveRenderMode = ESceneCapturePrimitiveRenderMode::PRM_UseShowOnlyList;
 	HandCapture->ShowOnlyActors = Hands;
 	HandCapture->TextureTarget = HandDepth;
-	HandCapture->bCaptureEveryFrame = bLive;
+	// The Quest tier (BpTier.h) captures the live hands at a fixed rate on a timer instead of every frame.
+	const bool bTierRate = bLive && BpTier::IsOn(GetWorld());
+	HandCapture->bCaptureEveryFrame = bLive && !bTierRate;
 	HandCapture->bCaptureOnMovement = false;
 	// Looking up (pitch 90): the image's right is the table's +Y (the paper's U) and its down is +X, the far edge, where
 	// the paper's V runs from far to near, so the paper reads the image at (U, 1 - V).
 	HandCapture->SetRelativeLocationAndRotation(FVector(0.0, 0.0, PlacedHeightCm - GlassRecessCm - HandPlaneCm), FRotator(90.f, 0.f, 0.f));
 	HandCapture->RegisterComponent();
 	HandCapture->CaptureScene();
+	if (bTierRate)
+	{
+		// The start delay's one-shot timer has fired; its handle carries the capture loop now.
+		GetWorldTimerManager().SetTimer(HandCaptureTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { if (HandCapture) HandCapture->CaptureScene(); }), 1.f / BpTier::HandShadowHz(), true);
+	}
 	PaperMid->SetTextureParameterValue(TEXT("HandTex"), HandDepth);
 	PaperMid->SetVectorParameterValue(TEXT("HandScale"), FLinearColor(1.f, -1.f, 0.f, 0.f));
 	PaperMid->SetVectorParameterValue(TEXT("HandOffset"), FLinearColor(0.f, 1.f, 0.f, 0.f));
 	PaperMid->SetScalarParameterValue(TEXT("HandPlaneCm"), HandPlaneCm);
 	PaperMid->SetScalarParameterValue(TEXT("HandOcc"), HandShadowStrength);
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: hand shadow from %d actor(s), %s, %dx%d"), Hands.Num(), bLive ? TEXT("every frame") : TEXT("captured once"),
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: hand shadow from %d actor(s), %s, %dx%d"), Hands.Num(), bTierRate ? *FString::Printf(TEXT("at %.0f Hz (quest tier)"), BpTier::HandShadowHz()) : bLive ? TEXT("every frame") : TEXT("captured once"),
 		HandDepth->SizeX, HandDepth->SizeY);
 }
 
