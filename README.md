@@ -1,5 +1,7 @@
 # bp: the product blueprint
 
+![Developer's Blueprint: your codebase, drawn like a building](docs/img/banner.jpg)
+
 A canvas that draws a whole software product as an architect's drawing set: domains as wings,
 capabilities as rooms, and features as fixtures. Stage and health are readable at any zoom, and each
 person reads the plan through their own lens. On top of the plan, a simulated swarm of AI agents
