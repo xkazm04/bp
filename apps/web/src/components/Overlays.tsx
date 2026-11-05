@@ -262,7 +262,7 @@ export function DecisionCard() {
   return (
     <AnimatePresence>
       {d && d.open && (() => {
-        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d), down = sim.blockedByFeature(d.f).length;
+        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d), down = sim.blockedByFeature(d.f).length, ro = !writes && sim.live;
         return (
           <div ref={ref} style={{ position: 'absolute', left: 0, top: 0, zIndex: 8 }}>
             <motion.div id="dcard" key={d.id} className={'u-' + d.urg} role="dialog" aria-label="Decision" style={{ position: 'relative' }}
@@ -273,13 +273,14 @@ export function DecisionCard() {
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>{d.ord ? <>, asked because of <b>{d.ord}</b></> : null}.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span>{down ? <span>{down} agent{down === 1 ? '' : 's'} blocked downstream</span> : null}</div>
               {brief && <BriefFacts b={brief} d={d} compact />}
-              {(writes || !sim.live) && d.opts.map((o, i) => (
+              {ro && <p className="op-ro wb-help">Decisions are read-only here (BP_WRITES=off).</p>}
+              {!ro && d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => (keep ? E.keepAnswer(d.id, i) : E.decide(d.id, i))} {...optHover(E, d.id, i)}>
                   <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recNote ? 'you declined this before' : d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
               {!sim.live && <label className="keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order<small>{s.tl || M.P.D[f.domain]?.name || f.domain}</small></label>}
-              <div className="fx" aria-live="polite">{note ?? <>{wa.length ? 'Answering frees ' + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
+              <div className="fx" aria-live="polite">{note ?? <>{wa.length ? (ro ? 'It holds ' : 'Answering frees ') + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
               <div className="nav"><button type="button" aria-label="Previous question" onClick={() => E.stepDecision(-1)}>‹ K</button><span>{pos || '–'} of {list.length}</span><button type="button" aria-label="Next question" onClick={() => E.stepDecision(1)}>J ›</button></div>
             </motion.div>
           </div>
