@@ -439,6 +439,32 @@ expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its bo
   }
 }
 
+// Onboarding build-up glyph buttons (DW-45): the outline variant's index close (✕), zoom out (−), zoom in (+) and the card
+// close the engine injects (✕) are named by a glyph and a title only, which is not an accessible name a screen reader or
+// voice control can rely on. Each must carry an aria-label that names its action and the key its title gives. The chrome is
+// server-rendered from b-outline/index.tsx (its engine starts in an effect, which a server render never runs); the card is
+// HTML the engine writes from a template, so engine.ts is read as source with comments stripped.
+{
+  const BV = (await imp('buildup/b-outline/index.tsx')).default;
+  let html = '', threw: string | null = null;
+  try { html = renderToString(React.createElement(BV, { source: { subscribe: () => () => {} }, reducedMotion: true, theme: 'dark' })); } catch (e) { threw = (e as Error).message; }
+  expect(threw === null && html.includes('data-r="zFit"'), `GUARD the build-up outline chrome did not server-render (${threw ?? 'no zoom bar'})`);
+  const attr = (tag: string, a: string) => (new RegExp(`\\s${a}="([^"]*)"`).exec(tag) || [])[1];
+  const keyOf = (title: string | undefined) => (/\(([^)]+)\)\s*$/.exec(title ?? '') || [])[1];
+  const named = (where: string, tag: string, action: RegExp) => {
+    const title = attr(tag, 'title'), key = keyOf(title), label = attr(tag, 'aria-label');
+    expect(!!tag && !!key, `GUARD ${where}: the button or its "(key)" title was not found - the scan stopped matching (${tag.slice(0, 120) || 'no tag'})`);
+    expect(!!label && action.test(label) && !!key && label.includes(key), `${where}: aria-label ${label === undefined ? 'missing' : JSON.stringify(label)}, expected one naming ${action.source} and its key ${key ?? '?'} (title ${JSON.stringify(title)})`);
+  };
+  const tagOf = (r: string) => (new RegExp(`<button[^>]*data-r="${r}"[^>]*>`).exec(html) || [''])[0];
+  named('build-up index close (data-r=idxClose, ✕)', tagOf('idxClose'), /\bclose\b/i);
+  named('build-up zoom out (data-r=zOut, −)', tagOf('zOut'), /\bzoom out\b/i);
+  named('build-up zoom in (data-r=zIn, +)', tagOf('zIn'), /\bzoom in\b/i);
+  const eng = readStripped(path.join(SRC, 'buildup/b-outline/engine.ts'));
+  const at = eng.indexOf('data-c="x"'), from = at < 0 ? -1 : eng.lastIndexOf('<button', at);
+  named('build-up card close (engine.ts data-c=x, ✕)', from < 0 ? '' : eng.slice(from, eng.indexOf('>', at) + 1), /\bclose\b/i);
+}
+
 // Plan decision card, read-only (DW-44): a live product whose server runs BP_WRITES=off hides the answers, so the card says
 // why in the review rail's own words (review.tsx) and its footer does not promise what answering would free. With writes on,
 // and on the Kettle sample (no live product), the answers and the footer are as before. The question is one that holds an
