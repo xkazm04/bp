@@ -1333,6 +1333,10 @@ and the skin only draws it. The host lives in `apps/web/src/components/companion
   - The slip sits bottom-right, left of where a skin's caption reaches. Pending cards come first, then the newest.
   - A card shows its summary and up to three `name: value` facts from its args, with **Approve** and **Decline** as the
     ledger's `Btn`.
+  - The summary (`door.server.ts` `argsShown`) names every arg the approval sends, whatever order the agent sent them
+    in. It lists the tool's schema keys in schema order, then any key the schema does not declare. A long key is cut to
+    40 characters and a long value to 60, with an ellipsis. The list of keys is never cut, so a long `note` cannot hide
+    `decision`.
   - An answer is `POST /api/companion/cards/<id>` `{decision}` with the header `x-bp-human: <token>`. The token comes
     from `GET /api/companion/human-token`. It is fetched once, kept in memory, and fetched again after a 403.
   - A decided card shows its outcome and fades out after 2 s.

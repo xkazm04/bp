@@ -211,10 +211,26 @@ const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
       : `an ORDER (${String(args.kind)})`;
     return bounded(`Proposes ${what} for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'} (${n})${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
   }
-  const shown = Object.entries(args).filter(([k]) => k !== 'slug' && k !== 'product').map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
-  const product = productOf(args);
-  return bounded(`${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`).slice(0, 300);
+  const product = productOf(args), shown = argsShown(t, args).join(', ');
+  return `${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`;
 };
+
+/** The most characters one arg's key or value shows on a card; a longer one is cut with an ellipsis. */
+export const CARD_KEY_MAX = 40, CARD_VALUE_MAX = 60;
+const clip = (s: string, max: number): string => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+/**
+ * Every arg the approval sends, as `key value`, in the tool's schema order and then any key the schema does not declare
+ * (toolRequest sends those too). The person approves exactly what the card says (DW-107): the summary used to list the args
+ * in the agent's own order and cut the whole line at 300 characters, so a long `note` sent first pushed `decision` (or
+ * `ids`, `tools`) out of sight of the person approving it. Now a long VALUE is shortened, never the list of keys. Only the
+ * key the product came from (productOf) is left out: the summary names the product itself.
+ */
+export function argsShown(t: ToolSpec, args: Record<string, unknown>): string[] {
+  const from = typeof args.slug === 'string' ? 'slug' : typeof args.product === 'string' ? 'product' : null;
+  const declared = Object.keys(t.params_schema.properties ?? {}), keys = Object.keys(args).filter((k) => k !== from && args[k] !== undefined);
+  const ordered = [...declared.filter((k) => keys.includes(k)), ...keys.filter((k) => !declared.includes(k))];
+  return ordered.map((k) => { const v = args[k]; return `${clip(k, CARD_KEY_MAX)} ${clip(typeof v === 'string' ? v : JSON.stringify(v) ?? String(v), CARD_VALUE_MAX)}`; });
+}
 
 // ------------------------------------------------------------------------------------------------ where a card runs
 // A card's request goes to THIS server's own bound origin, never to the origin the incoming request names. The request's
