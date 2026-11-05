@@ -15,6 +15,9 @@
 //        RED    a merged release (RELEASE_STATE offers `finish` outright there): the same for Finish
 //        GUARD  the landed draft offers Tag and no Build, the merged one Finish; a draft that did not land starts one
 //               build on one press of Build (no ask)
+//   4. DW-73 the phone's decision bar has no dead Release -> (train/DecisionBar.tsx under LedgerPage's Body, In packs):
+//        RED    phone: the bar shows no Release -> button, or a tap on it does something (a page, a toast, changed words)
+//        GUARD  desktop: the bar keeps Release -> and a press opens the Release tab; the phone ledger renders the bar
 // Rig. No DOM renderer is in this tree, and renderToString keeps no state between renders, so the components run under a
 // small reconciler of the check's own: each function component is called with a stand-in React dispatcher (state, memo,
 // refs, effects, context, external stores) over hook slots owned by an instance, and an instance is kept across renders
@@ -348,6 +351,40 @@ const ctxOf = (E: Any) => new Map<Any, Any>([[EngineCtx, E], [VariantCtx, getVar
       R.A.unmount();
     }
   }
+}
+
+// ================================================================================================ 4. DW-73
+{
+  const { LedgerPage } = await imp('components/ledger/LedgerPage.tsx');
+  const { DecisionBar } = await imp('components/ledger/train/DecisionBar.tsx');
+  const { Btn } = await imp('components/ledger/train/ui/Controls.tsx');
+  const { setLedgerUi, EMPTY_UI } = await imp('components/ledger/useLedger.ts');
+  /** The In packs page as the phone (Phone.tsx: `<LedgerPage phone />`) or the desktop hosts it, its decision bar
+   *  rendered with the handler Body gives it; Release -> pressed, and whatever it does recorded. */
+  async function bar(phone: boolean) {
+    const E: Any = engine({ phone }), pages: string[] = [];
+    const setPage = E.setPage;
+    E.setPage = (p: string, lv?: string) => { pages.push(p + (lv ? '/' + lv : '')); setPage(p, lv); };
+    setLedgerUi(() => ({ ...EMPTY_UI, scope: 'packs', status: new Set() }));
+    const A = app(React.createElement(LedgerPage, { lensButton: null, lensPanel: null, phone }), ctxOf(E),
+      (t) => fnOf(t)?.name === 'Body' || fnOf(t) === fnOf(DecisionBar));
+    await A.settle(20);
+    const region = () => find(A.tree, (el) => el.props?.['data-role'] === 'tr-bar');
+    const release = find(region(), (el) => fnOf(el.type) === fnOf(Btn) && /→\s*$/.test(textOf(el.props.children)));
+    const hasBar = !!region(), before = textOf(A.tree), toasts0 = toasts.length;
+    if (release) { release.props.onClick?.(ev()); await A.settle(20); }
+    const did = pages.length > 0 || toasts.length > toasts0 || textOf(A.tree) !== before;
+    const out = { errors: A.errors.slice(), hasBar, release: !!release, did, pages: pages.slice() };
+    A.unmount();
+    setLedgerUi(() => ({ ...EMPTY_UI }));
+    return out;
+  }
+  const desk = await bar(false);
+  expect(desk.errors.length === 0 && desk.hasBar && desk.release && desk.pages.includes('ledger/release'),
+    `GUARD DW-73 desktop: the decision bar's Release -> is gone or does not open the Release tab (${desk.errors.join('; ') || JSON.stringify(desk)})`);
+  const ph = await bar(true);
+  expect(ph.errors.length === 0 && ph.hasBar, `GUARD DW-73 phone: the phone ledger rendered no decision bar (${ph.errors.join('; ') || 'no tr-bar'})`);
+  expect(!ph.release || ph.did, `DW-73 phone: the decision bar shows a Release -> button and a tap on it does nothing (no page, no toast, no words change)`);
 }
 
 if (failures.length) { console.error(`check-ledger-guards: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
