@@ -38,7 +38,8 @@ export function BriefDrawer({ id, decide, className = 'lg-brief' }: { id: string
     <aside className={className} aria-label={'Brief · ' + p.title} data-role="lg-brief">
       <h4>Brief · <span>{p.id}</span></h4>
       {b ? <BriefFacts b={b} compact /> : <p className="lg-brief-n">The store has not answered yet: no brief to read.</p>}
-      {decide && decide.status === 'proposed' ? <Decision d={decide} /> : null}
+      {/* keyed by the finding: a reason typed for one finding never opens on the next (React keeps an unkeyed part's state) */}
+      {decide && decide.status === 'proposed' ? <Decision key={p.id} d={decide} /> : null}
     </aside>
   );
 }
