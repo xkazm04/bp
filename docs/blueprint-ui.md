@@ -949,9 +949,9 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
 - **The switch** (`PageSwitch` in `Header.tsx`): `Project <name> · [drawing set | findings ledger] · sheet …`, two
   `aria-pressed` buttons, the open (proposed) count as a 12 px badge. **L** toggles it except in a text field, a
   dialog that owns its keys, the open feature page and the morning watch.
-- **The top bar**: the title and `<product> · live lens scan | sample findings, simulated execution · n findings · n
+- **The top bar**: the title and `<product> · lens release train | sample findings, simulated execution · n findings · n
   items in k packs`, the summary strip (changed, waiting for you, will ship: `SummaryStrip`), the three tabs (Triage
-  table 1, Feature × lens matrix 2, Release 3 with the package count), Scan selected features, the Lenses button.
+  table 1, Feature × lens matrix 2, Release 3 with the package count), Scan selected features, Every lens (a live product), Trust, the Lenses button.
 - **Two scopes** for the table and the matrix, `In packs n | Backlog n` (`LedgerUi.scope`); a scope switch drops the
   status filter (their chips differ), and the focus and the compare panel start over.
   1. *In packs* (`train/PackTable.tsx`): packs newest first, each a sticky pack row (lens glyph and id, branch, base
@@ -1023,7 +1023,8 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
 - **Keys** (`train/keymap.ts`, one table: the handler, the footer reminders and the `?` sheet all read it, so a key
   shown is a key bound; the page owns them, `data-keys="own"`):
   - *In packs*: J/K or ↓/↑ move, X or Space selects, Enter compares (again: full width), A accept, R rework, S
-    descope, U undo, `/` filter, 1-3 tabs, ? the keys, Esc.
+    descope, U undo, E measures the selection now (one selection scan per lens over its items' features; a scan, so
+    BP_WRITES=off leaves it on), `/` filter, 1-3 tabs, ? the keys, Esc.
   - *Backlog*: J/K, X/Space, Enter opens the feature, D dispatches the selection, A dispatches the focused finding,
     Y approves the focused finding for later (no job queued) and N declines it with a reason (final), both beside its
     brief (`BriefDrawer.tsx`, docked right of the table; also in the compare panel) through `POST .../proposals/<id>`
@@ -1068,7 +1069,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   remaining, a package's own Dispatch, Edit and Delete (draft only; Delete asks twice). Dispatch rows flip through the same
   intent store as the direct path (`Ledger.dispatchWave`, one send helper). A row in a wave shows a chip (`wave · package`, the title names
   model and effort) passed to the memoised `Row` as four strings, so the J/K budget is unchanged. The wave list reloads after
-  every mutation and when a wave job changes status; a failing list reads as no waves. Text is 12 px or more, the buttons'
+  every mutation and when a wave job changes status. A failed read (5xx, offline) never reads as no waves: with no list yet the strip says "The waves could not be read" with Try again, and a failed reload keeps the last list and says "Could not refresh" with Try again; only a store with no waves (501, or no store) reads as none. Text is 12 px or more, the buttons'
   rules sit under `.lg-page`, and below 720 px of table width (a container query) the tabs fold into a select and the
   composer stacks. Selectors to drive: `[data-wave="strip" | "new" | "add" | "composer" | "create" | "dispatch" | "remaining" |
   "edit" | "delete" | "delete-yes"]`, `[data-wave-panel]`, `[data-wave-pkg]`, `[data-wave-state]`.
