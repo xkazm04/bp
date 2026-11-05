@@ -8,6 +8,13 @@
 //   2. DW-75 the backlog's Dispatch bar says what the filters hide (variants/Triage.tsx DispatchBar over the real useLedger):
 //        RED    2 selected, a lens filter hides 1: the bar's aria-live label says "1 hidden by filters" (as DecisionBar does)
 //        GUARD  both selected findings shown: the label reads "2 selected" and names nothing hidden
+//   3. DW-77 Tag (and Finish from merged) ask before they start (train/release/ReleaseView.tsx useReleaseActions, on the
+//      Kettle sim's train, every release job a press starts counted):
+//        RED    a draft of 2 items that all landed: one press of Tag (button) or one T starts no tag job and shows an inline
+//               confirm naming v0.1.0 and its 2 items; the confirm (its first button, or T again) starts exactly one
+//        RED    a merged release (RELEASE_STATE offers `finish` outright there): the same for Finish
+//        GUARD  the landed draft offers Tag and no Build, the merged one Finish; a draft that did not land starts one
+//               build on one press of Build (no ask)
 // Rig. No DOM renderer is in this tree, and renderToString keeps no state between renders, so the components run under a
 // small reconciler of the check's own: each function component is called with a stand-in React dispatcher (state, memo,
 // refs, effects, context, external stores) over hook slots owned by an instance, and an instance is kept across renders
@@ -23,6 +30,7 @@
 import { register, createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_LEDGER_GUARDS_MUTATE || '[]') } });
@@ -239,6 +247,107 @@ const ctxOf = (E: Any) => new Map<Any, Any>([[EngineCtx, E], [VariantCtx, getVar
   }
   A.unmount();
   setLedgerUi(() => ({ ...EMPTY_UI }));
+}
+
+// ================================================================================================ 3. DW-77
+{
+  const { ReleaseView } = await imp('components/ledger/train/release/ReleaseView.tsx');
+  const { ScanCtxCtx } = await imp('components/hooks.ts');
+  const { SAMPLE_ITEMS } = await impCore('src/model/train-sim.ts');
+  const KETTLE: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  /** A fresh Kettle model whose sim holds a release of two accepted items: `landed` puts them on the sample's main (the
+   *  path Tag takes), `merged` walks the release to merged (the sim's PR merged). Every job a release action starts is counted. */
+  async function release(name: string, opts: { landed: boolean; merged?: boolean }) {
+    const Mx = buildModel(1, () => 0, null), sim: Any = Mx.scanSim;
+    // seeded as the app's model binding seeds it (scripts/lib/train-planes.ts newSim: Kettle's order, manifests and values)
+    sim.bind({ order: KETTLE.features.map((f: Any) => f.slug), manifest: (l: string) => KETTLE.lenses.find((x: Any) => x.id === l)?.manifest, value: (f: string, l: string, k: string) => { const v = KETTLE.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; } });
+    const snap = sim.snapshot();
+    const idOf = (k: string): string => { const it = SAMPLE_ITEMS.find((x: Any) => x.key === k); return snap.proposals.find((p: Any) => p.title === it.title && p.pack_id === it.pack && (it.attemptOf ? !!p.attempt_of : !p.attempt_of))?.id; };
+    const two = [idOf('des1-booking'), idOf('des1-waitlist')];
+    const started = { build: 0, tag: 0, finish: 0 };
+    let relId = '';
+    try {
+      sim.triage({ ids: two, decision: 'accept' });
+      relId = sim.createRelease('0.1.0', two).release.id;
+      sim.setTrainToggles({ ghOff: false, conflict: false, gateFails: false, landed: opts.landed });
+      if (opts.merged) { sim.train.setRel(relId, { status: 'pr-open', pr_url: 'https://github.com/kettle/kettle/pull/7' }); sim.sampleMerge(relId); }
+    } catch (e) { expect(false, `GUARD DW-77 ${name}: the sample release could not be set up (${(e as Error).message})`); return null; }
+    for (const k of Object.keys(started) as (keyof typeof started)[]) {
+      const orig = sim[k + 'Release'].bind(sim);
+      sim[k + 'Release'] = (...a: Any[]) => { started[k]++; return orig(...a); };
+    }
+    const E = { ...engine(), M: Mx };
+    const ctx = ctxOf(E);
+    ctx.set(ScanCtxCtx, { slug: null, sim });
+    const A = app(React.createElement(ReleaseView, { phone: false }), ctx, (t) => fnOf(t)?.name === 'ActionsRow', (t) => fnOf(t)?.name === 'ActionsRow');
+    await A.settle(30);
+    await A.settle(30);
+    const view = () => find(A.tree, (el) => el.props?.['data-role'] === 'tr-rel');
+    const acts = () => find(A.tree, (el) => /\btr-rel-acts\b/.test(String(el.props?.className ?? '')));
+    const buttons = () => { const out: Any[] = []; each(acts(), (el) => { if (el.type === 'button') out.push(el); }); return out; };
+    const btn = (re: RegExp) => buttons().find((b) => re.test(textOf(b.props.children)));
+    const press = async (b: Any) => { if (b && !b.props.disabled) b.props.onClick?.(ev()); await A.settle(30); };
+    const key = async (k: string) => { view()?.props.onKeyDown(ev({ key: k, target: { tagName: 'DIV', closest: () => null } })); await A.settle(30); };
+    const status = () => sim.snapshot().releases.find((r: Any) => r.id === relId)?.status;
+    return { A, sim, started, relId, acts, buttons, btn, press, key, status, text: () => textOf(acts()?.props.children) };
+  }
+  const named = (text: string, n: number) => /v0\.1\.0/.test(text) && new RegExp('\\b' + n + '\\b[^.]*item').test(text);
+
+  // Tag by its button: the first press asks (naming v0.1.0 and the 2 items), the ask's go button starts exactly one tag job
+  {
+    const R = await release('Tag (button)', { landed: true });
+    if (R) {
+      const tag = R.btn(/^Tag v0\.1\.0/);
+      expect(R.A.errors.length === 0 && R.status() === 'draft' && !!tag && !R.btn(/^Build/), `GUARD DW-77 Tag (button): a landed draft does not offer Tag v0.1.0 (and no Build) (${R.A.errors.join('; ') || R.status() + ': ' + R.buttons().map((b: Any) => textOf(b.props.children)).join(' | ')})`);
+      await R.press(tag);
+      expect(R.started.tag === 0, `DW-77 Tag (button): one press of Tag started ${R.started.tag} tag job(s) on v0.1.0 at once, with no question asked`);
+      const ask = R.text();
+      expect(R.started.tag === 0 && named(ask, 2) && R.buttons().length >= 2, `DW-77 Tag (button): after one press no inline confirm names v0.1.0 and its 2 items (${JSON.stringify(ask)})`);
+      const first = R.started.tag;
+      if (first === 0) await R.press(R.buttons()[0]);
+      expect(first === 0 && R.started.tag === 1, `DW-77 Tag (button): confirming the ask did not start exactly one tag job (${R.started.tag})`);
+      R.A.unmount();
+    }
+  }
+  // Tag by its key: a stray T starts nothing and asks; a second T confirms, one tag job
+  {
+    const R = await release('Tag (T key)', { landed: true });
+    if (R) {
+      await R.key('t');
+      expect(R.started.tag === 0, `DW-77 Tag (T key): one T started ${R.started.tag} tag job(s) on v0.1.0 at once, with no question asked`);
+      expect(R.started.tag === 0 && named(R.text(), 2), `DW-77 Tag (T key): after one T no inline confirm names v0.1.0 and its 2 items (${JSON.stringify(R.text())})`);
+      const first = R.started.tag;
+      if (first === 0) await R.key('t');
+      expect(first === 0 && R.started.tag === 1, `DW-77 Tag (T key): T, then T again on the confirm, did not start exactly one tag job (${R.started.tag})`);
+      R.A.unmount();
+    }
+  }
+  // Finish from merged (the state table offers it outright): the first press asks too, the second finishes once
+  {
+    const R = await release('Finish (merged)', { landed: false, merged: true });
+    if (R) {
+      const fin = R.btn(/^Finish/);
+      expect(R.A.errors.length === 0 && R.status() === 'merged' && !!fin, `GUARD DW-77 Finish (merged): a merged release does not offer Finish (${R.A.errors.join('; ') || R.status() + ': ' + R.buttons().map((b: Any) => textOf(b.props.children)).join(' | ')})`);
+      await R.press(fin);
+      expect(R.started.finish === 0, `DW-77 Finish (merged): one press of Finish started ${R.started.finish} finish job(s) on v0.1.0 at once, with no question asked`);
+      expect(R.started.finish === 0 && named(R.text(), 2), `DW-77 Finish (merged): after one press no inline confirm names v0.1.0 and its 2 items (${JSON.stringify(R.text())})`);
+      const first = R.started.finish;
+      if (first === 0) await R.press(R.buttons()[0]);
+      expect(first === 0 && R.started.finish === 1, `DW-77 Finish (merged): confirming the ask did not start exactly one finish job (${R.started.finish})`);
+      R.A.unmount();
+    }
+  }
+  // GUARD Build on a draft that did not land: one press starts one build (no ask)
+  {
+    const R = await release('Build', { landed: false });
+    if (R) {
+      const build = R.btn(/^Build release v0\.1\.0/);
+      expect(R.A.errors.length === 0 && !!build && !build.props.disabled && !R.btn(/^Tag/), `GUARD DW-77 Build: a draft that has not landed does not offer an enabled Build release v0.1.0 (and no Tag) (${R.A.errors.join('; ') || R.buttons().map((b: Any) => textOf(b.props.children) + (b.props.disabled ? ' (disabled)' : '')).join(' | ')})`);
+      await R.press(build);
+      expect(R.started.build === 1 && R.started.tag === 0, `GUARD DW-77 Build: one press of Build started ${R.started.build} build job(s), expected 1`);
+      R.A.unmount();
+    }
+  }
 }
 
 if (failures.length) { console.error(`check-ledger-guards: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
