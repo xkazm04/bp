@@ -34,6 +34,11 @@ repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's wor
 |---|---|
 | `/` | The blueprint, with the adopted *subtle* lens expression |
 | `/variants` | The three lens expressions (subtle, shaped, bold) for comparison |
+| `/v/[variant]` | One lens expression on its own (`/v/subtle`, `/v/shaped`, `/v/bold`) |
+| `/projects` | The repositories bp can draw: add one and onboard it, rename or move it, follow its onboarding, remove it |
+| `/projects/[slug]/onboarding` | The project being onboarded: its plan drawn as the run learns it |
+| `/crossing` | The crossing from the web blueprint to the VR light table, as a web prototype (sample data) |
+| `/buildup` | The onboarding build-up lab (the outline becomes the building), driven by the onboarding event contract |
 | `?theme=light` | The light theme (a toggle in the header too) |
 | `?scale=4` | Four product lines, 528 features: the scale test |
 | `?lenses=-security,+com.kettle.cost` | Switch lenses off or on for the session |
@@ -44,8 +49,9 @@ repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's wor
 ## Live products
 
 A real product repo can be opened next to the Kettle sample. The `/lens-scan` skill (ai-registry) measures
-the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `scan.db`, `shots/`). List the
-repo in `bp.products.local.json` (shape: `bp.products.example.json`) and open `/?product=<slug>`: the scan
+the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `scan.db`, `shots/`). Add the repo on
+`/projects`, which checks the folder, registers it and starts its onboarding (or, by hand, list the repo in
+`bp.products.local.json`, shape: `bp.products.example.json`), and open `/?product=<slug>`: the scan
 drives the swarm layer live, its proposals wait in the queue for Approve or Decline, and lens panels show
 metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`kettle-live`) without a real
 scan, every reading projected from the Kettle map and its lens manifests, with Kettle's sample release train (three packs, built items to triage, a draft release); `node scripts/smoke-live.mjs [base]` seeds it and walks every product route against a running server. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
@@ -136,7 +142,8 @@ document index), [`apps/vr/README.md`](apps/vr/README.md) (how to run it on Lynx
 
 ```
 apps/web/                      the Next.js app (npm workspace @bp/web); run from the repo root: npm run dev
-apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant]
+apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant], /projects, /projects/[slug]/onboarding,
+                               /crossing, /buildup
 apps/web/src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
 apps/web/src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)
 apps/web/src/variants/         lens expressions: subtle (adopted), shaped, bold
