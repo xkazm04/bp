@@ -2,7 +2,8 @@
 // The decision bar under the In packs table (contest A/1's renderBar, the dispatch bar upgraded): what the decision
 // acts on (the selection, else the open item, else the focused one), its lenses, how many need a note to accept and
 // how many are locked in a release past draft, Clear, the decision buttons (Decide), and the release package pill:
-// "Package v<draft or suggested version> · <n accepted>" with Release -> (the Release tab). With nothing to act on it
+// "Package v<draft or suggested version> · <n accepted>" with Release -> (the Release tab; not on a phone, which has
+// no Release tab, only ReleaseStatusLine). With nothing to act on it
 // shows the scope's key reminders instead. The note editor takes the bar's line while a decision asks for a note.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
@@ -78,7 +79,8 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
             : noVer ? 'The release package: accepted items waiting for a release. The next version could not be read from the store, so none is shown.'
               : 'The release package: accepted items waiting for a release'}>
             <span>Package</span><b>{ver ? 'v' + ver + ' · ' : noVer ? 'v? · ' : ''}{pkg}</b>
-            <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn>
+            {/* the phone has no Release tab (its ledger is the table and a one-line release status): no dead button there */}
+            {!phone ? <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn> : null}
           </span>
         </>
       )}
