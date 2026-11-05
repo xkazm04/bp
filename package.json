@@ -67,6 +67,7 @@
     "check:companion-runtime": "node scripts/check-companion-runtime.ts",
     "check:companion-brain": "node scripts/check-companion-brain.ts",
     "check:companion-door": "node scripts/check-companion-door.ts",
+    "check:companion-card-summary": "node scripts/check-companion-card-summary.ts",
     "check:rules": "node scripts/check-rules.ts",
     "check:rules-panel": "node scripts/check-rules-panel.ts",
     "check:ledger-guards": "node scripts/check-ledger-guards.ts",
