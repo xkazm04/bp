@@ -377,6 +377,8 @@
 #flyout.wide .rl-room .bar i { background: var(--amber); }
 #flyout.wide .rl-room b { font: 600 15px var(--mono); text-align: right; }
 #flyout.wide .rl-room .bt { height: 30px; padding: 0 10px; font-size: 13px; text-transform: none; letter-spacing: 0.01em; }
+/* a refused rule write, announced beside the action bar it came from (outside the scroll area) */
+#flyout.wide .rl-err { margin: 0 26px 10px; flex: 0 0 auto; }
 #flyout.wide .rl-act { gap: 14px; flex-wrap: nowrap; }
 #flyout.wide .rl-act .bt.go { flex: 0 0 auto; white-space: nowrap; }
 #flyout.wide .rl-act .wb-meta { white-space: nowrap; }

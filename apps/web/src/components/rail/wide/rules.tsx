@@ -116,6 +116,7 @@ function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug:
   const draft = useMemo(() => draftOf(r), [r]);
   const rp = useReplay(slug, draft);
   const [err, setErr] = useState<string>();
+  const [busy, setBusy] = useState(false);
   const on = isLive(r, now), n = r.scope.kind === 'all' ? P.features.length : r.scope.features.length;
   const show = () => {
     E.setOrdHi(r.id);
@@ -123,9 +124,11 @@ function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug:
     if (ids.length) { E.setTarget(Object.fromEntries(ids.map((id) => [id, 1])) as Record<string, 1>, r.scope.label); E.lookAtTarget(); }
   };
   // an ended rule is set again as a new one (a new id, a fresh author line and the evidence as it reads today)
-  const renew = () => setRule(slug, { ...draft, text: r.text, ...(r.kind === 'grant' || r.expiresAt ? { hours: 24 } : {}) })
-    .then((x) => { E.toast((isOrder(x.kind) ? 'Order ' : 'Grant ') + x.id + ' set again', x.text + ' · ' + x.scope.label + ' (was ' + r.id + ')'); onSet(x.id); }, (e: Error) => setErr(e.message));
-  const revoke = () => revokeRule(slug, r.id).then((x) => E.toast((isOrder(x.kind) ? 'Lifted ' : 'Ended ') + x.id, x.text + ' · ' + x.scope.label), (e: Error) => setErr(e.message));
+  // one write at a time: the button holds still until it settles, and a retry clears the last refusal
+  const write = (go: () => Promise<unknown>) => { if (busy) return; setBusy(true); setErr(undefined); go().catch((e: Error) => setErr(e.message)).finally(() => setBusy(false)); };
+  const renew = () => write(() => setRule(slug, { ...draft, text: r.text, ...(r.kind === 'grant' || r.expiresAt ? { hours: 24 } : {}) })
+    .then((x) => { E.toast((isOrder(x.kind) ? 'Order ' : 'Grant ') + x.id + ' set again', x.text + ' · ' + x.scope.label + ' (was ' + r.id + ')'); onSet(x.id); }));
+  const revoke = () => write(() => revokeRule(slug, r.id).then((x) => E.toast((isOrder(x.kind) ? 'Lifted ' : 'Ended ') + x.id, x.text + ' · ' + x.scope.label)));
   return (
     <>
       <div className="wb-scroll">
@@ -140,7 +143,6 @@ function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug:
           <button type="button" className="bt" onClick={show}>Show its places</button>
           <span className="wb-meta">The plan outlines its places while it is selected.</span>
         </div>
-        {err && <p className="wb-err">{err}</p>}
         {isOrder(r.kind) && (
           <Sec head="What it has done" aside={held ? 'last ' + when(held.last) : 'nothing yet'}>
             <div className="wb-figs">
@@ -177,11 +179,12 @@ function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug:
           <Evidence bt={rp.r?.backtest} busy={rp.busy} error={rp.error} />
         </Sec>
       </div>
+      {err && <p className="wb-err rl-err" role="alert">{err}</p>}
       <div className="wb-act rl-act">
         <Verdict bt={rp.r?.backtest} />
         <span className="sp" />
-        {on ? <button type="button" className="bt rl-revoke" onClick={revoke}>{isOrder(r.kind) ? 'Lift ' + r.id : 'Revoke ' + r.id}</button>
-          : <button type="button" className="bt go" onClick={renew} disabled={!rp.r}>{'Set it again as ' + nextRuleId(all, r.kind) + (r.kind === 'grant' || r.expiresAt ? ' for 24 h' : '')}</button>}
+        {on ? <button type="button" className="bt rl-revoke" onClick={revoke} disabled={busy}>{busy ? (isOrder(r.kind) ? 'Lifting ' : 'Revoking ') + r.id + '…' : isOrder(r.kind) ? 'Lift ' + r.id : 'Revoke ' + r.id}</button>
+          : <button type="button" className="bt go" onClick={renew} disabled={!rp.r || busy}>{busy ? 'Setting it again…' : 'Set it again as ' + nextRuleId(all, r.kind) + (r.kind === 'grant' || r.expiresAt ? ' for 24 h' : '')}</button>}
       </div>
     </>
   );
@@ -217,6 +220,7 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
   const [hours, setHours] = useState(0);
   const [armed, setArmed] = useState(false);
   const [err, setErr] = useState<string>();
+  const [busy, setBusy] = useState(false);
   // an agent's proposed rule (a rule.propose card): the writer takes it whole, for the person to replay, change or set
   const pd = usePickedDraft();
   useEffect(() => {
@@ -250,9 +254,10 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
   useEffect(() => setArmed(false), [draft]);
   const risky = kind === 'grant' && !!bt && !trustworthy(bt);
   const set = () => {
-    if (!draft) return;
+    if (!draft || busy) return;
     if (risky && !armed) { setArmed(true); return; }
-    setRule(slug, draft).then((r) => { E.toast((isOrder(r.kind) ? 'Order ' : 'Grant ') + r.id + ' set', r.text + ' · ' + r.scope.label); onSet(r.id); }, (e: Error) => setErr(e.message));
+    setBusy(true); setErr(undefined);
+    setRule(slug, draft).then((r) => { E.toast((isOrder(r.kind) ? 'Order ' : 'Grant ') + r.id + ' set', r.text + ' · ' + r.scope.label); onSet(r.id); }, (e: Error) => setErr(e.message)).finally(() => setBusy(false));
   };
   const nextId = nextRuleId(all, kind ?? 'hold');
   const pill = (on: boolean, label: string, fn: () => void, key?: string) => <button key={key ?? label} type="button" aria-pressed={on} onClick={fn}>{label}</button>;
@@ -284,13 +289,13 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
         <Sec head="Replayed over your decisions" aside={bt ? bt.decided + ' decisions' : ''}>
           <Evidence bt={bt} busy={rp.busy} error={rp.error} onLeaveOut={scope ? (name, features) => setOut([...out, { name, features }]) : undefined} />
         </Sec>
-        {err && <p className="wb-err">{err}</p>}
       </div>
+      {err && <p className="wb-err rl-err" role="alert">{err}</p>}
       <div className="wb-act rl-act">
         {draft ? <Verdict bt={bt} /> : <span className="rl-vd">Pick a place and a rule</span>}
         <span className="sp" />
-        <button type="button" className={'bt go' + (armed ? ' rl-armed' : '')} disabled={!draft || !bt || rp.busy} onClick={set} title={risky && !armed ? 'The replay flags this grant: the first tap arms it, the second sets it' : undefined}>
-          {armed ? 'Tap again: grant despite the flags' : !draft ? 'Set' : kind === 'grant' ? 'Grant ' + nextId + ' for ' + (hours || 24) + ' h' : 'Set order ' + nextId}
+        <button type="button" className={'bt go' + (armed ? ' rl-armed' : '')} disabled={!draft || !bt || rp.busy || busy} onClick={set} title={risky && !armed ? 'The replay flags this grant: the first tap arms it, the second sets it' : undefined}>
+          {busy ? 'Setting…' : armed ? 'Tap again: grant despite the flags' : !draft ? 'Set' : kind === 'grant' ? 'Grant ' + nextId + ' for ' + (hours || 24) + ' h' : 'Set order ' + nextId}
         </button>
       </div>
     </>
