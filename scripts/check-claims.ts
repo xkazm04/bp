@@ -10,6 +10,11 @@
 //   6. README.md names every page route the app ships (DERIVED from the page.tsx files under apps/web/src/app, route
 //      groups dropped), and its Live products section names /projects as the way to add a repo, with
 //      bp.products.local.json still named as the manual alternative.
+//   7. docs/blueprint-ui.md's ledger section reads as the page (each claim read against the code): the Waves bullet says a
+//      failed list shows it could not be read with its retry (WavesBar.tsx's words), not "a failing list reads as no
+//      waves"; the top bar bullet gives the product line in LedgerPage.tsx's words and lists Every lens and Trust; the
+//      In packs keys bullet names a key of every KEYMAP.packs binding, E as measure the selection, one scan per lens.
+//      (DW-69, DW-67, DW-68; the found-it and code-side lines are guards, the rest red until the guide is corrected.)
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -243,5 +248,57 @@ const liveSec = (/^## Live products[ \t]*\r?$([\s\S]*?)(?=^## )/m.exec(readme) |
 ok('readme routes: the Live products section is found', liveSec.length > 0);
 ok('readme routes: Live products names /projects as the way to add a repo', namesRoute(liveSec, '/projects'), 'the section only says to list the repo in bp.products.local.json');
 ok('readme routes: Live products still names bp.products.local.json as the manual alternative', /bp\.products\.local\.json/.test(liveSec));
+// ------------------------------------------------------------------------ the ledger section of the UI guide reads as the page
+// Each claim is read against the code, never written here: the wave strip's failed-read words and its retry label from
+// WavesBar.tsx, the top bar's product wording and its controls from LedgerPage.tsx, the In packs keys from KEYMAP.packs.
+const UI_DOC = fs.readFileSync('docs/blueprint-ui.md', 'utf8');
+/** A top-level bullet of the guide that opens with `- **<name>**`, up to the next top-level bullet or heading. */
+const bulletOf = (text: string, name: string): string => {
+  const at = text.search(new RegExp(`^- \\*\\*${reEsc(name)}\\*\\*`, 'm'));
+  if (at < 0) return '';
+  const rest = text.slice(at + 2), end = rest.search(/^(?:- |#)/m);
+  return text.slice(at, end < 0 ? undefined : at + 2 + end);
+};
+const flat = (s: string) => s.replace(/\s+/g, ' ');
+//   DW-69 the waves strip: a failed list says it could not be read and offers a retry; only a missing store reads as none
+const WAVES_BAR = blankComments(fs.readFileSync('apps/web/src/components/ledger/waves/WavesBar.tsx', 'utf8'));
+const waveErr = /data-wave="error">([^:{<]+?)\s*:/.exec(WAVES_BAR)?.[1]?.trim() ?? '';
+const waveRetry = /className="wv-retry"[^>]*>([^<{]+)</.exec(WAVES_BAR)?.[1]?.trim() ?? '';
+const wavesDoc = flat(bulletOf(UI_DOC, 'Waves'));
+ok('ui guide waves: WavesBar.tsx shows a failed read in words with a retry button (the words are read from it)', /could not be read/.test(waveErr) && waveRetry.length > 0, `error ${JSON.stringify(waveErr)}, retry ${JSON.stringify(waveRetry)}`);
+ok('ui guide waves: the Waves bullet is found', wavesDoc.length > 0);
+ok('ui guide waves: the guide no longer says a failing list reads as no waves', !/failing list reads as no waves/i.test(flat(UI_DOC)), 'docs/blueprint-ui.md still says "a failing list reads as no waves"');
+ok(`ui guide waves: the Waves bullet says a failed list shows that it could not be read, with ${waveRetry || 'its retry'}`,
+  /could not be read/i.test(wavesDoc) && !!waveRetry && wavesDoc.includes(waveRetry), 'the bullet names neither the failed-read state nor its retry');
+//   DW-67 the top bar: the product line in the page's words, and every control the bar renders
+const PAGE = blankComments(fs.readFileSync('apps/web/src/components/ledger/LedgerPage.tsx', 'utf8'));
+const prod = /className="lg-prod">[^<]*?\{live \? '([^']+)' : '([^']+)'\}/.exec(PAGE);
+const topDoc = flat(bulletOf(UI_DOC, 'The top bar'));
+ok('ui guide top bar: LedgerPage.tsx\'s product line is read (live wording | sample wording)', !!prod, 'no `live ? \'...\' : \'...\'` in the lg-prod span');
+ok('ui guide top bar: the bullet is found', topDoc.length > 0);
+ok(`ui guide top bar: the bullet gives the product line in the page's words (${prod ? prod[1] + ' | ' + prod[2] : '?'})`,
+  !!prod && topDoc.includes(prod[1]) && topDoc.includes(prod[2]) && (prod[1] === 'live lens scan' || !topDoc.includes('live lens scan')),
+  prod ? `the bullet says ${JSON.stringify((/`<product> · ([^`]*?)·/.exec(topDoc) ?? ['', '?'])[1].trim())}` : '');
+const barControls: [string, RegExp][] = [['Every lens', /<AllLenses\b/], ['Trust', /<TrustPanel\b/]];
+ok('ui guide top bar: LedgerPage renders Every lens and Trust in its top bar', barControls.every(([, re]) => re.test(PAGE)));
+const unlisted = barControls.filter(([name, re]) => re.test(PAGE) && !new RegExp(`\\b${reEsc(name)}\\b`).test(topDoc)).map(([n]) => n);
+ok('ui guide top bar: the bullet lists every control the bar renders (Every lens and Trust among them)', unlisted.length === 0, `not listed: ${unlisted.join(', ')}`);
+//   DW-68 the In packs keys: every key KEYMAP.packs binds is named in the guide's In packs bullet, E as the measure
+const { KEYMAP } = await import('../apps/web/src/components/ledger/train/keymap.ts');
+const packsDoc = flat((/^ {2}- \*In packs\*:([\s\S]*?)(?=^ {2}- \*|^- )/m.exec(UI_DOC) ?? ['', ''])[1]);
+/** How the guide spells a key: letters upper case and whole, arrows as glyphs, 1-3 as a range. */
+const keyNamed = (k: string, text: string): boolean => {
+  const word: Record<string, string> = { ' ': 'Space', Escape: 'Esc', ArrowDown: '↓', ArrowUp: '↑' };
+  if (/^[1-9]$/.test(k)) return /\b1-3\b/.test(text) || new RegExp(`(?<![\\w-])${k}(?![\\w-])`).test(text);
+  const w = word[k] ?? (k.length === 1 ? k.toUpperCase() : k);
+  return /^\w+$/.test(w) ? new RegExp(`(?<![\\w/])${reEsc(w)}(?![\\w/])`).test(text) : text.includes(w);
+};
+ok('ui guide keys: the In packs bullet is found', packsDoc.length > 0);
+const missingKeys = KEYMAP.packs.filter((b) => !b.keys.some((k) => keyNamed(k, packsDoc))).map((b) => `${b.keys.join('/')} (${b.action})`);
+ok('ui guide keys: the In packs bullet names a key of every binding in KEYMAP.packs', missingKeys.length === 0, `not named: ${missingKeys.join(', ')}`);
+const measure = KEYMAP.packs.find((b) => b.action === 'measure');
+ok('ui guide keys: the In packs bullet says what E does: measures the selection, one scan per lens',
+  !!measure && measure.keys.some((k) => keyNamed(k, packsDoc)) && /\bmeasur/i.test(packsDoc) && /one (?:selection )?scan per lens/i.test(packsDoc),
+  measure ? `the bullet: ${JSON.stringify(packsDoc.trim())}` : 'KEYMAP.packs binds no measure key');
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
