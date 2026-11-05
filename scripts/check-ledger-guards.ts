@@ -5,6 +5,9 @@
 //        RED    N on A, type a reason, Esc, J to B, N: B's reason box opens empty
 //        RED    N on A, type a reason, J to B (focus moves, no Esc), N: B's reason box opens empty
 //        GUARD  N on A opens A's reason box and shows what is typed; Esc closes it; J moves the drawer to B
+//   2. DW-75 the backlog's Dispatch bar says what the filters hide (variants/Triage.tsx DispatchBar over the real useLedger):
+//        RED    2 selected, a lens filter hides 1: the bar's aria-live label says "1 hidden by filters" (as DecisionBar does)
+//        GUARD  both selected findings shown: the label reads "2 selected" and names nothing hidden
 // Rig. No DOM renderer is in this tree, and renderToString keeps no state between renders, so the components run under a
 // small reconciler of the check's own: each function component is called with a stand-in React dispatcher (state, memo,
 // refs, effects, context, external stores) over hook slots owned by an instance, and an instance is kept across renders
@@ -204,8 +207,37 @@ const ctxOf = (E: Any) => new Map<Any, Any>([[EngineCtx, E], [VariantCtx, getVar
     expect(!!box() && box().props.value === '', `${name}: N on ${b} opens a reason box already holding the reason typed for ${a} (${JSON.stringify(box()?.props.value)}): one Enter declines ${b} for good with it`);
     A.unmount();
   }
-  await run('N, type, Esc, J, N', true);
-  await run('N, type, J (no Esc), N', false);
+  await run('DW-76 N, type, Esc, J, N', true);
+  await run('DW-76 N, type, J (no Esc), N', false);
+  setLedgerUi(() => ({ ...EMPTY_UI }));
+}
+
+// ================================================================================================ 2. DW-75
+{
+  const { DispatchBar } = await imp('components/ledger/variants/Triage.tsx');
+  const { setLedgerUi, useLedger, useLedgerUi, EMPTY_UI } = await imp('components/ledger/useLedger.ts');
+  // the backlog's bar over the real useLedger (Kettle's findings), as Body hands it over: <DispatchBar L={L} />
+  let L: Any = null;
+  function Backlog() { L = useLedger(useLedgerUi('kettle'), setLedgerUi); return React.createElement(DispatchBar, { L }); }
+  setLedgerUi(() => ({ ...EMPTY_UI }));
+  const A = app(React.createElement(Backlog), ctxOf(engine()), (t) => fnOf(t) === fnOf(DispatchBar));
+  await A.settle();
+  const live = () => find(find(A.tree, (el) => el.props?.['aria-label'] === 'Dispatch'), (el) => !!el.props?.['aria-live'] && el.props['aria-live'] !== 'off');
+  const label = () => textOf(live()?.props.children);
+  // two dispatchable findings of two lenses, both rows of the table as it opens
+  const x = L?.rows?.find((f: Any) => f.can), y = x && L.rows.find((f: Any) => f.can && f.p.lens !== x.p.lens);
+  expect(A.errors.length === 0 && !!x && !!y && !!live(), `GUARD DW-75: the backlog bar did not render over two dispatchable findings of two lenses (${A.errors.join('; ') || (x && y ? 'no aria-live label' : 'no such findings')})`);
+  if (x && y) {
+    setLedgerUi((u: Any) => ({ ...u, sel: new Set([x.p.id, y.p.id]) }));
+    await A.settle();
+    expect(/^2 selected/.test(label()) && !/hidden/.test(label()), `GUARD DW-75: with both selected findings shown the live label names no hidden ones (${JSON.stringify(label())})`);
+    setLedgerUi((u: Any) => ({ ...u, lens: new Set([x.p.lens]) }));
+    await A.settle();
+    const shown = L.rows.some((f: Any) => f.p.id === x.p.id) && !L.rows.some((f: Any) => f.p.id === y.p.id);
+    expect(shown && L.ui.sel.size === 2, `GUARD DW-75: the lens filter did not keep ${x.p.id} and hide ${y.p.id} with both still selected`);
+    expect(/\b1 hidden by filters\b/.test(label()), `DW-75: 2 selected, 1 of them hidden by the lens filter, and the Dispatch bar's live label says nothing of it (${JSON.stringify(label())}): D would build a finding the person cannot see`);
+  }
+  A.unmount();
   setLedgerUi(() => ({ ...EMPTY_UI }));
 }
 
