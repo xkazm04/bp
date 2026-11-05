@@ -1012,7 +1012,7 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   after the merge on GitHub, tags, publishes and marks the items released. A draft whose every item already landed on
   the base branch (`releaseState.ts` `landedOutside`, `allLanded`) offers **Tag** (T, "Tag v0.1.0 over N landed items")
   instead of Build (`onPath`): the tag route's job (`/lens-scan release --landed`) checks the landings, gates the base
-  HEAD, tags it and releases the items, draft → building → tagged with no PR; the notes name each landing commit
+  HEAD, tags it and releases the items, draft → building → tagged with no PR. Tag, and Finish from pr-open or merged, ask first (an inline confirm naming the version and the item count; the confirm's button, or the key again, starts the job), since a tag is public and is not undone from the page; the notes name each landing commit
   (`check:release-tag` on both planes; Kettle's sample switch "accepted items already on main"). A mixed draft keeps
   Build, and the pre-flight says the landed items need no pick (the cut skips them). Above the actions, a draft or failed release
   shows its **pre-flight** (`train/release/preflight.ts`, `check:release-preflight`): an item with no commit (it cannot

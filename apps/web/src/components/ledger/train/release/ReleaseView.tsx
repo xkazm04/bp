@@ -62,8 +62,9 @@ export interface ReleaseActions {
   /** The pre-flight checks, and the first blocker's words (Build's title while it is held). */
   checks: readonly PreCheck[];
   blocked?: string;
-  /** The Finish confirm from pr-open is showing. */
-  asking: boolean;
+  /** The inline confirm that is showing: Finish (from pr-open or merged) or Tag. Both are public and not undone here, so
+   *  the first press (button or key) only asks, and the confirm's own button (or the key again) starts the job. */
+  asking: 'finish' | 'tag' | null;
   busy: boolean;
   err: { status?: number; text: string } | null;
   run(a: RelAction): void;
@@ -72,14 +73,14 @@ export interface ReleaseActions {
 
 function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
   const ctx = m.T.ctx, rel = m.rel;
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState<'finish' | 'tag' | null>(null);
   const [sending, setSending] = useState(false);
   // the job a request started, until the jobs list has it (a live jobs event can trail the 202)
   const [sent, setSent] = useState<{ rel: string; job: string } | null>(null);
   const [err, setErr] = useState<{ status?: number; text: string } | null>(null);
   const busy = sending || (!!sent && sent.rel === rel?.id && !m.jobs.some((j) => j.id === sent.job)) || isActive(m.last);
   const st = rel ? RELEASE_STATE[rel.status] : undefined, landedAll = allLanded(m);
-  const shown: RelAction[] = phone || !rel || !st || busy ? [] : asking ? ['finish']
+  const shown: RelAction[] = phone || !rel || !st || busy ? [] : asking ? [asking]
     : st.actions.filter((a) => onPath(a, landedAll) && (a !== 'sampleMerge' || !!ctx.sim) && (a !== 'pr' || !!safeUrl(rel.pr_url)));
   const probe = useProbe(m, phone || busy, landedAll ? 'tag' : 'build');
   const checks = useMemo(() => (phone ? [] : preflightOf(rel, m.items, probe, m)), [phone, rel, m, probe]);
@@ -89,19 +90,21 @@ function useReleaseActions(m: ReleaseModel, phone: boolean): ReleaseActions {
     try { const j = await start(); setSent({ rel: id, job: j.id }); } catch (e) {
       const s = (e as { status?: number }).status;
       setErr(s === undefined ? { text: refusalText(e) } : { status: s, text: refusalText(e) });
-    } finally { setSending(false); setAsking(false); }
+    } finally { setSending(false); setAsking(null); }
   };
   const run = (a: RelAction) => {
     if (!rel || !available.includes(a)) return;
     if (a === 'build' || a === 'retry') void go(rel.id, () => buildRelease(ctx, rel.id));
+    // a tag and a finish publish and cannot be undone from this page: the first press asks, the confirm starts the job
+    else if ((a === 'tag' || a === 'finish') && asking !== a) { setErr(null); setAsking(a); }
     else if (a === 'tag') void go(rel.id, () => tagRelease(ctx, rel.id));
     else if (a === 'finish') void go(rel.id, () => finishRelease(ctx, rel.id));
-    else if (a === 'finishAsk') { setErr(null); setAsking(true); }
+    else if (a === 'finishAsk') { setErr(null); setAsking('finish'); }
     else if (a === 'sampleMerge') {
       try { ctx.sim?.sampleMerge(rel.id); setErr(null); } catch (e) { setErr({ text: refusalText(e) }); }
     }
   };
-  return { shown, available, checks, ...(blocked ? { blocked } : {}), asking, busy, err, run, cancelAsk: () => setAsking(false) };
+  return { shown, available, checks, ...(blocked ? { blocked } : {}), asking, busy, err, run, cancelAsk: () => setAsking(null) };
 }
 
 const noSub = () => () => {};
@@ -145,9 +148,9 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
     <>
       <div className="tr-rel-acts">
         {a.asking ? (
-          <span className="tr-rel-ask" role="group" aria-label="Finish the release">
-            <span>Merged on GitHub? Finish tags v{v} and publishes the release.</span>
-            <Btn tone="go" kbd={keysOf('finish')} onClick={() => a.run('finish')} disabled={!a.available.includes('finish')}>Finish</Btn>
+          <span className="tr-rel-ask" role="group" aria-label={a.asking === 'tag' ? 'Tag the release' : 'Finish the release'}>
+            <span>{askWords(a.asking, rel.status === 'pr-open', v, m.items.length)}</span>
+            <Btn tone="go" kbd={keysOf(a.asking)} onClick={() => a.run(a.asking!)} disabled={!a.available.includes(a.asking)}>{a.asking === 'tag' ? 'Tag v' + v : 'Finish'}</Btn>
             <Btn onClick={a.cancelAsk}>Not yet</Btn>
           </span>
         ) : a.shown.map((x) => x === 'pr'
@@ -158,6 +161,13 @@ const ActionsRow = memo(function ActionsRow({ m, a }: { m: ReleaseModel; a: Rele
     </>
   );
 });
+
+/** The confirm's question: what the job publishes, its version and item count, and that it is not undone here. */
+const askWords = (a: 'finish' | 'tag', fromPr: boolean, v: string, n: number) => {
+  const items = n + ' item' + (n === 1 ? '' : 's');
+  return a === 'tag' ? `Tag v${v} on the base branch and release its ${items}? A tag is public and is not undone here.`
+    : (fromPr ? 'Merged on GitHub? ' : '') + `Finish tags v${v} and publishes the release of ${items}. A tag is public and is not undone here.`;
+};
 
 const prName = (url: string | undefined) => { const n = /\/pull\/(\d+)/.exec(url ?? '')?.[1]; return n ? 'PR #' + n : 'Pull request'; };
 
