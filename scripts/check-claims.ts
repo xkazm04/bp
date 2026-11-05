@@ -7,6 +7,9 @@
 //   5. while machine.md records BpLink built and run in Unreal (the Kettle line), apps/vr/README.md, apps/vr/WP3.1.md,
 //      plan.md and lynx-plan.md (the live plan, 2026-10-23) do not say it is unbuilt or unrun, unless that block also
 //      carries a correction citing reading 14.
+//   6. README.md names every page route the app ships (DERIVED from the page.tsx files under apps/web/src/app, route
+//      groups dropped), and its Live products section names /projects as the way to add a repo, with
+//      bp.products.local.json still named as the manual alternative.
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -212,5 +215,33 @@ ok('vr docs: self-proof, every STALE phrase matches its own sentence',
   STALE.length !== STALE_SENTENCES.length
     ? `${STALE.length} STALE entries but ${STALE_SENTENCES.length} sentences`
     : `matched nothing: ${unmatched.map(String).join(', ')}`);
+// ------------------------------------------------------------------------ the README names every shipped page
+// The route list is derived from the tree, never written here: every page.tsx under apps/web/src/app is a page a reader
+// can open, at its directory path with route groups "(x)" dropped. A route counts as named when README.md carries it as a
+// whole path, not as the prefix of a longer one (/projects is not named by /projects/[slug]/onboarding).
+const APP = 'apps/web/src/app';
+const pages: string[] = [];
+const walkPages = (dir: string): void => {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory()) { if (e.name !== 'api' && !e.name.startsWith('_')) walkPages(p); } else if (e.name === 'page.tsx') pages.push(p);
+  }
+};
+walkPages(APP);
+const routeOf = (file: string): string => '/' + file.slice(APP.length + 1).split('/').slice(0, -1).filter((s) => !/^\(.*\)$/.test(s)).join('/');
+const routes = pages.map(routeOf).sort();
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const namesRoute = (text: string, route: string) => new RegExp(`(?<![\\w/.\\]-])${reEsc(route)}(?![\\w/\\[-])`).test(text);
+const readme = fs.readFileSync('README.md', 'utf8');
+ok('readme routes: the page.tsx scan found the app\'s pages (/ and /variants among them)', routes.length >= 3 && routes.includes('/') && routes.includes('/variants'), routes.join(', '));
+ok('readme routes: self-proof, a longer route does not name its prefix and the whole path does',
+  !namesRoute('see `/projects/[slug]/onboarding`', '/projects') && namesRoute('open `/projects`, then `/projects/[slug]/onboarding`', '/projects')
+  && namesRoute('`/v/[variant]`', '/v/[variant]'));
+const unnamed = routes.filter((r) => !namesRoute(readme, r));
+ok('readme routes: README.md names every page route under apps/web/src/app', unnamed.length === 0, `not named: ${unnamed.join(', ')}`);
+const liveSec = (/^## Live products[ \t]*\r?$([\s\S]*?)(?=^## )/m.exec(readme) || ['', ''])[1];
+ok('readme routes: the Live products section is found', liveSec.length > 0);
+ok('readme routes: Live products names /projects as the way to add a repo', namesRoute(liveSec, '/projects'), 'the section only says to list the repo in bp.products.local.json');
+ok('readme routes: Live products still names bp.products.local.json as the manual alternative', /bp\.products\.local\.json/.test(liveSec));
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');
