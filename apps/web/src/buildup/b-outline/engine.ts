@@ -1750,7 +1750,7 @@ export function createOutlineEngine(root: HTMLElement, cls: Styles, opts: Outlin
     const hk = !!tl.general && (S.live || t >= tl.healthAt), pen = hk && isPencil(tl, t), shown = shownHealth(tl, t);
     const health = hk && shown ? shown + (pen ? ' (one batch’s reading, not final yet)' : '') : 'not judged yet';
     const stage = tl.stage ? `${esc(STAGE_WORD[tl.stage] || tl.stage)} <span class="${cls.muted}">(${esc(tl.stage)})</span>` : 'none given';
-    el.card.innerHTML = `<button class="${cls.btn} ${cls.x}" data-c="x" title="Close (Esc)">✕</button>
+    el.card.innerHTML = `<button class="${cls.btn} ${cls.x}" data-c="x" title="Close (Esc)" aria-label="Close the card · Esc">✕</button>
       <div class="${cls.path}">${esc(tl.wing.letter + ' ' + tl.wing.name.toUpperCase())} › ${esc(tl.room.name)} › ${esc(tl.bay.name)}</div>
       <h3>${esc(tl.name)}</h3>
       ${tl.summary ? `<p>${esc(tl.summary)}</p>` : ''}

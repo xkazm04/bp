@@ -45,15 +45,15 @@ export default function Variant({ source, reducedMotion, theme, chrome, onLive }
       <nav data-r="index" className={styles.index} aria-label="Outline index">
         <header>
           <h2>Outline · the words that built it</h2>
-          <button type="button" data-r="idxClose" className={styles.btn} title="Close (O)">✕</button>
+          <button type="button" data-r="idxClose" className={styles.btn} title="Close (O)" aria-label="Close the outline index · O">✕</button>
         </header>
         <ol data-r="idxList" />
       </nav>
       <div data-r="crumbs" className={styles.crumbs} aria-label="Where you are" />
       <div data-r="zoom" className={styles.zoom}>
-        <button type="button" data-r="zOut" className={styles.btn} title="Zoom out (-)">−</button>
+        <button type="button" data-r="zOut" className={styles.btn} title="Zoom out (-)" aria-label="Zoom out · -">−</button>
         <button type="button" data-r="zFit" className={styles.btn} title="Whole site (0)">Site</button>
-        <button type="button" data-r="zIn" className={styles.btn} title="Zoom in (+)">+</button>
+        <button type="button" data-r="zIn" className={styles.btn} title="Zoom in (+)" aria-label="Zoom in · +">+</button>
       </div>
       <aside data-r="card" className={styles.card} aria-live="polite" />
       <div data-r="tip" className={styles.tip} />
