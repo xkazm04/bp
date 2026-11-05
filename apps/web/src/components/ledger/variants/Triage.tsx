@@ -10,7 +10,7 @@
 // v5 (scan-finding/1): a Score cell (the stored score, "est." for a pre-v5 estimate, "unscored"; never 0) with impact and
 // confidence under it, a predicted-verdict chip and a machine-decided mark after the title (bits.tsx Verdict), and each lens's
 // reserve findings collapsed under "n in reserve" after the ranked rows (expandable; L.reserve, L.toggleReserve).
-import { memo, type ReactNode } from 'react';
+import { memo, useMemo, type ReactNode } from 'react';
 import type { Finding, Ledger } from '../useLedger';
 import { LensTag, StateMark } from '../train/ui/Marks.tsx';
 import { FeatureLink, KindTag, Move, Risk, Score, Size, Verdict, fromControl } from './bits';
@@ -113,9 +113,18 @@ export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
   const spans = L.lenses.filter((l) => L.ready.some((f) => f.p.lens === l.id));
   const wm = L.waveReady.length, taken = L.waveTaken[0]?.wave.name;
   const whyNot = !m ? 'Select proposed or approved findings that no job is building' : !wm ? 'These findings are already in the draft wave ' + taken : null;
+  // Dispatch sends every selected finding, the ones the filters hide included (useLedger dispatchIds): the live label says
+  // how many the person cannot see before D acts on them, as the decision bar does In packs
+  const hidden = useMemo(() => {
+    if (!n) return 0;
+    const shown = new Set(L.scoped.map((f) => f.p.id));
+    let k = 0;
+    for (const id of L.ui.sel) if (!shown.has(id)) k++;
+    return k;
+  }, [n, L.scoped, L.ui.sel]);
   return (
     <div className="lg-bar" role="region" aria-label="Dispatch">
-      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
+      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' + (hidden ? ' · ' + hidden + ' hidden by filters' : '') : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
       {spans.length ? <span className="lg-bar-l" title={spans.map((l) => l.name).join(', ')}>{spans.length === 1 ? '1 lens' : spans.length + ' lenses'}{spans.map((l) => <LensTag key={l.id} id={l.id} />)}</span>
         : !n && hint ? <span className="lg-bar-l">{hint}</span> : null}
       {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
