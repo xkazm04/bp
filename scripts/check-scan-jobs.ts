@@ -5,6 +5,7 @@
 //     and of a running job (its process is gone); the queue cap (429); a missing CLI;
 //   - the prompt goes on stdin, never in argv; an unsafe lens id or feature is refused before anything spawns;
 //   - attachRun by note (`bp-job:<id>` and `bp-job:<id> <more>`, never a bare prefix), and subscribe;
+//   - the Kettle chat's first turn names a map that is a tracked file (DW-187);
 //   - the lens-draft parser (a valid block, an invalid one, none; project and temporary modes, a taken look) and the
 //     onboarding chat route over the fake (`/lens-scan onboard --draft-only [--temporary]` on the first turn);
 //   - the routes: scans (202 / unknown-lens / no-scan-method / bad-scope; a selection of 1..200 features), dispatch
@@ -47,7 +48,7 @@ const FAKE = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 process.env.BP_CLAUDE_BIN = FAKE;
 
 const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
-const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
+const { parseDraftReply, draftMapPath, onboardPrompt } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
 const LS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-setup.ts')).href) as typeof import('../packages/core/src/scan/lens-setup.ts');
 const { logBlocks, spans } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/log-md.ts')).href) as typeof import('../apps/web/src/lib/scan/log-md.ts');
 const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/scope.ts')).href) as typeof import('../packages/core/src/scan/scope.ts');
@@ -242,6 +243,12 @@ try {
   check('scopeFeatures: features list', scopeFeatures({ scope: { features: ['a', 'c'] } }, fs3).map((f) => f.id).join() === 'a,c');
   check('scopeFeatures: a list matching nothing falls back to all; proposals scope = all', scopeFeatures({ scope: { features: ['zz'] } }, fs3).length === 3 && scopeFeatures({ scope: { proposals: ['p1'] } }, fs3).length === 3);
 
+  // ------------------------------------------------------------------ the Kettle chat's map (DW-187)
+  // Kettle's chat runs in the bp repo (lens-draft/route.ts), so the path its first turn names resolves from the repo root
+  const kettleMap = draftMapPath(true);
+  const trackedMap = spawnSync('git', ['ls-files', '--', kettleMap], { cwd: ROOT, encoding: 'utf8' }).stdout.trim();
+  check('draftMapPath(true) names the sample map, a tracked file that exists from the repo root', /kettle\.app-structure\.json$/.test(kettleMap) && trackedMap === kettleMap && fs.existsSync(path.join(ROOT, kettleMap)), `${kettleMap}; git ls-files: ${JSON.stringify(trackedMap)}`);
+  check('onboardPrompt on Kettle names that path; a live product\'s prompt does not, and its map stays the store\'s', onboardPrompt('hi', 'project', true).includes(kettleMap) && !onboardPrompt('hi', 'project', false).includes(kettleMap) && draftMapPath(false) === '.ai/lens-scan/app-structure.json', onboardPrompt('hi', 'project', true));
   // ------------------------------------------------------------------ draft parser
   const block = (o: unknown) => 'Here it is.\n\n```lens-manifest\n' + JSON.stringify(o, null, 2) + '\n```\n\nSay if it fits.';
   const TMP = { mode: 'temporary' } as const;
