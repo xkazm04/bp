@@ -246,5 +246,57 @@ const WT = await import(core('train/watch.ts')) as typeof import('../packages/co
   } finally { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch { /* a child still holds a file */ } }
 }
 
+// ------------------------------------------------------------------ 10 a judged checkpoint survives a later Tag (DW-156)
+{
+  // day n after enabling at h(6); a release merged at h(5); Tag on day 3, as store.mjs moves it: the item released, the release
+  // tagged, and both updated_at to that moment (so a reading of day 1 is older than the release's time from there on)
+  const d = (n: number) => h(6 + 24 * n);
+  const P = (value: number, measured_at: string, x: Any = {}) => ({ ...M(value, measured_at, x), lens: 'performance', metric: 'p95', unit: 'ms', method: 'probe', ...x });
+  const rel = { id: 'rel-2.0.0', version: '2.0.0', branch: 'release/2.0.0', status: 'merged', created_at: h(4), updated_at: h(5) };
+  const row = (status: string) => item('p-t', { lens: 'performance', metric: 'p95', expected_delta: -20, status, release_id: rel.id });
+  const seed = [P(100, h(0.5)), P(100, h(1.5), { proposal_id: 'p-t', phase: 'before' })];
+  const merged = (status: string, extra: Any[] = []) => ({ packs: [pack], releases: [rel], measurements: [...seed, ...extra], proposals: [row(status)] }) as Any;
+  const tagged = (s: Any) => ({ ...s, releases: s.releases.map((r: Any) => ({ ...r, status: 'tagged', tag: 'v2.0.0', updated_at: d(3) })), proposals: s.proposals.map((p: Any) => ({ ...p, status: 'released', updated_at: d(3) })) }) as Any;
+  /** The words before Tag (read on day 2) and after it (read on day 4), the watch made when the release was merged. */
+  const walk = (status: string, opts: Any, extra: Any[], landingAt?: string) => {
+    const made = WT.newWatch(merged(status), rel.id, opts, d(0), 'user:owner');
+    if (!made.ok) return { made, before: '', after: '', receipt: undefined as Any };
+    const s = merged(status, extra);
+    return { made, receipt: made.watch.items[0].landing, before: WT.watchState(made.watch, s, opts, Date.parse(d(2))).items[0].words, after: WT.watchState(made.watch, tagged(s), opts, Date.parse(d(4))).items[0].words, landingAt };
+  };
+  const met = 'target met: 78 ms on day 1 (target 80 ms)', short = 'shortfall: 95 ms on day 1 (target 80 ms)';
+  const withReceipt = { landed: { 'p-t': { ...landing, at: h(5) } }, contains };
+  const a = walk('accepted', withReceipt, [P(78, d(1.1), { commit_sha: MAIN })]);
+  check('10 with a landing receipt: day 1 at 78 ms reads target met before Tag', a.before === met, a.before);
+  check('10 with a landing receipt: the same words after Tag', a.after === met, a.after);
+  const s = walk('accepted', withReceipt, [P(95, d(1.1), { commit_sha: MAIN })]);
+  check('10 a shortfall before Tag stays a shortfall after it', s.before === short && s.after === short, JSON.stringify([s.before, s.after]));
+  // no landing receipt (git could not say): the watch froze the release's time at enabling, and judges by time
+  const b = walk('released', {}, [P(78, d(1.1))]);
+  check('10 no landing receipt: the watch froze the time of the release at enabling', b.receipt?.at === h(5) && !b.receipt?.sha, JSON.stringify(b.receipt));
+  check('10 no landing receipt, a released item under the merged release: the same words after Tag', b.before === met && b.after === met, JSON.stringify([b.before, b.after]));
+  const c = walk('accepted', {}, [P(78, d(1.1))]);
+  check('10 no landing receipt, an accepted item, as the store keeps it, under the merged release: judged from the frozen time, the same words after Tag', c.before === met && c.after === met, JSON.stringify([c.before, c.after]));
+  const cs = walk('accepted', {}, [P(95, d(1.1))]);
+  check('10 no landing receipt: a shortfall stays a shortfall after Tag', cs.before === short && cs.after === short, JSON.stringify([cs.before, cs.after]));
+  // the guard the fix must keep: the watch's own landing time still decides which readings count
+  const late = { landed: { 'p-t': { ...landing, at: d(2) } }, contains };
+  const early = walk('accepted', late, [P(78, d(1.5))]);
+  check('10 a reading before the landing time of the watch does not judge, before or after Tag', /^pending/.test(early.before) && /^pending/.test(early.after), JSON.stringify([early.before, early.after]));
+  const madeLate = WT.newWatch(merged('accepted'), rel.id, late, d(0), 'user:owner');
+  if (madeLate.ok) {
+    const sl = merged('accepted', [P(78, d(2.5))]);
+    const w = WT.watchState(madeLate.watch, tagged(sl), late, Date.parse(d(4))).items[0];
+    check('10 a reading after the landing time of the watch and before Tag judges, after Tag too', w.words === met, w.words);
+  } else check('10 the late-landing watch is made', false, JSON.stringify(madeLate));
+  // a checkpoint read after the Tag is judged as ever
+  const later = walk('accepted', withReceipt, [P(78, d(1.1), { commit_sha: MAIN })]);
+  if (later.made.ok) {
+    const s7 = tagged(merged('accepted', [P(78, d(1.1), { commit_sha: MAIN }), P(90, d(7.1), { commit_sha: MAIN })]));
+    const w = WT.watchState(later.made.watch, s7, withReceipt, Date.parse(d(8))).items[0];
+    check('10 a day 7 reading after Tag keeps the record of day 1 (met on day 1, 90 ms on day 7: regression)', w.words === 'regression: met on day 1, 90 ms on day 7 (target 80 ms)', w.words);
+  }
+}
+
 console.log(`check-outcome-evidence: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
