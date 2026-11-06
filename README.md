@@ -67,6 +67,7 @@ With the Personas desktop app as the one point of control (spark one-control), t
 |---|---|
 | `BP_RUNNER=personas` | Every scan, execute and release job runs through the Personas fleet shim instead of a `claude` of its own, so it waits in the Personas fleet's one queue (its cap and budgets) and shows in its Fleet Monitor as origin `lens_scan`, labelled `bp-job:<id>`. The Personas app must be running (the shim reads its local handshake). The onboarding chat still runs `claude` itself. An explicit `BP_CLAUDE_BIN` still wins. |
 | `PERSONAS_RUN_SHIM` | Where the shim is. Default: `<bp root>/../personas/scripts/fleet/personas-run.mjs` (the sibling checkout). A job fails with "Personas fleet shim not found" when neither exists. |
+| `BP_JOB_KEEP_ENV=A,B` | Scan, build, release and lens-draft runs get the server's environment without any `*_API_KEY` (they run on your Claude plan, as the companion does). Name a variable here when a product's probes need it. |
 | `BP_WRITES=off` | Read-only decisions: the approve / decline, dispatch, lens execute and triage controls are hidden and their routes answer 403 naming the flag. Scans, lens edits and the whole Release tab stay live (bp composes releases). Nothing is deleted; the default is writes on. |
 
 Every decision bp writes (approve, decline, the approvals a dispatch or lens execute makes, triage, a release) is signed

@@ -33,6 +33,7 @@ import { OVERLAY_PATH, PREPARABLE, lensSetupNeed } from '../scan/lens-setup.ts';
 import { findProduct, recovered, warnOnce, writeAtomic } from './products.server.ts';
 import { close, openRead, readRelease, type ReleaseRead } from './store.server.ts';
 import { storeCall } from './release.server.ts';
+import { childEnv } from './companion/runtime/cli.server.ts';
 import { adoptPrompt, adoptSkillDir, closeJournal, mapHasFeatures, NO_ADOPT_SKILL, openFeed, readStreamLine, reportedSince, resumeFeed, runAdoptCheck, type Feed } from './onboarding-job.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('jobs.server.ts is server-only');
@@ -92,7 +93,15 @@ export type SpawnResult = { ok: true; child: ChildProcess } | { ok: false; error
 
 /** Start the Claude Code CLI (BP_CLAUDE_BIN, else `claude` on PATH; a .js/.mjs path runs on this Node). `fleet`: a scan
  *  job, which BP_RUNNER=personas hands to the Personas fleet shim (cliBin). */
-export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = process.env, fleet = false): SpawnResult {
+/** The env of an unattended run: the companion's rule (childEnv: no *_API_KEY, none of a parent session's markers; model runs
+ *  go through the CLI on the person's plan), plus what BP_JOB_KEEP_ENV names (comma-separated, for a key a product's probes need). */
+export function jobEnv(base: NodeJS.ProcessEnv = process.env, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const keep = new Set((base.BP_JOB_KEEP_ENV ?? '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
+  const out = childEnv(base);
+  for (const [k, v] of Object.entries(base)) if (v !== undefined && keep.has(k.toUpperCase())) out[k] = v;
+  return { ...out, ...extra };
+}
+export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = jobEnv(), fleet = false): SpawnResult {
   const pick = cliBin(process.env, process.cwd(), fleet);
   if ('missing' in pick) return { ok: false, error: pick.missing, missing: true };
   const cli = resolveCli(args, pick.bin);
@@ -622,7 +631,7 @@ function start(slug: string, r: Rec): void {
   const args = [...JOB_ARGS, ...(r.job.model ? ['--model', r.job.model] : []), ...(r.job.effort ? ['--effort', r.job.effort] : [])]; // allow-listed at enqueue
   // BP_JOB_ID: lens-scan notes its run with it (and the Personas shim takes it as origin lens_scan); the label names
   // the job on the Personas fleet board
-  const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id, PERSONAS_RUN_LABEL: RUN_NOTE_PREFIX + r.job.id }, true);
+  const s = spawnCli(args, r.root, jobEnv(process.env, { BP_JOB_ID: r.job.id, PERSONAS_RUN_LABEL: RUN_NOTE_PREFIX + r.job.id }), true);
   if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
   const c = (r.child = s.child);
   r.pid = c.pid;
@@ -655,7 +664,7 @@ function startAdopt(slug: string, r: Rec, skill: string | null): void {
     r.feed?.phase('check', 'done', error ? null : `${need} to produce`);
     r.feed?.watch();
     const args = [...ADOPT_ARGS, ...(r.job.model ? ['--model', r.job.model] : [])]; // allow-listed at enqueue
-    const s = spawnCli(args, r.root, { ...process.env, BP_JOB_ID: r.job.id, CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: '0' }, false);
+    const s = spawnCli(args, r.root, jobEnv(process.env, { BP_JOB_ID: r.job.id, CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: '0' }), false);
     if (!s.ok) { finish(slug, r, 'failed', { error: s.error }); return; }
     const c = (r.child = s.child);
     r.pid = c.pid;
