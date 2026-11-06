@@ -79,9 +79,9 @@ Everything it does is in scope to keep:
   `before → expected` line, Approve / Decline with an optional note, "Show N more" past 12. The simulation keeps
   running on a light timer while no plan is drawn (a toast's Show opens the feature), the footer is the honest
   `LiveFoot`, the header carries the product name and the scan status, and the springs obey reduced motion.
-- **Back / forward.** The URL hash carries nine parameters (`Engine.hashOf`): lens, place (`at=` or `open=`),
-  time (`t=`), the comparison window (`d=`, only when it is not the 7-day default), the modes (`blast=`, `ga=1`),
-  person (`who=`) and the page with its ledger prototype (`page=ledger`, `lv=`). A place the user
+- **Back / forward.** The URL hash carries ten parameters (`Engine.hashOf`): lens (`lens=`), place (`at=` or `open=`),
+  time (`t=`), the compared date (`cmp=`), the comparison window (`d=`, only when it is not the 7-day default), the modes (`blast=`, `ready=`),
+  person (`who=`) and the page with its ledger prototype (`page=ledger`, `lv=`). An older `ga=1` is only read, never written. A place the user
   rests at for 600 ms, or opening or closing a feature, pushes a history entry; lens, time and toggles only replace
   the current one, so a fly-through spams nothing. Back, forward and a hash pasted into the tab restore lens, time,
   modes, place (fly) and the open feature; while the camera arrives the engine writes nothing, then adopts.
