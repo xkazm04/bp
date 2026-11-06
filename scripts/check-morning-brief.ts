@@ -182,6 +182,36 @@ check('the steering log says it, with the note', /Declined as a repeat: Add retr
   fs.rmSync(rulesFile, { force: true });
 }
 
+// ------------------------------------------------------------------------- a partial morning, to an agent (DW-218)
+// The page prints its own "Not read" line from deck.skipped. The agent view has no `skipped` key (morning-deck-1 is left
+// alone), so it says so in the open card's lines, and only there: the full deck's own open card must not double the page's line.
+{
+  const { agentDeck, buildDeck } = await import('../packages/core/src/companion/morning.ts');
+  const { wire } = await import('./lib/wire-schema.ts');
+  const asAgent = await wire('morning-deck-1', 'agentDeck');
+  const product = { slug: 'a', name: 'A', scan: { proposals: [], measurements: [], packs: [], releases: [], runs: [] }, where: new Map() };
+  const NOW = Date.parse('2026-10-20T08:00:00.000Z'), base = buildDeck([product] as never, [], '2026-10-19T16:00:00.000Z', NOW);
+  const notRead = (ls: string[] | undefined) => (ls ?? []).filter((l) => l.startsWith('Not read:'));
+  const openOf = (x: { cards: { kind: string; lines: string[] }[] }) => x.cards.find((c) => c.kind === 'open')?.lines;
+  const partial = { ...base, skipped: [{ product: 'b', why: 'x' }] }, before = JSON.stringify(partial);
+  const av = agentDeck(partial), lines = notRead(openOf(av));
+  check('the agent view of a partial morning: the open card says "Not read:", naming the product and the reason (DW-218)', lines.length === 1 && /\bb\b/.test(lines[0]) && /\bx\b/.test(lines[0]), JSON.stringify(openOf(av)));
+  check('...and the agent view is still morning-deck-1, with no `skipped` key', !asAgent(av) && !('skipped' in av), asAgent(av) ?? Object.keys(av).join());
+  check("...and the full deck's own open card is unchanged: the page prints its own line", JSON.stringify(partial) === before && !partial.cards[0].lines.some((l) => /Not read/.test(l.text)), JSON.stringify(partial.cards[0].lines));
+  const two = notRead(openOf(agentDeck({ ...base, skipped: [{ product: 'first-one', why: 'locked' }, { product: 'second-one', why: 'no scan store' }] }))).join(' ');
+  check('two products not read: both named, with their reasons (DW-218)', ['first-one', 'locked', 'second-one', 'no scan store'].every((w) => two.includes(w)), two);
+  check('control: a deck with nothing skipped adds no such line (no key, or an empty list)', !notRead(openOf(agentDeck(base))).length && !notRead(openOf(agentDeck({ ...base, skipped: [] }))).length);
+  // through the route: a registered product with no store is one the server could not read
+  const reg0 = fs.readFileSync(REG, 'utf8');
+  fs.writeFileSync(REG, JSON.stringify({ ...JSON.parse(reg0), products: [...JSON.parse(reg0).products, { slug: 'ghost', name: 'Ghost', root: path.join(TMP, 'ghost') }] }));
+  const full = await deck();
+  const door = (await (await GET(new Request('http://127.0.0.1:3313/api/companion/morning?view=agent', { headers: H }))).json()) as { cards: { kind: string; lines: string[] }[] };
+  fs.writeFileSync(REG, reg0);
+  check('route fixture: the deck names the product it could not read in `skipped`', !!full.skipped?.some((x) => x.product === 'ghost'), JSON.stringify(full.skipped));
+  check('morning.brief\'s route, a product not read: the agent reads "Not read:" naming it (DW-218)', notRead(openOf(door)).some((l) => l.includes('ghost')), JSON.stringify(openOf(door)));
+  check("the page's route, the same morning: no \"Not read\" line in the open card", !full.cards[0].lines.some((l) => /Not read/.test(l.text)), JSON.stringify(full.cards[0].lines));
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
 process.exit(failed ? 1 : 0);
