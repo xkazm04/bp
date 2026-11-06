@@ -148,7 +148,7 @@ function RuleDetail({ slug, r, now, held, breaches, since, all, onSet }: { slug:
             <div className="wb-figs">
               <Fig n={held?.items ?? 0} label={'items held out of agents’ work'} tone={held?.items ? 'amber' : undefined} />
               <Fig n={held?.refused ?? 0} label="acts refused whole" />
-              <Fig n={breaches.length} label={breaches.length === 1 ? 'breach' : 'breaches'} tone={breaches.length ? 'red' : 'mint'} title="Findings approved in its place against it since it was set: only something that went around bp's doors can make one" />
+              <Fig n={breaches.length} label={breaches.length === 1 ? 'breach' : 'breaches'} tone={breaches.length ? 'red' : 'mint'} title="Findings approved in its place against it since it was set: a person's own approval makes one, as does anything that went around bp. An order stops the build, not the approval" />
             </div>
             {held && <p className="wb-meta">Held at {held.tools.join(', ')}; every door that refused cited {r.id} and its author.</p>}
             {breaches.length > 0 ? (

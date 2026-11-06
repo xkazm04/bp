@@ -125,8 +125,10 @@ whole act was refused. A log that cannot be written is warned once and never fai
 foreign lines. Per rule, `tallyHeld` counts the acts (`times`), the items, the refusals and the last time.
 
 **Breaches** are not in either file. For an order, a breach is a finding approved after `at` and before the order
-ended (`revokedAt`, else `expiresAt`), inside its place, that the order would have held (`breachesOf`). bp's doors
-refuse those, so a breach means something went around them. They are read from `scan.db` decided rows (a `cap` breach
+ended (`revokedAt`, else `expiresAt`), inside its place, that the order would have held (`breachesOf`). The doors that
+consult an order are builds and scans, and approving is neither, so a person's own approval in the plan makes a breach
+as well as anything that went around bp (a CLI run, another app's runner): an order stops the build, not the approval.
+They are read from `scan.db` decided rows (a `cap` breach
 also needs the model and effort from the `bp-waves.json` package that built the finding).
 
 ## 8. Grants and the `rule:G-n` / `policy:pol_..` signatures

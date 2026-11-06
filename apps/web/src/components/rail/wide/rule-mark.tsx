@@ -41,7 +41,7 @@ export function RuleNote({ m }: { m: Mark }) {
   return (
     <p className={'wb-note rlmk-note' + (m.grant ? ' grant' : '')}>
       {m.held
-        ? <>Held by {citeWords({ id: r.id, kind: r.kind, by: r.by, at: r.at, text: r.text, place: r.scope.label })}. Your decision is recorded either way, but no agent door will build it until you lift {r.id}. </>
+        ? <>Held by {citeWords({ id: r.id, kind: r.kind, by: r.by, at: r.at, text: r.text, place: r.scope.label })}. Your decision is recorded either way, but no agent door will build it until you lift {r.id}, and approving it here reads as a breach of {r.id}. </>
         : <>{r.id} lets agents approve this on their own ({r.text.toLowerCase()}); deciding it yourself also tests the grant. </>}
       <button type="button" className="bt" onClick={open}>Open {r.id}</button>
     </p>

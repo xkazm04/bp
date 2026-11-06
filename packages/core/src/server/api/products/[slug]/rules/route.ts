@@ -1,7 +1,7 @@
 // GET /api/products/[slug]/rules: the product's standing rules (`{ rules, record, held, breaches }`: every rule, revoked
 // and expired ones included as the record; the size of the decided record a rule is replayed over; per rule, what the
 // doors held or refused under it (work/bp-rules-log.jsonl, scan/rules.ts tallyHeld) and the findings approved in its
-// place against it since it was set (breachesOf: something went around bp's doors); per grant, how the owner's own later
+// place against it since it was set (breachesOf: a person's own approval, or something that went around bp); per grant, how the owner's own later
 // decisions in its place compare with it (`since`, sinceSet: drifting when they overrule it); and the rules the owner's own record
 // suggests (scan/rules-suggest.ts: rooms where their decisions already follow a grant or a hold). Any client; agents read
 // it as rules.list.

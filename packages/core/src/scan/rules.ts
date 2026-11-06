@@ -276,9 +276,9 @@ export function sinceSet(r: Rule, decided: readonly DecidedRow[]): Since | null 
 export const trustworthy = (b: Backtest): boolean => !b.flags.some((f) => f.key === 'stop-ship' || f.key === 'any-tier' || f.key === 'silent');
 
 /**
- * Breaches: findings approved inside an order's place, against it, after it was set (and before it ended). bp's own doors
- * refuse those, so a breach means something went around them (a CLI run, another app's runner): the order's record says
- * so. Grant-signed decisions (`rule:`) are the grants' own and never a breach of an order the gate let them through.
+ * Breaches: findings approved inside an order's place, against it, after it was set (and before it ended). The doors that
+ * consult an order are builds and scans, so a person's own approval in the plan makes a breach, as does anything that went
+ * around bp (a CLI run, another app's runner): an order stops the build, not the approval. Grant-signed decisions (`rule:`) are the grants' own and never a breach of an order the gate let them through.
  */
 /** When a rule stopped standing: the earlier of its revoke and its expiry (a rule revoked after it expired ended at expiry). */
 export const endOf = (r: Pick<Rule, 'revokedAt' | 'expiresAt'>): string | undefined =>
