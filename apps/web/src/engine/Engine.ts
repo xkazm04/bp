@@ -959,7 +959,7 @@ export class Engine {
     if (atHome && !this.S.open) this.cam.flyTo(this.HOME, 400);
     this.placeKey = ''; this.dirty();
   }
-  toggleSelMode() { const on = !this.S.selMode; this.set({ selMode: on }); this.toast(on ? 'Target mode.' : 'Target mode off.', on ? 'Click or drag to select places. Press S again to leave.' : ''); }
+  toggleSelMode() { const on = !this.S.selMode; this.set({ selMode: on }); this.toast(on ? 'Target mode.' : 'Target mode off.', on ? 'Click or drag to select places, or press Enter for the place in view. Press S again to leave.' : ''); }
   toggleMorning(on?: boolean) { this.set({ morning: on == null ? !this.S.morning : on }); }
   /**
    * The morning watch's places targeted on the plan, on every product line. The incoming ids come from the
@@ -1076,6 +1076,14 @@ export class Engine {
     const bs: Box[] = [];
     for (const id of ids) { const T = this.M.L.TILE[id]; if (T) bs.push(T); }
     return union(bs);
+  }
+  /** Target mode's Enter: the tile that fills the view (the test plain Enter uses), else the place the camera is framed on. */
+  private selectInView() {
+    const T = this.nearestTile();
+    if (T && T.w * this.cam.k >= 96 * this.U && this.lod() > 0.5) { this.setTarget({ [T.id]: 1 }, this.M.P.F[T.id].name); return; }
+    const c = this.place[this.place.length - 1], tg = c ? this.targetOfPlace(c.t, c.o.id) : null;
+    if (tg) this.setTarget(tg.ids, tg.label);
+    else this.toast('Nothing in view to select:', 'walk to a wing, room or feature first, with the arrow keys.', undefined, undefined, 'warn');
   }
   private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.', undefined, undefined, 'warn'); }
   /** A sample steer's preview. Refused on a live product (its verbs are measure, build and stop: `previewLive`). */
@@ -1314,11 +1322,14 @@ export class Engine {
   }
   private targetFromHit(h: ReturnType<Engine['hitAt']>): { ids: Record<string, 1>; label: string } | null {
     const t = this.hitTarget(h); if (!t) return null;
+    if (t.type === 'tile') return { ids: { [t.id]: 1 }, label: this.M.P.F[t.id].name };
+    return this.targetOfPlace(t.type, t.id);
+  }
+  private targetOfPlace(type: string, id: string): { ids: Record<string, 1>; label: string } | null {
+    const o = this.placeById(type, id); if (!o) return null;
     const ids: Record<string, 1> = {};
-    if (t.type === 'tile') { ids[t.id] = 1; return { ids, label: this.M.P.F[t.id].name }; }
-    const o = this.placeById(t.type, t.id); if (!o) return null;
     for (const f of o.feats) ids[f.id] = 1;
-    const label = t.type === 'wing' ? (o as WingNode).def.name + ' wing' : t.type === 'room' ? (o as RoomNode).name : t.type === 'bay' ? (o as BayNode).name : (o as BldNode).name;
+    const label = type === 'wing' ? (o as WingNode).def.name + ' wing' : type === 'room' ? (o as RoomNode).name : type === 'bay' ? (o as BayNode).name : (o as BldNode).name;
     return { ids, label };
   }
   /**
@@ -1556,6 +1567,7 @@ export class Engine {
     if (k === '0' || k === 'Home') { this.goHome(); return; }
     if (k === 'Enter') {
       if (ctl) return;
+      if (S.selMode) { this.selectInView(); return; } // target mode: the keyboard's click on a place
       const rt = this.routeTarget(); if (rt) { this.openFeature(rt); return; } // a trouble-route arrival opens its feature
       const T = this.nearestTile(), cx = (this.SAFE.l + this.SAFE.r) / 2, cy = (this.SAFE.t + this.SAFE.b) / 2;
       if (T && T.w * this.cam.k >= 96 * this.U && this.lod() > 0.5) this.openFeature(T.id); else this.clickAt(cx, cy);
