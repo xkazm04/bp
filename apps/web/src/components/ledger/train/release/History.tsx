@@ -36,7 +36,7 @@ const Entry = memo(function Entry({ r, items, sample, view, canWatch, toggle, er
         {sample ? <SampleTag /> : null}
         {canWatch ? (
           <button type="button" className="tr-btn tr-rel-watch" data-role="tr-rel-watch" aria-pressed={!!view?.on} onClick={() => toggle(!view?.on)}
-            title={view?.on ? 'Stop the checkpoints (the record stays)' : 'Check each item against its target 1, 7 and 30 days on, with a scoped scan per lens'}>
+            title={view?.on ? 'Stop the checkpoints (the record stays)' : 'Check each item against its target 1, 7 and 30 days on, with a scoped scan per lens. A checkpoint is queued when this Release tab is opened: a day 1 or day 7 one whose window passed before that is missed.'}>
             {view?.on ? 'Stop watching' : 'Watch outcomes'}
           </button>
         ) : null}

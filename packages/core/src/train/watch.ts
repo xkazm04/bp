@@ -8,7 +8,8 @@
 //   schedule  checkpoints WATCH_DAYS after enabling; a due one queues one selection scan per lens over the items'
 //             features (jobs.ts measureScopes), its jobs labelled `Watch v<version> · day <n>` so a restart finds the
 //             jobs it already queued (checkpointPlan adopts them) and never queues them twice; a checkpoint whose window
-//             passed unmeasured is missed, never queued late
+//             passed unmeasured is missed. That is days 1 and 7, which end where the next checkpoint falls due; day 30 is the
+//             last, has an open window and is queued however late it is read, so it is never missed
 //   judge     checkpoint n is judged by the reading trackOf would judge the item by (its eligibility: method, unit,
 //             commit containing the landing), taken in the checkpoint's window [due n, due n+1), against the FIXED
 //             target, from the landing frozen at enabling (a later Tag moves the release's time, not this): met or short. The
