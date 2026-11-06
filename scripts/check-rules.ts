@@ -108,6 +108,18 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
     check('suggest: a room whose backlog you always approved suggests a grant; one you mostly declined, a hold; too few decisions, nothing', sg.length === 2 && sg.some((x) => x.kind === 'grant' && x.scope.id === 'a' && x.minTier === 3 && /6 of 6/.test(x.why)) && sg.some((x) => x.kind === 'hold' && x.scope.id === 'b' && /5 of 6/.test(x.why)) && !sg.some((x) => x.scope.id === 'c'), j(sg));
     const taken = S.suggestRules(rec3, rooms, [rule({ id: 'G-3', kind: 'grant', minTier: 3, scope: { kind: 'room', id: 'a', label: 'A', features: ['fa'] } })]);
     check('suggest: a room a live rule of that kind already covers is not suggested again', !taken.some((x) => x.scope.id === 'a') && taken.some((x) => x.scope.id === 'b'), j(taken));
+    // DW-189: a suggestion cites only decisions the person made, so seeded (synthetic) rows neither earn nor count toward one
+    const seededRow = (id: string, f: string, owner: 'approve' | 'decline', tier = 3) => ({ ...r3(id, f, owner, tier), synthetic: true });
+    const onlySeeded = [...'123456'].map((i) => seededRow('sa' + i, 'fa', 'approve')).concat([...'123456'].map((i) => seededRow('sb' + i, 'fb', 'decline', 2)));
+    const sgS = S.suggestRules(onlySeeded, rooms, []);
+    check('suggest: rooms whose qualifying rows are all synthetic suggest nothing (no grant, no hold)', sgS.length === 0, j(sgS));
+    const sgThin = S.suggestRules([...'1234'].map((i) => r3('ta' + i, 'fa', 'approve')).concat([...'123'].map((i) => seededRow('tb' + i, 'fa', 'approve'))), rooms, []);
+    check('suggest: seeded rows do not lift a room over the minimum: 4 real + 3 seeded approvals suggest nothing', sgThin.length === 0, j(sgThin));
+    const mixed = rec3.concat([...'123'].map((i) => seededRow('xa' + i, 'fa', 'approve')), [...'1234'].map((i) => seededRow('xb' + i, 'fb', 'decline', 2)));
+    const sgM = S.suggestRules(mixed, rooms, []);
+    const mg = sgM.find((x) => x.scope.id === 'a'), mh = sgM.find((x) => x.scope.id === 'b');
+    check('suggest: enough real rows plus seeded ones: the grant counts only the real ones in why, n and follow (6 of 6, not 9 of 9)', mg?.kind === 'grant' && /\b6 of 6\b/.test(mg.why) && mg.n === 6 && mg.follow === 6, j(mg));
+    check('suggest: enough real rows plus seeded ones: the hold counts only the real ones in why, n and follow (5 of 6, not 9 of 10)', mh?.kind === 'hold' && /\b5 of 6\b/.test(mh.why) && mh.n === 6 && mh.follow === 5, j(mh));
   }
   {
     const g = rule({ id: 'G-2', kind: 'grant', minTier: 3, at: '2026-10-15T00:00:00Z', scope: { kind: 'all', label: 'Everything', features: [] } });
@@ -265,6 +277,7 @@ try {
 
   const g0 = await req('GET', API);
   check('GET rules: none yet; the record counts the decided rows and the synthetic ones', g0.status === 200 && g0.json?.rules?.length === 0 && g0.json?.record?.decided >= 96 && g0.json?.record?.synthetic === 96, j(g0.json));
+  check('GET rules: no suggestion rests on more decisions than the real ones on this seeded product (DW-189)', Array.isArray(g0.json?.suggestions) && g0.json.suggestions.every((x: { n: number }) => x.n <= g0.json.record.decided - g0.json.record.synthetic), j(g0.json?.suggestions));
   const pv = await req('POST', API, {}, { kind: 'hold', scope: BILLING, preview: true });
   check('preview: 200 with the replay, nothing written', pv.status === 200 && pv.json?.backtest?.decided >= 96 && pv.json.rule.id === null && !fs.existsSync(FILE), j(pv.json?.backtest));
   check('preview: `now` names the open findings it would hold the moment it is set (q-pay in Billing, not q-book)', pv.json?.now?.hits?.some((h: { id: string; verdict: string }) => h.id === 'q-pay' && h.verdict === 'hold') && !pv.json.now.hits.some((h: { id: string }) => h.id === 'q-book') && pv.json.now.features === BILLING.features.length, j(pv.json?.now));
