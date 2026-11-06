@@ -16,6 +16,8 @@
 //             expected ranked list
 //   inbox     two products, `bad` named in skipped with why; `good`'s open and triage items ranked tier, band, stored score,
 //             pre-v5 estimate, unscored (scan/score.ts), age
+//   signed    triage_set over the MCP door (AUTO, BP_CONVERSATION conv-check) is signed companion:conv-check, not the person;
+//             the same route with no header is signed user:<login>; a malformed header is 400 (DW-106)
 //   doc       tech-stack.md section 4 is the catalog (name, flags, class)
 // Run: node scripts/check-companion-door.ts   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -88,8 +90,11 @@ fs.writeFileSync(path.join(good, '.ai', 'lens-scan', 'work', 'bp-waves.json'), J
 ] }));
 
 // ------------------------------------------------------------------------------------------------ the server
+// the server runs in a temp folder, where lens-scan's resolver has no manifest to read: name the install this checkout finds
+const { lensScanDirs } = await import('../packages/core/src/server/release.server.ts');
+const lensDir = lensScanDirs().find((d: string) => fs.existsSync(path.join(d, 'scripts', 'store.mjs')));
 const server = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
-  { cwd: tmp, env: { ...process.env, BP_HOME: HOME }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  { cwd: tmp, env: { ...process.env, BP_HOME: HOME, ...(lensDir ? { BP_LENS_SCAN_DIR: lensDir } : {}) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 let out = '';
 server.stdout!.on('data', (d) => (out += d));
 server.stderr!.on('data', (d) => (out += d));
@@ -292,6 +297,19 @@ try {
   check('inbox: ageMs measured from created_at (p2 ~120 h)', Math.abs((items.find((x: any) => x.id === 'p2')?.ageMs ?? 0) - 120 * H) < 10 * 60000);
   const ibl = await call('inbox_list', { limit: 2 });
   check('inbox: the inbox_list tool answers it, limited', !ibl.isError && ibl.json?.items?.length === 2, ibl.text);
+
+  // -------------------------------------------------------------------------------------------- signed (DW-106)
+  if (lensDir) {
+    const url = `http://127.0.0.1:${port}/api/products/good/triage`;
+    const post = async (headers: Record<string, string>, body: unknown) => { const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }); return { status: res.status, json: await res.json().catch(() => null) as any }; }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const tr = await call('triage_set', { slug: 'good', ids: ['p3'], decision: 'accept' });
+    check('signed: triage_set runs at once (AUTO) and the store signs it companion:conv-check, not the person', !tr.isError && tr.json?.by === 'companion:conv-check', tr.text);
+    const back = await post({}, { ids: ['p3'], decision: 'reopen' });
+    check('signed: the route with no header signs user:<login>, as before', back.status === 200 && /^user:/.test(back.json?.by ?? ''), j(back));
+    const worse = await post({ 'x-bp-conversation': 'has space' }, { ids: ['p3'], decision: 'accept' });
+    check('signed: a malformed x-bp-conversation is refused 400, never signed as the person', worse.status === 400, j(worse));
+    if (worse.status === 200) await post({}, { ids: ['p3'], decision: 'reopen' });
+  } else console.log('SKIP  signed: no lens-scan install on this machine (store.mjs signs the call)');
 
   // -------------------------------------------------------------------------------------------- doc
   const doc = fs.readFileSync(path.join(ROOT, 'docs/concepts/vr-light-table/tech-stack.md'), 'utf8');

@@ -831,6 +831,18 @@ try {
         && status('proposals', 'a3') === 'failed' && status('proposals', 'a1') === 'done' && status('packs', 'k-dev-1') === 'open', JSON.stringify(t4.body) + (p4.ok ? '' : ' ' + p4.error));
       const t5 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
       check('triage reopen of an untriaged item -> 409, skipped with its status', t5.status === 409 && t5.body.skipped[0]?.status === 'done' && t5.body.triaged.length === 0, JSON.stringify(t5.body));
+      // DW-106: an agent's call is signed as the agent. The header is the one bp-mcp.mjs sends; a malformed one is refused, never signed as the person
+      const asAgent = async (conv: string, body: unknown) => {
+        const res = await tri.POST(new Request('http://localhost:3000/x', { method: 'POST', headers: { ...H, 'x-bp-conversation': conv }, body: JSON.stringify(body) }), { params: Promise.resolve({ slug: 'rel' }) });
+        return { status: res.status, body: await res.json() as any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+      };
+      const ag = await asAgent('conv-7', { ids: ['a1'], decision: 'accept' });
+      check('triage with x-bp-conversation: signed companion:<id>, not the person', ag.status === 200 && ag.body.by === 'companion:conv-7', JSON.stringify(ag.body));
+      const un = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
+      check('GUARD triage with no header: signed user:<gh login>, as before', un.status === 200 && un.body.by === 'user:octocat', JSON.stringify(un.body));
+      const bads = await Promise.all(['has space', 'x'.repeat(81), 'semi;colon'].map((c) => asAgent(c, { ids: ['a1'], decision: 'accept' })));
+      check('triage with a malformed x-bp-conversation: 400, and nothing moved', bads.every((b) => b.status === 400) && status('proposals', 'a1') === 'done', bads.map((b) => b.status + ' ' + (b.body.by ?? b.body.error)).join(' | ') + ' a1 ' + status('proposals', 'a1'));
+      if (status('proposals', 'a1') !== 'done') await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' }); // the base: later checks start from a1 done
       const t6 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'accept' });
       const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
