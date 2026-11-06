@@ -573,7 +573,8 @@ const measured: Record<string, string> = {};
   expect(E.S.delta === 14, 'a mangled %-escape skips that pair; the valid ones still apply');
   loc.hash = '#lens=no-such-lens&who=nobody&open=nothing&t=garbage'; win.dispatch('popstate', {});
   expect(E.S.view === 'general' && E.S.who === null && E.S.open === null, 'an unknown lens, person and feature in a hash are ignored, not adopted');
-  expect(E.S.toast?.tone === 'warn' && E.S.toast.strong === 'No feature nothing on this map:', 'an unknown feature in a hash says so once in a warn toast (got ' + JSON.stringify(E.S.toast) + ')');
+  { const said = (E.S.toast?.strong ?? '') + ' ' + (E.S.toast?.text ?? ''); // DW-139: open= joins the one notice when another key is bad too
+    expect(E.S.toast?.tone === 'warn' && ['nothing', 'no-such-lens', 'nobody'].every((v) => said.includes(v)), 'an unknown lens, person and feature in a hash say so in one warn toast naming them all (got ' + JSON.stringify(E.S.toast) + ')'); }
   { const n0 = E.S.toast?.n; E.openFeature('nothing-either'); (E as Any).cam.stopFly(); advance(600); // the restore's flight home runs on motion, not this fake clock: land it, then pass the restore window
     expect(E.S.open === null && E.S.toast?.n === (n0 ?? 0) + 1 && E.S.toast?.strong === 'No feature nothing-either on this map:' && !loc.hash.includes('open='), 'openFeature of an unknown id toasts once, leaves open null and writes no open= (' + loc.hash + ')'); }
   // our own write must not be read back as a navigation
@@ -590,6 +591,66 @@ const measured: Record<string, string> = {};
   const E2 = new Engine({ canvas, ui, root, model: buildModel(1, () => clock, null), expression, intro: false });
   expect(E2.S.delta === 14 && E2.S.view === M.P.lenses[1].id && E2.S.open === Object.keys(M.P.F)[0], 'a hash present at load is read into the store: lens, delta and open feature');
   E2.destroy();
+}
+
+// ---------------------------------------------------------------------------------------------- 6a. a link that cannot be honoured says so (DW-139)
+// Unknown at=, lens=, blast=, who= and open= make one warn notice naming them all, on a pasted hash (restoreHash) and on first
+// load (readHash). open= alone keeps its words. A known value makes no notice; a hash the engine wrote itself does not re-announce.
+{
+  E.destroy();
+  const EL = mount(); advance(1100);
+  const P0 = EL.M.P, fidL = Object.keys(P0.F)[0], person = Object.keys(P0.P)[0], lensL = P0.lenses[1].id, roomL = EL.M.L.rooms[0].id;
+  /** The warn toasts one pasted hash raises: hashchange and popstate both fire for it, as a browser's do. */
+  const paste = (Eng: Any, hash: string) => {
+    let seen = Eng.S.toast?.n ?? 0; const got: Any[] = [];
+    const off = Eng.store.subscribe(() => { const t = Eng.S.toast; if (t && t.n !== seen) { seen = t.n; if (t.tone === 'warn') got.push(t); } });
+    loc.hash = hash; win.dispatch('hashchange', {}); win.dispatch('popstate', {}); off();
+    Eng.cam.stopFly(); advance(700);
+    return got;
+  };
+  const says = (t: Any) => (t?.strong ?? '') + ' ' + (t?.text ?? '');
+  for (const [k, v] of [['at', 'ghost-room'], ['lens', 'ghost-lens'], ['blast', 'ghost-feature'], ['who', 'ghost-person']]) {
+    const g = paste(EL, '#' + k + '=' + v);
+    expect(g.length === 1 && says(g[0]).includes(v), 'a pasted ' + k + '= not on the map makes one notice naming it (got ' + JSON.stringify(g) + ')');
+    paste(EL, '');
+  }
+  const all = paste(EL, '#at=gh-at&lens=gh-lens&blast=gh-blast&who=gh-who&open=gh-open');
+  expect(all.length === 1 && ['gh-at', 'gh-lens', 'gh-blast', 'gh-who', 'gh-open'].every((v) => says(all[0]).includes(v)), 'five unknown keys in one pasted hash make ONE notice naming them all (got ' + JSON.stringify(all) + ')');
+  // the engine wrote the hash after that notice: reading its own write back announces nothing
+  const quiet = (() => { let seen = EL.S.toast?.n ?? 0, more = 0; const off = EL.store.subscribe(() => { const t = EL.S.toast; if (t && t.n !== seen) { seen = t.n; more++; } }); win.dispatch('hashchange', {}); win.dispatch('popstate', {}); off(); return more; })();
+  expect(quiet === 0, 'a hash the engine itself wrote does not re-announce (' + quiet + ' toasts)');
+  paste(EL, '');
+  const lone = paste(EL, '#open=gh-open');
+  expect(lone.length === 1 && lone[0].strong === 'No feature gh-open on this map:', 'GUARD open= alone keeps saying what it said (got ' + JSON.stringify(lone) + ')');
+  paste(EL, '');
+  const known = paste(EL, '#at=' + roomL + '&lens=' + lensL + '&who=' + person);
+  expect(known.length === 0, 'known at=, lens= and who= make no notice (got ' + JSON.stringify(known) + ')');
+  paste(EL, '');
+  const knownB = paste(EL, '#blast=' + fidL);
+  expect(knownB.length === 0, 'a known blast= makes no notice (got ' + JSON.stringify(knownB) + ')');
+  paste(EL, '');
+  const gen = paste(EL, '#lens=general');
+  expect(gen.length === 0, 'lens=general is known: no notice (got ' + JSON.stringify(gen) + ')');
+  EL.destroy();
+  // first load: the same notice, from readHash
+  const load = (hash: string) => { win.innerWidth = 1280; win.innerHeight = 800; rafQ = []; loc.hash = hash; return new Engine({ canvas, ui, root, model: buildModel(1, () => clock, null), expression, intro: false }); };
+  const L1 = load('#at=gh-at&lens=gh-lens&blast=gh-blast&who=gh-who&open=gh-open');
+  expect(L1.S.toast?.tone === 'warn' && L1.S.toast?.n === 1 && ['gh-at', 'gh-lens', 'gh-blast', 'gh-who', 'gh-open'].every((v) => says(L1.S.toast).includes(v)), 'on first load, five unknown keys make ONE notice naming them all (got ' + JSON.stringify(L1.S.toast) + ')');
+  L1.cam.stopFly(); advance(1200);
+  { const n = L1.S.toast?.n; win.dispatch('hashchange', {}); expect(L1.S.toast?.n === n, 'after first load, the hash the engine wrote does not re-announce'); }
+  L1.destroy();
+  for (const [k, v] of [['at', 'gh-at'], ['lens', 'gh-lens'], ['blast', 'gh-blast'], ['who', 'gh-who']]) {
+    const L = load('#' + k + '=' + v);
+    expect(L.S.toast?.tone === 'warn' && says(L.S.toast).includes(v), 'on first load an unknown ' + k + '= makes a notice naming it (got ' + JSON.stringify(L.S.toast) + ')');
+    L.destroy();
+  }
+  const L2 = load('#open=gh-open');
+  expect(L2.S.toast?.strong === 'No feature gh-open on this map:', 'GUARD on first load open= alone keeps saying what it said (got ' + JSON.stringify(L2.S.toast) + ')');
+  L2.destroy();
+  const L3 = load('#at=' + roomL + '&lens=' + lensL + '&who=' + person + '&blast=' + fidL + '&open=' + fidL);
+  expect(L3.S.toast?.tone !== 'warn', 'on first load known values make no notice (got ' + JSON.stringify(L3.S.toast) + ')');
+  L3.destroy();
+  E = mount();
 }
 
 // ---------------------------------------------------------------------------------------------- 6b. an empty map

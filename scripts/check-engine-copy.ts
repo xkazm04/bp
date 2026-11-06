@@ -7,12 +7,15 @@
 //      arrived, 0 = a shape we could not read, 409 = settled elsewhere, any other = the product's own words),
 //      asserting no reply carries a developer string and every retryable one says the question is open again.
 //   2. Engine.decide's rollback takes its words from saveFailWords and no longer interpolates e.message.
+//   4. unknownLinkWords (DW-139): the one notice for a link that cannot be honoured, pure, naming every value; open= alone
+//      keeps unknownFeatureWords' words; nothing bad, no notice. check-engine-harness section 6a drives it through the hash.
 // Run: node scripts/check-engine-copy.ts   (Node's type stripping; copy.ts imports nothing)
 // Control: BP_ENGINE_COPY_SEED=message puts a developer string through assertion 1; =inline makes 2 read the
 // old inline rollback; =phone drops closeFeature's phone guard for assertion 3, so each half can be seen red.
 import path from 'node:path';
 import { readStripped } from './lib/source.ts';
-import { DEV_WORDS, saveFailWords } from '../apps/web/src/engine/copy.ts';
+import * as COPY from '../apps/web/src/engine/copy.ts';
+const { DEV_WORDS, saveFailWords } = COPY;
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 const SEED = process.env.BP_ENGINE_COPY_SEED ?? '';
@@ -82,6 +85,23 @@ for (const door of ['openFeature', 'closeFeature']) {
   const guard = b.indexOf('if (this.S.phone) return;'), write = b.indexOf('writeHashSoon');
   expect(guard >= 0, `Engine.${door} no longer returns before touching history on a phone (Phone.tsx owns that entry)`);
   expect(write < 0 || (guard >= 0 && guard < write), `Engine.${door} writes the hash before its phone guard`, `guard ${guard}, write ${write}`);
+}
+
+// ------------------------------------------- 4. the one notice for a link that cannot be honoured (DW-139)
+{
+  type Bad = { key: 'at' | 'lens' | 'blast' | 'who' | 'open'; value: string };
+  const words = (COPY as unknown as { unknownLinkWords?: (bad: readonly Bad[]) => { strong: string; text: string } | null }).unknownLinkWords;
+  expect(typeof words === 'function', 'copy.ts exports unknownLinkWords(bad: { key, value }[]): { strong, text } | null');
+  if (typeof words === 'function') {
+    expect(words([]) === null, 'nothing bad: no notice', JSON.stringify(words([])));
+    const open = words([{ key: 'open', value: 'gone' }]);
+    expect(JSON.stringify(open) === JSON.stringify(COPY.unknownFeatureWords('gone')), 'open= alone keeps its words', JSON.stringify(open));
+    const bad: Bad[] = [{ key: 'at', value: 'a1' }, { key: 'lens', value: 'l1' }, { key: 'blast', value: 'b1' }, { key: 'who', value: 'w1' }, { key: 'open', value: 'o1' }];
+    const w = words(bad), said = w ? w.strong + ' ' + w.text : '';
+    expect(bad.every((b) => said.includes(b.value)), 'several unknown keys: one notice naming them all', said);
+    expect(!DEV_WORDS.some((d) => said.includes(d)), 'the notice carries no developer string', said);
+    expect(JSON.stringify(words(bad)) === JSON.stringify(w), 'the notice is pure: the same input, the same words');
+  }
 }
 
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-engine-copy: ${failures.length} failed, ${held} held`); process.exit(1); }
