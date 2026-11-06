@@ -85,10 +85,13 @@ export const TOP_DECISIONS = 3;
 export const HELD_SHOWN = 2;
 /** At most this many decisions that arrived during the standup are shown at the end. */
 export const NEWS_SHOWN = 3;
+/** A built card's lines: this many, unless more builds failed. A failure is always named, so failures come first. */
+export const BUILT_SHOWN = 6;
 const TIER_WORDS = ['stop-ship', 'high', 'medium', 'backlog'];
 const n = (k: number, one: string, many = one + 's') => `${k} ${k === 1 ? one : many}`;
 const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]);
 const fmt = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
+const builtLines = (ok: readonly string[], bad: readonly string[]): CardLine[] => [...bad.map((t) => ({ text: `Failed: ${t}`, tone: 'bad' as Tone })), ...ok.map((t) => ({ text: t, tone: 'good' as Tone }))].slice(0, Math.max(BUILT_SHOWN, bad.length));
 const hoursAgo = (iso: string, now: number) => { const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3600e3)); return h < 1 ? 'just now' : h + ' h ago'; };
 
 /** The room most of these features sit in (ties: the first met), or undefined. */
@@ -148,7 +151,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
         : `${p.name}: ${n(bad.length, 'build')} failed overnight; nothing landed.`;
       mine.push({
         id: `built:${p.slug}`, kind: 'built', product: p.slug, productName: p.name, headline, tone: bad.length ? 'warn' : 'good',
-        lines: [...ok.map((x) => ({ text: `${x.title}${p.where.get(x.feature) ? ' · ' + p.where.get(x.feature)!.roomName : ''}`, tone: 'good' as Tone })), ...bad.map((x) => ({ text: `Failed: ${x.title}`, tone: 'bad' as Tone }))].slice(0, 6),
+        lines: builtLines(ok.map((x) => `${x.title}${p.where.get(x.feature) ? ' · ' + p.where.get(x.feature)!.roomName : ''}`), bad.map((x) => x.title)),
         ...(roomPlace(p.slug, w, headline) ? { place: roomPlace(p.slug, w, headline) } : {}),
       });
     }
@@ -279,7 +282,7 @@ function lateBuilt(p: ProductFacts, xs: readonly Proposal[]): MorningCard {
   const place = roomPlace(p.slug, busiestRoom((ok.length ? ok : bad).map((x) => x.feature), p.where), headline);
   return {
     id: `news-built:${p.slug}`, kind: 'built', product: p.slug, productName: p.name, headline, tone: bad.length ? 'warn' : 'good', news: true,
-    lines: [...ok.map((x) => ({ text: x.title, tone: 'good' as Tone })), ...bad.map((x) => ({ text: `Failed: ${x.title}`, tone: 'bad' as Tone }))].slice(0, 6),
+    lines: builtLines(ok.map((x) => x.title), bad.map((x) => x.title)),
     ...(place ? { place } : {}),
   };
 }
