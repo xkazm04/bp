@@ -25,6 +25,7 @@ export function suggestRules(decided: readonly DecidedRow[], rooms: readonly Roo
   for (const r of rooms) for (const f of r.features) roomOf.set(f, r);
   const tally = new Map<string, { room: Room; back: number; backOk: number; all: number; declined: number }>();
   for (const row of decided) {
+    if (row.synthetic) continue; // seeded history is nobody's decision: a suggestion says "you approved"
     const room = roomOf.get(row.feature);
     if (!room) continue;
     const t = tally.get(room.id) ?? { room, back: 0, backOk: 0, all: 0, declined: 0 };
