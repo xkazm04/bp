@@ -66,7 +66,8 @@ export function releaseNotes({ product, version, mode, items, conflicts, gates, 
   const out = mode === 'sample'
     ? [`## Kettle ${version} (sample)`, '', 'Sample release notes: Kettle is the sample product, and nothing here shipped.', '']
     : [`## ${product} ${version} (preview)`, ''];
-  out.push(`${items.length} change${items.length === 1 ? '' : 's'} from the lens release train, each measured before and after.`, '');
+  const n = items.length, measured = items.filter((x) => x.from && x.to).length, changes = `change${n === 1 ? '' : 's'}`;
+  out.push(measured === n ? `${n} ${changes} from the lens release train, each measured before and after.` : `${measured} of ${n} ${changes} measured before and after, from the lens release train.`, '');
   for (const x of items) {
     const p = x.p, u = x.from?.unit ? ' ' + x.from.unit : '';
     const move = x.from && x.to ? `${p.metric} ${fmtValue(x.from.value)} -> ${fmtValue(x.to.value)}${u} (${x.verdict})` : 'unmeasured';
