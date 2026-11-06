@@ -95,11 +95,11 @@ export type SpawnResult = { ok: true; child: ChildProcess } | { ok: false; error
  *  job, which BP_RUNNER=personas hands to the Personas fleet shim (cliBin). */
 /** The env of an unattended run: the companion's rule (childEnv: no *_API_KEY, none of a parent session's markers; model runs
  *  go through the CLI on the person's plan), plus what BP_JOB_KEEP_ENV names (comma-separated, for a key a product's probes need). */
-export function jobEnv(base: NodeJS.ProcessEnv = process.env, extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+export function jobEnv(base: NodeJS.ProcessEnv = process.env, extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   const keep = new Set((base.BP_JOB_KEEP_ENV ?? '').split(',').map((s) => s.trim().toUpperCase()).filter(Boolean));
   const out = childEnv(base);
   for (const [k, v] of Object.entries(base)) if (v !== undefined && keep.has(k.toUpperCase())) out[k] = v;
-  return { ...out, ...extra };
+  return { ...out, ...extra } as NodeJS.ProcessEnv;
 }
 export function spawnCli(args: string[], cwd: string, env: NodeJS.ProcessEnv = jobEnv(), fleet = false): SpawnResult {
   const pick = cliBin(process.env, process.cwd(), fleet);
