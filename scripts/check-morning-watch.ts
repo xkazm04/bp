@@ -137,6 +137,35 @@ check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(pat
   check('...and the close card counts it', /1 approved, 1 deferred to tomorrow, 2 held/.test(after.cards[after.cards.length - 1].lines[0]?.text ?? ''), after.cards[after.cards.length - 1].lines[0]?.text);
 }
 
+// ------------------------------------------------------------------------- every failed build is named (DW-224)
+// The card's line budget must not spend itself on successes first: a failure the headline counts is a failure the card names.
+{
+  const { buildDeck } = await import('../packages/core/src/companion/morning.ts');
+  const { wire } = await import('./lib/wire-schema.ts');
+  const NOW = Date.parse('2026-10-20T08:00:00.000Z'), SINCE = '2026-10-19T16:00:00.000Z', OPENED = '2026-10-20T07:00:00.000Z', NIGHT = '2026-10-20T02:00:00.000Z', LATE = '2026-10-20T07:30:00.000Z';
+  const item = (id: string, status: string, updated_at: string) => ({ id, run_id: 'r', feature: 'f', lens: 'development', title: `${status === 'done' ? 'Built' : 'Broke'} ${id}`, kind: 'fix', status, created_at: '2026-10-19T10:00:00.000Z', updated_at });
+  const night = (ok: number, bad: number, at: string) => [...Array.from({ length: ok }, (_, i) => item('ok' + i, 'done', at)), ...Array.from({ length: bad }, (_, i) => item('bad' + i, 'failed', at))];
+  const facts = (proposals: object[]) => [{ slug: 'a', name: 'A', scan: { proposals, measurements: [], packs: [], releases: [], runs: [] }, where: new Map() }] as never;
+  const builtCard = (ok: number, bad: number) => buildDeck(facts(night(ok, bad, NIGHT)), [], SINCE, NOW).cards.find((c) => c.id === 'built:a');
+  const lateCard = (ok: number, bad: number) => buildDeck(facts(night(ok, bad, LATE)), [], SINCE, NOW, [], OPENED).cards.find((c) => c.id === 'news-built:a');
+  type C = { lines: { text: string }[] } | undefined;
+  const namedFails = (c: C, bad: number) => Array.from({ length: bad }, (_, i) => `Failed: Broke bad${i}`).filter((t) => c?.lines.some((l) => l.text === t)).length;
+  const texts = (c: C) => c?.lines.map((l) => l.text).join(' | ') ?? 'no card';
+  const each = [['the built card', builtCard], ['the late card', lateCard]] as const;
+  for (const [name, card] of each) {
+    const six = card(6, 2), eight = card(3, 8), small = card(3, 1), calm = card(10, 0);
+    check(`${name}: six built and two failed: the headline counts 2 builds failed`, /2 builds failed/.test((six as { headline?: string } | undefined)?.headline ?? ''), (six as { headline?: string } | undefined)?.headline);
+    check(`${name}: six built and two failed: 2 of 2 failures named as "Failed: <title>" (DW-224)`, namedFails(six, 2) === 2, `${namedFails(six, 2)} named: ${texts(six)}`);
+    check(`${name}: three built and eight failed: all 8 failures named (DW-224)`, namedFails(eight, 8) === 8, `${namedFails(eight, 8)} named: ${texts(eight)}`);
+    check(`${name} control: three built and one failed: every item is named`, namedFails(small, 1) === 1 && [0, 1, 2].every((i) => small?.lines.some((l) => l.text.startsWith(`Built ok${i}`))), texts(small));
+    check(`${name} control: ten built and none failed: at most 6 lines`, !!calm && calm.lines.length <= 6, texts(calm));
+  }
+  const late = lateCard(6, 2) as { kind?: string; news?: boolean } | undefined;
+  check('the late card is kind built, marked news, when items land after the deck was opened', late?.kind === 'built' && late.news === true, JSON.stringify(late)?.slice(0, 200));
+  const fails = [(await wire('morning-deck-1', 'morningDeck'))(buildDeck(facts(night(3, 8, NIGHT)), [], SINCE, NOW))].filter(Boolean);
+  check('a card naming eight failures is still morning-deck-1', !fails.length, fails.join(' | '));
+}
+
 // ------------------------------------------------------------------------- the shared focus through a real apps/server
 const port = await new Promise<number>((r) => { const s = net.createServer(); s.listen(0, '127.0.0.1', () => { const p = (s.address() as net.AddressInfo).port; s.close(() => r(p)); }); });
 const base = `http://127.0.0.1:${port}`;
