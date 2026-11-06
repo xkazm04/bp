@@ -1,6 +1,6 @@
 // Scan jobs: a lens scan, an execute run or a release run (cut or finish) the blueprint started. Client-safe types and rules; the
 // live registry that spawns the Claude Code CLI is jobs.server.ts, the Kettle stand-in is
-// lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
+// packages/core/src/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@bp/core/standard/types';
 import type { WaveEffort, WaveModel } from './waves.ts';
 import { PROPOSAL_ID_PATTERN } from '../standard/schema-vocab.ts';
@@ -102,7 +102,7 @@ export function measureScopes(items: readonly { lens: string; feature: string }[
  *  many jobs run at once, at most this many wait queued (the next is refused 429), at most this many proposals per execute job. */
 export const MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_PROPOSALS = 50;
 
-/** A glyph+line pair, as checkLensManifest's `taken` lists it (src/lib/scan/manifest-check.ts TakenLook). */
+/** A glyph+line pair, as checkLensManifest's `taken` lists it (packages/core/src/scan/manifest-check.ts TakenLook). */
 export interface LensLook { glyph: string | { path: string }; line: string }
 
 /** Whether a stored glyph can be compared with another: a name, or a `{ path }`. A hand-edited map can hold neither,

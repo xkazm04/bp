@@ -25,7 +25,7 @@ import type { MetricMethod } from '../standard/types.ts';
 import type { Measurement, Proposal, ProposalStatus, ScanSnapshot } from './types.ts';
 
 export type TrackStage = 'saving' | 'approved' | 'declined' | 'building' | 'failed' | 'built' | 'rework' | 'accepted' | 'descoped' | 'confirmed' | 'not-confirmed' | 'unknown';
-/** The one verb a track offers in place (the live steer verbs, src/lib/model/live-steer.ts). */
+/** The one verb a track offers in place (the live steer verbs, apps/web/src/lib/model/live-steer.ts). */
 export type TrackNext = 'build' | 'measure' | 'stop';
 
 export interface Track {
