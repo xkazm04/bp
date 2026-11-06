@@ -1,7 +1,7 @@
 // POST /api/products/[slug]/triage, body `{ ids: string[], decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }`
 // (1..200 proposal ids): a person's call on built items. It runs lens-scan's own `store.mjs triage` (the single owner of
 // the transition rules: which statuses each decision may move, the note a failed item needs to be accepted, leaving a
-// draft release, settling packs open -> triaged), `--by user:<gh login>` (packages/core/src/server/release.server.ts triageBy).
+// draft release, settling packs open -> triaged), `--by user:<gh login>` (packages/core/src/server/release.server.ts triageBy), or `companion:<id>` for an agent's call (x-bp-conversation; 400 when malformed).
 // `reopen` is the undo (lens-scan 1.6.0, store v3): each item back to the status it left, refused per item while its
 // release is past draft, its rework rebuilt, its pack closed or nothing was recorded (skipped reasons `in-release`,
 // `rebuilt`, `pack-closed`, `no-prior-status`); decision `reopened`.
@@ -13,6 +13,7 @@ import { door } from '@bp/core/server/route-door.server';
 import { storeFile } from '@bp/core/server/products.server';
 import { SAFE_ID } from '@bp/core/scan/jobs';
 import { MAX_TRIAGE, triage, triageBy } from '@bp/core/server/release.server';
+import { CONVERSATION } from '@bp/core/server/brief.server';
 import type { TriageBody } from '@bp/core/scan/types';
 
 const DECISIONS = ['accept', 'rework', 'descope', 'reopen'];
@@ -35,8 +36,11 @@ const triageDoor = door('products/[slug]/triage', {
     body: (raw) => parse(raw) ?? Response.json({ error: `body must be { ids: string[] (1..${MAX_TRIAGE}), decision: 'accept' | 'rework' | 'descope' | 'reopen', note?: string }` }, { status: 400 }),
     store: 'required',
     writes: true,
-    live: async ({ product: p, body }) => {
-      const r = await triage(storeFile(p), body as TriageBody, await triageBy());
+    live: async ({ req, product: p, body }) => {
+      // triage.set is AUTO, so an agent calls this route with no card: its call (the header the MCP door sends) is signed as it, never as the person
+      const conv = req.headers.get('x-bp-conversation');
+      if (conv !== null && !CONVERSATION.test(conv)) return Response.json({ error: 'x-bp-conversation is not a conversation id' }, { status: 400 });
+      const r = await triage(storeFile(p), body as TriageBody, conv !== null ? 'companion:' + conv : await triageBy());
       // both 409s carry `error` and the result's lists, so a caller branches on a field, not on which shape arrived:
       // a store refusal has empty lists (it moved and skipped nothing), a nothing-moved answer has its skipped reasons
       if (!r.ok) return Response.json(r.kind === 'refused' ? { error: r.error, triaged: [], skipped: [] } : { error: r.error }, { status: r.kind === 'bad' ? 400 : r.kind === 'refused' ? 409 : 503 });

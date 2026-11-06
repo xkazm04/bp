@@ -71,7 +71,7 @@ With the Personas desktop app as the one point of control (spark one-control), t
 | `BP_WRITES=off` | Read-only decisions: the approve / decline, dispatch, lens execute and triage controls are hidden and their routes answer 403 naming the flag. Scans, lens edits and the whole Release tab stay live (bp composes releases). Nothing is deleted; the default is writes on. |
 
 Every decision bp writes (approve, decline, the approvals a dispatch or lens execute makes, triage, a release) is signed
-`user:<gh login>` (`gh api user --jq .login`, once per server process; `user:blueprint` when gh is missing or signed out).
+`user:<gh login>` (a companion's own triage call is signed `companion:<conversation>`) (`gh api user --jq .login`, once per server process; `user:blueprint` when gh is missing or signed out).
 ## The companion's API
 
 bp's companion acts only through one tool door: `apps/mcp/bp-mcp.mjs`, a stdio MCP server (`node apps/mcp/bp-mcp.mjs`,

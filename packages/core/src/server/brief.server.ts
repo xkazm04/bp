@@ -64,7 +64,7 @@ export function briefSource(slug: string): BriefSource | Response {
 
 // ------------------------------------------------------------------------------------------------ the trail
 export const TRAIL_KEEP = 200;
-const CONVERSATION = /^[A-Za-z0-9_.:-]{1,80}$/;
+export const CONVERSATION = /^[A-Za-z0-9_.:-]{1,80}$/;
 type TrailInput = TrailRow extends infer R ? (R extends TrailRow ? Omit<R, 'at' | 'conversation'> : never) : never;
 
 const trailFile = () => path.join(companionHome(), 'agent-trail.jsonl');
