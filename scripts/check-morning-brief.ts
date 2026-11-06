@@ -212,6 +212,23 @@ check('the steering log says it, with the note', /Declined as a repeat: Add retr
   check("the page's route, the same morning: no \"Not read\" line in the open card", !full.cards[0].lines.some((l) => /Not read/.test(l.text)), JSON.stringify(full.cards[0].lines));
 }
 
+// ------------------------------------------------------------------------- the agents card's headline (DW-228)
+// A brief of an open proposal (`id`) that quotes a decline: the agent heard it, and there was no draft of its own to withdraw.
+{
+  const { buildDeck } = await import('../packages/core/src/companion/morning.ts');
+  const product = { slug: 'a', name: 'A', scan: { proposals: [], measurements: [], packs: [], releases: [], runs: [] }, where: new Map() };
+  const NOW = Date.parse('2026-10-20T08:00:00.000Z'), SINCE = '2026-10-19T16:00:00.000Z', at = '2026-10-20T02:00:00.000Z';
+  const heardRow = { at, conversation: 'c', kind: 'brief', product: 'a', feature: 'f', title: 't', id: 'p1', advice: 'ask', quoted: 'no', declineId: 'p0' };
+  const { id: _id, ...draftRow } = heardRow; // a draft of the agent's own (no id) that met the decline, and nothing came after it: withdrawn
+  const agentsOf = (row: object) => { const x = buildDeck([product] as never, [], SINCE, NOW, [row] as never); return { tally: x.agents, head: x.cards.find((c) => c.kind === 'agents')?.headline ?? '' }; };
+  const none = agentsOf(heardRow), one = agentsOf(draftRow);
+  check('agents fixture: the brief of an open proposal heard 1 decline and withdrew 0; a draft withdrew 1', none.tally?.heard === 1 && none.tally.withdrew === 0 && one.tally?.heard === 1 && one.tally.withdrew === 1, JSON.stringify([none.tally, one.tally]));
+  check('withdrew 0: the headline does not say "stood down" (DW-228)', !/stood down/.test(none.head), none.head);
+  check('withdrew 0: the headline does not say "0 times" (DW-228)', !/\b0 times\b/.test(none.head), none.head);
+  check('withdrew 0: the headline still says they heard your decline', /heard/i.test(none.head) && /decline/i.test(none.head), none.head);
+  check('withdrew 1: the headline stays exactly as morning-demo-walk.py pins it', one.head === 'Agents heard your declines and stood down 1 time.', one.head);
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
 process.exit(failed ? 1 : 0);
