@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { Card } from '@bp/core/companion/contract';
 import { Btn } from '../ledger/train/ui/Controls';
 import { RuleCardReplay } from './RuleCardReplay';
+import { failedWords } from './store';
 
 const short = (v: unknown): string => {
   if (v === null || v === undefined) return '-';
@@ -36,6 +37,7 @@ export function Cards({ cards, onCard }: { cards: readonly Card[]; onCard(id: st
             {c.state === 'pending'
               ? <div className="cp-acts"><Btn tone="go" onClick={() => onCard(c.id, 'approve')}>Approve</Btn><Btn onClick={() => onCard(c.id, 'decline')}>Decline</Btn></div>
               : <p className="cp-out">{OUTCOME[c.state]}{c.decidedBy === 'policy' ? ' by ' + (c.policy && /^G-\d+$/.test(c.policy) ? 'your grant ' + c.policy : 'policy') : ''}</p>}
+            {failedWords(c) && <p className="cp-why" role="status">{failedWords(c)}</p>}
           </motion.li>
         ))}
       </AnimatePresence>

@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { LampProps } from '../index';
 import './lamp.css';
 import { RuleCardReplay } from '../../RuleCardReplay';
+import { failedWords } from '../../store';
 
 type Pose = { l: [number, number]; r: [number, number]; head: number };
 const POSES: Record<string, Pose> = {
@@ -132,6 +133,7 @@ export function GlimLamp(p: LampProps) {
   const pose = POSES[p.state] ?? POSES.idle;
   const card = p.state === 'asking' ? p.cards.find((c) => c.state === 'pending' && !held[c.id]) : undefined;
   const done = p.state === 'asking' ? p.cards.find((c) => held[c.id]) : undefined;
+  const failed = p.cards.find((c) => c.state === 'failed'), failedWhy = failed ? failedWords(failed) : null;
   const showInput = open || p.state === 'listening';
   const tagText = !pointing && !card && !showInput && p.caption && p.state !== 'idle' ? p.caption : null;
 
@@ -234,7 +236,7 @@ export function GlimLamp(p: LampProps) {
                     <input ref={inputRef} data-composer value={text} onChange={(e) => setText(e.target.value)} onKeyDown={onKey} placeholder="Ask Glim, or name a place…" aria-label="Write to Glim" />
                   </motion.div>
                 )}
-                {(card || done) && (
+                {(card || done || failedWhy) && (
                   <motion.div key="card" className="lp-card" role="group" aria-label="A decision Glim is holding out" style={{ left: LOOP_L - 296, top: LOOP_Y + 24 }}
                     initial={{ opacity: 0, y: -24, rotate: -3 }} animate={{ opacity: 1, y: 0, rotate: 0 }} exit={{ opacity: 0, y: 12 }}
                     transition={{ type: 'spring', stiffness: 150, damping: 13 }}>
@@ -251,6 +253,8 @@ export function GlimLamp(p: LampProps) {
                           <button type="button" className="lp-no" onClick={() => decide(card.id, 'decline')}>Decline</button>
                         </div>
                       </>
+                    ) : failedWhy ? (
+                      <div className="lp-done lp-failed" role="status"><b>That did not go through.</b> {failedWhy}</div>
                     ) : done ? (
                       <div className="lp-done">{held[done.id] === 'approve' ? 'Approved. Glim carries it to the builders.' : 'Declined. Glim puts it down.'}</div>
                     ) : null}

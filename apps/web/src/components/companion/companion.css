@@ -16,6 +16,7 @@
 .cp-out { margin: 0; font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
 .cp-card.s-approved .cp-out, .cp-card.s-done .cp-out { color: var(--mint); }
 .cp-card.s-failed .cp-out { color: var(--red); }
+.cp-why { margin: 4px 0 0; font: 400 12px var(--mono); color: var(--ink-2); overflow-wrap: anywhere; }
 .cp-note { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: var(--card); border: 1px solid var(--accent); color: var(--ink); font: 400 13px/1.4 var(--sans); box-shadow: 0 2px 10px var(--shadow); }
 .cp-note span { flex: 1; min-width: 0; }
 .cp-note a { color: var(--accent); font-weight: 600; }
