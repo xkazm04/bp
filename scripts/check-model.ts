@@ -17,7 +17,8 @@
 //   (g) product.ts/constants.ts: `?scale=N` is clamped to the product lines that LINES actually declares, so the
 //       ceiling and the table cannot drift apart (they were two hand-written 8s);
 //   (h) every multi-segment source path a model comment names resolves from the REPO ROOT, as git ls-files
-//       prints it - a file anchor that points nowhere is worse than silence, because a reader follows it;
+//       prints it - a file anchor that points nowhere is worse than silence, because a reader follows it; so do the scan
+//       module's notes on scan-sim.ts, manifest-check.ts and live-steer.ts (DW-184);
 //   (i) morning.ts kindWords: every event kind the watch can be handed has plain words, taken from the three
 //       vocabularies that produce them (PULSE_OF, the map's own activity types, the kinds the played hour
 //       emits) rather than from the KIND table itself, and the table words nothing no vocabulary declares.
@@ -30,6 +31,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_MODEL_MUTATE || '[]') } });
@@ -288,6 +290,14 @@ const PLACES: { id: string; feats: Any[] }[] = [...M.L.rooms, ...M.L.wings, ...M
   expect(walked > 10 && anchors > 4, `(h) the guard walked ${walked} model files and found ${anchors} path anchors`);
   expect(!miss.length, `(h) ${miss.length} of ${anchors} paths named in a model comment do not resolve from the repo root:\n      ` + miss.join('\n      '));
   console.log(`doc anchors ${walked} model files / ${anchors} paths named in prose / ${miss.length} dangling`);
+  // DW-184: the scan module's notes that named paths from before the core split. Each note still names its file (a bare name or
+  // a deleted note would dodge the rule), and every path it gives is one git ls-files prints.
+  const tracked = new Set(spawnSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' }).stdout.split('\n').filter(Boolean));
+  for (const [file, base] of [['jobs.ts', 'scan-sim.ts'], ['jobs.ts', 'manifest-check.ts'], ['track.ts', 'live-steer.ts'], ['waves.ts', 'scan-sim.ts']]) {
+    const prose = fs.readFileSync(path.join(ROOT, 'packages/core/src/scan', file), 'utf8').split('\n').filter((ln) => /^\s*(\/\/|\*|\/\*)/.test(ln) || ln.includes('// '));
+    const named = prose.flatMap((ln) => ln.match(PATHISH) ?? []).filter((m) => m.endsWith('/' + base));
+    expect(named.length > 0 && named.every((m) => tracked.has(m)), `(h) packages/core/src/scan/${file}: the notes naming ${base} give a tracked file from the repo root, got ${JSON.stringify(named)}`);
+  }
 }
 
 // ---------------------------------------------------------------- (i) every event kind the watch is handed has words
