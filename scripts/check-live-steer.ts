@@ -12,7 +12,7 @@
 //       reads to the feature's owner, and a map that names nobody to LIVE_DECIDER;
 //   (f) after a feed no live agent is left paused, and the proposal its lens agent waits on holds 1 (others 0);
 //   (g) Measure skips, per lens, the features read in the last 24 h (a current reading) or covered by an open measure
-//       job of that lens, says so, and carries the whole plan as `alt` (committing it scans all 5 per lens); with
+//       job of that lens or an open every-lens measure job, says so, and carries the whole plan as `alt` (committing it scans all 5 per lens); with
 //       nothing to skip the plan is today's, and with everything skipped it is the whole plan with no alt.
 // (a)-(c) run the real routes and job registry over the fake Claude Code CLI (scripts/fixtures/fake-claude.mjs, as
 // check-scan-jobs does), reached through the same scan actions the UI calls (a fetch stub hands the client's requests
@@ -253,6 +253,18 @@ expect(scanOk.length > 0 && scanOk.every((id: string) => ['development', 'securi
   const ja = { id: 'mj-all', kind: 'measure', lens: 'design', status: 'running', queued_at: ago(0.2), started_at: ago(0.2), scope: { kind: 'all', label: 'Everything', features: [] } };
   const p3b = LS.planLive('measure', G({ measurements: [], jobs: [ja] }));
   expect(!p3b.off && scanOf(p3b, 'design') === null && scanOf(p3b, 'security') === F5.join() && p3b.lines.some((l: string) => l.includes('mj-all') && /no Design scan/.test(l)), '(g) a running whole-product Design job -> no Design scan, and the line says so', JSON.stringify([p3b.scans, p3b.lines]));
+  // DW-188: an open every-lens measure job (one job, lens 'all', jobs.server.ts) covers every lens, as a whole-product job of that lens does.
+  // Every lens left out is the existing all-covered case (p4 below): a plan that still holds scans must say first that it measures again.
+  const every = (id: string, status: string, kind = 'measure') => ({ id, kind, lens: 'all', status, queued_at: ago(0.2), ...(status === 'running' ? { started_at: ago(0.2) } : {}), scope: { kind: 'all', label: 'Every lens', features: [] } });
+  for (const status of ['running', 'queued']) {
+    const pe = LS.planLive('measure', G({ measurements: [], jobs: [every('mj-every', status)] }));
+    expect(LZ.every((l) => pe.lines.some((x: string) => x.includes(`${l.name} is already being measured everywhere (job mj-every, ${status})`))), `(g) a ${status} every-lens job -> the plan says each lens is already being measured everywhere, naming the job (DW-188)`, pe.lines.join(' | '));
+    expect(!pe.off && (pe.scans.length === 0 || /is being measured now/.test(pe.lines[0] ?? '')), `(g) a ${status} every-lens job -> no plan repeats it without saying so first (DW-188)`, JSON.stringify([pe.scans, pe.lines[0]]));
+  }
+  const whole = LS.planLive('measure', G({ measurements: [] }));
+  const pp = LS.planLive('measure', G({ measurements: [], jobs: [every('pj-every', 'running', 'propose')] })); // it still takes a slot, so only the slot line may differ
+  expect(JSON.stringify(pp.scans) === JSON.stringify(whole.scans) && !pp.alt && !pp.lines.some((x: string) => /being measured/.test(x)), '(g) GUARD: an every-lens propose job measures nothing: the plan keeps every scan and does not call it measuring (DW-188)', JSON.stringify([pp.scans, pp.lines]));
+  expect(['done', 'failed', 'cancelled'].every((st) => JSON.stringify(LS.planLive('measure', G({ measurements: [], jobs: [every('mj-ended', st)] }))) === JSON.stringify(whole)), '(g) GUARD: an ended every-lens job covers nothing: the plan is unchanged by it (DW-188)');
   const all = [...F5.map((f) => R(f, 'design', 1)), ...F5.slice(0, 4).map((f) => R(f, 'security', 3))];
   const jf5 = { ...jq, id: 'mj-f5', lens: 'security', scope: { kind: 'feature', id: 'f5', label: 'F5', features: ['f5'] } };
   const p4 = LS.planLive('measure', G({ measurements: all, jobs: [jf5] }));

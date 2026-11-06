@@ -368,6 +368,17 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   const other = [job('x', { kind: 'execute', status: 'running', proposals: ['p'] }), job('r', { kind: 'release', status: 'queued', release: 'rel-1', step: 'build' })];
   const f3 = scopeFacts({ jobs: [...ended, ...other], scan: EMPTY, lens: 'security', features: ['a'], now });
   expect(!!f3 && f3.busy === undefined && f3.queue.running === 1 && f3.queue.queued === 1, 'scopeFacts: an ended, execute or release job reads busy (or the queue does not count every kind)', JSON.stringify(f3));
+  // DW-188: an every-lens measure job is one job with lens 'all' (jobs.ts ALL_LENSES, scope all, jobs.server.ts), and it reads every lens
+  const everyLens = (id: string, o: Record<string, unknown>) => job(id, { lens: 'all', scope: { kind: 'all', label: 'Every lens', features: [] }, ...o });
+  const f3r = scopeFacts({ jobs: [everyLens('ev', { status: 'running' })], scan: EMPTY, lens: 'security', features: ['a', 'b'], now });
+  expect(f3r?.busy?.status === 'running' && f3r.busy.jobId === 'ev' && f3r.busy.overlap === 2 && f3r.busy.of === 2, 'scopeFacts: a running every-lens measure job does not read busy 2 of 2 on a lens (DW-188)', JSON.stringify(f3r?.busy));
+  expect(!!f3r && (V.factsWords as (f: Facts, n: number) => { tag?: string })(f3r, now).tag === 'running', 'factsWords: the menu does not tag a lens running under a running every-lens job (DW-188)', JSON.stringify(f3r));
+  const f3q = scopeFacts({ jobs: [everyLens('evq', { status: 'queued' })], scan: EMPTY, lens: 'design', features: ['x', 'y', 'z'], now });
+  expect(f3q?.busy?.status === 'queued' && f3q.busy.jobId === 'evq' && f3q.busy.overlap === 3 && f3q.busy.of === 3, 'scopeFacts: a queued every-lens measure job does not read busy 3 of 3 on a lens (DW-188)', JSON.stringify(f3q?.busy));
+  const f3p = scopeFacts({ jobs: [everyLens('evp', { kind: 'propose', status: 'running' })], scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(!!f3p && f3p.busy === undefined, 'scopeFacts: an every-lens propose job reads busy, but it measures nothing (DW-188 guard)', JSON.stringify(f3p?.busy));
+  const f3e = scopeFacts({ jobs: ['done', 'failed', 'cancelled'].map((status) => everyLens('eve-' + status, { status })), scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(!!f3e && f3e.busy === undefined, 'scopeFacts: an ended every-lens measure job reads busy (DW-188 guard)', JSON.stringify(f3e?.busy));
   const ms = (id: number, feature: string, at: number, phase?: string) => ({ id, run_id: 'r1', feature, lens: 'security', metric: 'score', value: 1, measured_at: iso(at), ...(phase ? { phase, proposal_id: 'p' } : {}) });
   const scan4 = { ...EMPTY, measurements: [ms(1, 'a', now - 3 * D), ms(2, 'a', now - 2 * D), ms(3, 'b', now - H), ms(4, 'c', now - 60_000, 'after'), { ...ms(5, 'c', now - 1000), lens: 'design' }] };
   const f4 = scopeFacts({ jobs: [], scan: scan4, lens: 'security', features: ['a', 'b', 'c'], now });
