@@ -45,9 +45,8 @@ export function isHuman(req: Request): boolean {
  *  `x-bp-rule: <id>`, `x-bp-rule-tool: <tool>` and this per-process token, so the route it calls signs the decision
  *  `rule:G-n` / `policy:pol_..` instead of the person's name: the store says who decided, and the record a rule is
  *  replayed over is the owner's alone (rules.server.ts AGENT_SIGNS). Minted like the human token; never handed out.
- *  Known exposure (shared with the human token): the card's request goes to the origin the filing request named, and a
- *  local process that can set a Host header can name its own port; the server is loopback-only (a guard against the
- *  agent, not against an attacker already on this machine). */
+ *  The card's request goes to this server's own bound origin (originOf below), never one a request named; the server is
+ *  loopback-only (a guard against the agent, not against an attacker already on this machine). */
 const ruleToken = (): string => ((g as { __bpRuleToken?: string }).__bpRuleToken ??= randomBytes(32).toString('hex'));
 export const RULE_HEADER = 'x-bp-rule', RULE_TOOL_HEADER = 'x-bp-rule-tool', RULE_TOKEN_HEADER = 'x-bp-rule-token';
 const PERMIT_ID = /^(G-\d{1,6}|pol_[0-9a-z]{6,40})$/;

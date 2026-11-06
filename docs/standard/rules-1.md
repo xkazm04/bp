@@ -144,9 +144,10 @@ rule is tested against reads only the owner's decisions, so rows signed `rule:` 
 an order's breach. A card a companion policy runs (bp's older global grants, `policies.json`) is signed `policy:pol_..`
 the same way and is left out the same way. The signature is accepted only with a per-process token bp never hands out,
 and only while the permission still covers the call as it is when it lands (a wave changed since the card was filed, or
-a grant revoked meanwhile, is refused 403). Known exposure, shared with the human token: the card's request goes to the
-origin the filing request named, and a local process that can set a `Host` header could name its own port; bp is
-loopback-only, so this guards against the agent, not against an attacker already on the machine.
+a grant revoked meanwhile, is refused 403). The card's request goes to the server's own bound origin
+whatever `Host` the filing request carried, so neither token reaches another port (`originOf`, held by
+`check:companion-door`). `POST /api/companion/turn` still gives the MCP process its request's origin; that process holds
+neither token. bp is loopback-only, so this guards against the agent, not against an attacker already on the machine.
 
 ## 9. Writing
 
