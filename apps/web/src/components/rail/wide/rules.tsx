@@ -268,7 +268,7 @@ function Writer({ slug, all, onSet }: { slug: string; all: Rule[]; onSet: (id: s
         <h3 className="wb-title">{draft?.text ?? 'Write a rule'}{scope && <small className="rl-where"> · {scope.label}</small>}</h3>
         <p className="wb-lede">A rule steers every agent at once until you lift it. Before you set it, see what it does to the open backlog now, and where it would have disagreed with your own past decisions.</p>
         <Sec head="Place" aside={scope ? scope.kind : 'plan'}>
-          {!base && <p>Shift-click a wing, room or fixture on the plan, or shift-drag a box. Or govern the whole product.</p>}
+          {!base && <p>Shift-click a wing, room or feature on the plan, or shift-drag a box. Or govern the whole product.</p>}
           <div className="wb-filter">
             {pill(everything, 'Everything', () => setEverything(!everything))}
             {s.tgt.n > 0 && !everything && <button type="button" onClick={() => E.lookAtTarget()}>Look at {s.tgt.label || 'the selection'}</button>}

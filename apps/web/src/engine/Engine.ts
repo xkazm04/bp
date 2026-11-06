@@ -1088,7 +1088,7 @@ export class Engine {
     if (tg) this.setTarget(tg.ids, tg.label);
     else this.toast('Nothing in view to select:', 'walk to a wing, room or feature first, with the arrow keys.', undefined, undefined, 'warn');
   }
-  private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or fixture, or shift-drag a box.', undefined, undefined, 'warn'); }
+  private needTarget() { this.toast('Point at a place first:', 'shift-click a wing, room or feature, or shift-drag a box.', undefined, undefined, 'warn'); }
   /** A sample steer's preview. Refused on a live product (its verbs are measure, build and stop: `previewLive`). */
   preview(kind: 'ga' | 'research' | 'push' | 'pause' | 'resume' | 'order', tpl?: OrderTemplate, fid?: string) {
     const sim = this.M.sim;

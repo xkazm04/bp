@@ -297,7 +297,7 @@ function Overview({ seat }: { seat: PreviewSeat }) {
               </div>
             )}
           </div>
-        ) : <p>{sim.live ? 'Shift-click a wing, room or fixture, or shift-drag a box, then measure it, build what is approved there or stop the work on it.' : 'Shift-click a wing, room or fixture, or shift-drag a box, then pull agents, pause them or write an order for exactly that place.'}</p>}
+        ) : <p>{sim.live ? 'Shift-click a wing, room or feature, or shift-drag a box, then measure it, build what is approved there or stop the work on it.' : 'Shift-click a wing, room or feature, or shift-drag a box, then pull agents, pause them or write an order for exactly that place.'}</p>}
       </Sec>
       <Sec head="Latest from the swarm" aside={sim.live ? 'live scan' : 'simulated'}>
         {log.length ? (

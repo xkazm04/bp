@@ -132,7 +132,7 @@ function Writer({ seat }: { seat: PreviewSeat }) {
       <p className="wb-lede">An order is a standing rule the agents follow inside a place until you lift it. Pick the place on the plan, then a rule.</p>
       {!s.tgt.n ? (
         <Sec head="First, point at a place" aside="plan">
-          <p>Shift-click a wing, room or fixture, or shift-drag a box on the plan. The selection shows here.</p>
+          <p>Shift-click a wing, room or feature, or shift-drag a box on the plan. The selection shows here.</p>
         </Sec>
       ) : (
         <>
