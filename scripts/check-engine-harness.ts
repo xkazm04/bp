@@ -610,8 +610,18 @@ const measured: Record<string, string> = {};
   expect(arrows === '', 'ArrowRight / ArrowLeft on an empty map throw nothing' + (arrows ? ' (' + arrows + ')' : ''));
   const levels = threw(() => { for (let d = 1; d < EE.levelNames().length - 1; d++) EE.goLevel(d); flush(); });
   expect(levels === '', 'the level jump on an empty map throws nothing' + (levels ? ' (' + levels + ')' : ''));
+  // DW-140: U on a live product answers in words: an answer there went to the product and cannot be taken back
+  {
+    expect(EE.M.sim.live === true, 'the empty map runs a live sim');
+    const n0 = EE.S.toast?.n ?? 0;
+    key('u');
+    const t = EE.S.toast, said = (t?.strong ?? '') + ' ' + (t?.text ?? '');
+    expect((t?.n ?? 0) === n0 + 1 && t?.tone === 'warn' && /live|cannot|can't/i.test(said), 'U on a live product toasts once, tone warn, saying the answer cannot be taken back (got ' + JSON.stringify(t) + ')');
+  }
   EE.destroy(); rafQ = [];
   E = mount();
+  // the sample's empty history keeps its own toast (check-sim-undo case 4 pins the sim's words)
+  { key('u'); expect(E.S.toast?.tone === 'warn' && /^Nothing to undo/.test(E.S.toast?.strong ?? ''), 'GUARD U on the sample with an empty history still says "Nothing to undo" (got ' + JSON.stringify(E.S.toast) + ')'); }
 }
 
 // ---------------------------------------------------------------------------------------------- 7. destroy
