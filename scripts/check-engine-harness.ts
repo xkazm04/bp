@@ -537,6 +537,21 @@ const measured: Record<string, string> = {};
   reset(); noTarget(); E.cam.set(E.HOME); E.cam.stopFly?.();
 }
 
+// ---------------------------------------------------------------------------------------------- 5c. the hints use the plan's own word (DW-138)
+// The ladder and the sheet say feature; no visible label calls a tile a fixture. The Engine's hint runs here; the three rail
+// panels have no harness, so their hint sentences are read as source.
+{
+  reset(); E.needTarget();
+  const said = (E.S.toast?.strong ?? '') + ' ' + (E.S.toast?.text ?? '');
+  expect(!/fixture/i.test(said) && /wing, room or feature/.test(said), 'the point-at-a-place toast says feature, not fixture (got ' + JSON.stringify(said) + ')');
+  const fsH = await import('node:fs');
+  for (const f of ['agents.tsx', 'orders.tsx', 'rules.tsx']) {
+    const src = fsH.readFileSync(path.join(SRC, 'components/rail/wide', f), 'utf8');
+    expect(!/or fixture/.test(src) && /Shift-click a wing, room or feature/.test(src), 'rail/wide/' + f + ': the shift-click hint says feature, not fixture');
+  }
+  reset();
+}
+
 // ---------------------------------------------------------------------------------------------- 6. the hash: write, push / replace, read back
 {
   E.destroy(); E = mount(); reset();
