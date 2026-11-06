@@ -97,7 +97,7 @@ export function scopeFacts(a: { jobs: readonly ScanJob[]; scan: ScanSnapshot | u
   const of = a.features.length, ask = new Set(a.features);
   let busy: ScopeFacts['busy'];
   for (const j of a.jobs) {
-    if (j.kind !== 'measure' || j.lens !== a.lens || (j.status !== 'queued' && j.status !== 'running')) continue;
+    if (j.kind !== 'measure' || (j.lens !== a.lens && j.lens !== ALL_LENSES) || (j.status !== 'queued' && j.status !== 'running')) continue; // an every-lens job reads this lens too
     const sc = j.scope, overlap = !sc || sc.kind === 'all' ? of : sc.features.filter((f, i, fs) => ask.has(f) && fs.indexOf(f) === i).length;
     if (!overlap) continue;
     const status = jobLiveness(j, a.scan, a.now) as 'running' | 'stale' | 'queued';

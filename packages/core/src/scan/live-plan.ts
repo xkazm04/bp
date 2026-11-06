@@ -1,7 +1,7 @@
 // What a verb would do on a live product's selection, in words: the pure half of the selection bar's measure, build and
 // stop (apps/web/src/lib/model/live-steer.ts runs a committed plan). Pure: from the target's features, the product's
 // lenses, its jobs and proposals (and, for Measure here, the product's readings: what was read recently is left out).
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, type ScanJob } from './jobs.ts';
+import { ALL_LENSES, MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, jobLabel, type ScanJob } from './jobs.ts';
 import type { Measurement, Proposal } from './types.ts';
 import { admitForBuild, busyIds } from './admit.ts';
 import { lastRead } from './derive.ts';
@@ -90,17 +90,17 @@ export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
     const whole = measurePlan(base, F, ok, skip, ok.map((l) => ({ lens: l.id, features: fs })), []);
     if (!F.measurements) return whole;
     const read = lastRead(F.measurements), since = F.nowMs === undefined ? Infinity : F.nowMs - FRESH_MS, hrs = FRESH_MS / 3600000;
-    const scans: LivePlan['scans'] = [], notes: string[] = [], byId = byIdOf(F);
+    const scans: LivePlan['scans'] = [], notes: string[] = [], wideLines: string[] = [], byId = byIdOf(F);
     for (const l of ok) { // per lens id as a key: a lens is data, never a branch
       let wide: ScanJob | undefined;
       const flight = new Map<string, ScanJob>();
       for (const j of F.jobs) {
-        if (j.kind !== 'measure' || j.lens !== l.id || !open(j)) continue;
+        if (j.kind !== 'measure' || (j.lens !== l.id && j.lens !== ALL_LENSES) || !open(j)) continue; // one every-lens job covers each lens
         const jf = jobFeatures(j, byId);
         if (jf === 'all') wide ??= j;
         else for (const f of jf) if (!flight.has(f)) flight.set(f, j);
       }
-      if (wide) { notes.push(`${l.name} is already being measured everywhere (job ${wide.id}, ${wide.status}): no ${l.name} scan`); continue; }
+      if (wide) { const say = `${l.name} is already being measured everywhere (job ${wide.id}, ${wide.status})`; wideLines.push(say); notes.push(`${say}: no ${l.name} scan`); continue; }
       const by = read.get(l.id), busy = fs.filter((f) => flight.has(f));
       const fresh = fs.filter((f) => !flight.has(f) && (by?.get(f) ?? -Infinity) >= since);
       const keep = fs.filter((f) => !flight.has(f) && !fresh.includes(f));
@@ -109,7 +109,7 @@ export function planLive(verb: LiveVerb, F: SteerFacts): LivePlan {
       if (keep.length) scans.push({ lens: l.id, features: keep });
     }
     if (!notes.length) return whole;
-    if (!scans.length) return { ...whole, lines: [`Everything here was measured in the last ${hrs} h or is being measured now; this measures all of it again`, ...whole.lines] };
+    if (!scans.length) return { ...whole, lines: [`Everything here was measured in the last ${hrs} h or is being measured now; this measures all of it again`, ...wideLines, ...whole.lines] };
     return { ...measurePlan(base, F, ok, skip, scans, notes), alt: whole };
   }
   const byId = byIdOf(F);
