@@ -54,6 +54,8 @@ export interface ProductFacts {
   landed?: { ref: string; items: LandedMap };
   /** git's ancestry for the readings and the lenses' bounds (track.ts evidenceOpts): the ledger's eligibility, here too. */
   evidence?: Pick<TrackOpts, 'contains' | 'bounds'>;
+  /** Open finding id -> the live standing order no agent door will build it past (morning.server.ts). Not the owner's Hold verdict. */
+  orders?: ReadonlyMap<string, string>;
 }
 /** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
@@ -247,13 +249,14 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   for (const m of perProduct) cards.push(...m);
   // a decision card; `head` is its first line ("2 of 3" for a ranked one), `news` marks one filed after the deck was opened
   const card = ({ p, x, s, held }: Choice & { p: ProductFacts }, head: string, news: boolean): MorningCard => {
-    const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined, brief = cardBrief(p, x);
+    const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined, brief = cardBrief(p, x), order = x.status === 'proposed' ? p.orders?.get(x.id) : undefined;
     return {
       id: `decision:${p.slug}:${x.id}`, kind: 'decision', product: p.slug, productName: p.name, headline: x.title, tone: x.tier === 0 ? 'bad' : 'warn',
       lines: [
         { text: `${head} · ${p.name}${w ? ' · ' + w.roomName : ''}`, ...(news ? { tone: 'warn' as Tone } : {}) },
         { text: [tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Untiered', x.risk_class ? x.risk_class : null, 'raised ' + hoursAgo(x.created_at, now)].filter(Boolean).join(' · '), ...(x.tier === 0 ? { tone: 'bad' as Tone } : {}) },
         ...(stakes(p, x) ? [{ text: stakes(p, x)! }] : []),
+        ...(order ? [{ text: `Your order ${order} covers this: no agent door will build it until you lift ${order}, and approving it here reads as a breach of ${order}.`, tone: 'warn' as Tone }] : []),
         ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
       ],
       // a follower's lower third reads the place's words: the title, then the brief's short line (<= 280 on the wire)

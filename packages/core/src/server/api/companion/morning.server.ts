@@ -11,7 +11,7 @@ import path from 'node:path';
 import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
 import { briefMapOf, briefMapOfStructure, type BriefMap } from '../../../scan/brief.ts';
 import { evidenceOpts } from '../../../scan/track.ts';
-import type { ProductEntry } from '../../../scan/types.ts';
+import type { ProductEntry, Proposal } from '../../../scan/types.ts';
 import { writesOff } from '../../../scan/writes.ts';
 import { loadMap } from '../../../data/index.ts';
 import { findProduct, hasStore, storeDir, storeFile, warnOnce } from '../../products.server.ts';
@@ -19,6 +19,8 @@ import { decide, mapRev } from '../../store.server.ts';
 import { projectPlan } from '../../plan-projection.ts';
 import { landings, triageBy } from '../../release.server.ts';
 import { readTrail } from '../../brief.server.ts';
+import { listRules } from '../../rules.server.ts';
+import { gate, isLive } from '../../../scan/rules.ts';
 import { snapshots } from './views.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('morning.server.ts is server-only');
@@ -60,6 +62,13 @@ function whereOf(p: ProductEntry): MapFacts {
   return facts;
 }
 
+/** The open findings a live order holds, as the inbox reads them (views.server.ts). A cap is left out: a wave that names its
+ *  effort still builds there, so "no agent door" would be untrue of it. */
+function ordersOf(p: ProductEntry, proposals: readonly Proposal[], now: number): Map<string, string> {
+  const rules = listRules(p.root).filter((r) => r.kind !== 'cap' && isLive(r, now)), items = proposals.filter((x) => x.status === 'proposed').map((x) => ({ id: x.id, feature: x.feature, lens: x.lens }));
+  return new Map(rules.length ? gate(rules, { kind: 'build', tool: 'morning.brief', items }, now).held.map((h) => [h.id, h.order.id]) : []);
+}
+
 export function readSteer(p: ProductEntry): SteerRow[] {
   let text = '';
   try { text = fs.readFileSync(logFile(p), 'utf8'); } catch { return []; }
@@ -83,7 +92,7 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
   for (const [i, { p, scan }] of read.entries()) {
     const l = landed[i];
     const { lenses, ...mf } = whereOf(p), { contains, bounds } = evidenceOpts(l, lenses);
-    facts.push({ slug: p.slug, name: p.name, scan, ...mf, evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
+    facts.push({ slug: p.slug, name: p.name, scan, ...mf, orders: ordersOf(p, scan.proposals, now), evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
     const rows = readSteer(p);
     steer.push(...rows);
     renderOnRead(p, rows, now);
