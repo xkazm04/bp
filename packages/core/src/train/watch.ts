@@ -158,7 +158,8 @@ export function watchState(w: Watch, scan: Scan, opts: TrackOpts, nowMs: number,
     const state: WatchItemState = !last ? 'pending' : last.met ? 'met' : judged.some((r) => r.met) ? 'regression' : 'shortfall';
     counts[state]++;
     const tgt = `target ${fmt(it.target)}${u}`;
-    const words = !last ? `pending: ${tgt}, no checkpoint judged yet`
+    const unread = results.filter((r) => r.how === 'missed' || r.how === 'not measured' || r.how === 'measuring').map((r) => `day ${r.day} ${r.how}`).join(', ');
+    const words = !last ? (unread ? `pending: ${tgt}, no reading: ${unread}` : `pending: ${tgt}, no checkpoint judged yet`)
       : state === 'met' ? `target met: ${fmt(last.value!)}${u} on day ${last.day} (${tgt})`
         : state === 'regression' ? `regression: met on day ${judged.find((r) => r.met)!.day}, ${fmt(last.value!)}${u} on day ${last.day} (${tgt})`
           : `shortfall: ${fmt(last.value!)}${u} on day ${last.day} (${tgt})`;

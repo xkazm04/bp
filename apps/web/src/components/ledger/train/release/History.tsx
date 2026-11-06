@@ -19,7 +19,7 @@ const STATE_WORD = { pending: 'pending', met: 'target met', shortfall: 'shortfal
 /** The watch's one line: "Watching · met 2 · shortfall 1 · pending 1 · next checkpoint 2026-11-10". */
 export function watchLine(v: WatchView): string {
   const parts = (Object.keys(STATE_WORD) as (keyof typeof STATE_WORD)[]).filter((k) => v.counts[k]).map((k) => STATE_WORD[k] + ' ' + v.counts[k]);
-  return (v.on ? 'Watching' : 'Watch off') + (parts.length ? ' · ' + parts.join(' · ') : '') + (v.next ? ' · next checkpoint ' + v.next.slice(0, 10) : v.on ? ' · every checkpoint passed' : '');
+  return (v.on ? 'Watching' : 'Watch off') + (parts.length ? ' · ' + parts.join(' · ') : '') + (v.next ? ' · next checkpoint ' + v.next.slice(0, 10) : v.on ? ' · no checkpoint left' : '');
 }
 
 interface EntryProps { r: Release; items: readonly PkgItem[]; sample: boolean; view?: WatchView; canWatch: boolean; toggle(on: boolean): void; err?: string }
