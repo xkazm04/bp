@@ -1,7 +1,7 @@
 // The decision brief: one pure function, read by two audiences. The person sees it on the decision card (web Review,
 // VR's BpLink card, Personas through docs/concepts/decision-brief/personas-adoption.md); an agent reads it through the
 // plan.brief tool (catalog.ts) before it proposes. Both read the SAME object, so the context cannot drift between them.
-// Four facts over data bp already holds, every one with the ids that back it (a number on a card opens its list):
+// Five facts over data bp already holds, every one with the ids that back it (a number on a card opens its list):
 //   blast      - the feature on the plan (room, wing) and the features whose depends_on name it, from the v3 map;
 //   precedent  - decided rows under the same lens (and tier, when the subject has one), plus every row that is the same
 //                idea (on its attempt_of / parent_id chain, or the same feature + lens with a shared idea word or the same
@@ -11,8 +11,8 @@
 //                TrackOpts' landings), failed, or still open; a descoped row is counted apart, never as an approval.
 //                Declines that match the idea are quoted, latest first, one per standard, so an agent hears the
 //                owner's own words back;
-//   reversible - approving builds on a pack branch and ships only through triage and a release; declining is final (no
-//                route reopens a decided proposal); after a release the risk_class says whether a revert PR undoes it;
+//   reversible - approving builds on a pack branch and ships only through triage and a release; a person's decline is
+//                final (the veto route reopens only a machine's decision, inside its window); after a release the risk_class says whether a revert PR undoes it;
 //   cost       - the median minutes per item of the finished execute runs under the lens (else any lens), from runs and
 //                packs; none -> no build history.
 // Thin evidence is said, never filled in: no map entry -> 'not on the plan'; no decided rows -> 'no precedent yet';

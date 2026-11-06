@@ -11,21 +11,22 @@ before they propose, so a declined idea is not proposed again.
 ## One function, every reader
 
 `packages/core/src/scan/brief.ts` `briefFor(subject, scan, map)` is pure. The subject is an open proposal or an agent's
-draft (a feature and a few words). Its four facts each carry the ids that back them:
+draft (a feature and a few words). Its five facts each carry the ids that back them:
 
 | Fact | From | Thin evidence says |
 |---|---|---|
 | **blast** - the feature, its room and wing, the features whose `depends_on` name it | the v3 map | `which is not on the plan: blast radius unknown` |
 | **precedent** - decided rows of the **same idea** (the attempt/parent chain, the same external item, or the same proposal filed again on the same feature: identical idea words, numbers counted, the feature's own name aside, never opposite), a **like idea** (the same action - the title's first real verb - and most of the same words), the same standard, or the same lens and tier; approved vs declined | the store's proposals | `No precedent yet under <lens>` |
 | **declined** - the matching declines (not merely same-lens), latest first, one per standard, quoted in the person's words | `decision_note` / `triage_note`, `decided_by` | (no line) |
-| **undo** - an approval builds on a pack branch and ships only after triage and a release; a decline is final; after release by `risk_class` | the process, `risk_class` | `after release unknown (no risk class)` |
+| **undo** - an approval builds on a pack branch and ships only after triage and a release; a person's decline is final, a machine's decline or approval can be vetoed back to `proposed` inside its `veto_until` window; after release by `risk_class` | the process, `risk_class` | `after release unknown (no risk class)` |
 | **cost** - median minutes per item of finished execute runs under the lens, else any lens | `runs`, `packs` | `Cost: no build history yet` |
 
-`advice` is `withdraw` only when a decline of the **same idea** stands: it flips the card to Decline, and a decline is
-final, so it rests on identity, never likeness (three independent reviews showed every likeness rule also matches
+`advice` is `withdraw` only when a decline of the **same idea** stands: it flips the card to Decline, and a person's decline is
+final (only a machine's decision can be vetoed back to `proposed`), so it rests on identity, never likeness (three independent reviews showed every likeness rule also matches
 different changes: "Hash passwords with bcrypt" / "... with argon2"). `ask` when a like idea or the same standard was
 declined (shown in amber, *Like a declined idea*, Approve stays the default) or similar decisions were mostly declines
-(3+); else `proceed`. `facts` / `lines` are the brief in plain words under a fixed budget, **5 lines of at most 120 characters**,
+(3+), or when like approvals measured on main fell short at least as often as they held (`outcomeAsks`, 3+ measured,
+added 2026-11-03); else `proceed`. `facts` / `lines` are the brief in plain words under a fixed budget, **5 lines of at most 120 characters**,
 the one rendering every small surface shares.
 
 ## The doors

@@ -1,6 +1,6 @@
 {
   "contract": "bp-contract-1",
-  "rev": 7,
+  "rev": 8,
   "text": "docs/standard/contract-1.md",
   "note": "Every file a port outside bp copies or reproduces, with the sha256 of its LF bytes. check:contract (npm run check) fails when one changes without its entry here; node scripts/check-contract.mjs --write recomputes the hashes and raises rev. scripts/personas-drift.mjs reports a Personas checkout's pins against this file.",
   "files": [
@@ -49,7 +49,7 @@
     {
       "path": "packages/core/src/scan/brief.ts",
       "role": "copy-target",
-      "sha256": "db0f8e9d0a76c7ca00cc0a9eee9dd387e14f6ef64b25e751c2900a86e29d4068"
+      "sha256": "817772bff09af926b2c95886d82685613766df780b005df1b68f5dcd50be1c32"
     },
     {
       "path": "packages/core/src/standard/schema-vocab.ts",
