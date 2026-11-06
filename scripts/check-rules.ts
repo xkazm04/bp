@@ -11,7 +11,10 @@
 //            over MCP leaves the held item out and cites O-1, all-held is refused; scan.place and /dispatch are refused
 //            with the order; rules.list lists it; a tier-3 grant lets decision.answer run on a covered finding without a
 //            card (decidedBy policy, the grant's id) but not on a stop-ship; revoking lifts the hold; a corrupt file reads
-//            as no rules and is moved aside on the next write.
+//            as no rules and is moved aside on the next write. A person's own approval through POST /proposals/<id> in a held
+//            place answers 200 and reads as a breach (the plan's door, DW-186; docs/concepts/rules-personas-adoption.md).
+//   words    (DW-186) the contract, the guide, the code note and the panel's tooltip do not say a breach means only something
+//            went around bp's doors, and do say a person's own approval makes one; RuleNote says so on a held row.
 // Run: node scripts/check-rules.ts     Exit 1 on any miss.
 import fs from 'node:fs';
 import os from 'node:os';
@@ -21,6 +24,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { readStripped } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
@@ -165,6 +169,30 @@ const it = (id: string, feature: string, lens = 'design') => ({ id, feature, len
   check('a cautious grant earns live trust on real decisions only: five synthetic approvals earn nothing at a door', S.trustedLenses(cg, [1, 2, 3, 4, 5].map((i) => mk(i, true))).size === 0 && S.trustedLenses(cg, [1, 2, 3].map((i) => mk(i, false))).has('security'));
 }
 
+// ------------------------------------------------------------------------------------------------ what a breach is, in words
+// DW-186: bp counts a person's own approval in a held place as a breach, and does not block it (rules-personas-adoption.md,
+// "Decision card"), so no reader may be told a breach means only a bypass. Loose on purpose: the wording is the writer's.
+{
+  const flat = (x: string) => x.replace(/\r?\n\s*(?:\*\s*)?/g, ' ');
+  const ONLY_AROUND = /means\s+something\s+went\s+around|only\s+something\s+(?:that\s+)?went\s+around|doors\s+refuse\s+those/i;
+  const OWN_APPROVAL = /\b(?:person|owner|your?)(?:['’]s)?\s+(?:\w+\s+){0,3}approv|approv\w*\s+(?:\w+\s+){0,3}(?:by|from)\s+(?:an?\s+|the\s+)?(?:person|owner|you)\b/gi;
+  const saysOwnApproval = (x: string) => [...x.matchAll(OWN_APPROVAL)].some((m) => /breach/i.test(x.slice(Math.max(0, m.index - 240), m.index + m[0].length + 240)));
+  check('words control: the old claim is caught, and only a person\'s approval beside a breach reads as the true statement', ONLY_AROUND.test(flat("bp's doors refuse those,\n * so a breach means something went around them")) && ONLY_AROUND.test('only something that went around bp\'s doors makes one')
+    && saysOwnApproval("a person's own approval in a held place makes a breach") && saysOwnApproval('a breach: the owner approved it') && !saysOwnApproval('a breach is a finding approved after the order was set'));
+  const raw = (f: string) => fs.readFileSync(path.join(ROOT, f), 'utf8');
+  // rules.ts's statement is its doc comment, so it is read raw; the panel's is code, so a comment cannot stand in for it
+  const WORDS: [string, string][] = [['docs/standard/rules-1.md', raw('docs/standard/rules-1.md')], ['docs/blueprint-ui.md', raw('docs/blueprint-ui.md')], ['packages/core/src/scan/rules.ts', raw('packages/core/src/scan/rules.ts')],
+    ['the breach tooltip in apps/web/src/components/rail/wide/rules.tsx', readStripped(path.join(ROOT, 'apps/web/src/components/rail/wide/rules.tsx'))]];
+  for (const [name, text] of WORDS) {
+    const f = flat(text);
+    check(`${name} does not say a breach means only something went around bp's doors`, !ONLY_AROUND.test(f), ONLY_AROUND.exec(f)?.[0]);
+    check(`${name} says a person's own approval can make a breach`, saysOwnApproval(f));
+  }
+  const mark = readStripped(path.join(ROOT, 'apps/web/src/components/rail/wide/rule-mark.tsx'));
+  const note = mark.slice(Math.max(0, mark.indexOf('function RuleNote'))).split(/lets agents approve/)[0];
+  check('RuleNote on a held row says that approving reads as a breach of the order', /approv\w*[\s\S]{0,120}breach|breach[\s\S]{0,120}approv/i.test(note), note.slice(0, 200));
+}
+
 // ------------------------------------------------------------------------------------------------ the doors
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-check-rules-'));
 const KL = path.join(tmp, 'kl'), NOW = '2026-10-20T12:00:00.000Z';
@@ -276,6 +304,17 @@ try {
     const g = await req('GET', API);
     check('GET rules tallies what O-1 held (items, refusals, the doors) from work/bp-rules-log.jsonl', g.json?.held?.['O-1']?.items >= 2 && g.json.held['O-1'].refused >= 2 && g.json.held['O-1'].tools.includes('wave.compose') && g.json.held['O-1'].tools.includes('scan.place'), j(g.json?.held));
     check('a finding approved in the held place after O-1, around bp\'s doors, is a breach of O-1', g.json?.breaches?.['O-1']?.some((b: { id: string }) => b.id === 'q-around'), j(g.json?.breaches));
+  }
+  {
+    // DW-186: the plan's own door. Approving is not building, so the order does not stop it, and it reads as a breach.
+    const db = new DatabaseSync(path.join(KL, '.ai', 'lens-scan', 'scan.db'));
+    const t = new Date().toISOString();
+    db.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, standard, kind, status, tier, created_at, updated_at) VALUES ('q-own', 'run-demo-b', 'card-payments', 'design', 'Approved by hand', 'none', 'fix', 'proposed', 2, ?, ?)").run(t, t);
+    db.close();
+    const own = await req('POST', '/api/products/kl/proposals/q-own', {}, { decision: 'approve' });
+    check('a person approves in the place O-1 holds, through POST /proposals/<id>: 200, approved, signed by the person (the door does not block)', own.status === 200 && own.json?.status === 'approved' && /^user:/.test(own.json?.decided_by ?? ''), j(own.json));
+    const g = await req('GET', API);
+    check('GET rules then lists that approval under the breaches of O-1, signed by the person', g.json?.breaches?.['O-1']?.some((b: { id: string; by: string }) => b.id === 'q-own' && /^user:/.test(b.by)), j(g.json?.breaches?.['O-1']));
   }
   const gr = await req('POST', API, H, { kind: 'grant', minTier: 3, hours: 24, scope: BOOKING });
   check('a person grants G-1: backlog findings in Booking, 24 h', gr.status === 201 && gr.json?.rule?.id === 'G-1', j(gr.json));
