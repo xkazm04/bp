@@ -29,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
-((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
+((await import(HOOKS)) as { registerSrcHooks: (root: string, opts?: { transpile?: boolean }) => void }).registerSrcHooks(ROOT, { transpile: true });
 const core = (p: string) => pathToFileURL(path.join(ROOT, 'packages/core/src', p)).href;
 const TR = await import(core('scan/track.ts')) as typeof import('../packages/core/src/scan/track.ts');
 const LD = await import(core('scan/landed.ts')) as typeof import('../packages/core/src/scan/landed.ts');
@@ -295,6 +295,41 @@ const WT = await import(core('train/watch.ts')) as typeof import('../packages/co
     const s7 = tagged(merged('accepted', [P(78, d(1.1), { commit_sha: MAIN }), P(90, d(7.1), { commit_sha: MAIN })]));
     const w = WT.watchState(later.made.watch, s7, withReceipt, Date.parse(d(8))).items[0];
     check('10 a day 7 reading after Tag keeps the record of day 1 (met on day 1, 90 ms on day 7: regression)', w.words === 'regression: met on day 1, 90 ms on day 7 (target 80 ms)', w.words);
+  }
+}
+
+// ------------------------------------------------------------------ 11 a watched item says why it has no result (DW-158)
+const HISTORY = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/components/ledger/train/release/History.tsx')).href) as typeof import('../apps/web/src/components/ledger/train/release/History.tsx');
+{
+  const d = (n: number) => h(6 + 24 * n);
+  const P = (value: number, measured_at: string, x: Any = {}) => ({ ...M(value, measured_at, x), lens: 'performance', metric: 'p95', unit: 'ms', method: 'probe', ...x });
+  const rel = { id: 'rel-3.0.0', version: '3.0.0', branch: 'release/3.0.0', status: 'tagged', created_at: h(4), updated_at: h(5) };
+  const row = item('p-n', { lens: 'performance', metric: 'p95', expected_delta: -20, status: 'released', release_id: rel.id });
+  const scan = { packs: [pack], releases: [rel], measurements: [P(100, h(0.5)), P(100, h(1.5), { proposal_id: 'p-n', phase: 'before' })], proposals: [row] } as Any;
+  const opts = { landed: { 'p-n': { ...landing, at: h(5) } }, contains };
+  const made = WT.newWatch(scan, rel.id, opts, d(0), 'user:owner');
+  check('11 the watch is made', made.ok, JSON.stringify(made));
+  if (made.ok) {
+    const failedJob = [{ id: 'j-f', status: 'failed' }, { id: 'j-r', status: 'running' }] as Any;
+    const withMarks = (marks: Any[]) => ({ ...made.watch, checkpoints: made.watch.checkpoints.map((c, i) => ({ ...c, ...marks[i] })) });
+    const at = (marks: Any[], day: number) => WT.watchState(withMarks(marks), scan, opts, Date.parse(d(day)), failedJob);
+    const none = at([{ missed: true }, { missed: true }, { jobs: ['j-f'] }], 40), w = none.items[0];
+    check('11 the checkpoints themselves read missed, missed, not measured', w.checkpoints.map((c) => c.how).join() === 'missed,missed,not measured', w.checkpoints.map((c) => c.how).join());
+    check('11 day 1 and 7 missed, day 30 run with no reading: the words say missed, then not measured', /\bmissed\b/.test(w.words) && /not measured/.test(w.words) && w.words.indexOf('missed') < w.words.indexOf('not measured'), w.words);
+    check('11 ... and not merely "no checkpoint judged yet"', !/no checkpoint judged yet/.test(w.words), w.words);
+    check('11 the watch line does not say "every checkpoint passed" for such a watch', !/every checkpoint passed/.test(HISTORY.watchLine(none)), HISTORY.watchLine(none));
+    const allMissed = at([{ missed: true }, { missed: true }, { missed: true }], 40).items[0].words;
+    check('11 every checkpoint missed: missed, and not "not measured"', /\bmissed\b/.test(allMissed) && !/not measured/.test(allMissed), allMissed);
+    const allRan = at([{ jobs: ['j-f'] }, { jobs: ['j-f'] }, { jobs: ['j-f'] }], 40).items[0].words;
+    check('11 every checkpoint ran with no reading: not measured, and not "missed"', /not measured/.test(allRan) && !/\bmissed\b/.test(allRan), allRan);
+    const soFar = at([{ missed: true }, { jobs: ['j-r'] }, {}], 8).items[0].words;
+    check('11 day 1 missed and day 7 still measuring: says missed, and not "not measured" for the running one', /\bmissed\b/.test(soFar) && !/not measured/.test(soFar), soFar);
+    // nothing due yet: as it reads now
+    const fresh = WT.watchState(made.watch, scan, opts, Date.parse(d(0.5)));
+    check('11 GUARD nothing due yet: state pending, the words as they are', fresh.items[0].state === 'pending' && fresh.items[0].words === 'pending: target 80 ms, no checkpoint judged yet', JSON.stringify(fresh.items[0]));
+    check('11 GUARD nothing due yet: the watch line as it is', HISTORY.watchLine(fresh) === 'Watching · pending 1 · next checkpoint ' + d(1).slice(0, 10), HISTORY.watchLine(fresh));
+    const judged = WT.watchState(withMarks([{ missed: true }, {}, {}]), { ...scan, measurements: [...scan.measurements, P(78, d(7.5), { commit_sha: MAIN }), P(78, d(30.5), { commit_sha: MAIN })] }, opts, Date.parse(d(40)));
+    check('11 GUARD a judged item keeps its judged words, whatever else was missed', judged.items[0].words === 'target met: 78 ms on day 30 (target 80 ms)', judged.items[0].words);
   }
 }
 
