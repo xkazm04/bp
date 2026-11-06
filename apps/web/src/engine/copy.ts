@@ -37,6 +37,9 @@ export function saveFailWords(e: SaveFailure): SaveWords {
 /** Developer-facing strings a reader must never be shown, whatever the browser calls them. */
 export const DEV_WORDS: readonly string[] = ['Failed to fetch', 'Load failed', 'NetworkError', 'TypeError', 'ERR_', 'undefined', 'NaN'];
 
+/** U on a live product: an answer there went to the product, so there is no local history to take it back from. */
+export const LIVE_UNDO_WORDS = { strong: 'Nothing to undo here:', text: 'an answer on a live product goes straight to it, and cannot be taken back.' } as const;
+
 /** What a reader sees when a link or a back/forward names a feature this map does not have (renamed, or removed by a refresh). */
 export function unknownFeatureWords(id: string): { strong: string; text: string } {
   return { strong: `No feature ${id} on this map:`, text: 'it may have been renamed or removed.' };

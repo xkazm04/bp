@@ -18,7 +18,7 @@ import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type ReadyScope, type UIState } from './state';
 import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
-import { saveFailWords, unknownFeatureWords } from './copy';
+import { LIVE_UNDO_WORDS, saveFailWords, unknownFeatureWords } from './copy';
 import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -1059,7 +1059,10 @@ export class Engine {
   }
   /** U on the plan and the toast's UNDO: the reader's last gesture (answer, batch, kept answer or command) taken back, newest first. */
   undoLast() {
-    if (!this.M.sim.undoLast()) return;   // nothing left (the sim toasts why) or a live sim (no history)
+    if (!this.M.sim.undoLast()) { // nothing left (the sim toasts why) or a live sim (no history, so it is said here)
+      if (this.M.sim.live) this.toast(LIVE_UNDO_WORDS.strong, LIVE_UNDO_WORDS.text, undefined, undefined, 'warn');
+      return;
+    }
     this.store.set({ toast: null }); this.scheduleSimSync(true); this.forceStatic();
   }
   private forceStatic() { this.simSeenV = this.M.sim.version; this.simStaticV++; this.simStaticAt = performance.now(); this.simPatch = true; this.dirty(); }
