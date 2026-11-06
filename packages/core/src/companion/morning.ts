@@ -242,7 +242,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
     const lines = trailSessions(inWin, now, 3, undefined, Infinity).flatMap((x) => x.lines).slice(0, 6);
     const met = inWin.find((r): r is Extract<TrailRow, { kind: 'brief' }> => r.kind === 'brief' && !r.id && (r.advice === 'withdraw' || !!r.quoted));
     const at = met ? products.find((p) => p.slug === met.product) : undefined;
-    const headline = agents.heard ? `Agents heard your declines and stood down ${n(agents.withdrew, 'time')}.` : `Agents checked your decisions ${n(agents.reads, 'time')}; none met a decline.`;
+    const headline = agents.heard ? (agents.withdrew ? `Agents heard your declines and stood down ${n(agents.withdrew, 'time')}.` : 'Agents heard your declines and withdrew nothing.') : `Agents checked your decisions ${n(agents.reads, 'time')}; none met a decline.`;
     cards.push({
       id: 'agents', kind: 'agents', headline, tone: agents.heard ? 'warn' : 'calm',
       lines: lines.map((l) => ({ text: l.text, ...(l.tone === 'heard' ? { tone: 'warn' as Tone } : l.tone === 'act' ? { tone: 'good' as Tone } : {}) })),
