@@ -7,10 +7,14 @@
 //      the stream reconnect (a fake EventSource: down -> offline, reopened after the backoff)
 //   5. the companion's CSS: no font under 12 px, motion on transform and opacity only
 //   6. the voice: what a reply is reduced to before it is spoken, the mute's precedence, the tremolo's range
+//   7. a failed approved card says why (DW-109): store.ts failedWords(card) is the card's stored result, bounded, null unless
+//      it failed; Cards.tsx and the Glim lamp, rendered with react-dom/server in a child process (this gate strips types and
+//      cannot load .tsx), show it, and the lamp no longer says "Approved. Glim carries it to the builders." for such a card
 // Run: node scripts/check-companion-web.ts   (Node's type stripping; the modules import siblings with extensions)
 import fs from 'node:fs';
 import path from 'node:path';
 import type { Card, CompanionEvent, FocusCommand, TurnEvent } from '../packages/core/src/companion/contract.ts';
+import * as STORE from '../apps/web/src/components/companion/store.ts';
 import { BUSY, CARD_FADE_MS, INITIAL, NOTICE_MS, OFFLINE, POINT_MS, createStore, deriveLamp, reduce, type CompanionState, type LampInputs } from '../apps/web/src/components/companion/store.ts';
 import { connect, readEvent, readTurnEvent, sseParser, type SseMessage } from '../apps/web/src/components/companion/stream.ts';
 import { FOCUS_TABLE, placeHash, planFocus } from '../apps/web/src/components/companion/focus.ts';
@@ -18,6 +22,38 @@ import { fxGain, voiceStatus } from '../apps/web/src/components/companion/voice.
 import { readVoicePref, speakable, VOICE, VOICE_DEFAULT_ON, VOICE_DESIGN, VOICE_FX, VOICE_MAX_CHARS } from '../packages/core/src/companion/voice.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
+const HELD = "useState<Record<string, 'approve' | 'decline'>>({})";
+/** The child of section 7: renders Cards and GlimLamp under the transpiling loader, one JSON line out. */
+const CHILD = String.raw`
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+const ROOT = process.argv[2];
+try {
+  const req = createRequire(path.join(ROOT, 'apps/web/package.json'));
+  const url = (p) => pathToFileURL(path.join(ROOT, p)).href;
+  const { registerSrcHooks } = await import(url('scripts/lib/src-hooks.mjs'));
+  registerSrcHooks(ROOT, { transpile: true, mutate: [['Lamp.tsx', "useState<Record<string, 'approve' | 'decline'>>({})", "useState<Record<string, 'approve' | 'decline'>>({ c1: 'approve' })"]] });
+  const React = req('react'), { renderToStaticMarkup: html } = req('react-dom/server');
+  const { Cards } = await import(url('apps/web/src/components/companion/Cards.tsx'));
+  const { GlimLamp } = await import(url('apps/web/src/components/companion/lamps/glim/Lamp.tsx'));
+  const S = await import(url('apps/web/src/components/companion/store.ts'));
+  const failed = { id: 'c1', tool: 'release.build', args: { slug: 'x' }, summary: 'Build the release', state: 'failed', createdAt: '2026-11-06T00:00:00.000Z', result: '412 {"error":"gh is not logged in"}' };
+  const fns = { onCard() {}, onSubmit() {} };
+  // as the host feeds a lamp: the store holds the card it saw pending, then failed; deriveLamp says the state and caption
+  let s = S.reduce(S.INITIAL, { type: 'online', on: true }, 0);
+  s = S.reduce(s, { type: 'event', e: { type: 'card', card: { ...failed, state: 'pending', result: undefined } } }, 1);
+  s = S.reduce(s, { type: 'event', e: { type: 'card', card: failed } }, 2);
+  const d = S.deriveLamp(s, { now: 3, composerFocused: false, composerEmpty: true, jobsRunning: false, product: 'x' });
+  console.log(JSON.stringify({
+    cards: html(React.createElement(Cards, { cards: [failed], onCard() {} })),
+    doneCards: html(React.createElement(Cards, { cards: [{ ...failed, state: 'done' }], onCard() {} })),
+    lampAsking: html(React.createElement(GlimLamp, { state: 'asking', cards: [failed], ...fns })),
+    lampDerived: html(React.createElement(GlimLamp, { ...d, cards: s.cards, ...fns })),
+    lampHeld: html(React.createElement(GlimLamp, { state: 'asking', cards: [{ ...failed, state: 'pending', result: undefined }], ...fns })),
+  }));
+} catch (e) { console.log(JSON.stringify({ error: String(e && e.stack || e) })); }
+`;
 let failed = 0;
 const check = (name: string, ok: boolean, got?: unknown) => {
   if (ok) console.log('ok  ' + name);
@@ -170,6 +206,43 @@ for (const f of cssFiles(DIR)) {
   const trans = [...css.matchAll(/transition\s*:([^;}]*)/g)].flatMap((m) => m[1].split(/,(?![^(]*\))/).map((p) => p.trim().split(/\s+/)[0])).filter((p) => p !== 'transform' && p !== 'opacity' && p !== 'none');
   const frames = [...css.matchAll(/@keyframes[^{]*\{((?:[^{}]*\{[^}]*\})*)[^}]*\}/g)].flatMap((m) => [...m[1].matchAll(/([a-z-]+)\s*:/g)].map((x) => x[1])).filter((p) => p !== 'transform' && p !== 'opacity');
   check(rel + ': motion on transform and opacity only', !trans.length && !frames.length, [...trans, ...frames]);
+}
+
+// ------------------------------------------------------------------------- 7. a failed approved card says why (DW-109)
+{
+  const failedWords = (STORE as unknown as { failedWords?: (c: Pick<Card, 'state' | 'result'>) => string | null }).failedWords;
+  const WHY = '412 {"error":"gh is not logged in"}';
+  check('failed: store.ts exports failedWords(card): string | null', typeof failedWords === 'function');
+  if (typeof failedWords === 'function') {
+    const w = failedWords({ ...card('c9', 'failed'), result: WHY }) ?? '';
+    check('failed: the words keep the HTTP status and the message', w.includes('412') && w.includes('gh is not logged in'), w);
+    check('failed: null unless the card failed', (['pending', 'approved', 'declined', 'expired', 'done'] as Card['state'][]).every((s) => failedWords({ ...card('c9', s), result: WHY }) === null));
+    const long = failedWords({ ...card('c9', 'failed'), result: '503 ' + 'x'.repeat(5000) }) ?? '';
+    check('failed: a long result is bounded (at most 600 characters) and keeps its status', long.startsWith('503') && long.length <= 600, long.length);
+    let threw = false; try { failedWords(card('c9', 'failed')); } catch { threw = true; }
+    check('failed: a failed card with no stored result does not throw', !threw);
+  }
+  // the components: the lamp's "held" answer is state only a click sets, so the child seeds that one useState as approved
+  const childDir = fs.mkdtempSync(path.join((await import('node:os')).tmpdir(), 'bp-check-companion-web-'));
+  try {
+    const child = path.join(childDir, 'render.mjs');
+    fs.writeFileSync(child, CHILD);
+    const { spawnSync } = await import('node:child_process');
+    const r = spawnSync(process.execPath, [child, ROOT], { encoding: 'utf8', timeout: 60000 });
+    const out = (() => { try { return JSON.parse(r.stdout.trim().split('\n').pop() ?? '') as Record<string, string>; } catch { return { error: r.stderr + r.stdout } as Record<string, string>; } })();
+    check('failed: the components render in the child', !out.error, out.error?.slice(0, 600));
+    const has = (h: string) => (h ?? '').includes('412') && (h ?? '').includes('gh is not logged in');
+    const lampSrc = fs.readFileSync(path.join(ROOT, 'apps/web/src/components/companion/lamps/glim/Lamp.tsx'), 'utf8');
+    check('failed: Lamp.tsx keeps the line the render seeds (the held useState, literally)', lampSrc.includes(HELD));
+    check('failed: Cards.tsx shows the reason on a failed card', has(out.cards), out.cards);
+    check('failed: Cards.tsx still says Failed', /Failed/.test(out.cards ?? ''), out.cards);
+    check('failed: Cards.tsx shows no result on a done card', !/gh is not logged in/.test(out.doneCards ?? '') && /Done/.test(out.doneCards ?? ''), out.doneCards);
+    for (const k of ['lampAsking', 'lampDerived']) {
+      check('failed: the Glim lamp (' + k + ') shows the reason', has(out[k]), (out[k] ?? '').slice(-400));
+      check('failed: the Glim lamp (' + k + ') does not say Approved for a failed card', !/Glim carries it to the builders/.test(out[k] ?? ''), (out[k] ?? '').slice(-400));
+    }
+    check('failed: GUARD the lamp still says Approved while an approved card has not answered', /Glim carries it to the builders/.test(out.lampHeld ?? ''), (out.lampHeld ?? '').slice(-400));
+  } finally { fs.rmSync(childDir, { recursive: true, force: true }); }
 }
 
 console.log(failed ? `\n${failed} companion web check(s) failed` : '\ncompanion web ok');
