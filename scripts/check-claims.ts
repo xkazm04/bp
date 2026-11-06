@@ -15,6 +15,10 @@
 //      waves"; the top bar bullet gives the product line in LedgerPage.tsx's words and lists Every lens and Trust; the
 //      In packs keys bullet names a key of every KEYMAP.packs binding, E as measure the selection, one scan per lens.
 //      (DW-69, DW-67, DW-68; the found-it and code-side lines are guards, the rest red until the guide is corrected.)
+//   8. the outcome watch's words match train/watch.ts: History's Watch outcomes tooltip states the condition (checkpoints
+//      are queued when the Release tab is opened; one whose window passed before that is missed); the guide's watch rows and
+//      watch.ts's header say day 30 has an open window while days 1 and 7 can be missed; the POST row lists the 409 for a
+//      release carrying no item; the Release tab bullet names Watch outcomes. (DW-157, DW-153, DW-154)
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -300,5 +304,26 @@ const measure = KEYMAP.packs.find((b) => b.action === 'measure');
 ok('ui guide keys: the In packs bullet says what E does: measures the selection, one scan per lens',
   !!measure && measure.keys.some((k) => keyNamed(k, packsDoc)) && /\bmeasur/i.test(packsDoc) && /one (?:selection )?scan per lens/i.test(packsDoc),
   measure ? `the bullet: ${JSON.stringify(packsDoc.trim())}` : 'KEYMAP.packs binds no measure key');
+// ------------------------------------------------------------------------ the outcome watch: what is promised is what happens
+// Read against packages/core/src/train/watch.ts (checkpointPlan: the last checkpoint has no next window, so it is queued late
+// and never missed; newWatch: 409 for a release with no item) and server/watch.server.ts (only a read queues a checkpoint).
+const WATCH_SRC = fs.readFileSync('packages/core/src/train/watch.ts', 'utf8');
+ok('watch: the code still refuses a release with no item (409) and leaves the last checkpoint with no next window',
+  /status: 409, error: `release \$\{relId\} carries no item to watch`/.test(WATCH_SRC) && /if \(next && Date\.parse\(next\.due\) <= nowMs/.test(WATCH_SRC));
+const HIST = blankComments(fs.readFileSync('apps/web/src/components/ledger/train/release/History.tsx', 'utf8'));
+const watchBtn = /data-role="tr-rel-watch"[\s\S]*?<\/button>/.exec(HIST)?.[0] ?? '';
+ok('watch tooltip: the Watch outcomes button is found', /Watch outcomes/.test(watchBtn));
+ok('watch tooltip: it states the condition: checkpoints are queued when the Release tab is opened', /open(ed|s)?\b.*Release tab|Release tab.*open/i.test(flat(watchBtn)), flat(watchBtn).slice(0, 300));
+ok('watch tooltip: it says a checkpoint whose window passed before that is missed', /\bmissed\b/i.test(watchBtn), flat(watchBtn).slice(0, 300));
+const rowOf = (verb: string) => flat(UI_DOC.split(/\r?\n/).find((l) => l.startsWith('| `' + verb + ' /api/products/<slug>/releases/watch`')) ?? '');
+const getRow = rowOf('GET'), postRow = rowOf('POST');
+ok('watch rows: both rows of the guide are found', getRow.length > 0 && postRow.length > 0);
+ok('watch rows: the GET row says day 30 has an open window, queued late rather than missed', /day 30/i.test(getRow) && /open window/i.test(getRow) && /queued/i.test(getRow), getRow.slice(-400));
+ok('watch rows: the GET row says days 1 and 7 can be missed', /days? 1 and (?:day )?7\b[^|]*\bmissed\b/i.test(getRow), getRow.slice(-400));
+ok('watch rows: the POST row lists the 409 for a release carrying no item', /\*\*409\*\*[^|]*\bno item\b/i.test(postRow), postRow.slice(-300));
+const watchHead = WATCH_SRC.split(/\r?\n/).filter((l) => l.startsWith('//')).map((l) => l.replace(/^\/\/\s*/, '')).join(' ');
+ok('watch header: it no longer says every passed checkpoint is "never queued late"', !/missed, never queued late/.test(watchHead), watchHead.slice(0, 300));
+ok('watch header: it says day 30 has an open window while days 1 and 7 can be missed', /day 30[^.]*open window/i.test(watchHead) && /days? 1 and (?:day )?7\b[^.]*\bmissed\b/i.test(watchHead), watchHead.slice(0, 300));
+ok('ui guide release tab: the bullet names the Watch outcomes control', /Watch outcomes/.test(bulletOf(UI_DOC, 'The Release tab')), 'the bullet never names it');
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');

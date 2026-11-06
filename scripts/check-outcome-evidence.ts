@@ -200,6 +200,9 @@ const WT = await import(core('train/watch.ts')) as typeof import('../packages/co
     const rec = WT.recordPlan(w, adopt, new Map());
     check('8 a recorded checkpoint plans nothing more; a passed window is missed, the current one queued', WT.checkpointPlan(rec, Date.parse(h(31)), []).length === 0
       && JSON.stringify(WT.checkpointPlan(w, Date.parse(h(200)), []).map((p) => [p.day, !!p.missed, p.queue.length])) === '[[1,true,0],[7,false,1]]');
+    // DW-153: day 30 keeps an open window: a late one is queued, never missed, while days 1 and 7 can be missed
+    const late = WT.checkpointPlan(w, Date.parse(h(6 + 24 * 400)), []);
+    check('8 at day 400 days 1 and 7 are missed and day 30 is queued late', JSON.stringify(late) === JSON.stringify([{ day: 1, adopt: [], queue: [], missed: true }, { day: 7, adopt: [], queue: [], missed: true }, { day: 30, adopt: [], queue: [{ lens: 'performance', features: ['f-a'], label: 'Watch v1.0.0 · day 30' }] }]), JSON.stringify(late));
     check('8 an off watch plans nothing', WT.checkpointPlan({ ...w, off_at: h(7) }, Date.parse(h(31)), []).length === 0);
   }
 }
