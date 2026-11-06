@@ -31,6 +31,9 @@
 //      mainOutcome row by row; a descoped row is never an approval; judgement counted apart; the advice asks when at
 //      least 3 are measured and short >= held, naming the short ids as the precedent fact's evidence (never decline);
 //      without landings the accepted rows are open and the line reads as before; briefAdvice agrees with the brief.
+//  22. the words (DW-185): the concept note a port is built from says five facts, names the outcome ask, and qualifies "a
+//      decline is final" with the veto of a machine decision; brief.ts's header says five facts and no longer says flatly that
+//      no route reopens a decided proposal.
 // Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
@@ -357,6 +360,23 @@ const sec = [
   for (const c of g.cases) built.push(c.brief);
   ok(16, g.cases.length === 6 && ['withdraw', 'ask', 'proceed'].every((say) => g.cases.some((c) => c.brief.advice.say === say)) && g.cases.some((c) => /No precedent yet/.test(c.brief.lines.join('\n'))),
     'the golden covers withdraw, ask, proceed and a no-precedent case');
+}
+// 22. the note and the header say what the code does
+{
+  const note = fs.readFileSync(path.join(ROOT, 'docs/concepts/decision-brief/README.md'), 'utf8').replace(/\r\n/g, '\n');
+  const undoRow = note.split('\n').find((l) => l.startsWith('| **undo**')) ?? '';
+  const advice = note.slice(Math.max(0, note.indexOf('`advice` is'))).split('\n\n')[0];
+  const VETO = /veto[\s\S]{0,160}\b(machine|agent|grant|policy|rule)|\b(machine|agent|grant|policy|rule)[\s\S]{0,160}veto/i;
+  ok(22, !/\bfour facts\b/i.test(note), 'the note does not say four facts');
+  ok(22, /\bfive facts\b/i.test(note), 'the note says five facts');
+  ok(22, /\b(approvals?|accepts?)\b[\s\S]{0,120}\b(measured|on main)\b[\s\S]{0,120}\b(short|shortfall|fell|falls?|falling)\b/i.test(advice), 'the note\'s advice paragraph names the outcome ask (like approvals measured on main falling short)', advice.slice(0, 120));
+  ok(22, VETO.test(undoRow), 'the note\'s undo row qualifies "a decline is final" with the veto of a machine decision', undoRow.slice(0, 120));
+  ok(22, VETO.test(advice), 'the note\'s advice paragraph qualifies "a decline is final" with the veto of a machine decision');
+  const lines = fs.readFileSync(path.join(ROOT, 'packages/core/src/scan/brief.ts'), 'utf8').split(/\r?\n/);
+  const header = lines.slice(0, lines.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/\s*/, '')).join(' ');
+  ok(22, !/no route reopens a decided proposal/i.test(header), 'brief.ts\'s header no longer says flatly that no route reopens a decided proposal');
+  ok(22, /veto/i.test(header), 'brief.ts\'s header mentions the veto');
+  ok(22, !/\bfour facts\b/i.test(header) && /\bfive facts\b/i.test(header), 'brief.ts\'s header says five facts, not four', header.slice(0, 80));
 }
 // 15. the wire
 {
