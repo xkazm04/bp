@@ -8,6 +8,7 @@
 // (`/lens-scan measure --lens all` or `/lens-scan propose --lens all`, kind measure or propose, one MAX_RUNNING slot); 400
 // `'bad-phase'` for any other phase (or a phase on a single-lens body), `'bad-scope'` for a scope other than all. Kettle's sim
 // has no every-lens job: it answers its own unknown-lens refusal (the ledger offers the buttons on a live product only).
+// Both forms answer to the owner's standing orders first (rules.server.ts gateScan): 403 `{ error, order, held }`.
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim queues and lists the jobs, with the same answers.
 // Its scope goes through this route's parseScope first, so a Kettle job keeps no unknown keys and a label of at most 200.
@@ -54,6 +55,8 @@ const scans = door('products/[slug]/scans', {
         const scope = parseScope(body.scope, map.features);
         if (!scope || scope.kind !== 'all') return Response.json({ error: 'bad-scope' }, { status: 400 });
         if (!map.lenses.some((e) => e.enabled && scannable(e, false))) return Response.json({ error: 'no-scan-method' }, { status: 400 });
+        const g = gateScan(p, 'scan.place', ALL_LENSES, scope); // scope everything: any live hold refuses it, and so does any `only`
+        if (g.refused) return refusedBy(g);
         const r = enqueueAllLenses(slug, p.root, phase);
         return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
       }

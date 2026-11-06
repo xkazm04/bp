@@ -90,7 +90,7 @@ A rule covers a feature when its scope is `all` or the feature is in `scope.feat
 
 Every agent door calls one gate before it builds or scans (`gate`, through `gateBuild` / `gateScan`): wave compose
 (`wave.compose`) and dispatch (`wave.dispatch`), `/dispatch` (`dispatch`), a lens's execute (`lens.execute`), a
-place scan (`scan.place`) and a lens's prepare job (`lens.prepare`, gated as that lens's scan of everything: it edits the
+place scan (`scan.place`, with the lens `all` when it scans every lens at once, so any `hold` or `only` refuses that form) and a lens's prepare job (`lens.prepare`, gated as that lens's scan of everything: it edits the
 repo across the product). The gate reads only live orders. Grants never refuse.
 
 The gate **fails closed**: while `bp-rules.json` exists but cannot be read or parsed, every build and scan is refused,
