@@ -9,7 +9,7 @@ import { checkLensManifest, type CheckLensOptions } from './manifest-check.ts';
 export type DraftKind = 'project' | 'temporary';
 
 /** The map a product's chat reads: a live product's store map, or the Kettle sample's in the bp repo. */
-export const draftMapPath = (kettle: boolean): string => (kettle ? 'src/data/kettle.app-structure.json' : '.ai/lens-scan/app-structure.json');
+export const draftMapPath = (kettle: boolean): string => (kettle ? 'packages/core/data/kettle.app-structure.json' : '.ai/lens-scan/app-structure.json');
 
 /**
  * The first turn's prompt: `/lens-scan onboard --draft-only [--temporary]`, then the user's message. The skill prints
