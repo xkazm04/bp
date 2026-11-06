@@ -485,6 +485,58 @@ const measured: Record<string, string> = {};
   reset();
 }
 
+// ---------------------------------------------------------------------------------------------- 5b. the keyboard selects (DW-141)
+// With target mode on (S), Enter selects the place in view instead of navigating: the nearest tile when one fills the view
+// (the test plain Enter uses), else the place the camera is framed on (the last crumb). Target mode off: Enter as before.
+{
+  const noTarget = () => E.store.set({ tgt: { ids: {}, n: 0, label: '' } });
+  const fills = () => { const T = E.nearestTile(); return T && T.w * E.cam.k >= 96 * E.U && E.lod() > 0.5 ? T : null; };
+  const frame = (cam: Any) => { E.cam.set(cam); E.cam.stopFly?.(); E.dirty(); flush(); E.syncPlace(); }; // syncPlace: what a real frame ends with
+  const T0 = M.L.tiles[0], atTile = () => frame({ x: T0.x + T0.w / 2, y: T0.y + T0.h / 2, k: E.KB1 * 2.5 });
+  const fidK = Object.keys(M.P.F)[0];
+
+  // the mode's own toast says Enter does it (a keyboard user is otherwise told only to click or drag)
+  reset(); noTarget(); atTile(); key('s');
+  expect(E.S.selMode === true && /Enter/.test(E.S.toast?.text ?? ''), 'target mode: the toast names Enter (got ' + JSON.stringify(E.S.toast?.text) + ')');
+  const near = fills();
+  expect(!!near, 'a tile fills the view at tile level');
+  key('Enter');
+  expect(E.S.open === null, 'target mode: Enter on a tile opens nothing (open ' + E.S.open + ')');
+  expect(E.S.tgt?.n === 1 && !!near && E.S.tgt.ids[near.id] === 1 && !!E.S.tgt.label, 'target mode: Enter selects the tile in view, with a label (got ' + JSON.stringify(E.S.tgt) + ')');
+
+  // no tile fills the view: the place the camera is framed on, its last crumb (a wing, on this sample)
+  const atWing = () => frame(E.fitOf({ t: 'wing', o: Object.values(M.L.WING)[0] }));
+  reset({ selMode: true }); noTarget(); atWing();
+  const crumb = E.S.place.at(-1), framed = crumb ? E.placeById(crumb.t, crumb.id) : null;
+  expect(!fills() && !!framed && framed.feats.length > 1, 'a framed wing has no tile filling the view and is the last crumb (' + JSON.stringify(E.S.place) + ')');
+  if (framed) {
+    const k0 = E.cam.k, x0 = E.cam.x, y0 = E.cam.y;
+    key('Enter');
+    expect(E.S.tgt?.n === framed.feats.length && framed.feats.every((f: Any) => E.S.tgt.ids[f.id] === 1) && !!E.S.tgt.label, 'target mode: Enter selects the framed place, with a label (got n ' + E.S.tgt?.n + ' of ' + framed.feats.length + ', label ' + JSON.stringify(E.S.tgt?.label) + ')');
+    expect(!E.cam.flying && E.cam.k === k0 && E.cam.x === x0 && E.cam.y === y0, 'target mode: Enter on a framed place does not move the camera');
+    // target mode off: as before, a framed place selects nothing
+    reset(); noTarget(); atWing(); key('Enter'); E.cam.stopFly?.();
+    expect(E.S.tgt?.n === 0, 'GUARD target mode off: Enter on a framed place selects nothing');
+  }
+  // nothing framed (the whole plan): no crumb to select, and Enter still navigates nowhere it was not asked to
+  reset({ selMode: true }); noTarget(); frame(E.HOME);
+  { let threw = ''; try { key('Enter'); } catch (e) { threw = String(e); } E.cam.stopFly?.(); expect(threw === '' && E.S.open === null, 'target mode: Enter on the whole plan throws nothing and opens nothing' + (threw ? ' (' + threw + ')' : '')); }
+
+  // an active trouble-route arrival opens its feature only in plain mode; target mode selects
+  reset({ selMode: true }); noTarget(); atTile(); E.routeTarget = () => fidK; key('Enter');
+  expect(E.S.open === null && E.S.tgt?.n === 1, 'target mode: Enter selects even on a trouble-route arrival (open ' + E.S.open + ', n ' + E.S.tgt?.n + ')');
+  reset(); noTarget(); atTile(); key('Enter');
+  expect(E.S.open === fidK && E.S.tgt?.n === 0, 'GUARD target mode off: a trouble-route arrival still opens its feature');
+  delete E.routeTarget;
+
+  // target mode off: Enter still opens the tile in view; a focused control keeps its Enter in either mode
+  reset(); noTarget(); atTile(); { const T = fills(); key('Enter'); expect(!!T && E.S.open === T.id && E.S.tgt?.n === 0, 'GUARD target mode off: Enter opens the tile in view and selects nothing'); }
+  const btn = new El('button'); btn.matchSel = ['button'];
+  reset({ selMode: true }); noTarget(); atTile(); key('Enter', { target: btn });
+  expect(E.S.tgt?.n === 0 && E.S.open === null, 'GUARD target mode: Enter on a focused control belongs to that control');
+  reset(); noTarget(); E.cam.set(E.HOME); E.cam.stopFly?.();
+}
+
 // ---------------------------------------------------------------------------------------------- 6. the hash: write, push / replace, read back
 {
   E.destroy(); E = mount(); reset();
