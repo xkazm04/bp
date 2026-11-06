@@ -7,7 +7,8 @@
 // line each (a preview, before any run, says where they will go). Only the header block differs between the modes.
 // An item already on the base branch (lens-scan release.md "Landed", step L4) names its landing commit there instead of
 // the pick and the pack, and a release whose every item landed adds `landed: tagged on <base> at <HEAD>`. The reading on
-// the base branch now (main-now) is not given: no measurement names the commit it measured yet.
+// the base branch now (main-now) is not given, though every reading names the commit it measured (Measurement.commit_sha):
+// the notes say what shipped, and the watch (train/watch.ts) follows it after that.
 // Pure: value imports ./rules.ts, ../scan/compare.ts and ../scan/landed.ts only, so Node checks import it (scripts/check-release-notes.ts).
 import type { Measurement, Proposal } from '../scan/types.ts';
 import { verdictOf, type LensFields, type Verdict } from '../scan/compare.ts';
