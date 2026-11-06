@@ -397,6 +397,50 @@ try {
         && J.list('prod').length === n0 + 1, JSON.stringify(a202).slice(0, 300));
       check('lens all: the prompt is `/lens-scan measure --lens all`', await until(() => /^stdin \/lens-scan measure --lens all$/m.test(job('prod', a202.body.id)?.log_tail ?? '')), job('prod', a202.body.id)?.log_tail);
       await until(() => !['queued', 'running'].includes(job('prod', a202.body.id)?.status ?? ''));
+      // DW-221: the every-lens form answers to the owner's standing orders as the single-lens form does (docs/standard/rules-1.md section 6)
+      {
+        const every = { kind: 'all', label: 'Every lens', features: [] };
+        const ruleFile = path.join(store, 'work', 'bp-rules.json'), ruleLog = path.join(store, 'work', 'bp-rules-log.jsonl'), hadWork = fs.existsSync(path.join(store, 'work'));
+        const order = (id: string, kind: string, extra: object = {}) => ({ id, kind, text: kind, by: 'user:owner', at: '2026-10-20T10:00:00.000Z', scope: { kind: 'room', id: 'r1', label: 'Room', features: ['a'] }, ...extra });
+        const setRules = (...rules: object[]) => { fs.mkdirSync(path.dirname(ruleFile), { recursive: true }); fs.writeFileSync(ruleFile, JSON.stringify({ version: 1, rules })); };
+        // a job the base still queues must end before the next call, so one case cannot read as another's refusal
+        const settle = () => until(() => !J.list('prod').some((x) => x.status === 'queued' || x.status === 'running'));
+        const everyLens = async (phase?: string) => {
+          const n = J.list('prod').length, c = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: every, ...(phase ? { phase } : {}) });
+          const queued = J.list('prod').length - n;
+          await settle();
+          return { ...c, queued };
+        };
+        const words = (c: { status: number; body: unknown; queued: number }) => `${c.status}, ${c.queued} queued: ${JSON.stringify(c.body).slice(0, 200)}`;
+        const refusedByOrder = (c: { status: number; body: any; queued: number }, id: string) => c.status === 403 && typeof c.body.error === 'string' && c.body.error.includes(id) && c.body.order?.id === id && Array.isArray(c.body.held) && c.queued === 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+        try {
+          const free = await everyLens('propose');
+          check('every-lens control: with no rules the propose phase answers 202 and queues its job', free.status === 202 && free.body.kind === 'propose' && free.queued === 1, words(free));
+          setRules(order('O-1', 'hold'));
+          const single = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
+          check('every-lens control: under a live hold the single-lens form refuses, with { error, order, held }', single.status === 403 && single.body.order?.id === 'O-1', JSON.stringify(single).slice(0, 300));
+          const held = await everyLens('measure');
+          check('every-lens under a live hold (phase measure): 403 citing the order, no job queued (DW-221)', refusedByOrder(held, 'O-1'), words(held));
+          const heldP = await everyLens('propose');
+          check('every-lens under a live hold (phase propose): 403 citing the order, no job queued (DW-221)', refusedByOrder(heldP, 'O-1'), words(heldP));
+          const dflt = await everyLens();
+          check('every-lens under a live hold (no phase named): 403 citing the order, no job queued (DW-221)', refusedByOrder(dflt, 'O-1'), words(dflt));
+          check('every-lens refusal has the shape of the single-lens one (DW-221)', Object.keys(held.body).sort().join() === Object.keys(single.body).sort().join(), Object.keys(held.body).sort().join() + ' / ' + Object.keys(single.body).sort().join());
+          setRules(order('O-2', 'only', { lenses: ['development'] }));
+          const only = await everyLens('measure');
+          check("every-lens under an `only` naming some lenses: 403 citing it, no job queued; lens 'all' is in no order's list (DW-221)", refusedByOrder(only, 'O-2'), words(only));
+          setRules(order('O-3', 'cap', { maxEffort: 'low' }));
+          const capped = await everyLens('measure');
+          check('every-lens control: a cap never refuses a scan: 202 and its job', capped.status === 202 && capped.queued === 1, words(capped));
+          setRules(order('O-4', 'hold', { revokedAt: '2026-10-20T11:00:00.000Z' }));
+          const lifted = await everyLens('measure');
+          check('every-lens control: a revoked hold refuses nothing: 202 and its job', lifted.status === 202 && lifted.queued === 1, words(lifted));
+        } finally {
+          fs.rmSync(ruleFile, { force: true }); fs.rmSync(ruleLog, { force: true });
+          if (!hadWork) fs.rmSync(path.join(store, 'work'), { recursive: true, force: true });
+          await settle();
+        }
+      }
     } finally { fs.writeFileSync(regFile, reg0); }
   }
   // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
