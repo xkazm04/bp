@@ -314,12 +314,14 @@ export interface AgentCard {
 }
 export interface AgentDeck { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[]; news?: { since: string; count: number } }
 export function agentDeck(d: MorningDeck): AgentDeck {
+  // the page prints deck.skipped itself; this view has no such key, so an agent reads it in the open card's lines
+  const notRead = d.skipped?.length ? ['Not read: ' + d.skipped.map((x) => `${x.product} (${x.why})`).join('; ')] : [];
   return {
     since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}), ...(d.news ? { news: d.news } : {}),
     cards: d.cards.map((c) => {
       const x = c.decision, b = x?.brief;
       return {
-        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: c.lines.map((l) => l.text), ...(c.news ? { news: true as const } : {}),
+        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: [...c.lines.map((l) => l.text), ...(c.kind === 'open' ? notRead : [])], ...(c.news ? { news: true as const } : {}),
         ...(c.place ? { place: { product: c.place.product, ...(c.place.target ? { target: c.place.target } : {}) } } : {}),
         ...(x ? { decision: {
           proposal: x.proposal, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(x.steered ? { steered: { verdict: x.steered.verdict, at: x.steered.at } } : {}),
