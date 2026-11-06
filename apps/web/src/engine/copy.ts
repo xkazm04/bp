@@ -44,3 +44,15 @@ export const LIVE_UNDO_WORDS = { strong: 'Nothing to undo here:', text: 'an answ
 export function unknownFeatureWords(id: string): { strong: string; text: string } {
   return { strong: `No feature ${id} on this map:`, text: 'it may have been renamed or removed.' };
 }
+
+/** A key of a link that names something this map does not have. */
+export interface BadLinkKey { key: 'at' | 'lens' | 'blast' | 'who' | 'open'; value: string }
+const LINK_NOUN: Record<BadLinkKey['key'], string> = { at: 'place', lens: 'lens', blast: 'blast feature', who: 'person', open: 'feature' };
+const LINK_VALUE_MAX = 60;
+/** The one notice for a link that cannot be honoured (a value comes from the URL, so it is bounded); null when nothing is wrong. */
+export function unknownLinkWords(bad: readonly BadLinkKey[]): { strong: string; text: string } | null {
+  if (!bad.length) return null;
+  if (bad.length === 1 && bad[0].key === 'open') return unknownFeatureWords(bad[0].value);
+  const named = bad.map((b) => LINK_NOUN[b.key] + ' ' + (b.value.length > LINK_VALUE_MAX ? b.value.slice(0, LINK_VALUE_MAX) + '…' : b.value));
+  return { strong: 'This link names what is not on this map:', text: named.join(', ') + '. It may have been renamed or removed.' };
+}

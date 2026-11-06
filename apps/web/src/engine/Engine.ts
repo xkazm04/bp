@@ -18,7 +18,7 @@ import { CALLOUT_PAD, baseHeight, overlayRight, railWidth } from './chrome';
 import { LEDGER_VARIANTS, initialState, type Crumb, type DockTab, type HoverInfo, type LedgerVariant, type ReadyScope, type UIState } from './state';
 import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './deep-link';
 import { readTheme, type Theme } from './theme';
-import { LIVE_UNDO_WORDS, saveFailWords, unknownFeatureWords } from './copy';
+import { LIVE_UNDO_WORDS, saveFailWords, unknownFeatureWords, unknownLinkWords, type BadLinkKey } from './copy';
 import { lineSiblings } from './lines';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
@@ -806,10 +806,10 @@ export class Engine {
    * the tile and shrink back into it. Only a tile that is off screen or too small to see (a search
    * pick, a deep link, a list row) brings the plan to it first, instantly, behind the page.
    */
-  openFeature(id: string) {
+  openFeature(id: string, announced = false) {
     const F = this.M.P.F[id], T = this.M.L.TILE[id];
     if (!F) { // a shared link or a back/forward to a feature this map does not have: say so once, and stop pointing at it
-      const w = unknownFeatureWords(id); this.toast(w.strong, w.text, undefined, undefined, 'warn');
+      if (!announced) { const w = unknownFeatureWords(id); this.toast(w.strong, w.text, undefined, undefined, 'warn'); }
       if (this.S.open === id) this.set({ open: null });
       if (this.S.phone) return;
       this.writeHashSoon(); return;
@@ -1650,6 +1650,17 @@ export class Engine {
   private placeOfHash(h: Record<string, string>): string {
     return h.open && this.M.P.F[h.open] ? 'open=' + h.open : h.at ? 'at=' + encodeURIComponent(h.at) : '';
   }
+  /** The one notice for what a hash names and this map lacks (lens, place, blast, person, feature). */
+  private announceLink(h: Record<string, string>) {
+    const bad: BadLinkKey[] = [];
+    if (h.at && !(this.placeById('bld', h.at) || this.M.L.WING[h.at] || this.M.L.ROOM[h.at] || this.M.L.BAY[h.at])) bad.push({ key: 'at', value: h.at });
+    if (h.lens && h.lens !== GENERAL && !lensOf(this.M.P, h.lens)) bad.push({ key: 'lens', value: h.lens });
+    if (h.blast && !this.M.P.F[h.blast]) bad.push({ key: 'blast', value: h.blast });
+    if (h.who && !this.M.P.P[h.who]) bad.push({ key: 'who', value: h.who });
+    if (h.open && !this.M.P.F[h.open]) bad.push({ key: 'open', value: h.open });
+    const w = unknownLinkWords(bad);
+    if (w) this.toast(w.strong, w.text, undefined, undefined, 'warn');
+  }
   private readHash() {
     const h = this.parseHash();
     // a deep link (?page=ledger&tab=release, deep-link.ts) says what the hash has not said, once: the query drops it and
@@ -1665,6 +1676,7 @@ export class Engine {
     }
     this.hashSeen = location.hash; this.restoreUntil = performance.now() + 1000; this.adopt = true; this.hashPlace = this.placeOfHash(h);
     if (!Object.keys(h).length) return;
+    this.announceLink(h);
     this.hashLock = true;
     try {
     this.endIntro();
@@ -1680,7 +1692,7 @@ export class Engine {
       const t = this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null;
       if (t) this.cam.set(this.fitOf({ t: t as Crumb['t'], o: this.placeById(t, h.at)! }));
     }
-    if (h.open) this.openFeature(h.open); // an unknown id toasts and leaves open null
+    if (h.open) this.openFeature(h.open, true); // an unknown id was announced above, and leaves open null
     } finally { this.hashLock = false; }
   }
   /** Back / forward / a hash pasted into the same tab: bring lens, time, modes, place and the open feature to what the hash says (absent = the default). Writes are held until the camera arrives, then adopt. */
@@ -1689,6 +1701,7 @@ export class Engine {
     const h = this.parseHash();
     this.hashSeen = location.hash; this.restoreUntil = performance.now() + 400; this.adopt = true;
     clearTimeout(this.pushTimer); this.navPush = false; this.hashPlace = this.placeOfHash(h);
+    this.announceLink(h);
     this.hashLock = true;
     try {
       this.endIntro();
@@ -1705,7 +1718,7 @@ export class Engine {
       if (blast !== this.S.blast || ga !== this.S.ga || (sc && (!cur || cur.kind !== sc.kind || cur.id !== sc.id))) this.setMode(ga ? { blast, ga, scope: sc } : { blast, ga });
       if (h.page === 'ledger') this.setPage('ledger', ledgerVariant(h.lv)); else this.setPage('plan');
       if (h.open && this.M.P.F[h.open]) { if (this.S.open !== h.open) this.openFeature(h.open); return; }
-      if (h.open) this.openFeature(h.open); // not on this map: toasts once, then the plan as if it were absent
+      if (h.open) this.openFeature(h.open, true); // not on this map: announced above, then the plan as if it were absent
       if (this.S.open) this.closeFeature(false);
       if (this.S.phone || moded) return; // a mode frames its own features
       const t = h.at ? (this.placeById('bld', h.at) ? 'bld' : this.M.L.WING[h.at] ? 'wing' : this.M.L.ROOM[h.at] ? 'room' : this.M.L.BAY[h.at] ? 'bay' : null) : null;
