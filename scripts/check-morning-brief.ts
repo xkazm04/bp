@@ -128,6 +128,60 @@ check('the steering log says it, with the note', /Declined as a repeat: Add retr
     !!asDeck({ ...d, cards: [{ ...dc, kind: 'news' }] }) && !!asDeck({ ...d, cards: [{ ...dc, decision: { ...dc.decision, brief: { ...dc.decision!.brief, lines: ['1', '2', '3', '4', '5', '6'] } } }] }) && !!asRow({ ...row, verdict: 'veto' }));
 }
 
+// ------------------------------------------------------------------------- a standing order on a decision card (DW-226)
+// An ORDER (work/bp-rules.json, docs/standard/rules-1.md) is not the owner's Hold verdict ("Held since ...", the steering log):
+// the card says no agent door will build it until the order is lifted, in `lines`, on the wire as it stands.
+{
+  const { wire } = await import('./lib/wire-schema.ts');
+  const { morningDeck } = await import('../packages/core/src/server/api/companion/morning.server.ts');
+  const store = path.join(TMP, 'kettle-web', '.ai', 'lens-scan'), rulesFile = path.join(store, 'work', 'bp-rules.json');
+  const plan = JSON.parse(fs.readFileSync(path.join(store, 'app-structure.json'), 'utf8')) as { features: { slug: string; capability?: string }[] };
+  const billing = plan.features.filter((f) => f.capability === 'payments.billing').map((f) => f.slug);
+  const order = (o: object = {}) => ({ id: 'O-1', kind: 'hold', text: 'Hold billing', by: 'user:owner', at: '2026-01-01T00:00:00.000Z', scope: { kind: 'room', id: 'payments.billing', label: 'Billing', features: billing }, ...o });
+  const setRules = (...rules: object[]) => { fs.mkdirSync(path.dirname(rulesFile), { recursive: true }); fs.writeFileSync(rulesFile, JSON.stringify({ version: 1, rules })); };
+  const agentView = async () => (await (await GET(new Request('http://127.0.0.1:3313/api/companion/morning?view=agent', { headers: H }))).json()) as { cards: { lines: string[]; decision?: { proposal: string } }[] };
+  const textsOf = (x: Deck, id: string) => x.cards.find((c) => c.decision?.proposal === id)?.lines.map((l) => l.text) ?? [];
+  const agentTexts = (x: { cards: { lines: string[]; decision?: { proposal: string } }[] }, id: string) => x.cards.find((c) => c.decision?.proposal === id)?.lines ?? [];
+  const COVERED = 'brief-o4', FREE = 'find-kettle-web-1';
+  const saysOrder = (ts: string[], id = 'O-1') => ts.some((t) => t.includes(id) && /\bagent/i.test(t) && /\bbuild/i.test(t) && /\blift/i.test(t));
+  const namesOrder = (ts: string[]) => ts.some((t) => /\b[OG]-\d+\b/.test(t) || /\bagent door/i.test(t));
+  check('order fixture: the covered card sits in the held room, the free one does not', billing.includes('card-payments') && !billing.includes('digital-waiver-signing') && dec.some((c) => c.decision?.proposal === COVERED) && dec.some((c) => c.decision?.proposal === FREE), billing.join());
+  check('no order: no decision card names one', ![COVERED, FREE].some((id) => namesOrder(textsOf(d, id))));
+
+  setRules(order());
+  const held = await deck(), ah = await agentView();
+  check('a live hold: the card in that room has a line naming O-1 and that no agent door builds it until it is lifted (deck) (DW-226)', saysOrder(textsOf(held, COVERED)), textsOf(held, COVERED).join(' | '));
+  check('a live hold: the same line in the agent view (DW-226)', saysOrder(agentTexts(ah, COVERED)), agentTexts(ah, COVERED).join(' | '));
+  check('a live hold: a finding the order does not cover has no such line, deck or agent view', !namesOrder(textsOf(held, FREE)) && !namesOrder(agentTexts(ah, FREE)), textsOf(held, FREE).join(' | '));
+  check("an order is not the owner's Hold verdict: its card does not read \"Held since\"", !textsOf(held, COVERED).some((t) => /Held since/.test(t)), textsOf(held, COVERED).join(' | '));
+  const bad = [(await wire('morning-deck-1', 'morningDeck'))(held), (await wire('morning-deck-1', 'agentDeck'))(ah)].filter(Boolean);
+  check('a deck under an order, and its agent view, are still morning-deck-1 (no new keys)', !bad.length, bad.join(' | '));
+
+  const none = async (name: string, ...rules: object[]) => {
+    setRules(...rules);
+    const x = await deck(), a = await agentView();
+    check(`${name}: no order line, deck or agent view`, !namesOrder(textsOf(x, COVERED)) && !namesOrder(agentTexts(a, COVERED)), textsOf(x, COVERED).join(' | '));
+  };
+  await none('a revoked order', order({ revokedAt: '2026-01-02T00:00:00.000Z', revokedBy: 'user:owner' }));
+  await none('an expired order', order({ expiresAt: '2026-01-02T00:00:00.000Z' }));
+  await none('an order over another room', order({ scope: { kind: 'room', id: 'member-experience.member-app', label: 'Member app', features: ['digital-waiver-signing'] } }));
+  await none('an `only` that lets the finding\'s lens through holds nothing', order({ kind: 'only', lenses: ['development'] }));
+  await none('a cap: a wave that names its effort still builds there, so "no agent door" would be false', order({ kind: 'cap', maxEffort: 'medium' }));
+  await none('a grant over the room is not an order', order({ id: 'G-1', kind: 'grant', minTier: 3, expiresAt: '2099-01-01T00:00:00.000Z' }));
+
+  fs.writeFileSync(rulesFile, '{ not json');
+  const broken = await GET(req('GET'));
+  check('a corrupt rules file does not take the morning down: 200', broken.status === 200, String(broken.status));
+
+  // the owner's Hold verdict and the order, told apart the next morning: the verdict alone reads "Held since" and names no order
+  setRules(order());
+  const steered = await POST(req('POST', { product: 'kettle-web', proposal: FREE, verdict: 'hold' }, human));
+  const next = await morningDeck(undefined, Date.now() + 18 * 3600e3);
+  check("the owner's Hold verdict alone: \"Held since\", and no order line", steered.status === 200 && textsOf(next, FREE).some((t) => /^Held since/.test(t)) && !namesOrder(textsOf(next, FREE)), textsOf(next, FREE).join(' | '));
+  check('...and the order alone, the same morning: the order line, no "Held since" (DW-226)', saysOrder(textsOf(next, COVERED)) && !textsOf(next, COVERED).some((t) => /Held since/.test(t)), textsOf(next, COVERED).join(' | '));
+  fs.rmSync(rulesFile, { force: true });
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
 process.exit(failed ? 1 : 0);
