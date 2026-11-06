@@ -35,6 +35,9 @@ import { DatabaseSync } from 'node:sqlite';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);
+// BP_FAKE_ENV_FILE: check:scan-jobs reads what the spawned CLI inherited, one JSON line per run: the variables' names (never
+// their values) and the job's id
+if (process.env.BP_FAKE_ENV_FILE) fs.appendFileSync(process.env.BP_FAKE_ENV_FILE, JSON.stringify({ job: process.env.BP_JOB_ID ?? null, names: Object.keys(process.env) }) + '\n');
 let input = '';
 process.stdin.setEncoding('utf8');
 for await (const chunk of process.stdin) input += chunk;

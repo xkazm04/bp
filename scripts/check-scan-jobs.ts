@@ -23,6 +23,9 @@
 //     there), the job env carries BP_JOB_ID and PERSONAS_RUN_LABEL=bp-job:<id>; a decision (proposals, dispatch, lens
 //     execute) is signed user:<gh login> through a fake gh; BP_WRITES=off answers 403 on the decision and triage routes,
 //     the structure route says writes: false, and the release routes still work.
+//   - unattended runs do not inherit API keys (DW-105): the env the fake CLI records for a measure job, an execute job and the
+//     lens-draft chat has no *_API_KEY and none of the parent session's markers; PATH and BP_JOB_ID stay; BP_JOB_KEEP_ENV=A,B
+//     keeps exactly the variables it names; no spawn site hands the CLI ...process.env.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
 // FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
@@ -623,6 +626,50 @@ try {
   check('DELETE an unknown lens -> 404', (await call(one.DELETE, '/x', 'DELETE', { slug: 'prod', id: 'tmp.none' })).status === 404);
   fs.writeFileSync(mapFile, '{ broken');
   check('a map that does not parse -> 409, left as it is', (await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: MANIFEST })).status === 409 && fs.readFileSync(mapFile, 'utf8') === '{ broken');
+
+  // ------------------------------------------------------------------ unattended runs do not inherit API keys (DW-105)
+  {
+    const envFile = path.join(dir, 'fake-env.jsonl');
+    const SECRET: Record<string, string> = { ANTHROPIC_API_KEY: 'qa-fake', OPENAI_API_KEY: 'qa-fake', Some_Vendor_Api_Key: 'qa-fake' };
+    const MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_ENTRYPOINT'];
+    const planted: Record<string, string> = { ...SECRET, ...Object.fromEntries(MARKERS.map((m) => [m, 'qa-fake'])), BP_FAKE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: 'qa-fake' };
+    const saved = Object.fromEntries(Object.keys({ ...planted, BP_JOB_KEEP_ENV: '' }).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, planted);
+    type Seen = { job: string | null; names: string[] };
+    const seenAll = (): Seen[] => (fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Seen) : []);
+    const seenOf = async (id: string) => { await until(() => seenAll().some((x) => x.job === id) && job('envp', id)?.status !== 'running' && job('envp', id)?.status !== 'queued'); return seenAll().find((x) => x.job === id); };
+    const hasKey = (s: Seen | undefined, n: string) => !!s?.names.some((k) => k.toUpperCase() === n.toUpperCase());
+    const keys = (s: Seen | undefined) => s?.names.filter((k) => k.toUpperCase().endsWith('_API_KEY')) ?? ['no run seen'];
+    try {
+      const envRoot = repo('envp');
+      for (const [what, q] of [['measure', J.enqueueMeasure('envp', envRoot, 'x', ALL)], ['execute', J.enqueueExecute('envp', envRoot, ['p1'])]] as const) {
+        const s = q.ok ? await seenOf(q.job.id) : undefined;
+        check(what + ' job: the fake CLI ran and recorded its env', !!s, JSON.stringify(q).slice(0, 200));
+        check(what + ' job env: no *_API_KEY', keys(s).length === 0, keys(s).join());
+        check(what + ' job env: none of the parent session\'s markers', !MARKERS.some((m) => hasKey(s, m)), MARKERS.filter((m) => hasKey(s, m)).join());
+        check(what + ' job env: PATH and BP_JOB_ID kept', hasKey(s, 'PATH') && hasKey(s, 'BP_JOB_ID'));
+        check(what + ' job env: a login token is not a key: CLAUDE_CODE_OAUTH_TOKEN kept (as the companion\'s childEnv keeps it)', hasKey(s, 'CLAUDE_CODE_OAUTH_TOKEN'));
+      }
+      // the allow-list: exactly the named variables come through
+      process.env.BP_JOB_KEEP_ENV = 'ANTHROPIC_API_KEY, Some_Vendor_Api_Key';
+      const kept = J.enqueueMeasure('envp', envRoot, 'x', ALL);
+      const ks = kept.ok ? await seenOf(kept.job.id) : undefined;
+      check('BP_JOB_KEEP_ENV keeps the variables it names', hasKey(ks, 'ANTHROPIC_API_KEY') && hasKey(ks, 'Some_Vendor_Api_Key'), keys(ks).join());
+      check('BP_JOB_KEEP_ENV keeps only those', !hasKey(ks, 'OPENAI_API_KEY'), keys(ks).join());
+      delete process.env.BP_JOB_KEEP_ENV;
+      // the chat that writes a lens: no job id, so its one record is the newest without one
+      const n0 = seenAll().filter((x) => x.job === null).length;
+      const dr = await route('lens-draft/route.ts');
+      const reply = await call(dr.POST, '/x', 'POST', {}, { product: 'kettle', message: 'a lens for the money migration' });
+      const chats = seenAll().filter((x) => x.job === null), chat = chats.length > n0 ? chats[chats.length - 1] : undefined;
+      check('lens-draft: the fake CLI ran and recorded its env', reply.status === 200 && !!chat, String(reply.status));
+      check('lens-draft env: no *_API_KEY', keys(chat).length === 0, keys(chat).join());
+      check('lens-draft env: none of the parent session\'s markers, PATH kept', !MARKERS.some((m) => hasKey(chat, m)) && hasKey(chat, 'PATH'), MARKERS.filter((m) => hasKey(chat, m)).join());
+      // the adopt job's skill is not installed here, so its spawn site is read: none may hand the CLI the whole env
+      const jobsSrc = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/jobs.server.ts'), 'utf8');
+      check('jobs.server.ts: no spawnCli call hands over ...process.env (measure, execute, adopt)', !/spawnCli\([^\n]*\.\.\.process\.env/.test(jobsSrc));
+    } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+  }
 
   // the onboarding chat over the fake (json mode): first turn carries the contract, later turns resume
   const draft = await route('lens-draft/route.ts');
