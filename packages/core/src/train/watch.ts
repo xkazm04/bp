@@ -11,7 +11,8 @@
 //             passed unmeasured is missed, never queued late
 //   judge     checkpoint n is judged by the reading trackOf would judge the item by (its eligibility: method, unit,
 //             commit containing the landing), taken in the checkpoint's window [due n, due n+1), against the FIXED
-//             target: met or short. The item reads pending (nothing judged yet), target met, shortfall, or regression
+//             target, from the landing frozen at enabling (a later Tag moves the release's time, not this): met or short. The
+//             item reads pending (nothing judged yet, and which checkpoints passed unread), target met, shortfall, or regression
 //             (met at a checkpoint, short at a later one). Missing readings never count as success.
 import { measureScopes, type ScanJob } from '../scan/jobs.ts';
 import { boundWords, meetsTarget, trackOf, type TrackOpts } from '../scan/track.ts';
@@ -148,7 +149,7 @@ export function watchState(w: Watch, scan: Scan, opts: TrackOpts, nowMs: number,
       const base = { day: c.day, due: c.due };
       if (Date.parse(c.due) > nowMs) return { ...base, how: 'not yet due' };
       if (c.missed) return { ...base, how: 'missed' };
-      const t = trackOf(cuts[i], it.id, opts);
+      const t = trackOf(cuts[i], it.id, it.landing ? { ...opts, judgeFrom: it.landing.at } : opts); // the frozen landing: a later Tag moves the release's time, never the record
       if (t?.evidence && t.current !== undefined && t.currentAt && t.currentAt >= c.due) return { ...base, how: 'judged', value: t.current, at: t.currentAt, met: meetsTarget(t.current, it.target!, it.better === 'up' ? 1 : -1) };
       const busy = (c.jobs ?? []).some((id) => { const j = jobs.find((x) => x.id === id); return !!j && (j.status === 'queued' || j.status === 'running'); });
       return { ...base, how: busy ? 'measuring' : 'not measured' };

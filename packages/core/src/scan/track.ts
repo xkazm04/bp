@@ -88,6 +88,8 @@ export interface TrackOpts {
   contains?: (landing: string, measured: string) => boolean | undefined;
   /** A metric's declared bounds (the lens field's min / max: boundsOf). */
   bounds?: (lens: string, metric: string) => Bounds | undefined;
+  /** Judge from this time, whatever the item's status or its release's time now say: the landing a watch froze at enabling. */
+  judgeFrom?: string;
 }
 /** What git said landed (with its ancestry) and the lenses' bounds, as trackOf takes them: the one way every reader builds
  *  them. The same answer and lenses give the same lookups (cached by identity), so a reader's cache keyed by them holds. */
@@ -213,7 +215,7 @@ export function trackOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 
   // branch: when it landed there (git's committer time, as UTC like the store's times)
   const rel = p.release_id ? scan.releases.find((r) => r.id === p.release_id) : undefined;
   const landedAt = p.status === 'accepted' && landing ? utc(landing.at) : undefined;
-  const releasedAt = p.status === 'released' ? (rel && (rel.status === 'tagged' || rel.status === 'merged') ? rel.updated_at : p.updated_at) : landedAt;
+  const releasedAt = opts.judgeFrom ? utc(opts.judgeFrom) : p.status === 'released' ? (rel && (rel.status === 'tagged' || rel.status === 'merged') ? rel.updated_at : p.updated_at) : landedAt;
   const since = landedAt ? 'it landed' : 'the release';
   // the reading that judges it: the newest one after `releasedAt` that is eligible (eligibility); a newer one that is not
   // is named with why. Before that time a reading is an observation, as before.
