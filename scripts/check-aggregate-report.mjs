@@ -15,6 +15,10 @@
 // The --failed cases run a child check-all with BP_CHECK_RECORD in a throwaway dir, selecting only check:standard or
 // check:overlays (never this check), so there is no recursion and the real record is never touched. The seeded red
 // case reuses check:overlays' own BP_OVERLAYS_MUTATE control (GUARD: a red child still makes the aggregate exit 1).
+//   - the counts: each PASS line carries the expectations its check held (countOf: the RESULT line, else a prose summary,
+//     else uncounted), the summary totals them and names the uncounted checks, and a per-checkout baseline of the last green
+//     counts (BP_CHECK_COUNTS, else os.tmpdir()/bp-check-counts-<sha1(ROOT)>.json) names a check that got THINNER - reported,
+//     never failed; a red run never writes it, an unreadable one is noted and rewritten.
 // Run: node scripts/check-aggregate-report.mjs   (exit 1 on any failure)
 import fs from 'node:fs';
 import os from 'node:os';
@@ -133,6 +137,66 @@ check('GUARD: a red child makes the aggregate exit 1', sr.code === 1, `exit ${sr
 check('a red child is recorded', eq(sr.after, ['check:overlays']), JSON.stringify(sr.after));
 check('the red report prints the exact rerun', sr.out.includes('npm run -s check:overlays'), sr.out.slice(-400));
 check('a red run\'s last line names the check and --failed', sr.last.includes('check:overlays') && sr.last.includes('npm run check -- --failed'), sr.last);
+
+// The counts (platform-checks:B). countOf reads the expectation count a child prints (its RESULT line first, else a prose
+// summary, else null), the PASS line shows it, the summary totals it and names the uncounted checks, and a per-checkout
+// baseline of the last GREEN counts (BP_CHECK_COUNTS, here in the throwaway dir) names a check that now asserts fewer
+// things: THINNER, reported and never failed. A red run never writes the baseline; an unreadable one is noted and rewritten.
+const countCase = (label, out, want) => { const got = call('countOf', out); check(`countOf: ${label}`, got === want, `${JSON.stringify(got)}, expected ${want}`); };
+countCase('a harness summary', 'check-overlays: 92 expectations held', 92);
+countCase('N passed, M failed', 'check-x: 5 passed, 0 failed', 5);
+countCase('N of T ... expectations hold', '12 of 12 sim-answer expectations hold', 12);
+countCase('N checks passed', 'check-stream-status: 31 checks passed', 31);
+countCase('a RESULT line wins over a prose count', 'check-y: 9 expectations held\nRESULT {"check":"check-y","held":7,"failed":0,"skipped":0}', 7);
+countCase('tsc\'s silent success is uncounted (null), never 0', '', null);
+countCase('two different summaries are null, not a guess', 'a: 3 expectations held\nb: 4 expectations held', null);
+countCase('a count quoted in a FAIL line is not read', 'FAIL  expected 5 expectations held, got 4', null);
+countCase('an N of T sub-tally gives way to the summary beside it', 'acceptance cases: 8 of 8 hold\nreview record: 15 assertions held', 15);
+check('the counts baseline defaults to os.tmpdir keyed by sha1(ROOT), outside the repo', call('countsPath', ROOT, {}) === path.join(os.tmpdir(), `bp-check-counts-${sha}.json`), call('countsPath', ROOT, {}));
+check('BP_CHECK_COUNTS overrides the counts path', call('countsPath', ROOT, { BP_CHECK_COUNTS: '/x/c.json' }) === '/x/c.json');
+
+const cnt = path.join(dir, 'counts.json');
+const runOnly = (only, counts, extraEnv = {}) => {
+  if (counts === undefined) fs.rmSync(cnt, { force: true }); else fs.writeFileSync(cnt, counts);
+  fs.rmSync(rec, { force: true });
+  const env = { ...process.env, BP_CHECK_RECORD: rec, BP_CHECK_COUNTS: cnt, BP_CHECK_ONLY: only, ...extraEnv };
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/check-all.mjs')], { cwd: ROOT, env, encoding: 'utf8', timeout: 180000 });
+  const out = (r.stdout ?? '') + (r.stderr ?? '');
+  const lines = out.trim().split(/\r?\n/);
+  let after = null, parsed = null;
+  try { after = fs.readFileSync(cnt, 'utf8'); parsed = JSON.parse(after); } catch { /* none, or not json */ }
+  return { code: r.status, out, lines, last: lines.at(-1), after, parsed };
+};
+// case 2: no baseline yet -> the PASS line carries the count, and the baseline is written from it
+const c2 = runOnly('check:overlays', undefined);
+const pass2 = c2.lines.find((l) => /^PASS  check:overlays\b/.test(l)) ?? '';
+const N = Number((/^PASS  check:overlays  (\d+) held +\d+\.\ds$/.exec(pass2) ?? [])[1]);
+check('counts case 2: a green run with no baseline exits 0', c2.code === 0, `exit ${c2.code}\n${c2.out.slice(-400)}`);
+check('counts case 2: the PASS line reads PASS  check:overlays  <N> held  <t>s', N > 0, pass2 || c2.out.slice(-400));
+check('counts case 2: the baseline is written as {"check:overlays":N}', N > 0 && eq(c2.parsed, { 'check:overlays': N }), c2.after);
+// case 3: the baseline holds 5 more -> THINNER, reported and not failed, and the run's last line names it
+const c3 = runOnly('check:overlays', JSON.stringify({ 'check:overlays': N + 5 }));
+check('counts case 3: a thinner check is reported, not failed (exit 0)', N > 0 && c3.code === 0, `exit ${c3.code}\n${c3.out.slice(-400)}`);
+check('counts case 3: the THINNER line names the check and the delta', N > 0 && new RegExp(`^THINNER  check:overlays  ${N + 5} -> ${N} held \\(5 fewer than the last green run\\)$`, 'm').test(c3.out), c3.out.slice(-500));
+check('counts case 3: the run\'s last line names check:overlays as thinner', /thinner/i.test(c3.last) && c3.last.includes('check:overlays'), c3.last);
+// case 4: the baseline holds 3 fewer -> no THINNER line, and the baseline is raised to N
+const c4 = runOnly('check:overlays', JSON.stringify({ 'check:overlays': N - 3 }));
+check('counts case 4: a check that grew prints no THINNER line', c4.code === 0 && !/^THINNER/m.test(c4.out), `exit ${c4.code}\n${c4.out.slice(-400)}`);
+check('counts case 4: the baseline is raised to N', N > 0 && eq(c4.parsed, { 'check:overlays': N }), c4.after);
+// case 5: a check that prints no count is named in the summary, never read as 0
+const c5 = runOnly('check:overlays,check:tokens', undefined);
+const sum5 = c5.lines.find((l) => /^\d+ passed, \d+ failed/.test(l)) ?? '';
+check('counts case 5: the summary ends with the total and names the uncounted check', N > 0 && sum5.endsWith(` · ${N} expectations in 1 counted check; 1 uncounted: check:tokens`), sum5 || c5.out.slice(-400));
+check('counts case 5: the uncounted check is not written to the baseline', N > 0 && eq(c5.parsed, { 'check:overlays': N }), c5.after);
+// case 6: the seeded red child never lowers the baseline
+const c6 = runOnly('check:overlays', JSON.stringify({ 'check:overlays': N }), { BP_OVERLAYS_MUTATE: '[["Phone.tsx","height: 44","height: 40"]]' });
+check('counts case 6: the seeded red child exits 1', c6.code === 1, `exit ${c6.code}`);
+check('counts case 6: a red run leaves the baseline as it was', N > 0 && eq(c6.parsed, { 'check:overlays': N }), c6.after);
+// case 7: an unreadable baseline is noted, the verdict is the normal one, and the file is rewritten from the green counts
+const c7 = runOnly('check:overlays', '{not json');
+check('counts case 7: an unreadable baseline keeps the normal verdict (exit 0)', c7.code === 0, `exit ${c7.code}\n${c7.out.slice(-400)}`);
+check('counts case 7: the unreadable baseline is noted with its path', c7.lines.some((l) => l.startsWith(`note: the counts baseline ${cnt} is unreadable (`) && l.endsWith('); no comparison this run')), c7.out.slice(-500));
+check('counts case 7: the baseline is rewritten from this run', N > 0 && eq(c7.parsed, { 'check:overlays': N }), c7.after);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`check-aggregate-report: ${passed} held, ${failed} failed`);
