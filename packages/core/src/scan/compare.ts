@@ -3,27 +3,36 @@
 // waiting for a release. Pure and free of '@/' value imports, so scripts/check-release-train.ts runs it on Node
 // as-is. compareOf mirrors store.mjs `compare` (ai-registry skills/lens-scan/scripts/store.mjs): the item's
 // `before` and `after` readings (ordered lens, metric, measured_at, id) and its shots paired by (theme, size),
-// the latest capture of each phase.
+// the latest capture of each phase. It reads them from the one evidence index (evidence.ts evidenceIndex: grouped once per
+// array, so asking about many items costs one pass) and carries the latest reading of each phase and the judgement's
+// figures, so no cell re-picks them.
 import type { Measurement, Pack, Proposal, ProposalStatus, Release, ScanSnapshot, Shot } from './types.ts';
+import { NO_EVIDENCE, byMeasure, evidenceIndex, type ShotPair } from './evidence.ts';
+
+export type { ShotPair } from './evidence.ts';
 
 /** How an item's metric moved between its before and its after reading. */
 export type Verdict = 'moved' | 'flat' | 'worse' | 'unmeasured';
 
-/** A pair of captures of one (theme, size), each the latest of its phase. */
-export interface ShotPair { theme?: string; size?: string; before?: Shot; after?: Shot }
-
 export interface Comparison {
   p: Proposal;
-  /** The item's `before` readings, every metric it was measured on. */
-  before: Measurement[];
-  after: Measurement[];
+  /** The item's `before` readings, every metric it was measured on (the index's group: read, never change in place). */
+  before: readonly Measurement[];
+  after: readonly Measurement[];
+  /** Its shot pairs (the index's array, typed mutable for the screens' readers: never change it in place). */
   shots: ShotPair[];
   verdict: Verdict;
+  /** The latest reading of the item's own lens and metric in each phase, whether or not a verdict was reached on them. */
+  latest: { before?: Measurement; after?: Measurement };
   /** The readings the verdict compares (the latest of each phase for the item's own lens and metric), when there are both. */
   from?: Measurement;
   to?: Measurement;
   /** The direction the verdict was judged in (verdictOf): the lens field's `better`, else the expected delta's sign. */
   dir?: 'up' | 'down';
+  /** The judgement's baseline (the runs' median, else the one reading), to - base, and the runs' statistics (verdictOf). */
+  base?: number;
+  delta?: number;
+  stats?: RunStats;
 }
 
 /** The lens entries a product carries (its map's `lenses[]`): only what a direction lookup needs. */
@@ -34,10 +43,6 @@ export function betterOf(lenses: readonly LensFields[] | undefined, lens: string
   return lenses?.find((l) => l.id === lens)?.manifest?.fields?.find((f) => f.key === metric)?.metric?.better;
 }
 
-const byMeasure = (a: Measurement, b: Measurement) =>
-  a.lens < b.lens ? -1 : a.lens > b.lens ? 1 : a.metric < b.metric ? -1 : a.metric > b.metric ? 1
-    : a.measured_at < b.measured_at ? -1 : a.measured_at > b.measured_at ? 1 : a.id - b.id;
-const byCapture = (a: Shot, b: Shot) => (a.captured_at < b.captured_at ? -1 : a.captured_at > b.captured_at ? 1 : a.id - b.id);
 
 /** One frame at 60 Hz: a timing below it cannot be told apart from the display's own interval. */
 export const FRAME_MS = 16.7;
@@ -96,36 +101,42 @@ export function verdictOf(p: Proposal, before: readonly Measurement[], after: re
   return { verdict: (d > 0) === (dir === 'up') ? 'moved' : 'worse', from, to, ...j };
 }
 
+/** The tables compareOf reads (it never changes them). */
+export interface EvidenceTables { proposals: readonly Proposal[]; measurements: readonly Measurement[]; shots: readonly Shot[] }
+
+/** The latest reading of the item's own lens and metric in a phase's rows (sorted, oldest first). */
+const latestOwn = (p: Proposal, rows: readonly Measurement[]): Measurement | undefined => {
+  let r: Measurement | undefined;
+  for (const m of rows) if (m.lens === p.lens && m.metric === p.metric) r = m;
+  return r;
+};
+
 /** One item's before/after evidence and verdict; null for an id the scan does not hold. */
-export function compareOf(scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'shots'>, proposalId: string, lenses?: readonly LensFields[]): Comparison | null {
+export function compareOf(scan: EvidenceTables, proposalId: string, lenses?: readonly LensFields[]): Comparison | null {
   const p = scan.proposals.find((x) => x.id === proposalId);
   if (!p) return null;
-  const before: Measurement[] = [], after: Measurement[] = [];
-  for (const m of scan.measurements) if (m.proposal_id === p.id) { if (m.phase === 'before') before.push(m); else if (m.phase === 'after') after.push(m); }
-  before.sort(byMeasure); after.sort(byMeasure);
-  const pairs = new Map<string, ShotPair>();
-  for (const s of scan.shots.filter((x) => x.proposal_id === p.id && x.phase).sort(byCapture)) {
-    const k = JSON.stringify([s.theme ?? null, s.size ?? null]);
-    let pair = pairs.get(k);
-    if (!pair) { pair = {}; if (s.theme !== undefined) pair.theme = s.theme; if (s.size !== undefined) pair.size = s.size; pairs.set(k, pair); }
-    pair[s.phase!] = s; // in capture order: the latest of each phase wins
-  }
-  const v = verdictOf(p, before, after, lenses);
-  const out: Comparison = { p, before, after, shots: [...pairs.values()], verdict: v.verdict };
+  const e = evidenceIndex(scan.measurements, scan.shots).get(p.id) ?? NO_EVIDENCE, v = verdictOf(p, e.before, e.after, lenses);
+  const latest: Comparison['latest'] = {}, b = p.metric ? latestOwn(p, e.before) : undefined, a = p.metric ? latestOwn(p, e.after) : undefined;
+  if (b) latest.before = b;
+  if (a) latest.after = a;
+  const out: Comparison = { p, before: e.before, after: e.after, shots: e.pairs as ShotPair[], verdict: v.verdict, latest };
   if (v.from) out.from = v.from;
   if (v.to) out.to = v.to;
   if (v.dir) out.dir = v.dir;
+  if (v.base !== undefined) out.base = v.base;
+  if (v.delta !== undefined) out.delta = v.delta;
+  if (v.stats) out.stats = v.stats;
   return out;
 }
 
 const byCreated = (a: Proposal, b: Proposal) => (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
 /** A pack's items, as store.mjs `proposals --pack` orders them (created_at, id). */
-export const packItems = (scan: Pick<ScanSnapshot, 'proposals'>, packId: string): Proposal[] =>
+export const packItems = (scan: { proposals: readonly Proposal[] }, packId: string): Proposal[] =>
   scan.proposals.filter((p) => p.pack_id === packId).sort(byCreated);
 
 /** A release's items (created_at, id). */
-export const releaseItems = (scan: Pick<ScanSnapshot, 'proposals'>, relId: string): Proposal[] =>
+export const releaseItems = (scan: { proposals: readonly Proposal[] }, relId: string): Proposal[] =>
   scan.proposals.filter((p) => p.release_id === relId).sort(byCreated);
 
 /** Accepted items no release holds yet: what a new release takes by default (store.mjs `release-add` takes only these). */
