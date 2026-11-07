@@ -7,7 +7,8 @@
 // footer carries the state mark over its triage note (or what the state means) and the decision strip (Decide,
 // compact). It docks right at clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a
 // full-screen sheet on the phone. Full width takes the keyboard focus when it hides the table's focused row.
-// Everything derives from useTrain(); the theme / mode (LedgerUi.cmp) and the width are the ledger store's, the rest
+// Everything derives from useTrain(); the item's, the next item's and the pack mates' evidence are lookups in the one
+// evidence index (compareOf over @bp/core/scan/evidence: one pass per table, so J/K reads no evidence again). The theme / mode (LedgerUi.cmp) and the width are the ledger store's, the rest
 // resets when the item changes (the body is keyed by id). The next item's screens are prefetched while the browser idles.
 // A rebuild reads the attempt it rebuilds (compare/attempts.ts attemptChain): its line in the measurement, and the
 // screens' Against choice (LedgerUi.cmp.against), which the prefetch follows.
@@ -64,12 +65,6 @@ export function packOrder(T: Pick<TrainData, 'packs' | 'proposals'>): string[] {
 export const packHeading = (measured: number, total: number): string =>
   `The whole pack · ${measured} of ${total} item${total === 1 ? '' : 's'} measured in runs`;
 
-type Scan = Parameters<typeof compareOf>[0];
-/** The scan tables compareOf reads, from the train's data (copied once per change: compareOf takes mutable arrays). */
-function useScan(T: TrainData): Scan {
-  return useMemo(() => ({ proposals: [...T.proposals], measurements: [...T.measurements], shots: [...T.shots] }), [T.proposals, T.measurements, T.shots]);
-}
-
 /** The first sentence of the item's Summary (else its title): the state it designs, for the screens' callout. */
 function stateLine(p: Proposal): string {
   const m = /##\s*Summary\s*\n+([\s\S]*?)(?:\n##\s|$)/.exec(p.body ?? '');
@@ -78,12 +73,12 @@ function stateLine(p: Proposal): string {
 }
 
 export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }: ComparePanelProps) {
-  const T = useTrain(), P = useEngine().M.P, scan = useScan(T), pending = useLedgerUi(T.slug ?? 'kettle').pending;
-  const c = useMemo(() => compareOf(scan, id, T.lenses), [scan, id, T.lenses]);
+  const T = useTrain(), P = useEngine().M.P, pending = useLedgerUi(T.slug ?? 'kettle').pending;
+  const c = useMemo(() => compareOf(T, id, T.lenses), [T, id]);
   const now = useMemo(() => trackOf(scanOfTrain(T), id, landedOpts(T)), [T, id]);
   const order = useMemo(() => packOrder(T), [T]);
   const at = order.indexOf(id), nextId = at >= 0 ? order[at + 1] : undefined;
-  const next = useMemo(() => (nextId ? compareOf(scan, nextId, T.lenses) : null), [scan, nextId, T.lenses]);
+  const next = useMemo(() => (nextId ? compareOf(T, nextId, T.lenses) : null), [T, nextId]);
   const prev = useMemo(() => attemptChain(T, id)[0] ?? null, [T, id]);
   const nextPrev = useMemo(() => (nextId ? attemptChain(T, nextId)[0] ?? null : null), [T, nextId]);
   const nameOf = useMemo(() => { const m = new Map(P.base.features.map((f) => [f.slug, f.name])); return (slug: string) => m.get(slug) ?? slug; }, [P]);
@@ -115,7 +110,7 @@ export function ComparePanel({ id, view, wide, phone, onView, onWide, onClose }:
   return (
     <aside ref={box} tabIndex={-1} className={cls} data-role="tr-cmp" aria-label={'Compare ' + p.title}>
       <Head title={p.title} meta={meta} prev={go(at > 0 ? order[at - 1] : undefined)} next={go(nextId)} wide={wide} phone={phone} onWide={onWide} onClose={onClose} />
-      <Body key={p.id} c={c} now={now} prev={prev} T={T} scan={scan} lens={P.LENS[p.lens]} nameOf={nameOf} view={view} onView={onView} wide={wide} />
+      <Body key={p.id} c={c} now={now} prev={prev} T={T} lens={P.LENS[p.lens]} nameOf={nameOf} view={view} onView={onView} wide={wide} />
       <footer className="tr-cmp-d">
         {/* the state mark (deciding while a decision is on its way) over its triage note, or what the state means */}
         <span className="st">
@@ -147,17 +142,17 @@ function Head({ title, meta, prev, next, wide, phone, onWide, onClose }: { title
   );
 }
 
-interface BodyProps { c: Comparison; now: Track | null; prev: Attempt | null; T: TrainData; scan: Scan; lens: LensDef | undefined; nameOf(slug: string): string; view: CompareView; onView(v: CompareView): void; wide: boolean }
-const Body = memo(function Body({ c, now, prev, T, scan, lens, nameOf, view, onView, wide }: BodyProps) {
+interface BodyProps { c: Comparison; now: Track | null; prev: Attempt | null; T: TrainData; lens: LensDef | undefined; nameOf(slug: string): string; view: CompareView; onView(v: CompareView): void; wide: boolean }
+const Body = memo(function Body({ c, now, prev, T, lens, nameOf, view, onView, wide }: BodyProps) {
   const p = c.p, runs = hasRuns(c), fname = nameOf(p.feature);
   const perf = useMemo(() => {
     if (!runs) return null;
     const me = perfItem(c, fname, lens);
     // the pack's other items measured in runs, below it, as the winner's "the whole pack"
     const all = p.pack_id ? T.proposals.filter((x) => x.pack_id === p.pack_id) : [];
-    const mates = all.map((x) => (x.id === p.id ? c : compareOf(scan, x.id, T.lenses))).filter((x): x is Comparison => !!x && hasRuns(x));
+    const mates = all.map((x) => (x.id === p.id ? c : compareOf(T, x.id, T.lenses))).filter((x): x is Comparison => !!x && hasRuns(x));
     return { me, total: all.length, all: mates.length > 1 ? mates.map((x) => (x === c ? me : perfItem(x, nameOf(x.p.feature), lens))) : [] };
-  }, [runs, c, fname, lens, p.pack_id, p.id, T.proposals, T.lenses, scan, nameOf]);
+  }, [runs, c, fname, lens, p.pack_id, p.id, T, nameOf]);
 
   return (
     <div className="tr-cmp-b">

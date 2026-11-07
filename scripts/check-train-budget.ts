@@ -231,7 +231,10 @@ for (const [what, rows, run, budget] of BUDGETS) {
 // Counted in visits to the measurements and the shots through counting arrays: one grouping pass over each
 // (packages/core/src/scan/evidence.ts evidenceIndex, cached per array), never one pass per item (13 before the index).
 // (a) the evidence path the Body takes, compareOf for those 13 items; (b) the whole panel server-rendered over a counted
-// store: the evidence index's one pass plus trackOf's own (onMain.ts scanOfTrain copies the table for it), and nothing else.
+// store: three passes over the measurements, each once per table: the evidence index, onMain.ts scanOfTrain's copy for
+// trackOf (Main now) and track.ts's own index (the decision brief's precedent, BriefDrawer); one over the shots.
+// Before the index (2026-11-07): (a) 3,900 measurement and 6,240 shot visits (13 passes); (b) 4 counted passes, the 13
+// compareOf passes running uncounted over the panel's own copy of the tables (useScan), i.e. 17 passes in all.
 {
   const { compareOf } = await impCore('src/scan/compare.ts');
   const counter = <T extends object>(xs: T, hit: () => void): T => new Proxy(xs, { get: (t, k, r) => { if (typeof k === 'string' && /^\d+$/.test(k)) hit(); return Reflect.get(t, k, r); } });
@@ -256,7 +259,7 @@ for (const [what, rows, run, budget] of BUDGETS) {
   let err = '';
   try { renderToString(h(VariantCtx.Provider, { value: getVariant('subtle') }, h(EngineCtx.Provider, { value: E }, h(LiveCtx.Provider, { value: live2 }, h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop }))))); } catch (e) { err = String(e); }
   expect(!err, 'compare panel over a counted store: the render threw: ' + err);
-  expect(mv <= 2 * N, `compare panel, a perf item: ${mv} measurement visits, budget ${2 * N} (the evidence index's pass and trackOf's copy)`);
+  expect(mv <= 3 * N, `compare panel, a perf item: ${mv} measurement visits, budget ${3 * N} (the evidence index, scanOfTrain's copy for trackOf, track.ts's index for the brief)`);
   expect(sv <= NS, `compare panel, a perf item: ${sv} shot visits, budget ${NS} (the evidence index's pass)`);
   console.log(`compare  panel render, a perf item: ${mv} measurement visits (${(mv / N).toFixed(1)} passes), ${sv} shot visits (${(sv / NS).toFixed(1)} passes)`);
 }

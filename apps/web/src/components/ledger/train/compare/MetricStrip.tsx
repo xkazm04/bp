@@ -1,26 +1,18 @@
 // The compare panel's metric line: the item's metric `before → after unit` in the big figures the contest winner draws,
 // the metric key with the verdict (compare.ts verdictOf: moved, flat, worse, unmeasured; a failed build says so), and
 // how to read it: the better direction (the verdict's own, Comparison.dir), the target and the method. The readings are
-// the item's own phased ones.
+// the item's own phased ones, the latest of each phase as compareOf carries them (Comparison.latest).
 import { memo } from 'react';
 import type { Comparison } from '@bp/core/scan/compare';
-import type { Measurement } from '@bp/core/scan/types';
 import type { LensField } from '@bp/core/standard/types';
 import { VerdictChip } from '../ui/Marks.tsx';
 import { num } from '../ui/tables';
 import './MetricStrip.css';
 
-/** The latest reading of the item's own lens and metric in a phase's rows (they come sorted, oldest first). */
-export function latestOf(rows: readonly Measurement[], lens: string, metric: string | undefined): Measurement | undefined {
-  let r: Measurement | undefined;
-  for (const m of rows) if (m.lens === lens && m.metric === metric) r = m;
-  return r;
-}
-
 const METHOD_NOTE: Readonly<Record<string, string>> = { judgement: ' (a model re-read the code at each commit)' };
 
 export const MetricStrip = memo(function MetricStrip({ c, field }: { c: Comparison; field?: LensField }) {
-  const p = c.p, b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
+  const p = c.p, b = c.latest.before, a = c.latest.after;
   const unit = b?.unit ?? a?.unit ?? field?.unit ?? '';
   const better = c.dir;
   const method = a?.method ?? b?.method ?? field?.metric?.method;

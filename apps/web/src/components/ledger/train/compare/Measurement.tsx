@@ -11,7 +11,6 @@ import type { Comparison } from '@bp/core/scan/compare';
 import { mainOutcome, type Track } from '@bp/core/scan/track';
 import type { Measurement as Reading, ProposalStatus } from '@bp/core/scan/types';
 import type { Attempt } from './attempts';
-import { latestOf } from './MetricStrip';
 import './MetricStrip.css';
 
 const short = (sha: string | undefined) => (sha ? sha.slice(0, 7) : undefined);
@@ -56,7 +55,7 @@ export function mainNow(t: Track): string | null {
 }
 
 export const Measurement = memo(function Measurement({ c, now, prev }: { c: Comparison; now?: Track | null; prev?: Attempt | null }) {
-  const p = c.p, b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
+  const p = c.p, b = c.latest.before, a = c.latest.after;
   const main = now ? mainNow(now) : null;
   return (
     <section className="tr-sec" data-role="tr-cmp-meas">
