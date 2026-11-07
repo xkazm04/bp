@@ -1,9 +1,9 @@
-// The compare panel: one pack item's evidence beside the table (the contest winner A/1's side sheet). The header names
-// the item (lens, id, pack and place in it, feature, title) with prev / next, Wide and close; the body holds the metric
-// line or, for an item measured in baseline runs, the performance table, the screens (light / dark / both x side by
-// side / slider / blink / change map), what the measurement says (before, after and the reading on main now: trackOf with
-// git's landings), the commit and its diff, the decision brief (BriefDrawer: precedent by what like approvals came to on
-// main) and the item's own text; the
+// The compare panel: one pack item's evidence beside the table, a judging sheet. The header names
+// the item (lens, id, pack and place in it, feature, title) with prev / next, Wide and close; the body holds the evidence (the metric
+// line or, for an item measured in baseline runs, the performance table, the screens: light / dark / both x side by
+// side / slider / blink / change map, the commit and its diff) and the reasoning in a rail (what the measurement says: before, after
+// and the reading on main now, trackOf with git's landings; the decision brief, BriefDrawer: precedent by what like approvals came
+// to on main; the item's own text). Docked they stack; Wide sets them side by side, each scrolling, so the screens get the room; the
 // footer carries the state mark over its triage note (or what the state means) and the decision strip (Decide,
 // compact). It docks right at clamp(--cmp-min, 52%, --cmp-max) from 1100 px, overlays the table below that, and is a
 // full-screen sheet on the phone. Full width takes the keyboard focus when it hides the table's focused row.
@@ -156,6 +156,7 @@ const Body = memo(function Body({ c, now, T, scan, lens, nameOf, view, onView, w
 
   return (
     <div className="tr-cmp-b">
+      <div className="tr-cmp-ev" data-role="tr-cmp-ev">
       {perf ? (
         <section className="tr-sec" data-role="tr-cmp-perf">
           <h4>Performance · {p.metric}{T.slug === null ? <SampleTag>sample pack</SampleTag> : null}</h4>
@@ -169,13 +170,16 @@ const Body = memo(function Body({ c, now, T, scan, lens, nameOf, view, onView, w
         <div className="tr-sec"><Callout tone="flag"><b>✕ Build failed.</b><span>This item did not build, broke a gate or did not move its metric. Accepting it is allowed only with a note, and it ships flagged.</span></Callout></div>
       ) : null}
       {!perf || c.shots.length ? <Screens c={c} slug={T.slug} view={view} onView={onView} fname={fname} stateLine={stateLine(p)} /> : null}
-      <Measurement c={c} now={now} />
       {p.commit_sha ? <CommitDiff ctx={T.ctx} product={T.slug ?? 'kettle'} sha={p.commit_sha} initiallyOpen={wide} /> : (
         <section className="tr-sec"><h4>Commit</h4><p className="tr-dim">{p.status === 'failed' ? 'No commit: the build did not get that far.' : 'No commit recorded for this item.'}</p></section>
       )}
+      </div>
+      <div className="tr-cmp-rail" data-role="tr-cmp-rail">
+      <Measurement c={c} now={now} />
       {/* the brief beside the judgement: how like approvals fared on main, the owner's declines, undo, cost */}
       <BriefDrawer id={p.id} className="tr-sec tr-brief" />
       <section className="tr-sec"><h4>The item · {p.standard}</h4><ItemText body={p.body ?? p.title} /></section>
+      </div>
     </div>
   );
 });

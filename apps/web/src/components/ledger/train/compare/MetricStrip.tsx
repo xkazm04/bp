@@ -32,7 +32,7 @@ export const MetricStrip = memo(function MetricStrip({ c, field }: { c: Comparis
   return (
     <section className="tr-sec">
       <h4>Metric</h4>
-      <div className="tr-met" data-role="tr-cmp-metric">
+      <div className={'tr-met v-' + (p.status === 'failed' ? 'failed' : c.verdict)} data-role="tr-cmp-metric">
         <div className="big">
           <s>{b ? num(b.value) : '–'}</s><span className="ar" aria-label="to">→</span>
           <span data-role="tr-cmp-big">{a ? num(a.value) : '?'}</span>{unit ? <u>{unit}</u> : null}
