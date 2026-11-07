@@ -2,7 +2,7 @@
 // CLI headless in the product repo (`/lens-scan measure`, packages/core/src/server/jobs.server.ts). 202 + the ScanJob; 400
 // `{ error: 'unknown-lens' }` (not an enabled lens of the map), `'no-scan-method'` (no built-in method and no manifest
 // `scan` block), `'bad-scope'` (kind, label, id or features wrong, or a feature the map lacks); 429 when 16 jobs are
-// queued already; 404 for an unknown product or a product without a map. A `selection` scope (the ledger's selected
+// queued already; 404 for an unknown product or a product without a map, 409 for a map that does not parse (the door's map stage). A `selection` scope (the ledger's selected
 // features) carries no id and 1..MAX_SELECTION (200) features. Localhost only.
 // Every lens at once: `{ lens: 'all', scope: { kind: 'all', ... }, phase?: 'measure' | 'propose' }` queues ONE job
 // (`/lens-scan measure --lens all` or `/lens-scan propose --lens all`, kind measure or propose, one MAX_RUNNING slot); 400
@@ -12,11 +12,11 @@
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim queues and lists the jobs, with the same answers.
 // Its scope goes through this route's parseScope first, so a Kettle job keeps no unknown keys and a label of at most 200.
-// Admission (guards, product, Kettle, JSON body): the route door (route-door.server.ts).
+// Admission (guards, product, Kettle, JSON body, the map): the route door (route-door.server.ts).
 import { door } from '@bp/core/server/route-door.server';
 import { ALL_LENSES, MAX_SELECTION, SAFE_ID, scannable, type ScanScope, type ScanScopeKind } from '@bp/core/scan/jobs';
 import { enqueueAllLenses, enqueueMeasure, list } from '@bp/core/server/jobs.server';
-import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { lensOn } from '@bp/core/server/map.server';
 import { isObj } from '@bp/core/scan/guards';
 import { gateScan, refusedBy } from '@bp/core/server/rules.server';
 import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
@@ -44,9 +44,8 @@ const scans = door('products/[slug]/scans', {
     // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below
     kettle: (k, { body }) => (isObj(body) ? k.startScan(body.lens as string, parseScope(body.scope, ANY_FEATURE) as ScanScope) : Response.json({ error: 'unknown-lens' }, { status: 400 })),
     kettleStatus: 202,
-    live: ({ slug, product: p, body }) => {
-      const map = readLensesAndFeatures(p);
-      if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
+    map: 'required',
+    live: ({ slug, product: p, body, map }) => {
       if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
       // every enabled lens in ONE job (one MAX_RUNNING slot): `lens: 'all'`, scope everything, `phase` measure (default) or propose
       if (body.lens === ALL_LENSES) {
@@ -54,14 +53,14 @@ const scans = door('products/[slug]/scans', {
         if (phase !== 'measure' && phase !== 'propose') return Response.json({ error: 'bad-phase' }, { status: 400 });
         const scope = parseScope(body.scope, map.features);
         if (!scope || scope.kind !== 'all') return Response.json({ error: 'bad-scope' }, { status: 400 });
-        if (!map.lenses.some((e) => e.enabled && scannable(e, false))) return Response.json({ error: 'no-scan-method' }, { status: 400 });
+        if (!map.lenses.some((e) => lensOn(e) && scannable(e, false))) return Response.json({ error: 'no-scan-method' }, { status: 400 });
         const g = gateScan(p, 'scan.place', ALL_LENSES, scope); // scope everything: any live hold refuses it, and so does any `only`
         if (g.refused) return refusedBy(g);
         const r = enqueueAllLenses(slug, p.root, phase);
         return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
       }
       if (body.phase !== undefined) return Response.json({ error: 'bad-phase' }, { status: 400 });
-      const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && e.enabled) : undefined;
+      const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && lensOn(e)) : undefined;
       if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
       if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
       const scope = parseScope(body.scope, map.features);
