@@ -72,6 +72,9 @@ import { StateMark } from './train/ui/Marks.tsx';
 import { ComparePanel } from './train/compare/ComparePanel';
 import { MAIN_CHIPS, useOnMain, type OnMain } from './train/onMain';
 import { ReleaseStatusLine, ReleaseView, SummaryStrip } from './train/release/ReleaseView';
+import { LabHost } from './lab/LabHost';
+import { useLabChoice } from './lab/choice';
+import { LabSwitch } from './lab/parts';
 import './ledger.css';
 import './ledger-theme.css';
 
@@ -92,9 +95,11 @@ const cycle = <T,>(xs: readonly T[], x: T): T => xs[(xs.indexOf(x) + 1) % xs.len
 /** Mounted always (cheap: one store slice); the page state is useLedger.ts's store, so the selection and filters outlive a close. */
 export function LedgerPage({ lensButton, lensPanel, phone = false }: LedgerPageProps) {
   const s = useBp((s) => ({ page: s.page, lv: s.lv, phone: s.phone }), shallowEqual);
-  const ui = useLedgerUi(useLive()?.slug ?? 'kettle'), set: SetUi = setLedgerUi;
+  const ui = useLedgerUi(useLive()?.slug ?? 'kettle'), set: SetUi = setLedgerUi, lab = useLabChoice();
   const shown = s.page === 'ledger' && s.phone === phone;
   if (phone) return shown ? <Body ui={ui} set={set} lv="triage" phone lensButton={null} lensPanel={null} /> : null;
+  // the design lab (lab/): a direction replaces the Backlog stage; In packs and Release keep this page
+  if (shown && lab !== 'current' && s.lv !== 'release' && ui.scope === 'backlog') return <LabHost choice={lab} ui={ui} lensButton={lensButton} lensPanel={lensPanel} />;
   // no exit animation: leaving unmounts at once, so the chrome it made inert is released in the same commit that a
   // feature page (opened from a row) takes it over
   return shown ? <Body ui={ui} set={set} lv={s.lv} phone={false} lensButton={lensButton} lensPanel={lensPanel} /> : null;
@@ -303,6 +308,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
         {!phone && live ? <AllLenses /> : null}
         {!phone ? <TrustPanel L={L} /> : null}
         {lensButton ? <div className="lg-slot">{lensButton}</div> : null}
+        {/* the way back into the lab: picking a direction returns to the Backlog stage, the one the directions replace */}
+        {!phone ? <LabSwitch onPick={(c) => { if (c !== 'current') { L.setScope('backlog'); E.setPage('ledger', 'triage'); } }} /> : null}
       </header>
       {lv !== 'release' ? <Filters L={L} main={main} filter={filter} menus={!phone} /> : null}
       <div className="lg-main">
