@@ -13,6 +13,7 @@ import { takenLooks, type LensLook } from '../scan/jobs';
 import type { ProductEntry } from '../scan/types';
 import { isObj } from '@bp/core/scan/guards';
 import { OVERLAY_PATH, lensSetupNeed, type LensSetupNeed } from '../scan/lens-setup';
+import { lensOn, readMapFile, readProductMap } from './map.server';
 
 if (typeof window !== 'undefined') throw new Error('lens-write.server.ts is server-only');
 
@@ -24,16 +25,10 @@ const fail = (status: 400 | 403 | 404 | 409 | 500, error: string): { ok: false; 
 const mapFile = (p: ProductEntry): string => path.join(storeDir(p), 'app-structure.json');
 
 function readMap(file: string): LensWrite<Read> {
-  let text: string;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (e) {
-    return (e as NodeJS.ErrnoException).code === 'ENOENT' ? fail(404, `no structure at ${file}`) : fail(500, `cannot read ${file}: ${(e as Error).message}`);
-  }
-  let doc: unknown;
-  try { doc = JSON.parse(text); } catch (e) { return fail(409, `${file} is not valid JSON (${(e as Error).message}); it was left as it is`); }
-  if (!isObj(doc)) return fail(409, `${file} is not a JSON object; it was left as it is`);
-  if (doc.lenses !== undefined && !Array.isArray(doc.lenses)) return fail(409, `${file}: "lenses" is not an array; it was left as it is`);
-  const indent = /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? (/^\{\r?\n"/.test(text) ? '' : '  ');
-  return { ok: true, value: { doc, indent, eol: text.includes('\r\n') ? '\r\n' : '\n' } };
+  const r = readMapFile(file); // the readers' classifier (map.server.ts): 404 missing, 500 unreadable, 409 unparseable
+  if (!r.ok) return r.status === 409 ? fail(409, `${r.error}; it was left as it is`) : r;
+  const text = r.text, indent = /^\{\r?\n([ \t]+)"/.exec(text)?.[1] ?? (/^\{\r?\n"/.test(text) ? '' : '  ');
+  return { ok: true, value: { doc: r.doc as Doc, indent, eol: text.includes('\r\n') ? '\r\n' : '\n' } };
 }
 
 function writeMap(file: string, r: Read): void {
@@ -100,13 +95,11 @@ export function deleteLens(p: ProductEntry, id: string): LensWrite<{ id: string 
   });
 }
 
-/** The map's lens entries and feature slugs, for the scan routes' checks. null = no readable map. */
-export function readLensesAndFeatures(p: ProductEntry): { lenses: LensEntry[]; features: Set<string> } | null {
-  const r = readMap(mapFile(p));
-  if (!r.ok) return null;
-  const lenses = (Array.isArray(r.value.doc.lenses) ? r.value.doc.lenses : []).filter((e): e is LensEntry => isObj(e) && typeof e.id === 'string' && isObj(e.manifest));
-  const feats = Array.isArray(r.value.doc.features) ? r.value.doc.features : [];
-  return { lenses, features: new Set(feats.filter(isObj).map((f) => f.slug).filter((s): s is string => typeof s === 'string')) };
+/** The map's lens entries and feature slugs (map.server.ts readProductMap, cached per rev). null = no readable map; a route
+ *  that answers for the map declares the door's `map: 'required'` instead, which refuses with the reader's own status. */
+export function readLensesAndFeatures(p: ProductEntry): { lenses: readonly LensEntry[]; features: ReadonlySet<string> } | null {
+  const r = readProductMap(p);
+  return r.ok ? { lenses: r.lenses, features: r.features } : null;
 }
 
 /** The product's lens-scan overlay text, or null when it has none (or it cannot be read: the same verdict, no overlay). */
@@ -119,5 +112,5 @@ export function lensSetupOf(p: ProductEntry): LensSetupNeed[] {
   const m = readLensesAndFeatures(p);
   if (!m) return [];
   const overlay = readOverlay(p);
-  return m.lenses.filter((e) => e.enabled !== false).map((e) => lensSetupNeed(e.id, e.manifest, overlay)).filter((x): x is LensSetupNeed => !!x);
+  return m.lenses.filter(lensOn).map((e) => lensSetupNeed(e.id, e.manifest, overlay)).filter((x): x is LensSetupNeed => !!x);
 }
