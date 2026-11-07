@@ -16,13 +16,13 @@ import path from 'node:path';
 import { registerSrcHooks } from './lib/src-hooks.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 registerSrcHooks(ROOT);
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-stream-status-'));
-let failed = 0, passed = 0;
-const check = (name, ok, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
+const { expect, done } = harness('check-stream-status');
 
 const mk = (slug, write) => {
   const repo = path.join(dir, slug);
@@ -57,24 +57,24 @@ const names = (xs) => xs.map((x) => x.ev).join(',');
 
 try {
   const bad = await events('corrupt', 2500);
-  check('corrupt store: sends exactly one error event (once per message)', names(bad) === 'error', names(bad));
-  check('corrupt store: error carries a message', bad[0] && typeof JSON.parse(bad[0].data).message === 'string' && JSON.parse(bad[0].data).message.length > 0, bad[0]?.data);
-  check('corrupt store: no empty snapshot', !bad.some((x) => x.ev === 'snapshot'), names(bad));
+  expect(names(bad) === 'error', 'corrupt store: sends exactly one error event (once per message)', names(bad));
+  expect(bad[0] && typeof JSON.parse(bad[0].data).message === 'string' && JSON.parse(bad[0].data).message.length > 0, 'corrupt store: error carries a message', bad[0]?.data);
+  expect(!bad.some((x) => x.ev === 'snapshot'), 'corrupt store: no empty snapshot', names(bad));
   const none = await events('absent', 1500);
-  check('absent store: still answers the empty snapshot', names(none) === 'snapshot', names(none));
+  expect(names(none) === 'snapshot', 'absent store: still answers the empty snapshot', names(none));
   const ok = await events('good', 1500);
-  check('readable store: answers its snapshot, no error', names(ok) === 'snapshot', names(ok));
+  expect(names(ok) === 'snapshot', 'readable store: answers its snapshot, no error', names(ok));
 
   // a product with a map: the snapshot, then the map's rev; rewriting the map sends the new rev (once)
   const mapFile = path.join(products.find((p) => p.slug === 'mapped').root, '.ai/lens-scan/app-structure.json');
   fs.writeFileSync(mapFile, '{"a":1}');
   const mapped = await events('mapped', 3400, () => fs.writeFileSync(mapFile, '{"a":1,"bb":2}'));
-  check('mapped product: snapshot, map, then map again after the file changed', names(mapped) === 'snapshot,map,map', names(mapped));
+  expect(names(mapped) === 'snapshot,map,map', 'mapped product: snapshot, map, then map again after the file changed', names(mapped));
   const revs = mapped.filter((x) => x.ev === 'map').map((x) => JSON.parse(x.data).rev);
-  check('mapped product: the two revs differ', revs.length === 2 && revs[0] !== revs[1] && revs.every((r) => typeof r === 'string' && r), revs.join(' | '));
+  expect(revs.length === 2 && revs[0] !== revs[1] && revs.every((r) => typeof r === 'string' && r), 'mapped product: the two revs differ', revs.join(' | '));
   const { GET: STRUCT } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/app/api/products/[slug]/structure/route.ts')).href);
   const sj = await (await STRUCT(new Request('http://x/api/products/mapped/structure', { headers: { host: 'localhost:3000' } }), { params: Promise.resolve({ slug: 'mapped' }) })).json();
-  check('structure route answers the current rev of the stream', sj.rev === revs[1], sj.rev + ' vs ' + revs[1]);
+  expect(sj.rev === revs[1], 'structure route answers the current rev of the stream', sj.rev + ' vs ' + revs[1]);
 
   // a runaway client (a reload loop, a leaked EventSource): MAX_STREAMS open streams for one product, the next answers 429
   // with one line instead of another read connection and interval; closing one frees its slot
@@ -86,27 +86,26 @@ try {
     for (let i = 0; i < MAX_STREAMS; i++) held.push(await openOne());
     const over = await openOne(), overBody = over.res.status === 429 ? await over.res.json() : null;
     if (over.res.status !== 429) held.push(over); // served past the cap: it holds the store open, close it with the rest
-    check(`stream cap: ${MAX_STREAMS} open streams for one product are served, the next answers 429 with one line`,
-      MAX_STREAMS > 0 && held.every((h) => h.res.status === 200) && over.res.status === 429 && typeof overBody?.error === 'string' && overBody.error.includes(`at most ${MAX_STREAMS}`) && !overBody.error.includes('\n'),
+    expect(MAX_STREAMS > 0 && held.every((h) => h.res.status === 200) && over.res.status === 429 && typeof overBody?.error === 'string' && overBody.error.includes(`at most ${MAX_STREAMS}`) && !overBody.error.includes('\n'),
+      `stream cap: ${MAX_STREAMS} open streams for one product are served, the next answers 429 with one line`,
       `${held.map((h) => h.res.status).join(',')} then ${over.res.status} ${JSON.stringify(overBody)}`);
     await shut(held.shift());
     const again = await openOne(); held.push(again);
-    check('stream cap: closing one stream frees its slot (200 again)', again.res.status === 200, String(again.res.status));
+    expect(again.res.status === 200, 'stream cap: closing one stream frees its slot (200 again)', String(again.res.status));
   } finally { for (const h of held) await shut(h); }
 
   const code = (f) => fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '');
   const types = code('packages/core/src/scan/types.ts'), client = code('apps/web/src/lib/scan/client.ts'), header = code('apps/web/src/components/Header.tsx');
-  check('types.ts: StreamEvent names map', /type StreamEvent\s*=[^;]*'map'/.test(types));
-  check("client.ts: addEventListener('map') refetches the structure", /addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client));
-  check('types.ts: StreamEvent names error', /type StreamEvent\s*=[^;]*'error'/.test(types));
-  check("client.ts: addEventListener('error') sets status 'error'", /addEventListener\(\s*'error'[\s\S]{0,400}status:\s*'error'/.test(client));
-  check('client.ts: onerror ignores the server error event', /onerror\s*=\s*\(\s*\w+[^)]*\)\s*=>\s*\{[^}]*instanceof MessageEvent/.test(client));
+  expect(/type StreamEvent\s*=[^;]*'map'/.test(types), 'types.ts: StreamEvent names map');
+  expect(/addEventListener\(\s*'map'[\s\S]{0,400}refresh\(\)/.test(client), "client.ts: addEventListener('map') refetches the structure");
+  expect(/type StreamEvent\s*=[^;]*'error'/.test(types), 'types.ts: StreamEvent names error');
+  expect(/addEventListener\(\s*'error'[\s\S]{0,400}status:\s*'error'/.test(client), "client.ts: addEventListener('error') sets status 'error'");
+  expect(/onerror\s*=\s*\(\s*\w+[^)]*\)\s*=>\s*\{[^}]*instanceof MessageEvent/.test(client), 'client.ts: onerror ignores the server error event');
   const liveness = code('packages/core/src/scan/liveness.ts');
-  check("liveness.ts: the scan verdict has an 'error' branch", /=== 'error'[^\n]{0,80}'store-error'/.test(liveness));
-  check('Header.tsx: the pill words the scan verdict', /livenessWords\(\s*scanLiveness\(/.test(header));
+  expect(/=== 'error'[^\n]{0,80}'store-error'/.test(liveness), "liveness.ts: the scan verdict has an 'error' branch");
+  expect(/livenessWords\(\s*scanLiveness\(/.test(header), 'Header.tsx: the pill words the scan verdict');
 } finally {
   process.chdir(os.tmpdir());
   fs.rmSync(dir, { recursive: true, force: true });
 }
-console.log(failed ? `check-stream-status: ${failed} failed, ${passed} passed` : `check-stream-status: ${passed} checks passed`);
-process.exit(failed ? 1 : 0);
+done({ exit: true });

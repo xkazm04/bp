@@ -23,6 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { registerSrcHooks } from './lib/src-hooks.mjs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 registerSrcHooks(ROOT, { transpile: true }); // the variants' import graph reaches .tsx: the checks' loader transpiles it
@@ -31,8 +32,7 @@ const { bl } = await imp('apps/web/src/variants/base/legacy.ts');
 const shaped = (await imp('apps/web/src/variants/shaped/channels.ts')).CHANNELS;
 const bold = (await imp('apps/web/src/variants/bold/channels.ts')).CHANNELS;
 
-let failed = 0, passed = 0;
-const check = (name, ok, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
+const { expect, done } = harness('check-legacy-unmeasured');
 const feature = (lens) => ({ id: 'f', slug: 'f', name: 'F', stage: 'live', lens });
 const live = { rolloutPct: 0, progressPct: 0, value: () => undefined };
 const NM = 'NOT MEASURED';
@@ -42,7 +42,7 @@ const empty = bl(feature({}));
 // The built-in lenses are DERIVED from bl()'s own shape, not hand-kept here: a 7th lens added to
 // src/variants/base/legacy.ts joins all 42 assertions below at once. A hand list left them behind it.
 const LENSES = Object.keys(empty);
-check(`bl() names at least 6 built-in lenses (got ${LENSES.length}: ${LENSES.join(', ')})`, LENSES.length >= 6);
+expect(LENSES.length >= 6, `bl() names at least 6 built-in lenses (got ${LENSES.length}: ${LENSES.join(', ')})`);
 const flat = [];
 for (const [lens, o] of Object.entries(empty)) for (const [k, v] of Object.entries(o)) {
   if (k === 'health' || k === 'openBugs') continue; // health is 'unmeasured' already; counts stay 0
@@ -50,22 +50,22 @@ for (const [lens, o] of Object.entries(empty)) for (const [k, v] of Object.entri
 }
 // a field "asserts a value" when it is a non-empty string other than the vocabulary's own 'unknown', or the rating `value` (1..5 scale) is not 0
 const asserts = flat.filter(([k, v]) => (typeof v === 'string' && v !== '' && v !== 'unknown') || (k === 'business.value' && v !== 0));
-check('bl(no facet): no field asserts a value', asserts.length === 0, `${asserts.length} of ${flat.length}: ` + asserts.map(([k, v]) => k + '=' + JSON.stringify(v)).join(', '));
-check('bl(no facet): every health is unmeasured', LENSES.every((l) => empty[l]?.health === 'unmeasured'));
+expect(asserts.length === 0, 'bl(no facet): no field asserts a value', `${asserts.length} of ${flat.length}: ` + asserts.map(([k, v]) => k + '=' + JSON.stringify(v)).join(', '));
+expect(LENSES.every((l) => empty[l]?.health === 'unmeasured'), 'bl(no facet): every health is unmeasured');
 
 // ---- 2. content() on a feature with no facet
 const bare = feature({});
 const VARIANTS = [['shaped', shaped], ['bold', bold]];
 // A lens bl() names but a variant has no channel for is the first thing a 7th lens hits: report it by name
 // instead of crashing on `undefined.content` (the loops below are derived from LENSES, so they all reach it).
-for (const [vn, ch] of VARIANTS) for (const l of LENSES) check(`${vn} has a channel for the '${l}' lens`, typeof ch[l]?.content === 'function');
+for (const [vn, ch] of VARIANTS) for (const l of LENSES) expect(typeof ch[l]?.content === 'function', `${vn} has a channel for the '${l}' lens`);
 const chans = VARIANTS.map(([vn, ch]) => [vn, ch, LENSES.filter((l) => typeof ch[l]?.content === 'function')]);
 let said = 0;
 for (const [vn, ch, ls] of chans) for (const l of ls) {
   const c = ch[l].content(bare, live);
   const ok = c.parts.length === 1 && c.parts[0] === NM && c.stamp === undefined;
   if (!ok) said++;
-  check(`${vn}.${l}.content(no facet) is only ${NM}`, ok, JSON.stringify(c));
+  expect(ok, `${vn}.${l}.content(no facet) is only ${NM}`, JSON.stringify(c));
 }
 
 // ---- 3. the measured arm
@@ -79,17 +79,17 @@ const VALUES = {
 };
 // VALUES is the one place a new lens must still be named by hand, so say so instead of failing obscurely
 // in the measured arm (an absent entry would read as a lens that says nothing when everything is measured).
-for (const l of LENSES) check(`the measured arm has sample values for the '${l}' lens`, !!VALUES[l], 'add it to VALUES in this check');
+for (const l of LENSES) expect(!!VALUES[l], `the measured arm has sample values for the '${l}' lens`, 'add it to VALUES in this check');
 const lensOf = (l) => ({ h: 'good', v: VALUES[l], whyFields: [], facet: l });
 const full = feature(Object.fromEntries(LENSES.filter((l) => VALUES[l]).map((l) => [l, lensOf(l)])));
 for (const [vn, ch, ls] of chans) for (const l of ls.filter((x) => VALUES[x])) {
   const c = ch[l].content(full, live);
-  check(`${vn}.${l}.content(measured) speaks`, c.parts.length > 0 && !c.parts.includes(NM) && c.parts.every((p) => p !== ''), JSON.stringify(c));
+  expect(c.parts.length > 0 && !c.parts.includes(NM) && c.parts.every((p) => p !== ''), `${vn}.${l}.content(measured) speaks`, JSON.stringify(c));
 }
 const one = feature({ security: lensOf('security') });
 for (const [vn, ch, ls] of chans) for (const l of ls) {
   const c = ch[l].content(one, live), nm = c.parts.length === 1 && c.parts[0] === NM;
-  check(`${vn}.${l}.content(only security measured)`, l === 'security' ? !nm : nm, JSON.stringify(c));
+  expect(l === 'security' ? !nm : nm, `${vn}.${l}.content(only security measured)`, JSON.stringify(c));
 }
 
 // ---- 4. aggregates count measured facets only
@@ -101,19 +101,19 @@ const m = feature(Object.fromEntries(LENSES.filter((l) => MV[l]).map((l) => [l, 
 const u = feature({});
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const bdev = bold.development.aggregate([m, u]).parts;
-check('bold development [m, u] averages measured facets only: parts[1] is "80% agent-written"', bdev[1] === '80% agent-written', JSON.stringify(bdev));
-check('bold development [m, u] ends with "1 not measured"', bdev[bdev.length - 1] === '1 not measured', JSON.stringify(bdev));
+expect(bdev[1] === '80% agent-written', 'bold development [m, u] averages measured facets only: parts[1] is "80% agent-written"', JSON.stringify(bdev));
+expect(bdev[bdev.length - 1] === '1 not measured', 'bold development [m, u] ends with "1 not measured"', JSON.stringify(bdev));
 const sdev = shaped.development.aggregate([m, u]).parts;
-check('shaped development [m, u] says "80% agent code"', sdev.includes('80% agent code'), JSON.stringify(sdev));
+expect(sdev.includes('80% agent code'), 'shaped development [m, u] says "80% agent code"', JSON.stringify(sdev));
 const sdes = shaped.design.aggregate([m, u]).parts;
-check('shaped design [polished m, u]: parts[0] is "1 of 1 designed"', sdes[0] === '1 of 1 designed', JSON.stringify(sdes));
+expect(sdes[0] === '1 of 1 designed', 'shaped design [polished m, u]: parts[0] is "1 of 1 designed"', JSON.stringify(sdes));
 for (const [vn, ch, ls] of chans) for (const l of ls) {
   const a = ch[l].aggregate([u]);
-  check(`${vn}.${l}.aggregate([unmeasured]) is only ${NM}`, eq(a, { parts: [NM] }), JSON.stringify(a));
+  expect(eq(a, { parts: [NM] }), `${vn}.${l}.aggregate([unmeasured]) is only ${NM}`, JSON.stringify(a));
 }
 for (const [vn, ch, ls] of chans) for (const l of ls) {
   const mixed = ch[l].aggregate([m, u]).parts, alone = ch[l].aggregate([m]).parts;
-  check(`${vn}.${l}.aggregate reconciles: [m, u] = [m] + "1 not measured"`, mixed[mixed.length - 1] === '1 not measured' && eq(mixed.slice(0, -1), alone) && !alone.some((p) => / not measured$|^NOT MEASURED$/.test(p)), JSON.stringify({ mixed, alone }));
+  expect(mixed[mixed.length - 1] === '1 not measured' && eq(mixed.slice(0, -1), alone) && !alone.some((p) => / not measured$|^NOT MEASURED$/.test(p)), `${vn}.${l}.aggregate reconciles: [m, u] = [m] + "1 not measured"`, JSON.stringify({ mixed, alone }));
 }
 
 // ---- 5. one sensitive-and-unreviewed predicate
@@ -133,7 +133,7 @@ for (const dc of CLASSES) for (const rv of REVIEWS) {
     rail: typeof railParts === 'function' ? num(railParts('security', [f], sim), / UNREVIEWED$/) === 1 : undefined,
     perimeter: typeof perimeterNote === 'function' ? / without a review$/.test(perimeterNote(f)) : undefined,
   };
-  check(`sensitiveUnreviewed(${dc}, ${rv}) = ${truth}, and every reader agrees`, Object.values(readers).every((v) => v === truth), JSON.stringify(readers));
+  expect(Object.values(readers).every((v) => v === truth), `sensitiveUnreviewed(${dc}, ${rv}) = ${truth}, and every reader agrees`, JSON.stringify(readers));
 }
 const { blankComments } = await import(pathToFileURL(path.join(ROOT, 'scripts/lib/source.ts')).href);
 const walkDir = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walkDir(path.join(d, e.name)) : [path.join(d, e.name)]));
@@ -147,8 +147,8 @@ for (const p of srcFiles) {
     if (/\b(SENS|CLASSN|FIDELITY|DSTEP)\b\s*[:=]/.test(ln)) tables.push(rel + ':' + (i + 1));
   });
 }
-check('no file in bold/ or shaped/ spells the sensitive-and-unreviewed conjunction inline', inline.length === 0, inline.join(', '));
-check('the data-class and design ordinals live in base once (no SENS / CLASSN / FIDELITY / DSTEP table in bold/ or shaped/)', tables.length === 0, tables.join(', '));
+expect(inline.length === 0, 'no file in bold/ or shaped/ spells the sensitive-and-unreviewed conjunction inline', inline.join(', '));
+expect(tables.length === 0, 'the data-class and design ordinals live in base once (no SENS / CLASSN / FIDELITY / DSTEP table in bold/ or shaped/)', tables.join(', '));
 
-console.log(`check-legacy-unmeasured: bl census ${asserts.length} of ${flat.length} fields assert a value; ${said} of ${chans.reduce((n, [, , ls]) => n + ls.length, 0)} channels say more than ${NM} with no facet; ${passed} checks passed, ${failed} failed`);
-process.exit(failed ? 1 : 0);
+console.log(`check-legacy-unmeasured: bl census ${asserts.length} of ${flat.length} fields assert a value; ${said} of ${chans.reduce((n, [, , ls]) => n + ls.length, 0)} channels say more than ${NM} with no facet`);
+done({ exit: true });
