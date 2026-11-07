@@ -249,6 +249,13 @@ const words = await (async () => {
   const five = deck([product('p', ['a', 'b', 'c', 'd', 'e'].map((id) => prop(id)))]), l5 = openLines(five).find((t) => /wait/.test(t)) ?? '';
   check('control: five open decisions, three ranked: the top 3 are at the end', five.cards.filter((c) => c.kind === 'decision').length === 3 && /the top 3 are at the end/.test(l5), l5);
 }
+{
+  const { prop, product, deck, openLines } = words, late = (id: string, status: string) => prop(id, { status, updated_at: '2026-10-20T02:00:00.000Z' });
+  const failedOnly = openLines(deck([product('p', [late('x', 'failed'), late('y', 'failed')]), product('q', [])]))[0];
+  check('only failed builds overnight: the opening line names them builds, not a bare "2 failed"', failedOnly === 'Overnight, 1 product of 2 moved: 2 builds failed.', failedOnly);
+  const both = openLines(deck([product('p', [late('x', 'done'), late('y', 'failed')]), product('q', [])]))[0];
+  check('control: built and failed: "1 item built, 1 failed"', both === 'Overnight, 1 product of 2 moved: 1 item built, 1 failed.', both);
+}
 
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
