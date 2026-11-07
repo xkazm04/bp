@@ -146,7 +146,6 @@ const { patchRows } = await imp('CommitDiff.tsx');
 const { blocksOf, inline } = await imp('ItemText.tsx');
 const { minText, pairKey, pairLabel, pairReadings, shownPairs } = await imp('Screens.tsx');
 const { hasRuns, perfItem, perfReason, runsOf } = await imp('PerfTable.tsx');
-const { latestOf } = await imp('MetricStrip.tsx');
 const { packHeading, packOrder } = await imp('ComparePanel.tsx');
 
 { // the patch's rows: one header per file, the hunk, and each line's old and new number
@@ -206,7 +205,7 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   const c = compareOf(scan, 'p-x', LENSES) as Comparison;
   const lens: Any = { F: { interactionP95Ms: { label: 'Interaction p95', unit: 'ms', metric: { better: 'down', target: 100 } }, memMb: { label: 'Memory', unit: 'MB', metric: { better: 'down', target: 50 } } } };
   ok(runsOf(c).join() === '96,104,98' && hasRuns(c), 'runs: the item\'s own-metric before readings, in recorded order', runsOf(c));
-  ok(latestOf(c.before, 'performance', 'interactionP95Ms')?.value === 98, 'latest reading: the last matching row of the phase wins', latestOf(c.before, 'performance', 'interactionP95Ms'));
+  ok((c as Any).latest?.before?.value === 98, 'latest reading: the last matching row of the phase wins (Comparison.latest)', (c as Any).latest);
   const it = perfItem(c, 'Booking', lens);
   ok(it.label === 'Interaction p95' && it.unit === 'ms' && it.f.after === 72, 'perf item: the lens field names the row, the after is the latest reading', [it.label, it.unit, it.f.after]);
   ok(it.context.length === 1 && it.context[0].key === 'memMb' && it.context[0].value === 40 && it.context[0].target === 50, 'perf item: the feature\'s other metrics of this lens are context rows', it.context);
@@ -476,6 +475,128 @@ const { packHeading, packOrder } = await imp('ComparePanel.tsx');
   const sf = stripComments(fs.readFileSync(path.join(SRC, CMP, 'ShotFigure.css'), 'utf8')) + stripComments(fs.readFileSync(path.join(SRC, CMP, 'Screens.css'), 'utf8'));
   const focusRules = [...sf.matchAll(/([^{}]*\.focus[^{}]*)\{([^}]*)\}/g)].map((m) => m[2]);
   ok(focusRules.length > 0 && focusRules.every((b) => !/animation|transition|#[0-9a-f]{3,8}\b|rgb|hsl/i.test(b) && [...b.matchAll(/--fs-(\d+)/g)].every((m) => Number(m[1]) >= 12)), 'focus css: tokens only, --fs-* >= 12, no animation or transition', focusRules);
+}
+
+// ------------------------------------------------------------------------------------------- one evidence index
+// packages/core/src/scan/evidence.ts evidenceIndex groups an item's readings and shots once per array identity; compareOf
+// and every train surface (plan.ts verdictIn, ItemRow factsOf, ReleaseView summaryOf, History releaseItemsOf) read it.
+// Held against the pre-index answers: LEGACY below is compareOf as it was before the index (a scan of every measurement
+// and shot per call), and the surfaces' references are per-item filters over the tables.
+{
+  const { ScanSim } = await import('../packages/core/src/model/scan-sim.ts');
+  const { noteItem } = await import('../packages/core/src/train/notes.ts');
+  const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')) as Any;
+  const manifests = new Map<string, Any>(structure.lenses.map((l: Any) => [l.id, l.manifest]));
+  const KL: LensFields[] = structure.lenses.map((l: Any) => ({ id: l.id, manifest: l.manifest }));
+  const sim = new ScanSim({ now: () => Date.parse('2026-10-15T12:00:00.000Z'), findings: [] });
+  sim.bind({ order: structure.features.map((f: Any) => f.slug), manifest: (l: string) => manifests.get(l), value: (f: string, l: string, k: string) => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; } });
+  const s0 = sim.snapshot();
+  let EV: Any = {};
+  try { EV = await import('../packages/core/src/scan/evidence.ts'); } catch (e) { ok(false, 'evidence index: packages/core/src/scan/evidence.ts loads', String(e).split('\n')[0]); }
+  const evidenceIndex = typeof EV.evidenceIndex === 'function' ? EV.evidenceIndex : null;
+  ok(!!evidenceIndex, 'evidence index: evidence.ts exports evidenceIndex');
+
+  // 1. one Map per (measurements, shots) identity
+  if (evidenceIndex) {
+    const a = evidenceIndex(s0.measurements, s0.shots), b = evidenceIndex(s0.measurements, s0.shots), c = evidenceIndex([...s0.measurements], s0.shots);
+    ok(a instanceof Map && a === b, 'evidence index: the same two arrays return the identical Map');
+    ok(c !== a && c instanceof Map && c.size === a.size, 'evidence index: a new measurements array returns a new Map (with the same items)', [c === a, c?.size, a?.size]);
+  }
+
+  // 2. compareOf over the index equals compareOf before it, by row id and in order
+  const byMeasure = (a: Measurement, b: Measurement) => a.lens < b.lens ? -1 : a.lens > b.lens ? 1 : a.metric < b.metric ? -1 : a.metric > b.metric ? 1 : a.measured_at < b.measured_at ? -1 : a.measured_at > b.measured_at ? 1 : a.id - b.id;
+  const byCapture = (a: Shot, b: Shot) => (a.captured_at < b.captured_at ? -1 : a.captured_at > b.captured_at ? 1 : a.id - b.id);
+  const LEGACY = (scan: { proposals: readonly Proposal[]; measurements: readonly Measurement[]; shots: readonly Shot[] }, id: string, lenses?: LensFields[]) => {
+    const p = scan.proposals.find((x) => x.id === id);
+    if (!p) return null;
+    const before: Measurement[] = [], after: Measurement[] = [];
+    for (const m of scan.measurements) if (m.proposal_id === p.id) { if (m.phase === 'before') before.push(m); else if (m.phase === 'after') after.push(m); }
+    before.sort(byMeasure); after.sort(byMeasure);
+    const pairs = new Map<string, Any>();
+    for (const s of scan.shots.filter((x) => x.proposal_id === p.id && x.phase).sort(byCapture)) {
+      const k = JSON.stringify([s.theme ?? null, s.size ?? null]);
+      let pair = pairs.get(k);
+      if (!pair) { pair = {}; if (s.theme !== undefined) pair.theme = s.theme; if (s.size !== undefined) pair.size = s.size; pairs.set(k, pair); }
+      pair[s.phase!] = s;
+    }
+    const v = verdictOf(p, before, after, lenses);
+    return { p, before, after, shots: [...pairs.values()], verdict: v.verdict, from: v.from, to: v.to, dir: v.dir };
+  };
+  const digest = (c: Any) => c && JSON.stringify([c.p.id, c.before.map((m: Any) => m.id), c.after.map((m: Any) => m.id), c.shots.map((s: Any) => [s.theme ?? null, s.size ?? null, s.before?.id ?? null, s.after?.id ?? null]), c.verdict, c.from?.id ?? null, c.to?.id ?? null, c.dir ?? null]);
+  // the store-compare fixture's shape: rows out of order, tied timestamps, a null theme and size, a null phase, another item's rows, an unlinked reading
+  let fid = 0;
+  const T9 = (h: number) => `2026-10-14T${String(h).padStart(2, '0')}:00:00Z`;
+  const fm = (lens: string, metric: string, value: number, h: number, pid?: string, phase?: 'before' | 'after'): Measurement => ({ id: ++fid, run_id: 'r1', feature: 'f', lens, metric, value, measured_at: T9(h), ...(pid ? { proposal_id: pid } : {}), ...(phase ? { phase } : {}) } as Measurement);
+  const fsh = (size: string | null, theme: string | null, h: number, pid: string, phase?: 'before' | 'after'): Shot => ({ id: ++fid, run_id: 'r1', feature: 'f', path: 'p.png', captured_at: T9(h), proposal_id: pid, ...(size ? { size } : {}), ...(theme ? { theme } : {}), ...(phase ? { phase } : {}) } as Shot);
+  const fp = (id: string): Proposal => ({ ...P, id, lens: 'dev', metric: 'cov', expected_delta: 5, pack_id: 'k1' });
+  const FX = {
+    proposals: [fp('p2'), fp('p1'), fp('p0'), fp('px')],
+    measurements: [fm('dev', 'cov', 60, 3, 'p1', 'before'), fm('dev', 'cov', 50, 1, 'p1', 'before'), fm('design', 'z', 1, 9, 'p1', 'before'), fm('dev', 'aaa', 7, 5, 'p1', 'before'), fm('dev', 'cov', 55, 1, 'p1', 'before'), fm('dev', 'cov', 58, 2, 'p1', 'before'),
+      fm('dev', 'cov', 70, 4, 'p1', 'after'), fm('dev', 'cov', 65, 4, 'p1', 'after'), fm('dev', 'cov', 60, 2, 'p1', 'after'), fm('dev', 'bbb', 2, 1, 'p1', 'after'),
+      fm('dev', 'cov', 99, 1, 'p2', 'before'), fm('dev', 'cov', 98, 6), fm('dev', 'cov', 97, 6, 'p1')].reverse(),
+    shots: [fsh('lg', 'dark', 1, 'p1', 'before'), fsh('lg', 'dark', 3, 'p1', 'before'), fsh('lg', 'dark', 2, 'p1', 'after'), fsh('lg', 'dark', 4, 'p1', 'after'), fsh('lg', 'light', 1, 'p1', 'before'),
+      fsh('sm', 'light', 2, 'p1', 'after'), fsh('sm', 'light', 2, 'p1', 'after'), fsh(null, null, 1, 'p1', 'after'), fsh('lg', 'dark', 9, 'p1'), fsh('lg', 'dark', 9, 'p2', 'after')].reverse(),
+  };
+  const sets: [string, Any, LensFields[] | undefined][] = [['the Kettle sample train', s0, KL], ['the store-compare fixture', FX, undefined]];
+  for (const [what, scan, lenses] of sets) {
+    const ids = [...scan.proposals.map((p: Proposal) => p.id), 'nope'];
+    const diff = ids.filter((id) => digest(compareOf(scan, id, lenses)) !== digest(LEGACY(scan, id, lenses)));
+    ok(ids.length > 2 && !diff.length, `compareOf over the index equals compareOf before it for every item of ${what} (readings, pairs, verdict, from/to, in order)`, diff);
+  }
+  const p1 = compareOf(FX as Any, 'p1');
+  ok(!!p1 && p1.before.length === 6 && p1.after.length === 4 && p1.shots.length === 4, 'the fixture is not vacuous: p1 has 6 before, 4 after readings and 4 shot pairs', p1 && [p1.before.length, p1.after.length, p1.shots.length]);
+
+  // 3. the latest readings ride on the Comparison: one before and no after
+  {
+    const one = { proposals: [{ ...P, id: 'p-one', metric: 'memMb' }], measurements: [{ ...reading(40, 'before', 1), proposal_id: 'p-one', metric: 'memMb', unit: 'MB' }], shots: [] as Shot[] };
+    const c = compareOf(one, 'p-one', LENSES) as Any;
+    ok(c?.latest?.before?.value === 40 && c.latest.after === undefined && c.from === undefined, 'latest: one before reading and no after -> latest.before is that reading, latest.after undefined (c.from stays unset)', c?.latest);
+    const React = (await import('react')).default, { renderToStaticMarkup } = await import('react-dom/server');
+    const { MetricStrip } = await imp('MetricStrip.tsx');
+    const big = renderToStaticMarkup(React.createElement(MetricStrip, { c })).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    ok(/ 40 → \? MB/.test(big), 'latest: the metric strip renders "40 → ?" for one before and no after', big.slice(0, 80));
+  }
+
+  // 4. the surfaces over the index answer as the per-item filters do, for every Kettle sample item
+  const TR = path.join(SRC, 'components/ledger/train/');
+  const impT = async (f: string): Promise<Any> => { try { return await import(pathToFileURL(TR + f).href); } catch (e) { ok(false, 'import train/' + f, String(e).split('\n')[0]); return {}; } };
+  const [{ verdictIn }, { factsOf }, { summaryOf }, { releaseItemsOf }] = await Promise.all([impT('plan.ts'), impT('ItemRow.tsx'), impT('release/ReleaseView.tsx'), impT('release/History.tsx')]);
+  const T: Any = { slug: null, proposals: s0.proposals, byId: new Map(s0.proposals.map((p) => [p.id, p])), measurements: s0.measurements, shots: s0.shots, lenses: KL, releases: [], packs: s0.packs, jobs: [], landed: undefined };
+  const refOf = (p: Proposal) => {
+    const before = s0.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'before'), after = s0.measurements.filter((m) => m.proposal_id === p.id && m.phase === 'after');
+    return { before, after, v: verdictOf(p, before, after, KL) };
+  };
+  const packed = s0.proposals.filter((p) => p.pack_id);
+  ok(packed.length >= 8 && packed.every((p) => verdictIn(T, p) === refOf(p).v.verdict), 'plan.ts verdictIn over the index: every Kettle sample item\'s verdict equals the per-item filters\'', packed.filter((p) => verdictIn(T, p) !== refOf(p).v.verdict).map((p) => p.id));
+  if (typeof factsOf === 'function') {
+    const F: ReadonlyMap<string, Any> = factsOf(T);
+    const own = (p: Proposal) => (m: Measurement) => m.lens === p.lens && m.metric === p.metric;
+    const bad = packed.filter((p) => {
+      const r = refOf(p), f = F.get(p.id), shots = new Set(s0.shots.filter((s) => s.proposal_id === p.id && s.phase).map((s) => s.phase + '|' + (s.theme ?? '') + '|' + (s.size ?? ''))).size;
+      return !f || f.verdict !== r.v.verdict || f.runs !== r.before.filter(own(p)).length || f.afters !== r.after.filter(own(p)).length || f.shots !== shots || f.before !== r.v.base || f.after !== r.v.to?.value;
+    });
+    ok(!bad.length && s0.shots.length > 0, 'ItemRow factsOf over the index: verdict, runs, afters, screens and figures equal the per-item filters\' for every Kettle sample item', bad.map((p) => p.id));
+  } else ok(false, 'ItemRow.tsx exports factsOf (useItemFacts\' pure body)');
+  if (typeof summaryOf === 'function') {
+    const moved = packed.filter((p) => p.status !== 'released' && p.status !== 'executing' && refOf(p).v.verdict === 'moved').length;
+    const s = summaryOf(T);
+    ok(moved > 0 && s.moved === moved && s.built === packed.filter((p) => p.status !== 'released' && p.status !== 'executing').length, 'ReleaseView summaryOf over the index: the moved count equals the per-item filters\'', [s.moved, moved]);
+  } else ok(false, 'ReleaseView.tsx exports summaryOf (SummaryStrip\'s counts)');
+  if (typeof releaseItemsOf === 'function') {
+    // two releases in the history: the sample's packed items split between them
+    const props = s0.proposals.map((p, i) => (p.pack_id ? { ...p, release_id: i % 2 ? 'rel-a' : 'rel-b' } : p)), TH = { ...T, proposals: props };
+    const got: ReadonlyMap<string, Any[]> = releaseItemsOf(TH, [{ id: 'rel-a' }, { id: 'rel-b' }]);
+    const want = (rel: string) => props.filter((p) => p.release_id === rel).map((p) => { const r = refOf(p), n = noteItem(p, r.before, r.after, KL); return [p.id, n.verdict, n.flagged, n.from?.id ?? null, n.to?.id ?? null]; });
+    const have = (rel: string) => (got.get(rel) ?? []).map((n) => [n.p.id, n.verdict, n.flagged, n.from?.id ?? null, n.to?.id ?? null]);
+    ok(['rel-a', 'rel-b'].every((r) => want(r).length > 0 && JSON.stringify(have(r)) === JSON.stringify(want(r))), 'History releaseItemsOf over the index: each release\'s items carry the per-item filters\' evidence', ['rel-a', 'rel-b'].map((r) => [have(r).length, want(r).length]));
+  } else ok(false, 'History.tsx exports releaseItemsOf (the per-release items)');
+
+  // 5. no fifth grouping: no train source re-picks the latest reading or groups the tables by proposal itself
+  const files: string[] = [];
+  const walkT = (d: string) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const p = path.join(d, e.name); if (e.isDirectory()) walkT(p); else if (/\.tsx?$/.test(e.name)) files.push(p); } };
+  walkT(TR);
+  const hits = files.flatMap((f) => { const s = stripComments(fs.readFileSync(f, 'utf8')); return [...s.matchAll(/\b(latestOf|readingsBy|readingsOf)\b|\.proposal_id\b/g)].map((m) => path.relative(TR, f).replace(/\\/g, '/') + ': ' + m[0]); });
+  ok(files.length > 20 && !hits.length, 'source guard: no train file defines or imports latestOf / readingsBy / readingsOf or keys a loop by proposal_id (the evidence index is the one grouping)', hits);
 }
 
 // ------------------------------------------------------------------------------------------- canDecide, the release window
