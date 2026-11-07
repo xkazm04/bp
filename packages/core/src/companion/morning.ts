@@ -221,6 +221,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   fresh.sort(byRank);
   newsCount += fresh.length;
   const top = [...decisions.filter((d) => !d.held).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.held).slice(0, HELD_SHOWN)];
+  // the open decisions the deck's end actually shows: held ones count, and one already steered today (a kept slot) does not
+  const atEnd = top.filter((d) => d.x.status === 'proposed').length;
   const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
   const moved = sums.filter((s) => s.built || s.failed || s.releases || landedIn.has(s.slug)).length;
   const shipped = !landedIn.size ? 'Releases' : sums.some((s) => s.releases) ? 'Releases and landings' : 'Landed on the base branch';
@@ -230,7 +232,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   cards.push({
     id: 'open', kind: 'open', headline: 'Good morning.', tone: 'calm',
     lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `${shipped}: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
-      { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${Math.min(TOP_DECISIONS, S.waiting)} ${Math.min(TOP_DECISIONS, S.waiting) === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
+      { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${atEnd} ${atEnd === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
   });
   // the agent trail of the window: one line on the opening card, and a card of its own with what they heard and did
   const inWin = trail.filter((r) => r.at >= since && r.at <= until), agents = inWin.length ? trailTally(inWin, since, until) : undefined;

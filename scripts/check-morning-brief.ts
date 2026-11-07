@@ -229,6 +229,27 @@ check('the steering log says it, with the note', /Declined as a repeat: Add retr
   check('withdrew 1: the headline stays exactly as morning-demo-walk.py pins it', one.head === 'Agents heard your declines and stood down 1 time.', one.head);
 }
 
+// ------------------------------------------------------------------------- the opening card's words
+// In process, on hand-made products: the opening card counts what the deck's end actually shows.
+const words = await (async () => {
+  const { buildDeck } = await import('../packages/core/src/companion/morning.ts');
+  const { briefMapOf } = await import('../packages/core/src/scan/brief.ts');
+  const NOW = Date.parse('2026-10-20T08:00:00.000Z'), SINCE = '2026-10-19T16:00:00.000Z';
+  const prop = (id: string, o: object = {}) => ({ id, title: 'T ' + id, feature: 'f', lens: 'quality', status: 'proposed', tier: 2, created_at: '2026-10-15T00:00:00.000Z', updated_at: '2026-10-15T00:00:00.000Z', ...o });
+  const product = (slug: string, proposals: object[]) => ({ slug, name: slug.toUpperCase(), scan: { proposals, measurements: [], packs: [], releases: [], runs: [] }, where: new Map(), map: briefMapOf({}) });
+  const deck = (ps: object[], steer: object[] = []) => buildDeck(ps as never, steer as never, SINCE, NOW);
+  const openLines = (d: ReturnType<typeof deck>) => d.cards[0].lines.map((l) => l.text);
+  return { prop, product, deck, openLines, SINCE };
+})();
+{
+  const { prop, product, deck, openLines } = words;
+  const held = ['a', 'b', 'c', 'd'].map((id) => prop(id)), rows = held.map((x) => ({ at: '2026-10-17T08:00:00.000Z', product: 'p', proposal: x.id, verdict: 'hold', title: x.title, by: 'me' }));
+  const d = deck([product('p', held)], rows), shown = d.cards.filter((c) => c.kind === 'decision').length, line = openLines(d).find((t) => /wait/.test(t)) ?? '';
+  check('four held decisions, two shown: the opening card says the top 2 are at the end, not 3', shown === 2 && /^4 decisions wait; the top 2 are at the end\.$/.test(line), `${shown} shown: ${line}`);
+  const five = deck([product('p', ['a', 'b', 'c', 'd', 'e'].map((id) => prop(id)))]), l5 = openLines(five).find((t) => /wait/.test(t)) ?? '';
+  check('control: five open decisions, three ranked: the top 3 are at the end', five.cards.filter((c) => c.kind === 'decision').length === 3 && /the top 3 are at the end/.test(l5), l5);
+}
+
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
 console.log(`${failed ? 'FAILED' : 'ok'}: ${passed} passed, ${failed} failed (morning brief)`);
 process.exit(failed ? 1 : 0);
