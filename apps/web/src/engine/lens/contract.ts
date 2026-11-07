@@ -12,7 +12,9 @@
 // recolours a node. It speaks through shape, indicators, content, density, and (only in variants that
 // go that far) a secondary accent and decoration.
 import type { Feature, LensDef, Scalar, Stage } from '@bp/core/data';
+import type { BldNode } from '@bp/core/model';
 import type { Theme } from '../theme';
+import type { Text } from '../text';
 
 export type Density = 'simple' | 'standard' | 'dense';
 export interface Rect { x: number; y: number; w: number; h: number }
@@ -50,6 +52,12 @@ export interface MarkArgs {
   f: Feature;
   /** Presence 0..1: multiply your alpha by it (General = 1 for every lens; a lens = 1 for itself). */
   w: number;
+  /**
+   * Dominance 0..1 of this lens on this tile: the weight its `shape` is given, for marks that ride on the outline
+   * (General = 0 for every lens; a lone lens = 1 for itself; any other lens 0). The engine always passes it; a caller
+   * that draws a specimen outside the plan (the legend) may omit it, which reads as 0.
+   */
+  d?: number;
   /** Expansion 0..1: 0 = compact General form, 1 = this lens alone. */
   x: number;
   /** Convenience: x < 0.5. */
@@ -87,6 +95,25 @@ export interface ChannelAggregate {
 
 export interface Viewport { x: number; y: number; w: number; h: number; k: number; u: number }
 
+/** What a variant's decoration is given: one record per raster, reused (read it during the call, never keep it). */
+export interface DecorArgs {
+  /** The screen rect to draw into (the raster's cull bounds), the zoom and the UI scale. */
+  view: Viewport;
+  /** Screen px of world 0,0: a world point (wx, wy) lies at (ox + wx * view.k, oy + wy * view.k). */
+  ox: number; oy: number;
+  /** The plan's buildings, in world units (the layout of the engine that is drawing). */
+  blds: readonly BldNode[];
+  /** Each building's wall paths in world units, by building index (BldNode.i); `outline` is its footprint. */
+  wallPaths: readonly ({ outline: Path2D } | undefined)[];
+  /** The engine's text kit (fonts, measuring, fitting and wrapping words). */
+  tx: Text;
+  /** Live values the simulation moves. */
+  sim: { rolloutOf(f: Feature): number };
+  th: Theme;
+  /** This lens's weight (its dominance). */
+  w: number;
+}
+
 export interface LensChannel {
   /** Who reads this lens: design is simple, development is dense. The UI also consults it. */
   density: Density;
@@ -100,8 +127,8 @@ export interface LensChannel {
   content(f: Feature, live: FeatureLive): ChannelContent;
   /** What a place (room, wing, building) says under this lens. */
   aggregate(fs: readonly Feature[]): ChannelAggregate;
-  /** Optional decoration drawn under the plan, in screen space (bold variant). w = this lens's weight. */
-  decor?(ctx: CanvasRenderingContext2D, view: Viewport, w: number, th: Theme): void;
+  /** Optional decoration drawn under the plan, in screen space (bold variant). `a.w` = this lens's weight. */
+  decor?(ctx: CanvasRenderingContext2D, a: DecorArgs): void;
 }
 
 export interface LensExpression {

@@ -10,10 +10,10 @@
 //  3. a TITLE BLOCK per building in the empty paper under its shorter wings (when one is big enough),
 //     carrying the lens's sheet number and its building totals.
 //
-// Seam workaround: `decor(ctx, view, w, th)` gets the screen viewport but not the camera origin or the
-// plan geometry, so this file reads the running engine from `window.__bp` (read-only). See NOTES.md for
-// the seam change that would remove it.
-import type { Engine } from '@/engine/Engine';
+// Everything it draws from comes in on `DecorArgs` (engine/lens/contract.ts): the camera origin, the plan's
+// buildings and wall paths, the text kit and the sim of the engine that is drawing, so it holds no engine
+// reference of its own and draws the right plan when two engines are on the page.
+import type { DecorArgs } from '@/engine/lens/contract';
 import { drawText } from '@/engine/text';
 import { NOT_MEASURED, bl, hof, measuredOf, sensitiveUnreviewed, sensitivity, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@bp/core/model';
@@ -26,7 +26,7 @@ import { clamp } from '../base/util';
 const TAU = Math.PI * 2;
 
 interface Ctx2 {
-  E: Engine; th: Theme; view: Viewport; k: number; u: number;
+  A: DecorArgs; th: Theme; view: Viewport; k: number; u: number;
   /** Screen x/y of world 0,0. */
   ox: number; oy: number;
   accent: string;
@@ -34,12 +34,6 @@ interface Ctx2 {
 }
 const sx = (P: Ctx2, wx: number) => P.ox + wx * P.k;
 const sy = (P: Ctx2, wy: number) => P.oy + wy * P.k;
-
-function engine(): Engine | null {
-  if (typeof window === 'undefined') return null;
-  const E = (window as unknown as { __bp?: Engine }).__bp;
-  return E && E.M && E.th && E.cam ? E : null;
-}
 
 function onScreen(P: Ctx2, x: number, y: number, w: number, h: number, m = 0) {
   const v = P.view;
@@ -57,7 +51,7 @@ function clipOutside(ctx: CanvasRenderingContext2D, P: Ctx2) {
   const v = P.view, p = new Path2D();
   p.rect(v.x, v.y, v.w, v.h);
   const m = new DOMMatrix([P.k, 0, 0, P.k, P.ox, P.oy]);
-  for (const B of P.E.M.L.blds) { const wp = P.E.wallPaths[B.i]; if (wp) p.addPath(wp.outline, m); }
+  for (const B of P.A.blds) { const wp = P.A.wallPaths[B.i]; if (wp) p.addPath(wp.outline, m); }
   ctx.clip(p, 'evenodd');
 }
 
@@ -126,7 +120,7 @@ export function sensOf(R: RoomNode) {
 const wr: number[] = [];
 function wingRects(P: Ctx2): number[] {
   wr.length = 0;
-  for (const B of P.E.M.L.blds) for (const W of B.wings) {
+  for (const B of P.A.blds) for (const W of B.wings) {
     const x = sx(P, W.x), y = sy(P, W.y), w = W.w * P.k, h = W.h * P.k;
     if (onScreen(P, x, y, w, h, 8)) wr.push(x - 6, y - 6, x + w + 6, y + h + 6);
   }
@@ -295,7 +289,7 @@ function roomFences(ctx: CanvasRenderingContext2D, P: Ctx2, B: BldNode) {
 // ------------------------------------------------------------------------------------------- rails
 interface Rail { x0: number; x1: number; cy: number; bx: number; by: number; bay: BayNode }
 function bayRails(P: Ctx2, B: BldNode, fn: (r: Rail) => void) {
-  const { E, k, u } = P, tx = E.tx;
+  const { k, u } = P, tx = P.A.tx;
   if (BH * k < 23 * u) return;
   const cf = tx.f(12, 500, true), nf = tx.f(13.5, 600);
   for (const W of B.wings) {
@@ -317,7 +311,7 @@ function bayRails(P: Ctx2, B: BldNode, fn: (r: Rail) => void) {
 }
 
 function railText(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail, parts: string[], mono: boolean, reserve = 0): number {
-  const tx = P.E.tx, font = mono ? tx.f(12.5, 600, true) : tx.f(13.5, 600);
+  const tx = P.A.tx, font = mono ? tx.f(12.5, 600, true) : tx.f(13.5, 600);
   const room = r.x1 - r.x0 - reserve - 8 * P.u;
   if (room < 40 * P.u) return r.x1 - reserve;
   const s = tx.fit(parts, room, font); if (!s) return r.x1 - reserve;
@@ -373,7 +367,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
   ctx.strokeStyle = accent; ctx.fillStyle = accent; ctx.lineWidth = 1;
   switch (P.lens) {
     case 'business': {
-      const end = railText(ctx, P, r, railParts('business', fs, P.E.M.sim), false);
+      const end = railText(ctx, P, r, railParts('business', fs, P.A.sim), false);
       if (end - r.x0 > 20 * u) { ctx.strokeStyle = th.alpha(accent, 0.75); ctx.lineWidth = 1.5; ctx.setLineDash([1.5, 4 * u]); ctx.beginPath(); ctx.moveTo(r.x0, r.cy + 3 * u); ctx.lineTo(end - 4 * u, r.cy + 3 * u); ctx.stroke(); ctx.setLineDash([]); }
       break;
     }
@@ -402,18 +396,18 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
         }
         ctx.strokeStyle = th.alpha(accent, 0.9); ctx.lineWidth = 1.2; ctx.stroke(p);
       }
-      railText(ctx, P, r, railParts('development', fs, P.E.M.sim), true);
+      railText(ctx, P, r, railParts('development', fs, P.A.sim), true);
       break;
     }
     case 'operations': { // a flow line of chevrons to a live count
-      const end = railText(ctx, P, r, railParts('operations', fs, P.E.M.sim), true);
+      const end = railText(ctx, P, r, railParts('operations', fs, P.A.sim), true);
       const step = 16 * u, c = 3.5 * u, p = new Path2D();
       for (let x = r.x0 + c; x < end - 6 * u; x += step) { p.moveTo(x - c, r.cy - c); p.lineTo(x, r.cy); p.lineTo(x - c, r.cy + c); }
       ctx.strokeStyle = th.alpha(accent, 0.85); ctx.lineWidth = 1.4; ctx.stroke(p);
       break;
     }
     case 'security': { // a fence with a padlock, then what it guards
-      const parts = railParts('security', fs, P.E.M.sim);
+      const parts = railParts('security', fs, P.A.sim);
       // the fence and padlock only when the bay holds sensitive data somebody measured
       if (parts[0] === NOT_MEASURED || parts[0] === 'NO SENSITIVE DATA') { railText(ctx, P, r, parts, true); break; }
       const end = railText(ctx, P, r, parts, true);
@@ -443,7 +437,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
         else if (q.status === 'partial' || q.status === 'testing') { ok.moveTo(x + s * 0.25, y0 + s / 2); ok.lineTo(x + s * 0.75, y0 + s / 2); }
       }
       ctx.lineWidth = 1.6; ctx.strokeStyle = accent; ctx.stroke(ok); ctx.strokeStyle = th.red; ctx.stroke(bad);
-      railText(ctx, P, r, railParts('quality', fs, P.E.M.sim), true, bw + 6 * u);
+      railText(ctx, P, r, railParts('quality', fs, P.A.sim), true, bw + 6 * u);
       break;
     }
   }
@@ -451,7 +445,7 @@ function rail(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail) {
 
 // ------------------------------------------------------------------------------------- title block
 function titleBlock(ctx: CanvasRenderingContext2D, P: Ctx2, B: BldNode) {
-  const { E, th, u, k, accent, lens } = P, tx = E.tx;
+  const { th, u, k, accent, lens } = P, tx = P.A.tx;
   const parts = bldParts(B, lens), nm = LENS_NAME[lens];
   const lh = 18 * u;
   let H = 40 * u + parts.length * lh * 2; // conservative (every line wrapped) while placing
@@ -511,15 +505,16 @@ function titleBlock(ctx: CanvasRenderingContext2D, P: Ctx2, B: BldNode) {
 
 // ------------------------------------------------------------------------------------------- entry
 export function makeDecor(lens: BuiltinLens) {
-  return (ctx: CanvasRenderingContext2D, view: Viewport, w: number, th: Theme) => {
-    const E = engine(); if (!E || w <= 0.01) return;
-    const k = view.k, FW = view.w + 2 * view.x, FH = view.h + 2 * view.y;
-    const P: Ctx2 = { E, th, view, k, u: view.u, ox: FW / 2 - E.cam.x * k, oy: FH / 2 - E.cam.y * k, accent: th.mode === 'dark' ? CHANNEL_ACCENT(lens).dark : CHANNEL_ACCENT(lens).light, lens };
+  return (ctx: CanvasRenderingContext2D, A: DecorArgs) => {
+    const { view, th, w } = A;
+    if (w <= 0.01) return;
+    const k = view.k;
+    const P: Ctx2 = { A, th, view, k, u: view.u, ox: A.ox, oy: A.oy, accent: th.mode === 'dark' ? CHANNEL_ACCENT(lens).dark : CHANNEL_ACCENT(lens).light, lens };
     const ga = ctx.globalAlpha;
     ctx.globalAlpha = ga * clamp(w, 0, 1);
     ctx.textBaseline = 'alphabetic';
     field(ctx, P);
-    for (const B of E.M.L.blds) {
+    for (const B of A.blds) {
       const bx = sx(P, B.x), by = sy(P, B.y);
       if (!onScreen(P, bx, by, B.w * k, B.h * k, 200 * P.u)) continue;
       buildingOrnaments(ctx, P, B);

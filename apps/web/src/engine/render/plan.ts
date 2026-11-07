@@ -6,7 +6,7 @@ import type { Feature } from '@bp/core/data';
 import { EVIDENCE_BY_DENSITY } from '@bp/core/standard/present';
 import { BH, RH, deltaWin, healthUnder, stageAt, stageParts, STAGE_WORD, type BldNode, type TileNode } from '@bp/core/model';
 import type { Engine } from '../Engine';
-import type { ChannelAggregate, MarkArgs, Rect, TileGeom } from '../lens/contract';
+import type { ChannelAggregate, DecorArgs, MarkArgs, Rect, TileGeom } from '../lens/contract';
 import { clamp } from '../camera';
 import { drawText } from '../text';
 import { chipsFit, cloud, drawHealthBar, drawStageBar, glyphAgent, glyphPin, stageFill, stageStroke } from './glyphs';
@@ -96,14 +96,27 @@ export function lensFailed(E: Engine, l: string, part: string, err: unknown) {
   queueMicrotask(() => E.patch({ failedLenses: all }));
 }
 
-/** Variant decoration under the plan, weighted by each lens's dominance. */
+// decoration's arguments: one record, refilled per raster (or patch) before the first decor call of it, never allocated
+const DA = { view: { x: 0, y: 0, w: 0, h: 0, k: 1, u: 1 }, ox: 0, oy: 0, blds: [], wallPaths: [], tx: null, sim: null, th: null, w: 0 } as unknown as DecorArgs;
+
+/** Variant decoration under the plan, weighted by each lens's dominance. It is handed the plan of the engine drawing it. */
 export function drawDecor(E: Engine, ctx: CanvasRenderingContext2D, v: View) {
   const m = E.mixS;
+  let filled = false;
   for (const l of E.lensIds) {
     const ch = E.channel(l);
     if (!ch || !ch.decor || m.d[l] <= 0.001 || failed(E, l)) continue;
     ctx.save();
-    try { ch.decor(ctx, { x: v.c0x, y: v.c0y, w: v.c1x - v.c0x, h: v.c1y - v.c0y, k: v.k, u: E.U }, m.d[l], E.th); }
+    try {
+      const a = DA;
+      if (!filled) {
+        const vw = a.view; vw.x = v.c0x; vw.y = v.c0y; vw.w = v.c1x - v.c0x; vw.h = v.c1y - v.c0y; vw.k = v.k; vw.u = E.U;
+        a.ox = sxv(v, 0); a.oy = syv(v, 0); a.blds = E.M.L.blds; a.wallPaths = E.wallPaths; a.tx = E.tx; a.sim = E.M.sim; a.th = E.th;
+        filled = true;
+      }
+      a.w = m.d[l];
+      ch.decor(ctx, a);
+    }
     catch (err) { lensFailed(E, l, 'decor', err); }
     finally { ctx.restore(); }
   }
@@ -216,7 +229,7 @@ function healthMarks(E: Engine, ctx: CanvasRenderingContext2D, h: string, x: num
 
 // the blended rect and the channel's arguments: refilled per tile per lens, never allocated (channels use them during the call)
 const BLEND: Rect = { x: 0, y: 0, w: 0, h: 0 };
-const MA = { ctx: null, r: BLEND, slot: null, lens: null, tile: GEO, f: null, w: 0, x: 0, compact: false, th: null, stage: null, now: false, live: null, accent: '' } as unknown as MarkArgs;
+const MA = { ctx: null, r: BLEND, slot: null, lens: null, tile: GEO, f: null, w: 0, d: 0, x: 0, compact: false, th: null, stage: null, now: false, live: null, accent: '' } as unknown as MarkArgs;
 
 /** Lens channels on one tile or ribbon segment. */
 function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Feature, st: ReturnType<typeof stageAt>) {
@@ -231,7 +244,7 @@ function lensMarks(E: Engine, ctx: CanvasRenderingContext2D, g: TileGeom, f: Fea
     if (slot) { r = BLEND; r.x = lerp(slot.x, exp.x, x); r.y = lerp(slot.y, exp.y, x); r.w = lerp(slot.w, exp.w, x); r.h = lerp(slot.h, exp.h, x); w = p; }
     else { if (x <= 0.004) continue; r = exp; w = p * x; }
     if (r.w < 1 || r.h < 1) continue;
-    const a = MA; a.ctx = ctx; a.r = r; a.slot = slot; a.lens = P.LENS[l]; a.tile = g; a.f = f; a.w = w; a.x = x; a.compact = x < 0.5; a.th = E.th; a.stage = st; a.now = E.isNow; a.live = L; a.accent = E.accentOf(l);
+    const a = MA; a.ctx = ctx; a.r = r; a.slot = slot; a.lens = P.LENS[l]; a.tile = g; a.f = f; a.w = w; a.x = x; a.compact = x < 0.5; a.th = E.th; a.stage = st; a.now = E.isNow; a.live = L; a.accent = E.accentOf(l); a.d = l === m.top ? m.topD : 0;
     ctx.save();
     try { ch.marks(a); }
     catch (err) { lensFailed(E, l, 'marks', err); }

@@ -8,7 +8,7 @@ import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, ChannelContent, LensChannel, MarkArgs, Rect, Theme, TileGeom } from '../types';
 import { dialNeedle, drawIcon, iconFor } from './icons';
 import {
-  edgeComb, edgeCrops, edgeCut, edgeGauge, edgeSpines, edgeTicket, shapeBoard, shapeBracket, shapeComb, shapeCut, shapePill, shapeTicket, takeD,
+  edgeComb, edgeCrops, edgeCut, edgeGauge, edgeSpines, edgeTicket, shapeBoard, shapeBracket, shapeComb, shapeCut, shapePill, shapeTicket,
 } from './shapes';
 import { clamp, count } from '../base/util';
 
@@ -46,8 +46,8 @@ function paint(l: BuiltinLens, a: MarkArgs, edge: Edge, readout: Readout, ribbon
   if (!a.stage) return;
   const ga = ctx.globalAlpha;
   if (t.form === 'ribbon') { if (a.w > 0.01) { ctx.globalAlpha = ga * a.w; ribbon(a); } return; }
-  // 1. edge marks: exclusive, like the outline they ride on (dominance)
-  const d = takeD(l, f);
+  // 1. edge marks: exclusive, like the outline they ride on (the dominance the engine gives shape, on MarkArgs as a.d)
+  const d = a.d ?? 0;
   if (d > 0.01) { ctx.globalAlpha = ga * d; edge(a, d); ctx.globalAlpha = ga; }
   // 2. the chip / tag on the top edge (presence and expansion)
   const r = a.r, u = t.u;

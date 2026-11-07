@@ -243,8 +243,9 @@ interface LensChannel {
   /** What a tile, room and wing say under this lens. */
   content(f: Feature): { line: string; stamp?: string };
   aggregate(fs: Feature[]): { line: string; value?: number };
-  /** Optional decoration under the plan (bold variant). */
-  decor?(ctx: CanvasRenderingContext2D, view: Viewport, w: number, th: Theme): void;
+  /** Optional decoration under the plan (bold variant). DecorArgs carries the viewport, the camera origin, the plan's
+   *  buildings and wall paths, the text kit, the sim, the theme and this lens's weight: no engine global. */
+  decor?(ctx: CanvasRenderingContext2D, a: DecorArgs): void;
 }
 ```
 

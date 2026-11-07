@@ -21,6 +21,7 @@ through the bare base.
 Each building also gets a lens title block in empty paper under a short wing. Queue cards gain one
 line in the lens's voice.
 
-**Limits.** `decor()` reads `window.__bp` for camera and plan (the seam passes neither). Title blocks
-need a wing gap (none at `?scale=4` L0). Outlines apply to fixtures at least 120 px wide. A zoomed
+**Limits.** Title blocks need a wing gap (none at `?scale=4` L0). Outlines apply to fixtures at least 120 px wide. A zoomed
 lens switch at `?scale=4` sits on the frame-budget edge (p50 16.7 to 33 ms, headless software).
+`decor()` draws from its `DecorArgs` alone (camera origin, buildings, wall paths, text kit, sim), never from
+`window.__bp`: `check:channel-seam` holds it with two engines on the page.
