@@ -140,7 +140,7 @@ export const releaseItems = (scan: { proposals: readonly Proposal[] }, relId: st
   scan.proposals.filter((p) => p.release_id === relId).sort(byCreated);
 
 /** Accepted items no release holds yet: what a new release takes by default (store.mjs `release-add` takes only these). */
-export const unreleased = (scan: Pick<ScanSnapshot, 'proposals'>): Proposal[] =>
+export const unreleased = (scan: { proposals: readonly Proposal[] }): Proposal[] =>
   scan.proposals.filter((p) => p.status === 'accepted' && !p.release_id).sort(byCreated);
 
 /** A pack with its items counted by status (as store.mjs `packs` reports `items`), and its items. */

@@ -100,7 +100,7 @@ async function build(conflict: boolean): Promise<{ preview: string; stored: stri
   sim.triage({ ids: [id('des1-waiver')], decision: 'accept', note: 'Ships with the gate fixed by hand.' });
   sim.triage({ ids: [id('perf1-timetable')], decision: 'accept' });
   const c = sim.createRelease('0.1.0');
-  const snapEv = () => { const s = sim.snapshot(), by = S.readingsBy(s.measurements); return { s, items: s.proposals.filter((p) => p.release_id === c.release.id).map((p) => S.evidenceOf(p, by, lenses)) }; };
+  const snapEv = () => { const s = sim.snapshot(); return { s, items: s.proposals.filter((p) => p.release_id === c.release.id).map((p) => S.evidenceOf(p, s.measurements, lenses)) }; };
   const preview = S.notesPreview('Kettle', '0.1.0', snapEv().items, []);
   sim.setTrainToggles({ ghOff: false, conflict, gateFails: false });
   const job = sim.buildRelease(c.release.id);

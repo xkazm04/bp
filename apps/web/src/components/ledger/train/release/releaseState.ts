@@ -8,6 +8,7 @@
 import type { Measurement, Proposal, Release, ReleaseStatus } from '@bp/core/scan/types';
 import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
 import type { LensFields } from '@bp/core/scan/compare';
+import { NO_EVIDENCE, readingsIndex } from '@bp/core/scan/evidence';
 import { conflictsIn, fmtValue, isConflict, noteItem, releaseNotes, type NoteItem } from '@bp/core/train/notes';
 import { KEYMAP, type KeyAction } from '../keymap';
 import type { TrainData } from '../data';
@@ -149,23 +150,10 @@ export function elapsed(j: ScanJob, now: number): string | undefined {
 /** One package item with its evidence: the verdict and the readings it compares, and whether it ships flagged. */
 export type PkgItem = NoteItem;
 
-/** Readings by proposal id and phase, one pass over the measurements. */
-export function readingsBy(ms: readonly Measurement[]): Map<string, { before: Measurement[]; after: Measurement[] }> {
-  const out = new Map<string, { before: Measurement[]; after: Measurement[] }>();
-  for (const m of ms) {
-    if (!m.proposal_id || !m.phase) continue;
-    let e = out.get(m.proposal_id);
-    if (!e) out.set(m.proposal_id, (e = { before: [], after: [] }));
-    e[m.phase].push(m);
-  }
-  return out;
-}
-
-const NONE = { before: [] as Measurement[], after: [] as Measurement[] };
-
-/** An item's evidence (notes.ts noteItem: the verdict and the flag rule live there). */
-export function evidenceOf(p: Proposal, by: ReadonlyMap<string, { before: Measurement[]; after: Measurement[] }>, lenses: readonly LensFields[]): PkgItem {
-  const e = by.get(p.id) ?? NONE;
+/** An item's evidence (notes.ts noteItem: the verdict and the flag rule live there), from its readings in the one
+ *  evidence index (@bp/core/scan/evidence readingsIndex: grouped once per measurements array, never per item). */
+export function evidenceOf(p: Proposal, ms: readonly Measurement[], lenses: readonly LensFields[]): PkgItem {
+  const e = readingsIndex(ms).get(p.id) ?? NO_EVIDENCE;
   return noteItem(p, e.before, e.after, lenses);
 }
 

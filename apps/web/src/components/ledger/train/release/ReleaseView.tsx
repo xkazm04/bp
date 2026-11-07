@@ -9,19 +9,19 @@
 // release that offers a build, when its package, jobs or sample switches change - never on a timer. Before a draft the
 // tab owns a choice of package items (J/K, X or Space, Esc clears it first): Create draft and the suggestion take it.
 import { memo, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import type { Proposal } from '@bp/core/scan/types';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { buildRelease, finishRelease, preflightRelease, refusalText, tagRelease, type ScanCtx } from '@/lib/scan/actions';
-import { releaseItems, unreleased, verdictOf } from '@bp/core/scan/compare';
+import { releaseItems, unreleased } from '@bp/core/scan/compare';
 import { isWaiting } from '@bp/core/train/rules';
 import { landingOf } from '@bp/core/scan/landed';
 import { useEngine } from '../../../hooks';
 import { setLedgerUi } from '../../useLedger';
 import { KEYMAP } from '../keymap';
-import { useTrain } from '../data';
+import { useTrain, type TrainData } from '../data';
+import { verdictIn } from '../plan';
 import { Callout } from '../ui/Controls';
 import {
-  ACTION, RELEASE_STATE, allLanded, chosenOf, evidenceOf, onPath, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, readingsBy, standLine,
+  ACTION, RELEASE_STATE, allLanded, chosenOf, evidenceOf, onPath, failedStep, historyOf, isActive, jobsOf, keysOf, landedOutside, openRelease, standLine,
   safeUrl, standOf, STATUS_WORD, STEPS, type ReleaseModel, type RelAction,
 } from './releaseState';
 import { VersionBox, suggestKey, useSuggestion } from './VersionBox';
@@ -42,10 +42,9 @@ export interface ReleaseViewProps {
 export function useReleaseModel(): ReleaseModel {
   const T = useTrain();
   return useMemo(() => {
-    const rel = openRelease(T.releases), jobs = jobsOf(T.jobs, rel?.id), by = readingsBy(T.measurements);
-    // the compare.ts helpers only read the array (it is the stream's, never changed in place)
-    const scan = { proposals: T.proposals as Proposal[] }, free = unreleased(scan);
-    const items = (rel ? releaseItems(scan, rel.id) : free).map((p) => evidenceOf(p, by, T.lenses));
+    const rel = openRelease(T.releases), jobs = jobsOf(T.jobs, rel?.id);
+    const free = unreleased(T);
+    const items = (rel ? releaseItems(T, rel.id) : free).map((p) => evidenceOf(p, T.measurements, T.lenses));
     const m: ReleaseModel = { T, jobs, items, free: free.length, history: historyOf(T.releases, rel), landed: landedOutside(items, rel, T.landed), base: T.landed?.state === 'known' ? T.landed.ref : 'main' };
     if (rel) m.rel = rel;
     if (jobs.length) m.last = jobs[jobs.length - 1];
@@ -266,28 +265,29 @@ export function onBaseWords(xs: readonly { status: string; sha: string }[], base
   return `${xs.length} ${kind}item${xs.length === 1 ? '' : 's'} already on ${base}: ${shas}`;
 }
 
+/** The strip's counts over the train: every pack item's verdict a lookup in the evidence index (plan.ts verdictIn). */
+export function summaryOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'lenses' | 'landed'>) {
+  let built = 0, moved = 0, waiting = 0, failed = 0, rework = 0;
+  const onBase: { status: string; sha: string }[] = [];
+  for (const p of T.proposals) {
+    if (!p.pack_id) continue;
+    const on = isWaiting(p) ? landingOf(T.landed, p.id) : undefined;
+    if (on) onBase.push({ status: p.status, sha: on.sha });
+    else if (isWaiting(p)) { waiting++; if (p.status === 'failed') failed++; }
+    if (p.status === 'rework') rework++;
+    if (p.status === 'released' || p.status === 'executing') continue;
+    built++;
+    if (verdictIn(T, p) === 'moved') moved++;
+  }
+  return { built, moved, waiting, failed, rework, onBase: onBaseWords(onBase, T.landed?.state === 'known' ? T.landed.ref : 'main') };
+}
+
 /** The header band's three counters: Changed (items built), Waiting for you (done + failed, less what already landed on
  *  the base branch: named instead), Will ship (the draft). */
 export function SummaryStrip() {
   const E = useEngine(), m = useReleaseModel(), T = m.T;
   const sug = useSuggestion(T.ctx, suggestKey(m));
-  const c = useMemo(() => {
-    const by = readingsBy(T.measurements);
-    let built = 0, moved = 0, waiting = 0, failed = 0, rework = 0;
-    const onBase: { status: string; sha: string }[] = [];
-    for (const p of T.proposals) {
-      if (!p.pack_id) continue;
-      const on = isWaiting(p) ? landingOf(T.landed, p.id) : undefined;
-      if (on) onBase.push({ status: p.status, sha: on.sha });
-      else if (isWaiting(p)) { waiting++; if (p.status === 'failed') failed++; }
-      if (p.status === 'rework') rework++;
-      if (p.status === 'released' || p.status === 'executing') continue;
-      built++;
-      const e = by.get(p.id);
-      if (e && verdictOf(p, e.before, e.after, T.lenses).verdict === 'moved') moved++;
-    }
-    return { built, moved, waiting, failed, rework, onBase: onBaseWords(onBase, T.landed?.state === 'known' ? T.landed.ref : 'main') };
-  }, [T]);
+  const c = useMemo(() => summaryOf(T), [T]);
   const v = m.rel?.version ?? sug.s?.version, n = m.items.length;
   const toPacks = () => { setLedgerUi((u) => (u.scope === 'packs' ? u : { ...u, scope: 'packs' })); E.setPage('ledger', 'triage'); };
   return (

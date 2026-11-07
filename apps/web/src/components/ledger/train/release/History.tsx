@@ -10,7 +10,8 @@ import { watchState, type Watch, type WatchView } from '@bp/core/train/watch';
 import { useWatches } from '@/lib/scan/watches';
 import { SampleTag } from '../ui/Marks.tsx';
 import { landedOpts, scanOfTrain } from '../onMain.ts';
-import { evidenceOf, readingsBy, safeUrl, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
+import type { TrainData } from '../data';
+import { evidenceOf, safeUrl, STATUS_WORD, type PkgItem, type ReleaseModel } from './releaseState';
 
 const NONE: readonly PkgItem[] = [];
 const when = (iso: string) => iso.slice(0, 10) + ' ' + iso.slice(11, 16);
@@ -59,17 +60,20 @@ const Entry = memo(function Entry({ r, items, sample, view, canWatch, toggle, er
   );
 });
 
+/** Each history release's items with their evidence (releaseState evidenceOf: lookups in the one evidence index). */
+export function releaseItemsOf(T: Pick<TrainData, 'proposals' | 'measurements' | 'lenses'>, history: readonly Pick<Release, 'id'>[]): Map<string, PkgItem[]> {
+  const out = new Map<string, PkgItem[]>();
+  for (const p of T.proposals) if (p.release_id && history.some((r) => r.id === p.release_id)) {
+    let a = out.get(p.release_id); if (!a) out.set(p.release_id, (a = [])); a.push(evidenceOf(p, T.measurements, T.lenses));
+  }
+  return out;
+}
+
 export function History({ m }: { m: ReleaseModel }) {
   const sample = !!m.T.ctx.sim, T = m.T;
   const W = useWatches(T.ctx, T.proposals, T.jobs);
   const [errs, setErrs] = useState<Record<string, string>>({});
-  const items = useMemo(() => {
-    const by = readingsBy(T.measurements), out = new Map<string, PkgItem[]>();
-    for (const p of T.proposals) if (p.release_id && m.history.some((r) => r.id === p.release_id)) {
-      let a = out.get(p.release_id); if (!a) out.set(p.release_id, (a = [])); a.push(evidenceOf(p, by, T.lenses));
-    }
-    return out;
-  }, [T, m.history]);
+  const items = useMemo(() => releaseItemsOf(T, m.history), [T, m.history]);
   // each watch judged once per change of the train's data (or the watches): the ledger's tracking rules, git's landings
   const views = useMemo(() => {
     const out = new Map<string, WatchView>();

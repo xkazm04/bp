@@ -40,7 +40,7 @@ const P = await imp('components/ledger/train/plan.ts');
 const D = await imp('components/ledger/train/Decide.tsx');
 const { DecisionBar } = await imp('components/ledger/train/DecisionBar.tsx');
 const { Package } = await imp('components/ledger/train/release/Package.tsx');
-const { evidenceOf, readingsBy } = await imp('components/ledger/train/release/releaseState.ts');
+const { evidenceOf } = await imp('components/ledger/train/release/releaseState.ts');
 
 let passed = 0;
 const failures: string[] = [];
@@ -192,7 +192,7 @@ const reasonOf = (b: string | undefined): string | undefined => {
   const rel = releases[0], p = T.byId.get('p-locked');
   let html = '';
   if (typeof Package === 'function' && typeof evidenceOf === 'function') {
-    const m = { T, rel, jobs: [], items: [evidenceOf(p, readingsBy(measurements), M.P.lenses)], free: 0, history: [], landed: new Map(), base: 'main' };
+    const m = { T, rel, jobs: [], items: [evidenceOf(p, measurements, M.P.lenses)], free: 0, history: [], landed: new Map(), base: 'main' };
     html = render(h(Package, { m, phone: false }));
   }
   const b = btnOf(html, /\bUndo\b/), why = reasonOf(b);
@@ -200,7 +200,7 @@ const reasonOf = (b: string | undefined): string | undefined => {
   // GUARD: an accepted item of a draft release can still be undone from the Release tab
   const drel = { ...rel, status: 'draft' }, T2 = { ...T, releases: [drel] };
   let h2 = '';
-  if (typeof Package === 'function' && typeof evidenceOf === 'function') h2 = render(h(Package, { m: { T: T2, rel: drel, jobs: [], items: [evidenceOf(p, readingsBy(measurements), M.P.lenses)], free: 0, history: [], landed: new Map(), base: 'main' }, phone: false }));
+  if (typeof Package === 'function' && typeof evidenceOf === 'function') h2 = render(h(Package, { m: { T: T2, rel: drel, jobs: [], items: [evidenceOf(p, measurements, M.P.lenses)], free: 0, history: [], landed: new Map(), base: 'main' }, phone: false }));
   const b2 = btnOf(h2, /\bUndo\b/);
   ok(!!b2 && !/aria-disabled|\sdisabled(=|\s|>)/.test(b2.slice(0, b2.indexOf('>') + 1)), 'guard: Undo on an item of a draft release stays a live button');
 }
