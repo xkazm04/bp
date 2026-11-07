@@ -192,7 +192,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       confirmed += good.length; short += fell.length;
       const lenses = [...new Set(ts.map((t) => t.lens))];
       const headline = !ts.length ? `${p.name} ${r.version} merged; it carried nothing to measure.`
-        : fell.length ? `${p.name} ${r.version} fell short: ${fell.length} of ${ts.length} items below what was expected.`
+        : fell.length ? `${p.name} ${r.version} fell short: ${fell.length} of ${n(ts.length, 'item')} below what was expected.`
           : unk.length ? `${p.name} ${r.version} merged; ${n(unk.length, 'item')} not measured since.`
             : `${p.name} ${r.version} moved ${list(lenses)}: ${ts.length === 1 ? 'its item' : ts.length === 2 ? 'both items' : 'all ' + ts.length + ' items'} confirmed.`;
       const focus: Track | undefined = fell.find(onTile) ?? good.find(onTile) ?? fell[0] ?? good[0] ?? ts[0];
