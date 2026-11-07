@@ -10,7 +10,10 @@
   `packages/core/src/companion/morning.ts`; a card's brief references decision-brief-1, a card's place shared-focus-1),
   with their fixtures. The last three are the bp-Personas contract (`docs/standard/contract-1.md`, `contract.json`). The spec is
   `docs/standard/app-structure-v3.md`; `scripts/validate-structure.mjs` validates against these files.
-- `generate.mjs`: one model of the schemas, four outputs. A root in its `ROOTS` may name, third, the structs under it a
+- `roots.mjs`: the one table of roots, a row per schema file: its generated root, the structs read on their own, and
+  for each a hand-written pair (`hand: { file, name }`) or an `unpaired` reason. `generate.mjs`, `parity.mjs` and
+  check:schema's self-proof derive from it, and `schemaAjv()` is the one ajv every validator uses.
+- `generate.mjs`: one model of the schemas, four outputs. A root in `roots.mjs` may name the structs under it a
   client reads on their own (`FocusPlace`, `SharedView`, `SharedPlace`, `FocusAnswer`; `MorningDeck`, `AgentDeck`,
   `SteerRow`): `BpSchema::FromJson` works for each of them as for a root, and `ue-standin/check.cpp` must instantiate it.
   `--since <ref>` reads a schema that is new since the ref as an empty root, so everything it brings is reported added.
