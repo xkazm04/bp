@@ -176,6 +176,7 @@
     "check:bold-schedule": "node scripts/check-bold-schedule.ts",
     "check:build-forecast": "node scripts/check-build-forecast.ts",
     "check:harness": "node scripts/check-harness.mjs",
+    "check:train-attempts": "node scripts/check-train-attempts.ts",
     "art:status": "node scripts/art/status.mjs"
   },
   "devDependencies": {
