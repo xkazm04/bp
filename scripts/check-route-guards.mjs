@@ -19,6 +19,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { stripComments as strip } from './lib/source.ts';
 import { exportedMethods } from './lib/mounts.ts';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const API = path.join(ROOT, 'packages/core/src/server/api');
@@ -77,27 +78,30 @@ function audit(h) {
 }
 
 const files = walk(API);
-let handlerCount = 0, ok = 0, known = 0, doorCount = 0, failures = [];
+const { expect, done } = harness('check-route-guards');
+let handlerCount = 0, ok = 0, known = 0, doorCount = 0;
 const seen = new Set();
 for (const file of files) {
   const rel = path.relative(API, file).split(path.sep).join('/');
   let src = fs.readFileSync(file, 'utf8');
   for (const [suffix, find, repl] of mutations) if (rel.endsWith(suffix)) src = src.split(find).join(repl);
   const hs = handlers(src);
-  if (!hs.length) failures.push(`${rel}: no exported handler found`);
+  expect(hs.length, `${rel}: no exported handler found`);
   for (const h of hs) {
     handlerCount++;
-    if (!METHODS.includes(h.method)) { failures.push(`${rel}: ${h.method} is not a method this check knows; add its rule`); continue; }
+    if (!expect(METHODS.includes(h.method), `${rel}: ${h.method} is not a method this check knows; add its rule`)) continue;
     const bad = audit(h);
     if (!bad.length) ok++;
     if (DOOR_CALL.test(h.body)) doorCount++;
+    const unlisted = [];
     for (const rule of bad) {
       const key = `${rel} ${h.method} ${rule}`;
-      if (KNOWN[key]) { known++; seen.add(key); console.log(`  KNOWN  ${key}\n         ${KNOWN[key]}`); } else failures.push(`${key}: handler must call ${rule} before any other work`);
+      if (KNOWN[key]) { known++; seen.add(key); console.log(`  KNOWN  ${key}\n         ${KNOWN[key]}`); } else unlisted.push(`${key}: handler must call ${rule} before any other work`);
     }
+    expect(!unlisted.length, unlisted.join('\n'));
   }
 }
-for (const key of Object.keys(KNOWN)) if (!seen.has(key) && !mutations.length) failures.push(`${key}: listed as a known gap but now passes; remove it from KNOWN`);
+for (const key of Object.keys(KNOWN)) expect(seen.has(key) || mutations.length,`${key}: listed as a known gap but now passes; remove it from KNOWN`);
 
 // Self-test (seeded defects, in memory): dropping a handler's guard, or moving work ahead of it, must be caught.
 let controls = 0;
@@ -113,7 +117,7 @@ ${h.body}` }],
         ['another verb of the door', { ...h, body: h.body.replace(`.${h.method}(`, `.${other}(`) }],
         ['not a door', { ...h, src: h.src.replace(new RegExp(String.raw`\bconst\s+${d[1]}\s*=\s*door\s*\(`), `const ${d[1]} = notADoor(`) }],
         ['swapped args', { ...h, body: h.body.replace(/\(\s*(\w+)\s*,\s*(\w+)\s*\)/, '($2, $1)') }],
-      ]) { controls++; if (!audit(m).length) failures.push(`control: ${path.relative(API, file)} ${h.method} "${what}" was not caught`); }
+      ]) { controls++; expect(audit(m).length, `control: ${path.relative(API, file)} ${h.method} "${what}" was not caught`); }
       continue;
     }
     const g = h.body.match(/(localHost|localOnly)\(/);
@@ -124,7 +128,7 @@ ${h.body}` }],
     for (const [what, m] of [['guard dropped', dropped], ['work before guard', late], ['jsonOnly dropped', noJson]]) {
       if (!m) continue;
       controls++;
-      if (!audit(m).length) failures.push(`control: ${path.relative(API, file)} ${h.method} "${what}" was not caught`);
+      expect(audit(m).length, `control: ${path.relative(API, file)} ${h.method} "${what}" was not caught`);
     }
   }
 }
@@ -151,10 +155,11 @@ let mounts = 0;
 for (const file of webFiles) {
   const rel = path.relative(WEB_API, file).split(path.sep).join('/');
   mounts++;
-  if (!coreMethods.has(rel)) { failures.push(`apps/web/src/app/api/${rel}: no core handler at packages/core/src/server/api/${rel}`); continue; }
-  for (const b of auditMount(strip(fs.readFileSync(file, 'utf8')), rel, coreMethods.get(rel))) failures.push(`apps/web/src/app/api/${rel}: ${b}`);
+  if (!expect(coreMethods.has(rel), `apps/web/src/app/api/${rel}: no core handler at packages/core/src/server/api/${rel}`)) continue;
+  const mb = auditMount(strip(fs.readFileSync(file, 'utf8')), rel, coreMethods.get(rel));
+  expect(!mb.length, mb.map((b) => `apps/web/src/app/api/${rel}: ${b}`).join('\n'));
 }
-for (const rel of coreMethods.keys()) if (!webFiles.some((f) => path.relative(WEB_API, f).split(path.sep).join('/') === rel)) failures.push(`packages/core/src/server/api/${rel}: not mounted by apps/web`);
+for (const rel of coreMethods.keys()) expect(webFiles.some((f) => path.relative(WEB_API, f).split(path.sep).join('/') === rel),`packages/core/src/server/api/${rel}: not mounted by apps/web`);
 // The UI contract's API table (docs/blueprint-ui.md) is the third mirror of the route set: every `VERB /api/...` row must
 // name a live handler and every live handler must have a row. Path params are positional, so `[slug]` and `<slug>` both
 // normalise to `*`. Comments are blanked by the caller's source: only table rows (`| `VERB /api/...` |`) count.
@@ -170,12 +175,12 @@ function auditDocRoutes(doc, live) {
 }
 const DOC = path.join(ROOT, 'docs/blueprint-ui.md');
 const docText = fs.readFileSync(DOC, 'utf8');
-for (const b of auditDocRoutes(docText, coreMethods)) failures.push(b);
+{ const db = auditDocRoutes(docText, coreMethods); expect(!db.length, db.join('\n')); }
 { // the doc gate must bite: a deleted row and an invented row are each caught, and a row count is asserted (not a vacuous empty set)
   const rows = docText.split(/\r?\n/).filter((l) => /^\|\s*`(GET|POST|PATCH|PUT|DELETE) \/api/.test(l));
-  controls++; if (rows.length < 30) failures.push(`control: only ${rows.length} route rows parsed out of the doc`);
-  controls++; if (!auditDocRoutes(docText.replace(rows[0], ''), coreMethods).length) failures.push('control: a deleted doc row was not caught');
-  controls++; if (!auditDocRoutes(docText + '\n| `GET /api/nonesuch` | x |\n', coreMethods).length) failures.push('control: an invented doc row was not caught');
+  controls++; expect(rows.length >= 30, `control: only ${rows.length} route rows parsed out of the doc`);
+  controls++; expect(auditDocRoutes(docText.replace(rows[0], ''), coreMethods).length, 'control: a deleted doc row was not caught');
+  controls++; expect(auditDocRoutes(docText + '\n| `GET /api/nonesuch` | x |\n', coreMethods).length, 'control: an invented doc row was not caught');
 }
 // Mount controls: an inline handler, a wrong path and a missing method must each be caught.
 {
@@ -189,9 +194,9 @@ for (const b of auditDocRoutes(docText, coreMethods)) failures.push(b);
     ['force-static', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-static';\n`, ['GET']],
     ['one directive only', `export { GET } from ${spec};\nexport const runtime = 'nodejs';\n`, ['GET']],
     ['extra code', `export { GET } from ${spec};\nconsole.log('side effect');\n`, ['GET']],
-  ]) { controls++; if (!auditMount(code, rel, methods).length) failures.push(`control: mount "${what}" was not caught`); }
-  controls++; if (auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length) failures.push('control: a clean mount was refused');
+  ]) { controls++; expect(auditMount(code, rel, methods).length, `control: mount "${what}" was not caught`); }
+  controls++; expect(!auditMount(`export { GET } from ${spec};\n\nexport const runtime = 'nodejs';\nexport const dynamic = 'force-dynamic';\n`, rel, ['GET']).length, 'control: a clean mount was refused');
 }
 
 console.log(`${handlerCount} handlers in ${files.length} core routes: ${ok} guarded (${doorCount} door handlers), ${known} known gaps; ${mounts} web mounts; ${controls} seeded-defect controls`);
-if (failures.length) { console.error(`\nFAIL (${failures.length}):\n  ${failures.join('\n  ')}`); process.exit(1); }
+done();
