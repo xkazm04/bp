@@ -1197,6 +1197,14 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
     get the ledger's stable callbacks, never the `Ledger` object, which is new on every render). Counted in a dev
     build through React's devtools hook (a memoised row that bails out keeps its `memoizedProps` object): 2 item rows
     and 0 pack rows in packs, 2 rows in the backlog, on Kettle and on a 10x store.
+  - *Evidence per open*: an item's readings and screens are lookups in one evidence index
+    (`packages/core/src/scan/evidence.ts`: grouped by proposal once per measurements and shots array, in store.mjs
+    `compare`'s orders), which compareOf, `plan.ts` verdictIn, the table's facts, the Release tab's counts and its
+    history all read; no train file groups the tables itself (a source guard in `check:train-compare`). On the 10x
+    snapshot a perf item's open (the item, its next item, its 11 pack mates) visits the 300 measurements and 480 shots
+    once each, and J/K over the same store none (13 passes each before); the whole panel, counted, makes 3 passes
+    over the measurements (the index, `scanOfTrain`'s copy for Main now, `track.ts`'s index for the brief) and 1
+    over the shots (17 and 14 before).
 
 ## Lenses panel (2026-10-14; was Temporary lenses, 2026-10-13)
 
