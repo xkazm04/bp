@@ -169,6 +169,7 @@
     "check:outcome-evidence": "node scripts/check-outcome-evidence.ts",
     "check:schema-compat": "node scripts/check-schema-compat.mjs",
     "check:art-status": "node scripts/art/check-art-status.mjs",
+    "check:channel-seam": "node scripts/check-channel-seam.ts",
     "art:status": "node scripts/art/status.mjs"
   },
   "devDependencies": {
