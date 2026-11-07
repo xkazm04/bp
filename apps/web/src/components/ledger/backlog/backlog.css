@@ -1,5 +1,6 @@
 /* The Backlog's schedule sheet, its wave dock and the brief (backlog/*). Tokens only, both themes, nothing under 12 px. The sheet
-   wears the drawing set's grid, double walls and markers; the frame is ledger.css's. */
+   wears the drawing set's grid, double walls and markers; the frame is ledger.css's. A rule for a button sits under .lg-page, or
+   blueprint.css's `.bp button` takes its font and colour. */
 .sc-sp { flex: 1; }
 /* ---------------------------------------------------------------- the bench's state */
 .sc-save { display: inline-flex; align-items: center; gap: 6px; font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
@@ -43,10 +44,10 @@
 
 /* ---------------------------------------------------------------- slots */
 .sc-slots { display: inline-flex; gap: 2px; }
-.sc-slot { width: 22px; height: 22px; padding: 0; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); color: var(--ink-2); }
-.sc-slot:hover { border-color: var(--accent); color: var(--ink-hi); }
-.sc-slot.on { background: var(--accent); border-color: var(--accent); color: var(--on-ink); font-weight: 600; }
-.sc-slot.add { border-style: dashed; }
+.lg-page .sc-slot { width: 22px; height: 22px; padding: 0; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); color: var(--ink-2); }
+.lg-page .sc-slot:hover { border-color: var(--accent); color: var(--ink-hi); }
+.lg-page .sc-slot.on { background: var(--accent); border-color: var(--accent); color: var(--on-ink); font-weight: 600; }
+.lg-page .sc-slot.add { border-style: dashed; }
 .sc-held { font: 500 12px var(--mono); color: var(--ink-2); }
 
 /* ---------------------------------------------------------------- the wave */
@@ -54,8 +55,8 @@
 .sc-wave.sent { border-color: var(--ink-3); opacity: 0.9; }
 .sc-wave.active { border-color: var(--accent); box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 30%, transparent); }
 .sc-wave-h { flex: none; display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-bottom: 1px solid var(--ink-3); }
-.sc-num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink-hi); color: var(--paper-lo); font: 600 13px var(--mono); }
-.sc-num.sent { background: none; border: 1px solid var(--ink-3); color: var(--ink); }
+.lg-page .sc-num { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--ink-hi); color: var(--paper-lo); font: 600 13px var(--mono); }
+.lg-page .sc-num.sent { background: none; border: 1px solid var(--ink-3); color: var(--ink); }
 .sc-in { flex: 1; min-width: 0; height: 24px; padding: 0 4px; background: none; border: 1px solid transparent; color: var(--ink-hi); font: 600 14px var(--sans); letter-spacing: 0.03em; text-transform: uppercase; }
 .sc-in:hover { border-color: var(--ink-4); }
 .sc-in:focus { border-color: var(--accent); outline: none; background: var(--card); text-transform: none; }
@@ -63,21 +64,21 @@
 .sc-wave-n { flex: 1; min-width: 0; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-hi); }
 .sc-wave-m { flex: none; font: 500 12px var(--mono); color: var(--ink-2); }
 .sc-wave-m i { margin: 0 3px; font-style: normal; opacity: 0.6; }
-.sc-x { flex: none; width: 20px; height: 20px; padding: 0; background: none; border: 0; color: var(--ink-2); font-size: 14px; line-height: 1; }
-.sc-x:hover { color: var(--red-2); }
+.lg-page .sc-x { flex: none; width: 20px; height: 20px; padding: 0; background: none; border: 0; color: var(--ink-2); font-size: 14px; line-height: 1; }
+.lg-page .sc-x:hover { color: var(--red-2); }
 .sc-pks { flex: 1; min-height: 0; overflow: auto; list-style: none; margin: 0; padding: 0; }
 .sc-pk { border-bottom: 1px solid var(--ink-4); }
 .sc-pk:last-child { border-bottom: 0; }
 .sc-pk-h { display: flex; align-items: center; gap: 5px; padding: 3px 6px 3px 8px; background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .sc-pk-n { flex: 1; font-size: 13px; font-weight: 500; }
 .sc-tagline { font: 500 12px var(--mono); color: var(--ink-2); }
-.sc-tog { flex: none; height: 20px; padding: 0 5px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); color: var(--ink); }
-.sc-tog:hover { border-color: var(--accent); }
-.sc-eff { flex: none; display: inline-flex; align-items: flex-end; gap: 1px; height: 18px; }
-.sc-eff button { width: 7px; padding: 0; background: var(--ink-4); border: 0; }
-.sc-eff button:nth-child(1) { height: 7px; } .sc-eff button:nth-child(2) { height: 10px; } .sc-eff button:nth-child(3) { height: 14px; } .sc-eff button:nth-child(4) { height: 18px; }
-.sc-eff button.lit { background: var(--accent); }
-.sc-eff em { margin-left: 3px; align-self: center; font: 500 12px var(--mono); font-style: normal; color: var(--ink-2); }
+.lg-page .sc-tog { flex: none; height: 20px; padding: 0 5px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); color: var(--ink); }
+.lg-page .sc-tog:hover { border-color: var(--accent); }
+.lg-page .sc-eff { flex: none; display: inline-flex; align-items: flex-end; gap: 1px; height: 18px; }
+.lg-page .sc-eff button { width: 7px; padding: 0; background: var(--ink-4); border: 0; }
+.lg-page .sc-eff button:nth-child(1) { height: 7px; } .sc-eff button:nth-child(2) { height: 10px; } .sc-eff button:nth-child(3) { height: 14px; } .sc-eff button:nth-child(4) { height: 18px; }
+.lg-page .sc-eff button.lit { background: var(--accent); }
+.lg-page .sc-eff em { margin-left: 3px; align-self: center; font: 500 12px var(--mono); font-style: normal; color: var(--ink-2); }
 .sc-items { list-style: none; margin: 0; padding: 0; }
 .sc-empty { margin: 0; padding: 7px 10px; font-size: 12px; color: var(--ink-2); border: 1px dashed var(--ink-4); border-width: 0 0 1px; }
 .sc-line { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; font-size: 13px; min-height: 26px; }
@@ -87,13 +88,13 @@
 .sc-warn { flex: none; margin: 0; padding: 3px 8px; font-size: 12px; color: var(--amber-2); border-top: 1px solid var(--ink-4); }
 .sc-wave-f { flex: none; display: flex; align-items: center; gap: 6px; padding: 5px 6px; border-top: 1px solid var(--ink-3); }
 .sc-wave-f .bt { height: 26px; }
-.sc-arr { display: flex; }
-.sc-arr button { height: 22px; padding: 0 6px; margin-left: -1px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); color: var(--ink-2); }
-.sc-arr button:hover { color: var(--ink-hi); border-color: var(--ink-3); }
-.sc-newwave { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 10px; background: none; border: 1.5px dashed var(--ink-3); color: var(--ink-2); font-size: 13px; letter-spacing: 0.03em; }
-.sc-newwave b { font-size: 18px; font-weight: 400; line-height: 1; }
-.sc-newwave:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
-.sc-newwave.armed { border-color: var(--accent); color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.lg-page .sc-arr { display: flex; }
+.lg-page .sc-arr button { height: 22px; padding: 0 6px; margin-left: -1px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); color: var(--ink-2); }
+.lg-page .sc-arr button:hover { color: var(--ink-hi); border-color: var(--ink-3); }
+.lg-page .sc-newwave { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 50px; padding: 10px; background: none; border: 1.5px dashed var(--ink-3); color: var(--ink-2); font-size: 13px; letter-spacing: 0.03em; }
+.lg-page .sc-newwave b { font-size: 18px; font-weight: 400; line-height: 1; }
+.lg-page .sc-newwave:hover:not(:disabled) { border-color: var(--accent); color: var(--ink-hi); }
+.lg-page .sc-newwave.armed { border-color: var(--accent); color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .lg-page .sc-newwave:disabled { opacity: 0.8; }
 
 /* ---------------------------------------------------------------- the schedule */
@@ -104,8 +105,8 @@
 .sc-sec-h { position: sticky; top: 31px; z-index: 1; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; background: color-mix(in srgb, var(--paper-mid) 92%, var(--paper-lo)); border-bottom: 1px solid var(--line); }
 .sc-sec-h h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-hi); }
 .sc-sec-n { font: 500 12px var(--mono); color: var(--ink-2); }
-.sc-all { background: none; border: 0; padding: 2px 4px; font-size: 12px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
-.sc-all:hover { color: var(--ink-hi); }
+.lg-page .sc-all { background: none; border: 0; padding: 2px 4px; font-size: 12px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
+.lg-page .sc-all:hover { color: var(--ink-hi); }
 .sc-row { min-height: 46px; border-bottom: 1px solid var(--ink-4); content-visibility: auto; contain-intrinsic-size: auto 46px; }
 .sc-row:hover { background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .sc-row.on { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
@@ -120,10 +121,10 @@
 .sc-row.s-done .sc-tt, .sc-row.s-declined .sc-tt { color: var(--ink-2); }
 .sc-sub { display: flex; align-items: center; gap: 6px; font: 400 12px var(--mono); color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sc-sub i { font-style: normal; opacity: 0.6; }
-.sc-flink { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); }
-.sc-flink:hover:not(:disabled) { text-decoration: underline; }
-.sc-rsv { display: block; width: 100%; height: 30px; padding: 0 14px 0 66px; background: none; border: 0; border-bottom: 1px solid var(--ink-4); text-align: left; font: 500 12px var(--mono); color: var(--ink-2); }
-.sc-rsv:hover { color: var(--ink-hi); }
+.lg-page .sc-flink { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); }
+.lg-page .sc-flink:hover:not(:disabled) { text-decoration: underline; }
+.lg-page .sc-rsv { display: block; width: 100%; height: 30px; padding: 0 14px 0 66px; background: none; border: 0; border-bottom: 1px solid var(--ink-4); text-align: left; font: 500 12px var(--mono); color: var(--ink-2); }
+.lg-page .sc-rsv:hover { color: var(--ink-hi); }
 .sc-dock { flex: none; width: clamp(350px, 26vw, 430px); display: flex; flex-direction: column; min-height: 0; border-left: 3px double var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
 .sc-dock-w { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .sc-dock .sc-wave { flex: none; }
