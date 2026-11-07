@@ -177,6 +177,7 @@
     "check:build-forecast": "node scripts/check-build-forecast.ts",
     "check:harness": "node scripts/check-harness.mjs",
     "check:train-attempts": "node scripts/check-train-attempts.ts",
+    "check:ue-vocab": "node scripts/check-ue-vocab.mjs",
     "art:status": "node scripts/art/status.mjs"
   },
   "devDependencies": {
