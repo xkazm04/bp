@@ -49,6 +49,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ROOTS as TABLE, HAND_TS, pairingProblems, schemaAjv } from './roots.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_DIR = path.join(HERE, 'schema');
@@ -56,20 +57,8 @@ const OUT_TS = path.join(HERE, 'generated/ts/app-structure.ts');
 const OUT_UE = path.join(HERE, 'generated/ue/BpSchema.h');
 const OUT_FIX = path.join(HERE, 'generated/ue/BpSchemaFixups.h');
 const OUT_VOCAB = path.join(HERE, '../core/src/standard/schema-vocab.ts');
-const HAND_TS = 'packages/core/src/standard/types.ts'; // the hand-written types the code uses; parity.mjs compares
-const ROOTS = [
-  ['app-structure-3.schema.json', 'AppStructure'],
-  ['app-structure-event-3.schema.json', 'AppStructureEvent'],
-  ['lens-manifest-1.schema.json', 'LensManifest'],
-  ['plan-1.schema.json', 'Plan'],
-  ['structure-envelope-1.schema.json', 'StructureEnvelope'],
-  ['scan-wire-1.schema.json', 'ScanWire'],
-  ['decision-brief-1.schema.json', 'DecisionBrief'],
-  // A root's third element names the structs under it that a client also reads ON THEIR OWN (each its own payload on the
-  // wire): FromJson works for them as for a root, and ue-standin/check.cpp must instantiate it for each.
-  ['shared-focus-1.schema.json', 'SharedFocus', ['FocusPlace', 'SharedView', 'SharedPlace', 'FocusAnswer']],
-  ['morning-deck-1.schema.json', 'MorningWatch', ['MorningDeck', 'AgentDeck', 'SteerRow']],
-];
+// The roots, one row per schema file, and the hand-written types.ts parity.mjs compares: roots.mjs, the one table.
+const ROOTS = TABLE.map((row) => [row.file, row.root, row.reads ?? []]);
 const CPP_KEYWORDS = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq'
   + ' check verify ensure TEXT').split(' ')); // the last four are Unreal macros
 
@@ -666,15 +655,35 @@ if (isMain) {
     // which ignores what it does not understand.
     const ajvProblems = [];
     {
-      const Ajv2020Module = await import('ajv/dist/2020.js');
-      const Ajv2020 = Ajv2020Module.default?.default ?? Ajv2020Module.default ?? Ajv2020Module;
-      // strictRequired off for the same reason the validator turns it off: if/then branches require keys declared one level up
-      const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
-      for (const [f] of ROOTS) try { ajv.addSchema(schemas[f], f); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
+      const ajv = schemaAjv({ schemas, problems: ajvProblems }); // the one ajv: roots.mjs, the options every validator uses
       for (const [f] of ROOTS) if (!ajvProblems.some((p) => p.startsWith(`${f}:`))) try { if (!ajv.getSchema(f)) ajvProblems.push(`${f}: ajv did not compile it`); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
     }
     console.log(`${ajvProblems.length ? 'FAIL' : 'ok  '}  all ${ROOTS.length} schemas compile under ajv strict mode, every $ref resolving${ajvProblems.length ? ': ' + ajvProblems.slice(0, 4).join('; ') : ''}`);
     if (ajvProblems.length) failed++;
+    // ...and that ajv is the only one: a text constructing its own reads its options and key spelling again, as the five
+    // sites before roots.mjs did (check-decision-brief compiled without allowUnionTypes). The needle is spelled apart
+    // so this file is no hit of its own rule.
+    const AJV_NEEDLE = ['ajv', 'dist', '2020'].join('/'), AJV_HOME = 'packages/schema/roots.mjs';
+    const ajvSites = (texts) => [...texts].flatMap(([rel, text]) => (rel === AJV_HOME ? [] : text.split('\n').flatMap((l, i) => (l.includes(AJV_NEEDLE) ? [`${rel}:${i + 1}`] : []))));
+    const grepped = spawnSync('git', ['grep', '-l', '--untracked', '-F', '-e', AJV_NEEDLE], { cwd: path.join(HERE, '../..'), encoding: 'utf8' });
+    const ajvTexts = new Map((grepped.stdout ?? '').split(/\r?\n/).filter(Boolean).map((rel) => [rel, fs.readFileSync(path.join(HERE, '../..', rel), 'utf8')]));
+    const strays = grepped.status === 0 || grepped.status === 1 ? ajvSites(ajvTexts) : [`git grep exited ${grepped.status}`];
+    console.log(`${strays.length ? 'FAIL' : 'ok  '}  no text outside ${AJV_HOME} imports ajv's 2020 build (schemaAjv() is the one instance)${strays.length ? ': ' + strays.slice(0, 6).join(', ') : ''}`);
+    if (strays.length) failed++;
+    const seedRel = 'scripts/validate-structure.mjs', seedText = fs.readFileSync(path.join(HERE, '../..', seedRel), 'utf8').split('\n').filter((l) => !l.includes(AJV_NEEDLE));
+    const seededSites = ajvSites(new Map([[seedRel, [...seedText.slice(0, 12), `import Ajv2020Module from '${AJV_NEEDLE}.js';`, ...seedText.slice(12)].join('\n')], [AJV_HOME, `import x from '${AJV_NEEDLE}.js';`]]));
+    const seedCaught = seededSites.join() === `${seedRel}:13`;
+    console.log(`${seedCaught ? 'ok  ' : 'FAIL'}  control: a seeded ajv import in ${seedRel} is reported at ${seedRel}:13, and roots.mjs's own is not${seedCaught ? '' : ': got ' + (seededSites.join(', ') || 'nothing')}`);
+    if (!seedCaught) failed++;
+    // every struct a client reads (a root, a row's reads) is paired with a hand-written type in roots.mjs, or its row says
+    // why not: a pair dropped from the table cannot drop its compare and its probe in silence
+    const unpaired = pairingProblems(TABLE);
+    console.log(`${unpaired.length ? 'FAIL' : 'ok  '}  every root and read struct in roots.mjs has a hand-written pair or an unpaired reason (${TABLE.flatMap((r) => r.pairs).length} pairs, ${TABLE.filter((r) => r.unpaired).length} unpaired roots: ${TABLE.filter((r) => r.unpaired).map((r) => r.root).join(', ')})${unpaired.length ? ': ' + unpaired.join('; ') : ''}`);
+    if (unpaired.length) failed++;
+    const probeRow = pairingProblems([...TABLE, { file: 'zz-probe-1.schema.json', root: 'ZzProbe', pairs: [] }]).filter((p) => !unpaired.includes(p));
+    const rowCaught = probeRow.length === 1 && probeRow[0].startsWith('ZzProbe: a struct a client reads with no hand-written pair and no unpaired reason');
+    console.log(`${rowCaught ? 'ok  ' : 'FAIL'}  control: a table row whose root is neither paired nor unpaired is reported, naming it${rowCaught ? '' : ': got ' + (probeRow.join('; ') || 'nothing')}`);
+    if (!rowCaught) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
     for (const r of staleReport(outputs, read, counts)) { console.log(r.line); if (!r.ok) failed++; }
     // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h and schema-vocab.ts, the
@@ -731,7 +740,7 @@ if (isMain) {
     // fields agree.) An entry listed here that stops being a divergence fails below, so the list cannot outlive its fix.
     const KNOWN = [];
     const unexpected = parity.problems.filter((p) => !KNOWN.includes(p));
-    console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal, wave and plan; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
+    console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the ${new Set(TABLE.flatMap((r) => r.pairs.map((p) => p.gen))).size} generated names roots.mjs pairs; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
     if (unexpected.length) failed++;
     const stale = KNOWN.filter((p) => !parity.problems.includes(p));
     console.log(`${stale.length ? 'FAIL' : 'ok  '}  every allowed divergence is still one (plan-projection.ts types a tile's health as string)${stale.length ? ': fixed, now delete from KNOWN: ' + stale.join('; ') : ''}`);
@@ -766,15 +775,16 @@ if (isMain) {
     if (!enumWideCaught) failed++;
     // The controls above loosen a field or drop one from the generated side, so they stayed green with three parts of
     // compare() gutted (mutations C2 to C4 in plan.md, 2026-10-22): a field only the schema names, a field the schema
-    // requires and types.ts makes optional, and a root pair (Plan) never walked. The roots are named HERE, not read from
-    // parity.mjs's PAIRS, so a pair dropped there cannot also drop its probe. One field per root, added on the generated
-    // side, must come back as "in the schema, not in types.ts" under that root (a root reached only nested, like
-    // Proposal under ScanSnapshot.proposals, counts: the property is that every root's fields are compared).
-    const PARITY_ROOTS = ['AppStructure', 'AppStructureEvent', 'LensManifest', 'ScanSnapshot', 'ScanJob', 'Proposal', 'Wave', 'Plan'];
+    // requires and types.ts makes optional, and a root pair (Plan) never walked. The probed names are every pair's
+    // generated side in roots.mjs; a pair dropped from the table leaves its struct with neither pair nor reason, which
+    // the pairing rule above fails (the hand list this replaced stopped at 8 and missed the 10 contract pairs). One field
+    // per name, added on the generated side, must come back as "in the schema, not in types.ts" under that name (a
+    // name reached only nested, like Proposal under ScanSnapshot.proposals, counts: every pair's fields are compared).
+    const PARITY_ROOTS = [...new Set(TABLE.flatMap((row) => row.pairs.map((p) => p.gen)))];
     const extraGen = PARITY_ROOTS.reduce((t, g) => t.replace(`\nexport interface ${g} {\n`, `\nexport interface ${g} {\n  zzPairProbe_${g}: string;\n`), fresh.ts);
     const extraGot = compare(extraGen, handTs, wireTs).problems;
     const unreached = PARITY_ROOTS.filter((g) => !extraGot.some((p) => p.endsWith(`.zzPairProbe_${g}: in the schema, not in types.ts`)));
-    console.log(`${unreached.length ? 'FAIL' : 'ok  '}  self-proof: a field added to each of the ${PARITY_ROOTS.length} generated roots is reported as in the schema, not in types.ts${unreached.length ? ': not reported for ' + unreached.join(', ') : ''}`);
+    console.log(`${unreached.length ? 'FAIL' : 'ok  '}  self-proof: a field added to each of the ${PARITY_ROOTS.length} generated names roots.mjs pairs is reported as in the schema, not in types.ts (generated names: ${PARITY_ROOTS.join(', ')})${unreached.length ? ': not reported for ' + unreached.join(', ') : ''}`);
     if (unreached.length) failed++;
     const strict = fresh.ts.replace(/(\nexport interface ScanJob \{\n(?:  .*\n)*?)  exit_code\?: number;/, '$1  exit_code: number;');
     const strictGot = strict !== fresh.ts ? compare(strict, handTs, wireTs).problems : [];

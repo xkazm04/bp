@@ -18,37 +18,43 @@
 // the plan (Plan, PlanWing, PlanRoom, PlanBay, PlanTile, PlanBox) in packages/core/src/server/plan-projection.ts.
 // Both are read from there, not copied: wireSource() re-exports them into the compare. Plan was unpaired until
 // 2026-10-21, so the six shapes plan-1.schema.json generates - into these types AND into the VR client's USTRUCTs -
-// were never compared with the hand-written projection the plan route actually answers.
+// were never compared with the hand-written projection the plan route actually answers. Every pair is one `pairs`
+// entry of a row in roots.mjs, the one table (the hand lists here had drifted from the self-proof's).
 //
 // Used by `generate.mjs --check` (`npm run check:schema`); compare() takes source texts, so a seeded disagreement
 // can be checked without touching a file.
 import ts from 'typescript';
+import { ROOTS, HAND_TS } from './roots.mjs';
 
-/** The pairs compared: [generated interface, hand-written type]. */
-export const PAIRS = [['AppStructure', 'AppStructure'], ['AppStructureEvent', 'StructureEvent'], ['LensManifest', 'LensManifest']];
-/** The pairs read out of packages/core/src (see wireSource): ScanDelta is the snapshot's type under another name. */
-export const WIRE_PAIRS = [['ScanSnapshot', 'ScanSnapshot'], ['ScanSnapshot', 'ScanDelta'], ['ScanJob', 'ScanJob'], ['Proposal', 'Proposal'], ['Wave', 'Wave'], ['Plan', 'Plan'], ['DecisionBrief', 'Brief'],
-  ['FocusPlace', 'FocusPlace'], ['SharedView', 'SharedView'], ['SharedPlace', 'SharedPlace'], ['FocusPost', 'FocusPost'], ['FocusAnswer', 'FocusAnswer'],
-  ['MorningDeck', 'MorningDeck'], ['AgentDeck', 'AgentDeck'], ['SteerRow', 'SteerRow'], ['SteerPost', 'SteerPost']];
+/** [generated interface, hand-written type] per pair in the table: `hand` those in types.ts, `wire` the rest. */
+export const pairsOf = (table = ROOTS) => {
+  const all = table.flatMap((row) => row.pairs ?? []);
+  const of = (inHand) => all.filter((p) => (p.hand.file === HAND_TS) === inHand).map((p) => [p.gen, p.hand.name]);
+  return { hand: of(true), wire: of(false) };
+};
+/** The pairs compared against types.ts, and those read out of packages/core/src (see wireSource). */
+export const PAIRS = pairsOf().hand;
+export const WIRE_PAIRS = pairsOf().wire;
 
-/** A module that re-exports the hand-written scan wire types from their files; `root` is the repo root. */
-export function wireSource(root) {
-  const at = (f) => `${root.replace(/\\/g, '/')}/packages/core/src/scan/${f}`;
-  const core = (f) => `${root.replace(/\\/g, '/')}/packages/core/src/${f}`;
-  return [`export type { ScanSnapshot, ScanDelta, Proposal } from '${at('types.ts')}';`,
-    `export type { ScanJob } from '${at('jobs.ts')}';`, `export type { Wave } from '${at('waves.ts')}';`,
-    `export type { Plan } from '${root.replace(/\\/g, '/')}/packages/core/src/server/plan-projection.ts';`,
-    `export type { Brief } from '${at('brief.ts')}';`,
-    `export type { FocusPlace, SharedView, SharedPlace, FocusPost, FocusAnswer } from '${core('session/focus.ts')}';`,
-    `export type { MorningDeck, AgentDeck, SteerRow, SteerPost } from '${core('companion/morning.ts')}';`, ''].join('\n');
+/** A module that re-exports the table's hand-written types outside types.ts from their files; `root` is the repo root. */
+export function wireSource(root, table = ROOTS) {
+  const byFile = new Map();
+  for (const { hand } of table.flatMap((row) => row.pairs ?? [])) {
+    if (hand.file === HAND_TS) continue;
+    if (!byFile.has(hand.file)) byFile.set(hand.file, new Set());
+    byFile.get(hand.file).add(hand.name);
+  }
+  const at = (f) => `${root.replace(/\\/g, '/')}/${f}`;
+  return [...[...byFile].map(([f, names]) => `export type { ${[...names].join(', ')} } from '${at(f)}';`), ''].join('\n');
 }
 
 /**
  * Compare `gen` (the generated file's text) with `hand` (types.ts's text), and with `wire` (wireSource's text, when
- * given) for the scan wire types. Returns { problems: string[], shapes, enums } where shapes counts the object
- * shapes compared and enums the string-enum fields whose literal members were compared.
+ * given) for the scan wire types; the pairs are `table`'s (roots.mjs). Returns { problems: string[], shapes, enums }
+ * where shapes counts the object shapes compared and enums the string-enum fields whose literal members were compared.
  */
-export function compare(gen, hand, wire = null) {
+export function compare(gen, hand, wire = null, table = ROOTS) {
+  const pairs = pairsOf(table);
   const files = { '/gen.ts': gen, '/hand.ts': hand, ...(wire ? { '/wire.ts': wire } : {}) };
   const options = { strict: true, noEmit: true, target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, allowImportingTsExtensions: true, lib: ['lib.es2022.d.ts'], types: [] };
   const host = ts.createCompilerHost(options);
@@ -59,8 +65,11 @@ export function compare(gen, hand, wire = null) {
   const program = ts.createProgram(Object.keys(files), options, host);
   const checker = program.getTypeChecker();
   const exported = (file, name) => {
-    const sym = checker.getSymbolAtLocation(program.getSourceFile(file)).exports.get(name);
-    if (!sym) throw new Error(`${file === '/gen.ts' ? 'generated' : 'types.ts'}: no export ${name}`);
+    // wireSource's `export type { X } from '<file>'` makes an alias even when <file> has no X: resolve it, or a hand
+    // name the table misspells (in the re-export and the pair alike) compares an error type and reads green
+    const alias = checker.getSymbolAtLocation(program.getSourceFile(file)).exports.get(name);
+    const sym = alias && alias.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(alias) : alias;
+    if (!sym || !(sym.flags & (ts.SymbolFlags.Type | ts.SymbolFlags.Interface | ts.SymbolFlags.TypeAlias))) throw new Error(`${file === '/gen.ts' ? 'generated' : 'types.ts'}: no export ${name}`);
     return checker.getDeclaredTypeOfSymbol(sym);
   };
 
@@ -133,7 +142,7 @@ export function compare(gen, hand, wire = null) {
       walk(gt, ht, `${where}.${name}`);
     }
   };
-  for (const [g, h] of PAIRS) walk([exported('/gen.ts', g)], [exported('/hand.ts', h)], h);
-  if (wire) for (const [g, h] of WIRE_PAIRS) walk([exported('/gen.ts', g)], [exported('/wire.ts', h)], h);
+  for (const [g, h] of pairs.hand) walk([exported('/gen.ts', g)], [exported('/hand.ts', h)], h);
+  if (wire) for (const [g, h] of pairs.wire) walk([exported('/gen.ts', g)], [exported('/wire.ts', h)], h);
   return { problems, shapes, enums };
 }

@@ -29,7 +29,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import Ajv2020Module from 'ajv/dist/2020.js';
+import { schemaAjv } from '../packages/schema/roots.mjs';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,12 +152,9 @@ export function junctionSpec(ps1) {
   return link && target ? { link, target } : null;
 }
 
-// The payload schemas, all six registered under their $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
-// Same ajv options as scripts/validate-structure.mjs and packages/schema/generate.mjs (strict, allowUnionTypes).
-const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
-const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
-const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
-for (const f of fs.readdirSync(SCHEMA_DIR).filter((n) => n.endsWith('.schema.json'))) ajv.addSchema(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf8')));
+// The payload schemas: the one ajv (packages/schema/roots.mjs) every validator uses, each schema registered under its
+// file name and its $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
+const ajv = schemaAjv();
 const PAYLOAD_SCHEMAS = { envelope: 'structure-envelope-1', plan: 'plan-1', islands: 'plan-1', snapshot: 'scan-wire-1', waves: 'scan-wire-1' };
 const PAYLOAD_LABEL = { envelope: '/structure body', plan: '/plan body', islands: '/plan?layout=islands body', snapshot: '/stream snapshot frame', waves: '/waves body' };
 // One break per payload, applied to a copy of the live body. scan-wire-1's root takes one property per frame name, so a

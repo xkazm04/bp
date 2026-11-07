@@ -37,6 +37,7 @@
 // Run: node --import @bp/core/register scripts/check-decision-brief.ts
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { BRIEF_LINES, BRIEF_WIDTH, briefAdvice, briefFor, briefMapOf, briefMapOfStructure, repeatNote, subjectOf, type Brief, type BriefMap, type BriefSubject } from '../packages/core/src/scan/brief.ts';
 import { TOOLS, classOf } from '../packages/core/src/companion/catalog.ts';
 import { loadMap } from '../packages/core/src/data/index.ts';
@@ -380,11 +381,11 @@ const sec = [
 }
 // 15. the wire
 {
-  const Ajv2020Module = await import('ajv/dist/2020.js');
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const M = Ajv2020Module as any, Ajv2020 = M.default?.default ?? M.default ?? M;
-  const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false });
-  const validate = ajv.compile(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/schema/schema/decision-brief-1.schema.json'), 'utf8')));
+  // the one ajv (packages/schema/roots.mjs), with the options every validator uses
+  type Validate = ((doc: unknown) => boolean) & { errors?: unknown[] | null };
+  const { schemaAjv } = (await import(pathToFileURL(path.join(ROOT, 'packages/schema/roots.mjs')).href)) as { schemaAjv(): { getSchema(ref: string): Validate | undefined } };
+  const validate = schemaAjv().getSchema('decision-brief-1.schema.json');
+  if (!validate) throw new Error('schemaAjv() has no decision-brief-1.schema.json');
   const bad = built.filter((b) => !validate(JSON.parse(JSON.stringify(b))));
   ok(15, built.length >= 8 && bad.length === 0, `the ${built.length} briefs above validate against decision-brief-1`, bad[0] && validate(bad[0]) === false ? validate.errors?.slice(0, 2) : undefined);
   const b0 = JSON.parse(JSON.stringify(built[0]));

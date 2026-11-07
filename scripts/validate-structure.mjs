@@ -11,12 +11,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import Ajv2020Module from 'ajv/dist/2020.js';
+import { schemaAjv } from '../packages/schema/roots.mjs';
 // The evaluator's own definitions, not copies: Node strips the types (the fixture gate imports it the same way).
 import { OPS, conditionLeaves } from '../packages/core/src/standard/health.ts';
 import { NUMERIC } from '../packages/core/src/standard/present.ts';
 
-const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
 const LENS_DIR = path.join(ROOT, 'docs/standard/lenses');
@@ -28,12 +27,11 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // ------------------------------------------------------------------------------------------- ajv
 const readJson = (p) => JSON.parse(fs.readFileSync(p, 'utf8'));
-// strict, except strictRequired: if/then branches legitimately require keys declared one level up.
-const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
+// the one ajv (packages/schema/roots.mjs): strict, except strictRequired, with every schema registered by file and $id
+const ajv = schemaAjv();
 const lensSchema = readJson(path.join(SCHEMA_DIR, 'lens-manifest-1.schema.json'));
 const appSchema = readJson(path.join(SCHEMA_DIR, 'app-structure-3.schema.json'));
 const eventSchema = readJson(path.join(SCHEMA_DIR, 'app-structure-event-3.schema.json'));
-ajv.addSchema(lensSchema).addSchema(appSchema).addSchema(eventSchema);
 const validateLens = ajv.getSchema(lensSchema.$id);
 const validateApp = ajv.getSchema(appSchema.$id);
 const validateEvent = ajv.getSchema(eventSchema.$id);

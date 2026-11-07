@@ -1,8 +1,9 @@
 // Mutation harness for packages/schema/generate.mjs --check (the mutants are written outside the checkout).
 // usage: node packages/schema/mutants.mjs . [--rev <commit>] [mutation ...]   (cwd for each run = the repo root given)
-//   --rev reads generate.mjs and parity.mjs as of that commit (git show), e.g. the parent of the hardening commit
-// Each mutant is a copy of generate.mjs + parity.mjs with ONE edit, written under the OS temp dir with its imports
-// rewritten to file:/// URLs into this repo, and run as --check against the real tree. The identity run must exit 0:
+//   --rev reads generate.mjs, parity.mjs and roots.mjs as of that commit (git show), e.g. the parent of the hardening commit
+// Each mutant is a copy of generate.mjs + parity.mjs + roots.mjs with ONE edit (a string, or a RegExp replaced
+// everywhere it matches), written under the OS temp dir beside a junction to this repo's node_modules (so ajv and
+// typescript resolve as bare imports) with HERE pointed into this repo, and run as --check against the real tree. The identity run must exit 0:
 // a loader failure exits 1 too and would read like a caught mutation, so a non-zero exit with no FAIL line is
 // printed as LOADER/CRASH. Table and verdicts: docs/concepts/vr-light-table/plan.md, 'check:schema's controls
 // mutation-tested'. Not part of any gate.
@@ -10,7 +11,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { pathToFileURL } from 'node:url';
 
 const repo = path.resolve(process.argv[2]).split(path.sep).join('/');
 const args = process.argv.slice(3), revAt = args.indexOf('--rev');
@@ -19,7 +19,6 @@ const want = args;
 const source = (f) => (rev
   ? spawnSync('git', ['show', `${rev}:packages/schema/${f}`], { cwd: repo, encoding: 'utf8' }).stdout
   : fs.readFileSync(path.join(repo, 'packages/schema', f), 'utf8'));
-const url = (p) => pathToFileURL(path.join(repo, p)).href;
 
 // [name, file, find, replace, what it guts, the assertion lines to show (regex)]
 const M = [
@@ -33,11 +32,16 @@ const M = [
   ['C1-parity-no-extra', 'parity.mjs', 'for (const name of hs.keys()) if (!gs.has(name)) problems.push', 'for (const name of hs.keys()) if (false) problems.push', 'parity: a field in types.ts and not in the schema is not reported', /agrees with the generated|parity/],
   ['C2-parity-no-missing', 'parity.mjs', 'if (!hs.has(name)) { problems.push(`${where}.${name}: in the schema, not in types.ts`); continue; }', 'if (!hs.has(name)) continue;', 'parity: a field in the schema and not in types.ts is not reported', /agrees with the generated|parity/],
   ['C3-parity-optional-one-way', 'parity.mjs', 'if (hs.get(name) !== req) problems.push', 'if (!req && hs.get(name)) problems.push', 'parity: required in the schema but optional in types.ts is not reported', /agrees with the generated|parity/],
-  ['C4-parity-plan-pair-dropped', 'parity.mjs', ", ['Plan', 'Plan']];", '];', 'parity: the Plan shapes are never compared', /agrees with the generated|parity/],
+  ['C4-parity-plan-pair-dropped', 'roots.mjs', "    { gen: 'Plan', hand: { file: 'packages/core/src/server/plan-projection.ts', name: 'Plan' } },\n", '', 'parity: the Plan shapes are never compared', /agrees with the generated|parity|pair/],
   ['C5-parity-enum-missing-only', 'parity.mjs', 'extra = [...hl].filter((v) => !gl.has(v))', 'extra = []', 'parity: an enum value in types.ts and not in the schema is not reported', /agrees with the generated|parity/],
+  // the ten bp-Personas contract pairs (decision-brief-1, shared-focus-1, morning-deck-1): before roots.mjs, dropping
+  // them from WIRE_PAIRS exited 0 with 52 shapes compared instead of 90, the self-proof naming only 8 roots
+  ['C6-parity-contract-pairs-dropped', 'roots.mjs', /\n {4}\{ gen: '(DecisionBrief|FocusPlace|SharedView|SharedPlace|FocusPost|FocusAnswer|MorningDeck|AgentDeck|SteerRow|SteerPost)', hand: [^\n]*/g, '', 'parity: the contract pairs are never compared', /agrees with the generated|parity|pair/],
 ];
 
 const tmp = path.join(os.tmpdir(), 'bp-schema-mutants'); // mutants live outside the checkout
+fs.mkdirSync(tmp, { recursive: true });
+if (!fs.existsSync(path.join(tmp, 'node_modules'))) fs.symlinkSync(path.join(repo, 'node_modules'), path.join(tmp, 'node_modules'), 'junction');
 for (const [name, file, find, replace, guts, show] of M) {
   if (want.length && !want.includes(name)) continue;
   const dir = path.join(tmp, name);
@@ -45,16 +49,16 @@ for (const [name, file, find, replace, guts, show] of M) {
   const src = {
     'generate.mjs': source('generate.mjs'),
     'parity.mjs': source('parity.mjs'),
+    'roots.mjs': source('roots.mjs'),
   };
   if (find) {
-    const n = src[file].split(find).length - 1;
-    if (n !== 1) { console.log(`## ${name}: HARNESS ERROR, the find string occurs ${n} times in ${file}`); continue; }
+    const n = find instanceof RegExp ? (src[file].match(find) ?? []).length : src[file].split(find).length - 1;
+    if (find instanceof RegExp ? !n : n !== 1) { console.log(`## ${name}: HARNESS ERROR, the find string occurs ${n} times in ${file}`); continue; }
     src[file] = src[file].replace(find, () => replace);
   }
   const rewrites = [
     ['generate.mjs', 'const HERE = path.dirname(fileURLToPath(import.meta.url));', `const HERE = ${JSON.stringify(repo + '/packages/schema')};`],
-    ['generate.mjs', "await import('ajv/dist/2020.js')", `await import(${JSON.stringify(url('node_modules/ajv/dist/2020.js'))})`],
-    ['parity.mjs', "import ts from 'typescript';", `import ts from ${JSON.stringify(url('node_modules/typescript/lib/typescript.js'))};`],
+    ['roots.mjs', 'const HERE = path.dirname(fileURLToPath(import.meta.url));', `const HERE = ${JSON.stringify(repo + '/packages/schema')};`],
   ];
   for (const [f, a, b] of rewrites) {
     if (!src[f].includes(a)) { console.log(`## ${name}: HARNESS ERROR, rewrite target missing in ${f}: ${a}`); process.exit(2); }
