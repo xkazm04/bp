@@ -8,6 +8,7 @@ import {
   morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type OrderTemplate,
 } from '@bp/core/model';
 import { overlayRight } from '@/engine/chrome';
+import { calloutSeat } from '@/engine/surfaces';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
 import { steerVerbs } from '@/lib/model/live-steer';
@@ -355,10 +356,13 @@ export function Callout() {
   const s = useBp((s) => ({ blast: s.blast, ga: s.ga, scope: s.scope, info: s.info, tgt: s.tgt, simV: s.simV, troubleV: s.troubleV, dock: s.dockHidden, dtab: s.dtab, track: s.track }), shallowEqual);
   const pos = { left: Math.max(10, E.FW / E.U - overlayRight(E.S) - 340), top: E.SAFE.t / E.U + 4, maxHeight: `calc(100% - ${E.SAFE.t / E.U + 140}px)` };
   let body: React.ReactNode = null, cls = '';
-  if (s.track && M.tracks?.T[s.track]) {
+  // which body the box shows is the surface stack's (engine/surfaces.ts): the track record over "What is going on?",
+  // over blast, over readiness; a track this map holds no record of is skipped
+  const seat = calloutSeat(s, (id) => id !== 'track' || !!M.tracks?.T[s.track ?? '']);
+  if (seat === 'track' && s.track) {
     cls = 'info';
     body = <TrackRecord id={s.track} />;
-  } else if (s.info && s.tgt.n) {
+  } else if (seat === 'info') {
     const ids = s.tgt.ids, ag = sim.agentsIn(ids), ds = Object.keys(ids).flatMap((id) => sim.DOF[id] || []), ev = sim.log.filter((e) => ids[e.f]).slice(0, 6);
     cls = 'info';
     body = (
@@ -376,7 +380,7 @@ export function Callout() {
         {ev.length ? ev.map((e, i) => <div key={i} style={{ color: 'var(--ink-2)', fontSize: 13 }}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>) : <div style={{ color: 'var(--ink-2)' }}>Quiet so far this hour.</div>}
       </>
     );
-  } else if (s.blast) {
+  } else if (seat === 'blast' && s.blast) {
     const bl = M.closure.of(s.blast), f0 = M.P.F[s.blast], direct = f0.usedBy;
     const prodAll = bl.filter((id) => isLiveSt(M.P.F[id].stage)), prodDir = direct.filter((id) => isLiveSt(M.P.F[id].stage));
     body = (
@@ -392,7 +396,7 @@ export function Callout() {
         {direct.map((id) => { const g = M.P.F[id]; return <button key={id} type="button" className="lnk" onClick={() => { E.setMode({ blast: null }); E.openFeature(id); }}>{g.code ? <i>{g.code}</i> : null}{g.name} <span style={{ color: 'var(--ink-2)' }}>· {g.stage ? STAGE_WORD[g.stage].toLowerCase() : 'stage unknown'}</span></button>; })}
       </>
     );
-  } else if (s.ga && s.scope) {
+  } else if (seat === 'ga' && s.scope) {
     // readiness for what G read (engine readyScope): the summary from the lens manifests and readings (core readiness),
     // and, when the scope is a milestone, its release rows as before
     const sc = s.scope, R = E.readinessNow(), ms = sc.kind === 'ms' ? M.P.MS[sc.id] : null;

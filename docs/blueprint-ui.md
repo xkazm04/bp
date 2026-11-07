@@ -833,6 +833,14 @@ gets out of the plan's way, and L4 is a page. Earlier sections that say "dock", 
   - **Motion:** sections enter staggered, and numbers count up. Under reduced motion both are
     instant.
   - **Phone:** the phone view keeps the single-document body (`sheet/SheetBody.tsx`).
+- **One surface stack** (`apps/web/src/engine/surfaces.ts`, pure, 2026-11-07). The plan's dismissable surfaces are declared once,
+  top first: scan menu, morning card, person menu, timeline panel, rail flyout, the findings ledger (a barrier: Esc reaches
+  nothing behind it), feature page, decision card, track record, "What is going on?", preview, selection, blast, readiness,
+  legend key, compare. Esc closes the top open one (`escTarget`; `Engine.goUp` holds no ladder of its own), the callout box
+  paints the first open of track record, "What is going on?", blast, readiness (`calloutSeat`), and an opener closes the
+  other surfaces of its seat (the timeline and a flyout; the track record and "What is going on?"; blast and readiness)
+  and the ones its row names (`openPatch`: the feature page closes the decision card, the morning card and the scan menu).
+  A new overlay is one row. Checked by `npm run check:surfaces` (every pair of surfaces through the real `goUp`).
 
 ## Scans on the plan (2026-10-13)
 

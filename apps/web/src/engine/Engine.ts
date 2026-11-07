@@ -20,6 +20,7 @@ import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, withoutDeepLink } from './d
 import { readTheme, type Theme } from './theme';
 import { LIVE_UNDO_WORDS, saveFailWords, unknownFeatureWords, unknownLinkWords, type BadLinkKey } from './copy';
 import { lineSiblings } from './lines';
+import { escTarget, openPatch, surface, topSurface, type SurfaceId } from './surfaces';
 import { Text } from './text';
 import { StaticCache, deviceRes } from './render/static-cache';
 import { buildWallPaths, drawBuildings, drawDecor, drawGrid, drawLabels, drawTableTop, featRect, resetOutlines } from './render/plan';
@@ -656,7 +657,7 @@ export class Engine {
   /** A live product's snapshot and jobs, for its answer tracks (src/lib/model/live-tracks.ts). */
   feedTracks(scan: ScanSnapshot, jobs: readonly ScanJob[]) { const T = this.M.tracks; if (this.destroyed || !T) return; T.feed(scan, jobs); this.set({ simV: this.S.simV + 1 }); this.dirty(); }
   /** Open a track's record beside the plan (null closes it). */
-  openTrack(id: string | null) { this.set({ track: id }); }
+  openTrack(id: string | null) { this.set(id ? { ...openPatch('track', this.S), track: id } : { track: id }); }
   togglePlay() { if (!this.isNow) { this.setTime(this.M.P.asOf); return; } this.M.sim.togglePlay(); this.scheduleSimSync(true); this.dirty(); }
   setSpeed(n: number) { this.M.sim.setSpeed(n); this.scheduleSimSync(true); this.dirty(); }
   stepSpeed(dir: number) { const i = SPEEDS.indexOf(this.M.sim.speed as (typeof SPEEDS)[number]); this.setSpeed(SPEEDS[clamp(i + dir, 0, SPEEDS.length - 1)]); }
@@ -665,7 +666,7 @@ export class Engine {
    * Expand or collapse the timeline panel (it overlays the plan; the safe area keeps the collapsed strip).
    * The timeline panel and a rail flyout never stand open together: opening one closes the other.
    */
-  setTimeline(on = !this.S.tl) { if (on !== this.S.tl) this.set(on ? { tl: on, dtab: null } : { tl: on }); }
+  setTimeline(on = !this.S.tl) { if (on !== this.S.tl) this.set(on ? { ...openPatch('tl', this.S), tl: on } : { tl: on }); }
   seek(t: number) { if (!this.isNow) this.set({ t: this.M.P.asOf }); this.M.sim.seek(t); this.scheduleSimSync(true); this.dirty(); }
 
   // ============================================================================ lens, person, time
@@ -734,24 +735,11 @@ export class Engine {
     const p = this.place[depth - 1] || this.place[this.place.length - 1];
     if (p) this.cam.flyTo(this.fitOf(p));
   }
+  /** Esc: close the surface on top (engine/surfaces.ts SURFACES is the order); with none open, the camera goes up a level. */
   goUp() {
-    const S = this.S;
-    if (S.menu) { this.set({ menu: null }); return; }
-    if (S.tl) { this.set({ tl: false }); return; }
-    if (S.morning) { this.set({ morning: false }); return; }
-    if (S.whoMenu) { this.set({ whoMenu: false }); return; }
-    if (S.dtab) { this.set({ dtab: null }); return; }
-    if (S.info) { this.set({ info: false }); return; }
-    if (S.page === 'ledger') return; // Esc never leaves the ledger (it clears its own selection); nothing on the plan behind it moves
-    if (S.open) { this.closeFeature(); return; }
-    if (S.dec) { this.closeDecision(); return; }
-    if (S.track) { this.set({ track: null }); return; }
-    if (S.prev || S.lprev) { this.set({ prev: null, lprev: null }); return; }
-    if (S.tgt.n) { this.clearTarget(); return; }
-    if (S.blast) { this.setMode({ blast: null }); return; }
-    if (S.ga) { this.setMode({ ga: false }); return; }
-    if (S.key) { this.set({ key: null }); return; }
-    if (S.cmpA) { this.setCompare(null); return; }
+    const t = escTarget(this.S);
+    if (t) { this.closeSurface(t); return; }
+    if (topSurface(this.S)) return; // a barrier: Esc never leaves the ledger (it clears its own selection); nothing on the plan behind it moves
     const p = this.place;
     if (!p.length) {
       if (!this.cam.near(this.HOME, 0.02, 4)) this.goHome();
@@ -760,6 +748,16 @@ export class Engine {
     }
     if (p.length === 1) { this.goHome(); return; }
     this.cam.flyTo(this.fitOf(p[p.length - 2]));
+  }
+  /** Close one surface, with the side effects that belong to it (the feature page's hash write, the modes' hash). */
+  private closeSurface(id: SurfaceId) {
+    if (id === 'open') this.closeFeature();
+    else if (id === 'dec') this.closeDecision();
+    else if (id === 'tgt') this.clearTarget();
+    else if (id === 'blast') this.setMode({ blast: null });
+    else if (id === 'ga') this.setMode({ ga: false });
+    else if (id === 'cmpA') this.setCompare(null);
+    else this.set(surface(id).close);
   }
   walk(dir: number) {
     const W = this.M.L.walk;
@@ -819,7 +817,7 @@ export class Engine {
     if (!this.S.phone && (r.w * U < 48 || r.x * U < S.l || r.y * U < S.t || (r.x + r.w) * U > S.r || (r.y + r.h) * U > S.b)) {
       this.cam.set(this.fitCam({ x: T.x - T.w * 1.6, y: T.y - T.h * 1.6, w: T.w * 4.2, h: T.h * 4.2 }, { t: 40, r: 30, b: 60, l: 30 }, 1));
     }
-    this.set({ open: id, sel: null, hl: null, dec: null, hover: null, morning: false, menu: null });
+    this.set({ ...openPatch('open', this.S), open: id, sel: null, hl: null, hover: null });
     if (this.S.phone) return;
     this.placeKey = ''; this.writeHashSoon(true);
   }
@@ -837,7 +835,8 @@ export class Engine {
     if (focus) this.cv.focus({ preventScroll: true });
   }
   setMode(m: { ga?: boolean; blast?: string | null; scope?: ReadyScope | null }) {
-    const patch: Partial<UIState> = { ...m, info: false };
+    // a mode change closes what shares the callout with the modes (the other mode, "What is going on?")
+    const patch: Partial<UIState> = { ...openPatch(m.blast ? 'blast' : 'ga', this.S), ...m };
     // the readiness mode reads what the reader is looking at, resolved as it opens (before the page closes)
     if (m.ga === true) patch.scope = m.scope ?? this.readyScope();
     else if (m.ga === false) patch.scope = null;
@@ -852,7 +851,7 @@ export class Engine {
   }
   /** The readiness mode works on any map with features (a live product without milestones included). */
   get hasGA(): boolean { return this.M.P.features.length > 0; }
-  toggleGA() { if (this.hasGA || this.S.ga) this.setMode({ ga: !this.S.ga, blast: null }); }
+  toggleGA() { if (this.hasGA || this.S.ga) this.setMode({ ga: !this.S.ga }); }
   /** Days a good reading stays proof (older: unproven). One setting for now; the callout names it. */
   readonly readyMaxAge = 30;
   /**
@@ -904,7 +903,7 @@ export class Engine {
     const S = this.S, sf = this.M.P.scale > 1 ? '-S' : '';
     const t = id || S.open || S.sel || (S.hover && S.hover.type === 'tile' ? S.hover.id : null) || (this.M.P.F[BLAST_DEFAULT + sf] ? BLAST_DEFAULT + sf : this.M.P.features[0]?.id);
     if (!t) return;
-    this.setMode({ blast: t, ga: false });
+    this.setMode({ blast: t });
   }
   /** Highlight the features in trouble (bad or watch) under one lens; null clears. */
   setKey(k: string | null) { this.set({ key: k }); }
@@ -931,7 +930,7 @@ export class Engine {
   linkedRule: string | null = null;
   setLiveRules(rules: readonly Rule[]) { if (this.liveRules !== rules) { this.liveRules = rules; this.dirty(); } }
   /** Open a rail flyout; the open one again (or null) closes it. */
-  setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { dtab, tl: false } : { dtab }); }
+  setDockTab(t: DockTab | null) { const dtab = t === this.S.dtab ? null : t; this.set(dtab ? { ...openPatch('dtab', this.S), dtab } : { dtab }); }
   patch(p: Partial<UIState>) { this.set(p); }
   /**
    * Show the drawing set or the findings ledger (a DOM page over the plan). While the ledger shows, the frame loop
@@ -987,7 +986,7 @@ export class Engine {
     const sim = this.M.sim, d = sim.DEC[id]; if (!d || !d.open) return;
     if (this.S.open) this.closeFeature(false);
     d.isNew = false;
-    this.set({ dec: id, hl: null, hover: null, morning: false, hlOpt: null });
+    this.set({ ...openPatch('dec', this.S), dec: id, hl: null, hover: null, hlOpt: null });
     if (!noFly && !this.S.phone) {
       const T = this.M.L.TILE[d.f], R = { l: this.SAFE.l, t: this.SAFE.t, r: Math.min(this.SAFE.r, this.FW - overlayRight(this.S) * this.U) - 400 * this.U, b: this.SAFE.b };
       const c = this.fitCam({ x: T.x - 30, y: T.y - 30, w: T.w + 60, h: T.h + 60 }, { t: 60, r: 40, b: 60, l: 40 }, 1, R);
@@ -1357,7 +1356,7 @@ export class Engine {
     if (hu?.kind === 'pin' || hu?.kind === 'cluster') { this.openDecision(this.pinOf(hu).d.id); return; }
     if (hu?.kind === 'track') { this.openTrack(hu.id); return; }
     // a scan's chip: the Agents flyout opens on its job (Cancel at hand); the flyout overlays the plan, the camera stays
-    if (hu?.kind === 'scan') { this.set({ dtab: 'swarm', tl: false, scanJob: hu.id }); return; }
+    if (hu?.kind === 'scan') { this.set({ ...openPatch('dtab', this.S), dtab: 'swarm', scanJob: hu.id }); return; }
     if (hu?.kind === 'more') { if (this.lod() > 0.5) this.openFeature(hu.id); else this.flyToFeature(hu.id, false); return; }
     const ag = hu?.kind === 'agent' ? (hu.ref as SimAgent) : null;
     if (ag) {

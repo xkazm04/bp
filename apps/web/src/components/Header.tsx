@@ -12,6 +12,7 @@ import { livenessWords, scanLiveness } from '@bp/core/scan/liveness';
 import { Mark } from './Symbols';
 import { useOpenCount } from './ledger/useLedger';
 import type { Engine } from '@/engine/Engine';
+import { openPatch } from '@/engine/surfaces';
 import type { AppPage } from '@/engine/state';
 import './page-switch.css';
 import { GENERAL } from '@bp/core/data/types';
@@ -219,7 +220,8 @@ function LivePillOn({ L }: { L: LiveProduct }) {
 /** Show the drawing set or the findings ledger; the ledger covers the rail and the timeline, so their open panels close. */
 function goPage(E: Engine, p: AppPage) {
   if (E.S.page === p) return;
-  if (p === 'ledger' && (E.S.dtab || E.S.tl)) E.patch({ dtab: null, tl: false });
+  const covered = p === 'ledger' ? openPatch('ledger', E.S) : null;
+  if (covered && Object.keys(covered).length) E.patch(covered);
   E.setPage(p);
 }
 /**

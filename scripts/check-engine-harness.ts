@@ -17,6 +17,7 @@
 import { register, createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { ALL_CLOSED, openStates } from './lib/surface-states.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_ENGINE_MUTATE || '[]') } });
@@ -413,34 +414,30 @@ const measured: Record<string, string> = {};
 }
 
 // ---------------------------------------------------------------------------------------------- 4. goUp: the Esc ladder, in order
+// The order is engine/surfaces.ts SURFACES (check:surfaces pins it and every pair); here the real goUp walks it rung by
+// rung: each surface open with the next one below it, Esc closes the upper and leaves the lower. Rows sharing a seat never
+// stand open together, so blast and the readiness mode are driven through their openers instead of a constructed state.
 {
-  const rung = (name: string, patch: Record<string, unknown>, field: string, cleared: unknown) => {
-    reset(patch); E.goUp(); const s = E.S as Any;
-    expect(JSON.stringify(s[field]) === JSON.stringify(cleared), 'Esc ladder: ' + name + ' closes first (' + field + ' -> ' + JSON.stringify(s[field]) + ')');
-  };
-  rung('the scan menu', { menu: { x: 1, y: 1, chain: [], tile: null }, tl: true, dtab: 'view' }, 'menu', null);
-  rung('the timeline, before the morning card', { tl: true, morning: true, dtab: 'view' }, 'tl', false);
-  rung('the morning card, before the person menu', { morning: true, whoMenu: true, dtab: 'view' }, 'morning', false);
-  rung('the person menu, before the dock flyout', { whoMenu: true, dtab: 'view' }, 'whoMenu', false);
-  rung('the dock flyout, before info', { dtab: 'view', info: true }, 'dtab', null);
-  rung('info, before an open feature', { info: true, open: Object.keys(M.P.F)[0] }, 'info', false);
-  {
-    const f = Object.keys(M.P.F)[0]; reset({ open: f, blast: f }); E.goUp();
-    expect(E.S.open === null && E.S.blast === f, 'Esc ladder: an open feature closes before a blast mode');
+  const { SURFACES } = await imp('engine/surfaces.ts');
+  const OPEN = openStates(M);
+  let rungs = 0;
+  for (let i = 0; i + 1 < SURFACES.length; i++) {
+    const a = SURFACES[i], b = SURFACES[i + 1];
+    if (a.seat === b.seat || a.barrier) continue;
+    rungs++; reset({ ...ALL_CLOSED, ...OPEN[a.id], ...OPEN[b.id] }); E.goUp();
+    expect(!a.isOpen(E.S) && b.isOpen(E.S), 'Esc ladder: ' + a.id + ' closes before ' + b.id);
   }
+  expect(rungs >= 10, 'Esc ladder: the walk covers the stack (' + rungs + ' rungs)');
   {
-    const f = Object.keys(M.P.F)[0]; reset({ blast: f, ga: true }); E.goUp();
-    expect(E.S.blast === null && E.S.ga === true, 'Esc ladder: blast clears before the GA mode');
-    E.goUp(); expect(E.S.ga === false, 'Esc ladder: then the GA mode');
+    const f = Object.keys(M.P.F)[0]; reset({ ...ALL_CLOSED, ...OPEN.ga }); E.toggleBlast(f);
+    expect(E.S.blast === f && E.S.ga === false, 'Esc ladder: blast and the GA mode never stand together (blast turns GA off)');
+    E.goUp(); expect(E.S.blast === null, 'Esc ladder: then Esc clears blast');
   }
   {
     reset({ page: 'ledger', tl: false, dtab: null, key: 'x' }); E.goUp();
     expect(E.S.page === 'ledger' && E.S.key === 'x', 'Esc ladder: on the ledger page Esc changes nothing behind it');
   }
-  {
-    reset({ key: 'x' }); E.goUp(); expect(E.S.key === null, 'Esc ladder: the legend key closes after the modes');
-  }
-  reset();
+  reset({ ...ALL_CLOSED });
 }
 
 // ---------------------------------------------------------------------------------------------- 5. onKey: refusals and the map
