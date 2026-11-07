@@ -1,4 +1,4 @@
-// Parses both generated headers against the stand-ins and instantiates FromJson for every root, and for every struct a
+// Parses the generated headers (BpSchema.h, BpSchemaFixups.h, BpSchemaVocab.h) against the stand-ins and instantiates FromJson for every root, and for every struct a
 // client reads on its own (generate.mjs ROOTS' third element: the shared focus's place, view, shared place and POST answer;
 // the morning's deck, agent deck and steering row):
 //   clang++ -std=c++20 -fsyntax-only -Wall -Wextra -Ipackages/schema/ue-standin -Ipackages/schema/generated/ue packages/schema/ue-standin/check.cpp
@@ -6,6 +6,7 @@
 // below; until 2026-10-21 this file read three of the six, so FBpPlan, FBpStructureEnvelope and FBpScanWire - and
 // the FixUp bodies generated for them - were never put through a compiler at all.
 #include "BpSchemaFixups.h"
+#include "BpSchemaVocab.h"
 
 bool ReadAll(const TSharedRef<FJsonObject>& Json, FBpAppStructure& Map, FBpAppStructureEvent& Event, FBpLensManifest& Lens,
 	FBpPlan& Plan, FBpStructureEnvelope& Envelope, FBpScanWire& Wire, FBpDecisionBrief& Brief)
@@ -27,4 +28,11 @@ bool ReadMorning(const TSharedRef<FJsonObject>& Json, FBpMorningWatch& Watch, FB
 {
 	return BpSchema::FromJson(Json, Watch) && BpSchema::FromJson(Json, Deck) && BpSchema::FromJson(Json, Agent)
 		&& BpSchema::FromJson(Json, Row);
+}
+
+// BpSchemaVocab.h's constants are TCHAR literals an FString takes, and AllValues holds NumValues of them.
+static_assert(sizeof(BpVocab::Wave::Status::AllValues) / sizeof(BpVocab::Wave::Status::AllValues[0]) == BpVocab::Wave::Status::NumValues);
+FString FirstWaveStatus()
+{
+	return FString(BpVocab::Wave::Status::Draft);
 }

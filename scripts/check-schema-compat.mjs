@@ -99,7 +99,7 @@ const wire = (s) => s['scan-wire-1.schema.json'].$defs, plan = (s) => s['plan-1.
   const clean = edits.every((l) => /^[-+]\s*"description": "(?:[^"\\]|\\.)*",?\s*$/.test(l));
   const said = /no schema change since HEAD/.test(r.stdout);
   check(`cli: --since HEAD --dry-run on a ${clean ? 'clean' : 'dirty'} schema tree ${clean ? 'prints "no schema change since HEAD"' : 'reports a change'}, writes none of the ${outs.length} generated files, exits 0`,
-    r.status === 0 && said === clean && outs.length === 4 && bytes() === before && !/^wrote /m.test(r.stdout), `exit ${r.status}: ${(r.stdout + r.stderr).trim().split('\n').slice(0, 3).join(' | ')}`);
+    r.status === 0 && said === clean && outs.length === 5 && bytes() === before && !/^wrote /m.test(r.stdout), `exit ${r.status}: ${(r.stdout + r.stderr).trim().split('\n').slice(0, 3).join(' | ')}`);
 }
 {
   const r = spawnSync(process.execPath, [GEN, '--check'], { cwd: ROOT, encoding: 'utf8' });

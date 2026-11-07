@@ -6,6 +6,9 @@
 //   generated/ue/BpSchema.h         Unreal USTRUCTs with UPROPERTY fields, named as the JSON keys, so the VR client's
 //                                   FJsonObjectConverter::JsonObjectToUStruct fills them with no hand-written parsing
 //   generated/ue/BpSchemaFixups.h   BpSchema::FixUp and FromJson: fill the <Key>_ fields the converter cannot
+//   generated/ue/BpSchemaVocab.h    BpVocab::<Struct>::<Field>::<Value>: every struct field holding a string enum
+//                                   (inline enums too) as TEXT constants, so BpLink compares against the schema's
+//                                   values, not hand-typed literals (scripts/check-ue-vocab.mjs refuses a new one)
 //   packages/core/src/standard/schema-vocab.ts
 //                                   the vocabularies as consts: every named string enum, the scope kinds, the lens
 //                                   manifest's keys, the wave bounds and the proposal id pattern. Unlike the TS types,
@@ -30,7 +33,7 @@
 //   string-or-object, untyped items   FString <Key>_: the value's JSON text, by FixUp  the precise type
 // Optional and required fields look the same in C++ (a missing key keeps the default); the TS side marks optional.
 //
-// Run: node packages/schema/generate.mjs           write the four files
+// Run: node packages/schema/generate.mjs           write the five files
 //      node packages/schema/generate.mjs --check   exit 1 when a committed file differs from a fresh generation
 //                                                  (stale), when a schema field is neither mapped nor copied by
 //                                                  FixUp, or when types.ts disagrees with the generated types; each
@@ -57,6 +60,7 @@ const OUT_TS = path.join(HERE, 'generated/ts/app-structure.ts');
 const OUT_UE = path.join(HERE, 'generated/ue/BpSchema.h');
 const OUT_FIX = path.join(HERE, 'generated/ue/BpSchemaFixups.h');
 const OUT_VOCAB = path.join(HERE, '../core/src/standard/schema-vocab.ts');
+const OUT_UE_VOCAB = path.join(HERE, 'generated/ue/BpSchemaVocab.h');
 // The roots, one row per schema file, and the hand-written types.ts parity.mjs compares: roots.mjs, the one table.
 const ROOTS = TABLE.map((row) => [row.file, row.root, row.reads ?? []]);
 const CPP_KEYWORDS = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq'
@@ -225,6 +229,64 @@ export function emitVocab(m) {
     '// hand-typed second copy (scripts/check-schema-vocab.mjs). Pure and import-free.', ''];
   for (const r of rows) out.push(`/** ${r.from}${r.description ? ': ' + oneLine(r.description) : ''} */`, `export const ${r.name} = ${r.text};`);
   out.push('');
+  return out.join('\n');
+}
+
+// ---------------------------------------------------------------- Unreal: the vocabularies BpLink compares against
+// The names AllValues and NumValues sit beside the value constants of each field, so no value may fold onto them.
+const UE_VOCAB_RESERVED = new Set(['AllValues', 'NumValues']);
+/**
+ * Every struct field holding a string enum (two or more values; inline enums too, which emitVocab's named-$def rows
+ * skip), in model order: [{ struct, field, ns: 'BpVocab::<Struct>::<Field>', values, names: Map<value, constant> }].
+ * A value's C++ name is pascal(value) (a leading digit gets a V); two values of one field that fold to one name throw.
+ */
+export function ueVocab(m) {
+  const out = [], fields = new Map();
+  for (const st of m.structs.values()) for (const p of st.props) {
+    const vs = p.node.k === 'string' ? p.node.enum : null;
+    if (!vs || vs.length < 2) continue;
+    const ns = `BpVocab::${st.name}::${pascal(p.key)}`, names = new Map(), by = new Map();
+    if (fields.has(ns)) throw new Error(`${st.name}: fields ${fields.get(ns)} and ${p.key} both make ${ns}`);
+    fields.set(ns, p.key);
+    for (const v of vs) {
+      let n = pascal(v);
+      if (!n) throw new Error(`${st.name}.${p.key}: value ${JSON.stringify(v)} makes no C++ name`);
+      if (/^[0-9]/.test(n)) n = 'V' + n;
+      if (UE_VOCAB_RESERVED.has(n)) throw new Error(`${st.name}.${p.key}: value ${JSON.stringify(v)} makes ${n}, a name the header reserves`);
+      if (by.has(n)) throw new Error(`${st.name}.${p.key}: values ${JSON.stringify(by.get(n))} and ${JSON.stringify(v)} both make ${ns}::${n}`);
+      by.set(n, v); names.set(v, `${ns}::${n}`);
+    }
+    out.push({ struct: st.name, field: p.key, ns, values: [...vs], names });
+  }
+  return out;
+}
+const cxxString = (v) => JSON.stringify(v).replace(/\\u([0-9a-f]{4})/g, '\\x$1');
+/** BpSchemaVocab.h: plain C++ (no USTRUCT, so UHT never reads it), one namespace per enum field of ueVocab(m). */
+export function emitUeVocab(m) {
+  const out = ['// GENERATED by packages/schema/generate.mjs from packages/schema/schema/*.schema.json. Do not edit:',
+    '// change a schema and run `npm run schema:generate`; `npm run check:schema` fails while this file is stale.',
+    '//',
+    "// The schemas' string vocabularies for the VR client (apps/vr, module BpLink): one namespace per struct field of",
+    '// BpSchema.h that holds a string enum, BpVocab::<Struct>::<Field>::<Value>, so BpLink code compares',
+    '// `Wave.status == BpVocab::Wave::Status::Draft` instead of a hand-typed TEXT("draft"). A value the schema drops',
+    '// is a constant that disappears: its users stop compiling instead of comparing false in silence.',
+    '// AllValues lists a field\'s values in schema order, NumValues counts them. scripts/check-ue-vocab.mjs refuses a',
+    '// new raw literal on one of these fields in apps/vr/Source.',
+    '#pragma once', '', '#include "CoreMinimal.h"', '', 'namespace BpVocab', '{'];
+  let last = null;
+  for (const f of ueVocab(m)) {
+    if (f.struct !== last) {
+      if (last !== null) out.push('\t}', '');
+      out.push(`\t/** ${ueName(f.struct)} */`, `\tnamespace ${f.struct}`, '\t{');
+      last = f.struct;
+    } else out.push('');
+    out.push(`\t\t/** ${ueName(f.struct)}::${f.field}: one of ${f.values.join(', ')} */`, `\t\tnamespace ${pascal(f.field)}`, '\t\t{');
+    const consts = f.values.map((v) => f.names.get(v).split('::').pop());
+    f.values.forEach((v, i) => out.push(`\t\t\tinline constexpr const TCHAR* ${consts[i]} = TEXT(${cxxString(v)});`));
+    out.push(`\t\t\tinline constexpr const TCHAR* AllValues[] = { ${consts.join(', ')} };`, `\t\t\tinline constexpr int32 NumValues = ${f.values.length};`, '\t\t}');
+  }
+  if (last !== null) out.push('\t}');
+  out.push('}', '');
   return out.join('\n');
 }
 
@@ -595,9 +657,9 @@ export const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
   try { return [f, JSON.parse(fs.readFileSync(at, 'utf8'))]; }
   catch (e) { throw new Error(`packages/schema/schema/${f} is not readable as JSON: ${e.message}`, { cause: e }); }
 }));
-export const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), vocab: emitVocab(m), m }; };
+export const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), vocab: emitVocab(m), ueVocab: emitUeVocab(m), m }; };
 /** [path, fresh text] per output, in the order they are written and checked. */
-export const outputsOf = (fresh) => [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix], [OUT_VOCAB, fresh.vocab]];
+export const outputsOf = (fresh) => [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix], [OUT_VOCAB, fresh.vocab], [OUT_UE_VOCAB, fresh.ueVocab]];
 const norm = (s) => s.replace(/\r\n/g, '\n');
 
 // The committed-vs-fresh comparison, one function: the --check path and its control both call it, so the control
@@ -686,16 +748,18 @@ if (isMain) {
     if (!rowCaught) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
     for (const r of staleReport(outputs, read, counts)) { console.log(r.line); if (!r.ok) failed++; }
-    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h and schema-vocab.ts, the
-    // same loop reports the first stale at that line and the other two missing, and the TS file (handed its fresh text) current
+    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h, schema-vocab.ts and
+    // BpSchemaVocab.h, the same loop reports the first stale at that line and the other three missing, and the TS file
+    // (handed its fresh text) current
     {
       const fixLines = fresh.fix.split('\n'), at = fixLines.findIndex((l) => l.includes('CopyRaw(Json, TEXT("glyph")'));
-      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE || f === OUT_VOCAB ? null : fresh.ts);
+      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE || f === OUT_VOCAB || f === OUT_UE_VOCAB ? null : fresh.ts);
       const got = staleReport(outputs, handed, counts).map((r) => r.line);
-      const proved = at >= 0 && got.length === 4 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
+      const proved = at >= 0 && got.length === 5 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
         && got[2].startsWith('FAIL') && got[2].includes(` is stale: run npm run schema:generate (first difference at line ${at + 1}:`)
-        && got[3] === 'FAIL  packages/core/src/standard/schema-vocab.ts is missing: run npm run schema:generate';
-      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h and schema-vocab.ts absent are missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
+        && got[3] === 'FAIL  packages/core/src/standard/schema-vocab.ts is missing: run npm run schema:generate'
+        && got[4] === 'FAIL  packages/schema/generated/ue/BpSchemaVocab.h is missing: run npm run schema:generate';
+      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h, schema-vocab.ts and BpSchemaVocab.h absent are missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
       if (!proved) failed++;
     }
     // every schema field is held by the committed headers: mapped under its key, or a <Key>_ field FixUp fills
@@ -819,6 +883,11 @@ if (isMain) {
     const smokeControl = dropped.join() === 'ScanWire' && commented.join() === 'ScanWire';
     console.log(`${smokeControl ? 'ok  ' : 'FAIL'}  control: a root dropped from the smoke is reported, and one named only in a comment is not read`);
     if (!smokeControl) failed++;
+    // the stand-in smoke parses BpSchemaVocab.h too: its include, with comments stripped (a comment naming it is no include)
+    const vocabIncluded = (text) => /^\s*#include\s+"BpSchemaVocab\.h"/m.test(smokeText(text));
+    const includeControl = !vocabIncluded(`// #include "BpSchemaVocab.h"\n${smokeRaw.replace(/^\s*#include\s+"BpSchemaVocab\.h".*$/m, '')}`);
+    console.log(`${vocabIncluded(smokeRaw) && includeControl ? 'ok  ' : 'FAIL'}  ${smokeRel} includes BpSchemaVocab.h, so the clang++ -fsyntax-only run parses it (control: the include removed and named only in a comment is not one)`);
+    if (!vocabIncluded(smokeRaw) || !includeControl) failed++;
     // lens-manifest-1's builtinLensId enum against standard/catalog.ts, which loads the built-in manifests as seven
     // JSON imports, one per docs/standard/lenses/<id>.json (those are the manifests, not a copy of the list, so they
     // stay imports and are compared here). scan/manifest-check.ts's BUILTIN_IDS is the generated BUILTIN_LENS_IDS.
