@@ -1020,6 +1020,11 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   the patch behind a disclosure, the patch open from the start at full width, in chunks that skip layout off screen;
   fetched once per sha through the commits route, Kettle's sample diff) and the item's own text. The footer: what its
   state means, or its note, and Decide. The next item's screens are prefetched while the browser idles.
+  A rebuild (`attempt_of`) is judged against the attempt it replaces (`compare/attempts.ts`): when that attempt has
+  screens, the screens offer **Against** base · attempt n-1 (`LedgerUi.cmp.against`, base by default; a first build never
+  shows it, and a carried choice waits for the next rebuild), every mode then setting attempt n-1's after beside attempt
+  n's under captions naming both; the measurement adds an Attempt n-1 line between Before and After (its figure, what
+  the triage made of it, its note quoted, its commit); the prefetch follows the choice. `npm run check:train-attempts`.
 - **The Release tab** (`train/release/ReleaseView.tsx`; the states as data in `releaseState.ts`): the version
   (suggested with its reason by `GET releases/suggest`, editable, semver), **Create draft** (`POST releases`: the
   accepted items with no release, or only the chosen slice, then how many were drafted of those asked for and what
