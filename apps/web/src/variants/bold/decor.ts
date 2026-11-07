@@ -15,11 +15,12 @@
 // reference of its own and draws the right plan when two engines are on the page.
 import type { DecorArgs } from '@/engine/lens/contract';
 import { drawText } from '@/engine/text';
-import { NOT_MEASURED, bl, hof, measuredOf, sensitiveUnreviewed, sensitivity, type BuiltinLens } from '../base/legacy';
+import { NOT_MEASURED, bl, hof, measuredOf, sensitivity, type BuiltinLens } from '../base/legacy';
 import { BH, G, TH, TW, isLiveSt, type BayNode, type BldNode, type RoomNode } from '@bp/core/model';
 import type { Feature } from '@bp/core/data';
 import type { Theme, Viewport } from '../types';
-import { CHANNELS, kUsd } from './channels';
+import { CHANNELS } from './channels';
+import { kUsd, rowOf, tally } from './schedule';
 import { LENS_NAME } from './palette';
 import { clamp } from '../base/util';
 
@@ -323,7 +324,7 @@ function railText(ctx: CanvasRenderingContext2D, P: Ctx2, r: Rail, parts: string
 
 /**
  * A bay rail's words under a lens, over the bay's MEASURED features only (base measuredOf, the filter the channel
- * aggregates use, so the rail and the title block reconcile): an all-unmeasured bay says NOT MEASURED, a mixed one
+ * aggregates use, and the same schedule clauses, so the rail and the title block reconcile by construction): an all-unmeasured bay says NOT MEASURED, a mixed one
  * ends with 'N NOT MEASURED'. Design draws no words (crop marks only). Pure; exported for scripts/check-bold-decor.ts.
  */
 export function railParts(lens: BuiltinLens, feats: readonly Feature[], sim: { rolloutOf(f: Feature): number }): string[] {
@@ -331,32 +332,30 @@ export function railParts(lens: BuiltinLens, feats: readonly Feature[], sim: { r
   const { measured: fs, missing } = measuredOf(feats, lens);
   if (!fs.length) return [NOT_MEASURED];
   const tail = missing ? [missing + ' NOT MEASURED'] : [];
+  // every total is a schedule clause (schedule.ts), the same one the title block and the Plan-tab schedule state
+  const t = tally(lens, fs), n = (key: string) => rowOf(t, key).n;
   switch (lens) {
     case 'business': {
-      const asks = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
-      const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
+      const asks = n('asks'), mrr = n('mrr');
       return [asks + (asks === 1 ? ' customer ask' : ' customer asks'), ...(mrr ? [kUsd(mrr) + ' a month'] : []), ...(missing ? [missing + ' not measured'] : [])];
     }
     case 'development': {
-      const pr = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0), ur = fs.reduce((s, f) => s + (bl(f).development.humanReviewed === false ? 1 : 0), 0);
-      const ai = Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / fs.length);
-      return [feats.length + ' FEAT', pr + ' PR', 'AI ' + ai + '%', ...(ur ? [ur + ' UNREVIEWED'] : []), ...tail];
+      const pr = n('prs'), ur = n('unreviewed'), ag = rowOf(t, 'agent');
+      return [feats.length + ' FEAT', pr + ' PR', 'AI ' + Math.round(ag.n / ag.d) + '%', ...(ur ? [ur + ' UNREVIEWED'] : []), ...tail];
     }
     case 'operations': {
-      const live = fs.filter((f) => bl(f).operations.environment === 'production').length;
+      const live = n('production'), inc = n('incidents');
       let roll = 0, nf = 0; for (const f of fs) if (bl(f).operations.flag && isLiveSt(f.stage)) { roll += sim.rolloutOf(f); nf++; }
-      const inc = fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0);
       return [live + '/' + fs.length + ' LIVE', ...(nf ? [Math.round(roll / nf) + '% OUT'] : []), ...(inc ? [inc + ' INC'] : []), ...tail];
     }
     case 'security': {
-      const card = fs.filter((f) => bl(f).security.dataClass === 'payment').length, pers = fs.filter((f) => bl(f).security.dataClass === 'personal').length;
-      const un = fs.filter(sensitiveUnreviewed).length;
+      const card = n('card'), pers = n('personal'), un = n('unreviewed');
       if (!card && !pers) return ['NO SENSITIVE DATA', ...tail];
       return [...(card ? [card + ' CARD'] : []), ...(pers ? [pers + ' PERSONAL'] : []), ...(un ? [un + ' UNREVIEWED'] : []), ...tail];
     }
     case 'quality': {
-      const t = fs.reduce((a, f) => a + bl(f).quality.e2eTests, 0), pp = fs.reduce((a, f) => a + bl(f).quality.e2ePassing, 0), p1 = fs.reduce((a, f) => a + bl(f).quality.openBugs.p1, 0);
-      return [pp + '/' + t + ' E2E', ...(p1 ? [p1 + ' P1'] : []), ...tail];
+      const e = rowOf(t, 'e2e'), p1 = n('p1');
+      return [e.n + '/' + e.d + ' E2E', ...(p1 ? [p1 + ' P1'] : []), ...tail];
     }
   }
   return [];
