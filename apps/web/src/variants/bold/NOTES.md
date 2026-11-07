@@ -25,3 +25,10 @@ line in the lens's voice.
 lens switch at `?scale=4` sits on the frame-budget edge (p50 16.7 to 33 ms, headless software).
 `decor()` draws from its `DecorArgs` alone (camera origin, buildings, wall paths, text kit, sim), never from
 `window.__bp`: `check:channel-seam` holds it with two engines on the page.
+
+**Schedule.** Every total a title block states is a clause in `schedule.ts` (its words plus the predicate or
+per-feature value behind it), defined once per lens. The title block (`CHANNELS[lens].aggregate`), the bay rail
+(`railParts`) and the Plan tab's legend (`ScheduleLegend.tsx`, bold's `ui.Legend`) all read those clauses, so the three
+cannot drift. Under a built-in lens the legend is the sheet's schedule: each row (click, Enter, Space) flies to the next
+feature it counts with the highlight, wrapping; a row that counts nothing is disabled. General and manifest lenses keep
+the shared legend. `check:bold-schedule` pins the strings against the pre-schedule wording on the kettle fixture.

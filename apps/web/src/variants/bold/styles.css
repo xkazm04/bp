@@ -129,3 +129,15 @@
 @media (prefers-reduced-motion: reduce) {
   [data-variant='bold'] .bp-frame, [data-variant='bold'] #detail, [data-variant='bold'] .evp { transition: none; }
 }
+
+/* ------------------------------------------------- Plan tab: the sheet's schedule (ScheduleLegend.tsx) */
+/* Each title-block total is a row that walks the plan to the features it counts; one row per line, full width. */
+[data-variant='bold'] .bd-sch-h { grid-column: 1 / 3; display: flex; align-items: baseline; gap: 10px; border-bottom: 1px solid var(--lens); margin-bottom: 2px; }
+[data-variant='bold'] .bd-sch-h .no { font: 600 12px var(--mono); letter-spacing: 0.06em; color: var(--lens); }
+[data-variant='bold'] .bd-sch-h .nm { font: 600 13px var(--font-sans), system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-hi); }
+[data-variant='bold'] .bd-sch-h .hl { margin-left: auto; font: 500 12px var(--mono); color: var(--ink-2); }
+[data-variant='bold'] .bd-sch .bd-sch-row { grid-column: 1 / 3; display: flex; align-items: center; gap: 8px; width: 100%; min-height: 24px; padding: 0 0 0 8px; background: none; border: 0; border-left: 2px solid var(--lens); color: var(--ink); font: inherit; font-size: 14px; line-height: 1.15; text-align: left; cursor: pointer; }
+[data-variant='bold'] .bd-sch .bd-sch-row:hover:not([aria-disabled]) { background: color-mix(in srgb, var(--lens) 10%, transparent); }
+[data-variant='bold'] .bd-sch .bd-sch-row:focus-visible { outline: 2px solid var(--lens); outline-offset: 1px; }
+[data-variant='bold'] .bd-sch .bd-sch-row[aria-disabled] { cursor: default; color: var(--ink-2); border-left-color: var(--line); }
+[data-variant='bold'] .bd-sch .bd-sch-n { margin-left: auto; padding-right: 4px; font: 500 12px var(--mono); color: var(--ink-2); }

@@ -186,8 +186,8 @@ runCase(5, () => {
   expect(seen.join(',') === '2,3,2' && JSON.stringify(flown) === '[["2",true],["3",true],["2",true]]', 'three presses on [2,3] fly 2, 3, then wrap to 2, each with the highlight: ' + JSON.stringify(flown));
   const fresh = goNext ? goNext(E, ['2', '3'], 'gone') : 'missing';
   expect(fresh === '2', 'a cursor that left the row starts over at its first feature: ' + fresh);
-  let src = ''; try { src = fs.readFileSync(path.join(SRC, 'variants/bold/Schedule.tsx'), 'utf8'); } catch { /* missing */ }
-  expect(/onKeyDown=\{[^}]*(?:'Enter'|"Enter")[^}]*(?:' '|" ")[^}]*swallow\(e\)/.test(src) && /onClick=\{go\}/.test(src), 'Schedule.tsx rows press on click, Enter and Space, and swallow the key (stopImmediatePropagation) so the engine handler does not also act');
+  let src = ''; try { src = fs.readFileSync(path.join(SRC, 'variants/bold/ScheduleLegend.tsx'), 'utf8'); } catch { /* missing */ }
+  expect(/onKeyDown=\{[^}]*(?:'Enter'|"Enter")[^}]*(?:' '|" ")[^}]*swallow\(e\)/.test(src) && /onClick=\{go\}/.test(src), 'ScheduleLegend.tsx rows press on click, Enter and Space, and swallow the key (stopImmediatePropagation) so the engine handler does not also act');
 });
 
 // ---- 6 + 7. server render
