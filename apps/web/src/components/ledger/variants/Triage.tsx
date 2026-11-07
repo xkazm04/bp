@@ -12,6 +12,11 @@
 // reserve findings collapsed under "n in reserve" after the ranked rows (expandable; L.reserve, L.toggleReserve).
 import { memo, useMemo, type ReactNode } from 'react';
 import type { Finding, Ledger } from '../useLedger';
+import { forecastDispatch } from '@/lib/scan/actions';
+import { MAX_PROPOSALS } from '@bp/core/scan/jobs';
+import { useScanCtx } from '../../hooks';
+import { useForecast } from '../useWaves';
+import { forecastView } from '../build-forecast';
 import { LensTag, StateMark } from '../train/ui/Marks.tsx';
 import { FeatureLink, KindTag, Move, Risk, Score, Size, Verdict, fromControl } from './bits';
 import { OriginChip, TierChip } from '../../Queue';
@@ -122,6 +127,11 @@ export function DispatchBar({ L, hint, place }: { L: Ledger; hint?: ReactNode; /
     for (const id of L.ui.sel) if (!shown.has(id)) k++;
     return k;
   }, [n, L.scoped, L.ui.sel]);
+  // the build forecast (a dry dispatch: nothing written): what an order holds and what a job builds, said on the button
+  // before D; past MAX_PROPOSALS the dispatch goes in chunks and the label keeps the client's count
+  const ctx = useScanCtx(), ids = L.ready.map((f) => f.p.id);
+  const key = L.writes && m && m <= MAX_PROPOSALS && !L.busy ? (ctx.slug ?? 'kettle') + '|' + ids.join(',') : null;
+  const fc = forecastView('Dispatch', useForecast(key, () => forecastDispatch(ctx, ids)).state, m);
   return (
     <div className="lg-bar" role="region" aria-label="Dispatch">
       <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' + (hidden ? ' · ' + hidden + ' hidden by filters' : '') : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
@@ -135,8 +145,9 @@ export function DispatchBar({ L, hint, place }: { L: Ledger; hint?: ReactNode; /
         title={whyNot ?? 'Group ' + wm + (wm === 1 ? ' finding' : ' findings') + ' into a draft wave of packages, each with its own model and effort'}>
         Add to wave{wm && wm !== m ? ' ' + wm : ''}
       </button> : null}
-      {L.writes ? <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
-        {L.busy ? 'Dispatching…' : 'Dispatch ' + m}<kbd>D</kbd>
+      {L.writes ? <button type="button" className="bt go" disabled={!m || L.busy || fc.block} onClick={() => void L.dispatchIds()} data-forecast={fc.label}
+        title={fc.title ?? 'Approve the proposed ones and start one execute run over all of them (D)'}>
+        {L.busy ? 'Dispatching…' : fc.label}<kbd>D</kbd>
       </button> : null}
     </div>
   );

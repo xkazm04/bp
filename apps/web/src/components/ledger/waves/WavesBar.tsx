@@ -8,8 +8,13 @@
 // with a list that could not be read, it says so and offers Try again (never "No waves").
 // Dispatching goes through Ledger.dispatchWave, the optimistic path the direct Dispatch uses. With BP_WRITES=off the strip
 // keeps its tabs, select and facts and drops every write (New wave, Dispatch, Edit, Delete), saying so once, as Triage does.
+// Each Dispatch button reads the wave's build forecast (actions.ts forecastWave, a dry dispatch: nothing written) and says
+// what a standing order holds or a job builds before the click (build-forecast.ts: `Dispatch wave 9 · 2 held by O-1`).
 import { useState } from 'react';
-import { useWritesOn } from '../../hooks';
+import { useScanCtx, useWritesOn } from '../../hooks';
+import { forecastWave, type WaveForecast } from '@/lib/scan/actions';
+import { useForecast } from '../useWaves';
+import { forecastView } from '../build-forecast';
 import { dayHhmmUTC } from '@bp/core/model';
 import type { Ledger } from '../useLedger';
 import type { Wave, WaveState } from '@bp/core/scan/waves';
@@ -78,15 +83,18 @@ function WavePanel({ L, w, writes }: { L: Ledger; w: Wave; writes: boolean }) {
   // with writes off nothing can go: no Dispatch, Edit or Delete (the strip says why)
   const can = (ids: readonly string[]) => (writes ? ids.reduce((n, id) => n + (L.byId.get(id)?.can ? 1 : 0), 0) : 0);
   const left = can(idsOf(w));
+  const ctx = useScanCtx(), key = writes && left && !off ? [ctx.slug ?? 'kettle', w.id, state, left, w.packages.map((p) => p.id + ':' + p.ids.length).join()].join('|') : null;
+  const fc = useForecast<WaveForecast>(key, () => forecastWave(ctx, w.id));
+  const wv = forecastView(draft ? 'Dispatch wave' : 'Dispatch remaining', fc.state, left);
   return (
     <div className="wv-panel" data-wave-panel={w.id}>
       <div className="wv-head">
         <b className="wv-name">{w.name}</b><WaveMark state={state} />
         <span className="wv-meta">{size(w)} findings · {w.packages.length} {w.packages.length === 1 ? 'package' : 'packages'}{w.dispatched_at ? ' · dispatched ' + dayHhmmUTC(w.dispatched_at) : ''}</span>
         <span className="lg-sp" />
-        {draft ? <button type="button" className="bt go" data-wave="dispatch" disabled={off || !left} onClick={() => void L.dispatchWave(w.id)}
-          title={left ? 'Approve the proposed findings and queue one execute job per package, each with its own model and effort' : 'No finding of this wave can go: all are built, building or no longer open'}>{L.busy ? 'Dispatching…' : 'Dispatch wave ' + left}</button>
-          : left ? <button type="button" className="bt go" data-wave="remaining" disabled={off} onClick={() => void L.dispatchWave(w.id)} title="Queue the findings no job has built yet">Dispatch remaining {left}</button> : null}
+        {draft ? <button type="button" className="bt go" data-wave="dispatch" disabled={off || !left || wv.block} onClick={() => void L.dispatchWave(w.id)}
+          title={wv.title ?? (left ? 'Approve the proposed findings and queue one execute job per package, each with its own model and effort' : 'No finding of this wave can go: all are built, building or no longer open')}>{L.busy ? 'Dispatching…' : wv.label}</button>
+          : left ? <button type="button" className="bt go" data-wave="remaining" disabled={off || wv.block} onClick={() => void L.dispatchWave(w.id)} title={wv.title ?? 'Queue the findings no job has built yet'}>{wv.label}</button> : null}
         {draft ? <button type="button" className="bt" data-wave="edit" disabled={off} onClick={() => L.openComposer(w.id)}>Edit</button> : null}
         {draft && !ask ? <button type="button" className="bt" data-wave="delete" disabled={off} onClick={() => setAsk(true)}>Delete</button> : null}
         {draft && ask ? (
@@ -99,7 +107,8 @@ function WavePanel({ L, w, writes }: { L: Ledger; w: Wave; writes: boolean }) {
       </div>
       <ul className="wv-pks">
         {w.packages.map((p) => {
-          const ps = waves.packageState(w, p), pcan = can(p.ids);
+          const ps = waves.packageState(w, p), pcan = can(p.ids), row = fc.value?.packages.find((x) => x.id === p.id);
+          const pv = forecastView('Dispatch', row ? { forecast: row } : null, pcan);
           return (
             <li key={p.id} data-wave-pkg={p.id}>
               <b className="wv-pn">{p.name}</b>
@@ -107,7 +116,7 @@ function WavePanel({ L, w, writes }: { L: Ledger; w: Wave; writes: boolean }) {
               <span className="wv-meta">{p.ids.length} {p.ids.length === 1 ? 'finding' : 'findings'}</span>
               <WaveMark state={ps} />
               <span className="lg-sp" />
-              {pcan ? <button type="button" className="bt" data-wave="dispatch-pkg" disabled={off} onClick={() => void L.dispatchWave(w.id, [p.id])} title="Queue only this package">Dispatch {pcan}</button> : null}
+              {pcan ? <button type="button" className="bt" data-wave="dispatch-pkg" disabled={off || pv.block} onClick={() => void L.dispatchWave(w.id, [p.id])} title={pv.title ?? 'Queue only this package'}>{pv.label}</button> : null}
             </li>
           );
         })}

@@ -8,14 +8,34 @@
 // retry instead of asserting the product has none. Either way the ledger never breaks on it.
 // Derived here, once per change, for the views: each wave's state (waveState over the product's jobs), the finding ->
 // wave/package map (waveOfId) and the ids held by a DRAFT wave (a finding may sit in one draft wave only).
+// useForecast: a dry dispatch's answer for the Dispatch buttons (build-forecast.ts words it), asked once the key settles.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ScanCtx } from '@/lib/scan/actions';
+import { refusalOf, type ForecastLike, type ForecastState } from './build-forecast';
 import { createWave, deleteWave, dispatchWave, listWaves, refusalText, updateWave } from '@/lib/scan/actions';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { waveOfId, waveState, type Wave, type WaveBody, type WaveDispatchResult, type WavePackage, type WaveState } from '@bp/core/scan/waves';
 import { useEngine } from '../hooks';
 
 const NO_WAVES: readonly Wave[] = [];
+
+/** The forecast for `key` (null = nothing to ask): `ask` (actions.ts forecastDispatch / forecastWave) runs FORECAST_MS after
+ *  the key last changed; an answer for an older key is dropped, so the button never shows another selection's words. */
+const FORECAST_MS = 250;
+export function useForecast<T extends ForecastLike>(key: string | null, ask: () => Promise<T>): { state: ForecastState; value: T | null } {
+  const [got, setGot] = useState<{ key: string; state: ForecastState; value: T | null } | null>(null);
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  useEffect(() => {
+    if (key === null) return;
+    const live = { on: true };
+    const t = setTimeout(() => {
+      askRef.current().then((v) => { if (live.on) setGot({ key, state: { forecast: v }, value: v }); }, (e) => { if (live.on) setGot({ key, state: refusalOf(e), value: null }); });
+    }, FORECAST_MS);
+    return () => { live.on = false; clearTimeout(t); };
+  }, [key]);
+  return got && got.key === key ? got : { state: null, value: null };
+}
 
 export interface WavesModel {
   waves: readonly Wave[];
