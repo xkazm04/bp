@@ -26,6 +26,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { blankBlock, readBlanked, readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 // One fixed seam: the server render hands the Kettle scan sim's jobs to useScanJobs (its server snapshot is empty, which a
@@ -48,9 +49,7 @@ const O = await imp('components/Overlays.tsx');
 const { Phone, phoneFind } = await imp('components/Phone.tsx');
 const { Legend } = await imp('components/Legend.tsx');
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-overlays');
 
 const V = getVariant('subtle');
 const M = buildModel(1, () => 0, null), P = M.P;
@@ -496,5 +495,4 @@ expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its bo
   }
 }
 
-if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-overlays: ${held} expectations held`);
+done();

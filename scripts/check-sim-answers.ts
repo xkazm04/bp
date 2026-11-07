@@ -17,6 +17,7 @@
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_SIM_MUTATE || '[]') } });
@@ -30,9 +31,7 @@ const { SWARM } = await impCore('src/data/sample.ts');
 const MAP = (await impCore('data/kettle.app-structure.json')).default as { features: { id?: string; slug: string }[] };
 const RAW = (await impCore('data/swarm.json')).default as { orders: { id: string; violations: number }[] };
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-sim-answers');
 // the sim keys features by map slug; the swarm fixture (and the brief) by the old short ids
 const slug = (id: string) => MAP.features.find((f) => f.id === id)?.slug ?? id;
 const PAY09 = slug('PAY-09'), BKG06 = slug('BKG-06');
@@ -81,9 +80,9 @@ for (const [id, oi] of withFx) {
   const br: string[] = [];
   for (const o of Object.keys(a.vf)) { for (const f of a.vf[o]) if (!b.vf[o].has(f)) br.push(o + '+' + f); for (const f of b.vf[o]) if (!a.vf[o].has(f)) br.push(o + '-' + f); }
   if (key(br) !== key(p.breaks.map((x: Any) => x.o + (x.add ? '+' : '-') + x.f))) bad.push('breaches ' + br.join(','));
-  if (!bad.length) agree++; else failures.push(`${id} option ${oi + 1}: decide differs from its preview: ${bad.join('; ')}`);
+  if (!bad.length) agree++; else expect(false, `${id} option ${oi + 1}: decide differs from its preview: ${bad.join('; ')}`);
   sim.undoDecision();
-  if (fp(sim) === f0) undone++; else failures.push(`${id} option ${oi + 1}: undoDecision left a field changed`);
+  if (fp(sim) === f0) undone++; else expect(false, `${id} option ${oi + 1}: undoDecision left a field changed`);
 }
 expect(withFx.length >= 7 && agree === withFx.length, `previews that match their outcome: ${agree}/${withFx.length}`);
 expect(undone === withFx.length, `undo restores every field: ${undone}/${withFx.length}`);
@@ -214,7 +213,5 @@ for (const scale of [1, 2]) {
   } finally { sim.dispose(); }
 }
 
-for (const f of failures) console.log(`FAIL ${f}`);
 console.log(`previews that match their outcome: ${agree}/${withFx.length}`);
-console.log(`${held} of ${held + failures.length} sim-answer expectations hold`);
-process.exit(failures.length ? 1 : 0);
+done({ exit: true });

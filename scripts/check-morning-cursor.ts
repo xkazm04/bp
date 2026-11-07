@@ -7,6 +7,7 @@
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -17,9 +18,7 @@ const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT
 const W = await impCore('src/model/morning.ts');
 const { buildModel } = await impCore('src/model/sample.ts');
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-morning-cursor');
 
 // a browser storage stand-in (the check runs under Node, which has none by default here)
 const store = new Map<string, string>();
@@ -100,5 +99,4 @@ const M2 = buildModel(1, () => 0, null);   // a reload: the hour starts over, so
 expect(W.cursorFor(M2, 'ines').at === c0.at, 'a sample mark later than the restarted clock was kept');
 expect(W.defaultCursor(true) === null, 'a live product got the sample\'s away mark as its default');
 
-if (failures.length) { console.error(`check-morning-cursor: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-morning-cursor: ${held} expectations held`);
+done();

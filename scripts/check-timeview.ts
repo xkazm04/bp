@@ -8,6 +8,7 @@ import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
@@ -17,9 +18,7 @@ const { buildModel } = (await import(pathToFileURL(path.join(ROOT, 'packages/cor
 const { stageAt } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/index.ts')).href)) as Any;
 const { stageView, valueView, readingsUpTo, recordAsOf, lensAsOf, NOT_RECORDED } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/timeview.ts')).href)) as Any;
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-timeview');
 
 const P = buildModel(1, () => 0, null).P;
 const f = P.features.find((x: Any) => x.revs.length >= 2) ?? P.features[0];
@@ -234,5 +233,4 @@ expect(!nowLeaks("const x = rec.at === 'now' ? <FlaggedBy f={f} /> : rec.flagged
 expect(surfaces.some((p) => /SheetBody\.tsx$/.test(p)) && surfaces.some((p) => /FeatureSheet\.tsx$/.test(p)), 'the consumption scan holds SheetBody.tsx and FeatureSheet.tsx');
 expect((fs.readFileSync(path.join(SRC, 'components/page/General.tsx'), 'utf8').match(/Not on the drawing yet/g) || []).length === 0, 'General.tsx writes no inline stage word: the presenter does');
 
-if (failures.length) { console.error('FAIL check-timeview\n - ' + failures.join('\n - ')); process.exit(1); }
-console.log('check-timeview: ' + held + ' expectations held');
+done();

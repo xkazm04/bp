@@ -16,6 +16,7 @@
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_SIM_MUTATE || '[]') } });
@@ -26,9 +27,7 @@ const impCore = (p: string): Promise<Any> => import(pathToFileURL(path.join(ROOT
 const { buildModel } = await impCore('src/model/sample.ts');
 const MAP = (await impCore('data/kettle.app-structure.json')).default as { features: { id?: string; slug: string }[] };
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-sim-orders');
 const slug = (id: string) => MAP.features.find((f) => f.id === id)?.slug ?? id;
 const THREE = ['STU-06', 'INS-02', 'BKG-02'].map(slug);
 
@@ -159,6 +158,4 @@ const holdRun = (order: boolean) => {
   expect(t240 < t8 && t240 <= 2, `toasts: ${t240} at 240x vs ${t8} at 8x, expected them collapsed above 60x`);
 }
 
-for (const f of failures) console.log(`FAIL ${f}`);
-console.log(`${held} of ${held + failures.length} sim-order expectations hold`);
-process.exit(failures.length ? 1 : 0);
+done({ exit: true });
