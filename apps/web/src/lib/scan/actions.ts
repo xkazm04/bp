@@ -1,11 +1,11 @@
 // The one way the UI starts, dispatches and cancels scan work. A live product goes to its localhost
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
-import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
+import type { BuildForecast, ReleaseReady, ScanSim, WaveForecast } from '@bp/core/model/scan-sim';
 import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import type { Watch } from '@bp/core/train/watch';
-import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
+import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postDispatchDry, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, postWaveDispatchDry, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, DecisionBody, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import type { Landings } from '@bp/core/scan/landed';
@@ -56,6 +56,15 @@ export async function decideFinding(ctx: ScanCtx, id: string, body: DecisionBody
 export async function dispatch(ctx: ScanCtx, ids: string[]): Promise<DispatchResult> {
   if (ctx.slug) return postDispatch(ctx.slug, ids);
   if (ctx.sim) return ctx.sim.dispatch(ids);
+  throw nowhere();
+}
+
+export type { BuildForecast, WaveForecast };
+/** What `dispatch(ctx, ids)` would do, with nothing written (the Dispatch label's forecast): approve, take, skipped (held by an
+ *  order, in a job, not open) and jobs. Rejects as dispatch would (403 all held, 409 none can go, 429 queue full: `body` = the forecast). */
+export async function forecastDispatch(ctx: ScanCtx, ids: string[]): Promise<BuildForecast> {
+  if (ctx.slug) return postDispatchDry(ctx.slug, ids);
+  if (ctx.sim) return ctx.sim.forecastDispatch(ids);
   throw nowhere();
 }
 
@@ -229,5 +238,12 @@ export async function deleteWave(ctx: ScanCtx, id: string): Promise<{ id: string
 export async function dispatchWave(ctx: ScanCtx, id: string, packages?: string[]): Promise<WaveDispatchResult> {
   if (ctx.slug) return postWaveDispatch(ctx.slug, id, packages);
   if (ctx.sim) return ctx.sim.dispatchWave(id, packages);
+  throw nowhere();
+}
+/** What `dispatchWave` would do, per package, with nothing approved, queued or saved (the wave buttons' forecast). Rejects
+ *  as dispatchWave would (404, 400, 403, 409, 429 with the forecast as `body`). */
+export async function forecastWave(ctx: ScanCtx, id: string, packages?: string[]): Promise<WaveForecast> {
+  if (ctx.slug) return postWaveDispatchDry(ctx.slug, id, packages);
+  if (ctx.sim) return ctx.sim.forecastWave(id, packages);
   throw nowhere();
 }

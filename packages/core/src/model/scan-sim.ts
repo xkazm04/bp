@@ -28,6 +28,16 @@ export type { TrainToggles };
  *  still checked when the build starts; the sample's toggle is local state, so it says `signed-in`. */
 export interface ReleaseReady { ready: true; gh: 'signed-in' | 'unchecked' }
 
+/** A build's forecast (POST dispatch `{ dry: true }`, ScanSim.forecastDispatch): what the real call would approve
+ *  (`approve`), build (`take`) and skip, in how many execute jobs; `held`/`note` cite the standing orders that hold some
+ *  (a live product only: the sample has no orders). Nothing was written. */
+export interface BuildForecast { dry: true; approve: string[]; take: string[]; skipped: { id: string; status: string }[]; jobs: number; held?: { id: string; order: { id: string } }[]; note?: string }
+/** One package's row of a wave's forecast. */
+export interface PackageForecast { id: string; model: string; effort: string; approve: string[]; take: string[]; skipped: { id: string; status: string }[]; jobs: number }
+/** A wave dispatch's forecast (POST waves/[wave]/dispatch `{ dry: true }`, ScanSim.forecastWave): the totals and one row per
+ *  package; the wave as it stands (still a draft when it was one). */
+export interface WaveForecast extends BuildForecast { wave: Wave; packages: PackageForecast[] }
+
 /** What the sim needs of the product: bound once the model is built (`ScanSim.bind`). */
 export interface ScanSimProduct {
   /** Base feature slugs in layout order (left to right): what `all` walks, and the order a scope is walked in. */
@@ -181,15 +191,25 @@ export class ScanSim {
   }
 
   dispatch(ids: string[], opts: ExecOpts = {}): { job: ScanJob; approved: string[]; skipped: { id: string; status: string }[] } {
-    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
-    if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
-      || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
-    const at = this.iso(), { approved, go, skipped } = this.admit(ids, at);
-    if (!go.length) throw refuse(409, NOTHING_TO_BUILD, { skipped });
+    const { at, approved, go, skipped } = this.takeIds(ids, opts, false);
     const id = this.queueExecute(go, at, opts);
     this.pump();
     this.changed();
     return { job: this.recOf(id)!.job, approved, skipped };
+  }
+  /** The dispatch's forecast, as POST dispatch `{ dry: true }`: the same refusals (400, 409) and nothing approved or queued. */
+  forecastDispatch(ids: string[], opts: ExecOpts = {}): BuildForecast {
+    const { approved, go, skipped } = this.takeIds(ids, opts, true);
+    return { dry: true, approve: approved, take: go, skipped, jobs: buildChunks(go).length };
+  }
+  /** dispatch's guards and admission; `dry` approves nothing. */
+  private takeIds(ids: string[], opts: ExecOpts, dry: boolean): { at: string; approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
+    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
+    if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
+      || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
+    const at = this.iso(), t = this.admit(ids, at, dry);
+    if (!t.go.length) throw refuse(409, NOTHING_TO_BUILD, { skipped: t.skipped });
+    return { at, ...t };
   }
 
   /**
@@ -265,16 +285,33 @@ export class ScanSim {
     return { id };
   }
   /** Dispatch a wave (default: every package) or the named packages, as POST waves/[wave]/dispatch. */
-  dispatchWave(id: string, names?: string[]): WaveDispatchResult {
+  dispatchWave(id: string, names?: string[]): WaveDispatchResult { return this.walkWave(id, names, false) as WaveDispatchResult; }
+  /** A wave dispatch's forecast, as POST waves/[wave]/dispatch `{ dry: true }`: the same walk and refusals (404, 400, 409, 429
+   *  with the forecast as its body) with nothing approved, queued or stored. */
+  forecastWave(id: string, names?: string[]): WaveForecast { return this.walkWave(id, names, true) as WaveForecast; }
+  private walkWave(id: string, names: string[] | undefined, dry: boolean): WaveDispatchResult | WaveForecast {
     if (!this.prod) throw refuse(503, 'The sample is still loading');
     const waves = this.readWaves(), wave = waves.find((w) => w.id === id);
     if (!wave) throw refuse(404, `no wave ${id}`);
     const pkgs = packagesOf(wave, names);
     if (typeof pkgs === 'string') throw refuse(400, pkgs);
     const approved: string[] = [], skipped: { id: string; status: string }[] = [], refs: { package: string; job: string }[] = [], at = this.iso();
-    let full = false, went = 0;
+    let full = false, went = 0, planned = 0;
+    const rows: PackageForecast[] = [], take: string[] = [], busy = busyIds(this.recs.map((r) => r.job));
+    let room = MAX_QUEUED - this.recs.filter((r) => r.job.status === 'queued').length;
     for (const pk of pkgs) {
       if (full) break;
+      if (dry) {
+        // the forecast: the chunks counted against the queue's room, their findings held as a queued job would hold them
+        const a = admitForBuild(pk.ids, (x) => this.prop(x)?.status, busy), row: PackageForecast = { id: pk.id, model: pk.model, effort: pk.effort, approve: a.approve, take: a.take, skipped: a.skipped, jobs: 0 };
+        rows.push(row); take.push(...a.take); approved.push(...a.approve); skipped.push(...a.skipped); went += a.take.length;
+        for (const chunk of buildChunks(a.take)) {
+          if (room <= 0) { full = true; break; }
+          room--; planned++; row.jobs++;
+          for (const x of chunk) busy.add(x);
+        }
+        continue;
+      }
       const t = this.admit(pk.ids, at); // the jobs queued for an earlier package are in this.recs: they hold their findings
       approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
       for (const chunk of buildChunks(t.go)) {
@@ -282,6 +319,12 @@ export class ScanSim {
         refs.push({ package: pk.id, job: this.queueExecute(chunk, at, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id }) });
         this.pump();
       }
+    }
+    if (dry) {
+      if (!planned && !full && !went) throw refuse(409, 'none of these findings can be built (only proposed or approved ones that no job is building can)', { skipped });
+      const f: WaveForecast = { dry: true, wave, packages: rows, approve: approved, take, skipped, jobs: planned };
+      if (full) throw refuse(429, 'queue-full', { ...f });
+      return f;
     }
     if (!refs.length && !full && !went) { this.changed(); throw refuse(409, 'none of these findings can be built (only proposed or approved ones that no job is building can)', { skipped }); }
     const next = recordJobs(wave, refs, at);
@@ -397,9 +440,9 @@ export class ScanSim {
   private recOf(id: string): Rec | undefined { return this.recs.find((r) => r.job.id === id); }
   /** Add a queued execute job over `ids`; answers its id (the caller pumps and notifies). */
   /** packages/core/src/scan/admit.ts's rule over the sim's findings and jobs: the proposed ones approved here (decided_by 'blueprint'). */
-  private admit(ids: Iterable<string>, at: string): { approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
+  private admit(ids: Iterable<string>, at: string, dry = false): { approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
     const a = admitForBuild(ids, (id) => this.prop(id)?.status, busyIds(this.recs.map((r) => r.job)));
-    for (const id of a.approve) this.setProp(id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at });
+    if (!dry) for (const id of a.approve) this.setProp(id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at });
     return { approved: a.approve, go: a.take, skipped: a.skipped };
   }
   private queueExecute(ids: string[], at: string, opts: ExecOpts = {}): string {

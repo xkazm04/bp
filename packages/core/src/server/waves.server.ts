@@ -2,12 +2,14 @@
 // call (the file is tiny and the server may restart under it), written through products.server.ts's writeAtomic (a tmp file in the same directory and a rename, with the Windows retry). A file that cannot
 // be read is said once (warnOnce) and read as no waves; a READ never writes, and the write that follows moves the broken
 // file to `bp-waves.corrupt.json` first, so nothing is lost. Also here: takeForBuild, the approve-and-take step /dispatch and
-// a wave dispatch share, and dispatchWave (one execute job per package, each with its own model and effort).
+// a wave dispatch share, and dispatchWave (one execute job per package, each with its own model and effort). Both take
+// `dry` (the build forecast, POST dispatch `{ dry: true }`): the same admission, guards and refusals, and nothing written -
+// no decision, no job, no waves file; the queue's room is counted instead of filled.
 // Server-only: route handlers import it. Everything is synchronous, so two calls cannot interleave.
 import fs from 'node:fs';
 import path from 'node:path';
 import type { ProductEntry } from '../scan/types.ts';
-import { busyProposals, enqueueExecute } from './jobs.server.ts';
+import { MAX_QUEUED, busyProposals, enqueueExecute, list } from './jobs.server.ts';
 import { admitForBuild, buildChunks } from '../scan/admit.ts';
 import type { ScanJob } from '../scan/jobs.ts';
 import { recovered, storeFile, warnOnce, writeAtomic } from './products.server.ts';
@@ -88,7 +90,7 @@ export interface Taken { approved: string[]; go: string[]; skipped: { id: string
  * lacks; 'in-job' for one in `busy`, a queued or running execute job already builds it; 'unsafe-id'). Each id once. The rule
  * is scan/admit.ts admitForBuild; only the decision write is here.
  */
-export function takeForBuild(file: string, ids: readonly string[], busy?: ReadonlySet<string>, by = 'blueprint'): Taken {
+export function takeForBuild(file: string, ids: readonly string[], busy?: ReadonlySet<string>, by = 'blueprint', dry = false): Taken {
   const approved: string[] = [], go: string[] = [], skipped: { id: string; status: string }[] = [];
   try {
     const status = new Map(snapshotOf(file).proposals.map((x) => [x.id, x.status]));
@@ -96,6 +98,7 @@ export function takeForBuild(file: string, ids: readonly string[], busy?: Readon
     skipped.push(...a.skipped);
     for (const id of a.take) {
       if (!approve.has(id)) { go.push(id); continue; }
+      if (dry) { approved.push(id); go.push(id); continue; } // the forecast: what the decision write would approve, unwritten
       const r = decide(file, id, { decision: 'approve' }, by);
       if (r.ok) { approved.push(id); go.push(id); }
       else if (r.status === 409 && r.proposal.status === 'approved') go.push(id); // approved elsewhere a moment ago
@@ -105,8 +108,13 @@ export function takeForBuild(file: string, ids: readonly string[], busy?: Readon
   return { approved, go, skipped };
 }
 
+/** How many more jobs the product's queue takes now (enqueue's own MAX_QUEUED rule): the dry forecast's 429. */
+export const queueRoom = (slug: string): number => MAX_QUEUED - list(slug).filter((j) => j.status === 'queued').length;
+/** The 429 text a full queue answers (enqueue's own words). */
+export const queueFull = (slug: string): string => `${MAX_QUEUED} jobs are already queued for ${slug}`;
+
 /** The answer of dispatchWave: the route's status and body (202 and 429 carry `wave`, `jobs`, `approved`, `skipped`). */
-export interface WaveDispatchAnswer { status: 202 | 400 | 403 | 404 | 409 | 429 | 503; body: Record<string, unknown> }
+export interface WaveDispatchAnswer { status: 200 | 202 | 400 | 403 | 404 | 409 | 429 | 503; body: Record<string, unknown> }
 /** What the owner's standing orders hold of one package (rules.server.ts Gated, kept structural here: rules.server reads waves). */
 export interface Held { held: { id: string; order: { id: string } }[]; words: string }
 
@@ -115,8 +123,10 @@ export interface Held { held: { id: string; order: { id: string } }[]; words: st
  * no queued or running execute job builds, approve the proposed ones, and queue execute jobs of at most 50 with the
  * package's model and effort. The first job makes the wave `dispatched`; a later call ("Dispatch remaining") appends. A full
  * queue (429) stops it with what was queued so far recorded and the approvals standing; 409 when nothing could go.
+ * `dry`: the forecast - the same walk and refusals with nothing approved, queued or saved; 200 `{ dry, wave, packages: [{ id,
+ * model, effort, approve, take, skipped, jobs }], approve, take, skipped, jobs }` (a full queue: 429 with that body).
  */
-export function dispatchWave(slug: string, product: ProductEntry, waveId: string, packages?: readonly string[], by = 'blueprint', hold?: (pk: WavePackage) => Held): WaveDispatchAnswer {
+export function dispatchWave(slug: string, product: ProductEntry, waveId: string, packages?: readonly string[], by = 'blueprint', hold?: (pk: WavePackage) => Held, dry = false): WaveDispatchAnswer {
   const waves = listWaves(product.root), wave = waves.find((w) => w.id === waveId);
   if (!wave) return { status: 404, body: { error: `no wave ${waveId}` } };
   const pkgs = packagesOf(wave, packages);
@@ -125,16 +135,28 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
   if (odd) return { status: 400, body: { error: `bad-opts: package ${odd.id} has a model or effort outside the allow-list` } };
   const file = storeFile(product), busy = busyProposals(slug);
   const approved: string[] = [], skipped: { id: string; status: string }[] = [], jobs: ScanJob[] = [], refs: { package: string; job: string }[] = [];
-  let stop: { status: 400 | 429 | 503; error: string } | undefined, went = 0;
-  const held: Held['held'] = [], said: string[] = [];
+  let stop: { status: 400 | 429 | 503; error: string } | undefined, went = 0, room = dry ? queueRoom(slug) : 0, planned = 0;
+  const held: Held['held'] = [], said: string[] = [], take: string[] = [];
+  const rows: { id: string; model: string; effort: string; approve: string[]; take: string[]; skipped: { id: string; status: string }[]; jobs: number }[] = [];
   for (const pk of pkgs) {
     if (stop) break;
     // the owner's standing orders (rules.server.ts, through the route): what an order holds is skipped as `held:<order>`
     const h = hold?.(pk), out = new Set(h?.held.map((x) => x.id));
-    if (h?.held.length) { held.push(...h.held); said.push(h.words); skipped.push(...h.held.map((x) => ({ id: x.id, status: 'held:' + x.order.id }))); }
-    const t = takeForBuild(file, pk.ids.filter((x) => !out.has(x)), busy, by);
+    const heldOut = (h?.held ?? []).map((x) => ({ id: x.id, status: 'held:' + x.order.id }));
+    if (h?.held.length) { held.push(...h.held); said.push(h.words); skipped.push(...heldOut); }
+    const t = takeForBuild(file, pk.ids.filter((x) => !out.has(x)), busy, by, dry);
     approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
     if (t.error) stop = { status: 503, error: `dispatch failed: ${t.error}` };
+    if (dry) {
+      const row = { id: pk.id, model: pk.model, effort: pk.effort, approve: t.approved, take: t.go, skipped: [...heldOut, ...t.skipped], jobs: 0 };
+      rows.push(row); take.push(...t.go);
+      for (const chunk of buildChunks(t.go)) {
+        if (room <= 0) { stop = { status: 429, error: `${queueFull(slug)}; ${planned} execute job${planned === 1 ? '' : 's'} would be queued` }; break; }
+        room--; planned++; row.jobs++;
+        for (const id of chunk) busy.add(id);
+      }
+      continue;
+    }
     for (const chunk of buildChunks(t.go)) {
       const r = enqueueExecute(slug, product.root, chunk, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id });
       if (!r.ok) { stop = { status: r.status, error: `${r.error}; ${jobs.length} execute job${jobs.length === 1 ? '' : 's'} queued` }; break; }
@@ -142,8 +164,13 @@ export function dispatchWave(slug: string, product: ProductEntry, waveId: string
       for (const id of r.job.proposals ?? []) busy.add(id);
     }
   }
-  if (!jobs.length && !stop && !went && held.length) return { status: 403, body: { error: 'refused: ' + said.join('. '), order: held[0].order, held, skipped } };
-  if (!jobs.length && !stop && !went) return { status: 409, body: { error: 'none of these findings can be built (only proposed or approved ones that no job is building can)', skipped } };
+  const queued = dry ? planned : jobs.length;
+  if (!queued && !stop && !went && held.length) return { status: 403, body: { error: 'refused: ' + said.join('. '), order: held[0].order, held, skipped } };
+  if (!queued && !stop && !went) return { status: 409, body: { error: 'none of these findings can be built (only proposed or approved ones that no job is building can)', skipped } };
+  if (dry) {
+    const body = { dry: true, wave, packages: rows, approve: approved, take, skipped, jobs: planned, ...(held.length ? { held, note: said.join('. ') } : {}) };
+    return stop ? { status: stop.status, body: { error: stop.error, ...body } } : { status: 200, body };
+  }
   let next = wave;
   if (jobs.length) {
     next = recordJobs(wave, refs, new Date().toISOString());

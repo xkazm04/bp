@@ -142,6 +142,20 @@ const MAIN: Row[] = [
   { name: 'decideFinding of a decided finding', needs: () => ({ proposals: ['q5'] }), call: (A, c) => A.decideFinding(c, 'q5', { decision: 'decline', note: 'x' }),
     see: (o) => (o.ok ? { ok: true } : { status: o.status, error: !!o.message }), want: () => ({ status: 409, error: true }) },
   { name: 'decideFinding unknown finding', call: (A, c) => A.decideFinding(c, 'q-none', { decision: 'approve' }), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  // the build forecast (the Dispatch labels): a dry dispatch and a dry wave dispatch through actions.ts, the same answer on both
+  // planes, nothing written (the decide row after it finds q4 still proposed)
+  { name: 'createWave a second draft', needs: () => ({ proposals: ['q4', 'q5'] }), call: (A, c) => A.createWave(c, { name: 'Second', packages: [pkg('Next', ['q4', 'q5'], 'sonnet', 'medium')] }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status } : refusal(o)), want: () => ({ ok: true, status: 'draft' }), keep: (o, r) => { if (o.ok) r.wave.second = o.value.id; } },
+  { name: 'forecastWave the second draft', needs: (r) => ({ waves: [r.wave.second] }), call: (A, c, r) => A.forecastWave(c, r.wave.second),
+    see: (o) => (o.ok ? { ok: true, dry: o.value.dry, status: o.value.wave.status, jobs: o.value.jobs, packages: o.value.packages } : refusal(o)),
+    want: () => ({ ok: true, dry: true, status: 'draft', jobs: 1, packages: [{ id: 'pk-1', model: 'sonnet', effort: 'medium', approve: ['q4'], take: ['q4', 'q5'], skipped: [], jobs: 1 }] }) },
+  { name: 'forecastWave unknown wave', call: (A, c) => A.forecastWave(c, 'w-none'), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'forecastDispatch over proposed, approved and declined', needs: () => ({ proposals: ['q4', 'q5', 'q6'] }), call: (A, c) => A.forecastDispatch(c, ['q4', 'q5', 'q6']),
+    see: (o) => (o.ok ? { ok: true, dry: o.value.dry, approve: o.value.approve, take: o.value.take, skipped: skips(o.value.skipped), jobs: o.value.jobs } : refusal(o)),
+    want: () => ({ ok: true, dry: true, approve: ['q4'], take: ['q4', 'q5'], skipped: [{ id: 'q6', status: 'declined' }], jobs: 1 }) },
+  { name: 'forecastDispatch of nothing buildable', needs: () => ({ proposals: ['q6'] }), call: (A, c) => A.forecastDispatch(c, ['q6']), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  { name: 'decideFinding after the forecasts: q4 is still proposed', needs: () => ({ proposals: ['q4'] }), call: (A, c) => A.decideFinding(c, 'q4', { decision: 'approve' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status } : refusal(o)), want: () => ({ ok: true, status: 'approved' }) },
 ];
 // the end of the train: every pack closed, des1-card descoped in closed k-des-1 (store.mjs refuses its reopen: pack-closed)
 const TAIL: Row[] = [

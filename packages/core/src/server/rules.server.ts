@@ -178,14 +178,16 @@ function unreadable(read: RulesRead, items: readonly { id: string; feature: stri
   return { held: items.map((it) => ({ id: it.id, feature: it.feature, order: cite })), refused: cite, words: `refused: ${cite.text}` };
 }
 
-export function gateBuild(p: ProductEntry, tool: string, ids: readonly string[], model?: string, effort?: string): Gated {
+/** The gate over a build. `opts.log: false` (a dry forecast, POST dispatch `{ dry: true }`) answers the same and appends
+ *  nothing to the held log, so a preview never counts in the Rules tally; the default logs, as before. */
+export function gateBuild(p: ProductEntry, tool: string, ids: readonly string[], model?: string, effort?: string, opts: { log?: boolean } = {}): Gated {
   const read = readRules(p.root), rules = read.rules;
   const bad = unreadable(read, ids.map((id) => ({ id, feature: '' })));
   if (bad) return bad;
   if (!rules.length) return { held: [], words: '' };
   const act: Act = { kind: 'build', tool, items: itemsOf(p, ids), ...(model ? { model } : {}), ...(effort ? { effort } : {}) };
   const g = gate(rules, act);
-  if (g.held.length) logHeld(p.root, g, tool);
+  if (g.held.length && opts.log !== false) logHeld(p.root, g, tool);
   return answer(g);
 }
 export function gateScan(p: ProductEntry, tool: string, lens: string, scope: ScanScope): Gated {

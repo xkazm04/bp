@@ -10,7 +10,7 @@ import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
-import type { ReleaseReady } from '@bp/core/model/scan-sim';
+import type { BuildForecast, ReleaseReady, WaveForecast } from '@bp/core/model/scan-sim';
 import type { Landings } from '@bp/core/scan/landed';
 import type { Watch } from '@bp/core/train/watch';
 import { errorText, parseCommitDiff, parseJson, parseLandings, parseWatch, parseWatches, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
@@ -273,6 +273,18 @@ export const postAllLenses = (slug: string, phase: 'measure' | 'propose'): Promi
 export const postVeto = (slug: string, id: string, reason: string): Promise<Proposal> => send(api(slug) + '/proposals/' + encodeURIComponent(id) + '/veto', 'POST', { reason });
 /** Approve the proposed ones among `ids` and build them all in one execute job. 409 = none could go (`body.skipped`). */
 export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
+/** The build forecast (POST dispatch `{ ids, dry: true }`): 200 = what the dispatch would approve, build and skip, with nothing
+ *  written; else the refusal the dispatch would give (403 every id held, 409 none can go, 429 queue full with the forecast). */
+export const postDispatchDry = (slug: string, ids: string[]): Promise<BuildForecast> => call(api(slug) + '/dispatch', 'POST', parseForecast, { ids, dry: true });
+const isIds = (x: unknown): x is string[] => Array.isArray(x) && x.every((i) => typeof i === 'string');
+const isSkips = (x: unknown): x is { id: string; status: string }[] => Array.isArray(x) && x.every((s) => !!s && typeof (s as { id?: unknown }).id === 'string' && typeof (s as { status?: unknown }).status === 'string');
+/** A forecast's shape: `dry: true`, approve / take ids, skipped rows, a job count (a wave's adds `wave` and `packages`). */
+const parseForecast = <T extends BuildForecast>(x: unknown): Parsed<T> => {
+  const o = (x ?? {}) as Partial<WaveForecast>;
+  const ok = o.dry === true && isIds(o.approve) && isIds(o.take) && isSkips(o.skipped) && typeof o.jobs === 'number'
+    && (o.packages === undefined || (Array.isArray(o.packages) && o.packages.every((p) => !!p && typeof p.id === 'string' && isIds(p.take) && isSkips(p.skipped) && typeof p.jobs === 'number')));
+  return ok ? { ok: true, value: o as T } : { ok: false, error: 'not a build forecast (dry, approve, take, skipped, jobs)' };
+};
 /** Cancel a queued or running job. */
 export const deleteJob = (slug: string, id: string): Promise<ScanJob> => send(api(slug) + '/scans/' + encodeURIComponent(id), 'DELETE');
 /** Retire (false) or restore (true) a temporary lens. 403 = not temporary. */
@@ -353,6 +365,10 @@ export const deleteWaveReq = (slug: string, id: string): Promise<{ id: string }>
 /** Build a wave (202), or only the named packages. 409 = none could go (`body.skipped`); 429 = the queue cap stopped it (`body` = the result so far). */
 export const postWaveDispatch = (slug: string, id: string, packages?: string[]): Promise<WaveDispatchResult> =>
   call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseWaveDispatch, packages === undefined ? {} : { packages });
+/** A wave dispatch's forecast (`{ dry: true }`): 200 = one row per package, nothing approved, queued or saved; else the
+ *  refusal the dispatch would give (404, 400, 403, 409, 429 with the forecast). */
+export const postWaveDispatchDry = (slug: string, id: string, packages?: string[]): Promise<WaveForecast> =>
+  call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseForecast<WaveForecast>, packages === undefined ? { dry: true } : { packages, dry: true });
 
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. `signal` cancels the turn

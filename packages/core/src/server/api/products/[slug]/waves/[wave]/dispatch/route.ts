@@ -5,6 +5,9 @@
 // ("Dispatch remaining"). 202 `{ wave, jobs, approved, skipped }`; 409 `{ error, skipped }` when none could go; 400 for a bad
 // body or package; 404 for an unknown product, wave or missing store; 429 `{ error, wave, jobs, approved, skipped }` when the
 // queue cap stopped it (the jobs queued so far are recorded in the wave, the approvals stand); 503 when the store stayed locked; 403 while BP_WRITES=off.
+// `dry: true` (the build forecast WavesBar's buttons read): the same walk, guards and refusals with nothing approved, queued,
+// logged or saved; 200 `{ dry, wave, packages: [{ id, model, effort, approve, take, skipped, jobs }], approve, take, skipped,
+// jobs, held?, note? }`, 429 with that body when the queue would fill (waves.server.ts dispatchWave `dry`).
 // Localhost only. Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim dispatches it, with the same answers.
 // Admission (guards, product, wave id, Kettle, JSON body, store): the route door (route-door.server.ts).
 import { door } from '@bp/core/server/route-door.server';
@@ -14,13 +17,14 @@ import { triageBy } from '@bp/core/server/release.server';
 import { gateBuild } from '@bp/core/server/rules.server';
 import { agentSigner } from '../../../../../companion/door.server.ts';
 
-/** The package ids asked for (undefined = every package), or the 400. */
-function packagesOf(body: unknown): string[] | undefined | Response {
-  const names = (body as { packages?: unknown } | null)?.packages;
+/** The package ids asked for (undefined = every package) and the dry flag, or the 400. */
+function packagesOf(body: unknown): { packages: string[] | undefined; dry: boolean } | Response {
+  const { packages: names, dry } = (body ?? {}) as { packages?: unknown; dry?: unknown };
   if (names !== undefined && (!Array.isArray(names) || !names.length || names.some((n) => typeof n !== 'string' || !SAFE_ID.test(n)))) {
     return Response.json({ error: 'packages must be a list of package ids' }, { status: 400 });
   }
-  return names as string[] | undefined;
+  if (dry !== undefined && typeof dry !== 'boolean') return Response.json({ error: 'dry must be true or false' }, { status: 400 });
+  return { packages: names as string[] | undefined, dry: dry === true };
 }
 
 const dispatch = door('products/[slug]/waves/[wave]/dispatch', {
@@ -29,14 +33,16 @@ const dispatch = door('products/[slug]/waves/[wave]/dispatch', {
     body: packagesOf,
     store: 'required',
     writes: true,
-    kettle: (k, { params, body }) => k.dispatchWave(params.wave, body as string[] | undefined),
+    kettle: (k, { params, body }) => (body.dry ? Response.json(k.forecastWave(params.wave, body.packages)) : k.dispatchWave(params.wave, body.packages)),
     kettleStatus: 202,
     live: async ({ req, slug, product: p, params, body }) => {
       // a dispatch a standing permission runs: signed as it, and refused if it no longer covers the wave as it is now
-      const as = agentSigner(req, { slug, wave: params.wave, ...(body ? { packages: body } : {}) });
+      const { packages, dry } = body;
+      const as = agentSigner(req, { slug, wave: params.wave, ...(packages ? { packages } : {}) });
       if (as && 'refuse' in as) return as.refuse;
       try {
-        const r = dispatchWave(slug, p, params.wave, body as string[] | undefined, as?.by ?? await triageBy(), (pk) => gateBuild(p, 'wave.dispatch', pk.ids, pk.model, pk.effort));
+        const by = as?.by ?? (dry ? undefined : await triageBy());
+        const r = dispatchWave(slug, p, params.wave, packages, by, (pk) => gateBuild(p, 'wave.dispatch', pk.ids, pk.model, pk.effort, { log: !dry }), dry);
         return Response.json(r.body, { status: r.status });
       } catch (e) { return Response.json({ error: `dispatch failed: ${(e as Error).message}` }, { status: 503 }); }
     },
