@@ -15,7 +15,8 @@ import type { ProductEntry, Proposal } from '../../../scan/types.ts';
 import { writesOff } from '../../../scan/writes.ts';
 import { loadMap } from '../../../data/index.ts';
 import { findProduct, hasStore, storeDir, storeFile, warnOnce } from '../../products.server.ts';
-import { decide, mapRev } from '../../store.server.ts';
+import { decide } from '../../store.server.ts';
+import { readProductMap } from '../../map.server.ts';
 import { projectPlan } from '../../plan-projection.ts';
 import { landings, triageBy } from '../../release.server.ts';
 import { readTrail } from '../../brief.server.ts';
@@ -34,19 +35,19 @@ const logFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'ste
 const mdFile = (p: ProductEntry): string => path.join(storeDir(p), 'work', 'steering-log.md');
 
 /** feature -> its room and wing on the product's plan, the lens manifests' metric labels, and the plan as the decision brief
- *  reads it (through the loader the browser uses, as brief.server.ts does), cached per map rev. */
+ *  reads it (through the loader the browser uses, as brief.server.ts does), cached per map rev (the map itself is
+ *  map.server.ts's, read once per rev for every route). */
 interface MapFacts { where: Map<string, Where>; labels: Map<string, string>; map: BriefMap; lenses: MapLens[] }
 type MapLens = { id?: string; manifest?: { fields?: { key?: string; label?: string; min?: number; max?: number }[] } };
 const g = globalThis as unknown as { __bpMorningMaps?: Map<string, { rev: string; facts: MapFacts }> };
 function whereOf(p: ProductEntry): MapFacts {
-  const cache = (g.__bpMorningMaps ??= new Map()), dir = storeDir(p), rev = mapRev(dir), hit = cache.get(p.root);
-  if (hit && hit.rev === rev) return hit.facts;
+  const cache = (g.__bpMorningMaps ??= new Map()), m = readProductMap(p), rev = m.ok ? m.rev : '', hit = cache.get(p.root);
+  if (hit && rev && hit.rev === rev) return hit.facts;
   const where = new Map<string, Where>(), labels = new Map<string, string>();
   let brief: BriefMap = briefMapOf({}), lenses: MapLens[] = [];
   try {
-    let events = '';
-    try { events = fs.readFileSync(path.join(dir, 'events.jsonl'), 'utf8'); } catch { /* no events log */ }
-    const map = JSON.parse(fs.readFileSync(path.join(dir, 'app-structure.json'), 'utf8')) as { lenses?: MapLens[] };
+    if (!m.ok) throw new Error(m.error);
+    const events = m.events, map = m.doc as { lenses?: MapLens[] };
     lenses = map.lenses ?? [];
     for (const l of map.lenses ?? []) for (const f of l.manifest?.fields ?? []) if (l.id && f.key && f.label) labels.set(l.id + '|' + f.key, f.label);
     const plan = projectPlan(map, events, rev);

@@ -8,15 +8,15 @@
 // Gaps: per enabled lens of the product's map and per feature, `unmeasured` (no current reading) or `stale` (the newest one
 // is older than FRESH_MS); per coverage row, `unknown` or `deviation` (its `lens` is the row's standard). A feature's tier is
 // the most severe of its open findings' tiers (proposed or approved) and its priority (P0..P3 -> 0..3); none -> untiered.
-import fs from 'node:fs';
-import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Gap, InboxItem } from '../../../companion/contract.ts';
 import type { ProductEntry, ScanSnapshot } from '../../../scan/types.ts';
 import { lastRead } from '../../../scan/derive.ts';
 import { FRESH_MS } from '../../../scan/live-plan.ts';
-import { PRODUCTS_FILE, hasStore, readRegistry, storeDir, storeFile } from '../../products.server.ts';
+import { PRODUCTS_FILE, hasStore, readRegistry, storeFile } from '../../products.server.ts';
 import { readSnapshot } from '../../store.server.ts';
+import { lensOn, readProductMap } from '../../map.server.ts';
+import { isObj } from '../../../scan/guards.ts';
 import { gapScore, rankGaps, rankInbox, rankValue, type Ranked } from './rank.ts';
 import { worthOf } from '../../../scan/score.ts';
 import { readRecommendations } from './door.server.ts';
@@ -73,13 +73,14 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
 }
 
 interface MapFacts { features: { slug: string; priority?: string }[]; lenses: string[] }
-function mapOf(p: ProductEntry): MapFacts | null {
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(storeDir(p), 'app-structure.json'), 'utf8')) as { features?: unknown; lenses?: unknown };
-    const features = (Array.isArray(j.features) ? j.features : []).filter((f): f is { slug: string; priority?: string } => !!f && typeof (f as { slug?: unknown }).slug === 'string');
-    const lenses = (Array.isArray(j.lenses) ? j.lenses : []).filter((l) => l && typeof l.id === 'string' && l.enabled !== false).map((l) => l.id as string);
-    return { features, lenses };
-  } catch { return null; }
+/** The map's features and enabled lens ids (map.server.ts: the shared reader and its one enabled rule), or why it has none. */
+function mapOf(p: ProductEntry): MapFacts | { error: string } {
+  const m = readProductMap(p);
+  if (!m.ok) return { error: m.error };
+  const features = (Array.isArray(m.doc.features) ? m.doc.features : []).filter((f): f is { slug: string; priority?: string } => !!f && typeof (f as { slug?: unknown }).slug === 'string');
+  // every entry with an id counts here, a manifest or not (the gaps read no manifest); on or off by the one rule
+  const lenses = (Array.isArray(m.doc.lenses) ? m.doc.lenses : []).filter((l): l is { id: string } => isObj(l) && typeof l.id === 'string' && lensOn(l)).map((l) => l.id);
+  return { features, lenses };
 }
 
 /** A feature's tier: the most severe of its open findings' tiers and its priority's number; undefined when it has neither. */
@@ -94,8 +95,8 @@ export function featureTiers(scan: Pick<ScanSnapshot, 'proposals'>, features: re
 export function gaps(product: string | undefined, limit: number, now = Date.now()): { gaps: Gap[]; skipped: Skipped[] } {
   const { read, skipped } = snapshots(product), out: Gap[] = [];
   for (const { p, scan } of read) {
-    const map = mapOf(p);
-    if (!map) skipped.push({ product: p.slug, why: 'no readable app-structure.json: unmeasured and stale not computed' });
+    const read = mapOf(p), map = 'error' in read ? null : read;
+    if ('error' in read) skipped.push({ product: p.slug, why: read.error }); // the reader's own words: unmeasured and stale not computed
     const tiers = featureTiers(scan, map?.features ?? []);
     const add = (feature: string, lens: string, reason: Gap['reason']) => out.push({ product: p.slug, feature, lens, reason, score: gapScore(reason, tiers.get(feature)) });
     if (map) {
