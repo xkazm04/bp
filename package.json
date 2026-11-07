@@ -172,6 +172,7 @@
     "check:channel-seam": "node scripts/check-channel-seam.ts",
     "check:surfaces": "node scripts/check-surfaces.ts",
     "check:schema-roots": "node scripts/check-schema-roots.mjs",
+    "check:switcher": "node scripts/check-switcher.ts",
     "art:status": "node scripts/art/status.mjs"
   },
   "devDependencies": {
