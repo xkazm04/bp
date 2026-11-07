@@ -18,11 +18,16 @@
 // (os.tmpdir()/bp-check-<sha1(root)>.json, or BP_CHECK_RECORD), and `npm run check -- --failed` reruns exactly that set:
 // no record, an empty one or a name no longer in package.json fails before anything runs. --failed is the fix loop,
 // never the gate: the full npm run check still runs before a push, and the run's last line says so.
+// Each PASS line carries the expectations its check held (countOf in scripts/lib/check-report.mjs: the RESULT line of
+// scripts/lib/expect.ts, else a prose summary), and the summary totals them and names the checks that print no count. A
+// per-checkout baseline of the last GREEN counts (os.tmpdir()/bp-check-counts-<sha1(root)>.json, or BP_CHECK_COUNTS; outside
+// the repo, never committed) names a check whose count fell: `THINNER  <name>  97 -> 92 held (...)`. THINNER is reported, not
+// failed: whether a shrink fails the gate is the owner's call. A red check never writes its count back.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { failReport, rerunFor, recordPath, parseRecord, mergeRecord, lastLine } from './lib/check-report.mjs';
+import { failReport, rerunFor, recordPath, parseRecord, mergeRecord, lastLine, countOf, countsPath, parseCounts, thinner, thinnerLine, mergeCounts, countSummary } from './lib/check-report.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const scripts = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).scripts;
@@ -87,7 +92,7 @@ const run = (name, cmd = `npm run -s ${name}`, ceiling = timeoutMs) => new Promi
     if (settled) return;
     settled = true; clearTimeout(timer);
     if (why) out += (out && !out.endsWith('\n') ? '\n' : '') + why + '\n';
-    resolve({ name, code, ms: performance.now() - t0, out, skips: out.split(/\r?\n/).filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim()) });
+    resolve({ name, code, ms: performance.now() - t0, out, count: countOf(out), skips: out.split(/\r?\n/).filter((l) => /^\s*SKIP\b/.test(l)).map((l) => l.trim()) });
   };
   const timer = setTimeout(() => { why = `FAIL ${name} (timed out after ${ceiling / 1000}s)`; killTree(p); setTimeout(() => done(1), 2000).unref(); }, ceiling);
   p.on('error', (e) => { why = `FAIL ${name} (could not be run: ${e.message})`; done(1); });
@@ -134,7 +139,10 @@ await Promise.all(Array.from({ length: Math.min(4, queue.length) }, async () => 
   for (let n; (n = queue.shift()); ) {
     const r = await run(n);
     results.push(r);
-    console.log(`${r.code === 0 && !unforgiven(r.name, r.skips).length ? 'PASS' : 'FAIL'}  ${r.name.padEnd(width)}  ${(r.ms / 1000).toFixed(1).padStart(5)}s`);
+    const green = r.code === 0 && !unforgiven(r.name, r.skips).length;
+    // the count column is fixed-width so the seconds stay aligned; a FAIL line keeps its old shape
+    const held = green ? (r.count == null ? '' : `${r.count} held`).padEnd(10) : '';
+    console.log(`${green ? 'PASS' : 'FAIL'}  ${r.name.padEnd(width)}  ${held}${(r.ms / 1000).toFixed(1).padStart(5)}s`);
     // A child's own SKIP lines are the only sign that a passing check did not run everything, and this
     // runner used to discard the output of anything that exited 0. They are REPRINTED here, under the
     // check that reported them, and counted in the summary - a passing check that skipped ten expectations
@@ -154,11 +162,26 @@ for (const r of failed) {
 const red = names.filter((n) => failed.some((r) => r.name === n));
 try { fs.writeFileSync(RECORD, JSON.stringify(mergeRecord(prevRecord.names ?? [], todo, red))); }
 catch (e) { console.log(`note: could not write the record ${RECORD}: ${e.message}`); }
+// The counts: compare this run's green counts with the baseline, print THINNER under the PASS lines, write the green ones back.
+const COUNTS = countsPath(ROOT, process.env);
+let countsText = null;
+try { countsText = fs.readFileSync(COUNTS, 'utf8'); } catch { /* no baseline yet */ }
+const prevCounts = parseCounts(countsText);
+if (prevCounts.error) console.log(`note: the counts baseline ${COUNTS} is unreadable (${prevCounts.error}); no comparison this run`);
+const greenCounts = Object.fromEntries(results.filter((r) => !failed.includes(r) && r.count != null).map((r) => [r.name, r.count]));
+const thin = thinner(prevCounts.counts ?? {}, greenCounts);
+if (thin.length) console.log('');
+for (const t of thin) console.log(thinnerLine(t));
+try { fs.writeFileSync(COUNTS, JSON.stringify(mergeCounts(prevCounts.counts ?? {}, greenCounts))); }
+catch (e) { console.log(`note: could not write the counts baseline ${COUNTS}: ${e.message}`); }
 const partial = results.filter((r) => r.skips.length);
 const nSkips = partial.reduce((n, r) => n + r.skips.length, 0);
 const nBad = results.reduce((n, r) => n + r.bad.length, 0);
 console.log(`\n${results.length - failed.length} passed, ${failed.length} failed, ${skipped.size} skipped of ${names.length}`
-  + (partial.length ? `; ${partial.length} check(s) printed ${nSkips} SKIP line(s), ${nBad} not opted out and failing: ${partial.map((r) => r.name).join(', ')}` : ''));
+  + (partial.length ? `; ${partial.length} check(s) printed ${nSkips} SKIP line(s), ${nBad} not opted out and failing: ${partial.map((r) => r.name).join(', ')}` : '')
+  + (results.length ? ` ${countSummary(Object.fromEntries(names.filter((n) => results.some((r) => r.name === n)).map((n) => [n, results.find((r) => r.name === n).count])))}` : ''));
+// THINNER is reported, never failed; it is the last line unless the run is red, when the fix loop's line keeps that place.
+if (thin.length) console.log(`${thin.length} thinner than the last green run: ${thin.map((t) => t.name).join(', ')} (reported, not failed)`);
 const tailLine = lastLine(red, failedMode ? names.length : null);
 if (tailLine) console.log(tailLine);
 process.exit(failed.length ? 1 : 0);
