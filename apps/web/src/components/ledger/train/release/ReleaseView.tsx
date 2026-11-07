@@ -237,6 +237,7 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
   const n = m.items.length, sug = useSuggestion(m.T.ctx, suggestKey(m)), ver = m.rel?.version ?? sug.s?.version;
   return (
     <div ref={root} className={'tr-rel' + (phone ? ' phone' : '')} data-role="tr-rel" tabIndex={-1} onKeyDown={onKey}>
+      <div className="tr-rel-track"><Stepper rel={m.rel} last={m.last} /></div>
       <section aria-label="Package">
         <h3>Package · {m.landed.size ? `${n - m.landed.size} to cut · ${m.landed.size} landed outside a release${m.rel ? ' · v' + m.rel.version : ''}` : `${n} ${m.rel ? 'in v' + m.rel.version : 'accepted'}`}</h3>
         <VersionBox m={m} phone={phone} {...(ch.chosen ? { chosen: ch.chosen } : {})} onMade={ch.clear} />
@@ -244,7 +245,6 @@ export function ReleaseView({ phone }: ReleaseViewProps) {
       </section>
       <section aria-label="Build">
         <h3>Build · Claude Code on your machine, your gh login</h3>
-        <Stepper rel={m.rel} last={m.last} />
         {m.T.ctx.sim && !phone ? <SampleToggles sim={m.T.ctx.sim} /> : null}
         <Failures m={m} a={a} />
         <Preflight checks={a.checks} />

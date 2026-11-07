@@ -15,11 +15,12 @@
 @media (max-width: 1100px) { .tr-sum button { min-width: calc(var(--sp-10) * 11); padding: var(--sp-5) var(--sp-10); } }
 
 /* ---------------------------------------------------------------- the tab: package left, build right */
-.tr-rel { display: grid; grid-template-columns: var(--cols-release); gap: 0; min-height: 100%; outline: none; font-size: var(--fs-14); line-height: 1.4; color: var(--ink); }
+.tr-rel { display: grid; grid-template-columns: var(--cols-release); grid-template-rows: auto minmax(0, 1fr); gap: 0; min-height: 100%; outline: none; font-size: var(--fs-14); line-height: 1.4; color: var(--ink); }
 .tr-rel > section { padding: var(--sp-14) var(--sp-18) var(--sp-20); min-width: 0; }
-.tr-rel > section + section { border-left: 1px solid var(--ink-3); }
+.tr-rel > section + section { border-left: var(--bw-bar) double var(--line); background: color-mix(in srgb, var(--paper-lo) 40%, transparent); }
+.tr-rel-track { grid-column: 1 / -1; padding: var(--sp-10) var(--sp-18) var(--sp-8); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
 .tr-rel.phone { grid-template-columns: 1fr; }
-.tr-rel.phone > section + section { border-left: 0; border-top: 1px solid var(--ink-3); }
+.tr-rel.phone > section + section { border-left: 0; border-top: 1px solid var(--ink-3); background: none; }
 .tr-rel h3 { display: flex; align-items: center; gap: var(--sp-10); margin: 0 0 var(--sp-10); font: 600 var(--fs-13) var(--mono); letter-spacing: var(--ls-5); text-transform: uppercase; color: var(--ink-2); }
 .tr-rel h3::after { content: ''; flex: 1; height: 1px; background: var(--ink-4); }
 .tr-rel .tr-call { margin-bottom: var(--sp-10); }
@@ -30,7 +31,7 @@
 .tr-rel-hint { margin-bottom: var(--sp-10); font-size: var(--fs-13); }
 
 /* the version box */
-.tr-rel-ver { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-6) var(--sp-14); align-items: center; padding: var(--sp-12); border: 1px solid var(--ink-3); background: var(--panel); margin-bottom: var(--sp-14); }
+.tr-rel-ver { border-style: double; border-width: var(--bw-bar); border-color: var(--line); display: grid; grid-template-columns: auto 1fr; gap: var(--sp-6) var(--sp-14); align-items: center; padding: var(--sp-12); background: var(--panel); margin-bottom: var(--sp-14); }
 .tr-rel-ver label { font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-4); text-transform: uppercase; color: var(--ink-2); }
 .tr-rel-ver .vin { display: flex; align-items: center; gap: var(--sp-6); flex-wrap: wrap; }
 .tr-rel-ver .vin > span { font: 600 var(--fs-26) var(--mono); color: var(--ink-2); }
@@ -57,20 +58,28 @@
 .tr-pl .lgrp .tr-lens { color: var(--ink-2); letter-spacing: var(--ls-4); }
 
 /* ---------------------------------------------------------------- the build: stepper, toggles, actions */
-.tr-rel-steps { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0 0 var(--sp-12); padding: 0; list-style: none; border: 1px solid var(--ink-3); background: var(--panel); }
-.tr-rel-steps li { position: relative; padding: var(--sp-8) var(--sp-10) var(--sp-9); border-right: 1px solid var(--ink-4); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-2); text-transform: uppercase; color: var(--ink-2); }
-.tr-rel-steps li:last-child { border-right: 0; }
-.tr-rel-steps li b { display: block; font-size: var(--fs-15); letter-spacing: 0; text-transform: none; color: var(--ink); font-weight: 500; }
+.tr-rel-steps { display: grid; grid-template-columns: repeat(5, 1fr); margin: 0; padding: 0; list-style: none; }
+/* the line the release travels: a rail through the steps, a node on it per step */
+.tr-rel-steps li { position: relative; padding: var(--sp-18) var(--sp-10) 0 0; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-4); text-transform: uppercase; color: var(--ink-2); }
+.tr-rel-steps li::before { content: ''; position: absolute; left: 0; right: 0; top: var(--sp-6); border-top: 2px solid var(--ink-3); }
+.tr-rel-steps li::after { content: ''; position: absolute; left: 0; top: 0; box-sizing: border-box; width: var(--sp-14); height: var(--sp-14); border: 2px solid var(--ink-3); border-radius: 50%; background: var(--paper-lo); }
+.tr-rel-steps li b { display: block; font: 500 var(--fs-15) var(--sans); letter-spacing: 0; text-transform: none; color: var(--ink); }
 .tr-rel-steps li.done { color: var(--mint); }
+.tr-rel-steps li.done::before { border-color: var(--mint); }
+.tr-rel-steps li.done::after { border-color: var(--mint); background: var(--mint); }
 .tr-rel-steps li.done b { color: var(--ink-hi); }
-.tr-rel-steps li.now { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); box-shadow: inset 0 calc(-1 * var(--bw-bar)) 0 var(--accent); }
+.tr-rel-steps li.now { color: var(--accent); }
+.tr-rel-steps li.now::after { border-color: var(--accent); background: var(--ink-hi); box-shadow: 0 0 var(--sp-10) var(--accent); }
+.tr-rel-steps li.now b { color: var(--ink-hi); font-weight: 600; }
 .tr-rel-steps li.now.run b::after { content: ''; display: inline-block; width: var(--sp-10); height: var(--sp-10); margin-left: var(--sp-7); border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: tr-spin 1s linear infinite; vertical-align: -1px; }
-.tr-rel-steps li.bad { color: var(--red); background: color-mix(in srgb, var(--red) 12%, transparent); box-shadow: inset 0 calc(-1 * var(--bw-bar)) 0 var(--red); }
+.tr-rel-steps li.bad { color: var(--red); }
+.tr-rel-steps li.bad::after { border-color: var(--red); background: var(--red); box-shadow: 0 0 var(--sp-10) var(--red); }
 /* a stalled build: the row still says building and no job is running (releaseState.ts standOf) - marked, never spinning */
-.tr-rel-steps li.stall { color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); box-shadow: inset 0 calc(-1 * var(--bw-bar)) 0 var(--amber); }
+.tr-rel-steps li.stall { color: var(--amber); }
+.tr-rel-steps li.stall::after { border-color: var(--amber); background: var(--amber); }
 @keyframes tr-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .tr-rel-steps li.now.run b::after { animation: none; } }
-.tr-rel-job { margin: calc(-1 * var(--sp-6)) 0 var(--sp-10); font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); color: var(--ink-2); }
+.tr-rel-job { margin: var(--sp-6) 0 0; font: 500 var(--fs-12) var(--mono); letter-spacing: var(--ls-1); color: var(--ink-2); }
 
 .tr-rel-sim { display: flex; flex-wrap: wrap; gap: var(--sp-6) var(--sp-16); align-items: center; padding: var(--sp-8) var(--sp-10); margin-bottom: var(--sp-10); border: 1px dashed var(--amber); font-size: var(--fs-13); color: var(--ink-2); }
 .tr-rel-sim label { display: inline-flex; align-items: center; gap: var(--sp-6); cursor: pointer; color: var(--ink); }
@@ -85,6 +94,8 @@
 /* ---------------------------------------------------------------- the job log, the notes, the history */
 .tr-rel-log { height: var(--log-h); overflow: auto; padding: var(--sp-10) var(--sp-12); background: var(--term-bg); border: 1px solid var(--ink-3); font: var(--fs-13)/1.6 var(--mono); color: var(--term-ink); }
 .tr-rel-log div { white-space: pre-wrap; }
+/* no job yet: one sentence, not an empty terminal */
+.tr-rel-log:has(.idle) { height: auto; }
 .tr-rel-log i { font-style: normal; color: var(--term-dim); margin-right: var(--sp-8); }
 .tr-rel-log .ok { color: var(--term-ok); }
 .tr-rel-log .warn { color: var(--term-warn); }
