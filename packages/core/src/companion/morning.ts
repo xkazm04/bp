@@ -227,7 +227,7 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   const moved = sums.filter((s) => s.built || s.failed || s.releases || landedIn.has(s.slug)).length;
   const shipped = !landedIn.size ? 'Releases' : sums.some((s) => s.releases) ? 'Releases and landings' : 'Landed on the base branch';
   const openLine = products.length
-    ? `Overnight, ${moved ? n(moved, 'product') + ' of ' + products.length + ' moved' : 'none of your ' + n(products.length, 'product') + ' moved'}${S.built ? `: ${n(S.built, 'item')} built` : ''}${S.failed ? (S.built ? `, ${S.failed} failed` : `: ${n(S.failed, 'build')} failed`) : ''}.`
+    ? `Overnight, ${moved ? (products.length === 1 ? 'your product moved' : n(moved, 'product') + ' of ' + products.length + ' moved') : products.length === 1 ? 'your product did not move' : 'none of your ' + products.length + ' products moved'}${S.built ? `: ${n(S.built, 'item')} built` : ''}${S.failed ? (S.built ? `, ${S.failed} failed` : `: ${n(S.failed, 'build')} failed`) : ''}.`
     : 'No live products are registered, so there is nothing to brief.';
   cards.push({
     id: 'open', kind: 'open', headline: 'Good morning.', tone: 'calm',

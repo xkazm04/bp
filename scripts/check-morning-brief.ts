@@ -255,6 +255,10 @@ const words = await (async () => {
   check('only failed builds overnight: the opening line names them builds, not a bare "2 failed"', failedOnly === 'Overnight, 1 product of 2 moved: 2 builds failed.', failedOnly);
   const both = openLines(deck([product('p', [late('x', 'done'), late('y', 'failed')]), product('q', [])]))[0];
   check('control: built and failed: "1 item built, 1 failed"', both === 'Overnight, 1 product of 2 moved: 1 item built, 1 failed.', both);
+  const still = openLines(deck([product('p', [])]))[0], one = openLines(deck([product('p', [late('x', 'done')])]))[0], none = openLines(deck([product('p', []), product('q', [])]))[0];
+  check('one product, a quiet night: "your product did not move", not "none of your 1 product"', still === 'Overnight, your product did not move.', still);
+  check('one product that moved: "your product moved", not "1 product of 1"', one === 'Overnight, your product moved: 1 item built.', one);
+  check('control: two quiet products: "none of your 2 products moved"', none === 'Overnight, none of your 2 products moved.', none);
 }
 
 try { fs.rmSync(TMP, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch { /* Windows may still hold it: the OS cleans it */ }
