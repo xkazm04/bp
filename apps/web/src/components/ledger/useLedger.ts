@@ -193,7 +193,10 @@ export type LedgerScope = 'packs' | 'backlog';
 export type CompareTheme = 'light' | 'dark' | 'both';
 /** A compare screen mode: one of train/keymap.ts COMPARE_MODES (side, slider, blink, change map, changed area). */
 export type CompareMode = (typeof COMPARE_MODES)[number]['value'];
-export interface CompareView { theme: CompareTheme; mode: CompareMode }
+/** What the screens set the after against: the item's base, or (a rebuild) the previous attempt's after (compare/attempts.ts). */
+export type CompareAgainst = 'base' | 'prev';
+/** `against` is optional, base by default: a 'prev' carried to a first build shows its base pairs and is kept for the next rebuild. */
+export interface CompareView { theme: CompareTheme; mode: CompareMode; against?: CompareAgainst }
 export const EMPTY_UI: LedgerUi = {
   sel: new Set(), lens: new Set(), status: new Set(['proposed']), main: new Set(), feat: new Set(), q: '', focus: null,
   scope: 'backlog', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null, reserve: new Set(),

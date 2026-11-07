@@ -4,10 +4,13 @@
 // is evidence, taken after the change landed or was released, or an observation), with the outcome on the base branch
 // when the change is there (held / short of expected, track.ts's words). The method shows because a judged metric is
 // noisy. The standard the item was built against heads the item's own text below ("The item · <standard>"), as in A/1.
+// A rebuild adds, between Before and After, the attempt it rebuilds (compare/attempts.ts): its after figure, what the
+// triage made of it and the note that sent it back, with its commit, so the ask and both results read on one sheet.
 import { memo } from 'react';
 import type { Comparison } from '@bp/core/scan/compare';
 import { mainOutcome, type Track } from '@bp/core/scan/track';
-import type { Measurement as Reading } from '@bp/core/scan/types';
+import type { Measurement as Reading, ProposalStatus } from '@bp/core/scan/types';
+import type { Attempt } from './attempts';
 import { latestOf } from './MetricStrip';
 import './MetricStrip.css';
 
@@ -24,6 +27,23 @@ function Line({ label, m }: { label: string; m: Reading }) {
   );
 }
 
+/** What the triage made of an earlier attempt, in the line's words. */
+const DID: Partial<Record<ProposalStatus, string>> = { rework: 'reworked', accepted: 'accepted', descoped: 'descoped', failed: 'failed', released: 'released', done: 'built, not triaged' };
+
+/** The earlier attempt's line: "1 · reworked: “<note>” <sha>" (its after figure, the unit and run on hover as Line's
+ *  run, the triage, the ask). */
+function PrevLine({ a }: { a: Attempt }) {
+  const sha = short(a.sha), m = a.after;
+  return (
+    <>
+      <b>Attempt {a.n}</b>
+      <span data-role="tr-cmp-prev" title={m ? 'run ' + m.run_id + ' · ' + num(m.value) + (m.unit ? ' ' + m.unit : '') : undefined}>
+        {m ? num(m.value) : 'no reading'} · {DID[a.status] ?? a.status}{a.note ? ': “' + a.note + '”' : ''}{sha ? <> <code>{sha}</code></> : null}
+      </span>
+    </>
+  );
+}
+
 const OUTCOME = { held: 'held', short: 'short of expected', unmeasured: 'not measured since', 'no-target': 'no expected value', 'out-of-bounds': 'target out of bounds' } as const;
 
 /** The reading on main in words: "50 % on 2026-10-30 · judgement · evidence, after it landed · short of expected 100 %". */
@@ -35,7 +55,7 @@ export function mainNow(t: Track): string | null {
   return `${num(t.current)}${u} on ${t.currentAt.slice(0, 10)} · ${t.currentMethod ?? 'method not recorded'} · ${kind}${out}`;
 }
 
-export const Measurement = memo(function Measurement({ c, now }: { c: Comparison; now?: Track | null }) {
+export const Measurement = memo(function Measurement({ c, now, prev }: { c: Comparison; now?: Track | null; prev?: Attempt | null }) {
   const p = c.p, b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
   const main = now ? mainNow(now) : null;
   return (
@@ -44,6 +64,7 @@ export const Measurement = memo(function Measurement({ c, now }: { c: Comparison
       <div className="tr-met">
         <div className="evid">
           {b ? <Line label="Before" m={b} /> : <><b>Before</b><span className="dim">no reading</span></>}
+          {prev ? <PrevLine a={prev} /> : null}
           {a ? <Line label="After" m={a} /> : <><b>After</b><span className="dim">no reading{p.status === 'failed' ? ': the build did not get that far' : ''}</span></>}
           {p.metric ? <><b>Main now</b>{main ? <span data-role="tr-cmp-main">{main}</span> : <span className="dim">no current reading of {p.metric}</span>}</> : null}
         </div>

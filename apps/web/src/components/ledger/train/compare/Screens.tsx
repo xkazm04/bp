@@ -1,15 +1,18 @@
 // The compare panel's screens: the item's before/after shot pairs (compare.ts compareOf, paired by theme and size) in
 // light, dark or both, side by side, as a slider, blinking, as a change map or cropped to the changed area, with the pixel verdict above them in
 // words. The theme and the mode live in the ledger store (LedgerUi.cmp, L and M cycle them); everything else is local.
+// A rebuild (attempt_of) also offers Against: base · attempt n-1 (LedgerUi.cmp.against, compare/attempts.ts pairsFor):
+// every mode then sets the previous attempt's after beside this one's, the captions naming the two attempts.
 // Only the shown pairs mount images; the change map of each is computed once per session by useChangeMap.
 import { memo, useMemo, useRef, useState, type CSSProperties } from 'react';
 import type { Comparison, ShotPair } from '@bp/core/scan/compare';
 import type { Shot } from '@bp/core/scan/types';
 import { shotSrc } from '@bp/core/train/shots';
 import { focusCrop, pixWords } from '@bp/core/train/pixels';
-import type { CompareMode, CompareTheme, CompareView } from '../../useLedger';
+import type { CompareAgainst, CompareMode, CompareTheme, CompareView } from '../../useLedger';
 import { COMPARE_MODES } from '../keymap';
 import { Callout, Seg, type SegOption } from '../ui/Controls';
+import { hasPrevShots, pairsFor, type Attempt } from './attempts';
 import { ChangeMap } from './ChangeMap';
 import { NoCapture, ShotFigure, ShotImg } from './ShotFigure';
 import { useChangeMap, type MapState, type PairRef } from './useChangeMap';
@@ -31,6 +34,12 @@ export const pairLabel = (s: Pick<ShotPair, 'theme' | 'size'>): string => (s.the
 /** The change-map cache key of a pair (the product, then the two shot ids), or null when a side is missing. */
 export const pairKey = (slug: string | null, s: ShotPair): string | null => (s.before && s.after ? `${slug ?? 'kettle'}:${s.before.id}:${s.after.id}` : null);
 
+/** What the two sides of a pair are called: `b` / `a` in captions and alt text, `tb` / `ta` as the short tags. */
+export interface Sides { b: string; a: string; tb: string; ta: string }
+export const BASE_SIDES: Sides = { b: 'Before', a: 'After', tb: 'Before', ta: 'After' };
+/** The sides of an attempt-vs-attempt pair: attempt n's after and attempt n+1's. */
+export const attemptSides = (n: number): Sides => ({ b: `Attempt ${n} · after`, a: `Attempt ${n + 1} · after`, tb: `Attempt ${n}`, ta: `Attempt ${n + 1}` });
+
 export interface ScreensProps {
   c: Comparison;
   slug: string | null;
@@ -40,10 +49,17 @@ export interface ScreensProps {
   fname: string;
   /** The item's designed state in one sentence (its Summary's first). */
   stateLine: string;
+  /** The attempt this item rebuilds (compare/attempts.ts attemptChain's newest), or none for a first build. */
+  prev?: Attempt | null;
 }
 
-export const Screens = memo(function Screens({ c, slug, view, onView, fname, stateLine }: ScreensProps) {
-  const show = useMemo(() => shownPairs(c.shots, view.theme), [c.shots, view.theme]);
+export const Screens = memo(function Screens({ c, slug, view, onView, fname, stateLine, prev }: ScreensProps) {
+  const eff = useMemo(() => pairsFor(c, prev, view.against), [c, prev, view.against]);
+  const show = useMemo(() => shownPairs(eff.pairs, view.theme), [eff.pairs, view.theme]);
+  const sides = eff.against === 'prev' && prev ? attemptSides(prev.n) : BASE_SIDES;
+  // the choice exists only on a rebuild whose earlier attempt has screens; a first build never shows it
+  const against = useMemo((): readonly SegOption<CompareAgainst>[] | null => (hasPrevShots(prev) && c.shots.length
+    ? [{ value: 'base', label: 'base', title: 'this item’s before and after' }, { value: 'prev', label: 'attempt ' + prev.n, title: 'attempt ' + prev.n + '’s after beside this one’s' }] : null), [prev, c.shots.length]);
   const refs = useMemo(() => show.flatMap((s): PairRef[] => {
     const key = pairKey(slug, s);
     return key && s.before && s.after ? [{ key, before: shotSrc(slug, s.before), after: shotSrc(slug, s.after) }] : [];
@@ -55,6 +71,7 @@ export const Screens = memo(function Screens({ c, slug, view, onView, fname, sta
     <section className="tr-sec" data-role="tr-cmp-screens">
       <h4>Screens
         <span className="r">
+          {against ? <Seg label="Against" options={against} value={eff.against} onChange={(v) => onView({ ...view, against: v })} /> : null}
           <Seg label="Theme" options={THEMES} value={view.theme} onChange={(theme) => onView({ ...view, theme })} />
           <Seg label="Compare mode" options={MODES} value={view.mode} onChange={(mode) => onView({ ...view, mode })} />
         </span>
@@ -65,7 +82,7 @@ export const Screens = memo(function Screens({ c, slug, view, onView, fname, sta
         <>
           <PixLine show={show} maps={show.map(mapOf)} stateLine={stateLine} />
           <div className="tr-pairs">
-            {show.map((s) => <PairView key={(s.theme ?? '') + '|' + (s.size ?? '')} s={s} slug={slug} mode={view.mode} map={mapOf(s)} />)}
+            {show.map((s) => <PairView key={(s.theme ?? '') + '|' + (s.size ?? '')} s={s} slug={slug} mode={view.mode} map={mapOf(s)} sides={sides} />)}
           </div>
         </>
       )}
@@ -129,28 +146,28 @@ export const minText = (s: Shot | undefined): string | undefined => {
   return 'min text ' + (typeof v === 'number' ? v : '–') + ' px';
 };
 
-const PairView = memo(function PairView({ s, slug, mode, map }: { s: ShotPair; slug: string | null; mode: CompareMode; map: MapState | undefined }) {
+const PairView = memo(function PairView({ s, slug, mode, map, sides }: { s: ShotPair; slug: string | null; mode: CompareMode; map: MapState | undefined; sides: Sides }) {
   const label = pairLabel(s), b = s.before ? shotSrc(slug, s.before) : null, a = s.after ? shotSrc(slug, s.after) : null;
   if (mode === 'side' || !a || !b) {
     return (
       <div className="tr-pair">
-        <ShotFigure cap={'Before · ' + label} aside={minText(s.before)} asideTitle="the harness’s own text check">
-          {b ? <ShotImg src={b} alt={'Before, ' + label} /> : <NoCapture what="before" />}
+        <ShotFigure cap={sides.b + ' · ' + label} aside={minText(s.before)} asideTitle="the harness’s own text check">
+          {b ? <ShotImg src={b} alt={sides.b + ', ' + label} /> : <NoCapture what={sides.tb.toLowerCase()} />}
         </ShotFigure>
-        <ShotFigure cap={'After · ' + label} aside={minText(s.after)} asideTitle="the harness’s own text check">
-          {a ? <ShotImg src={a} alt={'After, ' + label} /> : <NoCapture what="after" />}
+        <ShotFigure cap={sides.a + ' · ' + label} aside={minText(s.after)} asideTitle="the harness’s own text check">
+          {a ? <ShotImg src={a} alt={sides.a + ', ' + label} /> : <NoCapture what={sides.ta.toLowerCase()} />}
         </ShotFigure>
       </div>
     );
   }
-  if (mode === 'slider') return <div className="tr-pair one"><Slider label={label} before={b} after={a} /></div>;
-  if (mode === 'blink') return <div className="tr-pair one"><Blink label={label} before={b} after={a} /></div>;
-  if (mode === 'focus') return <FocusPair label={label} before={b} after={a} map={map} />;
+  if (mode === 'slider') return <div className="tr-pair one"><Slider label={label} before={b} after={a} sides={sides} /></div>;
+  if (mode === 'blink') return <div className="tr-pair one"><Blink label={label} before={b} after={a} sides={sides} /></div>;
+  if (mode === 'focus') return <FocusPair label={label} before={b} after={a} map={map} sides={sides} />;
   const moved = map?.status === 'done' ? map.grid.moved.toFixed(2) + '% moved' : map?.status === 'error' ? 'failed' : 'computing…';
   return (
     <div className="tr-pair one">
-      <ShotFigure cap={'Change map · ' + label + ' · after, with changed pixels marked'} aside={moved}>
-        <ShotImg src={a} alt={'After, ' + label} className="dim" />
+      <ShotFigure cap={'Change map · ' + label + ' · ' + (sides === BASE_SIDES ? 'after' : sides.a + ' against ' + sides.tb.toLowerCase()) + ', with changed pixels marked'} aside={moved}>
+        <ShotImg src={a} alt={sides.a + ', ' + label} className="dim" />
         {/* the frame reads the same three-way status as its caption: a failed map is never "computing…" (the callout says why) */}
         {map?.status === 'done' ? <ChangeMap grid={map.grid} /> : map?.status === 'error' ? <span className="tr-map-none">no change map</span> : <span className="tr-computing">computing…</span>}
       </ShotFigure>
@@ -165,15 +182,15 @@ const boxText = (b: readonly number[]): string => `x ${b[0]}–${b[2]}, y ${b[1]
  *  each image through --fx/--fy/--fw/--fh, ShotFigure.css .tr-scr.focus), the heat cells registered over the after.
  *  Nothing moved, a map still computing or a failed one: the two whole frames and what the map says. No animation:
  *  the crop is a still layout, so reduced motion has nothing to stop. */
-export function FocusPair({ label, before, after, map }: { label: string; before: string; after: string; map: MapState | undefined }) {
+export function FocusPair({ label, before, after, map, sides = BASE_SIDES }: { label: string; before: string; after: string; map: MapState | undefined; sides?: Sides }) {
   const grid = map?.status === 'done' ? map.grid : undefined, crop = grid ? focusCrop(grid) : null;
   if (!grid || !crop || !grid.bbox) {
     return (
       <div className="tr-focus-wrap">
         <div className="tr-pair">
-          <ShotFigure cap={'Before · ' + label}><ShotImg src={before} alt={'Before, ' + label} /></ShotFigure>
-          <ShotFigure cap={'After · ' + label} aside={map?.status === 'error' ? 'failed' : grid ? 'whole screen' : 'computing…'}>
-            <ShotImg src={after} alt={'After, ' + label} />
+          <ShotFigure cap={sides.b + ' · ' + label}><ShotImg src={before} alt={sides.b + ', ' + label} /></ShotFigure>
+          <ShotFigure cap={sides.a + ' · ' + label} aside={map?.status === 'error' ? 'failed' : grid ? 'whole screen' : 'computing…'}>
+            <ShotImg src={after} alt={sides.a + ', ' + label} />
             {!map || map.status === 'computing' ? <span className="tr-computing">computing…</span> : null}
           </ShotFigure>
         </div>
@@ -189,9 +206,9 @@ export function FocusPair({ label, before, after, map }: { label: string; before
   return (
     <div className="tr-focus-wrap">
       <div className="tr-pair focus">
-        <ShotFigure cap={'Before · ' + label + ' · ' + box} aside={zoom} frame="focus">{img(before, 'Before, ' + label + ', the changed area')}</ShotFigure>
-        <ShotFigure cap={'After · ' + label + ' · changed pixels marked'} aside={zoom} frame="focus">
-          {img(after, 'After, ' + label + ', the changed area')}
+        <ShotFigure cap={sides.b + ' · ' + label + ' · ' + box} aside={zoom} frame="focus">{img(before, sides.b + ', ' + label + ', the changed area')}</ShotFigure>
+        <ShotFigure cap={sides.a + ' · ' + label + ' · changed pixels marked'} aside={zoom} frame="focus">
+          {img(after, sides.a + ', ' + label + ', the changed area')}
           <ChangeMap grid={grid} crop={crop} />
         </ShotFigure>
       </div>
@@ -201,14 +218,14 @@ export function FocusPair({ label, before, after, map }: { label: string; before
 }
 
 /** The after clipped over the before at --cut; the range input sets the variable on the frame, React never re-renders. */
-function Slider({ label, before, after }: { label: string; before: string; after: string }) {
+function Slider({ label, before, after, sides }: { label: string; before: string; after: string; sides: Sides }) {
   const frame = useRef<HTMLDivElement>(null);
   return (
-    <ShotFigure cap={'Before ◀ ' + label + ' ▶ after'} aside="drag, or ← → on the slider" frameRef={frame}>
-      <ShotImg src={before} alt={'Before, ' + label} />
-      <ShotImg src={after} alt={'After, ' + label} className="top" />
-      <span className="tr-tagb">Before</span><span className="tr-taga">After</span>
-      <input type="range" min="0" max="100" defaultValue="50" aria-label="Slider: before on the left, after on the right"
+    <ShotFigure cap={sides.tb + ' ◀ ' + label + ' ▶ ' + sides.ta.toLowerCase()} aside="drag, or ← → on the slider" frameRef={frame}>
+      <ShotImg src={before} alt={sides.b + ', ' + label} />
+      <ShotImg src={after} alt={sides.a + ', ' + label} className="top" />
+      <span className="tr-tagb">{sides.tb}</span><span className="tr-taga">{sides.ta}</span>
+      <input type="range" min="0" max="100" defaultValue="50" aria-label={'Slider: ' + sides.tb.toLowerCase() + ' on the left, ' + sides.ta.toLowerCase() + ' on the right'}
         onInput={(e) => frame.current?.style.setProperty('--cut', e.currentTarget.value + '%')} />
       <span className="tr-knob" />
     </ShotFigure>
@@ -217,18 +234,19 @@ function Slider({ label, before, after }: { label: string; before: string; after
 
 /** Before and after swapping every 0.7 s (CSS); with reduced motion, a toggle shows one or the other instead — so the
  *  rate is claimed only inside .tr-blink-a, the one element that media query hides, and never in the caption. */
-function Blink({ label, before, after }: { label: string; before: string; after: string }) {
+function Blink({ label, before, after, sides }: { label: string; before: string; after: string; sides: Sides }) {
   const [on, setOn] = useState(false);
+  const b = sides.tb.toLowerCase(), a = sides.ta.toLowerCase();
   const aside = (
     <>
-      <span className="tr-blink-a">before ⇄ after every 0.7 s: anything that jumps changed</span>
-      <button type="button" className="tr-blink-t" aria-pressed={on} onClick={() => setOn(!on)}>{on ? 'showing after · show before' : 'showing before · show after'}</button>
+      <span className="tr-blink-a">{b} ⇄ {a} every 0.7 s: anything that jumps changed</span>
+      <button type="button" className="tr-blink-t" aria-pressed={on} onClick={() => setOn(!on)}>{on ? `showing ${a} · show ${b}` : `showing ${b} · show ${a}`}</button>
     </>
   );
   return (
-    <ShotFigure cap={'Blink · ' + label} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
-      <ShotImg src={before} alt={'Before, ' + label} />
-      <ShotImg src={after} alt={'After, ' + label} className="aft" />
+    <ShotFigure cap={'Blink · ' + label + (sides === BASE_SIDES ? '' : ' · ' + sides.tb + ' ⇄ ' + a)} aside={aside} frame={'blink' + (on ? ' after-on' : '')}>
+      <ShotImg src={before} alt={sides.b + ', ' + label} />
+      <ShotImg src={after} alt={sides.a + ', ' + label} className="aft" />
     </ShotFigure>
   );
 }
