@@ -19,6 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
@@ -34,8 +35,7 @@ const K = await load<typeof import('../packages/core/src/server/kettle-sim.serve
 const A = await load<Any>('apps/web/src/lib/scan/actions.ts');
 const BF = await load<Any>('apps/web/src/components/ledger/build-forecast.ts').catch((e) => ({ missing: (e as Error).message }));
 
-let failed = 0, passed = 0;
-const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
+const H = harness('check-build-forecast');
 const j = (x: unknown) => JSON.stringify(x)?.slice(0, 400) ?? String(x);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const T = '2026-11-07T10:00:00.000Z';
@@ -66,9 +66,9 @@ fs.writeFileSync(live.rules, JSON.stringify({ version: 1, rules: [{ id: 'O-1', k
 process.chdir(dir);
 
 const route = (rel: string) => load<Any>('apps/web/src/app/api/' + rel);
-const H = { host: 'localhost:3000', 'content-type': 'application/json' };
+const HDR = { host: 'localhost:3000', 'content-type': 'application/json' };
 const call = async (fn: (req: Request, ctx: unknown) => Promise<Response>, params: object, body: unknown) => {
-  const res = await fn(new Request('http://localhost:3000/x', { method: 'POST', headers: H, body: JSON.stringify(body) }), { params: Promise.resolve(params) });
+  const res = await fn(new Request('http://localhost:3000/x', { method: 'POST', headers: HDR, body: JSON.stringify(body) }), { params: Promise.resolve(params) });
   return { status: res.status, body: await res.json() as Any };
 };
 
@@ -81,12 +81,12 @@ try {
   {
     const r0 = rows(live.store), j0 = jobsOf('live');
     const d = await call(disp, { slug: 'live' }, { ids: ['p1', 'p2', 'p3'], dry: true });
-    check('1 dry /dispatch -> 200 { dry, approve [p1], take [p1 p2], skipped [p3 declined], jobs 1 }', d.status === 200 && d.body.dry === true && j(d.body.approve) === j(['p1']) && j(d.body.take) === j(['p1', 'p2'])
-      && j(d.body.skipped) === j([{ id: 'p3', status: 'declined' }]) && d.body.jobs === 1 && !('job' in d.body), d.status + ' ' + j(d.body));
-    check('1 after the dry call p1 is still proposed and the store rows are byte-identical', status(live.store, 'p1') === 'proposed' && rows(live.store) === r0);
-    check('1 after the dry call the job registry holds no new job', jobsOf('live') === j0, jobsOf('live'));
+    H.expect(d.status === 200 && d.body.dry === true && j(d.body.approve) === j(['p1']) && j(d.body.take) === j(['p1', 'p2'])
+      && j(d.body.skipped) === j([{ id: 'p3', status: 'declined' }]) && d.body.jobs === 1 && !('job' in d.body), '1 dry /dispatch -> 200 { dry, approve [p1], take [p1 p2], skipped [p3 declined], jobs 1 }', d.status + ' ' + j(d.body));
+    H.expect(status(live.store, 'p1') === 'proposed' && rows(live.store) === r0, '1 after the dry call p1 is still proposed and the store rows are byte-identical');
+    H.expect(jobsOf('live') === j0, '1 after the dry call the job registry holds no new job', jobsOf('live'));
     const bad = await call(disp, { slug: 'live' }, { ids: ['p1'], dry: 'yes' });
-    check('1 dry that is not a boolean -> 400', bad.status === 400, bad.status + ' ' + j(bad.body));
+    H.expect(bad.status === 400, '1 dry that is not a boolean -> 400', bad.status + ' ' + j(bad.body));
   }
 
   // ---------------------------------------------------------------- 2 + 5 in-job and the full queue (product busy)
@@ -96,18 +96,18 @@ try {
     for (let i = 0; i < 3; i++) slow();
     await sleep(200);
     const ex = J.enqueueExecute('busy', busy.root, ['q2']);
-    check('2 setup: an execute job over q2 is queued', ex.ok && J.list('busy').some((x) => x.kind === 'execute' && x.status === 'queued'), jobsOf('busy'));
+    H.expect(ex.ok && J.list('busy').some((x) => x.kind === 'execute' && x.status === 'queued'), '2 setup: an execute job over q2 is queued', jobsOf('busy'));
     const r0 = rows(busy.store), j0 = jobsOf('busy');
     const d = await call(disp, { slug: 'busy' }, { ids: ['q1', 'q2'], dry: true });
-    check('2 dry with q2 built by a queued execute job -> q2 skipped in-job', d.status === 200 && j(d.body.skipped) === j([{ id: 'q2', status: 'in-job' }]) && j(d.body.take) === j(['q1']), d.status + ' ' + j(d.body));
-    check('2 nothing written (store rows, jobs)', rows(busy.store) === r0 && jobsOf('busy') === j0);
+    H.expect(d.status === 200 && j(d.body.skipped) === j([{ id: 'q2', status: 'in-job' }]) && j(d.body.take) === j(['q1']), '2 dry with q2 built by a queued execute job -> q2 skipped in-job', d.status + ' ' + j(d.body));
+    H.expect(rows(busy.store) === r0 && jobsOf('busy') === j0, '2 nothing written (store rows, jobs)');
     for (let i = 0; i < 15; i++) slow();
     const queued = J.list('busy').filter((x) => x.status === 'queued').length;
     const r1 = rows(busy.store), j1 = jobsOf('busy');
     const f = await call(disp, { slug: 'busy' }, { ids: ['q1'], dry: true });
-    check(`5 setup: ${J.MAX_QUEUED} jobs queued`, queued >= J.MAX_QUEUED, String(queued));
-    check('5 dry with a full queue -> 429 carrying the forecast', f.status === 429 && f.body.dry === true && j(f.body.approve) === j(['q1']) && typeof f.body.error === 'string', f.status + ' ' + j(f.body));
-    check('5 no finding moved to approved, no job', status(busy.store, 'q1') === 'proposed' && rows(busy.store) === r1 && jobsOf('busy') === j1);
+    H.expect(queued >= J.MAX_QUEUED, `5 setup: ${J.MAX_QUEUED} jobs queued`, String(queued));
+    H.expect(f.status === 429 && f.body.dry === true && j(f.body.approve) === j(['q1']) && typeof f.body.error === 'string', '5 dry with a full queue -> 429 carrying the forecast', f.status + ' ' + j(f.body));
+    H.expect(status(busy.store, 'q1') === 'proposed' && rows(busy.store) === r1 && jobsOf('busy') === j1, '5 no finding moved to approved, no job');
     for (const x of J.list('busy')) J.cancel('busy', x.id);
   }
 
@@ -115,23 +115,22 @@ try {
   {
     const log0 = text(live.log), r0 = rows(live.store);
     const d = await call(disp, { slug: 'live' }, { ids: ['p1', 'p5'], dry: true });
-    check('3 dry with a hold O-1 over p5 -> p5 skipped held:O-1, with held and note', d.status === 200 && d.body.skipped?.some((s: Any) => s.id === 'p5' && s.status === 'held:O-1') && Array.isArray(d.body.held) && d.body.held[0]?.id === 'p5'
-      && typeof d.body.note === 'string' && !!d.body.note && j(d.body.take) === j(['p1']), d.status + ' ' + j(d.body));
-    check('3 work/bp-rules-log.jsonl is byte-identical around the dry call', text(live.log) === log0, text(live.log).slice(0, 200));
+    H.expect(d.status === 200 && d.body.skipped?.some((s: Any) => s.id === 'p5' && s.status === 'held:O-1') && Array.isArray(d.body.held) && d.body.held[0]?.id === 'p5'
+      && typeof d.body.note === 'string' && !!d.body.note && j(d.body.take) === j(['p1']), '3 dry with a hold O-1 over p5 -> p5 skipped held:O-1, with held and note', d.status + ' ' + j(d.body));
+    H.expect(text(live.log) === log0, '3 work/bp-rules-log.jsonl is byte-identical around the dry call', text(live.log).slice(0, 200));
     const all = await call(disp, { slug: 'live' }, { ids: ['p5'], dry: true });
-    check('4 dry with every id held -> 403 refusedBy', all.status === 403 && typeof all.body.error === 'string' && all.body.order?.id === 'O-1', all.status + ' ' + j(all.body));
-    check('4 nothing written (store, held log)', text(live.log) === log0 && rows(live.store) === r0);
+    H.expect(all.status === 403 && typeof all.body.error === 'string' && all.body.order?.id === 'O-1', '4 dry with every id held -> 403 refusedBy', all.status + ' ' + j(all.body));
+    H.expect(text(live.log) === log0 && rows(live.store) === r0, '4 nothing written (store, held log)');
     const real = await call(disp, { slug: 'live' }, { ids: ['p5'] });
-    check('4 the real call answers the same 403 body', real.status === 403 && j(real.body) === j(all.body), real.status + ' ' + j(real.body));
-    check('4 (control) the real held call does log', text(live.log) !== log0);
+    H.expect(real.status === 403 && j(real.body) === j(all.body), '4 the real call answers the same 403 body', real.status + ' ' + j(real.body));
+    H.expect(text(live.log) !== log0, '4 (control) the real held call does log');
   }
 
   // ---------------------------------------------------------------- 7 parity for /dispatch
   {
     const dry = await call(disp, { slug: 'live' }, { ids: ['p1', 'p2', 'p3'], dry: true });
     const real = await call(disp, { slug: 'live' }, { ids: ['p1', 'p2', 'p3'] });
-    check('7 /dispatch: the real call after a dry one -> approved == dry.approve, the same skipped, job over dry.take',
-      real.status === 202 && j(real.body.approved) === j(dry.body.approve) && j(real.body.skipped) === j(dry.body.skipped) && j(real.body.job?.proposals) === j(dry.body.take), j(dry.body) + ' / ' + j(real.body));
+    H.expect(real.status === 202 && j(real.body.approved) === j(dry.body.approve) && j(real.body.skipped) === j(dry.body.skipped) && j(real.body.job?.proposals) === j(dry.body.take), '7 /dispatch: the real call after a dry one -> approved == dry.approve, the same skipped, job over dry.take', j(dry.body) + ' / ' + j(real.body));
   }
 
   // ---------------------------------------------------------------- 6 + 7 the wave
@@ -141,31 +140,31 @@ try {
     const w0 = text(live.waves), r0 = rows(live.store), j0 = jobsOf('live'), l0 = text(live.log);
     const d = await call(wdisp, { slug: 'live', wave: wid }, { dry: true });
     const pk = d.body.packages ?? [];
-    check('6 dry wave dispatch -> 200, one row per package { id, model, effort, approve, take, skipped, jobs }', d.status === 200 && d.body.dry === true && pk.length === 2
+    H.expect(d.status === 200 && d.body.dry === true && pk.length === 2
       && j(pk[0]) === j({ id: 'pk-1', model: 'opus', effort: 'high', approve: ['p6'], take: ['p6', 'p8'], skipped: [], jobs: 1 })
-      && j(pk[1]) === j({ id: 'pk-2', model: 'sonnet', effort: 'low', approve: ['p7'], take: ['p7'], skipped: [], jobs: 1 }) && d.body.jobs === 2, d.status + ' ' + j(d.body));
-    check('6 the wave stays a draft and bp-waves.json is byte-identical', d.body.wave?.status === 'draft' && text(live.waves) === w0);
-    check('6 nothing else written (store rows, jobs, held log)', rows(live.store) === r0 && jobsOf('live') === j0 && text(live.log) === l0);
+      && j(pk[1]) === j({ id: 'pk-2', model: 'sonnet', effort: 'low', approve: ['p7'], take: ['p7'], skipped: [], jobs: 1 }) && d.body.jobs === 2, '6 dry wave dispatch -> 200, one row per package { id, model, effort, approve, take, skipped, jobs }', d.status + ' ' + j(d.body));
+    H.expect(d.body.wave?.status === 'draft' && text(live.waves) === w0, '6 the wave stays a draft and bp-waves.json is byte-identical');
+    H.expect(rows(live.store) === r0 && jobsOf('live') === j0 && text(live.log) === l0, '6 nothing else written (store rows, jobs, held log)');
     const real = await call(wdisp, { slug: 'live', wave: wid }, {});
-    check('7 wave: the real dispatch after a dry one -> approved == dry.approve, the same skipped', real.status === 202 && j(real.body.approved) === j(d.body.approve) && j(real.body.skipped) === j(d.body.skipped) && real.body.jobs?.length === d.body.jobs,
+    H.expect(real.status === 202 && j(real.body.approved) === j(d.body.approve) && j(real.body.skipped) === j(d.body.skipped) && real.body.jobs?.length === d.body.jobs, '7 wave: the real dispatch after a dry one -> approved == dry.approve, the same skipped',
       j(real.body).slice(0, 300));
   }
 
   // ---------------------------------------------------------------- 8 the label, and Kettle's sim
   {
     const ok = typeof BF.forecastView === 'function';
-    check('8 build-forecast.ts exports forecastView', ok, BF.missing ?? Object.keys(BF).join());
+    H.expect(ok, '8 build-forecast.ts exports forecastView', BF.missing ?? Object.keys(BF).join());
     if (ok) {
       const take = Array.from({ length: 9 }, (_, i) => 'f' + i);
       const v = BF.forecastView('Dispatch', { forecast: { take, skipped: [{ id: 'h1', status: 'held:O-1' }, { id: 'h2', status: 'held:O-1' }, { id: 'b1', status: 'in-job' }] } }, 12);
-      check('8 label: Dispatch 9 · 2 held by O-1 · 1 in a job, not blocked', v.label === 'Dispatch 9 · 2 held by O-1 · 1 in a job' && v.block === false, j(v));
+      H.expect(v.label === 'Dispatch 9 · 2 held by O-1 · 1 in a job' && v.block === false, '8 label: Dispatch 9 · 2 held by O-1 · 1 in a job, not blocked', j(v));
       const e = BF.forecastView('Dispatch', { forecast: { take: [], skipped: [{ id: 'h1', status: 'held:O-1' }] } }, 1);
-      check('8 an empty take blocks', e.block === true && e.label === 'Dispatch 0 · 1 held by O-1', j(e));
+      H.expect(e.block === true && e.label === 'Dispatch 0 · 1 held by O-1', '8 an empty take blocks', j(e));
       const none = BF.forecastView('Dispatch', null, 4);
-      check('8 no forecast (yet, or it failed) -> today\'s label, not blocked', none.label === 'Dispatch 4' && none.block === false, j(none));
+      H.expect(none.label === 'Dispatch 4' && none.block === false, '8 no forecast (yet, or it failed) -> today\'s label, not blocked', j(none));
       const held = BF.forecastView('Dispatch', { refusal: { status: 403, message: 'refused: O-1', body: { held: [{ id: 'h1', order: { id: 'O-1' } }] } } }, 1);
       const full = BF.forecastView('Dispatch', { refusal: { status: 429, message: '16 jobs are already queued', body: { take: ['a', 'b'], skipped: [] } } }, 2);
-      check('8 a 403 forecast blocks as held, a 429 as queue full', held.block && held.label === 'Dispatch 0 · 1 held by O-1' && full.block && full.label === 'Dispatch 2 · queue full', j([held, full]));
+      H.expect(held.block && held.label === 'Dispatch 0 · 1 held by O-1' && full.block && full.label === 'Dispatch 2 · queue full', '8 a 403 forecast blocks as held, a 429 as queue full', j([held, full]));
     }
     const at = Date.parse(T);
     const fp = (id: string, s: string) => ({ id, run_id: 'r0', feature: 'a', lens: 'development', title: 't', standard: 'none', kind: 'fix', status: s, created_at: T, updated_at: T });
@@ -175,11 +174,11 @@ try {
       K.hostKettle({ scan: sim, swarm: null as Any });
       const j0 = JSON.stringify(sim.jobs()), s0 = JSON.stringify(sim.snapshot().proposals);
       const d = await call(disp, { slug: 'kettle' }, { ids: ['k1', 'k2', 'k3'], dry: true });
-      check('8 Kettle hosted + dry -> 200 forecast, sim jobs and findings unchanged', d.status === 200 && d.body.dry === true && j(d.body.approve) === j(['k1']) && j(d.body.take) === j(['k1', 'k2'])
-        && JSON.stringify(sim.jobs()) === j0 && JSON.stringify(sim.snapshot().proposals) === s0, d.status + ' ' + j(d.body));
+      H.expect(d.status === 200 && d.body.dry === true && j(d.body.approve) === j(['k1']) && j(d.body.take) === j(['k1', 'k2'])
+        && JSON.stringify(sim.jobs()) === j0 && JSON.stringify(sim.snapshot().proposals) === s0, '8 Kettle hosted + dry -> 200 forecast, sim jobs and findings unchanged', d.status + ' ' + j(d.body));
       const f = typeof A.forecastDispatch === 'function' ? await A.forecastDispatch({ slug: null, sim }, ['k1', 'k2']).catch((e: Error) => e) : null;
-      check('8 actions.forecastDispatch on the sim plane -> the forecast, nothing approved', !!f && f.dry === true && j(f.take) === j(['k1', 'k2']) && sim.snapshot().proposals.find((p: Any) => p.id === 'k1')?.status === 'proposed', j(f));
-      check('8 actions.ts exports forecastWave', typeof A.forecastWave === 'function');
+      H.expect(!!f && f.dry === true && j(f.take) === j(['k1', 'k2']) && sim.snapshot().proposals.find((p: Any) => p.id === 'k1')?.status === 'proposed', '8 actions.forecastDispatch on the sim plane -> the forecast, nothing approved', j(f));
+      H.expect(typeof A.forecastWave === 'function', '8 actions.ts exports forecastWave');
     } finally { K.hostKettle(undefined as Any); sim.dispose(); }
   }
 } finally {
@@ -188,5 +187,4 @@ try {
   await sleep(300);
   try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* a dying child still holds a file */ }
 }
-console.log(failed ? `check-build-forecast: ${failed} failed, ${passed} passed` : `check-build-forecast: ${passed} checks passed`);
-process.exit(failed ? 1 : 0);
+H.done({ exit: true });

@@ -52,7 +52,7 @@ const LEGACY = [
   'apps/web/src/variants/check-copies.ts', 'packages/core/check-standard.mjs', 'scripts/art/check-art-scripts.mjs',
   'scripts/art/check-art-status.mjs', 'scripts/check-aggregate-report.mjs', 'scripts/check-athena-host.mjs',
   'scripts/check-bold-decor.ts', 'scripts/check-bold-schedule.ts', 'scripts/check-bplink.mjs',
-  'scripts/check-build-admit.ts', 'scripts/check-build-forecast.ts', 'scripts/check-buildup-live.ts',
+  'scripts/check-build-admit.ts', 'scripts/check-buildup-live.ts',
   'scripts/check-channel-seam.ts', 'scripts/check-claims.ts', 'scripts/check-clear-cover.ts',
   'scripts/check-clear-path.ts', 'scripts/check-companion-brain.ts', 'scripts/check-companion-card-summary.ts',
   'scripts/check-companion-door.ts', 'scripts/check-companion-runtime.ts', 'scripts/check-companion-web.ts',
