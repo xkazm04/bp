@@ -53,11 +53,11 @@ export function StageBar({ items }: { items: readonly Finding[] }) {
 /** What a carried row needs: stable across renders, so it can sit in a memoised row's props. */
 export interface CarryApi { selected(): ReadonlySet<string>; titleOf(id: string): string; setDrag(ids: readonly string[] | null): void; place(ids: readonly string[], to: Target): void; readOnly: boolean }
 let ghost: HTMLElement | null = null;
-/** A row as a thing to carry: the whole selection if it is part of it, else itself. */
-export const carry = (api: CarryApi, id: string) => (api.readOnly ? {} : {
+/** A row as a thing to carry: the whole selection if it is part of it, else itself; `whole` names what a matrix cell holds. */
+export const carry = (api: CarryApi, id: string, whole?: readonly string[]) => (api.readOnly ? {} : {
   draggable: true,
   onDragStart(e: DragEvent) {
-    const sel = api.selected(), ids = sel.has(id) ? [...sel] : [id];
+    const sel = api.selected(), ids = whole ? [...whole] : sel.has(id) ? [...sel] : [id];
     e.dataTransfer.setData('text/plain', ids.join(' '));
     e.dataTransfer.effectAllowed = 'move';
     ghost = document.createElement('div');

@@ -195,8 +195,8 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
   // the Backlog table's focused finding (the row Triage marks focused: the focus, else the first row) has its brief docked beside it
   const briefId = !phone && !packs && lv === 'triage' ? (ui.focus && L.byId.has(ui.focus) ? ui.focus : L.rows[0]?.p.id ?? null) : null;
   const decline = async (id: string, reason: string) => { if (await L.decideOne(id, 'decline', reason)) setDeclining(null); };
-  // the wide Backlog draws its rows by lens: J/K walk them as drawn
-  const drawn = (): readonly string[] => (!phone && !packs && lv === 'triage' && root.current?.querySelectorAll ? Array.from(root.current.querySelectorAll<HTMLElement>('.sc-sheet [data-fid]')).map((e) => e.dataset.fid!) : []);
+  // the wide Backlog draws its rows by lens and the matrix by domain: J/K walk them as drawn
+  const drawn = (): readonly string[] => (!phone && (lv === 'matrix' || (!packs && lv === 'triage')) && root.current?.querySelectorAll ? Array.from(root.current.querySelectorAll<HTMLElement>('.sc-sheet [data-fid], .lg-mx [data-fid]')).map((e) => e.dataset.fid!) : []);
   const step = (d: number) => {
     const dom = drawn(), ord = dom.length ? dom : L.order(lv); if (!ord.length) return;
     const i = ui.focus ? ord.indexOf(ui.focus) : -1, j = i < 0 ? (d > 0 ? 0 : ord.length - 1) : Math.max(0, Math.min(ord.length - 1, i + d)), id = ord[j];
@@ -442,7 +442,7 @@ function Filters({ L, main, filter, menus, scopeSeg, quick }: { L: Ledger; main:
   return (
     <div className="lg-filt">
       {scopeSeg ? <Seg label="Scope" value={ui.scope} onChange={L.setScope} options={[
-        { value: 'packs', label: 'In packs ' + L.items.length, title: 'The built items of the lens packs: accept, rework, descope' },
+        { value: 'packs', label: 'Packs ' + L.items.length, title: 'The built items of the lens packs: accept, rework, descope' },
         { value: 'backlog', label: 'Backlog ' + L.all.length, title: 'Every finding of every lens: select and dispatch' },
       ]} /> : null}
       {quick ? <QuickViews L={L} /> : (

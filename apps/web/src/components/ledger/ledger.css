@@ -45,15 +45,15 @@
 .lg-page.phone .lg-top { padding: 12px 14px 10px; }
 
 /* ---------------------------------------------------------------- filters */
-.lg-filt { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
+.lg-filt { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 6px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
 .lg-qv { position: relative; display: flex; }
 .lg-qv > button { margin-left: -1px; }
 .lg-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.lg-page .lg-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.lg-page .lg-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 6px; gap: 4px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
 .lg-chip b { font-weight: 600; color: var(--ink-hi); }
 button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-chip[aria-pressed='true'] { border-color: var(--ink); color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: inset 0 -2px 0 var(--ink); }
-.lg-q { height: 26px; min-width: 140px; flex: 1 1 140px; max-width: 260px; padding: 0 8px; background: color-mix(in srgb, var(--paper-lo) 60%, transparent); border: 1px solid var(--ink-3); color: var(--ink); font: 14px var(--sans); }
+.lg-q { height: 26px; min-width: 110px; flex: 1 1 110px; max-width: 260px; padding: 0 8px; background: color-mix(in srgb, var(--paper-lo) 60%, transparent); border: 1px solid var(--ink-3); color: var(--ink); font: 14px var(--sans); }
 .lg-q::placeholder { color: var(--ink-2); }
 .lg-page .lg-x { background: none; border: 0; padding: 4px 2px; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
 .lg-x:hover { color: var(--ink-hi); }
@@ -127,7 +127,7 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-zero b { display: block; font-size: 16px; color: var(--mint-2); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
 
 /* selected and focused rows, the same in both views */
-.lg-tr.on, .lg-mx tr.on > th { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.lg-tr.on, .lg-page .lg-mx tr.on > th { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
 .lg-tr:focus-visible, .lg-mx tr:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lg-tr input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 
@@ -155,33 +155,55 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
   .lg-tr input { width: 22px; height: 22px; }
 }
 
-/* ---------------------------------------------------------------- Feature x lens matrix */
-.lg-mx-wrap { padding: 8px 18px 14px; overflow-x: auto; }
-.lg-mx { border-collapse: collapse; width: 100%; font-size: 14px; }
+/* ---------------------------------------------------------------- Feature x lens matrix: the sheet, the plan's markers */
+/* no overflow box of its own: .lg-body scrolls both ways, so the head and the feature column stay sticky to it */
+.lg-mx-wrap { min-width: max-content; }
+.lg-page.phone .lg-mx-wrap { min-width: 0; overflow-x: auto; }
+.lg-mx { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 14px; }
 .lg-mx th, .lg-mx td { border-bottom: 1px solid var(--ink-4); padding: 0; text-align: center; }
-.lg-mx thead th { position: sticky; top: 0; z-index: 1; background: var(--paper-lo); padding: 7px 6px 5px; font: 500 12px var(--mono); letter-spacing: 0.08em; color: var(--ink-2); border-bottom-color: var(--ink-3); white-space: nowrap; }
-.lg-mx thead th span { margin-left: 5px; }
-.lg-mx .lg-mf { text-align: left; min-width: 220px; }
-.lg-mx tbody th button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 6px 8px; background: none; border: 0; text-align: left; color: var(--ink); }
-.lg-mx tbody th b { font-weight: 500; color: var(--ink-hi); }
-.lg-mx tbody th span { font-size: 12px; color: var(--ink-2); }
-.lg-mx tbody th button:hover b { text-decoration: underline; text-underline-offset: 3px; }
-.lg-mc { min-width: 74px; border-left: 1px solid var(--ink-4); }
-.lg-mc.none { color: var(--ink-3); }
-.lg-page .lg-mc button { display: flex; justify-content: center; align-items: center; gap: 7px; width: 100%; min-height: 40px; padding: 4px; background: none; border: 0; font: 500 13px var(--mono); color: var(--ink); }
+.lg-mx thead th { position: sticky; top: 0; z-index: 3; height: 34px; background: var(--paper-lo); border-bottom: 3px double var(--line); font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.lg-mx .lg-mf { position: sticky; left: 0; z-index: 2; text-align: left; min-width: 200px; background: color-mix(in srgb, var(--paper-mid) 86%, var(--paper-lo)); border-right: 1px solid var(--ink-3); }
+.lg-mx thead .lg-mf { z-index: 4; padding: 0 14px; background: var(--paper-lo); }
+.lg-page .lg-mx-col { display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 34px; padding: 0 2px; letter-spacing: 0.02em; background: none; border: 0; font: inherit; color: inherit; }
+.lg-page .lg-mx-col:hover:not(:disabled) { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lg-page .lg-mx-col[aria-pressed='true'] { color: var(--ink-hi); box-shadow: inset 0 -3px 0 var(--accent); }
+.lg-mx-col b { font-weight: 600; color: var(--amber); }
+.lg-mx-pin { --ink: var(--on-ink); display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px; border-radius: 3px; background: var(--ink-2); }
+.lg-mx-sec th { text-align: left; background: color-mix(in srgb, var(--paper-mid) 92%, var(--paper-lo)); border-bottom: 1px solid var(--line); }
+.lg-mx-sec th > div { position: sticky; left: 0; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; }
+.lg-mx-sec h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-hi); white-space: nowrap; }
+.lg-mx-sec em { font: 500 12px var(--mono); font-style: normal; color: var(--ink-2); }
+.lg-page .lg-mx tbody th.lg-mf button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 5px 14px; background: none; border: 0; text-align: left; color: var(--ink); }
+.lg-mx tbody th.lg-mf b { font-weight: 500; color: var(--ink-hi); white-space: nowrap; }
+.lg-mx tbody th.lg-mf span { font: 400 12px var(--mono); color: var(--ink-2); }
+.lg-mx tbody th.lg-mf button:hover b { text-decoration: underline; text-underline-offset: 3px; }
+.lg-mx tr.act > th.lg-mf { box-shadow: inset 3px 0 0 var(--ink-hi); }
+.lg-mc { min-width: 66px; border-left: 1px solid var(--ink-4); }
+.lg-mc.none { color: var(--ink-4); }
+.lg-page .lg-mc button { position: relative; display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 3px; width: 100%; min-height: 44px; padding: 4px; background: none; border: 0; font: 600 13px var(--mono); color: var(--on-ink); }
 .lg-mc button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
-.lg-mc.on button { background: color-mix(in srgb, var(--accent) 18%, transparent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.lg-mc.on button { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 0 0 0 2px var(--accent); }
 .lg-mc.part button { box-shadow: inset 0 0 0 1px var(--accent); }
-.lg-mc span { display: inline-flex; align-items: center; gap: 2px; }
+/* a count as the plan's marker: risk by shape first, its colour after */
+.lg-mc span { display: inline-flex; align-items: center; gap: 3px; min-width: 26px; height: 24px; justify-content: center; padding: 0 4px; border-radius: 3px; }
+.lg-mc span b { font-weight: 400; font-size: 12px; }
+.lg-mc .r-high { background: var(--red); box-shadow: 0 0 10px color-mix(in srgb, var(--red) 42%, transparent); }
+.lg-mc .r-medium { background: var(--amber); box-shadow: 0 0 8px color-mix(in srgb, var(--amber) 32%, transparent); }
+.lg-mc .r-low { background: color-mix(in srgb, var(--amber) 22%, transparent); color: var(--ink-hi); outline: 1px solid var(--amber); outline-offset: -1px; }
+.lg-mc.placed span { opacity: 0.55; }
+.lg-mc-w { position: absolute; right: 3px; top: 3px; min-width: 15px; height: 15px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 600 12px/1 var(--mono); color: var(--paper-lo); background: var(--ink-hi); }
 /* In packs: each pack item's state mark (A/1 .mx td .pkm) */
-.lg-mc .lg-pkm { gap: 0; letter-spacing: 2px; color: var(--ink-hi); }
-.lg-mc .r-high b { color: var(--red-2); font-weight: 400; } .lg-mc .r-medium b { color: var(--amber-2); font-weight: 400; } .lg-mc .r-low b { color: var(--ink-2); font-weight: 400; }
-.lg-md { padding: 0 0 0 10px !important; width: 1%; white-space: nowrap; }
-.lg-md .bt { height: 28px; }
+.lg-mc .lg-pkm { gap: 3px; padding: 0; color: var(--ink-hi); }
+.lg-mc .lg-pkm i { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 3px; font-size: 14px; background: color-mix(in srgb, currentColor 12%, transparent); }
+.lg-md { position: sticky; right: 0; padding: 0 8px !important; width: 1%; white-space: nowrap; }
+.lg-md .bt { height: 26px; }
 .lg-md .lg-drill { margin-right: 6px; }
-.lg-md .lg-dsp { min-width: 112px; justify-content: center; }  /* disabled or not, the Table buttons line up */
+.lg-md .lg-dsp { min-width: 96px; justify-content: center; }  /* disabled or not, the Table buttons line up */
+/* the controls show on the row in hand, so the data outweighs them; they keep their place, and the phone has no hover to wait for */
+.lg-page:not(.phone) .lg-md > * { opacity: 0; }
+.lg-page:not(.phone) .lg-mx tr:hover .lg-md > *, .lg-page:not(.phone) .lg-mx tr.act .lg-md > *, .lg-page:not(.phone) .lg-mx tr:focus-within .lg-md > * { opacity: 1; }
 .lg-fchip span { margin-left: 2px; font-size: 14px; line-height: 1; }
-.lg-mc .lg-mvpm { color: var(--accent); font-size: 13px; }
+.lg-mc .lg-mvpm { color: var(--ink-hi); font-size: 13px; }
 
 /* ---------------------------------------------------------------- v5 (scan-finding/1): score, verdict, reserve, MVPs, trust */
 /* the Score cell: the stored score (est. / unscored in the quiet ink, never a 0), impact and confidence under it */
@@ -227,5 +249,5 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-trust-n { margin: 8px 0 0; font-size: 12px; color: var(--ink-2); }
 .lg-trust-p td.lg-trust-oc { white-space: normal; }
 .lg-trust-o li code { margin-right: 4px; }
-.lg-mx tbody tr:hover > * { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.lg-mx tbody tr:not(.lg-mx-sec):hover > td { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 

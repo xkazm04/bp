@@ -973,6 +973,9 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
      under its lens. Beside it the **dock**: every wave, always a drop target, over the focused finding's **brief**, a peek whose
      click, its ⤢ or B maximizes it into a modal (the brief at full length and the finding's own words; J/K walk on inside it, 1-9
      place, N opens it on the reason; Esc comes back to the row).
+  The matrix (`variants/Matrix.tsx`) is drawn the same way: rows in map order, ruled into sections by domain with a lettered head; a
+  cell's counts as the plan's markers, risk by shape first; a column head selects its lens and counts it; Table and Dispatch show
+  on the row in hand. In the Backlog a cell carries its open findings to the wave dock and wears the number of the draft holding them all.
 
   The matrix in packs shows each item's state mark per cell and has no Dispatch (packs are triaged).
 - **Decisions** (`train/Decide.tsx`, the one control; the decision bar and the compare footer both render it): Accept,
@@ -1065,11 +1068,13 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
   mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
   (`feature <name> ×`), a text filter (`/`).
-- **Waves on a wide window** (`backlog/bench.ts`, `backlog/Schedule.tsx WaveDock`). No composer and no Save: a drag, a slot, 1-9 or + all
+- **Waves on a wide window** (`backlog/bench.ts`, its rules in `backlog/bench-rules.ts`, held against the store's own steps by `check:wave-bench`; `backlog/Schedule.tsx WaveDock`). No composer and no Save: a drag, a slot, 1-9 or + all
   call one operation, place. The change shows at once and writes itself shortly after, losses first so the store's one-draft rule
   never refuses a move; a package or wave left empty lives only on the page until a finding lands in it. The save state is always
   in the top bar; a refusal is loud and sticky, keeps the edits and offers Try again. Undo is one step per gesture, Delete included;
-  Dispatch saves first and closes the undo history. A wave's number filters the rows to it.
+  Dispatch saves first and closes the undo history. A wave's number filters the rows to it. A draft the page never knew (a list that
+  answered late, another tab, an agent) joins the working copy, which hands back to the store soon after a save; an undo takes back
+  only what this page made, never a draft from elsewhere.
 - **Waves** (the phone; `useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `packages/core/src/scan/waves.ts`).
   In the Backlog scope a strip tops the body: `All | one tab per wave | + New wave` (a tab is the wave's state mark, name and
   finding count; the selected tab, `LedgerUi.wave`, keeps only its findings in `rows`). The dispatch bar's **Add to wave**
