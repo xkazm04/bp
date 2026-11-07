@@ -65,8 +65,8 @@ export function boundPending(was: ReadonlyMap<string, ProposalStatus>, ms: numbe
 /** The order "next waiting item" walks after a single decision (the table's visible rows), from LedgerPage. */
 export const DecideOrder = createContext<(() => readonly string[]) | null>(null);
 
-// the readings and the verdict live in the planner (plan.ts); kept importable from here for the table's facts and the checks
-export { readingsOf, verdictIn, releaseIn, type Readings } from './plan';
+// the verdict lives in the planner (plan.ts, over the one evidence index); kept importable from here for the checks
+export { verdictIn, releaseIn } from './plan';
 
 const VERB: Record<TriageResult['decision'], string> = { accepted: 'Accepted', rework: 'Sent to rework', descoped: 'Descoped', reopened: 'Back to waiting' };
 const REASON: Record<string, string> = {

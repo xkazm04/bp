@@ -7,9 +7,10 @@
 // composites rules.ts cannot see: items with a decision on its way (pending), the triage cap, and the `rebuilt`
 // refusal (another proposal is the item's next attempt, `attempt_of`: undo that one instead; the store's reason
 // `rebuilt`). It never branches on a lens id.
-import type { Measurement, Proposal, Release, TriageDecision } from '@bp/core/scan/types';
+import type { Proposal, Release, TriageDecision } from '@bp/core/scan/types';
 import { triageCapText } from '@bp/core/scan/types';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
+import { NO_EVIDENCE, readingsIndex } from '@bp/core/scan/evidence';
 import { TRIAGE_FROM, canDecide, isFlagged, noteRequired } from '@bp/core/train/rules';
 import type { TrainData } from './data';
 import type { LastDecision } from '../useLedger';
@@ -17,30 +18,11 @@ import type { LastDecision } from '../useLedger';
 /** What the planner reads of the train data. */
 export type PlanData = Pick<TrainData, 'proposals' | 'byId' | 'releases' | 'measurements' | 'lenses'>;
 
-/** Every item's before and after readings, grouped in one pass and kept per measurements array (the store hands the same
- *  array until it changes): the one source of an item's readings for the table's facts (ItemRow.tsx useItemFacts), the
- *  decision bar and the decision path. */
-export interface Readings { before: Measurement[]; after: Measurement[] }
-const READINGS = new WeakMap<readonly Measurement[], ReadonlyMap<string, Readings>>();
-export function readingsOf(ms: readonly Measurement[]): ReadonlyMap<string, Readings> {
-  let out = READINGS.get(ms);
-  if (out) return out;
-  const by = new Map<string, Readings>();
-  for (const m of ms) {
-    if (!m.proposal_id || (m.phase !== 'before' && m.phase !== 'after')) continue;
-    let e = by.get(m.proposal_id);
-    if (!e) by.set(m.proposal_id, (e = { before: [], after: [] }));
-    e[m.phase].push(m);
-  }
-  READINGS.set(ms, out = by);
-  return out;
-}
-const NO_READINGS: readonly Measurement[] = [];
-
-/** An item's verdict, from its own readings (a lookup in the grouped readings, not a scan of every measurement). */
+/** An item's verdict, from its own readings: a lookup in the one evidence index (@bp/core/scan/evidence readingsIndex,
+ *  grouped once per measurements array, the groups compareOf and the table's facts read), not a scan of every measurement. */
 export function verdictIn(T: Pick<PlanData, 'measurements' | 'lenses'>, p: Proposal): Verdict {
-  const e = readingsOf(T.measurements).get(p.id);
-  return verdictOf(p, e?.before ?? NO_READINGS, e?.after ?? NO_READINGS, T.lenses).verdict;
+  const e = readingsIndex(T.measurements).get(p.id) ?? NO_EVIDENCE;
+  return verdictOf(p, e.before, e.after, T.lenses).verdict;
 }
 export const releaseIn = (T: Pick<PlanData, 'releases'>, p: Proposal): Release | undefined => (p.release_id ? T.releases.find((r) => r.id === p.release_id) : undefined);
 
