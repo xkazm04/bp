@@ -175,6 +175,7 @@
     "check:switcher": "node scripts/check-switcher.ts",
     "check:bold-schedule": "node scripts/check-bold-schedule.ts",
     "check:build-forecast": "node scripts/check-build-forecast.ts",
+    "check:harness": "node scripts/check-harness.mjs",
     "art:status": "node scripts/art/status.mjs"
   },
   "devDependencies": {

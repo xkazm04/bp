@@ -1,9 +1,9 @@
 // Pins the one check protocol (scripts/lib/expect.ts) and the ratchet that keeps checks on it. npm run check reads two text
 // conventions from its children: a line starting FAIL is kept in the red report above the 25-line tail
 // (scripts/lib/check-report.mjs), and a line starting SKIP fails the suite (scripts/check-all.mjs). Nothing made a child
-// follow either: 129 of 147 check files carried a hand harness, and check-overlays printed its failure details indented by
-// two spaces, so a red run past 24 failure lines lost its header and its first failures (measured: a 30-failure output in
-// that shape kept neither the header nor failures 1-5). The harness prints the conventions at the source. Cases:
+// follow either: 133 of 151 check files carried a hand harness (121 after this card), and check-overlays printed its
+// failure details indented by two spaces, so a red run past 24 failure lines lost its header and its first failures
+// (measured: a 30-failure output in that shape kept neither the header nor failures 1-5). The harness prints the conventions at the source. Cases:
 //   1  expect(true) x2 + expect(false, 'c broke') -> exactly one `FAIL  c broke`, last line
 //      RESULT {"check":"x","held":2,"failed":1,"skipped":0}, exit 1
 //   2  no expectation at all -> `FAIL  x: no expectation ran`, exit 1 (a check that asserted nothing is not green)
@@ -52,11 +52,11 @@ const LEGACY = [
   'apps/web/src/variants/check-copies.ts', 'packages/core/check-standard.mjs', 'scripts/art/check-art-scripts.mjs',
   'scripts/art/check-art-status.mjs', 'scripts/check-aggregate-report.mjs', 'scripts/check-athena-host.mjs',
   'scripts/check-bold-decor.ts', 'scripts/check-bold-schedule.ts', 'scripts/check-bplink.mjs',
-  'scripts/check-build-admit.ts', 'scripts/check-buildup-live.ts', 'scripts/check-channel-seam.ts',
-  'scripts/check-claims.ts', 'scripts/check-clear-cover.ts', 'scripts/check-clear-path.ts',
-  'scripts/check-companion-brain.ts', 'scripts/check-companion-card-summary.ts', 'scripts/check-companion-door.ts',
-  'scripts/check-companion-runtime.ts', 'scripts/check-companion-web.ts', 'scripts/check-compare.ts',
-  'scripts/check-crossing.ts', 'scripts/check-decision-brief.ts', 'scripts/check-deep-link.ts',
+  'scripts/check-build-admit.ts', 'scripts/check-build-forecast.ts', 'scripts/check-buildup-live.ts',
+  'scripts/check-channel-seam.ts', 'scripts/check-claims.ts', 'scripts/check-clear-cover.ts',
+  'scripts/check-clear-path.ts', 'scripts/check-companion-brain.ts', 'scripts/check-companion-card-summary.ts',
+  'scripts/check-companion-door.ts', 'scripts/check-companion-runtime.ts', 'scripts/check-companion-web.ts',
+  'scripts/check-compare.ts', 'scripts/check-crossing.ts', 'scripts/check-decision-brief.ts', 'scripts/check-deep-link.ts',
   'scripts/check-engine-copy.ts', 'scripts/check-engine-harness.ts', 'scripts/check-engine-lines.ts',
   'scripts/check-engine-store.ts', 'scripts/check-fake-claude.mjs', 'scripts/check-fixtures.ts',
   'scripts/check-gate-helpers.mjs', 'scripts/check-job-journal.ts', 'scripts/check-kettle-host-reload.mjs',
