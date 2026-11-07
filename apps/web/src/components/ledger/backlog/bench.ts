@@ -12,14 +12,15 @@
 //   Leaving flushes (batch-undo/flush-on-teardown): closing the page never drops a place.
 // The gesture and the operation are apart (drag-drop/keyboard-alternatives): a drag, a 1-9 key and a slot button all call place().
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_EFFORT, DEFAULT_MODEL, arrange, type ArrangeBy } from '../waves/arrange';
-import { MAX_PACKAGES, type Wave, type WaveBody, type WaveEffort, type WaveModel, type WavePackage } from '@bp/core/scan/waves';
+import { arrange, type ArrangeBy } from '../waves/arrange';
+import { MAX_PACKAGES, type Wave, type WavePackage } from '@bp/core/scan/waves';
 import type { Ledger } from '../useLedger';
+import { bodyOf, foreignDrafts, newPkg, placeIn, planWrites, sig, undoTo, type Target } from './bench-rules';
+
+export type { Target } from './bench-rules';
 
 const SAVE_MS = 600, RELEASE_MS = 3000;
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'failed';
-/** Where a place lands: a wave (or 'new'), and optionally a package of it (or 'new'); `wave: null` takes findings out of every draft. */
-export interface Target { wave: string | 'new' | null; pkg?: string | 'new' }
 export interface Spot { wave: Wave; pkg: WavePackage; n: number; draft: boolean }
 
 export interface Bench {
@@ -48,10 +49,6 @@ export interface Bench {
   setDrag(ids: readonly string[] | null): void;
 }
 
-const sig = (w: Pick<Wave, 'name' | 'packages'>) => JSON.stringify([w.name, w.packages.filter((p) => p.ids.length).map((p) => [p.name, p.model, p.effort, p.ids])]);
-const hasIds = (w: Wave) => w.packages.some((p) => p.ids.length);
-const body = (w: Wave): WaveBody => ({ name: w.name.trim() || 'Wave', packages: w.packages.filter((p) => p.ids.length).map(({ name, model, effort, ids }) => ({ name: name.trim() || 'Package', model, effort, ids })) });
-const newPkg = (n: number, ids: string[] = []): WavePackage => ({ id: 'new-' + Math.random().toString(36).slice(2, 8), name: 'Package ' + n, model: DEFAULT_MODEL as WaveModel, effort: DEFAULT_EFFORT as WaveEffort, ids });
 const n1 = (n: number, one: string) => n + ' ' + one + (n === 1 ? '' : 's');
 
 export function useWaveBench(L: Ledger): Bench {
@@ -83,8 +80,7 @@ export function useWaveBench(L: Ledger): Bench {
   useEffect(() => {
     const cur = localRef.current;
     if (!cur) return;
-    const known = new Set([...cur, ...confirmed.current].map((w) => w.id));
-    const foreign = serverDrafts.filter((w) => !known.has(w.id) && !gone.current.has(w.id));
+    const foreign = foreignDrafts([...cur, ...confirmed.current], serverDrafts, gone.current);
     if (!foreign.length) return;
     confirmed.current = [...confirmed.current, ...foreign];
     setLocal([...cur, ...foreign]);
@@ -98,39 +94,25 @@ export function useWaveBench(L: Ledger): Bench {
     return () => clearTimeout(t);
   }, [local, save, serverDrafts, setLocal]);
 
-  /** Write the working copy's difference from what the store last confirmed. Losses first; a package or wave left empty is local. */
+  /** Write the working copy's difference from what the store last confirmed, in the order bench-rules.ts plans. */
   const sync = useCallback(async (): Promise<boolean> => {
-    const W = LRef.current.waves, target = (localRef.current ?? []).filter(hasIds);
-    const held = (w: Wave) => new Set(w.packages.flatMap((p) => p.ids));
-    for (const c of [...confirmed.current]) {
-      if (target.some((t) => t.id === c.id)) continue;
-      if (!(await W.remove(c.id))) return false;
-      gone.current.add(c.id);
-      confirmed.current = confirmed.current.filter((x) => x.id !== c.id);
-    }
-    // a wave that both gives and takes first gives, so a swap between two drafts is never refused as taken
-    for (const t of target) {
-      const c = confirmed.current.find((x) => x.id === t.id);
-      if (!c || sig(c) === sig(t)) continue;
-      const now = held(t), was = held(c), lost = [...was].some((id) => !now.has(id)), gained = [...now].some((id) => !was.has(id));
-      if (!lost || !gained) continue;
-      const kept = c.packages.map((p) => ({ ...p, ids: p.ids.filter((id) => now.has(id)) })).filter((p) => p.ids.length);
-      if (!kept.length) continue;
-      const r = await W.update(c.id, { packages: kept.map(({ name, model, effort, ids }) => ({ name, model, effort, ids })) });
+    const W = LRef.current.waves;
+    for (const w of planWrites(confirmed.current, localRef.current ?? [])) {
+      if (w.kind === 'remove') {
+        if (!(await W.remove(w.id))) return false;
+        gone.current.add(w.id);
+        confirmed.current = confirmed.current.filter((x) => x.id !== w.id);
+        continue;
+      }
+      const t = localRef.current?.find((x) => x.id === w.id), sent = t ? sig(t) : '';
+      const r = w.kind === 'patch' ? await W.update(w.id, w.body) : await W.create(w.body);
       if (!r) return false;
-      confirmed.current = confirmed.current.map((x) => (x.id === r.id ? r : x));
-    }
-    for (const t of target) {
-      const c = confirmed.current.find((x) => x.id === t.id);
-      if (c && sig(c) === sig(t)) continue;
-      const sent = sig(t);
-      const r = c ? await W.update(c.id, body(t)) : await W.create(body(t));
-      if (!r) return false;
-      confirmed.current = c ? confirmed.current.map((x) => (x.id === r.id ? r : x)) : [...confirmed.current, r];
-      if (r.id !== t.id) { alias.current.set(t.id, r.id); mine.current.add(r.id); }
+      confirmed.current = w.kind === 'patch' ? confirmed.current.map((x) => (x.id === r.id ? r : x)) : [...confirmed.current, r];
+      if (w.kind === 'patch' && !w.final) continue;
+      if (r.id !== w.id) { alias.current.set(w.id, r.id); mine.current.add(r.id); }
       // adopt the store's answer (its ids, and any finding a standing order held out) unless the person has moved on
       const cur = localRef.current;
-      if (cur) setLocal(cur.map((x) => (x.id !== t.id ? x : sig(x) === sent ? r : { ...x, id: r.id })));
+      if (cur) setLocal(cur.map((x) => (x.id !== w.id ? x : sig(x) === sent ? r : { ...x, id: r.id })));
     }
     return true;
   }, [setLocal]);
@@ -182,37 +164,11 @@ export function useWaveBench(L: Ledger): Bench {
     if (!LRef.current.writes) return;
     const ids = placeable(idsIn);
     if (!ids.length) { setSaid('Nothing to place: those findings are built, building or no longer open'); return; }
-    const moving = new Set(ids);
-    // out of wherever they were; a package or wave a move empties goes with it, an empty one made on purpose stays
-    let next = current().map((w) => {
-      const pks = w.packages.map((p) => (p.ids.some((i) => moving.has(i)) ? { ...p, ids: p.ids.filter((i) => !moving.has(i)), lost: true } : p));
-      const kept = pks.filter((p) => !('lost' in p) || p.ids.length).map(({ id, name, model, effort, ids: x }) => ({ id, name, model, effort, ids: x }));
-      return { ...w, packages: kept };
-    }).filter((w) => w.packages.length);
-    let where = 'out of its wave';
-    if (to.wave === 'new') {
-      const taken = new Set(LRef.current.waves.waves.map((w) => w.name).concat(next.map((w) => w.name)));
-      let k = LRef.current.waves.waves.length + 1; while (taken.has('Wave ' + k)) k++;
-      const w: Wave = { id: 'tmp-' + Math.random().toString(36).slice(2, 10), name: 'Wave ' + k, status: 'draft', created_at: new Date().toISOString(), packages: [newPkg(1, [...ids])] };
-      mine.current.add(w.id);
-      next = [...next, w];
-      where = w.name;
-    } else if (to.wave) {
-      // the target may have been emptied by this very move: it comes back
-      let w = next.find((x) => x.id === to.wave);
-      if (!w) { const was = current().find((x) => x.id === to.wave); if (!was) return; w = { ...was, packages: [] }; next = [...next, w]; }
-      const t = w;
-      let pks = t.packages;
-      if (!pks.length) pks = [newPkg(1)];
-      let pk = to.pkg === 'new' ? null : pks.find((p) => p.id === to.pkg) ?? pks[0];
-      if (!pk) {
-        if (pks.length >= MAX_PACKAGES) pk = pks[0];
-        else { pk = newPkg(pks.length + 1); pks = [...pks, pk]; }
-      }
-      const into = pk.id;
-      next = next.map((x) => (x.id === t.id ? { ...x, packages: pks.map((p) => (p.id === into ? { ...p, ids: [...p.ids, ...ids] } : p)) } : x));
-      where = t.name + (pks.length > 1 ? ' · ' + pk.name : '');
-    }
+    const server = LRef.current.waves.waves;
+    const placed = placeIn(current(), ids, to, server.map((w) => w.name), server.length, new Date().toISOString());
+    if (!placed) return;
+    const { next, where, made } = placed;
+    if (made) mine.current.add(made);
     commit(next, n1(ids.length, 'finding') + ' → ' + where);
     LRef.current.set((u) => { const s = new Set(u.sel); for (const id of ids) s.delete(id); return { ...u, sel: s }; });
   }, [commit, current, placeable]);
@@ -242,12 +198,8 @@ export function useWaveBench(L: Ledger): Bench {
     const h = history.current.pop();
     if (!h) return;
     setDepth(history.current.length);
-    // a wave created since the snapshot was taken has a store id now; a deleted one is created again by the drain. A draft that
-    // appeared since from elsewhere is not this gesture's to undo: going back to before it must not delete it.
-    const back = h.waves.map((w) => ({ ...w, id: alias.current.get(w.id) ?? w.id })), ids = new Set(back.map((w) => w.id));
-    const known = new Set([...h.known].map((id) => alias.current.get(id) ?? id));
-    const others = current().filter((w) => !ids.has(w.id) && !known.has(w.id) && !mine.current.has(w.id));
-    setLocal([...back, ...others]);
+    // a wave created since has a store id now, a deleted one the drain creates again; a draft from elsewhere stays
+    setLocal(undoTo(h.waves, h.known, current(), alias.current, mine.current));
     setSaid('Undid: ' + h.said);
     schedule();
   }, [schedule, setLocal]);

@@ -161,6 +161,7 @@
     "check:route-door": "node scripts/check-route-door.ts",
     "check:shaped-legend": "node scripts/check-shaped-legend.ts",
     "check:wave-arrange": "node scripts/check-wave-arrange.ts",
+    "check:wave-bench": "node scripts/check-wave-bench.ts",
     "check:release-preflight": "node scripts/check-release-preflight.ts",
     "check:landed": "node scripts/check-landed.ts",
     "check:on-main": "node scripts/check-on-main.ts",
