@@ -13,7 +13,8 @@ export type KeyAction =
   | 'next' | 'prev' | 'select' | 'open'
   | 'accept' | 'rework' | 'descope' | 'undo' | 'measure'
   | 'dispatch' | 'dispatchFocused' | 'approveLater' | 'decline'
-  | 'filter' | 'view1' | 'view2' | 'view3'
+  | 'filter' | 'view1' | 'view2' | 'view3' | 'stageNext' | 'stagePrev'
+  | 'place' | 'newWave' | 'unplace' | 'undoPlace' | 'brief'
   | 'theme' | 'mode' | 'wide'
   | 'build' | 'finish' | 'tag'
   | 'help' | 'escape';
@@ -27,10 +28,16 @@ const move: readonly KeyBinding[] = [
   { keys: ['k', 'ArrowUp'], action: 'prev', label: 'previous item' },
   { keys: ['x', ' '], action: 'select', label: 'select' },
 ];
+/** The stage strip's order, a step at a time: in every scope, since the Backlog gives 1-9 to its waves. */
+const stages: readonly KeyBinding[] = [
+  { keys: [']'], action: 'stageNext', label: 'next stage' },
+  { keys: ['['], action: 'stagePrev', label: 'previous stage' },
+];
 const views: readonly KeyBinding[] = [
   { keys: ['1'], action: 'view1', label: 'triage table' },
   { keys: ['2'], action: 'view2', label: 'feature × lens matrix' },
   { keys: ['3'], action: 'view3', label: 'release' },
+  ...stages,
 ];
 /** The compare panel's screen modes, in the order M cycles them: the one list LedgerPage's M, the Screens segment and
  *  this label read (useLedger.ts CompareMode derives from it). Here because this module is value-free. */
@@ -66,10 +73,16 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     // decided beside the focused row's brief (BriefDrawer), through proposals/[id]: no job is queued
     { keys: ['y'], action: 'approveLater', label: 'approve this finding for later (no build yet)', write: true },
     { keys: ['n'], action: 'decline', label: 'decline this finding, with a reason (final)', write: true },
+    // the wave bench (backlog/bench.ts): every change shows at once and saves itself
+    { keys: ['1', '2', '3', '4', '5', '6', '7', '8', '9'], action: 'place', label: 'place in that draft wave', write: true },
+    { keys: ['+', '='], action: 'newWave', label: 'start a new wave with it', write: true },
+    { keys: ['0'], action: 'unplace', label: 'take it out of its wave', write: true },
+    { keys: ['z'], action: 'undoPlace', label: 'undo the last wave change', write: true },
+    { keys: ['b'], action: 'brief', label: 'maximize the brief · again: back' },
     filter,
-    ...views,
+    ...stages,
     help,
-    { keys: ['Escape'], action: 'escape', label: 'clear the selection' },
+    { keys: ['Escape'], action: 'escape', label: 'close the brief, then clear the selection' },
   ],
   compare: [
     { keys: ['l'], action: 'theme', label: 'light · dark · both' },
@@ -108,7 +121,7 @@ export const keyName = (k: string): string => NAMES[k] ?? (k.length === 1 ? k.to
  *  dispatch buttons carry their own keys; the `?` sheet lists the rest). */
 export const SHORT: Readonly<Record<KeyScope, readonly KeyAction[]>> = {
   packs: ['next', 'select', 'open', 'help'],
-  backlog: ['next', 'select', 'open', 'help'],
+  backlog: ['next', 'select', 'place', 'brief', 'help'],
   compare: ['theme', 'mode', 'wide'],
   release: ['build', 'tag', 'finish', 'help'],
 };

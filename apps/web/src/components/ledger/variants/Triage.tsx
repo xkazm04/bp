@@ -1,5 +1,5 @@
 'use client';
-// The Backlog scope of the triage table: one dense, keyboard-first row per finding (lens, feature, title, before →
+// The phone's Backlog (a wide window has backlog/Schedule.tsx; the dispatch bar below serves both): one dense, keyboard-first row per finding (lens, feature, title, before →
 // expected, risk, size, status), open ones first and best value per effort first within a status. J/K move, Space
 // selects, D dispatches, A dispatches the focused one, Enter opens the feature; the goal is an empty Proposed list
 // ("inbox zero"). Below ~720 px a row folds into a two-line card, the phone's backlog. Its bar is the dispatch bar
@@ -108,7 +108,7 @@ export function Triage({ L }: { L: Ledger }) {
 /** The backlog's bar: what is selected, which lenses it spans, its effort, Clear (Esc), Add to wave and Dispatch (D). With
  *  nothing selected it shows the scope's key reminders (`hint`). Add to wave is off when nothing selected can go, or when
  *  every one that can already sits in a draft wave (the title says which). */
-export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
+export function DispatchBar({ L, hint, place }: { L: Ledger; hint?: ReactNode; /** Replaces Add to wave: the wide Backlog's slots (backlog/parts.tsx PlaceBar); the phone keeps the composer. */ place?: ReactNode }) {
   const n = L.ui.sel.size, m = L.ready.length;
   const spans = L.lenses.filter((l) => L.ready.some((f) => f.p.lens === l.id));
   const wm = L.waveReady.length, taken = L.waveTaken[0]?.wave.name;
@@ -130,7 +130,8 @@ export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
       {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
       <span className="lg-sp" />
       <button type="button" className="bt" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear <kbd>Esc</kbd></button>
-      {L.writes ? <button type="button" className="bt" data-wave="add" disabled={!!whyNot} onClick={() => L.openComposer()}
+      {place ?? null}
+      {L.writes && !place ? <button type="button" className="bt" data-wave="add" disabled={!!whyNot} onClick={() => L.openComposer()}
         title={whyNot ?? 'Group ' + wm + (wm === 1 ? ' finding' : ' findings') + ' into a draft wave of packages, each with its own model and effort'}>
         Add to wave{wm && wm !== m ? ' ' + wm : ''}
       </button> : null}

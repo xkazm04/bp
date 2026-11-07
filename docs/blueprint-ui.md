@@ -933,8 +933,10 @@ Rejected: a looping radar sweep (fake progress, perpetual frames) and a per-tile
 The owner's words: findings need a standalone page, a ledger of items to click and dispatch across lenses. On
 2026-10-14 the owner kept two of four prototypes, the triage table and the feature × lens matrix, as a pair; on
 2026-10-15 the release-manager contest's winner A/1 ("The Ledger, Carried Through to Release") carried the ledger on
-to the release: built pack items are triaged here, compared before and after, and shipped from a third tab. A/1's
-type, density and palette are the look (`ledger-theme.css` redefines bp's colour roles on `.lg-page`; the train's
+to the release: built pack items are triaged here, compared before and after, and shipped from its own stage. A/1's type and
+palette were the look until 2026-11-07, when the owner moved the ledger to the drawing set's own, so the plan and the ledger read
+as one drawing, and picked the Schedule of three Backlog directions (`ledger-theme.css` now holds only the font roles and the
+slider's knob; `scripts/fidelity/README.md` says what that leaves of A/1's contract; the train's
 CSS is `train/**`, prefix `tr-`, every value through the `globals.css` tokens, and `node
 scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label is the switch.
 
@@ -950,20 +952,27 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   `aria-pressed` buttons, the open (proposed) count as a 12 px badge. **L** toggles it except in a text field, a
   dialog that owns its keys, the open feature page and the morning watch.
 - **The top bar**: the title and `<product> · lens release train | sample findings, simulated execution · n findings · n
-  items in k packs`, the summary strip (changed, waiting for you, will ship: `SummaryStrip`), the three tabs (Triage
-  table 1, Feature × lens matrix 2, Release 3 with the package count), Scan selected features, Every lens (a live product), Trust, the Lenses button.
-- **Two scopes** for the table and the matrix, `In packs n | Backlog n` (`LedgerUi.scope`); a scope switch drops the
+  items in k packs`, the stage strip (Backlog, In packs, Matrix, Release with the package count; `]` and `[` walk it), the summary
+  strip (changed, waiting for you, will ship: `SummaryStrip`), the bench's save state and Undo (the Backlog), Scan selected features,
+  Every lens (a live product), Trust, the Lenses button.
+- **Two scopes** for the table and the matrix (`LedgerUi.scope`): the stage strip chooses it, and the matrix keeps a
+  `In packs n | Backlog n` switch of its own, as the phone does; a scope switch drops the
   status filter (their chips differ), and the focus and the compare panel start over.
-  1. *In packs* (`train/PackTable.tsx`): packs newest first, each a sticky pack row (lens glyph and id, branch, base
+  1. *In packs* (`train/PackTable.tsx`, drawn as the sheet: a lettered head per pack, each item's lens as the plan's pin): packs newest first, each a sticky pack row (lens glyph and id, branch, base
      commit, item count, state, SAMPLE on Kettle, one state mark per item and `n/m decided`) over its items. An item
      row: checkbox, lens, feature with the item id (and its attempt), title with its triage note, before → after with
      the metric key, the verdict (moved, flat, worse, unmeasured: `compare.ts verdictOf`), evidence (screens, a perf
      item's runs, the commit) and the state mark (`train/ui/Marks.tsx StateMark`, the one drawing of a state; ⚑ for an
      item accepted although it failed or did not move). Focused (ring), open (tint) and selected (accent bar) look
      different. A click opens the item in the compare panel; under the table sits the **decision bar**.
-  2. *Backlog* (`variants/Triage.tsx`): every finding, open first, best worth (the stored score; One score below) first within a status, an
+  2. *Backlog* (wide: `backlog/Schedule.tsx`; the phone: `variants/Triage.tsx`): every finding, open first, best worth (the stored score; One score below) first within a status, an
      "Inbox zero" note when nothing is proposed; under it the **dispatch bar** (selected, how many can go, the lenses
-     spanned, effort, Clear, Dispatch n).
+     spanned, effort, Clear, the place slots, Dispatch n). The wide form is a schedule sheet: a section per lens with the wing's
+     lettered head and stage bar, rows of a line and a half (pin, title with its tier, kind, origin and verdict marks, feature and
+     before → expected, the score as a drawn bar, risk, size, a slot per draft wave), the lens MVP's pin starred, reserve folded
+     under its lens. Beside it the **dock**: every wave, always a drop target, over the focused finding's **brief**, a peek whose
+     click, its ⤢ or B maximizes it into a modal (the brief at full length and the finding's own words; J/K walk on inside it, 1-9
+     place, N opens it on the reason; Esc comes back to the row).
 
   The matrix in packs shows each item's state mark per cell and has no Dispatch (packs are triaged).
 - **Decisions** (`train/Decide.tsx`, the one control; the decision bar and the compare footer both render it): Accept,
@@ -1026,13 +1035,14 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   shown is a key bound; the page owns them, `data-keys="own"`):
   - *In packs*: J/K or ↓/↑ move, X or Space selects, Enter compares (again: full width), A accept, R rework, S
     descope, U undo, E measures the selection now (one selection scan per lens over its items' features; a scan, so
-    BP_WRITES=off leaves it on), `/` filter, 1-3 tabs, ? the keys, Esc.
+    BP_WRITES=off leaves it on), `/` filter, 1-3 views, `]` and `[` the stages, ? the keys, Esc.
   - *Backlog*: J/K, X/Space, Enter opens the feature, D dispatches the selection, A dispatches the focused finding,
     Y approves the focused finding for later (no job queued) and N declines it with a reason (final), both beside its
-    brief (`BriefDrawer.tsx`, docked right of the table; also in the compare panel) through `POST .../proposals/<id>`
-    and the intent store; BP_WRITES=off binds and shows neither. `/`, 1-3, ?, Esc (first closes the reason editor).
+    brief (`BriefDrawer.tsx`, in the dock and its modal; also in the compare panel) through `POST .../proposals/<id>`
+    and the intent store; BP_WRITES=off binds and shows neither. 1-9 place in that draft wave, + starts one, 0 takes out of
+    a wave, Z or Ctrl+Z undoes a wave change, B maximizes the brief. `/`, `]` and `[`, ?, Esc (first closes the reason editor, then the brief).
   - *Compare* (layered over the scope it was opened from): L theme, M mode, W full width.
-  - *Release*: J/K and X/Space choose a slice before a draft, B build, T tag what landed, F finish, 1-3, ?, Esc clears the choice, then
+  - *Release*: J/K and X/Space choose a slice before a draft, B build, T tag what landed, F finish, 1-3, `]` and `[`, ?, Esc clears the choice, then
     back to triage.
 
   Esc is layered: a note being written, then full width, then the compare panel, then the selection, then (Release)
@@ -1055,7 +1065,12 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   and the Lenses panel and the plan's right-click read the selection (`useLedgerSelection()`). Status chips (state
   mark and count), lens chips (glyph, short, count in the scope), a feature chip from the matrix's **Table**
   (`feature <name> ×`), a text filter (`/`).
-- **Waves** (`useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `packages/core/src/scan/waves.ts`).
+- **Waves on a wide window** (`backlog/bench.ts`, `backlog/Schedule.tsx WaveDock`). No composer and no Save: a drag, a slot, 1-9 or + all
+  call one operation, place. The change shows at once and writes itself shortly after, losses first so the store's one-draft rule
+  never refuses a move; a package or wave left empty lives only on the page until a finding lands in it. The save state is always
+  in the top bar; a refusal is loud and sticky, keeps the edits and offers Try again. Undo is one step per gesture, Delete included;
+  Dispatch saves first and closes the undo history. A wave's number filters the rows to it.
+- **Waves** (the phone; `useWaves.ts`, `waves/WavesBar.tsx`, `waves/WaveComposer.tsx`, `waves/waves.css`; contract `packages/core/src/scan/waves.ts`).
   In the Backlog scope a strip tops the body: `All | one tab per wave | + New wave` (a tab is the wave's state mark, name and
   finding count; the selected tab, `LedgerUi.wave`, keeps only its findings in `rows`). The dispatch bar's **Add to wave**
   (beside Dispatch, which stays the direct path) opens the inline composer (`LedgerUi.composer`, not a modal) over the
@@ -1131,8 +1146,9 @@ scripts/check-train-quality.mjs` enforces it). The header's "drawing set" label 
   effort ÷d, risk factor, the formula; band and MVP), `impact_why`, the predicted verdict with its precedent and who
   predicted it when, and a built change's proof (metric before → after with the unit and method, the verdict, and whether
   a red control proved the gate bites).
-- **The Lenses slot.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` (a side column) as nodes;
-  `LensesButton` and `LensesPanel` plug in there (below).
+- **The Lenses station.** `LedgerPage` takes `lensButton` (top bar) and `lensPanel` as nodes;
+  `LensesButton` and `LensesPanel` plug in there (below). While open the station holds the whole sheet: the lenses ruled as a
+  schedule, the onboarding chat docked beside them; Esc gives the stage back.
 - **Lens chip menus** (2026-10-14). Each lens chip has a disclosure (▾): **Scan this lens · everything**, **Scan
   selection**, **Execute backlog (n)** (it asks "Approve and build n findings in k jobs?" first) and **Open in Lenses
   panel**. An item that cannot run stays focusable and says why. Esc or a click outside closes it, the arrows move

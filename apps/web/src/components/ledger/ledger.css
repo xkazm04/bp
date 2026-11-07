@@ -1,14 +1,24 @@
 /* The findings ledger's page shell (src/components/ledger/*: the frame, tabs, filters, lens menus, body, bar and the
    Triage and Matrix variants). Tokens only, both themes; nothing under 12 px, body 14 px. Lenses differ here by glyph
-   and short name, never by colour; status and risk carry a shape mark before any colour. The page frame, tabs, chips,
-   filter and bar carry the contest winner A/1's values (release-manager; its In packs table, marks and decision
-   controls are train/**'s own CSS); the state mark is train/ui (StateMark). The header's page switch
+   and short name, never by colour; status and risk carry a shape mark before any colour. The frame is the drawing set's sheet:
+   its grid, its double wall, its type (ledger-theme.css); In packs, its marks and decision controls are train/**'s own CSS,
+   the Backlog's schedule backlog/backlog.css; the state mark is train/ui (StateMark). The header's page switch
    ("drawing set | findings ledger") and the phone's title line are NOT here: they are in the first-load stylesheet
    src/components/page-switch.css, so this file can load with the ledger's own chunk. */
 
 /* ---------------------------------------------------------------- the page */
-.lg-page { position: absolute; left: 14px; right: 14px; top: calc(var(--hdr-top) + var(--hdr-h) + 8px); bottom: 8px; z-index: 20; display: flex; flex-direction: column; min-width: 0;
-  background: linear-gradient(170deg, var(--sheet-a), var(--sheet-b) 60%, var(--sheet-c)); border: 1px solid var(--ink-3); box-shadow: 0 24px 70px var(--shadow); font-size: 14px; line-height: 1.4; color: var(--ink); }
+.lg-page { position: absolute; left: 14px; right: 14px; top: calc(var(--hdr-top) + var(--hdr-h) + 8px); bottom: 8px; z-index: 20; display: flex; flex-direction: column; min-width: 0; font-size: 14px; line-height: 1.4; color: var(--ink);
+  background-color: var(--paper-lo);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--ink) 2.5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 2.5%, transparent) 1px, transparent 1px),
+    radial-gradient(ellipse 90% 80% at 50% 40%, var(--paper-hi), var(--paper-mid) 55%, var(--paper-lo));
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px, 100% 100%;
+  border: 3px double var(--line); box-shadow: 0 0 0 1px var(--ink-4), 0 0 44px color-mix(in srgb, var(--accent) 16%, transparent), 0 24px 70px var(--shadow); }
+/* the plan's floating controls have nothing to say over the sheet, and they cover its rows: they stay on the plan */
+.bp:has(.lg-page:not(.phone)) #mw-launch, .bp:has(.lg-page:not(.phone)) #fx, .bp:has(.lg-page:not(.phone)) .cp-host { display: none; }
 .lg-page:focus { outline: none; }
 .lg-page:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lg-page.phone { position: relative; inset: auto; z-index: auto; margin: 6px 0 12px; box-shadow: none; }
@@ -16,25 +26,34 @@
 .lg-page kbd { font: 500 12px/1 var(--mono); padding: 1px 4px; border: 1px solid var(--ink-3); color: inherit; opacity: 0.85; margin-left: 6px; border-radius: 2px; }
 .lg-page button:disabled { opacity: 0.5; cursor: default; }
 
-.lg-top { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; padding: 12px 18px 10px; border-bottom: 1px solid var(--ink-3); }
-.lg-h { display: flex; flex-direction: column; gap: 2px; min-width: 0; margin-right: auto; }
-.lg-h h2 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-hi); line-height: 1.1; }
-.lg-prod { font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
-.lg-tabs { display: flex; flex-wrap: wrap; border: 1px solid var(--ink-3); background: var(--panel); }
-.lg-tabs button { position: relative; display: inline-flex; align-items: center; height: 34px; padding: 0 12px; background: none; border: 0; border-right: 1px solid var(--ink-4); font-size: 14px; color: var(--ink-2); white-space: nowrap; }
-.lg-tabs button:last-child { border-right: 0; }
-.lg-tabs button:hover { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 9%, transparent); }
-.lg-tabs button.on { color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: inset 0 -3px 0 var(--ink); }
+.lg-top { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 72%, transparent); }
+.lg-h { display: flex; flex-direction: column; min-width: 0; }
+.lg-h h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-hi); line-height: 1.1; white-space: nowrap; }
+.lg-prod { font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 250px; }
+.lg-page.phone .lg-prod { white-space: normal; max-width: none; }
+.lg-tabs { display: flex; flex-wrap: wrap; border: 1px solid var(--ink-3); background: color-mix(in srgb, var(--paper-lo) 60%, transparent); }
+.lg-page .lg-tabs button { position: relative; display: inline-flex; align-items: center; gap: 5px; height: 32px; padding: 0 10px; background: none; border: 0; border-right: 1px solid var(--ink-4); font-size: 14px; color: var(--ink-2); white-space: nowrap; }
+.lg-page .lg-tabs button:last-child { border-right: 0; }
+.lg-page .lg-tabs button b { font: 600 12px var(--mono); }
+.lg-page .lg-tabs button:hover { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.lg-page .lg-tabs button.on { color: var(--ink-hi); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 0 -3px 0 var(--accent); }
 .lg-slot { display: flex; align-items: center; }
+.lg-top .tr-sum { background: none; }
+.lg-top .tr-sum button { min-width: 0; padding: 1px 8px 2px; }
+.lg-top .tr-sum strong { font-size: 15px; }
+.lg-top .tr-sum strong em { font-size: 12px; }
+.lg-page.phone .lg-top { padding: 12px 14px 10px; }
 
 /* ---------------------------------------------------------------- filters */
-.lg-filt { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 18px; border-bottom: 1px solid var(--ink-4); }
+.lg-filt { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
+.lg-qv { position: relative; display: flex; }
+.lg-qv > button { margin-left: -1px; }
 .lg-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.lg-page .lg-chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 9px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.lg-page .lg-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; background: none; border: 1px solid var(--ink-4); font: 500 12px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
 .lg-chip b { font-weight: 600; color: var(--ink-hi); }
 button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-chip[aria-pressed='true'] { border-color: var(--ink); color: var(--ink-hi); background: color-mix(in srgb, var(--ink) 14%, transparent); box-shadow: inset 0 -2px 0 var(--ink); }
-.lg-q { height: 28px; min-width: 180px; flex: 1 1 180px; max-width: 300px; padding: 0 9px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 14px var(--sans); }
+.lg-q { height: 26px; min-width: 140px; flex: 1 1 140px; max-width: 260px; padding: 0 8px; background: color-mix(in srgb, var(--paper-lo) 60%, transparent); border: 1px solid var(--ink-3); color: var(--ink); font: 14px var(--sans); }
 .lg-q::placeholder { color: var(--ink-2); }
 .lg-page .lg-x { background: none; border: 0; padding: 4px 2px; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; }
 .lg-x:hover { color: var(--ink-hi); }
@@ -72,7 +91,7 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-page.phone .lg-body { overflow: visible; }
 /* the compare panel at full width: the table hides behind it (Esc or W gives it back) */
 .lg-page.wide .lg-body { display: none; }
-.lg-side { flex: none; max-width: 420px; overflow: auto; border-left: 1px solid var(--ink-3); background: var(--card); }
+.lg-side { flex: 1; min-width: 0; overflow: hidden; }
 /* the focused finding's brief (BriefDrawer.tsx), docked right of the Backlog table */
 .lg-brief { flex: none; width: clamp(280px, 28%, 400px); overflow: auto; padding: 10px 12px; border-left: 1px solid var(--ink-3); background: var(--card); font-size: 13px; }
 .lg-brief h4, .tr-brief h4 { margin: 0 0 6px; font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
@@ -84,13 +103,13 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-brief-d textarea { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--card-hi); border: 1px solid var(--ink-3); padding: 4px 6px; resize: vertical; }
 .lg-side:empty { display: none; }
 
-.lg-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 8px 18px; border-top: 1px solid var(--ink-3); background: var(--card-hi); min-height: 52px; font-size: 14px; }
+.lg-bar { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 6px 14px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 80%, transparent); min-height: 52px; font-size: 14px; }
 .lg-bar-n { font-weight: 600; color: var(--ink-hi); }
 .lg-bar-l { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
 .lg-bar-e { font: 500 12px var(--mono); color: var(--ink-2); letter-spacing: 0.04em; }
 .lg-sp { flex: 1; }
 .lg-bar .bt { height: 32px; }
-.lg-page.phone .lg-bar { position: sticky; bottom: 0; z-index: 3; }
+.lg-page.phone .lg-bar { padding: 8px 14px; background: var(--card-hi); position: sticky; bottom: 0; z-index: 3; }
 .lg-page.phone .lg-bar .bt { height: 44px; }
 
 /* ---------------------------------------------------------------- shared row parts */
@@ -140,7 +159,7 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-mx-wrap { padding: 8px 18px 14px; overflow-x: auto; }
 .lg-mx { border-collapse: collapse; width: 100%; font-size: 14px; }
 .lg-mx th, .lg-mx td { border-bottom: 1px solid var(--ink-4); padding: 0; text-align: center; }
-.lg-mx thead th { position: sticky; top: 0; z-index: 1; background: var(--card-hi); padding: 7px 6px 5px; font: 500 12px var(--mono); letter-spacing: 0.08em; color: var(--ink-2); border-bottom-color: var(--ink-3); white-space: nowrap; }
+.lg-mx thead th { position: sticky; top: 0; z-index: 1; background: var(--paper-lo); padding: 7px 6px 5px; font: 500 12px var(--mono); letter-spacing: 0.08em; color: var(--ink-2); border-bottom-color: var(--ink-3); white-space: nowrap; }
 .lg-mx thead th span { margin-left: 5px; }
 .lg-mx .lg-mf { text-align: left; min-width: 220px; }
 .lg-mx tbody th button { display: flex; flex-direction: column; align-items: flex-start; width: 100%; padding: 6px 8px; background: none; border: 0; text-align: left; color: var(--ink); }

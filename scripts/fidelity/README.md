@@ -14,6 +14,13 @@ and its named interactions in a browser (the contest skill's promotion step, `re
 | `contract.py` | runs the contest's `style-contract.py` per scene, with one change: a bp page loads to `domcontentloaded` (bp never reaches `networkidle`: the live stream is a held EventSource) |
 | `drive.py` | the interactions, asserting on what the product writes: J/K, X, A, R with a note, U, the slider drag, L, M, Esc in layers on Kettle; read-only navigation on Athena |
 
+## Standing since 2026-11-07
+
+The owner moved the ledger to the drawing set's palette and type and replaced the wide Backlog with the Schedule, a ruling, not a
+deviation: the colours, fonts and the top bar this contract measures no longer describe the page. Its roles still name real markup
+(`check:fidelity-roles` holds that), and `drive.py`'s interactions still say what the keys do. Re-capture or retire the contract
+before reading its deviations as defects.
+
 ## Re-run
 
 ```

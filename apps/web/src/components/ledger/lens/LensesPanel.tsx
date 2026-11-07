@@ -1,6 +1,6 @@
 'use client';
-// The Lenses panel on the findings ledger: a button that opens a side panel listing every lens of the product
-// (built-in, project and temporary, in the map's order) with what can be done to each, above the onboarding chat
+// The Lenses station on the findings ledger: a button that gives the sheet to a schedule of every lens of the product
+// (built-in, project and temporary, in the map's order) with what can be done to each, beside the onboarding chat
 // with Claude (LensChat). The two exports are placed independently (the ledger's slots), so whether the panel is open,
 // and which row to bring into view, is a tiny module store here, not either component's state.
 //
@@ -44,6 +44,8 @@ export function setLensesPanelOpen(v: boolean, lens: string | null = null) {
 }
 const focused = () => { if (!st.lens) return; st = { ...st, lens: null }; for (const f of [...subs]) f(); };
 function usePanel() { return useSyncExternalStore(subscribe, get, () => CLOSED); }
+/** Whether the Lenses station holds the sheet (the page gives it the whole of it while it does). */
+export const useLensesOpen = (): boolean => usePanel().open;
 
 /** "Lenses" (+ how many the product has); opens the panel. */
 export function LensesButton() {
@@ -119,6 +121,7 @@ function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly 
             {' · '}{stat.open ? `${stat.open} open ${stat.open === 1 ? 'finding' : 'findings'}` : 'no open findings'}
             {day(r.created_at) ? ' · created ' + day(r.created_at) : ''}
           </small>
+          {d && all ? <span className="tl-meter" aria-hidden="true"><i style={{ width: (measured / Math.max(1, all - na)) * 100 + '%' }} /></span> : null}
         </div>
       </div>
       {m.description ? <p className="tl-row-d">{m.description}</p> : null}
@@ -153,7 +156,7 @@ function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly 
 }
 
 // -------------------------------------------------------------------------------------- the panel
-/** The side panel over the ledger: every lens of the product, then the chat that onboards a new one. */
+/** The station over the ledger's sheet: every lens of the product, beside the chat that onboards a new one. */
 export function LensesPanel() {
   const on = usePanel().open;
   return <AnimatePresence>{on && <Panel key="tl" />}</AnimatePresence>;

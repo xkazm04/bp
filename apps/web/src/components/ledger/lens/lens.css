@@ -1,6 +1,6 @@
 /* The Lenses panel on the findings ledger (LensesPanel, LensChat, DraftCard). Tokens only; 12 px floor, body 14 px.
-   The panel is in the flow of the ledger's side slot (LedgerPage's `.lg-side`, which draws the left rule and the card
-   background and is hidden while the panel is closed): it takes the slot's full height and scrolls inside itself. */
+   A station: while open it holds the ledger's whole sheet (LedgerPage's `.lg-side`, hidden while closed), the lenses ruled as a
+   schedule on the left and the onboarding chat docked on the right, each scrolling inside itself. */
 
 /* ---------- the opener */
 .tl-open { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 13px var(--sans); letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
@@ -8,11 +8,13 @@
 .tl-open .n { min-width: 18px; height: 18px; padding: 0 4px; border: 1px solid var(--ink-3); font: 600 12px/16px var(--mono); text-align: center; color: var(--ink-hi); }
 
 /* ---------- the panel */
-.tl-panel { position: relative; display: flex; flex-direction: column; width: 380px; max-width: 100%; height: 100%; min-height: 0; box-sizing: border-box; background: var(--card); color: var(--ink); font-size: 14px; outline: none; }
-.tl-h { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--ink-3); }
+.tl-panel { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; box-sizing: border-box; outline: none; }
+.tl-h { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
 .tl-h h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--ink-hi); }
-.tl-b { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
-.tl-sec { display: flex; justify-content: space-between; gap: 8px; margin: 0; padding: 10px 12px 6px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border-top: 1px solid var(--ink-4); }
+.tl-b { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) clamp(350px, 28vw, 460px); }
+.tl-b > section { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--ink-3) transparent; }
+.tl-b > section + section { border-left: 3px double var(--line); background: color-mix(in srgb, var(--paper-lo) 50%, transparent); }
+.tl-sec { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 8px; margin: 0; padding: 7px 14px 6px; background: var(--paper-lo); font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); border-top: 1px solid var(--ink-4); }
 .tl-b > section:first-child .tl-sec { border-top: 0; }
 .tl-note { margin: 0; padding: 4px 12px 12px; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
 
@@ -25,7 +27,7 @@
 .tl-bt[aria-disabled='true']:hover { border-color: var(--ink-3); color: var(--ink); }
 .tl-bt.go { border-color: var(--accent); color: var(--ink-hi); }
 .tl-bt.bad { border-color: var(--red); color: var(--red-2); }
-.tl-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 8px; }
+.tl-acts { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
 .tl-ask span { flex: 1 1 100%; font-size: 13px; color: var(--ink-hi); }
 .tl-err { margin: 8px 0 0; padding: 6px 8px; border-left: 3px solid var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red-2); font-size: 13px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .tl-short { margin-left: 6px; padding: 0 4px; border: 1px solid var(--ink-3); font: 500 12px/16px var(--mono); color: var(--ink-2); }
@@ -33,18 +35,25 @@
 
 /* ---------- the list */
 .tl-list { margin: 0; padding: 0; list-style: none; }
-.tl-row { padding: 9px 12px 10px; border-bottom: 1px solid var(--ink-4); }
+.tl-row { display: grid; grid-template-columns: minmax(280px, 1.1fr) minmax(220px, 1.2fr) minmax(250px, auto); gap: 4px 18px; align-items: start; padding: 10px 14px; border-bottom: 1px solid var(--ink-4); }
+.tl-row:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.tl-row > .tl-note, .tl-row > .tl-err { grid-column: 1 / -1; }
+.tl-meter { display: block; width: 180px; max-width: 100%; height: 4px; margin-top: 5px; background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.tl-meter i { display: block; height: 100%; background: var(--accent); }
+@media (max-width: 1280px) { .tl-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .tl-row > .tl-acts { grid-column: 1 / -1; } }
 .tl-row-h { display: flex; gap: 9px; align-items: flex-start; }
 .tl-row-h .tl-gl { margin-top: 2px; }
 .tl-row-t { min-width: 0; }
 .tl-row-t b { font-size: 15px; font-weight: 600; color: var(--ink-hi); }
 .tl-row-t small { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-2); letter-spacing: 0.02em; }
 .tl-row .st.off { color: var(--amber-2); }
-.tl-row-d { margin: 5px 0 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); overflow-wrap: anywhere; }
+.tl-row-d { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); overflow-wrap: anywhere; }
 .tl-row.off .tl-row-t b, .tl-row.off .tl-gl { opacity: 0.6; }
 .tl-row:focus { outline: none; }
 .tl-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.tl-look { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 3px; margin-top: 2px; }
+.tl-look { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 4px; margin-top: 2px; }
+.tl-look .tl-gl { --ink: var(--on-ink); box-sizing: content-box; padding: 4px; border-radius: 4px; background: var(--amber); box-shadow: 0 0 10px color-mix(in srgb, var(--amber) 36%, transparent); }
+.tl-row.off .tl-look .tl-gl { background: var(--ink-3); box-shadow: none; }
 .tl-kind { margin-left: 6px; padding: 0 4px; border: 1px dashed var(--ink-3); font: 500 12px/16px var(--mono); letter-spacing: 0.04em; color: var(--ink-2); white-space: nowrap; cursor: help; }
 .tl-kind.k-builtin { border-style: solid; }
 .tl-note.in { padding: 6px 0 0; font-size: 13px; }

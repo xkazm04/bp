@@ -1,6 +1,6 @@
 'use client';
-// The bench: the one operation every lab direction calls, "these findings go there". It is what makes wave work seamless, and
-// it is deliberately the same under all three looks, so the experiment compares layouts and not save behaviour.
+// The bench: the one operation the Backlog's wave work goes through, "these findings go there". It replaced the wave composer
+// on a wide window (the phone keeps waves/WaveComposer.tsx).
 //   No composer, no Create, no Save. A place is shown at once and written shortly after (draft-editing/debounced-save-groups):
 //   the draft waves are held locally, edits coalesce for SAVE_MS, and one drain writes the difference. Its state is always
 //   on screen; a failure is loud and sticky, keeps the edits and offers a retry.
@@ -16,7 +16,7 @@ import { DEFAULT_EFFORT, DEFAULT_MODEL, arrange, type ArrangeBy } from '../waves
 import { MAX_PACKAGES, type Wave, type WaveBody, type WaveEffort, type WaveModel, type WavePackage } from '@bp/core/scan/waves';
 import type { Ledger } from '../useLedger';
 
-const SAVE_MS = 600;
+const SAVE_MS = 600, RELEASE_MS = 3000;
 export type SaveState = 'saved' | 'dirty' | 'saving' | 'failed';
 /** Where a place lands: a wave (or 'new'), and optionally a package of it (or 'new'); `wave: null` takes findings out of every draft. */
 export interface Target { wave: string | 'new' | null; pkg?: string | 'new' }
@@ -49,7 +49,6 @@ export interface Bench {
 }
 
 const sig = (w: Pick<Wave, 'name' | 'packages'>) => JSON.stringify([w.name, w.packages.filter((p) => p.ids.length).map((p) => [p.name, p.model, p.effort, p.ids])]);
-const sigAll = (ws: readonly Wave[]) => ws.filter(hasIds).map((w) => w.id + sig(w)).sort().join('\n');
 const hasIds = (w: Wave) => w.packages.some((p) => p.ids.length);
 const body = (w: Wave): WaveBody => ({ name: w.name.trim() || 'Wave', packages: w.packages.filter((p) => p.ids.length).map(({ name, model, effort, ids }) => ({ name: name.trim() || 'Package', model, effort, ids })) });
 const newPkg = (n: number, ids: string[] = []): WavePackage => ({ id: 'new-' + Math.random().toString(36).slice(2, 8), name: 'Package ' + n, model: DEFAULT_MODEL as WaveModel, effort: DEFAULT_EFFORT as WaveEffort, ids });
@@ -68,17 +67,35 @@ export function useWaveBench(L: Ledger): Bench {
   const localRef = useRef<Wave[] | null>(null);
   const setLocal = useCallback((w: Wave[] | null) => { localRef.current = w; setLocalState(w); }, []);
   const confirmed = useRef<Wave[]>(serverDrafts);
-  const history = useRef<{ waves: Wave[]; said: string; group?: string }[]>([]);
+  const history = useRef<{ waves: Wave[]; said: string; group?: string; known: ReadonlySet<string> }[]>([]);
+  /** Waves this bench created: the only ones an undo may take away by going back to before them. */
+  const mine = useRef(new Set<string>());
   const alias = useRef(new Map<string, string>());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inflight = useRef<Promise<boolean> | null>(null);
   const again = useRef(false);
+  const gone = useRef(new Set<string>());
 
   // the store's drafts are the truth whenever nothing is held here
   useEffect(() => { if (!local) confirmed.current = serverDrafts; }, [local, serverDrafts]);
-  // let go of the working copy once the store shows exactly what it holds: from there on the store's refreshes read through
+  // a draft this copy never knew of (the list answered after the first place, another tab, an agent) joins it: not knowing a wave
+  // must never read as having deleted it. The ones deleted here are remembered, so a list still in flight cannot bring them back.
   useEffect(() => {
-    if (local && save === 'saved' && local.every((w) => w.packages.every((p) => p.ids.length)) && sigAll(serverDrafts) === sigAll(local)) setLocal(null);
+    const cur = localRef.current;
+    if (!cur) return;
+    const known = new Set([...cur, ...confirmed.current].map((w) => w.id));
+    const foreign = serverDrafts.filter((w) => !known.has(w.id) && !gone.current.has(w.id));
+    if (!foreign.length) return;
+    confirmed.current = [...confirmed.current, ...foreign];
+    setLocal([...cur, ...foreign]);
+  }, [serverDrafts, setLocal]);
+  // let go of the working copy once the store shows what it holds, and in any case soon after the last save, so a change made
+  // elsewhere reads through. An empty package exists only here, so it holds the copy until a finding lands in it.
+  useEffect(() => {
+    if (!local || save !== 'saved' || !local.every((w) => w.packages.every((p) => p.ids.length))) return;
+    if (local.every((w) => serverDrafts.some((x) => x.id === w.id && sig(x) === sig(w)))) { setLocal(null); return; }
+    const t = setTimeout(() => setLocal(null), RELEASE_MS);
+    return () => clearTimeout(t);
   }, [local, save, serverDrafts, setLocal]);
 
   /** Write the working copy's difference from what the store last confirmed. Losses first; a package or wave left empty is local. */
@@ -88,6 +105,7 @@ export function useWaveBench(L: Ledger): Bench {
     for (const c of [...confirmed.current]) {
       if (target.some((t) => t.id === c.id)) continue;
       if (!(await W.remove(c.id))) return false;
+      gone.current.add(c.id);
       confirmed.current = confirmed.current.filter((x) => x.id !== c.id);
     }
     // a wave that both gives and takes first gives, so a swap between two drafts is never refused as taken
@@ -109,7 +127,7 @@ export function useWaveBench(L: Ledger): Bench {
       const r = c ? await W.update(c.id, body(t)) : await W.create(body(t));
       if (!r) return false;
       confirmed.current = c ? confirmed.current.map((x) => (x.id === r.id ? r : x)) : [...confirmed.current, r];
-      if (r.id !== t.id) alias.current.set(t.id, r.id);
+      if (r.id !== t.id) { alias.current.set(t.id, r.id); mine.current.add(r.id); }
       // adopt the store's answer (its ids, and any finding a standing order held out) unless the person has moved on
       const cur = localRef.current;
       if (cur) setLocal(cur.map((x) => (x.id !== t.id ? x : sig(x) === sent ? r : { ...x, id: r.id })));
@@ -149,7 +167,7 @@ export function useWaveBench(L: Ledger): Bench {
   /** One gesture: remember the state before it (`group` merges with the gesture before, as typing one name), then apply. */
   const commit = useCallback((next: Wave[], what: string, group?: string) => {
     const last = history.current[history.current.length - 1];
-    if (!group || last?.group !== group) { history.current.push({ waves: current(), said: what, group }); if (history.current.length > 50) history.current.shift(); setDepth(history.current.length); }
+    if (!group || last?.group !== group) { const was = current(); history.current.push({ waves: was, said: what, group, known: new Set(was.map((w) => w.id)) }); if (history.current.length > 50) history.current.shift(); setDepth(history.current.length); }
     setLocal(next);
     setSaid(what);
     schedule();
@@ -176,6 +194,7 @@ export function useWaveBench(L: Ledger): Bench {
       const taken = new Set(LRef.current.waves.waves.map((w) => w.name).concat(next.map((w) => w.name)));
       let k = LRef.current.waves.waves.length + 1; while (taken.has('Wave ' + k)) k++;
       const w: Wave = { id: 'tmp-' + Math.random().toString(36).slice(2, 10), name: 'Wave ' + k, status: 'draft', created_at: new Date().toISOString(), packages: [newPkg(1, [...ids])] };
+      mine.current.add(w.id);
       next = [...next, w];
       where = w.name;
     } else if (to.wave) {
@@ -223,8 +242,12 @@ export function useWaveBench(L: Ledger): Bench {
     const h = history.current.pop();
     if (!h) return;
     setDepth(history.current.length);
-    // a wave created since the snapshot was taken has a store id now; a deleted one is created again by the drain
-    setLocal(h.waves.map((w) => ({ ...w, id: alias.current.get(w.id) ?? w.id })));
+    // a wave created since the snapshot was taken has a store id now; a deleted one is created again by the drain. A draft that
+    // appeared since from elsewhere is not this gesture's to undo: going back to before it must not delete it.
+    const back = h.waves.map((w) => ({ ...w, id: alias.current.get(w.id) ?? w.id })), ids = new Set(back.map((w) => w.id));
+    const known = new Set([...h.known].map((id) => alias.current.get(id) ?? id));
+    const others = current().filter((w) => !ids.has(w.id) && !known.has(w.id) && !mine.current.has(w.id));
+    setLocal([...back, ...others]);
     setSaid('Undid: ' + h.said);
     schedule();
   }, [schedule, setLocal]);
