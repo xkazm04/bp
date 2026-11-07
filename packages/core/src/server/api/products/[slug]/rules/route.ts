@@ -12,11 +12,10 @@
 //                   the evidence before it proposes the rule). 200 `{ rule, backtest, now }`.
 //   otherwise       the HUMAN path (the `x-bp-human` token, 403 without it): the rule is written to bp-rules.json with
 //                   its author (`user:<gh login>`) and the evidence it was set on. 201 `{ rule, backtest }`.
-// 400 for a bad draft; 404 for an unknown product or one with no map. Localhost only. Kettle has no rules (its orders
+// 400 for a bad draft; 404 for an unknown product or one with no map, 409 for a map that does not parse (the door's map stage). Localhost only. Kettle has no rules (its orders
 // are the sim's): 405.
 import { door } from '@bp/core/server/route-door.server';
 import { backtest, breachesOf, checkRuleBody, impact, ruleOf, sinceSet, tallyHeld } from '@bp/core/scan/rules';
-import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
 import { RulesUnreadable, addRule, decidedRows, listRules, openRows, readHeld, roomsOf, trustedLenses } from '@bp/core/server/rules.server';
 import { suggestRules } from '@bp/core/scan/rules-suggest';
 import { triageBy } from '@bp/core/server/release.server';
@@ -34,9 +33,8 @@ const rules = door('products/[slug]/rules', {
   },
   POST: {
     body: true,
-    live: async ({ req, slug, product: p, body, read }) => {
-      const map = readLensesAndFeatures(p);
-      if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
+    map: 'required',
+    live: async ({ req, product: p, body, read, map }) => {
       const lenses = new Set(map.lenses.map((l) => l.id));
       const draft = checkRuleBody(body, {
         feature: (f) => map.features.has(f), lens: (l) => lenses.has(l),
