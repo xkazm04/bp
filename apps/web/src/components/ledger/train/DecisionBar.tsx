@@ -74,7 +74,8 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
           ) : hint ? <span className="lg-bar-l">{hint}</span> : null}
           <span className="lg-sp" />
           {!phone ? <Btn kbd="Esc" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear</Btn> : null}
-          <Decide ids={targets} />
+          {/* an item open in compare is decided in the panel's own footer; the bar decides a selection, and everything on a phone */}
+          {phone || !L.ui.open || n ? <Decide ids={targets} /> : null}
           <span className="tr-pkg" title={rel ? 'The release package: every accepted item of ' + rel.id + ', plus the accepted items no release holds yet'
             : noVer ? 'The release package: accepted items waiting for a release. The next version could not be read from the store, so none is shown.'
               : 'The release package: accepted items waiting for a release'}>
