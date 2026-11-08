@@ -301,6 +301,7 @@
         "kind": { "enum": ["measure", "execute", "release", "prepare", "propose", "adopt"], "description": "prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. adopt: onboard the product with the adopt-bp skill." },
         "lens": { "type": "string", "description": "The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable." },
         "scope": { "$ref": "#/$defs/scanScope" },
+        "focus": { "type": "string", "maxLength": 1000, "description": "A directed scan's note: what this lens is to look for. Absent on a plain scan." },
         "proposals": { "type": "array", "items": { "type": "string" }, "description": "The proposals an execute job builds." },
         "release": { "type": "string", "description": "A release job's release id (rel-<version>)." },
         "version": { "type": "string" },

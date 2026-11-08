@@ -294,7 +294,7 @@ export function parseCommitDiff(x: unknown): Parsed<CommitDiff> {
 function scanJob(x: unknown, at: string): ScanJob {
   const o = obj(x, at);
   const j: ScanJob = { id: str(o, 'id', at), kind: member(JOB_KIND, o, 'kind', at), status: member(JOB_STATUS, o, 'status', at), queued_at: str(o, 'queued_at', at) };
-  for (const k of ['lens', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, at));
+  for (const k of ['lens', 'focus', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, at));
   put(j, 'scope', o.scope === undefined ? undefined : scope(o.scope, join(at, 'scope')));
   put(j, 'proposals', optList(o, 'proposals', at, aString));
   put(j, 'step', optMember(RELEASE_STEP, o, 'step', at));

@@ -1818,6 +1818,10 @@ struct BPLINK_API FBpScanJob
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FBpScanScope scope;
 
+	/** A directed scan's note: what this lens is to look for. Absent on a plain scan */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString focus;
+
 	/** The proposals an execute job builds */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	TArray<FString> proposals;

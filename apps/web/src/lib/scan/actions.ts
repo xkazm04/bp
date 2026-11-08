@@ -1,6 +1,7 @@
 // The one way the UI starts, dispatches and cancels scan work. A live product goes to its localhost
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
+import type { SavedFocus } from '@bp/core/scan/focus';
 import type { BuildForecast, ReleaseReady, ScanSim, WaveForecast } from '@bp/core/model/scan-sim';
 import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
@@ -30,6 +31,15 @@ export async function startScan(ctx: ScanCtx, lens: string, scope: ScanScope): P
   if (ctx.sim) return ctx.sim.startScan(lens, scope);
   throw nowhere();
 }
+
+const stub = (what: string): never => { throw Object.assign(new Error(what + ' is not built yet'), { status: 501 }); };
+/** Start a directed scan: one lens, a scope and the note saying what to look for (scan/focus.ts). Rejects as startScan does; 400 bad-focus. */
+export async function startDirectedScan(_ctx: ScanCtx, _lens: string, _scope: ScanScope, _focus: string): Promise<ScanJob> { return stub('startDirectedScan'); }
+/** The product's saved focuses, newest first. */
+export async function listFocuses(_ctx: ScanCtx): Promise<SavedFocus[]> { return stub('listFocuses'); }
+/** Keep a focus for reuse (the same lens and note answers the existing one). */
+export async function saveFocus(_ctx: ScanCtx, _lens: string, _note: string): Promise<SavedFocus> { return stub('saveFocus'); }
+export async function deleteFocus(_ctx: ScanCtx, _id: string): Promise<{ id: string }> { return stub('deleteFocus'); }
 
 /** ONE measure or propose job over every enabled lens (`--lens all`, one MAX_RUNNING slot). A live product only: the Kettle
  *  sim has no every-lens job, and the ledger offers it on a live product only. */

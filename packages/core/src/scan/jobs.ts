@@ -37,6 +37,8 @@ export interface ScanJob {
   /** The lens a measure job scans, or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
+  /** A directed scan's note (focus.ts): what this lens is to look for. Absent on a plain scan. */
+  focus?: string;
   /** The proposals an execute job builds. */
   proposals?: string[];
   /** A release job's release id (`rel-<version>`), its version and step. */
