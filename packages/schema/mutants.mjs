@@ -18,7 +18,7 @@ const rev = revAt >= 0 ? args.splice(revAt, 2)[1] : null;
 const want = args;
 const source = (f) => (rev
   ? spawnSync('git', ['show', `${rev}:packages/schema/${f}`], { cwd: repo, encoding: 'utf8' }).stdout
-  : fs.readFileSync(path.join(repo, 'packages/schema', f), 'utf8'));
+  : fs.readFileSync(path.join(repo, 'packages/schema', f), 'utf8').split(String.fromCharCode(13) + String.fromCharCode(10)).join(String.fromCharCode(10))); // a Windows checkout's CRLF must not hide a find string that spans a line
 
 // [name, file, find, replace, what it guts, the assertion lines to show (regex)]
 const M = [
