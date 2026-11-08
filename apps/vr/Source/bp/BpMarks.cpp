@@ -232,6 +232,21 @@ namespace
 			WithPlannedTables(World, TEXT("BpScan.Start ") + FString::Join(Args, TEXT(" ")), [&Args, &Lens](ABpTable& Table) { Table.StartScan(Args[0], Lens); });
 		}));
 
+	/** BpScan.Directed <focus id> [room id|site]: a directed scan of a saved focus, the wrist's path (no second pinch). */
+	FAutoConsoleCommandWithWorldAndArgs CmdScanDirected(
+		TEXT("BpScan.Directed"),
+		TEXT("BpScan.Directed <focus id> [room id|site]: start a directed scan of a saved focus through apps/server (the wrist's path; refused from the bundle; a live product takes it, a plain BpScan.Start never). No place: the room the table shows, or the site."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpScan: usage BpScan.Directed <focus id> [room id|site]"));
+				return;
+			}
+			const FString Focus = Args[0], Target = Args.Num() > 1 ? Args[1] : FString();
+			WithPlannedTables(World, TEXT("BpScan.Directed ") + FString::Join(Args, TEXT(" ")), [&Focus, &Target](ABpTable& Table) { Table.StartDirected(Focus, Target, nullptr); });
+		}));
+
 	/** BpCard.Show [1|0]: show or hide the decision card. */
 	FAutoConsoleCommandWithWorldAndArgs CmdCardShow(
 		TEXT("BpCard.Show"),
@@ -380,6 +395,7 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 	}
 	if (bScanLive || ScanStrength > 0.f) SetActorTickInterval(0.f);
 	if (bCardShown) RefreshCard();
+	RefreshScanMarks();
 	// Room mode's map shows the room's open findings: a read that changes them redraws it.
 	if (!ShownRoomMode.IsEmpty() && RoomFindingsKey() != RoomMapKey) BuildRoomMap();
 	// The screen deck's queue and its screens' content (the findings, the waves) follow the store (BpDeck.cpp).
@@ -933,17 +949,10 @@ void ABpTable::WriteScanParams(float Strength)
 	}
 }
 
-void ABpTable::StartScan(const FString& Id, const FString& Lens)
+bool ABpTable::BuildScanScope(const FString& Id, FString& Kind, FString& ScopeId, FString& Label, TArray<FString>& Features) const
 {
-	if (!SheetPlan.IsValid())
-	{
-		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, no plan yet"));
-		return;
-	}
 	// The scope as the web names it (blueprint-ui.md, Scope ids): a wing by its WING_DEFS key, a room by its domain, a bay
 	// by its capability, a feature by its slug; its features are the plan's tiles under it.
-	FString Kind, ScopeId, Label;
-	TArray<FString> Features;
 	const auto TilesWhere = [this, &Features](TFunctionRef<bool(int32 Tile)> Keep)
 	{
 		for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
@@ -960,38 +969,55 @@ void ABpTable::StartScan(const FString& Id, const FString& Lens)
 		if (ScopeId.IsEmpty()) ScopeId = Id;
 		Label = Wing->name;
 		TilesWhere([this, &Id](int32 Tile) { return TileRoom.IsValidIndex(Tile) && RoomWing.IsValidIndex(TileRoom[Tile]) && RoomWing[TileRoom[Tile]] == Id; });
+		return true;
 	}
-	else if (const FBpPlanRoom* Room = FindRoom(Id))
+	if (const FBpPlanRoom* Room = FindRoom(Id))
 	{
 		Kind = TEXT("room");
 		ScopeId = Id;
 		Label = Room->name;
 		const int32 RoomIndex = SheetPlan->rooms.IndexOfByPredicate([&Id](const FBpPlanRoom& R) { return R.id == Id; });
 		TilesWhere([this, RoomIndex](int32 Tile) { return TileRoom.IsValidIndex(Tile) && TileRoom[Tile] == RoomIndex; });
+		return true;
 	}
-	else if (const int32* Bay = BayIndex.Find(Id))
+	if (const int32* Bay = BayIndex.Find(Id))
 	{
 		Kind = TEXT("bay");
 		ScopeId = Id;
 		Label = SheetPlan->bays[*Bay].name;
 		TilesWhere([this, &Id](int32 Tile) { return SheetPlan->tiles[Tile].parentId == Id; });
+		return true;
 	}
-	else if (const FBpPlanTile* Tile = SheetPlan->tiles.FindByPredicate([&Id](const FBpPlanTile& T) { return T.id == Id; }))
+	if (const FBpPlanTile* Tile = SheetPlan->tiles.FindByPredicate([&Id](const FBpPlanTile& T) { return T.id == Id; }))
 	{
 		Kind = TEXT("feature");
 		ScopeId = Id;
 		Label = Tile->name;
 		Features.Add(Id);
+		return true;
 	}
-	else
+	return false;
+}
+
+void ABpTable::StartScan(const FString& Id, const FString& Lens)
+{
+	if (!SheetPlan.IsValid())
+	{
+		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, no plan yet"));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (!BuildScanScope(Id, Kind, ScopeId, Label, Features))
 	{
 		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, %s is no wing, room, bay or feature of the plan"), *Id);
 		return;
 	}
 	if (!FBpLinkModule::Get().IsKettle())
 	{
-		// A live product (the owner's ruling, FAD): nothing new starts from the table; the beam replays its last scan.
-		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused to POST a scan of %s:%s for %s, a live product; replaying its last completed scan instead"),
+		// A live product (the owner's ruling, FAD, relaxed 2026-11-08 for directed scans only, StartDirected): a plain scan
+		// never starts from the table; the beam replays its last scan.
+		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused to POST a plain scan of %s:%s for %s, a live product; replaying its last completed scan instead"),
 			*Kind, *ScopeId, *FBpLinkModule::Get().GetProductSlug());
 		StartReplay(Kind + TEXT(":") + ScopeId, Features);
 		return;
@@ -1002,6 +1028,87 @@ void ABpTable::StartScan(const FString& Id, const FString& Lens)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpScan: POST scans answered %d %.160s"), Status, *Body);
 	});
+}
+
+FString ABpTable::DirectedTarget() const
+{
+	if (!RoomModeId.IsEmpty()) return RoomModeId;
+	if (!RoomId.IsEmpty()) return RoomId;
+	if (!WingId.IsEmpty()) return WingId;
+	return TEXT("site");
+}
+
+FString ABpTable::DirectedLabel(const FString& Target) const
+{
+	if (Target == TEXT("site")) return TEXT("Everything");
+	if (!SheetPlan.IsValid()) return FString();
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	return BuildScanScope(Target, Kind, ScopeId, Label, Features) ? Label : FString();
+}
+
+void ABpTable::StartDirected(const FString& FocusId, const FString& InTarget, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
+	// A focus the table has not read yet (the console, before the Scan tab was ever opened): read them once, then go on.
+	if (!Link.GetFocusList().Focuses.ContainsByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; }) && !Link.IsFromBundle())
+	{
+		TWeakObjectPtr<ABpTable> Self(this);
+		Link.GetFocuses([Self, FocusId, Target, OnDone](const FBpFocusList&)
+		{
+			if (ABpTable* T = Self.Get()) T->StartDirectedRead(FocusId, Target, OnDone);
+		});
+		return;
+	}
+	StartDirectedRead(FocusId, Target, OnDone);
+}
+
+void ABpTable::StartDirectedRead(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [FocusId, OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: directed %s: %s: %s"), *FocusId, bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	if (!SheetPlan.IsValid())
+	{
+		Finish(false, TEXT("The table has no plan yet."));
+		return;
+	}
+	if (Link.IsFromBundle())
+	{
+		Finish(false, TEXT("This table reads the build's bundled snapshot, and no server keeps a scan."));
+		return;
+	}
+	const FBpFocusList& List = Link.GetFocusList();
+	const FBpSavedFocus* Focus = List.Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+	if (!Focus)
+	{
+		Finish(false, !List.Error.IsEmpty() ? List.Error : FString::Printf(TEXT("No saved focus %s on %s."), *FocusId, *Link.GetProductSlug()));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (Target == TEXT("site"))
+	{
+		Kind = TEXT("all");
+		Label = TEXT("Everything");
+	}
+	else if (!BuildScanScope(Target, Kind, ScopeId, Label, Features))
+	{
+		Finish(false, FString::Printf(TEXT("%s is no wing, room, bay or feature of the plan."), *Target));
+		return;
+	}
+	const FString Lens = Focus->Lens, Note = Focus->Note;
+	UE_LOG(LogBpTable, Log, TEXT("BpScan: directed POST lens=%s scope=%s:%s label=\"%s\" features=%d focus=\"%.120s\""), *Lens, *Kind, *ScopeId, *Label, Features.Num(), *Note);
+	Link.PostScan(Lens, Kind, ScopeId, Label, Features, [Finish, Label, Lens](int32 Status, const FString& Body)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: directed POST answered %d %.200s"), Status, *Body);
+		if (Status == 202) Finish(true, FString::Printf(TEXT("Started: %s · %s"), *Label, *BpWords::Lens(Lens)));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	}, Note);
 }
 
 void ABpTable::ShowCard(bool bShow)

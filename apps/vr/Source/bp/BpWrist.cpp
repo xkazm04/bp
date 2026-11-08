@@ -12,6 +12,7 @@
 #include "BpLink.h"
 #include "BpTable.h"
 #include "BpType.h"
+#include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Camera/CameraComponent.h"
 #include "Components/WidgetComponent.h"
@@ -186,7 +187,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:project:<slug>|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat|wrist:tour>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT)."),
+		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:tab:scan|wrist:project:<slug>|wrist:room:<id>|wrist:focus:<id>|wrist:scan:cancel|wrist:scan:dismiss|wrist:page:next|wrist:page:prev|wrist:seat|wrist:tour>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT, a PC link the scan tab)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -260,6 +261,7 @@ void ABpPawn::MakeWristPanel()
 	// The projects tab follows the products, their onboarding and the open product (WP-V1).
 	WristOnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpPawn::OnWristOnboarding);
 	WristProductHandle = Link.OnProduct().AddUObject(this, &ABpPawn::OnWristProduct);
+	WristFocusHandle = Link.OnFocuses().AddUObject(this, &ABpPawn::OnWristFocuses);
 	ReceiveScanState(Link.GetScanState());
 }
 
@@ -268,11 +270,27 @@ void ABpPawn::OnWristOnboarding(const FBpOnboardingState&)
 	RefreshWrist();
 }
 
+void ABpPawn::OnWristFocuses(const FBpFocusList&)
+{
+	RefreshWrist();
+}
+
+void ABpPawn::WristDisarm()
+{
+	WristArmedFocus.Reset();
+	WristArmedTarget.Reset();
+	WristArmedLabel.Reset();
+}
+
 void ABpPawn::OnWristProduct(const FString&)
 {
 	// Another product: its rooms are not this one's (the table left room mode), and the packages are its own.
 	WristRoomMode.Reset();
 	bWristRooms = false;
+	// Its focuses are its own, and what was armed was for the old product's place.
+	WristDisarm();
+	WristScanWords.Reset();
+	bWristScanRefused = bWristScanStarting = false;
 	RefreshWrist();
 }
 
@@ -280,6 +298,8 @@ void ABpPawn::OnWristRoomChanged(const FString& RoomId)
 {
 	WristRoomMode = RoomId;
 	if (RoomId.IsEmpty()) bWristRooms = false;
+	// The armed words named the room the table showed; it shows another now.
+	WristDisarm();
 	RefreshWrist();
 }
 
@@ -324,10 +344,33 @@ void ABpPawn::WristTap(const FString& Id)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s"), *Id);
 	ABpTable* Table = WristTable.Get();
+	// A row armed: only that row goes on. Anything else disarms, and the rest of the Scan tab's controls do only that.
+	if (!WristArmedFocus.IsEmpty() && Id != TEXT("wrist:focus:") + WristArmedFocus)
+	{
+		WristDisarm();
+		if (Id.StartsWith(TEXT("wrist:focus:")) || Id.StartsWith(TEXT("wrist:scan:")))
+		{
+			RefreshWrist();
+			return;
+		}
+	}
+	if (Id == TEXT("wrist:scan:dismiss"))
+	{
+		WristScanWords.Reset();
+		bWristScanRefused = false;
+		RefreshWrist();
+		return;
+	}
+	if (Id == TEXT("wrist:scan:cancel"))
+	{
+		RefreshWrist();
+		return;
+	}
 	if (Id == TEXT("wrist:tab:projects"))
 	{
 		bWristProjects = true;
 		bWristRooms = false;
+		bWristScan = false;
 		// The page with the open product.
 		const FBpLinkModule& Link = FBpLinkModule::Get();
 		const int32 At = WristProjectOrder(Link.GetOnboarding()).IndexOfByPredicate([&Link](const FBpProductEntry* E) { return E->Slug == Link.GetProductSlug(); });
@@ -351,6 +394,7 @@ void ABpPawn::WristTap(const FString& Id)
 	{
 		bWristRooms = true;
 		bWristProjects = false;
+		bWristScan = false;
 		// The page with the room shown.
 		if (Table)
 		{
@@ -359,7 +403,70 @@ void ABpPawn::WristTap(const FString& Id)
 			WristPage = At == INDEX_NONE ? 0 : At / WristRoomsPerPage;
 		}
 	}
-	else if (Id == TEXT("wrist:tab:packages")) bWristRooms = bWristProjects = false;
+	else if (Id == TEXT("wrist:tab:packages")) bWristRooms = bWristProjects = bWristScan = false;
+	else if (Id == TEXT("wrist:tab:scan"))
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		if (Link.IsFromBundle() || !Link.HasPcLink())
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist scan tab: no PC link"));
+			return;
+		}
+		bWristScan = true;
+		bWristRooms = bWristProjects = false;
+		WristPage = 0;
+		// A focus is saved on the PC, so the list is read when the tab opens, not polled.
+		Link.GetFocuses();
+	}
+	else if (Id.StartsWith(TEXT("wrist:focus:")) && Table && bWristScan)
+	{
+		const FString FocusId = Id.Mid(12);
+		const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
+		const FBpSavedFocus* Focus = List.Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+		const double Now = FPlatformTime::Seconds();
+		if (!Focus)
+		{
+			WristDisarm();
+			WristScanWords = TEXT("That focus is gone. Open the tab again.");
+			bWristScanRefused = true;
+		}
+		else if (WristArmedFocus.IsEmpty() || Table->DirectedTarget() != WristArmedTarget)
+		{
+			// First pinch, or the table moved under an armed row: the words must say what will happen now.
+			WristArmedFocus = FocusId;
+			WristArmedTarget = Table->DirectedTarget();
+			WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+			WristArmedAt = Now;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: Scan %s for: %s"), *FocusId, *WristArmedLabel, *Focus->Note);
+		}
+		else if (Now - WristArmedAt < WristConfirmGuardS)
+		{
+			// The pinch that armed it, bouncing: a real model run must not start on one.
+			return;
+		}
+		else
+		{
+			const FString Target = WristArmedTarget;
+			WristDisarm();
+			bWristScanStarting = true;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			TWeakObjectPtr<ABpPawn> Self(this);
+			Table->StartDirected(FocusId, Target, [Self](bool bOk, const FString& Words)
+			{
+				ABpPawn* Pawn = Self.Get();
+				if (!Pawn) return;
+				Pawn->bWristScanStarting = false;
+				Pawn->WristScanWords = Words;
+				Pawn->bWristScanRefused = !bOk;
+				Pawn->RefreshWrist();
+			});
+		}
+		RefreshWrist();
+		return;
+	}
 	else if (Id == TEXT("wrist:page:next")) ++WristPage;
 	else if (Id == TEXT("wrist:page:prev")) WristPage = FMath::Max(0, WristPage - 1);
 	else if (Id.StartsWith(TEXT("wrist:room:")) && Table)
@@ -398,6 +505,9 @@ void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 	Add(TEXT("wrist sub-line"), 21.0);
 	Add(TEXT("wrist project name"), 25.0);
 	Add(TEXT("wrist project state"), 19.0);
+	Add(TEXT("wrist focus note"), 23.0);
+	Add(TEXT("wrist focus lens"), 19.0);
+	Add(TEXT("wrist scan card"), 23.0);
 }
 
 void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative)
@@ -464,9 +574,14 @@ void ABpPawn::RefreshWrist()
 	// The rooms tab in room mode (WP3); the projects tab always (WP-V1), so the tabs always stand.
 	const bool bRoomTab = !WristRoomMode.IsEmpty() && Table;
 	const bool bTabs = true;
-	const bool bRooms = bRoomTab && bWristRooms;
-	const bool bProjects = bWristProjects && !bRooms;
-	const FBpLinkModule& Link = FBpLinkModule::Get();
+	FBpLinkModule& LinkRef = FBpLinkModule::Get();
+	const FBpLinkModule& Link = LinkRef;
+	// The Scan tab (P5): a PC link only, never in the bundle or the APK.
+	const bool bScanTab = !Link.IsFromBundle() && Link.HasPcLink();
+	if (!bScanTab) bWristScan = false;
+	const bool bScan = bScanTab && bWristScan;
+	const bool bRooms = bRoomTab && bWristRooms && !bScan;
+	const bool bProjects = bWristProjects && !bRooms && !bScan;
 	const FBpOnboardingState& Onboarding = Link.GetOnboarding();
 	const FString Open = Link.GetProductSlug();
 	TArray<ABpTable::FRoomRank> Ranks;
@@ -485,7 +600,17 @@ void ABpPawn::RefreshWrist()
 		Key += FString::Printf(TEXT("|projects %s p%d|"), *Open, WristPage);
 		for (const FBpProductEntry* P : WristProjectOrder(Onboarding)) Key += FString::Printf(TEXT("%s:%s:%d:%s:%s:%d/%d:%s;"), *P->Slug, *P->Name, P->bHasMap, *P->State, *P->Phase, P->N, P->Of, *P->ProgressPhase);
 	}
+	const FBpFocusList& FocusList = Link.GetFocusList();
+	const FString ScanPlace = Table ? Table->DirectedLabel(Table->DirectedTarget()) : FString();
+	if (bScan)
+	{
+		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(FocusList.Focuses.Num(), WristRoomsPerPage));
+		WristPage = FMath::Clamp(WristPage, 0, Pages - 1);
+		Key += FString::Printf(TEXT("|scan p%d f%d a=%s t=%s s=%d r=%d w=%s e=%s|"), WristPage, FocusList.Serial, *WristArmedFocus, *ScanPlace, bWristScanStarting, bWristScanRefused, *WristScanWords, *FocusList.Error);
+		for (const FBpSavedFocus& F : FocusList.Focuses) Key += FString::Printf(TEXT("%s:%s:%s;"), *F.Id, *F.Lens, *F.Note);
+	}
 	Key += bRoomTab ? TEXT("|tabs3") : TEXT("|tabs2");
+	if (bScanTab) Key += TEXT("+scan");
 	const bool bSeat = IsHeadsetOn();
 	if (bSeat) Key += TEXT("|seat");
 	if (Key == WristKey) return;
@@ -613,15 +738,22 @@ void ABpPawn::RefreshWrist()
 		static const FSlateRoundedBoxBrush TabOff(Cyan.CopyWithNewOpacity(0.06f), 10.f, CyanEdge.CopyWithNewOpacity(0.5f), 2.f);
 		const FSlateFontInfo TabFont = CapFont(TEXT("Bold"), 20.f);
 		struct FTabSpec { const TCHAR* Text; bool bOn; const TCHAR* Id; };
-		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects, TEXT("wrist:tab:packages") } };
+		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects && !bScan, TEXT("wrist:tab:packages") } };
 		if (bRoomTab) Tabs.Add({ TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms") });
+		if (bScanTab) Tabs.Add({ TEXT("SCAN"), bScan, TEXT("wrist:tab:scan") });
+		// The scan tab can over-fill the row with SEAT and TOUR: then the tabs close up rather than run off the panel.
+		float Need = bSeat ? WristSeatW + WristTabGap : 0.f;
+		if (!bRoomTab && Table && Table->HasPlan()) Need += WristSeatW + WristTabGap;
+		for (const FTabSpec& Spec : Tabs) Need += FMath::Max(WristTabMinW, WristTextWidth(Spec.Text, TabFont) + 2.f * WristTabPadX) + WristTabGap;
+		const bool bCloseUp = bScanTab && Need - WristTabGap > WristX1 - WristX0;
+		const float TabMinW = bCloseUp ? 0.f : WristTabMinW, TabPadX = bCloseUp ? 8.f : WristTabPadX, TabGap = bCloseUp ? 6.f : WristTabGap;
 		// Laid out from the right.
 		for (int32 Index = Tabs.Num() - 1; Index >= 0; --Index)
 		{
 			const FTabSpec& Spec = Tabs[Index];
-			const float W = FMath::Max(WristTabMinW, WristTextWidth(Spec.Text, TabFont) + 2.f * WristTabPadX);
+			const float W = FMath::Max(TabMinW, WristTextWidth(Spec.Text, TabFont) + 2.f * TabPadX);
 			const FBox2f Box(FVector2f(RowLeft - W, WristTabTop), FVector2f(RowLeft, WristTabBottom));
-			RowLeft -= W + WristTabGap;
+			RowLeft -= W + TabGap;
 			Put(Box, SNew(SBorder).BorderImage(Spec.bOn ? &TabOn : &TabOff).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(FText::FromString(Spec.Text)).Font(TabFont).ColorAndOpacity(FSlateColor(Spec.bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.8f)))
@@ -759,11 +891,113 @@ void ABpPawn::RefreshWrist()
 			WristBoxes.Add({ TEXT("wrist:room:") + Rank.Id, Box });
 		}
 	}
-	// The pager: the rooms tab's always, the projects tab's once there is more than a page (WP-V1).
-	if (bRooms || (bProjects && Onboarding.Products.Num() > WristRoomsPerPage))
+	// The Scan tab (P5): what a pinch would start, armed; a refusal in words; else the saved focuses, a page of them.
+	const bool bScanCard = bScan && (!WristArmedFocus.IsEmpty() || bWristScanRefused);
+	if (bScan)
+	{
+		List = SNew(SVerticalBox);
+		Title = TEXT("SCAN");
+		const FSlateFontInfo NoteFont = CapFont(TEXT("Regular"), 23.f), LensFont = CapFont(TEXT("Bold"), 19.f), CardFont = CapFont(TEXT("Bold"), 24.f);
+		const int32 Saved = FocusList.Focuses.Num();
+		Sub = bWristScanStarting ? FString(TEXT("Starting the scan…"))
+			: !WristScanWords.IsEmpty() && !bWristScanRefused ? WristScanWords
+			: !FocusList.bHasFocuses && FocusList.Error.IsEmpty() ? FString(TEXT("Reading the saved focuses…"))
+			: FString::Printf(TEXT("%d saved · would scan %s"), Saved, ScanPlace.IsEmpty() ? TEXT("the site") : *ScanPlace);
+		const FBox2f Whole(FVector2f(WristX0, WristRowTop), FVector2f(WristX1, WristRowTop + 4 * WristRowStep + WristRowH));
+		if (bScanCard)
+		{
+			static const FSlateRoundedBoxBrush ArmedCard(GlassLit.CopyWithNewOpacity(0.55f), 12.f, Amber, 3.f);
+			static const FSlateRoundedBoxBrush RefusedCard(Stopped.CopyWithNewOpacity(0.16f), 12.f, Stopped, 3.f);
+			const float WrapW = WristX1 - WristX0 - 48.f;
+			TSharedRef<SVerticalBox> Words = SNew(SVerticalBox);
+			if (!WristArmedFocus.IsEmpty())
+			{
+				const FBpSavedFocus* Armed = FocusList.Focuses.FindByPredicate([this](const FBpSavedFocus& F) { return F.Id == WristArmedFocus; });
+				const FString Note = Armed ? Armed->Note : FString();
+				const FString Clipped = Note.Len() > 320 ? Note.Left(320).TrimEnd() + BpType::Ellipsis() : Note;
+				Words->AddSlot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("Scan %s for:"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel))).Font(CardFont).ColorAndOpacity(FSlateColor(Cyan)).WrapTextAt(WrapW)
+				];
+				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(Clipped)).Font(NoteFont).ColorAndOpacity(FSlateColor(FLinearColor::White)).WrapTextAt(WrapW)
+				];
+				Words->AddSlot().FillHeight(1.f)[SNew(SBox)];
+				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(TEXT("PINCH AGAIN TO START"))).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
+				];
+				WristBoxes.Add({ TEXT("wrist:focus:") + WristArmedFocus, Whole });
+				static const FSlateRoundedBoxBrush CancelBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
+				const FBox2f Cancel(WristPrev.Min, FVector2f(WristX0 + 180.f, WristPrev.Max.Y));
+				Put(Cancel, SNew(SBorder).BorderImage(&CancelBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(FText::FromString(TEXT("CANCEL"))).Font(LensFont).ColorAndOpacity(FSlateColor(CyanText))
+					]);
+				WristBoxes.Add({ TEXT("wrist:scan:cancel"), Cancel });
+			}
+			else
+			{
+				Words->AddSlot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::FromString(TEXT("The scan did not start"))).Font(CardFont).ColorAndOpacity(FSlateColor(Stopped))
+				];
+				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(WristScanWords)).Font(NoteFont).ColorAndOpacity(FSlateColor(FLinearColor::White)).WrapTextAt(WrapW)
+				];
+				Words->AddSlot().FillHeight(1.f)[SNew(SBox)];
+				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
+				[
+					SNew(STextBlock).Text(FText::FromString(TEXT("PINCH TO DISMISS"))).Font(LensFont).ColorAndOpacity(FSlateColor(CyanText))
+				];
+				WristBoxes.Add({ TEXT("wrist:scan:dismiss"), Whole });
+			}
+			Put(Whole, SNew(SBorder).BorderImage(bWristScanRefused && WristArmedFocus.IsEmpty() ? &RefusedCard : &ArmedCard).Padding(FMargin(22.f, 18.f))[Words]);
+		}
+		else if (Saved == 0)
+		{
+			static const FSlateRoundedBoxBrush EmptyFocus(Cyan.CopyWithNewOpacity(0.05f), 12.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
+			const FString Empty = !FocusList.Error.IsEmpty() ? FocusList.Error : !FocusList.bHasFocuses ? FString(TEXT("Reading…")) : FString(TEXT("Save a focus on the PC first"));
+			Put(FBox2f(FVector2f(WristX0, WristRowTop), FVector2f(WristX1, WristRowTop + WristRowH)), SNew(SBorder).BorderImage(&EmptyFocus).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(WristCut(Empty, CapFont(TEXT("Bold"), 25.f), WristX1 - WristX0 - 28.f))).Font(CapFont(TEXT("Bold"), 25.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]);
+		}
+		else
+		{
+			static const FSlateRoundedBoxBrush FocusRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+			for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
+			{
+				const int32 At = WristPage * WristRoomsPerPage + Index;
+				if (!FocusList.Focuses.IsValidIndex(At)) break;
+				const FBpSavedFocus& F = FocusList.Focuses[At];
+				const FString Lens = WristCut(BpWords::Lens(F.Lens).ToUpper(), LensFont, 150.f);
+				const float LensW = WristTextWidth(Lens, LensFont) + 18.f;
+				const FString Note = WristCut(F.Note.Replace(TEXT("\n"), TEXT(" ")), NoteFont, WristX1 - WristX0 - 28.f - LensW);
+				const FBox2f Box(FVector2f(WristX0, WristRowTop + Index * WristRowStep), FVector2f(WristX1, WristRowTop + Index * WristRowStep + WristRowH));
+				Put(Box, SNew(SBorder).BorderImage(&FocusRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 18.f, 0.f)
+						[
+							SNew(STextBlock).Text(FText::FromString(Lens)).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
+						]
+						+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(FText::FromString(Note)).Font(NoteFont).ColorAndOpacity(FSlateColor(FLinearColor::White))
+						]
+					]);
+				WristBoxes.Add({ TEXT("wrist:focus:") + F.Id, Box });
+			}
+		}
+	}
+	// The pager: the rooms tab's always, the projects tab's and the scan tab's once there is more than a page (WP-V1).
+	if (bRooms || (bProjects && Onboarding.Products.Num() > WristRoomsPerPage) || (bScan && !bScanCard && FocusList.Focuses.Num() > WristRoomsPerPage))
 	{
 		static const FSlateRoundedBoxBrush PagerBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
-		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(bRooms ? Ranks.Num() : Onboarding.Products.Num(), WristRoomsPerPage));
+		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(bRooms ? Ranks.Num() : bScan ? FocusList.Focuses.Num() : Onboarding.Products.Num(), WristRoomsPerPage));
 		const auto PagerTab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
 		{
 			Put(Box, SNew(SBorder).BorderImage(&PagerBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -828,5 +1062,6 @@ void ABpPawn::RefreshWrist()
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist wave=%s packages=%d%s"), Wave ? *Wave->id : TEXT("none"), Rows.Num(),
 		bRooms ? *FString::Printf(TEXT(" rooms tab page %d (%d rooms, here %s)"), WristPage + 1, Ranks.Num(), *WristRoomMode)
 		: bProjects ? *FString::Printf(TEXT(" projects tab page %d (%d projects, here %s): %s"), WristPage + 1, Onboarding.Products.Num(), *Open, *Sub)
+		: bScan ? *FString::Printf(TEXT(" scan tab page %d (%d focuses, armed %s): %s"), WristPage + 1, FocusList.Focuses.Num(), WristArmedFocus.IsEmpty() ? TEXT("none") : *WristArmedFocus, *Sub)
 		: bRoomTab ? TEXT(" (tabs)") : TEXT(""));
 }

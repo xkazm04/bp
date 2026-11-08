@@ -499,12 +499,14 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 		}
 		// The lenses' words as their manifests say them (the web reads the same manifests from the same answer).
 		LensNames.Reset();
+		LensAccents.Reset();
 		FieldLabels.Reset();
 		FieldUnits.Reset();
 		for (const FBpLensEntry& Lens : Snapshot.Structure.lenses)
 		{
 			const FString& Id = Lens.manifest.id.IsEmpty() ? Lens.id : Lens.manifest.id;
 			if (!Lens.manifest.name.IsEmpty()) LensNames.Add(Id, Lens.manifest.name);
+			if (!Lens.manifest.presentation.accent.dark.IsEmpty()) LensAccents.Add(Id, Lens.manifest.presentation.accent.dark);
 			for (const FBpField& Field : Lens.manifest.fields)
 			{
 				if (!Field.label.IsEmpty()) FieldLabels.Add(Id + TEXT("/") + Field.key, Field.label);
@@ -550,8 +552,13 @@ void FBpLinkModule::SetProduct(const FString& InSlug)
 	FeatureKinds.Reset();
 	FeatureSummaries.Reset();
 	LensNames.Reset();
+	LensAccents.Reset();
 	FieldLabels.Reset();
 	FieldUnits.Reset();
+	// Another product's focuses are not this one's; the tab reads them again when it opens.
+	const int32 FocusSerial = FocusList.Serial;
+	FocusList = FBpFocusList();
+	FocusList.Serial = FocusSerial + 1;
 	Briefs.Reset();
 	bBriefsBundled = false;
 	FocusWaveId.Reset();
@@ -626,6 +633,7 @@ void FBpLinkModule::ShutdownModule()
 	OnboardingDelegate.Clear();
 	MilestoneDelegate.Clear();
 	BuildupDelegate.Clear();
+	FocusesDelegate.Clear();
 }
 
 // ---- The scan side (spark vr-fidelity-40 FC1): the jobs, the store's tables and the waves, polled ----------------------
@@ -968,20 +976,25 @@ void FBpLinkModule::ApproveDecisions(const TArray<FString>& ProposalIds, TFuncti
 }
 
 void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
-	TFunction<void(int32, const FString&)> OnDone)
+	TFunction<void(int32, const FString&)> OnDone, const FString& InFocus)
 {
-	// Only Kettle's scans are simulated; a live product's would run a real lens scan on a real repo (FAD, the owner's
-	// rule: nothing new starts from the table).
+	const FString Focus = InFocus.TrimStartAndEnd();
+	// Kettle's scans are simulated; a live product's run a real lens scan on a real repo. The owner's ruling (FAD, relaxed
+	// 2026-11-08): a plain scan still never starts on a live product from the table, a directed one (a saved focus, confirmed by
+	// a second pinch) may. The bundle has no server to keep either.
+	const auto Refuse = [this, &OnDone](const FString& Why)
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: %s"), *GetProductSlug(), *Why);
+		if (OnDone) OnDone(0, Why);
+	};
 	if (GFromBundle)
 	{
-		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: the table reads the build's bundled snapshot, and no server keeps a scan"), *GetProductSlug());
-		if (OnDone) OnDone(0, FString());
+		Refuse(TEXT("The table reads the build's bundled snapshot, and no server keeps a scan"));
 		return;
 	}
-	if (!IsKettle())
+	if (!IsKettle() && Focus.IsEmpty())
 	{
-		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: %s is a live product, and the table starts no scan on it"), *GetProductSlug(), *GetProductSlug());
-		if (OnDone) OnDone(0, FString());
+		Refuse(FString::Printf(TEXT("%s is a live product: the table starts only a directed scan on it, never a plain one"), *GetProductSlug()));
 		return;
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
@@ -995,6 +1008,8 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
 	Body->SetStringField(TEXT("lens"), Lens);
 	Body->SetObjectField(TEXT("scope"), Scope);
+	// Absent on a plain scan, never empty (the route reads a `focus` key as a directed scan).
+	if (!Focus.IsEmpty()) Body->SetStringField(TEXT("focus"), Focus);
 	FString Text;
 	FJsonSerializer::Serialize(Body, TJsonWriterFactory<>::Create(&Text));
 
@@ -1009,6 +1024,79 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
 		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->NextScanPollS = 0.0;
 		if (OnDone) OnDone(Status, Response.IsValid() ? Response->GetContentAsString() : FString());
+	});
+	Request->ProcessRequest();
+}
+
+FString FBpLinkModule::ScanAnswerWords(int32 Status, const FString& Body)
+{
+	if (Status == 0) return Body.IsEmpty() ? FString(TEXT("The PC did not answer. Is `npm run server` running?")) : Body;
+	FString Error;
+	TSharedPtr<FJsonObject> Json;
+	if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid()) Json->TryGetStringField(TEXT("error"), Error);
+	// The LAN door refuses with a bare 403 whatever the cause (lan-door.ts), so this device cannot tell a missing `scan` scope
+	// from a revoked pairing; a standing order's 403 carries its own words.
+	if (Status == 403) return Error.IsEmpty() ? FString(TEXT("This headset may not start scans. On the PC, pair it again with the scan scope: npm run server -- pair approve <code> --scope read,scan")) : Error;
+	if (Status == 429) return TEXT("The scan queue is full. Try again when one has finished.");
+	if (Error == TEXT("unknown-lens")) return TEXT("This product has no such lens enabled.");
+	if (Error == TEXT("no-scan-method")) return TEXT("That lens has no way to scan yet: set it up on the PC first.");
+	if (Error == TEXT("bad-focus")) return TEXT("The saved note is not one a scan can take: edit it on the PC.");
+	if (Error == TEXT("bad-scope")) return TEXT("The server did not accept that place as a scope.");
+	if (!Error.IsEmpty()) return Error;
+	return FString::Printf(TEXT("The server answered %d."), Status);
+}
+
+bool FBpLinkModule::HasPcLink() const
+{
+	return !GFromBundle && ScanState.bHasJobs;
+}
+
+void FBpLinkModule::GetFocuses(TFunction<void(const FBpFocusList&)> OnDone)
+{
+	if (GFromBundle)
+	{
+		FocusList.Error = TEXT("The table reads the build's bundled snapshot, and no server keeps a focus");
+		if (OnDone) OnDone(FocusList);
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const FString Slug = GetProductSlug();
+	const uint32 Gen = GProductGen;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/products/") + Slug + TEXT("/focuses"), TEXT("application/json"));
+	TrackProductRequest(Request);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Slug, Gen](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (!Module || Gen != GProductGen) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		FBpFocusList& List = Module->FocusList;
+		++List.Serial;
+		List.Error.Reset();
+		TSharedPtr<FJsonObject> Json;
+		const TArray<TSharedPtr<FJsonValue>>* Rows = nullptr;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid() && Json->TryGetArrayField(TEXT("focuses"), Rows))
+		{
+			List.bHasFocuses = true;
+			List.Focuses.Reset();
+			for (const TSharedPtr<FJsonValue>& Value : *Rows)
+			{
+				const TSharedPtr<FJsonObject>* Row = nullptr;
+				FBpSavedFocus Focus;
+				if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Focus.Id)) continue;
+				(*Row)->TryGetStringField(TEXT("lens"), Focus.Lens);
+				(*Row)->TryGetStringField(TEXT("note"), Focus.Note);
+				(*Row)->TryGetStringField(TEXT("created_at"), Focus.CreatedAt);
+				List.Focuses.Add(MoveTemp(Focus));
+			}
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has %d saved focuses"), *Slug, List.Focuses.Num());
+		}
+		else
+		{
+			List.Error = Status == 0 ? FString(TEXT("The PC did not answer")) : Status == 403 ? FString(TEXT("This headset may not read the saved focuses")) : FString::Printf(TEXT("The server answered %d"), Status);
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: GET %s/focuses failed (status %d)"), *Slug, Status);
+		}
+		Module->FocusesDelegate.Broadcast(List);
+		if (OnDone) OnDone(List);
 	});
 	Request->ProcessRequest();
 }

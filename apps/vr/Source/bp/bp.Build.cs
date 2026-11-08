@@ -16,6 +16,6 @@ public class bp : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "BpLink", "RenderCore", "RHI", "UMG", "Slate", "SlateCore", "HeadMountedDisplay", "OculusInteraction", "OculusInteractionPrebuilts" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "BpLink", "Json", "RenderCore", "RHI", "UMG", "Slate", "SlateCore", "HeadMountedDisplay", "OculusInteraction", "OculusInteractionPrebuilts" });
 	}
 }

@@ -12,6 +12,7 @@ class UBpHands;
 class UWidgetComponent;
 struct FBpScanState;
 struct FBpOnboardingState;
+struct FBpFocusList;
 class UCameraComponent;
 class UIsdkControllerRigComponent;
 class UIsdkHandRigComponent;
@@ -95,7 +96,11 @@ public:
 	 *  Spark onboarding-vr WP-V1: a third tab, PROJECTS, always there: every product (Kettle, then the server's list), the
 	 *  open one marked HERE, an onboarding one reading "Building · <phase> n/N" (or "Stopped at <phase>"); a tap on a row
 	 *  ("wrist:project:<slug>") switches the table to that product (BpLink SetProduct): WATCH on a building one, OPEN on
-	 *  another. The tabs ("wrist:tab:projects" too) stand on the title's row whenever they are shown. */
+	 *  another. The tabs ("wrist:tab:projects" too) stand on the title's row whenever they are shown.
+	 *  Spark directed-scans P5: a fourth tab, SCAN ("wrist:tab:scan"), only with a PC link (never in the bundle or the APK): the
+	 *  product's saved focuses ("wrist:focus:<id>"), read when the tab opens. A pinch on a row arms it, saying what will happen
+	 *  ("Scan <place> for: <note>", the place the table shows); a second pinch on it starts the directed scan (ABpTable::StartDirected);
+	 *  anything else disarms. A refusal or failure is said in words on the panel. */
 	static constexpr int32 WristRoomsPerPage = 5;
 	bool WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
 	/** The panel's centre in the world (BpView.Pose wrist aims at it). */
@@ -192,6 +197,21 @@ private:
 	FDelegateHandle WristOnboardingHandle;
 	FDelegateHandle WristProductHandle;
 	void OnWristOnboarding(const FBpOnboardingState& State);
+	/** The Scan tab (P5): shown, the focus armed (its id, and the place and words it would run with), when it was armed, what
+	 *  the last start said, and whether that was a refusal or failure (a card until dismissed) rather than news (the sub-line). */
+	bool bWristScan = false;
+	FString WristArmedFocus;
+	FString WristArmedTarget;
+	FString WristArmedLabel;
+	double WristArmedAt = 0.0;
+	FString WristScanWords;
+	bool bWristScanRefused = false;
+	bool bWristScanStarting = false;
+	FDelegateHandle WristFocusHandle;
+	void OnWristFocuses(const FBpFocusList& List);
+	void WristDisarm();
+	/** The pinch that armed a row, bouncing, must not also confirm it: a second pinch sooner than this does nothing. */
+	static constexpr double WristConfirmGuardS = 0.4;
 	void OnWristProduct(const FString& Slug);
 	int32 WristPage = 0;
 	FString WristRoomMode;

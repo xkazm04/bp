@@ -553,6 +553,14 @@ public:
 	FString GetCardLine() const;
 	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
 	void StartScan(const FString& Id, const FString& Lens);
+	/** A directed scan's place, as the table shows it now: the room shown or lifted, else the lifted wing, else "site". */
+	FString DirectedTarget() const;
+	/** That place in words ("Everything" for the site, else the plan's name); empty when the plan does not have it. */
+	FString DirectedLabel(const FString& Target) const;
+	/** POST a directed scan of a saved focus (its lens and note) over Target ("site", a wing, room, bay or feature id; empty:
+	 *  DirectedTarget()), through the same scope-building StartScan has. A focus the table has not read is fetched first. OnDone
+	 *  says whether the job is queued and, either way, words for the wrist (the refusal or failure, never a silent nothing). */
+	void StartDirected(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
 
 	/** Brightens one wing, room or crumb (HitTest's kinds and ids); an empty Id clears it. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
@@ -786,6 +794,18 @@ private:
 	/** The pointed room's rest extrusions, raised (HighlightRiseCm) while a room highlight is set at rest (FK). */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> HighlightShell;
+	/** A scan on the rooms: lit walls, rails and ticks in one edge-glow batch, empty and hidden while no scan runs. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> ScanMarks;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ScanMarksMid;
+	FTimerHandle ScanMarkTimer;
+	TSet<int32> ScanMarkRooms;
+	FString ScanMarksKey;
+	/** Jobs this table saw queued or running, and when each was first seen finished (platform seconds): a job's marks linger
+	 *  from then, on this clock, not the server's. */
+	TSet<FString> ScanMarkLive;
+	TMap<FString, double> ScanMarkEnded;
 	/** The pointed room's furniture, lifted with its copy (FP): one batch per glyph batch, empty unless a room is pointed. */
 	UPROPERTY()
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> GlyphLift;
@@ -934,6 +954,19 @@ private:
 	void SetTitle(const FString& Line1, const FString& Line2);
 	// The marks (BpMarks.cpp): pins, the scan line and the decision card, from the scan side BpLink polls.
 	void LoadMarks();
+	/** The place a scope names, as the web names it (blueprint-ui.md, Scope ids): false when Id is no wing, room, bay or feature. */
+	bool BuildScanScope(const FString& Id, FString& Kind, FString& ScopeId, FString& Label, TArray<FString>& Features) const;
+	void StartDirectedRead(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	// A scan on the rooms (BpScanMarks.cpp).
+	void InitScanMarks();
+	/** Rebuilt on a scan-state change and when a finished job's marks are due to go; never per frame. */
+	void RefreshScanMarks();
+	void ClearScanMarks();
+	/** The marks' visibility and fade, with the levels (ApplyRestVolumes). */
+	void ApplyScanMarks();
+	/** A marked room's own rest walls dim, so the accent owns the outline: the factor for this room (1 when unmarked). */
+	float ScanRestShow(int32 Room) const;
+	void ReapplyRestVolumes();
 	/** FAC (r9 rank 4): the hands' shadow on the paper, which is emissive and so takes no light's shadow. An orthographic
 	 *  depth capture of the hands alone from just under the paper (HandDepth: per paper texel, the height of the lowest hand
 	 *  surface over it) feeds M_BlueprintPaper's occlusion term. The posed capture hands are still, so they are captured

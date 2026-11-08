@@ -87,6 +87,29 @@ struct BPLINK_API FBpScanState
 /** Fired on the game thread when a poll brought back something new. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
 
+/** One focus saved on the PC for reuse (packages/core/src/scan/focus.ts SavedFocus): a lens and what it is to look for. */
+struct BPLINK_API FBpSavedFocus
+{
+	FString Id;
+	FString Lens;
+	FString Note;
+	FString CreatedAt;
+};
+
+/** GET .../focuses as last read, for the open product. Unlike the scan side it is not polled: it is read when the wrist's
+ *  Scan tab opens (a focus is saved on the PC, so nothing here changes while the owner stands at the table). */
+struct BPLINK_API FBpFocusList
+{
+	TArray<FBpSavedFocus> Focuses;
+	bool bHasFocuses = false;
+	/** Why the last read failed, in words; empty after one that answered. */
+	FString Error;
+	int32 Serial = 0;
+};
+
+/** Fired on the game thread when a GetFocuses read answered. */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpFocuses, const FBpFocusList&);
+
 /** The shared focus ("one place"): the place the owner is looking at, as another surface published it (GET /api/session/focus,
  *  packages/core/src/session/focus.ts SharedView.shared). Ids only, never a selection. */
 struct BPLINK_API FBpFollowPlace
@@ -294,6 +317,9 @@ public:
 	/** A lens's name (structure.lenses[].manifest.name, what the web's P.LENS shows) by its id; null when the last structure
 	 *  that parsed names no such lens (spark vr-room-layers WP3: the manifest is the one source of the table's lens words). */
 	const FString* FindLensName(const FString& Lens) const { return LensNames.Find(Lens); }
+	/** A lens's accent as its manifest gives it for a dark surface (presentation.accent.dark, "#rrggbb"), the colour the web marks
+	 *  its scans in; null when the manifest gives none. */
+	const FString* FindLensAccent(const FString& Lens) const { return LensAccents.Find(Lens); }
 	/** A lens field's label and unit (manifest.fields[]: the web's metric name and unit, rail/wide/review.tsx) by the lens and
 	 *  the field's key; null when the manifest has no such field or it names none. */
 	const FString* FindFieldLabel(const FString& Lens, const FString& Key) const { return FieldLabels.Find(Lens + TEXT("/") + Key); }
@@ -319,11 +345,25 @@ public:
 	 *  did not answer). Every write is refused then. */
 	bool IsFromBundle() const;
 
-	/** POST .../scans { lens, scope }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
-	 *  OnDone gets the HTTP status (202 when queued) and the body. Refused for a live product (IsKettle): nothing is sent,
-	 *  the refusal is logged and OnDone gets status 0. */
+	/** POST .../scans { lens, scope[, focus] }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
+	 *  OnDone gets the HTTP status (202 when queued) and the body. Refused from the bundle, always, and on a live product unless
+	 *  Focus is non-empty (the owner's ruling of 2026-11-08: a directed scan may start from the table, a plain one still may
+	 *  not). A refusal sends nothing, is logged, and hands OnDone status 0 with the reason as Body. */
 	void PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
-		TFunction<void(int32 Status, const FString& Body)> OnDone);
+		TFunction<void(int32 Status, const FString& Body)> OnDone, const FString& Focus = FString());
+	/** What a PostScan answer that was not 202 means, in words the table can show: the refusal Body at status 0, no answer at
+	 *  all, a LAN door 403 (bare, for a pairing without the `scan` scope), a standing order, a full queue, a route's refusal. */
+	static FString ScanAnswerWords(int32 Status, const FString& Body);
+
+	/** GET .../focuses: the open product's saved focuses, into GetFocusList(). OnFocuses fires and OnDone runs when it
+	 *  answers (with Error set when it failed); an answer for a product the table has left is dropped. From the bundle there
+	 *  is nothing to ask: Error says so and nothing is sent. Game thread. */
+	void GetFocuses(TFunction<void(const FBpFocusList&)> OnDone = nullptr);
+	const FBpFocusList& GetFocusList() const { return FocusList; }
+	FOnBpFocuses& OnFocuses() { return FocusesDelegate; }
+	/** Whether a server is answering this session: not the bundle, and the job list has been read. The wrist's Scan tab
+	 *  stands only then. */
+	bool HasPcLink() const;
 
 	/** Adds an open finding to the product's draft wave the way the web's ledger does (spark vr-room-layers WP2, the screen
 	 *  deck's Approve): with no draft wave, POST .../waves a new one (the composer's defaults: "Wave <n>", one package
@@ -513,6 +553,9 @@ private:
 	TMap<FString, FString> FeatureKinds;
 	TMap<FString, FString> FeatureSummaries;
 	TMap<FString, FString> LensNames;
+	TMap<FString, FString> LensAccents;
+	FBpFocusList FocusList;
+	FOnBpFocuses FocusesDelegate;
 	/** By "<lens>/<key>". */
 	TMap<FString, FString> FieldLabels;
 	TMap<FString, FString> FieldUnits;

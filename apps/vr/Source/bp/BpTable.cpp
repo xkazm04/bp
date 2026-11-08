@@ -481,6 +481,10 @@ ABpTable::ABpTable()
 	// The pointed room's raised copy (FK), with the rest extrusions' layout.
 	HighlightShell = MakeVolumes(TEXT("HighlightShell"));
 	HighlightShell->NumCustomDataFloats = VolumeCustomFloats + 1;
+	// A scan's lit walls, rails and ticks (BpScanMarks.cpp), with the rest extrusions' layout; hidden until a scan runs.
+	ScanMarks = MakeVolumes(TEXT("ScanMarks"));
+	ScanMarks->NumCustomDataFloats = VolumeCustomFloats + 1;
+	ScanMarks->SetVisibility(false);
 	// The pins, tags included: placed in the actor's space (they follow a lifted wing or room by their transforms); custom
 	// data 0 to 3 is the tag's atlas cell.
 	Pins = MakeVolumes(TEXT("Pins"));
@@ -884,6 +888,8 @@ void ABpTable::LoadArt()
 	InitSwitch();
 	// The shared focus's caption (BpFollow.cpp).
 	InitFollow();
+	// A scan on the rooms (BpScanMarks.cpp): the pointed room's edge glow, in the lens accent.
+	InitScanMarks();
 }
 
 void ABpTable::ApplyColumnLook()
@@ -2126,6 +2132,8 @@ int32 ABpTable::CVarL0VolumesValue()
 
 void ABpTable::ClearVolumes()
 {
+	// A scan's marks are the old volumes' rooms; the next scan read draws them on the new ones.
+	ClearScanMarks();
 	RestVolumes->ClearInstances();
 	LiftedShell->ClearInstances();
 	HighlightShell->ClearInstances();
@@ -2253,6 +2261,10 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	CardDecided.Reset();
 	DeckBriefAsked.Reset();
 	BriefFor.Reset();
+	// The scan's room marks and what they remembered of the old product's jobs.
+	ClearScanMarks();
+	ScanMarkLive.Reset();
+	ScanMarkEnded.Reset();
 	// The scan line and any replay.
 	bScanLive = bScanReplay = false;
 	ScanJob.Reset();

@@ -652,6 +652,8 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 		// The line-weight hierarchy (FC3): rooms medium, partitions fine.
 		if (RestInk.IsValidIndex(Index)) Show *= RestInk[Index];
+		// A room a scan is on: its own walls step back for the lit wall in the lens accent (BpScanMarks.cpp).
+		if (RestFace.IsValidIndex(Index) && RestFace[Index] >= 1.f) Show *= ScanRestShow(Room);
 		// The pointed room shows in HighlightShell instead, and every other room recedes around it (FO).
 		if (Room != INDEX_NONE && Room == Pointed) Show = 0.f;
 		else if (Pointed != INDEX_NONE) Show *= PointedDim;
@@ -675,6 +677,12 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	}
 	ApplyGlyphs(WingEase);
 	ApplyRoomNames(WingEase);
+	ApplyScanMarks();
+}
+
+void ABpTable::ReapplyRestVolumes()
+{
+	if (SheetPlan.IsValid()) ApplyRestVolumes(Ease(WingAlpha));
 }
 
 void ABpTable::RedrawSheet()
