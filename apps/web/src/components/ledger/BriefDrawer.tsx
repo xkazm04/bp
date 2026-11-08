@@ -8,6 +8,7 @@
 // neither (LedgerPage does not bind them either). The reason editor keeps its own keys: Enter declines, Esc cancels.
 import { useMemo, useState } from 'react';
 import { briefMapOfStructure } from '@bp/core/scan/brief';
+import { focusOfRunNote } from '@bp/core/scan/focus';
 import type { ProposalStatus } from '@bp/core/scan/types';
 import { BriefFacts, briefOfProposal } from '../Brief';
 import { useEngine } from '../hooks';
@@ -33,10 +34,12 @@ export function BriefDrawer({ id, decide, className = 'lg-brief', full = false }
   const map = useMemo(() => briefMapOfStructure(M.P.base), [M]);
   const p = T.byId.get(id);
   const b = useMemo(() => (p && scan ? briefOfProposal(p, { ...scan, proposals: [...T.proposals] }, map, landedOpts(T)) : null), [p, scan, T, map]);
+  const focus = useMemo(() => (p ? focusOfRunNote(scan?.runs.find((r) => r.id === p.run_id)?.note) : null), [p, scan?.runs]);
   if (!p) return null;
   return (
     <aside className={className} aria-label={'Brief · ' + p.title} data-role="lg-brief">
       <h4>Brief · <span>{p.id}</span></h4>
+      {focus ? <p className="lg-brief-focus"><b>Directed scan</b> {focus.note}</p> : null}
       {b ? <BriefFacts b={b} compact={!full} /> : <p className="lg-brief-n">The store has not answered yet: no brief to read.</p>}
       {/* keyed by the finding: a reason typed for one finding never opens on the next (React keeps an unkeyed part's state) */}
       {decide && decide.status === 'proposed' ? <Decision key={p.id} d={decide} /> : null}

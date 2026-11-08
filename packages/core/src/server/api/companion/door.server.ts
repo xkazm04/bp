@@ -29,6 +29,7 @@ import { snapshotOf } from '../../store.server.ts';
 import { listWaves } from '../../waves.server.ts';
 import { decidedRows, itemsOf, listRules, trustedLenses } from '../../rules.server.ts';
 import { grantFor, type Rule } from '../../../scan/rules.ts';
+import { FOCUS_NOTE_MAX } from '../../../scan/focus.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
 
@@ -209,6 +210,12 @@ const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
       ? `a GRANT (${args.minTier === undefined || args.minTier === 0 ? 'any tier: it covers stop-ship findings' : `tier ${String(args.minTier)}+`}${args.cautious === true ? ', cautious' : ''})`
       : `an ORDER (${String(args.kind)})`;
     return bounded(`Proposes ${what} for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'} (${n})${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
+  }
+  if (t.name === 'scan.directed') { // the note IS what is being approved, so it shows whole (argsShown would cut it at CARD_VALUE_MAX), last so that no other arg can be pushed out of sight by it; the label is the agent's own, so the kind and the features stand beside it
+    const sc = args.scope as { kind?: unknown; label?: unknown; features?: unknown } | undefined, fs = Array.isArray(sc?.features) ? sc.features.map(String) : [];
+    const where = sc?.kind === 'all' ? 'every feature' : `${fs.length} feature${fs.length === 1 ? '' : 's'}${fs.length ? `: ${clip(fs.join(', '), 120)}` : ''}`;
+    const { lens, scope: _scope, focus, ...rest } = args, others = argsShown(t, rest).join(', '), product = productOf(args);
+    return `Directed scan${product ? ` of ${product}` : ''}: lens ${clip(String(lens), CARD_VALUE_MAX)}, scope ${typeof sc?.label === 'string' ? clip(sc.label, CARD_VALUE_MAX) : 'not named'} (${typeof sc?.kind === 'string' ? `${clip(sc.kind, CARD_VALUE_MAX)}, ` : ''}${where})${others ? `, ${others}` : ''}, looking for: ${typeof focus === 'string' ? `"${clip(focus, FOCUS_NOTE_MAX)}"` : clip(JSON.stringify(focus) ?? 'nothing', CARD_VALUE_MAX)}`;
   }
   const product = productOf(args), shown = argsShown(t, args).join(', ');
   return `${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`;

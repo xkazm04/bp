@@ -39,6 +39,7 @@ import { FeatureSheet } from './FeatureSheet';
 import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
+import { DirectedScan } from './DirectedScan';
 import { EmptyPlan } from './EmptyPlan';
 import { OnboardingBanner } from '@/onboarding/Banner';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
@@ -77,6 +78,7 @@ const Chrome = memo(function Chrome() {
       <FeatureSheet />
       {s.ledger ? <LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} /> : null}
       <ScanMenu />
+      <DirectedScan />
       <Morning />
       <CompanionHost />
       <CrossingHost />

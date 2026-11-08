@@ -14,7 +14,9 @@
 // its own lens view the scope items stay as "Scan anyway" under a "Prepare repo" item (the menu re-reads the list on opening).
 // "Scan all lenses" over Everything on a live product, with no lens left out, is ONE every-lens job (oneJobForAll): one queue
 // slot and one read of each feature, not a job per lens; narrower scopes and the Kettle sim keep one job per lens.
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+// Each place also offers "Directed scan…", which closes the menu and opens the card (DirectedScan.tsx): its note needs a real
+// text field, and a role=menu cannot hold one. The ledger selection is not offered there (the design left that entry out).
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { overlayRight } from '@/engine/chrome';
 import type { ScanMenuState } from '@/engine/state';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
@@ -26,6 +28,7 @@ import { oneJobForAll, scopesAt } from '@/lib/scan/scan-views';
 import { shallowEqual, useBp, useEngine, useScanCtx } from './hooks';
 import { useScanJobs } from './rail/panels';
 import { useLedgerSelection } from './ledger/useLedger';
+import { openDirectedScan } from './DirectedScan';
 import { useTheme } from './ThemeToggle';
 import './scan.css';
 import { GENERAL } from '@bp/core/data/types';
@@ -93,6 +96,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
   // what each (lens, scope) scan would repeat, read once per jobs / rows change
   const { jobs, scan } = useScanJobs(false, true);
   const queue = useMemo(() => queueRoom(jobs), [jobs]);
+  const focused = useMemo(() => jobs.find((j) => j.status === 'running' && j.focus)?.focus, [jobs]);
   const facts = useMemo(() => {
     const now = Date.now(), all = P.base.features.map((f) => f.id), out = new Map<string, ReturnType<typeof factsWords>>();
     for (const o of opts) for (const l of lenses) out.set(l.id + '|' + o.kind, factsWords(scopeFacts({ jobs, scan, lens: l.id, features: o.scope.kind === 'all' ? all : o.scope.features, now }), now));
@@ -123,6 +127,15 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     prepareLens(ctx, id).then(() => E.toast('Preparing the repo for ' + name, 'Claude Code adds what lens-scan needs to measure it' + (root ? ' in ' + root : '') + '; scan it when the job is done'))
       .catch((e) => E.toast('Repo preparation not started', name + ': ' + refusalText(e), undefined, undefined, 'bad'));
   };
+  const directedOk = lensView ? lensView.ok : lenses.some((l) => l.ok);
+  const directedItem = (o: (typeof opts)[number]) => (o.kind === 'selection' ? null : (
+    <button type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (directedOk && !queue.full ? '' : ' off')} aria-disabled={directedOk && !queue.full ? undefined : true} aria-describedby={qd}
+      title={queue.why ?? (directedOk ? 'One lens and a note saying what to look for' : 'No lens here has a scan method')}
+      onClick={() => { if (!directedOk || queue.full) return; close(); openDirectedScan({ ...(lensView ? { lens: lensView.id } : {}), scope: o.scope }); }}>
+      <span className="t">Directed scan… · <i>{o.title}</i> {o.kind === 'all' ? '' : o.scope.label}</span>
+    </button>
+  ));
+
   // the setup verdict comes with the project list: read it again, since a prepare job or a hand edit may have changed the overlay
   useEffect(() => { if (ctx.slug) void refreshProjects(); }, [ctx.slug]);
 
@@ -168,6 +181,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
     <div ref={ref} id="scanmenu" className="sm" role="menu" aria-label={'Scan ' + what} data-keys="own" onKeyDown={onKey} onContextMenu={(e) => e.preventDefault()} style={{ visibility: 'hidden' }}>
       <div className="sm-h"><span>Scan</span><b title={what}>{what}</b></div>
       {queue.running + queue.queued > 0 && <div id="sm-q" className={'sm-q' + (queue.full ? ' warn' : '')}>{queue.full ? queue.why : queue.running + ' of ' + MAX_RUNNING + ' running · ' + queue.queued + ' queued'}</div>}
+      {focused && <div className="sm-qf" title={focused}>Looking for: {focused}</div>}
       {lensView && viewNeed && (
         <button type="button" role="menuitem" tabIndex={-1} className={'sm-it need' + (queue.full ? ' off' : '')} aria-disabled={queue.full ? true : undefined} aria-describedby={qd} title={viewNeed.why} onClick={() => !queue.full && prepare(lensView.id)}>
           <ScanGlyph g={lensView.glyph} />
@@ -176,12 +190,15 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
         </button>
       )}
       {opts.map((o) => lensView ? (
-        <button key={o.kind} type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok && !queue.full ? '' : ' off')} aria-disabled={lensView.ok && !queue.full ? undefined : true} aria-describedby={qd}
+        <Fragment key={o.kind}>
+        <button type="button" role="menuitem" tabIndex={-1} className={'sm-it' + (lensView.ok && !queue.full ? '' : ' off')} aria-disabled={lensView.ok && !queue.full ? undefined : true} aria-describedby={qd}
           title={lensView.ok ? fact(lensView.id, o.kind).say : undefined} onClick={() => lensView.ok && !queue.full && run([lensView.id], o.scope)}>
           <ScanGlyph g={lensView.glyph} />
           <span className="t">{viewNeed ? 'Scan anyway' : 'Scan ' + lensView.name} · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
           <span className="n">{lensView.ok ? fact(lensView.id, o.kind).n : 'no scan method'}</span>
         </button>
+        {directedItem(o)}
+        </Fragment>
       ) : (
         <div key={o.kind} className="sm-g" role="group" aria-label={o.kind === 'selection' ? 'Ledger selection (' + count(o.scope) + ' features)' : o.title + ': ' + o.scope.label}>
           {o.kind === 'selection' ? <div className="sm-h"><span>Ledger selection</span><b>{count(o.scope)} features{sel.length > MAX_SELECTION ? ' of ' + sel.length + ' selected' : ''}</b></div> : null}
@@ -190,6 +207,7 @@ function MenuBody({ m, view }: { m: ScanMenuState; view: string }) {
             <span className="t">Scan all lenses · <i>{o.title}</i> {o.kind === 'all' || o.kind === 'selection' ? '' : o.scope.label}</span>
             <span className="n">{count(o.scope)}</span>
           </button>
+          {directedItem(o)}
           <div className="sm-ls">
             {lenses.map((l) => {
               const need = l.ok ? needs.get(l.id) : undefined;

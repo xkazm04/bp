@@ -41,7 +41,7 @@ const Row = memo(function Row({ f, on, focus, mvp, max, atWave, atN, drafts, api
       <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onClick={(e) => e.stopPropagation()} onChange={() => onToggle(id)} aria-label={'Select ' + f.p.title} /></span>
       <span role="cell" className="c-pin"><Pin lens={f.p.lens} status={f.status} risk={f.p.risk} n={atN} mvp={mvp} /></span>
       <span role="cell" className="c-t">
-        <span className="sc-t"><TierChip p={f.p} /><span className="sc-tt">{f.p.title}</span><KindTag p={f.p} /><OriginChip p={f.p} act={focus} /><Verdict p={f.p} /></span>
+        <span className="sc-t"><TierChip p={f.p} /><span className="sc-tt">{f.p.title}</span>{f.focus ? <span className="sc-focus" title={f.focus.note}>focus<span className="vh">: {f.focus.note}</span></span> : null}<KindTag p={f.p} /><OriginChip p={f.p} act={focus} /><Verdict p={f.p} /></span>
         <span className="sc-sub">
           {f.status !== 'proposed' || f.job ? <StateMark status={f.status} job={f.job} /> : null}
           <button type="button" className="sc-flink" tabIndex={-1} disabled={!f.fid} title={f.fid ? 'Open ' + f.fname + ' on its ' + f.p.lens + ' tab' : f.p.feature + ' is not on this map'} onClick={(e) => { e.stopPropagation(); onOpen(f); }}>{f.fname}</button>

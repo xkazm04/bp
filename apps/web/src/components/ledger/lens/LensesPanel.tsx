@@ -7,7 +7,7 @@
 // A row: glyph and line sample, name and short, the kind (built-in / project / temporary), measured n of m features,
 // open findings, and a ring while a measure or execute job is on the lens. Actions: enable / disable (project and
 // temporary only: built-ins are set in the map, the PATCH route refuses them), Scan all, Scan selection (the features
-// behind the ledger's selection), Execute backlog (n) with an inline confirm, Delete (project and temporary) with an
+// behind the ledger's selection), Directed scan (the card), Execute backlog (n) with an inline confirm, Delete (project and temporary) with an
 // inline confirm. An action that cannot run stays in the Tab order and says why when chosen (aria-disabled).
 // Rows and counts come from lens-ops.ts; nothing below branches on a lens id or on which product it is, beyond the
 // enable and delete writes.
@@ -22,6 +22,7 @@ import { useLedgerSelection } from '../useLedger';
 import { LineSample } from './DraftCard';
 import { LensGlyph } from '../variants/bits';
 import { LensChat, useChatStarted } from './LensChat';
+import { EVERYTHING_SCOPE, openDirectedScan } from '../../DirectedScan';
 import { executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats, type LensRow } from './lens-ops';
 import './lens.css';
 
@@ -142,6 +143,7 @@ function Row({ r, slug, sel }: { r: LensRow; slug: string | null; sel: readonly 
           {act('scan', 'Scan all', block, () => void run('scan', () => scanNow(E, ctx, r.id, name)), 'go')}
           {act('sel', sel.length ? `Scan selection (${Math.min(sel.length, MAX_SELECTION)})` : 'Scan selection', block ?? (sel.length ? null : 'Select findings in the ledger first'),
             () => void run('sel', () => scanSelection(E, ctx, [{ id: r.id, name }], sel)))}
+          {act('directed', 'Directed scan…', block, () => openDirectedScan({ lens: r.id, scope: EVERYTHING_SCOPE }))}
           {writes ? act('execute', `Execute backlog (${n})`, n ? null : 'Nothing to build: no proposed or approved finding without a job', () => setAsk('execute')) : null}
           {builtin ? null : act(enabled ? 'off' : 'on', enabled ? (temp ? 'Retire' : 'Disable') : (temp ? 'Restore' : 'Enable'),
             writable ? null : 'This lens is in the sample map; it cannot be changed here', () => void toggle(), '', enabled ? 'Disabling…' : 'Enabling…')}

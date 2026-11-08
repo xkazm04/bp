@@ -58,6 +58,7 @@ import { setLedgerUi, useLedger, useLedgerSelection, useLedgerUi, type CompareMo
 import { LensGlyph, Risk, Size } from './variants/bits';
 import { EXEC_BATCH, executeAsk, executeBacklog, scanBlock, scanNow, scanSelection, useLensRows, useLensStats } from './lens/lens-ops';
 import { setLensesPanelOpen, useLensesOpen } from './lens/LensesPanel';
+import { EVERYTHING_SCOPE, openDirectedScan } from '../DirectedScan';
 import { DispatchBar, Triage } from './variants/Triage';
 import { WavesBar } from './waves/WavesBar';
 import { MvpStrip } from './variants/MvpStrip';
@@ -139,7 +140,7 @@ function Body({ ui, set, lv, phone, lensButton, lensPanel }: { ui: LedgerUi; set
     const page = root.current, host = page?.closest('.bp');
     const held: HTMLElement[] = [];
     host?.querySelectorAll<HTMLElement>('.bp-map, .bp-ui > *').forEach((el) => {
-      if (el === page || el.contains(page!) || el.id === 'hdr' || el.id === 'toast' || el.classList.contains('toast-live')) return;
+      if (el === page || el.contains(page!) || el.id === 'hdr' || el.id === 'toast' || el.id === 'directed' || el.classList.contains('toast-live')) return;
       if (!el.inert) { el.inert = true; held.push(el); }
     });
     page?.focus({ preventScroll: true });
@@ -621,6 +622,7 @@ function LensMenuBody({ l, close }: { l: LensCol; close: () => void }) {
       {item('Scan this lens · everything', block, () => { close(); void scanNow(E, ctx, l.id, l.name); })}
       {item('Scan selection', selBlock, () => { close(); void scanSelection(E, ctx, [{ id: l.id, name: l.name }], sel.features); },
         sel.features.length ? sel.features.length + (sel.features.length === 1 ? ' feature' : ' features') + (sel.features.length > MAX_SELECTION ? ', the first ' + MAX_SELECTION : '') : undefined)}
+      {item('Directed scan…', block, () => { close(); openDirectedScan({ lens: l.id, scope: EVERYTHING_SCOPE }); })}
       {writes ? item('Execute backlog (' + n + ')', exBlock, () => setAsk(true), n > EXEC_BATCH ? 'in jobs of ' + EXEC_BATCH : undefined) : null}
       {item('Open in Lenses panel', null, () => { close(); setLensesPanelOpen(true, l.id); })}
     </>

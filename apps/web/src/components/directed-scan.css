@@ -1,0 +1,43 @@
+/* The directed scan card (DirectedScan.tsx), the focus chip and note on findings, and the focus line in the plan's scan menu.
+   Tokens only; text never under 12px. Every button rule sits under `.bp`, because blueprint.css's `.bp button` outranks a
+   one-class rule. Above the ledger (z 20), below the toast (z 40), so a failed save can still be read. */
+.ds-host { position: absolute; inset: 0; z-index: 39; display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; background: color-mix(in srgb, var(--scrim) 70%, transparent); }
+.ds-card { display: flex; flex-direction: column; gap: 8px; width: min(480px, 100%); max-height: 100%; box-sizing: border-box; overflow: auto; overscroll-behavior: contain; padding: 14px 16px; background: var(--card-hi); border: 1px solid var(--ink-2); box-shadow: 0 16px 44px var(--shadow); font: 400 14px/1.4 var(--sans); color: var(--ink); outline: none; }
+.ds-card h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink-hi); }
+.ds-card h3 { margin: 0 0 4px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.ds-card p { margin: 0; }
+.ds-f { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ds-f > span { flex: 0 0 64px; font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+.ds-note { flex-direction: column; align-items: stretch; gap: 4px; }
+.ds-note > span { flex: none; }
+.ds-card select, .ds-card textarea { box-sizing: border-box; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink-hi); font: 400 14px/1.4 var(--sans); }
+.ds-card select { flex: 1 1 auto; min-width: 0; height: 30px; padding: 0 6px; }
+.ds-card textarea { width: 100%; padding: 6px 8px; resize: vertical; }
+.ds-card select:focus-visible, .ds-card textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+.ds-scope b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--ink-hi); }
+.ds-scope i { flex: 0 0 auto; font: 500 12px var(--mono); color: var(--ink-2); }
+.ds-n { align-self: flex-end; font: 500 12px var(--mono); color: var(--ink-2); }
+.ds-n.over { color: var(--red-2); }
+.ds-q, .ds-why { font-size: 13px; color: var(--ink-2); }
+.ds-saved ul { margin: 0; padding: 0; list-style: none; max-height: 132px; overflow: auto; overscroll-behavior: contain; }
+.ds-saved li { display: flex; align-items: stretch; gap: 4px; }
+.bp .ds-sv { flex: 1 1 auto; min-width: 0; padding: 4px 6px; border: 0; border-left: 3px solid transparent; background: none; color: var(--ink); font: 400 13px/1.3 var(--sans); text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp .ds-sv:hover:not(:disabled), .bp .ds-sv:focus-visible { background: var(--ink-4); border-left-color: var(--accent); outline: none; }
+.bp .ds-x { flex: 0 0 auto; width: 26px; border: 0; background: none; color: var(--ink-2); font: 500 14px var(--mono); }
+.bp .ds-x:hover:not(:disabled), .bp .ds-x:focus-visible { color: var(--red-2); outline: 1px solid var(--ink-3); }
+.ds-save { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink); }
+.ds-err { padding: 6px 8px; border-left: 3px solid var(--red); background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red-2); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ds-a { display: flex; justify-content: flex-end; gap: 6px; }
+.bp .ds-bt { height: 30px; padding: 0 12px; background: var(--panel); border: 1px solid var(--ink-3); color: var(--ink); font: 500 12px var(--mono); letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+.bp .ds-bt:hover:not(:disabled):not([aria-disabled='true']) { border-color: var(--ink); color: var(--ink-hi); }
+.bp .ds-bt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bp .ds-bt.go { border-color: var(--accent); color: var(--ink-hi); }
+.bp .ds-bt:disabled, .bp .ds-bt[aria-disabled='true'] { opacity: 0.55; cursor: not-allowed; }
+
+/* a finding a directed scan filed: the note is the chip's title */
+.sc-focus { flex: 0 0 auto; padding: 0 4px; border: 1px dashed var(--ink-3); font: 500 12px/16px var(--mono); letter-spacing: 0.04em; color: var(--ink-2); white-space: nowrap; cursor: help; }
+.lg-brief-focus { margin: 0 0 6px; font-size: 13px; line-height: 1.4; color: var(--ink); overflow-wrap: anywhere; }
+.lg-brief-focus b { font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+
+/* the plan menu's queue line: what a running job is looking for */
+.sm-qf { padding: 2px 12px 4px; border-bottom: 1px solid var(--ink-4); font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -143,6 +143,7 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `release.finish` (Finish a release whose PR is open or merged) | no | external | GATED |
 | `scan.gaps` (Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked) | yes | none | AUTO |
 | `scan.place` (Start a lens scan of a scope (feature, bay, room, wing or all)) | yes | internal | AUTO |
+| `scan.directed` (Start a directed scan: one lens reads a scope for what the person's note says to look for, and files ranked findings) | no | internal | GATED |
 | `plan.find` (Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan) | yes | none | AUTO |
 | `plan.brief` (Before you propose a change to a feature, read what the person already decided about it: their declines of the same or a similar idea in their own words, how similar decisions went, what it touches and costs) | yes | none | AUTO |
 | `morning.brief` (The Morning Watch: one standup across every live product, as cards, each decision card with its decision brief, each card with the place it shows) | yes | none | AUTO |

@@ -26,6 +26,7 @@ import type { ScanJob } from '@bp/core/scan/jobs';
 import type { MainOutcome } from '@bp/core/scan/track';
 import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
 import { decideFinding, dispatch } from '@/lib/scan/actions';
+import { focusOfRunNote } from '@bp/core/scan/focus';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
 import type { COMPARE_MODES } from './train/keymap';
@@ -72,6 +73,8 @@ export interface Finding {
   w: Worth;
   /** Whether it can be dispatched now: proposed or approved, no job is on it, and no dispatch of it is in flight. */
   can: boolean;
+  /** The note of the directed scan that filed it, read off its run; absent for an undirected run. */
+  focus?: { metric: string; note: string };
 }
 
 /** A column of the matrix and a filter chip: an enabled lens, or a lens id the findings name that the map does not enable. */
@@ -348,13 +351,19 @@ export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string,
     return m;
   }, [src.jobs]);
 
+  // what each directed run was looking for. Every scan delta hands over a new `runs` array, so the map is rebuilt only when
+  // the focuses themselves changed (compared as a string): a new map would remake every Finding and re-render every memoised row
+  const focusKey = useMemo(() => JSON.stringify((src.scan?.runs ?? []).flatMap((r) => { const f = focusOfRunNote(r.note); return f ? [[r.id, f.metric, f.note]] : []; })), [src.scan?.runs]);
+  const focusOf = useMemo(() => new Map((JSON.parse(focusKey) as [string, string, string][]).map(([id, metric, note]) => [id, { metric, note }])), [focusKey]);
+
   const all = useMemo<Finding[]>(() => {
     const est = estValue(src.proposals);
     return src.proposals.map((p) => {
-      const f = feats.get(p.feature), it = intents.get(p.id), status = overlay(p.status, it), job = jobOf.get(p.id) ?? null;
-      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, w: worthOf(p, est), can: canBuild(status, !!job) && !inFlight(p.status, it) };
+      const f = feats.get(p.feature), it = intents.get(p.id), status = overlay(p.status, it), job = jobOf.get(p.id) ?? null, focus = focusOf.get(p.run_id);
+      const row: Finding = { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, w: worthOf(p, est), can: canBuild(status, !!job) && !inFlight(p.status, it) };
+      return focus ? { ...row, focus } : row;
     });
-  }, [src.proposals, feats, intents, jobOf]);
+  }, [src.proposals, feats, intents, jobOf, focusOf]);
   const byId = useMemo(() => new Map(all.map((f) => [f.p.id, f])), [all]);
 
   const lenses = useMemo<LensCol[]>(() => {
@@ -372,7 +381,7 @@ export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string,
   }, [all]);
 
   const q = tidy(ui.q.trim());
-  const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? '', f.p.pack_id ?? ''].join(' ')).includes(q), [q, P]);
+  const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? '', f.p.pack_id ?? '', f.focus?.note ?? ''].join(' ')).includes(q), [q, P]);
   const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature))
     && (!ui.main.size || onMain(ui.main, mainOf?.get(f.p.id))) && textOk(f),
     [ui.lens, ui.status, ui.main, mainOf, ui.feat, textOk]);

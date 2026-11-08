@@ -392,7 +392,7 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   // of a lens the repo cannot measure yet), no lens id branched on
   const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
   const items = sm.match(/role="menuitem" tabIndex=[^>]*/g) ?? []; // the JSX items, not the selectors that find them
-  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 5 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
+  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 6 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
     && !/(['"])(security|design|development|performance)\1/.test(sm), 'ScanMenu.tsx does not read scopeFacts over useScanJobs, put queue.full and its reason on every scan item, or branches on a lens id', String(items.length));
   // Kettle: the sim's own jobs and snapshot feed the same facts, and its refusal agrees with queue.full
   const { ScanSim } = await import('../packages/core/src/model/scan-sim.ts');
