@@ -154,7 +154,7 @@ runCase(3, () => {
     expect(now === old, `GUARD ${lens} bay ${Bay.cap?.id ?? Bay.code}: the rail says today's words (${old}), not ${now}`);
   }
   const src = fs.readFileSync(path.join(SRC, 'variants/bold/decor.ts'), 'utf8');
-  const body = /export function railParts[\s\S]*?\n}\n/.exec(src)?.[0] ?? '';
+  const body = /export function railParts[\s\S]*?\r?\n}\r?\n/.exec(src)?.[0] ?? '';
   const inline = ['customerRequests30d', 'mrrImpactUsd', 'openPRs', 'humanReviewed', "environment === 'production'", 'incidents30d', "dataClass === 'payment'", "dataClass === 'personal'", 'sensitiveUnreviewed', 'e2ePassing', 'openBugs'].filter((t) => body.includes(t));
   expect(!!body && inline.length === 0, 'railParts reads its totals from the schedule clauses, not from inline predicates: ' + (inline.join(', ') || (body ? 'ok' : 'railParts not found')));
   const chs = fs.readFileSync(path.join(SRC, 'variants/bold/channels.ts'), 'utf8');
