@@ -15,6 +15,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "IXRTrackingSystem.h"
+#include "Misc/App.h"
 #include "RenderTimer.h"
 #include "Styling/CoreStyle.h"
 #include "TimerManager.h"
@@ -29,6 +30,12 @@ namespace
 		TEXT("bp.FrameMeter"),
 		-1,
 		TEXT("The frame meter over the wrist panel (headset-plan code item 4): 1 shown, 0 hidden, -1 shown with a headset only."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarSeatFakeEye(
+		TEXT("bp.SeatFakeEyeCm"),
+		-1.f,
+		TEXT("A check of the seat's guard without a headset on a head: over 0, a headset Seat reads the eye this high above the floor until the head is reported on (the floor correction still applies), as an off-head launch or a wrong floor would."),
 		ECVF_Default);
 
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
@@ -121,6 +128,34 @@ namespace
 			ABpTable* Table = nullptr;
 			const float EyeCm = Args.Num() > 0 ? FCString::Atof(*Args[0]) : -1.f;
 			if (!FindPlay(World, Pawn, Table) || !Pawn->Seat(EyeCm)) UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Seat [eye_above_floor_cm] (needs a playing world with the bp pawn and a table)"));
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs CmdFakeHead(
+		TEXT("BpView.FakeHead"),
+		TEXT("BpView.FakeHead on|off|unknown [seconds]: what a headset put on or taken off would do, or a runtime with no presence signal (unknown), after that many seconds (the seat guard's check, with the Simulator)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			ABpPawn* Pawn = nullptr;
+			ABpTable* Table = nullptr;
+			if (Args.Num() == 0 || !FindPlay(World, Pawn, Table))
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.FakeHead on|off [seconds] (needs a playing world with the bp pawn)"));
+				return;
+			}
+			const bool bOn = Args[0] == TEXT("on");
+			const bool bForget = Args[0] == TEXT("unknown");
+			const float After = Args.Num() > 1 ? FCString::Atof(*Args[1]) : 0.f;
+			const TWeakObjectPtr<ABpPawn> Weak(Pawn);
+			FTimerHandle Later;
+			Pawn->GetWorld()->GetTimerManager().SetTimer(Later, FTimerDelegate::CreateLambda([Weak, bOn, bForget]()
+			{
+				if (ABpPawn* Each = Weak.Get())
+				{
+					if (bForget) Each->ForgetHead();
+					else if (bOn) Each->OnHeadOn();
+					else Each->OnHeadOff();
+				}
+			}), FMath::Max(0.01f, After), false);
 		}));
 
 	FAutoConsoleCommandWithWorldAndArgs CmdTextCard(
@@ -237,12 +272,16 @@ bool ABpPawn::Seat(float EyeAboveFloorCm)
 	const double FloorZ = Table->GetHomeTransform().GetLocation().Z;
 	FVector Eye = Camera->GetComponentLocation();
 	if (EyeAboveFloorCm > 0.f) Eye.Z = FloorZ + EyeAboveFloorCm;
-	double FloorFixCm = 0.0;
-	if (EyeAboveFloorCm <= 0.f && IsHeadsetOn() && Eye.Z - FloorZ < SeatEyeMinCm)
+	else if (CVarSeatFakeEye.GetValueOnGameThread() > 0.f && IsHeadsetOn() && HeadPresence != EBpHeadPresence::On) Eye.Z = FloorZ + CVarSeatFakeEye.GetValueOnGameThread();
+	// The floor correction is for a wrong runtime floor under a head that is really on (Steam Link, 2026-10-29). A headset
+	// lying on a desk reads the same low eye, and a correction taken for it would leave the person 1.5 m over the table
+	// (2026-11-08), so it never runs with the headset known to be off the head.
+	if (EyeAboveFloorCm <= 0.f && IsHeadsetOn() && HeadPresence != EBpHeadPresence::Off && Eye.Z - FloorZ < SeatEyeMinCm)
 	{
-		FloorFixCm = SeatedEyeCm - (Eye.Z - FloorZ);
+		const double FloorFixCm = SeatedEyeCm - (Eye.Z - FloorZ);
 		AddActorWorldOffset(FVector(0.0, 0.0, FloorFixCm));
 		Eye.Z += FloorFixCm;
+		SeatFloorFixCm += FloorFixCm;
 		UE_LOG(LogBpTable, Log, TEXT("BpView: seat floor corrected by %.1f cm (the runtime's floor stood %.1f cm under the eye)"), FloorFixCm, SeatedEyeCm - FloorFixCm);
 	}
 	const double HeadYaw = Camera->GetComponentRotation().Yaw;
@@ -266,13 +305,70 @@ bool ABpPawn::Seat(float EyeAboveFloorCm)
 
 void ABpPawn::SeatAtStart()
 {
-	// The head's first poses can still be the origin's: at least two tries, then the first tracked one.
+	// The head's first poses can still be the origin's: at least two tries, then the first tracked one on a head that is on.
 	++SeatTried;
+	if (SeatTried < 2) return;
 	const bool bTracked = GEngine && GEngine->XRSystem.IsValid() && GEngine->XRSystem->IsTracking(IXRTrackingSystem::HMDDeviceId);
-	if (SeatTried < 2 || (!bTracked && SeatTried < SeatTries)) return;
+	const bool bWorn = HeadPresence == EBpHeadPresence::On || (HeadPresence == EBpHeadPresence::Unknown && FApp::HasVRFocus());
+	if (!bTracked || HeadPresence == EBpHeadPresence::Off || !bWorn)
+	{
+		// Waiting for a head (a launch with the headset off, the runtime's menu, or a head not yet tracked). The first wait is
+		// logged; after SeatTries, a runtime that says nothing about the head and gives no focus still gets a seat, so it does
+		// not sit at the level's table forever: a provisional one, redone when the head is really on.
+		if (SeatTried == 2) UE_LOG(LogBpTable, Log, TEXT("BpView: seat waits for the head (presence=%d tracked=%d focus=%d)"), static_cast<int32>(HeadPresence), bTracked, FApp::HasVRFocus());
+		if (SeatTried >= SeatTries && bTracked && HeadPresence == EBpHeadPresence::Unknown && !bSeatProvisional)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpView: no presence signal and no focus after %.0f s; a provisional seat at the eye it reports"), SeatTried * SeatRetryS);
+			bSeatProvisional = true;
+			Seat();
+		}
+		return;
+	}
 	GetWorldTimerManager().ClearTimer(SeatTimer);
-	if (!bTracked) UE_LOG(LogBpTable, Warning, TEXT("BpView: the head is not tracked after %.0f s; seating at the eye it reports"), SeatTried * SeatRetryS);
+	// A provisional seat (no signal, then the head arrived): its correction goes first.
+	if (bSeatProvisional && !FMath::IsNearlyZero(SeatFloorFixCm))
+	{
+		AddActorWorldOffset(FVector(0.0, 0.0, -SeatFloorFixCm));
+		UE_LOG(LogBpTable, Log, TEXT("BpView: undid a %.1f cm floor correction taken before the head was on"), SeatFloorFixCm);
+		SeatFloorFixCm = 0.0;
+	}
+	const bool bAssumed = HeadPresence != EBpHeadPresence::On;
+	bSeatProvisional = false;
 	Seat();
+	// On a head only assumed (no presence signal), a correction stays provisional until a real put-on says otherwise.
+	bSeatProvisional = bAssumed && !FMath::IsNearlyZero(SeatFloorFixCm);
+}
+
+void ABpPawn::OnHeadOn()
+{
+	const bool bFirst = !bHeadEverOn;
+	bHeadEverOn = true;
+	HeadPresence = EBpHeadPresence::On;
+	UE_LOG(LogBpTable, Log, TEXT("BpView: the headset is on the head (first=%d provisional=%d)"), bFirst, bSeatProvisional);
+	if (!bFirst || !bSeatProvisional) return;
+	// The first put-on after a seat made on an assumed head: the correction it took goes, and the seat is made again.
+	if (!FMath::IsNearlyZero(SeatFloorFixCm))
+	{
+		AddActorWorldOffset(FVector(0.0, 0.0, -SeatFloorFixCm));
+		UE_LOG(LogBpTable, Log, TEXT("BpView: undid a %.1f cm floor correction taken before the head was on"), SeatFloorFixCm);
+		SeatFloorFixCm = 0.0;
+	}
+	bSeatProvisional = false;
+	GetWorldTimerManager().ClearTimer(SeatTimer);
+	Seat();
+}
+
+void ABpPawn::ForgetHead()
+{
+	HeadPresence = EBpHeadPresence::Unknown;
+	bHeadEverOn = false;
+	UE_LOG(LogBpTable, Log, TEXT("BpView: the head's presence is unknown (a check)"));
+}
+
+void ABpPawn::OnHeadOff()
+{
+	HeadPresence = EBpHeadPresence::Off;
+	UE_LOG(LogBpTable, Log, TEXT("BpView: the headset is off the head"));
 }
 
 // ---- The legibility test card ------------------------------------------------------------------------------------------
@@ -403,6 +499,7 @@ void ABpPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	TickFrameMeter(DeltaSeconds);
+	TickWristLive();
 }
 
 void ABpPawn::TickFrameMeter(float DeltaSeconds)

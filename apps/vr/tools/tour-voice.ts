@@ -4,6 +4,11 @@
 // page's robot effect (VOICE_FX) applied here by ffmpeg, then written as 16-bit mono WAV that BpTour.cpp plays at the lamp.
 //
 //   node apps/vr/tools/tour-voice.ts [--force]
+//   node apps/vr/tools/tour-voice.ts --loudness    (re-level the WAVs already on disk: no key, no credits)
+//
+// Every clip is levelled to LOUDNESS (integrated loudness, peak ceiling), measured with ffmpeg's ebur128 and applied as one
+// static gain plus a limiter, so the set is even and the headset's small speakers carry it (2026-11-08: the clips measured
+// -20.6 to -22.5 LUFS, peak -6 dBFS, and the owner, wearing the headset, called the voice barely heard).
 //
 // Writes apps/vr/Content/BpData/voice/tour/<step>.wav plus lines.json (the text of each clip, and the voice it was read
 // with). The spoken lines carry no product names or counts, so one set serves every bundled product; the caption carries
@@ -33,6 +38,32 @@ export const TOUR_LINES: Record<string, string> = {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
 const RATE = 24000;
+/** Glim's level at the source: integrated loudness in LUFS, and the sample peak's ceiling in dBFS. */
+const LOUDNESS = { targetLufs: -14, ceilingDb: -1 };
+
+/** Integrated loudness of a clip, from ffmpeg's ebur128 summary. Null when ffmpeg could not read it. */
+function measureLufs(file: string): number | null {
+  const res = spawnSync('ffmpeg', ['-hide_banner', '-nostats', '-i', file, '-af', 'ebur128=framelog=quiet', '-f', 'null', '-'], { encoding: 'utf8' });
+  const m = /I:\s+(-?[\d.]+) LUFS/.exec(res.stderr ?? '');
+  return m ? Number(m[1]) : null;
+}
+
+/** Re-level a WAV in place to LOUDNESS: one static gain, and a limiter (no auto-level) that only touches the peaks over the
+ *  ceiling. Idempotent: the gain comes from the clip's measured loudness. */
+function level(wav: string): { before: number; after: number } | null {
+  const before = measureLufs(wav);
+  if (before === null) return null;
+  const gain = LOUDNESS.targetLufs - before;
+  const limit = Math.pow(10, LOUDNESS.ceilingDb / 20).toFixed(4);
+  const tmp = `${wav}.tmp.wav`;
+  const ff = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', wav,
+    '-af', `volume=${gain.toFixed(2)}dB,alimiter=limit=${limit}:attack=5:release=50:level=disabled`,
+    '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', tmp], { encoding: 'utf8' });
+  if (ff.status !== 0) { fs.rmSync(tmp, { force: true }); return null; }
+  fs.renameSync(tmp, wav);
+  const after = measureLufs(wav);
+  return after === null ? null : { before, after };
+}
 
 function fxChain(): string {
   const f = VOICE_FX;
@@ -46,13 +77,25 @@ function fxChain(): string {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (!voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
+  const onlyLevel = process.argv.includes('--loudness');
+  if (!onlyLevel && !voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
   if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) { console.log('REFUSED: ffmpeg is not on PATH'); process.exit(2); }
   const force = process.argv.includes('--force');
   fs.mkdirSync(OUT, { recursive: true });
   const indexFile = path.join(OUT, 'lines.json');
   const before = fs.existsSync(indexFile) ? JSON.parse(fs.readFileSync(indexFile, 'utf8')) : { lines: {} };
-  const voice = { voiceId: VOICE.voiceId, modelId: VOICE.modelId, seed: VOICE.seed, settings: VOICE.settings, fx: fxChain(), rate: RATE };
+  const voice = { voiceId: VOICE.voiceId, modelId: VOICE.modelId, seed: VOICE.seed, settings: VOICE.settings, fx: fxChain(), rate: RATE, loudness: LOUDNESS };
+  if (onlyLevel) {
+    let bad = 0;
+    for (const step of Object.keys(TOUR_LINES)) {
+      const wav = path.join(OUT, `${step}.wav`);
+      const leveled = fs.existsSync(wav) ? level(wav) : null;
+      if (!leveled) { bad++; console.log(`FAIL  ${step}: no clip or ffmpeg failed`); continue; }
+      console.log(`level ${step}: ${leveled.before.toFixed(1)} -> ${leveled.after.toFixed(1)} LUFS`);
+    }
+    fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: TOUR_LINES }, null, 2) + '\n');
+    process.exit(bad ? 1 : 0);
+  }
   const sameVoice = JSON.stringify(before.voice) === JSON.stringify(voice);
   let failed = 0;
   for (const [step, text] of Object.entries(TOUR_LINES)) {
@@ -65,6 +108,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const ff = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', mp3, '-af', fxChain(), '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', wav], { encoding: 'utf8' });
     fs.rmSync(mp3, { force: true });
     if (ff.status !== 0) { failed++; console.log(`FAIL  ${step}: ffmpeg ${ff.stderr.slice(0, 200)}`); continue; }
+    if (!level(wav)) { failed++; console.log(`FAIL  ${step}: could not level the clip`); continue; }
     console.log(`ok    ${step} (${res.cached ? 'cached' : 'synthesized'}) -> ${(fs.statSync(wav).size / 1024).toFixed(0)} KB`);
   }
   fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: TOUR_LINES }, null, 2) + '\n');

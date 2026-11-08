@@ -523,6 +523,13 @@ public:
 	 *  or "crumb" (OutId "home", "wing:<id>" or "room:<id>"). False when the ray meets none. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	bool HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const;
+	/** The world point of HitTest's last surface hit on a plane (a wing, a room, the paper); false when it hit a widget (the
+	 *  deck, the card, the lamp) or nothing. The aim cursor's reticle. */
+	bool GetAimHit(FVector& OutWorld) const;
+	/** The aim assist (bp.AimAssistDeg): a ray that missed, bent to the nearest pinchable paper target (a wing, a lifted room,
+	 *  a crumb, a key plan room, a feature) whose footprint lies within RadiusDeg of it. Writes HitTest's kind and id, and the
+	 *  target is confirmed by HitTest along the bent ray, so a pinch acts on exactly what the highlight shows. */
+	bool AssistHit(const FVector& WorldOrigin, const FVector& WorldDir, float RadiusDeg, FString& OutKind, FString& OutId) const;
 	/** For checks (level_check.py): a plan point on the paper (cm from its far-left corner) at the fitted scale, and the
 	 *  product the table reads (BpLink's slug). */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
@@ -648,6 +655,9 @@ public:
 	void AskLamp(const FString& FeatureId);
 	/** The lamp's head in the world (its hit sphere's centre); false when the level has no lamp. */
 	bool LampHead(FVector& OutWorld) const;
+	/** HitTest's last plane point (table space), for GetAimHit. */
+	mutable FVector AimHitLocal = FVector::ZeroVector;
+	mutable bool bAimHitLocal = false;
 	/** The lasso (a pinch dragged across the room's map): LassoBegin at the pinch, a paper point per frame, LassoEnd at the
 	 *  release, which closes the loop and puts the open findings of the glyphs inside into the draft wave (BpLink
 	 *  AddToDraft, never a dispatch); LassoEnd is false when the stroke never got LassoStartCm long (the pinch was a tap). */
@@ -1503,6 +1513,18 @@ private:
 	int32 TourAsks = 0;
 	int32 TourTaps = 0;
 	void TickTour();
+	/** The voice's level (bp.VoiceVolume, 0..3; saved across runs in the app's user settings): the pawn's wrist control steps it.
+	 *  Above 1 the clip is limited sample by sample (SpeakTour), so the top of the range never clips the speaker. */
+public:
+	static float VoiceVolume();
+	static void StepVoiceVolume(float Delta);
+	/** Reads the saved level, once a run (the pawn at BeginPlay). */
+	static void LoadVoiceVolume();
+	/** Hear the level now: the line playing again, or "Like this." when none plays. */
+	void PreviewVoice();
+private:
+	bool IsVoicePlaying() const;
+	float TourVoiceGain = -1.f;
 	void EnterTourStep(int32 Step);
 	/** The step's line in Glim's voice at the lamp's head (Content/BpData/voice/tour/<Clip>.wav, apps/vr/tools/tour-voice.ts);
 	 *  a line still playing stops first. Silent when the clip is missing or bp.TourVoice is 0. */

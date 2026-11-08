@@ -19,6 +19,9 @@ class UIsdkHandRigComponent;
 class UMotionControllerComponent;
 class USkeletalMeshComponent;
 
+/** Whether the headset is on the head, as far as the runtime has said (XR_EXT_user_presence, or nothing). */
+enum class EBpHeadPresence : uint8 { Unknown, Off, On };
+
 UCLASS()
 class BP_API ABpPawn : public APawn
 {
@@ -107,6 +110,8 @@ public:
 	FVector GetWristWorld() const;
 	bool WristAim(const FString& Id, FVector& OutWorld) const;
 	void WristTap(const FString& Id);
+	/** The control a hand's ray is on (UBpHands, the aim cursor): it lights, since no cursor is drawn over the panel. */
+	void SetWristHover(const FString& Id);
 	/** The wrist panel's text classes where it stands (BpView.TextCard): the rooms tab's names and counts, a package's
 	 *  name and its sub-line. */
 	void WristTextClasses(TArray<BpType::FClassSample>& Out) const;
@@ -188,6 +193,7 @@ private:
 	void MakeWristPanel();
 	void ReceiveScanState(const FBpScanState& State);
 	FString WristKey;
+	FString WristHover;
 	FDelegateHandle ScanHandle;
 	/** The rooms tab: shown, its page, the room the table shows (empty on the site plan: no tabs), and each control's box in
 	 *  the panel's pixels as last laid out. */
@@ -231,6 +237,31 @@ private:
 	FTimerHandle SeatTimer;
 	int32 SeatTried = 0;
 	void SeatAtStart();
+public:
+	/** The headset put on or taken off (FCoreDelegates; BpView.FakeHead fakes them). The seat waits for the head: a launch with
+	 *  the headset on the desk must not seat to a false eye. The first time it is really put on, a seat made before that (with
+	 *  the head only assumed) is undone and made again; later doffing and donning never re-seat (the wrist's SEAT is there). */
+	void OnHeadOn();
+	void OnHeadOff();
+	/** BpView.FakeHead unknown: a runtime that says nothing about the head (the guard's check). */
+	void ForgetHead();
+private:
+	FDelegateHandle HeadOnHandle;
+	FDelegateHandle HeadOffHandle;
+	EBpHeadPresence HeadPresence = EBpHeadPresence::Unknown;
+	bool bHeadEverOn = false;
+	/** A seat was made while the head was only assumed (no presence signal) and took a floor correction: redone on the first put-on. */
+	bool bSeatProvisional = false;
+	/** The floor correction a seat has taken, undone with the seat it belongs to. */
+	double SeatFloorFixCm = 0.0;
+	/** The wrist panel's transform on the left grip (bp.Wrist*; BpWrist.cpp), live: applied when a value changes. */
+	void ApplyWristPose();
+	FString WristPoseApplied;
+	UPROPERTY(Transient)
+	TObjectPtr<USceneComponent> WristSimGrip;
+	/** The wrist's pose cvars and the voice level, followed each frame (the panel re-attached, its label redrawn). */
+	void TickWristLive();
+	float WristVoiceShown = -1.f;
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> FrameMeter;
 	struct FFrameSample

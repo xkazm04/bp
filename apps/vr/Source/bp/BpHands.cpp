@@ -4,6 +4,8 @@
 #include "BpPawn.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Core/IsdkConditionalBool.h"
 #include "Core/IsdkConditionalGroupAll.h"
 #include "DataSources/IsdkIHandPointerPose.h"
@@ -24,6 +26,49 @@ DEFINE_LOG_CATEGORY(LogBpHands);
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAim(
+		TEXT("bp.Aim"),
+		1,
+		TEXT("The aim cursor: a thin ray from the pinch point and a small reticle where it meets the paper or a target, bright and snapped on what a pinch would act on, dim on nothing. 0 off, 1 on for headset hands and controllers, 2 also for the synthetic hand (flat captures)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimRayCm(
+		TEXT("bp.AimRayCm"),
+		140.f,
+		TEXT("The aim ray's length when it meets nothing (cm, 20 to 400); meeting a surface it ends there."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimReticleCm(
+		TEXT("bp.AimReticleCm"),
+		1.2f,
+		TEXT("The aim reticle's size (cm across, 0.3 to 6); 1.4x on a target, 0.85x on nothing."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimRayWidthCm(
+		TEXT("bp.AimRayWidthCm"),
+		0.12f,
+		TEXT("The aim ray's thickness (cm, 0.03 to 1)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimAssistDeg(
+		TEXT("bp.AimAssistDeg"),
+		2.f,
+		TEXT("The aim assist: a ray that meets nothing takes the nearest pinchable paper target within this cone (degrees, 0 off, up to 10)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarAimSynthOffset(
+		TEXT("bp.AimSynthOffsetCm"),
+		0.f,
+		TEXT("Flat checks only: the synthetic hand stands this far right of and below the eye's line to its target, so its ray is seen from the side (a capture of the aim ray; 0 keeps the eye's line)."),
+		ECVF_Default);
+
+	/** The cursor's colours (emissive; the material clamps on the headset). */
+	const FLinearColor AimOnTarget(FLinearColor(1.f, 0.62f, 0.14f) * 2.2f);
+	const FLinearColor AimOnPaper(FLinearColor(0.72f, 0.92f, 1.f) * 1.05f);
+	const FLinearColor AimOnNothing(FLinearColor(0.72f, 0.92f, 1.f) * 0.5f);
+
+	/** What a pinch acts on, small enough for the reticle to snap to its centre (a wing or a room keeps the ray's own point). */
+	bool ReticleSnaps(const FString& Kind)
+	{
+		return Kind == TEXT("crumb") || Kind == TEXT("deck") || Kind == TEXT("card") || Kind == TEXT("feature") || Kind == TEXT("minimap") || Kind == TEXT("lamp");
+	}
+
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPinch(
 		TEXT("BpHands.Pinch"),
 		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:approveall|deck:decline|card:decline|card:approve|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck or card control or a feature it taps: released where it closed), through the same judging as real hands."),
@@ -247,6 +292,7 @@ void UBpHands::ReadHeadset(float DeltaTime, FSample (&Out)[2])
 void UBpHands::Step(int32 Slot, const FSample& Sample, float DeltaTime)
 {
 	FSlot& S = Slots[Slot];
+	S.bAiming = false;
 	if (!Sample.bValid)
 	{
 		if (S.State == EBpTracking::Tracked || S.State == EBpTracking::Reacquiring)
@@ -282,7 +328,14 @@ void UBpHands::Step(int32 Slot, const FSample& Sample, float DeltaTime)
 		// The wrist panel first (it is nearest the eye; spark vr-room-layers WP3's room list), then the table.
 		const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
 		if (Pawn && Pawn->WristHit(Sample.RayOrigin, Sample.RayDir, S.HoverId)) S.HoverKind = TEXT("wrist");
-		else Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId);
+		else if (!Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId) && (Slot != Synthetic || CVarAim.GetValueOnGameThread() >= 2))
+		{
+			// A ray that just misses (a seam, a thin room): the nearest pinchable paper target within a small cone.
+			Table->AssistHit(Sample.RayOrigin, Sample.RayDir, FMath::Clamp(CVarAimAssistDeg.GetValueOnGameThread(), 0.f, 10.f), S.HoverKind, S.HoverId);
+		}
+		S.AimFrom = Sample.RayOrigin;
+		S.AimDir = Sample.RayDir.GetSafeNormal();
+		S.bAiming = !S.AimDir.IsNearlyZero();
 	}
 	else
 	{
@@ -709,7 +762,19 @@ void UBpHands::RunCommands(float DeltaTime)
 		else
 		{
 			const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
-			const bool bAimed = Gesture.Id.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim) : T->AimAt(Gesture.Id, Gesture.Aim);
+			// "paper:<x cm>_<y cm>" (or a comma, but -ExecCmds splits there): bare paper, BpHands.Point's way of aiming at nothing
+			// for the aim cursor's checks.
+			bool bAimed = false;
+			if (Gesture.Id.StartsWith(TEXT("paper:")))
+			{
+				FString XText, YText;
+				if (Gesture.Id.Mid(6).Replace(TEXT("_"), TEXT(",")).Split(TEXT(","), &XText, &YText))
+				{
+					Gesture.Aim = T->PaperToWorld(FVector2D(FCString::Atod(*XText), FCString::Atod(*YText)));
+					bAimed = true;
+				}
+			}
+			else bAimed = Gesture.Id.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim) : T->AimAt(Gesture.Id, Gesture.Aim);
 			if (!bAimed)
 			{
 				UE_LOG(LogBpHands, Log, TEXT("BpHands: refused pinch on unknown id %s"), *Gesture.Id);
@@ -719,6 +784,11 @@ void UBpHands::RunCommands(float DeltaTime)
 		}
 		// The hand stands on the line from the eye to the target, so its ray meets the target as drawn now.
 		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, static_cast<double>(SyntheticReach));
+		if (const float Aside = CVarAimSynthOffset.GetValueOnGameThread(); Aside != 0.f)
+		{
+			// Seen from the side: a ray on the eye's own line is a point to the eye.
+			Gesture.Hand += T->GetActorRightVector() * Aside - FVector(0.0, 0.0, Aside);
+		}
 		Gesture.PullDir = TowardEye(Gesture.Hand) * (Gesture.bPush ? -1.0 : 1.0);
 		Gesture.Step = EStep::Point;
 		Gesture.Frames = 0;
@@ -810,5 +880,120 @@ void UBpHands::TickComponent(float DeltaTime, ELevelTick TickType, FActorCompone
 	UpdateHighlight();
 	UpdateHold(DeltaTime);
 	UpdateFades(DeltaTime);
+	UpdateAim();
 	RunCommands(DeltaTime);
+}
+
+void UBpHands::UpdateAim()
+{
+	struct FMark { FTransform Place; FLinearColor Color; };
+	TArray<FMark, TInlineAllocator<6>> Marks;
+	const int32 Mode = CVarAim.GetValueOnGameThread();
+	ABpTable* T = Mode > 0 ? FindTable() : nullptr;
+	const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+	const float ReticleCm = FMath::Clamp(CVarAimReticleCm.GetValueOnGameThread(), 0.3f, 6.f);
+	const float RayLen = FMath::Clamp(CVarAimRayCm.GetValueOnGameThread(), 20.f, 400.f);
+	const float RayW = FMath::Clamp(CVarAimRayWidthCm.GetValueOnGameThread(), 0.03f, 1.f);
+	FString WristHover;
+	for (int32 Slot = 0; T && Pawn && Slot < SlotCount; ++Slot)
+	{
+		const FSlot& S = Slots[Slot];
+		if (!S.bAiming || (Slot == Synthetic && (Mode < 2 || !bSyntheticActive))) continue;
+		// Over the wrist panel a ray and a reticle would cover the control being read: the control itself lights instead.
+		if (S.HoverKind == TEXT("wrist"))
+		{
+			WristHover = S.HoverId;
+			continue;
+		}
+		const bool bHover = !S.HoverId.IsEmpty();
+		bool bPoint = false, bFlat = false;
+		FVector Point = FVector::ZeroVector;
+		if (bHover && ReticleSnaps(S.HoverKind))
+		{
+			// A control or a glyph: the reticle snaps to its centre, which is where the pinch counts.
+			bPoint = T->AimAt(S.HoverId, Point);
+			bFlat = bPoint && S.HoverKind != TEXT("deck") && S.HoverKind != TEXT("card") && S.HoverKind != TEXT("lamp");
+		}
+		if (!bPoint && bHover && T->GetAimHit(Point)) { bPoint = true; bFlat = true; }
+		if (!bPoint)
+		{
+			// Nothing to pinch: where the ray meets the paper, dim; none at all (a ray pointing off the table) leaves the ray.
+			FVector2D Paper;
+			if (T->PaperAt(S.AimFrom, S.AimDir, Paper) && FVector::DotProduct(T->PaperToWorld(Paper) - S.AimFrom, S.AimDir) <= RayLen)
+			{
+				Point = T->PaperToWorld(Paper);
+				bPoint = bFlat = true;
+			}
+		}
+		const FLinearColor Color = bHover ? AimOnTarget : bPoint ? AimOnPaper : AimOnNothing;
+		const FVector TableUp = T->GetActorUpVector();
+		{
+			const FVector End = bPoint ? Point : S.AimFrom + S.AimDir * RayLen;
+			const FVector Start = S.AimFrom + S.AimDir * 3.0;
+			const FVector Along = End - Start;
+			if (FVector::DotProduct(Along, S.AimDir) > 0.5)
+			{
+				const FVector Dir = Along.GetSafeNormal();
+				const FTransform Place(FRotationMatrix::MakeFromXZ(Dir, FMath::Abs(FVector::DotProduct(Dir, TableUp)) < 0.99 ? TableUp : FVector::RightVector).ToQuat(), Start + Along * 0.5, FVector(Along.Size() / 100.0, RayW / 100.0, RayW / 100.0));
+				Marks.Add({ Place, Color * 0.55f });
+			}
+		}
+		if (bPoint)
+		{
+			const double Size = ReticleCm * (bHover ? 1.4 : 0.85) / 100.0;
+			// Lying on the paper (lifted a hair, so it never z-fights the glass), else square to the hand.
+			const FVector Normal = bFlat ? TableUp : -S.AimDir;
+			const FVector At = Point + Normal * 0.25;
+			const FQuat Facing = FRotationMatrix::MakeFromZ(Normal).ToQuat() * FQuat(FVector::UpVector, FMath::DegreesToRadians(45.0));
+			Marks.Add({ FTransform(Facing, At, FVector(Size, Size, 0.0006)), Color });
+		}
+	}
+	if (ABpPawn* Owner = Cast<ABpPawn>(GetOwner())) Owner->SetWristHover(Mode > 0 ? WristHover : FString());
+	if (Marks.Num() == 0)
+	{
+		// Nothing aims: no draw, no work beyond this frame's reading, until a hand aims again.
+		if (AimMarks && AimShown > 0)
+		{
+			AimMarks->ClearInstances();
+			AimMarks->SetVisibility(false);
+		}
+		AimShown = 0;
+		return;
+	}
+	if (!AimMarks)
+	{
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_AimMark.M_AimMark"));
+		if (!Cube || !Material)
+		{
+			UE_LOG(LogBpHands, Warning, TEXT("BpHands: aim cursor assets are missing (cube %d, M_AimMark %d); no cursor"), Cube != nullptr, Material != nullptr);
+			return;
+		}
+		AimMarks = NewObject<UInstancedStaticMeshComponent>(GetOwner(), TEXT("AimMarks"));
+		AimMarks->SetupAttachment(GetOwner()->GetRootComponent());
+		AimMarks->SetMobility(EComponentMobility::Movable);
+		AimMarks->SetUsingAbsoluteLocation(true);
+		AimMarks->SetUsingAbsoluteRotation(true);
+		AimMarks->SetUsingAbsoluteScale(true);
+		AimMarks->SetStaticMesh(Cube);
+		AimMarks->SetMaterial(0, Material);
+		AimMarks->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		AimMarks->SetCastShadow(false);
+		AimMarks->NumCustomDataFloats = 3;
+		AimMarks->RegisterComponent();
+		AimMarks->SetWorldTransform(FTransform::Identity);
+	}
+	if (!AimMarks->IsVisible()) AimMarks->SetVisibility(true);
+	while (AimMarks->GetInstanceCount() > Marks.Num()) AimMarks->RemoveInstance(AimMarks->GetInstanceCount() - 1);
+	for (int32 Index = 0; Index < Marks.Num(); ++Index)
+	{
+		const FMark& Mark = Marks[Index];
+		if (Index >= AimMarks->GetInstanceCount()) AimMarks->AddInstance(Mark.Place, true);
+		else AimMarks->UpdateInstanceTransform(Index, Mark.Place, true, false, true);
+		AimMarks->SetCustomDataValue(Index, 0, Mark.Color.R, false);
+		AimMarks->SetCustomDataValue(Index, 1, Mark.Color.G, false);
+		AimMarks->SetCustomDataValue(Index, 2, Mark.Color.B, false);
+	}
+	AimMarks->MarkRenderStateDirty();
+	AimShown = Marks.Num();
 }

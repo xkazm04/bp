@@ -12,6 +12,7 @@
 #include "Engine/Engine.h"
 #include "IXRTrackingSystem.h"
 #include "IsdkFunctionLibrary.h"
+#include "Misc/CoreDelegates.h"
 #include "MotionControllerComponent.h"
 #include "Rig/IsdkControllerRigComponent.h"
 #include "Rig/IsdkHandRigComponent.h"
@@ -136,10 +137,16 @@ void ABpPawn::BeginPlay()
 		for (TActorIterator<AActor> It(GetWorld()); It && !bCaptureHands; ++It) bCaptureHands = It->ActorHasTag(CaptureHandsTag);
 		if (bCaptureHands) SetRestHandsVisible(false);
 	}
+	ABpTable::LoadVoiceVolume();
 	MakeWristPanel();
 	MakeFrameMeter();
 	// Seated calibration (headset-plan code item 1): once the head is tracked, the table comes to the seated eye.
-	if (IsHeadsetOn()) GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
+	if (IsHeadsetOn())
+	{
+		HeadOnHandle = FCoreDelegates::VRHeadsetPutOnHead.AddUObject(this, &ABpPawn::OnHeadOn);
+		HeadOffHandle = FCoreDelegates::VRHeadsetRemovedFromHead.AddUObject(this, &ABpPawn::OnHeadOff);
+		GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
+	}
 }
 
 void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -152,6 +159,8 @@ void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnFocuses().Remove(WristFocusHandle);
 	}
 	if (ABpTable* Table = WristTable.Get()) Table->OnRoomModeChanged().Remove(RoomHandle);
+	FCoreDelegates::VRHeadsetPutOnHead.Remove(HeadOnHandle);
+	FCoreDelegates::VRHeadsetRemovedFromHead.Remove(HeadOffHandle);
 	Super::EndPlay(EndPlayReason);
 }
 

@@ -115,6 +115,10 @@ private:
 		bool bLasso = false;
 		float Fade = 1.f;
 		bool bTriggerDown = false;
+		/** The aim cursor (UpdateAim): the hand's ray this frame, whether it may show (a tracked hand that aims). */
+		bool bAiming = false;
+		FVector AimFrom = FVector::ZeroVector;
+		FVector AimDir = FVector::ForwardVector;
 	};
 
 	/** The synthetic hand's gesture in progress. */
@@ -159,6 +163,8 @@ private:
 	void UpdateHold(float DeltaTime);
 	const FSlot* Speaker() const;
 	void UpdateFades(float DeltaTime);
+	/** The aim cursor (bp.Aim): one mesh, a thin ray and a small reticle per aiming hand; costs nothing while no hand aims. */
+	void UpdateAim();
 	void RunCommands(float DeltaTime);
 	bool StartCommand(const FString& Command);
 	void ActivateSynthetic();
@@ -192,4 +198,8 @@ private:
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> HandMidsLeft;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> HandMidsRight;
+	/** The rays and reticles (UpdateAim), built when a hand first aims. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UInstancedStaticMeshComponent> AimMarks;
+	int32 AimShown = 0;
 };

@@ -44,6 +44,21 @@ namespace
 	/** A stopped onboarding (WP-V1): a warm red, apart from the amber of one still building. */
 	const FLinearColor Stopped(FColor(0xFF, 0x8E, 0x7E));
 
+	// The panel on the left grip with a headset, set live (ABpPawn::ApplyWristPose). The grip's axes: X toward the thumb, Y out
+	// of the palm, Z toward the wrist. 2026-11-08 (the owner, on the Quest 3S): the old pose (FRotator(-60, 180, 0), offset (0,
+	// 0, 6)) faced 131 degrees away from the eye with a resting hand (palm down, forearm toward the paper, 30 cm forward and 40
+	// down from the eye); turned 40% of that toward the eye it stands 79 degrees off, the turn a person makes is 40% shorter.
+	// The rotation is the old one moved along that same arc, so the panel still reads upright; the offset is over the back of
+	// the wrist, 7 cm off the grip along the panel's normal (2.8 cm clear of a modelled hand). Only the arm can confirm them.
+	TAutoConsoleVariable<float> CVarWristPitch(TEXT("bp.WristPitchDeg"), -32.2f, TEXT("The wrist panel's pitch on the left grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristYaw(TEXT("bp.WristYawDeg"), -110.4f, TEXT("The wrist panel's yaw on the left grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristRoll(TEXT("bp.WristRollDeg"), -54.6f, TEXT("The wrist panel's roll on the left grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetX(TEXT("bp.WristOffsetXCm"), -2.3f, TEXT("The wrist panel's offset along the left grip's X, toward the thumb (cm)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetY(TEXT("bp.WristOffsetYCm"), -9.2f, TEXT("The wrist panel's offset along the left grip's Y, out of the palm (cm; negative: out of the back of the hand)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetZ(TEXT("bp.WristOffsetZCm"), 1.8f, TEXT("The wrist panel's offset along the left grip's Z, toward the wrist (cm)."), ECVF_Default);
+	TAutoConsoleVariable<int32> CVarWristPreview(TEXT("bp.WristPreview"), 0, TEXT("A flat check of the wrist pose: 1 hangs the panel from a modelled resting left hand (30 cm forward, 18 left, 40 down from the eye, palm down, forearm forward) with the bp.Wrist* pose, so a flat capture shows the angle."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristPreviewDeg(TEXT("bp.WristPreviewDeg"), 0.f, TEXT("With bp.WristPreview 1: the hand turned this far along the arc that squares the panel to the eye (degrees)."), ECVF_Default);
+
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
 	{
@@ -143,6 +158,14 @@ namespace
 	constexpr float WristTabMinW = 112.f;
 	constexpr float WristTabGap = 10.f;
 	constexpr float WristSeatW = 98.f;
+	/** The voice's level control, right of the sub-line: minus, the level, plus, under the tabs (ids wrist:voice:minus|plus). */
+	constexpr float WristVoiceTop = 66.f;
+	constexpr float WristVoiceBottom = 106.f;
+	constexpr float WristVoiceBtnW = 72.f;
+	constexpr float WristVoiceLabelW = 152.f;
+	constexpr float WristVoiceGap = 6.f;
+	constexpr float WristVoiceW = WristVoiceBtnW * 2.f + WristVoiceLabelW + WristVoiceGap * 2.f;
+	constexpr float WristVoiceStep = 0.25f;
 	constexpr float WristRowTop = 112.f;
 	constexpr float WristRowH = 60.f;
 	constexpr float WristRowStep = 66.f;
@@ -187,7 +210,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:tab:scan|wrist:project:<slug>|wrist:room:<id>|wrist:focus:<id>|wrist:scan:cancel|wrist:scan:dismiss|wrist:page:next|wrist:page:prev|wrist:seat|wrist:tour>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT, a PC link the scan tab)."),
+		TEXT("BpWrist.Tap <wrist:tab:projects|wrist:tab:rooms|wrist:tab:packages|wrist:tab:scan|wrist:project:<slug>|wrist:room:<id>|wrist:focus:<id>|wrist:scan:cancel|wrist:scan:dismiss|wrist:page:next|wrist:page:prev|wrist:seat|wrist:tour|wrist:voice:minus|wrist:voice:plus>: what a hand's tap on that control of the wrist panel does (room mode adds the rooms tab, a headset SEAT, a PC link the scan tab)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -219,8 +242,9 @@ void ABpPawn::MakeWristPanel()
 	const FVector Offset(WristPanelForwardCm, WristPanelSideCm, WristPanelDownCm);
 	if (IsHeadsetOn())
 	{
-		// A headset: on the left hand's grip until a wrist pose is wired (no tracked-hand work in this spark).
-		SetWristParent(HandGripLeft.Get(), NAME_None, FTransform(FRotator(-60.f, 180.f, 0.f), FVector(0.0, 0.0, 6.0), FVector(1.0 / WristPanelPxPerCm)));
+		// A headset: on the left hand's grip (a wrist pose is not wired; the grip follows the hand and ApplyWristPose holds the
+		// transform, live on the bp.Wrist* cvars).
+		ApplyWristPose();
 	}
 	else
 	{
@@ -308,8 +332,10 @@ bool ABpPawn::WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	if (!WristPanel || !WristPanel->IsVisible() || WristBoxes.Num() == 0) return false;
 	const FTransform& T = WristPanel->GetComponentTransform();
 	const FVector Normal = T.GetUnitAxis(EAxis::X);
+	// A one-sided mesh: a ray from behind passes through (the panel's back never takes a hit; before 2026-11-08 a ray
+	// crossing it from behind stole the pinch from the table).
 	const double Denom = FVector::DotProduct(WorldDir, Normal);
-	if (FMath::IsNearlyZero(Denom)) return false;
+	if (Denom >= -KINDA_SMALL_NUMBER) return false;
 	const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
 	if (Along < 0.0) return false;
 	// UWidgetComponent's mapping (as the deck's): widget x = -local Y, y = -local Z, from its pivot, in draw pixels.
@@ -344,6 +370,14 @@ void ABpPawn::WristTap(const FString& Id)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s"), *Id);
 	ABpTable* Table = WristTable.Get();
+	// The voice's level: it steps, is heard at once, and an armed row (the Scan tab) stays armed.
+	if (Id == TEXT("wrist:voice:minus") || Id == TEXT("wrist:voice:plus"))
+	{
+		ABpTable::StepVoiceVolume(Id.EndsWith(TEXT("plus")) ? WristVoiceStep : -WristVoiceStep);
+		if (Table) Table->PreviewVoice();
+		RefreshWrist();
+		return;
+	}
 	// A row armed: only that row goes on. Anything else disarms, and the rest of the Scan tab's controls do only that.
 	if (!WristArmedFocus.IsEmpty() && Id != TEXT("wrist:focus:") + WristArmedFocus)
 	{
@@ -510,6 +544,70 @@ void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 	Add(TEXT("wrist scan card"), 23.0);
 }
 
+void ABpPawn::ApplyWristPose()
+{
+	if (!WristPanel) return;
+	const bool bHeadset = IsHeadsetOn();
+	const int32 Preview = CVarWristPreview.GetValueOnGameThread();
+	if (!bHeadset && Preview <= 0) return;
+	const FRotator Rot(CVarWristPitch.GetValueOnGameThread(), CVarWristYaw.GetValueOnGameThread(), CVarWristRoll.GetValueOnGameThread());
+	const FVector Off(CVarWristOffsetX.GetValueOnGameThread(), CVarWristOffsetY.GetValueOnGameThread(), CVarWristOffsetZ.GetValueOnGameThread());
+	const float Turn = CVarWristPreviewDeg.GetValueOnGameThread();
+	const FString Applied = FString::Printf(TEXT("%.2f/%.2f/%.2f %.2f,%.2f,%.2f p%d %.1f %s"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z, Preview, Turn, *GetActorLocation().ToString());
+	if (Applied == WristPoseApplied) return;
+	const bool bLog = !WristPoseApplied.IsEmpty();
+	WristPoseApplied = Applied;
+	const FTransform Relative(Rot, Off, FVector(1.0 / WristPanelPxPerCm));
+	if (bHeadset)
+	{
+		SetWristParent(HandGripLeft.Get(), NAME_None, Relative);
+	}
+	else
+	{
+		// The flat check: a stand-in for the resting left grip, 30 cm forward, 18 left and 40 down from the eye, X toward the
+		// thumb (the right), Y out of the palm (down), Z toward the wrist (back), turned along the arc that squares the panel
+		// to the eye.
+		if (!WristSimGrip)
+		{
+			WristSimGrip = NewObject<USceneComponent>(this, TEXT("WristSimGrip"));
+			WristSimGrip->SetupAttachment(Origin);
+			WristSimGrip->RegisterComponent();
+			SetWristParent(WristSimGrip.Get(), NAME_None, Relative);
+		}
+		const FVector GripAt(30.0, -18.0, -40.0);
+		FQuat Grip = FRotationMatrix::MakeFromXZ(FVector(0.0, 1.0, 0.0), FVector(-1.0, 0.0, 0.0)).ToQuat();
+		const FTransform Neutral(Grip, GripAt);
+		const FVector PanelAt = Neutral.TransformPosition(Off);
+		const FVector Normal = Grip.RotateVector(Rot.Vector());
+		const FVector ToEye = (FVector::ZeroVector - PanelAt).GetSafeNormal();
+		const FVector Axis = FVector::CrossProduct(Normal, ToEye).GetSafeNormal();
+		if (!Axis.IsNearlyZero() && Turn != 0.f) Grip = FQuat(Axis, FMath::DegreesToRadians(Turn)) * Grip;
+		WristSimGrip->SetRelativeLocationAndRotation(GripAt, Grip);
+		SetWristParent(WristSimGrip.Get(), NAME_None, Relative);
+		const double Off1 = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(Grip.RotateVector(Rot.Vector()).GetSafeNormal(), ToEye)));
+		if (bLog) UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist preview turn %.1f deg: the panel faces %.1f deg off the eye"), Turn, Off1);
+	}
+	if (bLog) UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist pose pitch=%.1f yaw=%.1f roll=%.1f offset=(%.1f, %.1f, %.1f) applied"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z);
+}
+
+void ABpPawn::SetWristHover(const FString& Id)
+{
+	if (Id == WristHover) return;
+	WristHover = Id;
+	RefreshWrist();
+}
+
+void ABpPawn::TickWristLive()
+{
+	ApplyWristPose();
+	const float Volume = ABpTable::VoiceVolume();
+	if (Volume != WristVoiceShown)
+	{
+		WristVoiceShown = Volume;
+		RefreshWrist();
+	}
+}
+
 void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative)
 {
 	if (!WristPanel || !Parent) return;
@@ -613,6 +711,8 @@ void ABpPawn::RefreshWrist()
 	if (bScanTab) Key += TEXT("+scan");
 	const bool bSeat = IsHeadsetOn();
 	if (bSeat) Key += TEXT("|seat");
+	Key += FString::Printf(TEXT("|v%.2f"), ABpTable::VoiceVolume());
+	Key += TEXT("|h") + WristHover;
 	if (Key == WristKey) return;
 	WristKey = Key;
 	WristBoxes.Reset();
@@ -783,6 +883,28 @@ void ABpPawn::RefreshWrist()
 				SNew(STextBlock).Text(FText::FromString(TEXT("TOUR"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
 			]);
 		WristBoxes.Add({ TEXT("wrist:tour"), WristTour });
+	}
+	// The voice's level, on the row under the tabs, right; the sub-line stops short of it.
+	{
+		static const FSlateRoundedBoxBrush VoiceBtn(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
+		static const FSlateRoundedBoxBrush VoiceLabel(Cyan.CopyWithNewOpacity(0.05f), 10.f, CyanEdge.CopyWithNewOpacity(0.35f), 1.5f);
+		const FBox2f Minus(FVector2f(WristX1 - WristVoiceW, WristVoiceTop), FVector2f(WristX1 - WristVoiceW + WristVoiceBtnW, WristVoiceBottom));
+		const FBox2f Label(FVector2f(Minus.Max.X + WristVoiceGap, WristVoiceTop), FVector2f(Minus.Max.X + WristVoiceGap + WristVoiceLabelW, WristVoiceBottom));
+		const FBox2f Plus(FVector2f(Label.Max.X + WristVoiceGap, WristVoiceTop), FVector2f(WristX1, WristVoiceBottom));
+		const auto Btn = [&](const FBox2f& Box, const TCHAR* Text, const TCHAR* BoxId)
+		{
+			Put(Box, SNew(SBorder).BorderImage(&VoiceBtn).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 28.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
+				]);
+			WristBoxes.Add({ BoxId, Box });
+		};
+		Btn(Minus, TEXT("-"), TEXT("wrist:voice:minus"));
+		Put(Label, SNew(SBorder).BorderImage(&VoiceLabel).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("VOICE %d%%"), FMath::RoundToInt(ABpTable::VoiceVolume() * 100.f)))).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(ABpTable::VoiceVolume() > 0.f ? CyanText : Amber))
+			]);
+		Btn(Plus, TEXT("+"), TEXT("wrist:voice:plus"));
 	}
 	if (bProjects)
 	{
@@ -1014,6 +1136,12 @@ void ABpPawn::RefreshWrist()
 				SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("PAGE %d OF %d"), WristPage + 1, Pages))).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(CyanText))
 			]);
 	}
+	// The control a hand's ray is on: an amber edge, what a pinch would act on (the aim cursor stops short of the panel).
+	if (const FWristBox* Hovered = WristBoxes.FindByPredicate([this](const FWristBox& Each) { return Each.Id == WristHover; }))
+	{
+		static const FSlateRoundedBoxBrush HoverEdge(Amber.CopyWithNewOpacity(0.12f), 10.f, Amber, 3.f);
+		Put(Hovered->Box, SNew(SBorder).BorderImage(&HoverEdge));
+	}
 	// The title where the tabs leave it room; else the lit tab names the panel (WP-V1: three tabs and SEAT fill the row).
 	const float TitleRight = WristX0 + WristTextWidth(Title, CapFont(TEXT("Bold"), 25.f)) + 12.f;
 	if (TitleRight > RowLeft + WristTabGap) Title.Reset();
@@ -1038,7 +1166,7 @@ void ABpPawn::RefreshWrist()
 			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
 			[
-				SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
+				SNew(STextBlock).Text(FText::FromString(WristCut(Sub, CapFont(TEXT("Regular"), 18.f), WristX1 - WristX0 - WristVoiceW - 14.f))).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[

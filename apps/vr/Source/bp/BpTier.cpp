@@ -14,6 +14,7 @@
 #include "Engine/Engine.h"
 #include "Engine/SkinnedAsset.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
@@ -119,6 +120,56 @@ namespace
 			UE_LOG(LogBpTable, Log, TEXT("BpTier:   %8lld %s %s"), Rows[Index].Tris, Rows[Index].bTranslucent ? TEXT("T") : TEXT("o"), *Rows[Index].Name);
 		}
 	}
+
+#if !UE_BUILD_SHIPPING
+	/** bp.QuestTier.Hide: what it hid, so a clear shows exactly those again. */
+	TArray<TWeakObjectPtr<AActor>> HiddenByAblation;
+
+	FAutoConsoleCommandWithWorldAndArgs CmdHide(
+		TEXT("bp.QuestTier.Hide"),
+		TEXT("bp.QuestTier.Hide <substring>: hides every StaticMeshActor whose actor or mesh name contains it (case-insensitive), to ablate one mesh on the device; no argument shows them again. Logs what it hid. Non-Shipping builds only."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (GEngine && (!World || !World->IsGameWorld()))
+			{
+				World = nullptr;
+				for (const FWorldContext& Context : GEngine->GetWorldContexts())
+				{
+					if (Context.World() && Context.World()->IsGameWorld()) { World = Context.World(); break; }
+				}
+			}
+			if (!World)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpTier: usage bp.QuestTier.Hide [substring] (needs a playing world)"));
+				return;
+			}
+			if (Args.Num() == 0)
+			{
+				int32 Shown = 0;
+				for (const TWeakObjectPtr<AActor>& Each : HiddenByAblation)
+				{
+					if (AActor* Actor = Each.Get()) { Actor->SetActorHiddenInGame(false); ++Shown; }
+				}
+				HiddenByAblation.Reset();
+				UE_LOG(LogBpTable, Log, TEXT("BpTier: hide cleared, %d actor(s) shown again"), Shown);
+				return;
+			}
+			const FString& Needle = Args[0];
+			int32 Count = 0;
+			for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+			{
+				const UStaticMeshComponent* Comp = It->GetStaticMeshComponent();
+				const UStaticMesh* Mesh = Comp ? Comp->GetStaticMesh() : nullptr;
+				const FString MeshName = Mesh ? Mesh->GetName() : FString();
+				if (It->IsHidden() || (!It->GetName().Contains(Needle) && !MeshName.Contains(Needle))) continue;
+				It->SetActorHiddenInGame(true);
+				HiddenByAblation.Add(*It);
+				if (Count < 40) UE_LOG(LogBpTable, Log, TEXT("BpTier:   hid %s (%s)"), *It->GetName(), *MeshName);
+				++Count;
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpTier: hide %s: %d actor(s) hidden"), *Needle, Count);
+		}));
+#endif
 
 	FAutoConsoleCommandWithWorldAndArgs CmdReport(
 		TEXT("bp.QuestTier.Report"),

@@ -14,6 +14,7 @@
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/ConfigCacheIni.h"
 #include "Misc/App.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -33,6 +34,34 @@ namespace
 		1,
 		TEXT("1: the lamp's tour speaks each step's line in Glim's voice (the bundled clips); 0: captions only."),
 		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarVoiceVolume(
+		TEXT("bp.VoiceVolume"),
+		1.5f,
+		TEXT("The lamp's voice level, 0 to 3 (1 the clips as levelled, -14 LUFS; above 1 limited, never clipped); the wrist's VOICE - and + step it, and it is saved across runs."),
+		ECVF_Default);
+	const TCHAR* const VoiceSettingsSection = TEXT("/Script/bp.BpVoice");
+	const TCHAR* const VoiceSettingsKey = TEXT("VoiceVolume");
+	bool bLoadingVoice = false;
+
+	void SaveVoiceVolume(IConsoleVariable* Var)
+	{
+		if (bLoadingVoice || !GConfig || !Var) return;
+		GConfig->SetFloat(VoiceSettingsSection, VoiceSettingsKey, Var->GetFloat(), GGameUserSettingsIni);
+		GConfig->Flush(false, GGameUserSettingsIni);
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume %.2f saved"), Var->GetFloat());
+	}
+
+	/** A sample scaled by the level, with a soft knee above 0.8 full scale, so a level above 1 is loud and never clips. */
+	float LimitSample(float X)
+	{
+		const float A = FMath::Abs(X);
+		if (A <= 0.8f) return X;
+		const float Over = FMath::Min((A - 0.8f) / 0.2f, 4.f);
+		// tanh(x), a soft approach to 1 (x <= 4 suffices: 1 - tanh(4) < 0.002).
+		const float Soft = (FMath::Exp(Over) - FMath::Exp(-Over)) / (FMath::Exp(Over) + FMath::Exp(-Over));
+		return FMath::Sign(X) * (0.8f + 0.2f * Soft);
+	}
 
 	TAutoConsoleVariable<int32> CVarTourFocus(
 		TEXT("bp.TourFocus"),
@@ -306,22 +335,92 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 	Wave->Duration = static_cast<float>(Bytes) / (2.f * Channels * Rate);
 	Wave->SoundGroup = SOUNDGROUP_Voice;
 	Wave->bLooping = false;
-	Wave->QueueAudio(File->GetData() + Offset, Bytes);
+	// The clip at the level (bp.VoiceVolume), limited sample by sample: a level over 1 must not clip the output.
+	TourVoiceGain = VoiceVolume();
+	TArray<uint8> Scaled;
+	Scaled.SetNumUninitialized(Bytes);
+	for (int32 At = 0; At + 1 < Bytes; At += 2)
+	{
+		const int16 In = static_cast<int16>(File->GetData()[Offset + At] | (File->GetData()[Offset + At + 1] << 8));
+		const float Out = LimitSample(static_cast<float>(In) / 32768.f * TourVoiceGain);
+		const int16 Sample = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(Out * 32767.f), -32768, 32767));
+		Scaled[At] = static_cast<uint8>(Sample & 0xFF);
+		Scaled[At + 1] = static_cast<uint8>((Sample >> 8) & 0xFF);
+	}
+	Wave->QueueAudio(Scaled.GetData(), Bytes);
 	if (!TourVoiceFalloff)
 	{
-		// Heard from the lamp: spatialized, full within a metre and a half, so a seated person always hears it.
+		// Heard from the lamp: spatialized, full within three metres, so a seated person never loses it to distance.
 		TourVoiceFalloff = NewObject<USoundAttenuation>(this);
 		TourVoiceFalloff->Attenuation.bAttenuate = true;
 		TourVoiceFalloff->Attenuation.bSpatialize = true;
 		TourVoiceFalloff->Attenuation.AttenuationShape = EAttenuationShape::Sphere;
-		TourVoiceFalloff->Attenuation.AttenuationShapeExtents = FVector(150.f, 0.f, 0.f);
+		TourVoiceFalloff->Attenuation.AttenuationShapeExtents = FVector(300.f, 0.f, 0.f);
 		TourVoiceFalloff->Attenuation.FalloffDistance = 400.f;
 	}
 	FVector Head;
 	if (!LampHead(Head)) Head = GetActorTransform().TransformPosition(FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm));
 	TourVoiceEndsAt = (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0) + Wave->Duration + 0.15;
 	TourVoice = UGameplayStatics::SpawnSoundAtLocation(this, Wave, Head, FRotator::ZeroRotator, 1.f, 1.f, 0.f, TourVoiceFalloff);
-	UE_LOG(LogBpTable, Log, TEXT("BpTour: says %s (%.1f s)%s"), Clip, Wave->Duration, TourVoice.IsValid() ? TEXT("") : TEXT(", no audio device: silent"));
+	// How the line reaches the ear, measured here: the listener (the seat's eye), the sphere's attenuation at that distance,
+	// and the platform's headroom (Config/Android/AndroidEngine.ini holds the Quest's at 0).
+	float SeatDistCm = -1.f, Attenuation = -1.f;
+	const FVector Ear = GetWorld() && GetWorld()->GetFirstPlayerController() && GetWorld()->GetFirstPlayerController()->GetPawn() ? GetWorld()->GetFirstPlayerController()->GetPawn()->GetPawnViewLocation() : FVector::ZeroVector;
+	if (!Ear.IsZero())
+	{
+		SeatDistCm = FVector::Dist(Ear, Head);
+		Attenuation = TourVoiceFalloff->Attenuation.AttenuationEval(FMath::Max(0.f, SeatDistCm - static_cast<float>(TourVoiceFalloff->Attenuation.AttenuationShapeExtents.X)), TourVoiceFalloff->Attenuation.FalloffDistance, 1.f);
+	}
+	float HeadroomDb = 0.f;
+	if (GConfig) GConfig->GetFloat(TEXT("Audio"), TEXT("PlatformHeadroomDB"), HeadroomDb, GEngineIni);
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: says %s (%.1f s) level=%.2f dist_cm=%.0f attenuation=%.2f headroom_db=%.0f%s"), Clip, Wave->Duration, TourVoiceGain, SeatDistCm, Attenuation, HeadroomDb, TourVoice.IsValid() ? TEXT("") : TEXT(", no audio device: silent"));
+}
+
+float ABpTable::VoiceVolume()
+{
+	return FMath::Clamp(CVarVoiceVolume.GetValueOnGameThread(), 0.f, 3.f);
+}
+
+void ABpTable::StepVoiceVolume(float Delta)
+{
+	IConsoleVariable* Var = CVarVoiceVolume.AsVariable();
+	const float Stepped = FMath::Clamp(FMath::GridSnap(VoiceVolume() + Delta, 0.25f), 0.f, 3.f);
+	Var->Set(Stepped, ECVF_SetByConsole);
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume stepped to %.2f"), Stepped);
+}
+
+void ABpTable::LoadVoiceVolume()
+{
+	static bool bDone = false;
+	if (bDone) return;
+	bDone = true;
+	CVarVoiceVolume.AsVariable()->SetOnChangedCallback(FConsoleVariableDelegate::CreateStatic(&SaveVoiceVolume));
+	float Saved = 0.f;
+	if (GConfig && GConfig->GetFloat(VoiceSettingsSection, VoiceSettingsKey, Saved, GGameUserSettingsIni))
+	{
+		bLoadingVoice = true;
+		CVarVoiceVolume.AsVariable()->Set(FMath::Clamp(Saved, 0.f, 3.f), ECVF_SetByConsole);
+		bLoadingVoice = false;
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume %.2f (saved)"), VoiceVolume());
+	}
+}
+
+bool ABpTable::IsVoicePlaying() const
+{
+	const UAudioComponent* Voice = TourVoice.Get();
+	return Voice && Voice->IsPlaying() && GetWorld() && GetWorld()->GetTimeSeconds() < TourVoiceEndsAt;
+}
+
+void ABpTable::PreviewVoice()
+{
+	// The line that is playing, from the start at the new level; else the lamp's "Like this."
+	if (IsVoicePlaying() && !TourVoiceClip.IsEmpty())
+	{
+		const FString Clip = TourVoiceClip;
+		SpeakTour(*Clip);
+		return;
+	}
+	SpeakTour(TEXT("shown"));
 }
 
 void ABpTable::TickTour()
@@ -330,6 +429,13 @@ void ABpTable::TickTour()
 	if (!World || !SheetPlan.IsValid()) return;
 	const double Now = World->GetTimeSeconds();
 	FBpLinkModule& Link = FBpLinkModule::Get();
+	// A line's samples are done: its component stops (a procedural wave would play silence on), tour or not (a preview of
+	// the level plays outside the tour); a level changed mid-line (the wrist, adb) restarts that line at it.
+	if (UAudioComponent* Voice = TourVoice.Get(); Voice && Voice->IsPlaying())
+	{
+		if (Now >= TourVoiceEndsAt) Voice->Stop();
+		else if (TourVoiceGain >= 0.f && !FMath::IsNearlyEqual(TourVoiceGain, VoiceVolume(), 0.01f)) PreviewVoice();
+	}
 	// Away (no focus): nothing advances. A cold start counts its delay from the focus; a running step holds.
 	if (!TourHasFocus())
 	{
@@ -367,12 +473,8 @@ void ABpTable::TickTour()
 		return;
 	}
 	if (Link.GetProductSlug() != TourProduct) { StopTour(TEXT("another product")); return; }
-	// A line's samples are done: its component stops (a procedural wave would play silence on), and a waiting line speaks.
-	if (Now >= TourVoiceEndsAt)
-	{
-		if (UAudioComponent* Voice = TourVoice.Get(); Voice && Voice->IsPlaying()) Voice->Stop();
-		if (!TourVoiceNext.IsEmpty()) SpeakTour(*FString(TourVoiceNext));
-	}
+	// A line's samples are done (the top of this tick stopped it): a waiting line speaks.
+	if (Now >= TourVoiceEndsAt && !TourVoiceNext.IsEmpty()) SpeakTour(*FString(TourVoiceNext));
 
 	const double InStep = Now - TourStepAt;
 	const bool bIdle = Now - FMath::Max(TourHandAt, TourStepAt) >= TourIdleS;

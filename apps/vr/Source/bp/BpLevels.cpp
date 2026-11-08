@@ -757,15 +757,18 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 {
 	OutKind.Reset();
 	OutId.Reset();
+	bAimHitLocal = false;
 	if (!SheetPlan.IsValid() || WorldDir.IsNearlyZero()) return false;
 	const FTransform& Actor = GetActorTransform();
 	const FVector Origin = Actor.InverseTransformPosition(WorldOrigin), Dir = Actor.InverseTransformVector(WorldDir);
-	const auto OnPlane = [&Origin, &Dir](double Z, FVector& Point)
+	const auto OnPlane = [this, &Origin, &Dir](double Z, FVector& Point)
 	{
 		if (FMath::IsNearlyZero(Dir.Z)) return false;
 		const double T = (Z - Origin.Z) / Dir.Z;
 		if (T < 0.0) return false;
 		Point = Origin + Dir * T;
+		AimHitLocal = Point;
+		bAimHitLocal = true;
 		return true;
 	};
 	// A point on a lifted plane, back through its batch's transform to the paper, then to plan space.
@@ -781,6 +784,7 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		if (DeckHit(WorldOrigin, WorldDir, OutId))
 		{
 			OutKind = TEXT("deck");
+			bAimHitLocal = false;
 			return true;
 		}
 		// The lamp's head (WP3: a hold asks it for the next room), a sphere about it.
@@ -793,6 +797,7 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 			{
 				OutKind = TEXT("lamp");
 				OutId = TEXT("lamp");
+				bAimHitLocal = false;
 				return true;
 			}
 		}
@@ -802,6 +807,7 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	if (CardHit(WorldOrigin, WorldDir, OutId))
 	{
 		OutKind = TEXT("card");
+		bAimHitLocal = false;
 		return true;
 	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
@@ -866,6 +872,82 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		}
 	}
 	return false;
+}
+
+bool ABpTable::GetAimHit(FVector& OutWorld) const
+{
+	if (!bAimHitLocal) return false;
+	OutWorld = GetActorTransform().TransformPosition(AimHitLocal);
+	return true;
+}
+
+bool ABpTable::AssistHit(const FVector& WorldOrigin, const FVector& WorldDir, float RadiusDeg, FString& OutKind, FString& OutId) const
+{
+	OutKind.Reset();
+	OutId.Reset();
+	if (RadiusDeg <= 0.f || !SheetPlan.IsValid() || WorldDir.IsNearlyZero()) return false;
+	const FTransform& Actor = GetActorTransform();
+	const FVector Origin = Actor.InverseTransformPosition(WorldOrigin), Dir = Actor.InverseTransformVector(WorldDir).GetSafeNormal();
+	if (FMath::IsNearlyZero(Dir.Z)) return false;
+	const double TanRadius = FMath::Tan(FMath::DegreesToRadians(FMath::Min<double>(RadiusDeg, 10.0)));
+	/** A footprint on one lift's plane, in paper cm. */
+	struct FTarget { FBox2D Box; int32 Group; };
+	TArray<FTarget, TInlineAllocator<64>> Targets;
+	const FTransform AtRest = WingGroupTransform(0.f);
+	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
+	FTransform RoomT = WingT;
+	RoomT.AddToTranslation(FVector(-LiftedRoomSlideCm * Ease(RoomAlpha), 0.0, RoomLiftCm * Ease(RoomAlpha)));
+	const FTransform Groups[3] = { AtRest, WingT, RoomT };
+	const auto PlanBox = [this](const FBpPlanBox& B)
+	{
+		FBox2D Out(ForceInit);
+		Out += PlanToPaperCm(FVector2D(B.x, B.y));
+		Out += PlanToPaperCm(FVector2D(B.x + B.w, B.y + B.h));
+		return Out;
+	};
+	if (!RoomModeId.IsEmpty())
+	{
+		for (const FCrumb& Crumb : RoomCrumbs) if (!Crumb.Id.IsEmpty()) Targets.Add({ Crumb.PaperCm, 0 });
+		for (const FKeyCell& Cell : KeyCells) Targets.Add({ Cell.PaperCm, 0 });
+		for (const FRoomSlot& Slot : RoomSlots) Targets.Add({ Slot.Box, 0 });
+	}
+	else
+	{
+		for (const FCrumb& Crumb : Crumbs) if (!Crumb.Id.IsEmpty()) Targets.Add({ Crumb.PaperCm, 0 });
+		for (const FBpPlanWing& Wing : SheetPlan->wings) Targets.Add({ PlanBox(Wing.box), 0 });
+		if (!AnimWing.IsEmpty() && WingAlpha > 0.f)
+		{
+			for (const FBpPlanRoom& Room : SheetPlan->rooms)
+			{
+				if (Room.parentId != AnimWing) continue;
+				Targets.Add({ PlanBox(Room.box), Room.id == AnimRoom && RoomAlpha > 0.f ? 2 : 1 });
+			}
+		}
+	}
+	// The nearest footprint to the ray's point on its own plane, within the cone there.
+	double Best = TNumericLimits<double>::Max();
+	FVector BestWorld = FVector::ZeroVector;
+	for (int32 Group = 0; Group < UE_ARRAY_COUNT(Groups); ++Group)
+	{
+		const double T = (Groups[Group].GetTranslation().Z - Origin.Z) / Dir.Z;
+		if (T <= 0.0) continue;
+		const FVector2D On = LocalToPaperCm(Groups[Group].InverseTransformPosition(Origin + Dir * T));
+		const double Reach = T * TanRadius;
+		for (const FTarget& Target : Targets)
+		{
+			if (Target.Group != Group || !Target.Box.bIsValid) continue;
+			const FVector2D Nearest(FMath::Clamp(On.X, Target.Box.Min.X, Target.Box.Max.X), FMath::Clamp(On.Y, Target.Box.Min.Y, Target.Box.Max.Y));
+			const double Gap = FVector2D::Distance(On, Nearest);
+			if (Gap > Reach || Gap >= Best) continue;
+			Best = Gap;
+			// A hair inside the footprint, so the confirming ray lands in it.
+			const FVector2D Inside = FMath::Lerp(Nearest, Target.Box.GetCenter(), 0.1);
+			const FVector Local(PaperDepthCm * 0.5 - Inside.Y, Inside.X - PaperWidthCm * 0.5, 0.0);
+			BestWorld = Actor.TransformPosition(Groups[Group].TransformPosition(Local));
+		}
+	}
+	if (Best == TNumericLimits<double>::Max()) return false;
+	return HitTest(WorldOrigin, (BestWorld - WorldOrigin).GetSafeNormal(), OutKind, OutId) && !OutId.IsEmpty();
 }
 
 bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
