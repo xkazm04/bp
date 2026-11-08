@@ -170,7 +170,7 @@ const Body = memo(function Body({ c, now, prev, T, lens, nameOf, view, onView, w
         <div className="tr-sec"><Callout tone="flag"><b>✕ Build failed.</b><span>This item did not build, broke a gate or did not move its metric. Accepting it is allowed only with a note, and it ships flagged.</span></Callout></div>
       ) : null}
       {!perf || c.shots.length ? <Screens c={c} slug={T.slug} view={view} onView={onView} fname={fname} stateLine={stateLine(p)} prev={prev} /> : null}
-      {p.commit_sha ? <CommitDiff ctx={T.ctx} product={T.slug ?? 'kettle'} sha={p.commit_sha} initiallyOpen={wide} /> : (
+      {p.commit_sha ? <CommitDiff ctx={T.ctx} product={T.slug ?? 'kettle'} sha={p.commit_sha} wide={wide} /> : (
         <section className="tr-sec"><h4>Commit</h4><p className="tr-dim">{p.status === 'failed' ? 'No commit: the build did not get that far.' : 'No commit recorded for this item.'}</p></section>
       )}
       </div>

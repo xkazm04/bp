@@ -104,6 +104,8 @@ export function Agents() {
                 ? <span className="rm"><span>{j.release}</span>{x.rel && <span>{x.rel.status}</span>}</span>
                 : x.prepare ? <span className="rm"><span>repo setup</span></span>
                 : <span className="rm"><span>{x.measure ? j.scope?.label ?? 'Everything' : (j.proposals ?? []).join(', ')}</span><span>{x.n}/{x.m}</span></span>}
+              {/* two directed scans of one lens and scope differ only by the note: one clipped line here, the whole of it on the title */}
+              {j.focus ? <span className="rm"><span title={j.focus}>Looking for: {j.focus}</span></span> : null}
               {!x.release && !x.prepare && <span className="bar" aria-hidden="true"><i style={{ width: (x.m ? (100 * x.n) / x.m : 0) + '%' }} /></span>}
             </Row>
           );

@@ -7,6 +7,8 @@
 //   bounded   a long value is shortened, never the key list: the full note is not in the summary, which stays <= 600 chars
 //   order     the same args in one insertion order and its reverse show every key either way
 //   policy    policy.propose with a long tools array first still shows hours, minTier and tools
+//   directed  scan.directed (its own summary path) shows the lens, the scope, an undeclared key and the WHOLE note: the note
+//             is what is being approved, so the per-value cut that binds every other arg must not reach it
 // rule.propose has its own summary path and is not asserted here.
 // Run: node scripts/check-companion-card-summary.ts   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -65,6 +67,12 @@ try {
   const s4 = await summary('policy.propose', { tools, hours: 1, product: 'kettle', minTier: 3 });
   has('policy', s4, ['hours', 'minTier', 'tools', 'kettle']);
   check('policy: the summary stays <= 600 chars', s4.length <= 600, `length ${s4.length}`);
+
+  // directed: a note far past the 60-char value cut, with its last words the ones a cut would lose
+  const focus = 'Coverage of framer motion transitions on checkout ' + 'and the modals around it '.repeat(30) + 'tail-of-the-note';
+  const s5 = await summary('scan.directed', { focus, extra: 'zzz-marker', slug: 'kettle', lens: 'perf', scope: { kind: 'room', label: 'Payments room', features: ['gift-cards', 'tax'] } });
+  has('directed', s5, ['kettle', 'lens perf', 'Payments room', 'room', 'gift-cards', 'tax', 'extra', 'zzz-marker']);
+  check('directed: the summary quotes the whole note', s5.includes(`"${focus}"`), `length ${s5.length}`);
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

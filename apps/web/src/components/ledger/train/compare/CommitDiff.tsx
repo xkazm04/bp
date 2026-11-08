@@ -2,8 +2,9 @@
 // shows the item, once per product and sha for the session (a module cache, so walking items back and forth never
 // refetches). Shows the files with add/del bars at once (A/1: the file list is part of the evidence), the message with
 // its trailers behind a disclosure, and the patch, whose lines mount only while the patch is open (open from the start
-// in the wide panel), in chunks of 100 that the browser skips laying out off screen (content-visibility).
-import { memo, useEffect, useMemo, useState } from 'react';
+// in the wide panel, and opened on entering it unless the person closed it), in chunks of 100 that the browser skips
+// laying out off screen (content-visibility).
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { CommitDiff as Diff } from '@bp/core/scan/types';
 import { commitDiff, refusalText, type ScanCtx } from '@/lib/scan/actions';
 import { boundedWait } from './useChangeMap';
@@ -107,14 +108,18 @@ export interface CommitDiffProps {
   /** The product (its slug, 'kettle' for the sample): the cache key's first half. */
   product: string;
   sha: string;
-  /** The patch open at mount (the wide panel shows everything). */
-  initiallyOpen?: boolean;
+  /** The wide panel shows everything: the patch is open at mount there, and opens on entering it. */
+  wide?: boolean;
 }
 
 type Got = { sha: string; d: Diff } | { sha: string; error: string };
 
-export const CommitDiff = memo(function CommitDiff({ ctx, product, sha, initiallyOpen = false }: CommitDiffProps) {
-  const [patch, setPatch] = useState(initiallyOpen);
+export const CommitDiff = memo(function CommitDiff({ ctx, product, sha, wide = false }: CommitDiffProps) {
+  const [patch, setPatch] = useState(wide);
+  // only the person closes the patch (nothing here sets it false), so a closing toggle is theirs: Wide does not overrule
+  // it. It lives as long as the item does: the panel's body is keyed by id.
+  const shut = useRef(false);
+  useEffect(() => { if (wide && !shut.current) setPatch(true); }, [wide]);
   const [got, setGot] = useState<Got | null>(null);
   const [tries, setTries] = useState(0);
   useEffect(() => {
@@ -131,7 +136,7 @@ export const CommitDiff = memo(function CommitDiff({ ctx, product, sha, initiall
         <>
           <Files d={cur.d} />
           <details className="tr-det"><summary>Commit message</summary><Message text={cur.d.message} /></details>
-          <details className="tr-det" open={patch} onToggle={(e) => setPatch(e.currentTarget.open)}>
+          <details className="tr-det" open={patch} onToggle={(e) => { shut.current = !e.currentTarget.open; setPatch(e.currentTarget.open); }}>
             <summary>The patch · {cur.d.lines} lines{cur.d.truncated ? ' (truncated)' : ''}</summary>
             {patch ? <Patch d={cur.d} /> : null}
           </details>

@@ -202,6 +202,13 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 /* the controls show on the row in hand, so the data outweighs them; they keep their place, and the phone has no hover to wait for */
 .lg-page:not(.phone) .lg-md > * { opacity: 0; }
 .lg-page:not(.phone) .lg-mx tr:hover .lg-md > *, .lg-page:not(.phone) .lg-mx tr.act .lg-md > *, .lg-page:not(.phone) .lg-mx tr:focus-within .lg-md > * { opacity: 1; }
+/* A matrix narrower than its lenses (compare docked) slides its last cells under the pinned controls. Paper goes behind them only on the
+   rows where they show, the feature column's own, so a button never sits on a count and a row whose controls are hidden keeps every cell. */
+.lg-page:not(.phone) .lg-mx tbody tr:hover .lg-md, .lg-page:not(.phone) .lg-mx tbody tr.act .lg-md, .lg-page:not(.phone) .lg-mx tbody tr:focus-within .lg-md, .lg-page.phone .lg-mx tbody .lg-md { background: color-mix(in srgb, var(--paper-mid) 86%, var(--paper-lo)); }
+/* the head's cell has no control to keep in reach, and pinned its solid ground would hide the last lens names */
+.lg-mx thead .lg-md { right: auto; }
+/* a cell tabbed to must stop clear of that paper, not behind it (about the width of Table and Dispatch) */
+.lg-body:has(.lg-mx) { scroll-padding-right: 190px; }
 .lg-fchip span { margin-left: 2px; font-size: 14px; line-height: 1; }
 .lg-mc .lg-mvpm { color: var(--ink-hi); font-size: 13px; }
 
