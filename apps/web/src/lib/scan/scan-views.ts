@@ -65,6 +65,7 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
         n: j.status === 'done' ? pr.m : pr.n, m: pr.m, status,
         // the chip is a target: it names its job (one per line at ?scale > 1), when it was last heard from, and why it failed
         job: j.id, seen, error: j.status === 'failed' ? j.error : undefined,
+        ...(all ? { all: true as const } : {}),
       });
     }
   }

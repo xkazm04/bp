@@ -393,6 +393,13 @@ const measured: Record<string, string> = {};
     const E4 = mount(1280, 800, 4), M4 = E4.M, base = room.base;
     const now = Date.now(), job = { id: 'j1', kind: 'measure', lens, scope: { kind: 'room', id: base, label: room.name, features: room.feats.map((f: Any) => f.id) }, status: 'running', queued_at: new Date(now - 1000).toISOString(), started_at: new Date(now - 1000).toISOString() };
     const { views } = scanViews([job], undefined, M4, () => '#6ff2c8', now);
+    // the rooms' own reading on the real ?scale=4 layout: each line's room carries its own counts, nothing added across lines
+    const { roomScans } = await imp('engine/render/scans.ts');
+    const roomRows = roomScans(views, M4.L), roomLines = M4.L.rooms.filter((r: Any) => r.base === base);
+    expect(roomLines.length === 4 && roomRows.length === 4 && roomRows.every((r: Any) => r.total === room.feats.length && r.done === 0 && r.state === 'scanning'), '?scale=4: a room scan gives each line\'s room its own total (' + JSON.stringify(roomRows.slice(0, 2)) + ')');
+    const every = scanViews([{ ...job, scope: { kind: 'all', label: 'Everything', features: [] } }], undefined, M4, () => '#6ff2c8', now).views;
+    const everyRows = roomScans(every, M4.L);
+    expect(every.every((v: Any) => v.all === true) && everyRows.length === M4.L.rooms.length && everyRows.reduce((a: number, r: Any) => a + r.total, 0) === M4.L.tiles.length, '?scale=4: an everything scan counts every tile once across every line\'s rooms (' + everyRows.reduce((a: number, r: Any) => a + r.total, 0) + ' of ' + M4.L.tiles.length + ')');
     const v2 = views.find((v: Any) => v.id === 'j1@2');
     expect(!!v2, 'at ?scale=4 the job has a view j1@2 (' + views.map((v: Any) => v.id).join(' ') + ')');
     if (v2) {

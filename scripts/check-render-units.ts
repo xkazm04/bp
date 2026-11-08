@@ -624,6 +624,90 @@ function traced(fn: () => void): string[] {
   expect(/stalled/.test(stale.chip) && !/stalled/.test(live.chip), `scans: a stale view's chip says it stalled (${stale.chip})`);
 }
 
+// ---------------------------------------------------------------- the scan layer at L0: each room's own state
+// roomScans is the pure reading the layer draws. Partial and everything scopes, two jobs over a room (the newest wins), a job
+// per product line at ?scale > 1 (never added together), and the rooms a job has no feature in (absent). The drawn half: only
+// below lod 0.995, in the accent but no wider than a wall and a thin rail, and the everything outline gives way to the rooms.
+{
+  const blds = [{ id: 'b0' }, { id: 'b1' }];
+  const wing = (b: number) => ({ bld: blds[b] });
+  const roomNode = (id: string, ri: number, x = 0) => ({ id, ri, x, y: 0, w: 400, h: 300, labelBox: null });
+  const lay = (rooms: { node: ReturnType<typeof roomNode>; ids: string[]; b?: number }[]) => {
+    const TILE: Record<string, unknown> = {}, tiles: unknown[] = [];
+    for (const r of rooms) for (const id of r.ids) { const T = { id, room: r.node, wing: wing(r.b ?? 0), x: r.node.x, y: 0, w: 20, h: 10, bi: 0, bay: { rib: { x: r.node.x, y: 0, w: 20, h: 10 }, tiles: [id] } }; TILE[id] = T; tiles.push(T); }
+    return { TILE, tiles } as never;
+  };
+  const V = (o: Record<string, unknown>) => ({ id: 'j', job: 'j', lens: 'l', accent: '#123456', place: null, features: [], done: new Set<string>(), n: 0, m: 0, status: 'running', ...o }) as never;
+  const a = roomNode('a', 0), b = roomNode('b', 1, 500), c = roomNode('c', 2, 1000);
+  const L1 = lay([{ node: a, ids: ['a1', 'a2', 'a3'] }, { node: b, ids: ['b1', 'b2'] }, { node: c, ids: ['c1'] }]);
+  const of = (rs: { room: string }[], id: string) => rs.find((r) => r.room === id) as unknown as { done: number; total: number; state: string; lens: string } | undefined;
+
+  const partial = SL.roomScans([V({ features: ['a1', 'a2', 'b1', 'b2'], done: new Set(['a1', 'b1', 'b2']) })], L1);
+  expect(of(partial, 'a')?.total === 2 && of(partial, 'a')?.done === 1 && of(partial, 'a')?.state === 'scanning', 'roomScans: a partial scope counts only the room\'s features in scope');
+  expect(of(partial, 'b')?.done === 2 && of(partial, 'b')?.state === 'scanned', 'roomScans: a room whose scoped features are all read is scanned');
+  expect(!of(partial, 'c'), 'roomScans: a room with no feature in scope is absent');
+  expect(partial.map((r) => r.room).join() === 'a,b', 'roomScans: rooms come back in plan order');
+
+  const every = SL.roomScans([V({ all: true, done: new Set(['c1']) })], L1);
+  expect(of(every, 'a')?.total === 3 && of(every, 'a')?.done === 0 && of(every, 'b')?.total === 2 && of(every, 'c')?.state === 'scanned', 'roomScans: an everything scope covers every room, each with its own total');
+
+  const two = SL.roomScans([V({ features: ['a1', 'a2'], done: new Set(['a1', 'a2']), lens: 'old' }), V({ features: ['a1', 'a3'], done: new Set(['a3']), lens: 'new' })], L1);
+  expect(of(two, 'a')?.lens === 'new' && of(two, 'a')?.done === 1 && of(two, 'a')?.total === 2 && of(two, 'a')?.state === 'scanning', 'roomScans: two jobs over a room, the newest (last) one\'s lens and counts win');
+
+  // ?scale > 1: scanViews gives each line its own view, its ids carry the line suffix, an everything view names its building
+  const a0 = roomNode('a', 0), a1 = roomNode('a@1', 1, 500);
+  const L2 = lay([{ node: a0, ids: ['f', 'g'], b: 0 }, { node: a1, ids: ['f@1', 'g@1'], b: 1 }]);
+  const line = (b: number, sf: string, o: Record<string, unknown>) => V({ id: 'j@' + b, place: { t: 'bld', id: 'b' + b }, done: new Set(['f' + sf]), ...o });
+  const scaledAll = SL.roomScans([line(0, '', { all: true }), line(1, '@1', { all: true })], L2);
+  expect(scaledAll.length === 2 && scaledAll.every((r) => r.total === 2 && r.done === 1), `roomScans ?scale>1: an everything job counts each line once (${JSON.stringify(scaledAll)})`);
+  const scaledSome = SL.roomScans([V({ id: 'j@0', features: ['f'], done: new Set(['f']) }), V({ id: 'j@1', features: ['f@1'], done: new Set() })], L2);
+  expect(of(scaledSome, 'a')?.total === 1 && of(scaledSome, 'a')?.state === 'scanned' && of(scaledSome, 'a@1')?.total === 1 && of(scaledSome, 'a@1')?.done === 0, 'roomScans ?scale>1: a feature scope reads per line, not added across lines');
+  const dupes = SL.roomScans([V({ features: ['a1', 'a1'], done: new Set(['a1']) })], L1);
+  expect(of(dupes, 'a')?.total === 1 && of(dupes, 'a')?.state === 'scanned', 'roomScans: a scope naming a feature twice counts it once');
+
+  expect(SL.roomScans([V({ status: 'queued', features: ['a1'] })], L1).length === 0, 'roomScans: a queued job has reached no room');
+  for (const status of ['stale', 'failed']) {
+    const r = SL.roomScans([V({ status, features: ['a1', 'a2', 'b1', 'b2'], done: new Set(['b1', 'b2']) })], L1);
+    expect(!of(r, 'a') && of(r, 'b')?.state === 'scanned', `roomScans: a ${status} job keeps only the rooms it finished (unfinished ones are not being read)`);
+  }
+
+  // the seam: only scanViews says a job is over everything, and the key is absent on the rest (absent values are omitted)
+  {
+    const SV = await load<typeof import('../apps/web/src/lib/scan/scan-views.ts')>('apps/web/src/lib/scan/scan-views.ts');
+    const GEO = { P: { base: { features: [{ id: 'f' }] }, scale: 1, buildings: [{ sf: '' }] }, L: { TILE: {}, blds: [{}], rooms: [], bays: [], wings: [] } } as never;
+    const mk = (id: string, scope: unknown) => ({ id, kind: 'measure', lens: 'l', scope, status: 'running', queued_at: '2026-11-08T00:00:00Z', started_at: '2026-11-08T00:00:00Z' });
+    const { views } = SV.scanViews([mk('a', { kind: 'all', label: 'x', features: [] }), mk('b', { kind: 'selection', label: 'y', features: ['f'] })] as never, undefined, GEO, () => '#fff', Date.parse('2026-11-08T00:00:01Z'));
+    expect(views[0]?.all === true && !('all' in (views[1] ?? { all: 1 })), 'scanViews: an everything job says so on its view, any other scope omits the key');
+  }
+
+  // the drawn layer, on a real view of two rooms
+  const th = theme(false), tx = { f: () => '12px sans-serif', w: (t: string) => t.length * 7 }, accent = '#123456';
+  const R0 = { ...roomNode('r0', 0), x: 0, y: 0, w: 400, h: 300 }, R1 = { ...roomNode('r1', 1), x: 500, y: 0, w: 400, h: 300 };
+  const L3 = lay([{ node: R0, ids: ['p1', 'p2', 'p3', 'p4'] }, { node: R1, ids: ['q1'] }]) as unknown as Record<string, unknown>;
+  const E = { U: 1, th, tx, SAFE: { l: 0, t: 0 }, cam: { reduced: false }, dashT: 7, isNow: true, lensAccent: () => accent, M: { L: { ...L3, blds: [{ x: 0, y: 0, w: 1000, h: 400 }] }, P: { LENS: {} } }, placeById: () => null, hits: { add() {} } } as never;
+  const vw: View = { x: 500, y: 150, k: 1, FW: 1280, FH: 800, c0x: -100, c0y: -100, c1x: 1380, c1y: 900 };
+  const drawAt = (views: unknown[], lod: number) => { const layer = new SL.ScanLayer(); layer.set(views as never, E); const g = fresh(); layer.draw(E, g, vw, lod, 0); return g; };
+  const wall = (g: ReturnType<typeof fresh>) => g.rects.filter((r) => Math.abs(r[2] - 398) < 1e-6 && Math.abs(r[3] - 298) < 1e-6);
+  const texts = (g: ReturnType<typeof fresh>) => g.calls.filter((n) => n === 'fillText').length;
+  const job = { all: true, done: new Set(['p1', 'q1']), n: 2, m: 5 };
+  const atL0 = drawAt([V(job)], 0), closer = drawAt([V(job)], 1);
+  expect(atL0.dash.every((d) => d.length === 0), 'scans L0: the everything outline gives way to the rooms (no dashed stroke at lod 0)');
+  expect(closer.dash.some((d) => d.length > 0) && wall(closer).length === 0, 'scans closer: the everything outline is drawn as before and no room wall is');
+  expect(wall(atL0).length === 1, `scans L0: only the room being read has a lit wall, the scanned one is quiet (${wall(atL0).length})`);
+  const rail = atL0.rects.filter((r) => r[3] === 3 && r[2] > 2);
+  expect(rail.length === 1 && near(rail[0][0], 640 - 500 + 4) && near(rail[0][2], 392 / 4), `scans L0: the rail fills done/total from the room's left (${JSON.stringify(rail)})`);
+  expect(atL0.fills.filter((f) => f === accent).length === 1, 'scans L0: the accent fills the rail and nothing else');
+  expect(texts(atL0) === 3, `scans L0: a scanning room and a scanned room print n/m, and the chip still names the lens (${texts(atL0)} texts)`);
+  // no reader there yet: nothing; the reader's first feature: the wall lights before the first reading lands
+  expect(wall(drawAt([V({ features: ['p1', 'p2'] })], 0)).length === 0, 'scans L0: a room the job has not reached lights nothing');
+  expect(wall(drawAt([V({ features: ['p1', 'p2'], current: 'p2' })], 0)).length === 1, 'scans L0: the room holding the feature being read is lit');
+  // a stalled or failed everything job has no room speaking for it, so its outline stays
+  expect(drawAt([V({ all: true, status: 'failed' })], 0).dash.some((d) => d.length > 0), 'scans L0: a failed everything job keeps its outline');
+  // the words: a tick means read, never clean
+  const words = fs.readFileSync(path.join(ROOT, 'apps/web/src/components/Legend.tsx'), 'utf8').match(/ROOM_SCAN_WORDS = '([^']+)'/)?.[1] ?? '';
+  expect(/scanned/.test(words) && !/\b(ok|passed|clean|healthy)\b/i.test(words), `the legend says a room is scanned, never ok or passed (${words})`);
+}
+
 // ---------------------------------------------------------------- hits.ts: hit order IS draw order
 // The per-frame hit list (Engine.clickAt / hoverAt read it): a region registered later was drawn later, on top, and wins
 // where two overlap; a coarse pointer grows each box to the touch floor around its own centre; reset reuses the records.

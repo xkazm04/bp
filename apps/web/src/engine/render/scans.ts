@@ -4,13 +4,14 @@
 // chip text and widths, the done lists) is worked out there, so a frame allocates nothing: it reads
 // preallocated arrays, reuses two rect records and draws, culled to the viewport. A lens accent marks the
 // outline, the chip border, the sweep and the ticks; it never fills a tile.
-import type { Box } from '@bp/core/model';
+// At L0 a scan also reads per room (`roomScans`): a lit wall, a thin rail and n/m on a room being read, a tick on a read one.
+import type { Box, Layout, RoomNode } from '@bp/core/model';
 import type { JobStatus } from '@bp/core/scan/jobs';
 import type { Engine } from '../Engine';
 import { drawText } from '../text';
 import { glyph } from './lens-glyph';
 import { featRect } from './plan';
-import { onView, rs, union, type SRect, type View } from './view';
+import { onView, rs, syv, union, type SRect, type View } from './view';
 
 export interface ScanView {
   id: string;
@@ -32,13 +33,60 @@ export interface ScanView {
   seen?: number;
   /** A failed job's error line, for the chip's card. */
   error?: string;
+  /** The job's scope is everything (`features` is empty then, and every tile of the view's line is in scope). */
+  all?: true;
 }
+
+/** One room's part in the scans on the plan. `done` and `total` count the room's features in the job's scope. */
+export interface RoomScan { room: string; lens: string; done: number; total: number; state: 'scanning' | 'scanned' }
+
+/** A room's mark as the layer draws it: which view it came from (the accent), and whether a reader has reached the room yet. */
+interface RoomMark extends RoomScan { node: RoomNode; view: number; lit: boolean; text: string }
+
+/**
+ * Each room's state, worked out once per view set. Views arrive oldest first (scanViews), so a later view over a room
+ * replaces an earlier one: the newest job's lens and counts win. A view counts only the tiles of its own product line,
+ * so a `?scale` > 1 job (one view per line) gives each line's rooms their own counts and never adds lines together.
+ * A queued job has not reached any room. A stalled or failed job is no longer reading, so it keeps only the rooms it
+ * finished: drawing its unfinished ones as lit would say a reader is there.
+ */
+function roomMarks(views: readonly ScanView[], L: Pick<Layout, 'TILE' | 'tiles'>): RoomMark[] {
+  const by = new Map<string, RoomMark>();
+  views.forEach((V, view) => {
+    if (V.status === 'queued') return;
+    const line = V.place?.t === 'bld' ? V.place.id : null;
+    const ids = V.all ? L.tiles.filter((T) => !line || T.wing.bld.id === line).map((T) => T.id) : V.features;
+    const counts = new Map<RoomNode, { total: number; done: number; lit: boolean }>();
+    for (const id of new Set(ids)) {
+      const T = L.TILE[id]; if (!T) continue;
+      let c = counts.get(T.room);
+      if (!c) counts.set(T.room, (c = { total: 0, done: 0, lit: false }));
+      c.total++;
+      if (V.done.has(id)) c.done++;
+      if (V.current === id) c.lit = true;
+    }
+    for (const [node, c] of counts) {
+      const scanned = c.done >= c.total;
+      if (!scanned && V.status !== 'running') continue;
+      by.set(node.id, { room: node.id, lens: V.lens, done: c.done, total: c.total, state: scanned ? 'scanned' : 'scanning', node, view, lit: c.lit || c.done > 0, text: c.done + '/' + c.total });
+    }
+  });
+  return [...by.values()].sort((a, b) => a.node.ri - b.node.ri);
+}
+
+/** Each room's scan state over these views, in plan order; a room with nothing in any job's scope is absent. */
+export const roomScans = (views: readonly ScanView[], L: Pick<Layout, 'TILE' | 'tiles'>): RoomScan[] =>
+  roomMarks(views, L).map(({ room, lens, done, total, state }) => ({ room, lens, done, total, state }));
 
 /** The job a view stands for: `job`, else its id without the product-line suffix (`j1@2` -> `j1`). */
 export const viewJob = (V: Pick<ScanView, 'id' | 'job'>): string => V.job ?? V.id.replace(/@\d+$/, '');
 
 /** The sweep's period across the feature being judged. */
 const BEAM_MS = 1200;
+/** Below this the plan is at its room level (L0): the condition the room pins and tracked counts already use. */
+const L0 = 0.995;
+/** The narrowest room that carries n/m: its width beside the bottom-right "N tracked" count, in px before UI scale. */
+const ROOM_TEXT_W = 156;
 const DASH = [8, 5], NO_DASH: number[] = [];
 const r1: SRect = { x: 0, y: 0, w: 0, h: 0 }, r2: SRect = { x: 0, y: 0, w: 0, h: 0 };
 
@@ -54,6 +102,8 @@ export class ScanLayer {
   private col: string[] = [];
   private chipW: number[] = []; private chipX: number[] = [];
   private jobs: string[] = [];
+  /** The rooms' scan marks: recomputed here on a view change, only read per frame. */
+  private rooms: RoomMark[] = [];
   private font = ''; private th: unknown = null;
   /** True while any view runs: the engine keeps its loop alive for the marching dashes and the sweep. */
   animating = false;
@@ -95,8 +145,43 @@ export class ScanLayer {
       this.col.push(V.accent);
       this.jobs.push(viewJob(V));
     }
+    this.rooms = roomMarks(this.views, L);
     this.animating = this.busy.length > 0 || views.some((V) => V.status === 'running');
     this.font = ''; this.th = E.th;
+  }
+
+  /**
+   * L0, per room: a scanning room's wall in the lens accent, a rail along its bottom edge filled done/total from the left and
+   * n/m above that; a scanned room keeps a quiet wall with a tick and m/m. They fade in as the room pins do. A room the job has
+   * not reached draws nothing: a lit wall says a reader is there, and at `?scale=4` a faint wall on every unreached room is noise.
+   * The rail's paper trough is a mark's casing (the tick's halo), not a tile wash, and the accent stays a 2 px line and a 3 px bar.
+   * n/m and the tick stand in the room's bottom-left corner, clear of its label, its question pin (top right) and tracked count (bottom right).
+   */
+  private drawRooms(E: Engine, ctx: CanvasRenderingContext2D, v: View, lod: number, font: string): void {
+    const ms = this.rooms;
+    if (!ms.length || lod >= L0) return;
+    const th = E.th, u = E.U;
+    ctx.globalAlpha = 1 - lod;
+    for (let i = 0; i < ms.length; i++) {
+      const m = ms[i], r = rs(v, m.node, r1), col = this.col[m.view];
+      if (r.w < 20 * u || r.h < 12 * u || !onView(v, r, 8 * u)) continue;
+      const scanned = m.state === 'scanned', bottom = r.y + r.h;
+      if (!scanned) {
+        if (!m.lit) continue;
+        ctx.strokeStyle = col; ctx.lineWidth = 2 * u;
+        ctx.strokeRect(r.x + u, r.y + u, r.w - 2 * u, r.h - 2 * u);
+        const rx = r.x + 4 * u, rw = r.w - 8 * u, ry = bottom - 7 * u;
+        ctx.fillStyle = th.paper; ctx.fillRect(rx - u, ry - u, rw + 2 * u, 5 * u);
+        if (m.done) { ctx.fillStyle = col; ctx.fillRect(rx, ry, Math.max(2 * u, (rw * m.done) / m.total), 3 * u); }
+      }
+      // the bottom-left slot: never over a label that reaches down this far
+      const lb = m.node.labelBox;
+      if (lb && syv(v, lb.y + lb.h) > bottom - 22 * u) continue;
+      const x = r.x + 8 * u;
+      if (scanned) tick(ctx, x, bottom - 20 * u, 10 * u, col, th.paper, u);
+      if (r.w >= ROOM_TEXT_W * u) drawText(ctx, m.text, scanned ? x + 14 * u : x, bottom - 10 * u, font, th.inkHi, th.halo);
+    }
+    ctx.globalAlpha = 1;
   }
 
   /** Chip widths and their offsets along a shared place's top edge: once per font (UI scale, families) or view set. */
@@ -123,6 +208,7 @@ export class ScanLayer {
     if (th !== this.th) { this.th = th; for (let i = 0; i < n; i++) this.col[i] = E.lensAccent(this.views[i].lens); }
     ctx.save();
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    this.drawRooms(E, ctx, v, lod, font);
     for (let i = 0; i < n; i++) {
       const V = this.views[i], col = V.status === 'failed' ? th.red : V.status === 'stale' ? th.amber : this.col[i], running = V.status === 'running';
       const r = rs(v, this.box[i], r1);
@@ -130,10 +216,17 @@ export class ScanLayer {
       const off = -3 * u + 6 * u * this.depth[i];
       const x = r.x + off, y = r.y + off, w = r.w - 2 * off, h = r.h - 2 * off;
       if (w <= 2 || h <= 2 || !onView(v, r, 24 * u)) continue;
-      ctx.strokeStyle = col; ctx.lineWidth = 2 * u;
-      ctx.setLineDash(DASH); ctx.lineDashOffset = running && !reduced ? -E.dashT * 1.2 : 0;
-      ctx.strokeRect(x, y, w, h);
-      ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0;
+      // at L0 the rooms speak for a job over everything, so its site-wide outline fades out as they fade in; a queued, stalled or
+      // failed one has no rooms saying so and keeps it. The chip stays either way: it is the only place that names the lens
+      const lineA = V.all && lod < L0 && (running || V.status === 'done') ? lod : 1;
+      if (lineA > 0) {
+        ctx.globalAlpha = lineA;
+        ctx.strokeStyle = col; ctx.lineWidth = 2 * u;
+        ctx.setLineDash(DASH); ctx.lineDashOffset = running && !reduced ? -E.dashT * 1.2 : 0;
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash(NO_DASH); ctx.lineDashOffset = 0;
+        ctx.globalAlpha = 1;
+      }
       // the sweep across the feature being judged (reduced motion: none)
       if (running && V.current && !reduced) {
         const f = featRect(E, v, V.current, lod, r2);
