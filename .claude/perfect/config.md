@@ -1,7 +1,7 @@
 ---
 product: "Kettle blueprint (bp)"
 stack: "Next.js 16 + React 19 + TypeScript + motion, a hand-written canvas engine, no other runtime deps; data is static JSON (app-structure v3) plus optional live products via localhost API routes"
-vault: []
+vault: ["C:/Users/kazda/Documents/Obsidian/bp"]
 vault_subdir: Perfect
 base_branch: master
 wave_size: 3
@@ -17,7 +17,9 @@ locale_count: 1
 
 # /perfect overlay for bp
 
-Vault: none configured, so the loop keeps state in `<repo>/.perfect/Perfect/` (git-ignored).
+Vault: `C:/Users/kazda/Documents/Obsidian/bp` on Lynx (operator approved 2026-11-08), outside every checkout so
+`Perfect/friction.md` and the rest survive it. A machine without that root falls back to `<repo>/.perfect/Perfect/`
+(git-ignored); add its own root to the list rather than replacing this one.
 Context ids for commit scopes are the `id` fields in `context-map.json` (e.g. `app-shell`).
 
 ## Gates
