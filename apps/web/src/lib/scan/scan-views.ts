@@ -8,7 +8,7 @@ import type { ScanSnapshot } from '@bp/core/scan/types';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import { SILENT_MS, jobSignOfLife } from '@bp/core/scan/liveness';
 
-import { scopesAt, jobProgress, type JobProgress, type ScopeOption } from '@bp/core/scan/views';
+import { foreignRunJobs, scopesAt, jobProgress, type JobProgress, type ScopeOption } from '@bp/core/scan/views';
 export { scopesAt, jobProgress, type JobProgress, type ScopeOption } from '@bp/core/scan/views';
 type Geo = { P: Product; L: Layout };
 
@@ -29,7 +29,7 @@ export const STALE_MS = SILENT_MS;
 export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefined, M: Geo, accent: (lens: string) => string, now: number): { views: ScanView[]; next: number } {
   const { P, L } = M, views: ScanView[] = [], baseAll = P.base.features.map((f) => f.id);
   let next = Infinity;
-  const order = jobs.filter((j) => j.kind === 'measure' && j.lens && j.scope)
+  const order = [...jobs, ...foreignRunJobs(jobs, scan, now, LINGER_MS as Partial<Record<'done' | 'failed', number>>)].filter((j) => j.kind === 'measure' && j.lens && j.scope)
     .sort((a, b) => ((a.started_at ?? a.queued_at) < (b.started_at ?? b.queued_at) ? -1 : (a.started_at ?? a.queued_at) > (b.started_at ?? b.queued_at) ? 1 : 0));
   for (const j of order) {
     const linger = LINGER_MS[j.status];
@@ -53,7 +53,8 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
       if (Number.isFinite(s)) { seen = s; if (s + STALE_MS <= now) status = 'stale'; else next = Math.min(next, s + STALE_MS); }
     }
     const sc = j.scope!, all = sc.kind === 'all', pr = jobProgress(j, scan, baseAll.length);
-    const full = j.status === 'done' ? new Set(all ? baseAll : sc.features) : pr.done;
+    // a finished job says what was read, not what it was pointed at: a tick means read. A job the store has no rows for (none to count) is taken at its word
+    const assumed = j.status === 'done' && !pr.n, full = assumed ? new Set(all ? baseAll : sc.features) : pr.done;
     for (let b = 0; b < P.scale; b++) {
       const sf = P.buildings[b]?.sf ?? '', B = L.blds[b];
       const place = placeOf(M, sc, b, sf);
@@ -62,7 +63,7 @@ export function scanViews(jobs: readonly ScanJob[], scan: ScanSnapshot | undefin
         features: all ? [] : sc.features.map((f) => f + sf).filter((id) => L.TILE[id]),
         done: new Set([...full].map((f) => f + sf).filter((id) => L.TILE[id]?.wing.bld === B)),
         current: status === 'running' && pr.current ? pr.current + sf : undefined,
-        n: j.status === 'done' ? pr.m : pr.n, m: pr.m, status,
+        n: assumed ? pr.m : pr.n, m: pr.m, status,
         // the chip is a target: it names its job (one per line at ?scale > 1), when it was last heard from, and why it failed
         job: j.id, seen, error: j.status === 'failed' ? j.error : undefined,
         ...(all ? { all: true as const } : {}),

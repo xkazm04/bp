@@ -14,9 +14,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { harness } from './lib/expect.ts';
-import { BAD_FOCUS, FOCUS_NOTE_MAX, MAX_SAVED_FOCUSES, checkFocusNote, focusFence, focusOfRunNote } from '../packages/core/src/scan/focus.ts';
+import { BAD_FOCUS, FOCUS_NOTE_MAX, MAX_SAVED_FOCUSES, checkFocusNote, focusFence, focusOfRunNote, isFocusMetric } from '../packages/core/src/scan/focus.ts';
+import { lastRead } from '../packages/core/src/scan/derive.ts';
 import { isJobNote, type ScanJob, type ScanScope } from '../packages/core/src/scan/jobs.ts';
-import { jobProgress } from '../packages/core/src/scan/views.ts';
+import { foreignRunJobs, jobProgress } from '../packages/core/src/scan/views.ts';
 import { emptyScan, type Activity, type Run, type ScanSnapshot } from '../packages/core/src/scan/types.ts';
 import { ScanSim } from '../packages/core/src/model/scan-sim.ts';
 import { list as listJobs } from '../packages/core/src/server/jobs.server.ts';
@@ -249,4 +250,25 @@ const curr = jobProgress(job, snap([row2('reading', 'reading b', 'b'), row2('not
 expect(curr.current === 'b' && curr.n === 1, 'no impact: the note names no feature as being read', curr.current);
 
 fs.rmSync(dir, { recursive: true, force: true });
+
+// ---- a scan started elsewhere (VR's server, a CLI) is known here only through the store both read
+{
+  const NOW = Date.parse('2026-11-08T12:00:00.000Z'), L = { done: 3000, failed: 6000 };
+  const run = (o: Record<string, unknown>) => ({ id: 'r1', started_at: '2026-11-08T11:59:00.000Z', updated_at: '2026-11-08T11:59:30.000Z', phase: 'measure', status: 'running', lenses: ['design'], scope: { features: ['a', 'b'] }, ...o });
+  const f = (runs: unknown[], jobs: unknown[] = []) => foreignRunJobs(jobs as never, { runs } as never, NOW, L);
+  expect(f([run({})]).length === 1 && f([run({})])[0].kind === 'measure' && f([run({})])[0].scope!.features.join() === 'a,b', 'a running measure run no job claims is drawn as a job');
+  expect(f([run({})], [{ id: 'j1', run_id: 'r1' }]).length === 0, 'a run this process has the job for is left to the job');
+  expect(f([run({ note: 'bp-job:j9' })], [{ id: 'j9' }]).length === 0, 'a run claimed by its bp-job note is left to the job');
+  expect(f([run({ phase: 'propose' })]).length === 0, 'a plain propose run reads no feature: never drawn, or it could only show a false tick');
+  expect(f([run({ phase: 'propose', note: 'bp-job:x · focus:focusAb a note' })]).length === 1, 'a directed run (phase propose) is drawn');
+  expect(f([run({ lenses: ['design', 'qa'] })]).length === 0 && f([run({ lenses: ['all'] })]).length === 0, 'only single-lens runs');
+  expect(f([run({ status: 'done', ended_at: '2026-11-08T11:59:59.000Z' })]).length === 1, 'a run that just ended lingers');
+  expect(f([run({ status: 'done', ended_at: '2026-11-08T11:59:50.000Z' })]).length === 0, 'and then clears');
+  expect(f([run({ status: 'aborted', ended_at: '2026-11-08T11:59:59.000Z' })]).length === 0, 'an aborted run clears at once');
+  expect(f([run({ scope: undefined })])[0]?.scope?.kind === 'all', 'a run with no feature list is everything');
+  expect(isFocusMetric('focusAuthGaps') && !isFocusMetric('focus') && !isFocusMetric('consoleErrors'), 'a focus metric is named focus<Word>');
+  const rows = (m: string) => [{ run_id: 'r', feature: 'a', lens: 'design', metric: m, value: 1, measured_at: '2026-11-08T11:00:00.000Z' }];
+  expect(!lastRead(rows('focusAuthGaps') as never).get('design')?.has('a') && !!lastRead(rows('consoleErrors') as never).get('design')?.has('a'), 'a focus reading never refreshes a lens last-read date');
+}
+
 done();

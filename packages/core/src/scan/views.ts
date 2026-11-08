@@ -1,6 +1,7 @@
 // Scans as the plan draws them, shared by live products and the Kettle sim: the scopes a right-click offers at a
 // place (`scopesAt`), a job's progress read from the store rows (`jobProgress`), and what a scan of a scope would
 // repeat (`scopeFacts`: the job already on it, the last read, the queue room). Pure.
+import { focusOfRunNote } from './focus.ts';
 import type { Layout } from '../model/layout.ts';
 import type { Product } from '../model/product.ts';
 import type { ScanSnapshot } from './types.ts';
@@ -51,6 +52,28 @@ export interface JobProgress {
 /** `activity --kind note` of a real run's no-impact judgement (lens-scan SKILL.md): the feature is on the row's `feature`; a
  *  steps lens writes `no impact: <feature>: <reason>` and no `feature` (steps.mjs), so there it is read off the text. */
 const NO_IMPACT = 'no impact:', NO_IMPACT_TEXT = /^no impact: ([^:\s]+):/;
+
+/**
+ * Scans the store shows that this process has no job for, as the jobs they are: the web app and apps/server keep separate job
+ * registries, so a scan started from VR (or by a CLI) is only known here through the store both read. A run counts while it runs and
+ * for `linger` after it ended, if it reads feature by feature: a measure run, or a directed one (which runs as phase propose). A plain
+ * propose run writes no per-feature rows, so it could only ever show a false tick. A run this process's jobs already claim is left to them.
+ */
+export function foreignRunJobs(jobs: readonly ScanJob[], scan: Pick<ScanSnapshot, 'runs'> | undefined, now: number, linger: Partial<Record<'done' | 'failed', number>>): ScanJob[] {
+  const out: ScanJob[] = [];
+  for (const r of scan?.runs ?? []) {
+    if (r.lenses?.length !== 1 || r.lenses[0] === ALL_LENSES) continue; // a row with no lens list says nothing about what it read
+    if (r.phase !== 'measure' && !(r.phase === 'propose' && focusOfRunNote(r.note))) continue;
+    const status = r.status === 'running' ? 'running' : r.status === 'done' || r.status === 'failed' ? r.status : null;
+    if (!status) continue;
+    if (status !== 'running' && !(Date.parse(r.ended_at ?? '') + (linger[status] ?? 0) > now)) continue;
+    if (jobs.some((j) => j.run_id === r.id || isJobNote(r.note, j.id))) continue;
+    const features = Array.isArray(r.scope?.features) ? (r.scope.features as unknown[]).filter((f): f is string => typeof f === 'string') : [];
+    out.push({ id: 'run:' + r.id, kind: 'measure', lens: r.lenses[0], scope: features.length ? { kind: 'selection', label: 'A scan started elsewhere', features } : { kind: 'all', label: 'Everything', features: [] },
+      status, queued_at: r.started_at, started_at: r.started_at, run_id: r.id, ...(r.ended_at ? { ended_at: r.ended_at } : {}) });
+  }
+  return out;
+}
 
 /** A measure job's progress from the store rows: its run (by `run_id`, else the `bp-job:<id>` note), the features measured in it on its lens, the one being read. */
 export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total: number): JobProgress {
