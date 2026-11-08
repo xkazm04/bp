@@ -1,6 +1,7 @@
 // Indexes over a scan snapshot, built in one pass and cached by the measurements table's identity (a
 // delta that brings no measurement keeps it, so nothing is recomputed). Pure and free of '@/' value
 // imports: Node runs scripts/check-scan-wire.ts over it as-is.
+import { isFocusMetric } from './focus.ts';
 import type { Measurement, Run, ScanSnapshot } from './types.ts';
 
 /**
@@ -62,7 +63,8 @@ export function lastRead(measurements: readonly Measurement[]): Map<string, Map<
   if (ix) return ix;
   ix = new Map();
   for (const m of measurements) {
-    if (!isCurrent(m)) continue;
+    // a directed run's own metric answers its note, and says nothing about how recently the lens's fields were read
+    if (!isCurrent(m) || isFocusMetric(m.metric)) continue;
     const t = Date.parse(m.measured_at);
     if (!Number.isFinite(t)) continue;
     let by = ix.get(m.lens);

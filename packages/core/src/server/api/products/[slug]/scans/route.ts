@@ -8,6 +8,9 @@
 // (`/lens-scan measure --lens all` or `/lens-scan propose --lens all`, kind measure or propose, one MAX_RUNNING slot); 400
 // `'bad-phase'` for any other phase (or a phase on a single-lens body), `'bad-scope'` for a scope other than all. Kettle's sim
 // has no every-lens job: it answers its own unknown-lens refusal (the ledger offers the buttons on a live product only).
+// A directed scan: the single-lens body plus `focus` (scan/focus.ts: 3..1000 characters, no control characters but newlines),
+// one job of kind measure with `focus` on it and a `directed` prompt on stdin. 400 `'bad-focus'` for a note that is not one, and
+// for any `focus` beside `lens: 'all'` (a focus is one lens's question). No `focus` key: exactly the plain scan.
 // Both forms answer to the owner's standing orders first (rules.server.ts gateScan): 403 `{ error, order, held }`.
 // GET /api/products/[slug]/scans: the product's ScanJob[], oldest first.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): the sim queues and lists the jobs, with the same answers.
@@ -19,6 +22,7 @@ import { enqueueAllLenses, enqueueMeasure, list } from '@bp/core/server/jobs.ser
 import { lensOn } from '@bp/core/server/map.server';
 import { isObj } from '@bp/core/scan/guards';
 import { gateScan, refusedBy } from '@bp/core/server/rules.server';
+import { BAD_FOCUS, checkFocusNote } from '@bp/core/scan/focus';
 import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
 
 const KINDS: readonly ScanScopeKind[] = SCAN_SCOPE_KINDS;
@@ -41,14 +45,15 @@ const scans = door('products/[slug]/scans', {
   GET: { kettle: (k) => k.jobs(), live: (c) => Response.json(list(c.slug)) },
   POST: {
     body: true,
-    // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below
-    kettle: (k, { body }) => (isObj(body) ? k.startScan(body.lens as string, parseScope(body.scope, ANY_FEATURE) as ScanScope) : Response.json({ error: 'unknown-lens' }, { status: 400 })),
+    // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below; the focus is the sim's to check
+    kettle: (k, { body }) => (isObj(body) ? k.startScan(body.lens as string, parseScope(body.scope, ANY_FEATURE) as ScanScope, body.focus as string | undefined) : Response.json({ error: 'unknown-lens' }, { status: 400 })),
     kettleStatus: 202,
     map: 'required',
     live: ({ slug, product: p, body, map }) => {
       if (!isObj(body)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
       // every enabled lens in ONE job (one MAX_RUNNING slot): `lens: 'all'`, scope everything, `phase` measure (default) or propose
       if (body.lens === ALL_LENSES) {
+        if (body.focus !== undefined) return Response.json({ error: BAD_FOCUS }, { status: 400 });
         const phase = body.phase === undefined ? 'measure' : body.phase;
         if (phase !== 'measure' && phase !== 'propose') return Response.json({ error: 'bad-phase' }, { status: 400 });
         const scope = parseScope(body.scope, map.features);
@@ -63,11 +68,13 @@ const scans = door('products/[slug]/scans', {
       const lens = body.lens, entry = typeof lens === 'string' && SAFE_ID.test(lens) ? map.lenses.find((e) => e.id === lens && lensOn(e)) : undefined;
       if (!entry) return Response.json({ error: 'unknown-lens' }, { status: 400 });
       if (!scannable(entry, false)) return Response.json({ error: 'no-scan-method' }, { status: 400 });
+      const focus = body.focus === undefined ? undefined : checkFocusNote(body.focus);
+      if (focus === null) return Response.json({ error: BAD_FOCUS }, { status: 400 });
       const scope = parseScope(body.scope, map.features);
       if (!scope) return Response.json({ error: 'bad-scope' }, { status: 400 });
       const g = gateScan(p, 'scan.place', entry.id, scope); // a standing order (rules.server.ts) may refuse it, cited
       if (g.refused) return refusedBy(g);
-      const r = enqueueMeasure(slug, p.root, entry.id, scope);
+      const r = enqueueMeasure(slug, p.root, entry.id, scope, focus);
       return r.ok ? Response.json(r.job, { status: 202 }) : Response.json({ error: r.error }, { status: r.status });
     },
   },

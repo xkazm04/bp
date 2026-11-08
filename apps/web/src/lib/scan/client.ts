@@ -6,6 +6,7 @@ import type { AppStructure, LensEntry, LensManifest } from '@bp/core/standard/ty
 import { refreshProjects, statusOfStore, storeFromList } from './projects.ts';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
+import type { SavedFocus } from '@bp/core/scan/focus';
 import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
@@ -13,7 +14,7 @@ import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSugge
 import type { BuildForecast, ReleaseReady, WaveForecast } from '@bp/core/model/scan-sim';
 import type { Landings } from '@bp/core/scan/landed';
 import type { Watch } from '@bp/core/train/watch';
-import { errorText, parseCommitDiff, parseJson, parseLandings, parseWatch, parseWatches, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
+import { errorText, parseCommitDiff, parseFocusBody, parseFocuses, parseJson, parseLandings, parseWatch, parseWatches, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
 
 export { mergeScan, upsert } from '@bp/core/scan/merge';
@@ -360,6 +361,14 @@ export const getWaves = (slug: string): Promise<Wave[]> => call(api(slug) + '/wa
 export const postWave = (slug: string, body: WaveBody): Promise<Wave> => call(api(slug) + '/waves', 'POST', inWave, body);
 /** Rename a draft wave and/or replace its packages (PATCH). 409 = not a draft, or taken. */
 export const patchWaveReq = (slug: string, id: string, patch: Partial<WaveBody>): Promise<Wave> => call(api(slug) + '/waves/' + encodeURIComponent(id), 'PATCH', inWave, patch);
+/** Queue a directed scan: one lens, a scope and the note (202 = the job). 400 bad-focus / unknown-lens / no-scan-method / bad-scope. */
+export const postDirectedScan = (slug: string, lens: string, scope: ScanScope, focus: string): Promise<ScanJob> => call(api(slug) + '/scans', 'POST', parseScanJob, { lens, scope, focus });
+/** The product's saved focuses, newest first (GET focuses). */
+export const getFocuses = (slug: string): Promise<SavedFocus[]> => call(api(slug) + '/focuses', 'GET', parseFocuses);
+/** Keep a focus (POST focuses, 201; the same lens and note answers its row, 200). 400 bad-focus / unknown-lens. */
+export const postFocus = (slug: string, lens: string, note: string): Promise<SavedFocus> => call(api(slug) + '/focuses', 'POST', parseFocusBody, { lens, note });
+/** Forget a saved focus. 404 = it is not there. */
+export const deleteFocusReq = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/focuses/' + encodeURIComponent(id), 'DELETE');
 /** Delete a draft wave. 409 = not a draft. */
 export const deleteWaveReq = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/waves/' + encodeURIComponent(id), 'DELETE');
 /** Build a wave (202), or only the named packages. 409 = none could go (`body.skipped`); 429 = the queue cap stopped it (`body` = the result so far). */

@@ -39,7 +39,7 @@ for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '8.8.8.8', '172.15.255.
 const all = [...SCOPES];
 for (const [m, p] of [['POST', '/api/companion/cards/c1'], ['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
   ['POST', '/api/products/kettle/releases/r1/build'], ['POST', '/api/products/kettle/releases/r1/finish'], ['POST', '/api/products/kettle/waves/w1/dispatch'],
-  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/scans'],
+  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['DELETE', '/api/products/kettle/scans/j-1'], ['POST', '/api/products/kettle/focuses'],
   ['POST', '/api/products/kettle/proposals/kf-001'], ['POST', '/api/companion/morning'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x'], ['POST', '/api/products/kettle/proposals/kf-001/approve/x'],
   ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
@@ -57,6 +57,9 @@ check('no other scope reaches the decline', verbOf(['read', 'standup', 'place', 
 check('decide reaches the set approve (D15): POST .../proposals/approve, POST only, and no other scope', verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve') !== null
   && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/approve') === null && verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/approve') === null
   && verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve/x') === null);
+check('scan is POST .../scans alone, and no other scope reaches it', verbOf(['scan'], 'POST', '/api/products/kettle-web/scans') !== null && verbOf(['read', 'standup', 'place', 'focus', 'decide'], 'POST', '/api/products/kettle-web/scans') === null
+  && verbOf(['scan'], 'GET', '/api/products/kettle-web/scans') === null && verbOf(['scan'], 'POST', '/api/products/kettle-web/dispatch') === null);
+check('read: the saved focuses, GET only', verbOf(['read'], 'GET', '/api/products/kettle-web/focuses') !== null && verbOf(['read'], 'POST', '/api/products/kettle-web/focuses') === null && verbOf(['scan'], 'GET', '/api/products/kettle-web/focuses') === null);
 check('no other scope reaches the approve (D12)', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null);
 // E6 (D3): the door's slug is the registry's ^[a-z0-9][a-z0-9-]{0,62}$ (registry.server.ts SLUG_RE): 63 characters pass, 64 do not
 const slug63 = 'a'.repeat(63), slug64 = 'a'.repeat(64);
@@ -242,7 +245,27 @@ r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { 
 check("decide: the approve reaches the route as the paired device (D12; Kettle is no live store: the route's 404)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
 refused("decide: never the free decide (the plan's POST .../proposals/<id>)", await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001', { token: tokenE, body: { decision: 'decline', note: 'x' } }));
 refused("decide: never the deck's steering", await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } }));
-for (const id of [idC, deviceE.split(':')[1]]) await admin('POST', '/lan/pair/revoke', { id });
+// scan (directed-scans): decide's ceremony, over POST .../scans. A plain approve drops it; only an approve that names it grants it.
+const NF = nonce();
+const codeF = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NF, device: 'quest-f', scopes: ['read', 'scan'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeF });
+check('scan: a plain approve of a device that asked for it drops it (named-only)', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NF } });
+const tokenF = String(r.json.token), idF = String(r.json.device).split(':')[1];
+check('scan: ...so its token carries read only', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+refused('scan: POST .../scans without the scope', await lan(QUEST, 'POST', '/api/products/kettle/scans', { token: tokenF, body: { lens: 'design', scope: { kind: 'all', label: 'Everything', features: [] }, focus: 'Best practice penetration test' } }));
+r = await lan(QUEST, 'GET', '/api/products/kettle/focuses', { token: tokenF });
+check('read: the saved focuses reach the mount (Kettle with no sim hosted: its 405, not the door\'s 403)', r.status === 405, `${r.status} ${r.body.slice(0, 120)}`);
+const NG = nonce();
+const codeG = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NG, device: 'quest-g', scopes: ['read', 'scan'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeG, scopes: ['read', 'scan'] });
+check('scan: the owner names it at approve, and it is granted', r.status === 200 && JSON.stringify(r.json.scopes) === '["read","scan"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NG } });
+const tokenG = String(r.json.token), idG = String(r.json.device).split(':')[1];
+check('scan: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('scan'), r.body);
+r = await lan(QUEST, 'POST', '/api/products/kettle/scans', { token: tokenG, body: { lens: 'design', scope: { kind: 'all', label: 'Everything', features: [] }, focus: 'Best practice penetration test' } });
+check('scan: POST .../scans reaches the route (Kettle with no sim hosted: its 405, not the door\'s 403)', r.status === 405, `${r.status} ${r.body.slice(0, 120)}`);
+for (const id of [idC, deviceE.split(':')[1], idF, idG]) await admin('POST', '/lan/pair/revoke', { id });
 check('decide: both pairings revoked again', readRegistry(HOME).map((p) => p.device).join() === 'quest-b');
 
 // the ceremony's other ends: deny, the pending cap, the window

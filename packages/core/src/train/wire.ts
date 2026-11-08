@@ -5,6 +5,7 @@
 import type { Band, CommitDiff, Confidence, FindingCategory, MvpRule, PredictedVerdict, Proof, ProofVerdict, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, ScoreParts, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
+import type { SavedFocus } from '../scan/focus.ts';
 import type { Landing, Landings } from '../scan/landed.ts';
 import type { Checkpoint, Watch, WatchItem } from './watch.ts';
 import { isObj } from '../scan/guards.ts';
@@ -336,3 +337,13 @@ export function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
     return { wave: wave(o.wave, 'wave'), jobs: list(o, 'jobs', '', scanJob), approved: list(o, 'approved', '', aString), skipped: list(o, 'skipped', '', skipped) };
   });
 }
+
+// ------------------------------------------------------------------------------------------- saved focuses
+function savedFocus(x: unknown, at: string): SavedFocus {
+  const o = obj(x, at);
+  return { id: str(o, 'id', at), lens: str(o, 'lens', at), note: str(o, 'note', at), created_at: str(o, 'created_at', at) };
+}
+/** GET focuses: `{ focuses }`, newest first. */
+export const parseFocuses = (x: unknown): Parsed<SavedFocus[]> => door(() => list(obj(x, ''), 'focuses', '', savedFocus));
+/** POST focuses: `{ focus }`. */
+export const parseFocusBody = (x: unknown): Parsed<SavedFocus> => door(() => savedFocus(obj(x, '').focus, 'focus'));

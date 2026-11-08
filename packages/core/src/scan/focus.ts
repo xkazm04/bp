@@ -4,6 +4,7 @@
 // in argv, and the fence tells the skill it is data: what to look for, never an instruction about tools or files.
 // The durable home of a focus is the run's own note (`bp-job:<id> · focus:<metric> <text>`), so a finding keeps its focus after the
 // job leaves the registry (KEEP_JOBS). Absent values are omitted, never null (the store's wire convention).
+import { ALL_LENSES, SAFE_ID } from './jobs.ts';
 
 /** A message-class slot: a paragraph or a few, and no more. */
 export const FOCUS_NOTE_MIN = 3, FOCUS_NOTE_MAX = 1000;
@@ -37,3 +38,18 @@ export function focusOfRunNote(note: string | undefined): { metric: string; note
   const m = /(?:^|·\s*)focus:([a-z][A-Za-z0-9]*)\s+([\s\S]+)$/.exec(note);
   return m ? { metric: m[1], note: m[2].trim() } : null;
 }
+
+/** Why a saved focus is refused, or null: the note is bounded by focus.ts, the lens an id any lens could have, and never `all` (a focus is one lens's question). */
+export const focusRefusal = (lens: unknown, note: unknown): string | null =>
+  typeof lens !== 'string' || !SAFE_ID.test(lens) ? 'unknown-lens' : lens === ALL_LENSES || checkFocusNote(note) === null ? BAD_FOCUS : null;
+/** Keep a focus at the end of `list` (the oldest first; past MAX_SAVED_FOCUSES the oldest goes): the same lens and note is the row it already is. The one list rule, for the sim and focuses.server.ts. */
+export function keepFocus(list: readonly SavedFocus[], lens: string, note: string, at: string, id: () => string): { focus: SavedFocus; focuses: SavedFocus[]; created: boolean } {
+  const same = list.find((f) => f.lens === lens && f.note === note);
+  if (same) return { focus: same, focuses: list.slice(), created: false };
+  const focus: SavedFocus = { id: id(), lens, note, created_at: at };
+  return { focus, focuses: [...list, focus].slice(-MAX_SAVED_FOCUSES), created: true };
+}
+
+/** A reading of a directed run's own metric (lens-scan names them `focus<Word>`). It answers the note, not the lens's declared
+ *  fields, so it must not make the lens look freshly read. */
+export const isFocusMetric = (metric: string): boolean => /^focus[A-Z]/.test(metric);

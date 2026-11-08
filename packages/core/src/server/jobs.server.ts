@@ -2,7 +2,8 @@
 // CLI headless in the product repo (`claude -p --dangerously-skip-permissions`, the operator's choice: a
 // headless run cannot answer permission prompts). Per product: the latest 50 jobs, a FIFO queue, at most
 // 3 running. The prompt goes to the CLI on stdin, never on the command line; every id in it was held to
-// SAFE_ID here and to the map or store by the route. Each job logs to
+// SAFE_ID here and to the map or store by the route, and a directed scan's note, the one free text in a prompt, went through
+// scan/focus.ts (bounded there, fenced there as data). Each job logs to
 // `<root>/.ai/lens-scan/work/bp-jobs/<job>.log` and keeps its last lines as `log_tail`. The registry lives on
 // globalThis so a dev-server module reload keeps the running children. Server-only: route handlers import it.
 // An execute job a wave package queues (waves.server.ts) also runs with `--model <m> --effort <e>`: only values of the
@@ -25,6 +26,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { ALL_LENSES, MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, type ReleaseStep, type ScanJob, type ScanScope } from '../scan/jobs.ts';
+import { BAD_FOCUS, checkFocusNote, focusFence } from '../scan/focus.ts';
 import { RELEASE_ID } from '../scan/release.ts';
 import { ABANDONED_FROM, ABANDONED_TO, reached } from '../scan/release-steps.ts';
 import { busyIds } from '../scan/admit.ts';
@@ -416,14 +418,18 @@ function enqueue(slug: string, root: string, job: ScanJob, prompt: string, extra
   return { ok: true, job: copy(rec) };
 }
 
-/** Queue a lens scan. The route has checked the lens against the map and the scope's features against its features. */
-export function enqueueMeasure(slug: string, root: string, lens: string, scope: ScanScope): Enqueued {
+/** Queue a lens scan. The route has checked the lens against the map and the scope's features against its features. With
+ *  `focus` it is a directed scan: one lens, the same job kind, a `directed` prompt that carries the note fenced, on stdin only. */
+export function enqueueMeasure(slug: string, root: string, lens: string, scope: ScanScope, focus?: string): Enqueued {
   if (!SAFE_ID.test(lens)) return { ok: false, status: 400, error: 'unknown-lens' };
   const all = scope.kind === 'all';
   if ((!all && !scope.features.length) || scope.features.some((f) => !SAFE_ID.test(f)) || (scope.id !== undefined && !SAFE_ID.test(scope.id))) return { ok: false, status: 400, error: 'bad-scope' };
   if (scope.kind === 'selection' && (scope.id !== undefined || scope.features.length > MAX_SELECTION)) return { ok: false, status: 400, error: 'bad-scope' };
-  const prompt = `/lens-scan measure --lens ${lens}` + (all ? '' : ` --scope ${scope.features.join(',')}`);
-  return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, status: 'queued', queued_at: now() }, prompt);
+  const note = focus === undefined ? undefined : checkFocusNote(focus);
+  if (note === null || (note !== undefined && lens === ALL_LENSES)) return { ok: false, status: 400, error: BAD_FOCUS };
+  const over = all ? '' : ` --scope ${scope.features.join(',')}`;
+  const prompt = note === undefined ? `/lens-scan measure --lens ${lens}${over}` : `/lens-scan directed --lens ${lens}${over}\n${focusFence(note)}`;
+  return enqueue(slug, root, { id: jobId(), kind: 'measure', lens, scope, ...(note === undefined ? {} : { focus: note }), status: 'queued', queued_at: now() }, prompt);
 }
 
 /**
@@ -618,7 +624,8 @@ function start(slug: string, r: Rec): void {
     // running: log_tail lives in memory and KEEP_JOBS drops it. Say which file stopped taking lines.
     r.log.on('error', (e) => { r.log = undefined; warnOnce('job log ' + logFile, e); });
     const opt = [r.job.model && `model ${r.job.model}`, r.job.effort && `effort ${r.job.effort}`, r.job.wave && `wave ${r.job.wave}`, r.job.package && `package ${r.job.package}`].filter(Boolean).join(' · ');
-    r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n${opt ? `# ${opt}\n` : ''}# prompt (stdin): ${r.prompt}\n`);
+    // every line of a many-line prompt keeps the header's `#`: the rest of the log is the CLI's own output
+    r.log.write(`# bp job ${r.job.id} started ${r.job.started_at}\n${opt ? `# ${opt}\n` : ''}# prompt (stdin): ${r.prompt.replace(/\n/g, '\n# ')}\n`);
   } catch (e) {
     r.log = undefined; // a read-only repo still runs; log_tail still fills
     // ...but nothing on disk will say this job ran, so the one unattended record of a `--dangerously-skip-permissions`

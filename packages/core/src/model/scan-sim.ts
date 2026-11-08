@@ -4,13 +4,15 @@
 // A timer runs only while a job runs (never a rAF); every change notifies once per tick. Pure and free of
 // '@/' value imports, so Node can drive it (the scan-package probes). It also keeps the sample's ledger waves (waves.ts)
 // in this browser (localStorage `bp.waves.kettle`, memory when storage refuses), under the rules waves.server.ts applies. The sample release train (packs, triage, releases,
-// the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer.
+// the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer. Its saved focuses (focus.ts) are
+// memory only, seeded with the two the sample shows.
 import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { ReleaseStep, ScanJob, ScanScope } from '@bp/core/scan/jobs';
 import type { Landings } from '@bp/core/scan/landed';
 import type { LensExecuteResult } from '@bp/core/scan/jobs';
 import type { LensEntry, LensField, LensManifest } from '@bp/core/standard/types';
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { BAD_FOCUS, checkFocusNote, focusRefusal, keepFocus, type SavedFocus } from '../scan/focus.ts';
+import { ALL_LENSES, MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
 import { NOTHING_TO_BUILD, admitForBuild, buildChunks, busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
@@ -141,10 +143,14 @@ export class ScanSim {
   /** The features a temporary lens found nothing to say about, by lens: their health must read `na`. */
   noImpact(): ReadonlyMap<string, ReadonlySet<string>> { return this.na; }
 
-  startScan(lens: string, scope: ScanScope): ScanJob {
+  /** A scan, as POST scans does; with `focus` a directed one (the same walk, the note on the job and on the run's note). */
+  startScan(lens: string, scope: ScanScope, focus?: string): ScanJob {
     const P = this.prod;
     if (!P) throw refuse(503, 'The sample is still loading');
+    if (focus !== undefined && lens === ALL_LENSES) throw refuse(400, BAD_FOCUS);
     if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
+    const note = focus === undefined ? undefined : checkFocusNote(focus);
+    if (note === null) throw refuse(400, BAD_FOCUS);
     const all = scope?.kind === 'all', known = new Set(P.order);
     if (!scope || !KINDS.has(scope.kind) || typeof scope.label !== 'string' || !scope.label || !Array.isArray(scope.features)
       || (all ? scope.features.length > 0 || scope.id !== undefined : !scope.features.length || scope.features.some((f) => !known.has(f)))
@@ -154,7 +160,7 @@ export class ScanSim {
     const id = 'sim-' + ++this.nextId;
     const rank = new Map(P.order.map((s, i) => [s, i]));
     const items = all ? P.order.slice() : [...new Set(scope.features)].sort((a, b) => rank.get(a)! - rank.get(b)!);
-    const job: ScanJob = { id, kind: 'measure', lens, scope: { ...scope, features: scope.features.slice() }, status: 'queued', queued_at: at };
+    const job: ScanJob = { id, kind: 'measure', lens, scope: { ...scope, features: scope.features.slice() }, ...(note === undefined ? {} : { focus: note }), status: 'queued', queued_at: at };
     this.recs.push({ job, items, i: 0, stepAt: 0, step: STEP_MS, runId: 'run-' + id });
     this.pump();
     this.changed();
@@ -284,6 +290,34 @@ export class ScanSim {
     this.writeWaves(r.waves);
     return { id };
   }
+  // ----------------------------------------------------------------------------------------- the sample's saved focuses
+  // Under the rules of focuses.server.ts, in memory. Seeded on the first read, so a fake clock needs nothing at construction.
+  private focusRows: SavedFocus[] | null = null;
+  private focusId = 0;
+  private focusList(): SavedFocus[] {
+    return (this.focusRows ??= [
+      { id: 'focus-' + ++this.focusId, lens: 'security', note: 'Best practice penetration test', created_at: this.iso() },
+      { id: 'focus-' + ++this.focusId, lens: 'design', note: 'Coverage of framer motion transition animations for pages and large sections', created_at: this.iso() },
+    ]);
+  }
+  /** Newest first, as GET focuses. */
+  listFocuses(): SavedFocus[] { return this.focusList().slice().reverse(); }
+  /** Keep a focus, as POST focuses: 400 bad-focus or unknown-lens; the same lens and note answers the row it already is. */
+  saveFocus(lens: string, note: string): SavedFocus {
+    const bad = focusRefusal(lens, note);
+    if (bad) throw refuse(400, bad);
+    const r = keepFocus(this.focusList(), lens, checkFocusNote(note)!, this.iso(), () => 'focus-' + ++this.focusId);
+    this.focusRows = r.focuses;
+    return r.focus;
+  }
+  /** Forget a saved focus, as DELETE focuses/[id]: 404 when it is not there. */
+  deleteFocus(id: string): { id: string } {
+    const rows = this.focusList();
+    if (!rows.some((f) => f.id === id)) throw refuse(404, `no focus ${id}`);
+    this.focusRows = rows.filter((f) => f.id !== id);
+    return { id };
+  }
+
   /** Dispatch a wave (default: every package) or the named packages, as POST waves/[wave]/dispatch. */
   dispatchWave(id: string, names?: string[]): WaveDispatchResult { return this.walkWave(id, names, false) as WaveDispatchResult; }
   /** A wave dispatch's forecast, as POST waves/[wave]/dispatch `{ dry: true }`: the same walk and refusals (404, 400, 409, 429
@@ -505,7 +539,7 @@ export class ScanSim {
     }
     const lenses = j.kind === 'measure' ? [j.lens!] : [...new Set(r.items.map((id) => this.prop(id)?.lens).filter((l): l is string => !!l))];
     const scope = j.kind === 'measure' ? { features: j.scope!.features.slice() } : { proposals: r.items.slice() };
-    this.runs.push({ id: r.runId, started_at: at, updated_at: at, phase: j.kind === 'measure' ? 'measure' : 'execute', status: 'running', lenses, scope, model: 'sample', note: RUN_NOTE_PREFIX + j.id });
+    this.runs.push({ id: r.runId, started_at: at, updated_at: at, phase: j.kind === 'measure' ? 'measure' : 'execute', status: 'running', lenses, scope, model: 'sample', note: RUN_NOTE_PREFIX + j.id + (j.focus ? ` · focus:focusDemo ${j.focus}` : '') });
     this.setJob(r, { status: 'running', started_at: at, run_id: r.runId });
     r.i = 0; r.stepAt = t + r.step;
     this.open(r);

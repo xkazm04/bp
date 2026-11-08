@@ -23,6 +23,7 @@
     "check:decision-brief": "node --import @bp/core/register scripts/check-decision-brief.ts",
     "check:scan-wire": "node scripts/check-scan-wire.ts",
     "check:scan-jobs": "node scripts/check-scan-jobs.ts",
+    "check:directed-scan": "node --import @bp/core/register scripts/check-directed-scan.ts",
     "check:job-journal": "node scripts/check-job-journal.ts",
     "check:onboarding": "node --import @bp/core/register scripts/check-onboarding.ts",
     "check:onboarding-feed": "node --import @bp/core/register scripts/check-onboarding-feed.ts",

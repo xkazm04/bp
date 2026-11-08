@@ -48,6 +48,10 @@ export interface JobProgress {
   m: number;
 }
 
+/** `activity --kind note` of a real run's no-impact judgement (lens-scan SKILL.md): the feature is on the row's `feature`; a
+ *  steps lens writes `no impact: <feature>: <reason>` and no `feature` (steps.mjs), so there it is read off the text. */
+const NO_IMPACT = 'no impact:', NO_IMPACT_TEXT = /^no impact: ([^:\s]+):/;
+
 /** A measure job's progress from the store rows: its run (by `run_id`, else the `bp-job:<id>` note), the features measured in it on its lens, the one being read. */
 export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total: number): JobProgress {
   const sc = job.scope, all = !sc || sc.kind === 'all', m = all ? total : sc.features.length;
@@ -61,7 +65,13 @@ export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total:
   for (const f of read) if (!want || want.has(f)) done.add(f);
   let current: string | undefined;
   for (const a of scan.activity) {
-    if (a.run_id !== run.id || (!every && a.lens !== job.lens) || !a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
+    if (a.run_id !== run.id || (!every && a.lens !== job.lens)) continue;
+    if (a.kind === 'note' && a.text.startsWith(NO_IMPACT)) { // judged: nothing here for the lens, and a room's rail still has to reach m/m
+      const f = a.feature ?? NO_IMPACT_TEXT.exec(a.text)?.[1];
+      if (f && (!want || want.has(f))) done.add(f);
+      continue;
+    }
+    if (!a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
     if (a.kind === 'measured' && (!want || want.has(a.feature))) done.add(a.feature); // judged with nothing to measure (a temporary lens's "no impact")
     if (!want || want.has(a.feature)) current = a.feature;
   }

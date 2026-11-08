@@ -6,7 +6,7 @@ import type { BuildForecast, ReleaseReady, ScanSim, WaveForecast } from '@bp/cor
 import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
 import type { Watch } from '@bp/core/train/watch';
-import { decideProposal, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDispatch, postDispatchDry, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, postWaveDispatchDry, type LensExecuteResult } from './client.ts';
+import { decideProposal, deleteFocusReq, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getFocuses, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDirectedScan, postDispatch, postDispatchDry, postFocus, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, postWaveDispatchDry, type LensExecuteResult } from './client.ts';
 import type { CommitDiff, DecisionBody, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import type { Landings } from '@bp/core/scan/landed';
@@ -32,14 +32,29 @@ export async function startScan(ctx: ScanCtx, lens: string, scope: ScanScope): P
   throw nowhere();
 }
 
-const stub = (what: string): never => { throw Object.assign(new Error(what + ' is not built yet'), { status: 501 }); };
 /** Start a directed scan: one lens, a scope and the note saying what to look for (scan/focus.ts). Rejects as startScan does; 400 bad-focus. */
-export async function startDirectedScan(_ctx: ScanCtx, _lens: string, _scope: ScanScope, _focus: string): Promise<ScanJob> { return stub('startDirectedScan'); }
+export async function startDirectedScan(ctx: ScanCtx, lens: string, scope: ScanScope, focus: string): Promise<ScanJob> {
+  if (ctx.slug) return postDirectedScan(ctx.slug, lens, scope, focus);
+  if (ctx.sim) return ctx.sim.startScan(lens, scope, focus);
+  throw nowhere();
+}
 /** The product's saved focuses, newest first. */
-export async function listFocuses(_ctx: ScanCtx): Promise<SavedFocus[]> { return stub('listFocuses'); }
+export async function listFocuses(ctx: ScanCtx): Promise<SavedFocus[]> {
+  if (ctx.slug) return getFocuses(ctx.slug);
+  if (ctx.sim) return ctx.sim.listFocuses();
+  throw nowhere();
+}
 /** Keep a focus for reuse (the same lens and note answers the existing one). */
-export async function saveFocus(_ctx: ScanCtx, _lens: string, _note: string): Promise<SavedFocus> { return stub('saveFocus'); }
-export async function deleteFocus(_ctx: ScanCtx, _id: string): Promise<{ id: string }> { return stub('deleteFocus'); }
+export async function saveFocus(ctx: ScanCtx, lens: string, note: string): Promise<SavedFocus> {
+  if (ctx.slug) return postFocus(ctx.slug, lens, note);
+  if (ctx.sim) return ctx.sim.saveFocus(lens, note);
+  throw nowhere();
+}
+export async function deleteFocus(ctx: ScanCtx, id: string): Promise<{ id: string }> {
+  if (ctx.slug) return deleteFocusReq(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.deleteFocus(id);
+  throw nowhere();
+}
 
 /** ONE measure or propose job over every enabled lens (`--lens all`, one MAX_RUNNING slot). A live product only: the Kettle
  *  sim has no every-lens job, and the ledger offers it on a live product only. */
