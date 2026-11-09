@@ -6,7 +6,10 @@
 
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "CoreMinimal.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Rendering/DrawElements.h"
+#include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/DeclarativeSyntaxSupport.h"
 #include "Widgets/Layout/SBorder.h"
@@ -130,6 +133,101 @@ namespace BpSheet
 				]
 			];
 	}
+
+	/** A text's width in a font, in the widget's pixels (the renderer's measure; an estimate before Slate runs). */
+	inline float TextWidth(const FString& Text, const FSlateFontInfo& Font)
+	{
+		if (FSlateApplication::IsInitialized())
+		{
+			if (FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer()) return static_cast<float>(Renderer->GetFontMeasureService()->Measure(Text, Font).X);
+		}
+		return Text.Len() * 0.5f * Font.Size * 96.f / 72.f;
+	}
+
+	/** The fit rule (blueprint-ui.md): the text, else cut at a character with an ellipsis, never drawn smaller. */
+	inline FString Cut(const FString& Text, const FSlateFontInfo& Font, float MaxW)
+	{
+		if (TextWidth(Text, Font) <= MaxW) return Text;
+		for (int32 Keep = Text.Len() - 1; Keep > 0; --Keep)
+		{
+			const FString Shorter = Text.Left(Keep).TrimEnd() + TEXT("…");
+			if (TextWidth(Shorter, Font) <= MaxW) return Shorter;
+		}
+		return FString();
+	}
+
+	/** Words into lines of MaxW; past MaxLines the last kept line takes the rest, cut. */
+	inline FString Wrap(const FString& Text, const FSlateFontInfo& Font, float MaxW, int32 MaxLines)
+	{
+		TArray<FString> Words, Lines;
+		Text.Replace(TEXT("\n"), TEXT(" ")).ParseIntoArrayWS(Words);
+		FString Line;
+		for (const FString& Word : Words)
+		{
+			const FString Try = Line.IsEmpty() ? Word : Line + TEXT(" ") + Word;
+			if (TextWidth(Try, Font) <= MaxW) { Line = Try; continue; }
+			if (!Line.IsEmpty()) Lines.Add(Line);
+			Line = Cut(Word, Font, MaxW);
+		}
+		if (!Line.IsEmpty()) Lines.Add(Line);
+		if (MaxLines > 0 && Lines.Num() > MaxLines)
+		{
+			FString Rest = Lines[MaxLines - 1];
+			for (int32 Index = MaxLines; Index < Lines.Num(); ++Index) Rest += TEXT(" ") + Lines[Index];
+			Lines.SetNum(MaxLines);
+			Lines.Last() = Cut(Rest, Font, MaxW);
+		}
+		return FString::Join(Lines, TEXT("\n"));
+	}
+
+	/** A plate: a flat fill and a square edge EdgePx thick drawn inside its bounds (the sheet's controls and rows), and an
+	 *  optional accent bar BarPx wide down its left edge (the row the table shows, the lit tab). */
+	class SPlate : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SPlate) : _Fill(FLinearColor::Transparent), _Edge(FLinearColor::Transparent), _EdgePx(2.f), _Bar(FLinearColor::Transparent), _BarPx(0.f) {}
+			SLATE_ARGUMENT(FLinearColor, Fill)
+			SLATE_ARGUMENT(FLinearColor, Edge)
+			SLATE_ARGUMENT(float, EdgePx)
+			SLATE_ARGUMENT(FLinearColor, Bar)
+			SLATE_ARGUMENT(float, BarPx)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& Args)
+		{
+			Fill = Args._Fill;
+			Edge = Args._Edge;
+			EdgePx = Args._EdgePx;
+			Bar = Args._Bar;
+			BarPx = Args._BarPx;
+		}
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(16.0, 16.0); }
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer,
+			const FWidgetStyle&, bool) const override
+		{
+			const FVector2f Size = FVector2f(Geometry.GetLocalSize());
+			const FSlateBrush* White = FCoreStyle::Get().GetBrush("WhiteBrush");
+			if (Fill.A > 0.f) FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(), White, ESlateDrawEffect::None, Fill);
+			if (Edge.A > 0.f && EdgePx > 0.f)
+			{
+				const float H = EdgePx * 0.5f;
+				TArray<FVector2f> Points = { FVector2f(H, H), FVector2f(Size.X - H, H), FVector2f(Size.X - H, Size.Y - H), FVector2f(H, Size.Y - H), FVector2f(H, H) };
+				FSlateDrawElement::MakeLines(Out, Layer + 1, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Edge, false, EdgePx);
+			}
+			if (Bar.A > 0.f && BarPx > 0.f)
+			{
+				FSlateDrawElement::MakeBox(Out, Layer + 1, Geometry.ToPaintGeometry(FVector2f(BarPx, Size.Y), FSlateLayoutTransform()), White, ESlateDrawEffect::None, Bar);
+			}
+			return Layer + 2;
+		}
+
+	private:
+		FLinearColor Fill;
+		FLinearColor Edge;
+		float EdgePx = 2.f;
+		FLinearColor Bar;
+		float BarPx = 0.f;
+	};
 
 	/** The risk band's mark and colour, as the ledger shows them (useLedger.ts riskBand; ▲ high, ◆ medium, ▽ low). */
 	inline const TCHAR* RiskMark(double Risk) { return Risk >= 7.0 ? TEXT("▲") : Risk >= 4.0 ? TEXT("◆") : TEXT("▽"); }

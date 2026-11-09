@@ -201,6 +201,7 @@ namespace
 				Each.Name += FString::Printf(TEXT(" (at %.0f cm)"), WristReadCm);
 			}
 			Classes.Append(Wrist);
+			Pawn->ConsoleTextClasses(Classes);
 			Table->ShowTextCard(bShow, Eye, Classes);
 		}));
 
@@ -534,6 +535,12 @@ void ABpPawn::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	TickFrameMeter(DeltaSeconds);
 	TickWristLive();
+	// Night two W1: the wrist's facing, the console's place, the controllers' keys and the music bed (each a few reads a
+	// frame; nothing is drawn unless what it shows changed).
+	TickWristFace(DeltaSeconds);
+	TickConsoleLive();
+	TickPad(DeltaSeconds);
+	TickMusic();
 }
 
 void ABpPawn::TickFrameMeter(float DeltaSeconds)

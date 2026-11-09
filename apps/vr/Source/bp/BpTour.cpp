@@ -8,6 +8,7 @@
 // 5 take a decision, 6 step back out, 7 the hand-off.
 #include "BpTable.h"
 
+#include "BpAudio.h"
 #include "BpLink.h"
 #include "BpPawn.h"
 #include "Components/AudioComponent.h"
@@ -35,75 +36,10 @@ namespace
 		TEXT("1: the lamp's tour speaks each step's line in Glim's voice (the bundled clips); 0: captions only."),
 		ECVF_Default);
 
-	TAutoConsoleVariable<float> CVarVoiceVolume(
-		TEXT("bp.VoiceVolume"),
-		1.5f,
-		TEXT("The lamp's voice level, 0 to 3 (1 the clips as levelled, -14 LUFS; above 1 limited, never clipped); the wrist's VOICE - and + step it, and it is saved across runs."),
-		ECVF_Default);
-	const TCHAR* const VoiceSettingsSection = TEXT("/Script/bp.BpVoice");
-	const TCHAR* const VoiceSettingsKey = TEXT("VoiceVolume");
-	bool bLoadingVoice = false;
-
-	void SaveVoiceVolume(IConsoleVariable* Var)
-	{
-		if (bLoadingVoice || !GConfig || !Var) return;
-		GConfig->SetFloat(VoiceSettingsSection, VoiceSettingsKey, Var->GetFloat(), GGameUserSettingsIni);
-		GConfig->Flush(false, GGameUserSettingsIni);
-		UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume %.2f saved"), Var->GetFloat());
-	}
-
-	/** A sample scaled by the level, with a soft knee above 0.8 full scale, so a level above 1 is loud and never clips. */
-	float LimitSample(float X)
-	{
-		const float A = FMath::Abs(X);
-		if (A <= 0.8f) return X;
-		const float Over = FMath::Min((A - 0.8f) / 0.2f, 4.f);
-		// tanh(x), a soft approach to 1 (x <= 4 suffices: 1 - tanh(4) < 0.002).
-		const float Soft = (FMath::Exp(Over) - FMath::Exp(-Over)) / (FMath::Exp(Over) + FMath::Exp(-Over));
-		return FMath::Sign(X) * (0.8f + 0.2f * Soft);
-	}
-
-	TAutoConsoleVariable<int32> CVarTourFocus(
-		TEXT("bp.TourFocus"),
-		-1,
-		TEXT("-1: the tour pauses when a headset is on and the app has lost its XR focus (the Quest menu, the headset off); 0: act as if the focus were lost (a check in the flat view); 1: never pause."),
-		ECVF_Default);
-
-	/** Whether the person is in the app: no headset (the flat view), or the OpenXR session is FOCUSED (FApp::HasVRFocus
-	 *  is false while the runtime's menu shows, VISIBLE, and once the session stops with the headset off). */
+	/** Whether the person is in the app (BpAudio::HasFocus: bp.TourFocus's rule). */
 	bool TourHasFocus()
 	{
-		const int32 Forced = CVarTourFocus.GetValueOnGameThread();
-		if (Forced >= 0) return Forced != 0;
-		return !ABpPawn::IsHeadsetOn() || FApp::HasVRFocus();
-	}
-
-	/** A 16-bit PCM WAV's samples: its rate, channels and the data chunk's bytes. False for any other shape. */
-	bool ReadWav(const TArray<uint8>& File, int32& OutRate, int32& OutChannels, int32& OutOffset, int32& OutBytes)
-	{
-		const auto U32 = [&File](int32 At) { return At + 4 <= File.Num() ? static_cast<uint32>(File[At]) | (File[At + 1] << 8) | (File[At + 2] << 16) | (static_cast<uint32>(File[At + 3]) << 24) : 0u; };
-		const auto U16 = [&File](int32 At) { return At + 2 <= File.Num() ? static_cast<uint32>(File[At]) | (File[At + 1] << 8) : 0u; };
-		if (File.Num() < 44 || FMemory::Memcmp(File.GetData(), "RIFF", 4) != 0 || FMemory::Memcmp(File.GetData() + 8, "WAVE", 4) != 0) return false;
-		bool bFormat = false;
-		for (int32 At = 12; At + 8 <= File.Num();)
-		{
-			const uint32 Size = U32(At + 4);
-			if (FMemory::Memcmp(File.GetData() + At, "fmt ", 4) == 0)
-			{
-				if (U16(At + 8) != 1 || U16(At + 22) != 16) return false;
-				OutChannels = static_cast<int32>(U16(At + 10));
-				OutRate = static_cast<int32>(U32(At + 12));
-				bFormat = true;
-			}
-			else if (FMemory::Memcmp(File.GetData() + At, "data", 4) == 0)
-			{
-				OutOffset = At + 8;
-				OutBytes = FMath::Min<int32>(static_cast<int32>(Size), File.Num() - OutOffset);
-				return bFormat && OutBytes > 0;
-			}
-			At += 8 + static_cast<int32>(Size + (Size & 1));
-		}
-		return false;
+		return BpAudio::HasFocus();
 	}
 
 	enum ETourStep : int32
@@ -352,7 +288,7 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 		if (!FFileHelper::LoadFileToArray(*File, *Path, FILEREAD_Silent)) UE_LOG(LogBpTable, Log, TEXT("BpTour: no voice clip %s (captions only)"), *Path);
 	}
 	int32 Rate = 0, Channels = 0, Offset = 0, Bytes = 0;
-	if (File->Num() == 0 || !ReadWav(*File, Rate, Channels, Offset, Bytes) || Channels < 1) return;
+	if (File->Num() == 0 || !BpAudio::ReadWav(*File, Rate, Channels, Offset, Bytes) || Channels < 1) return;
 	// A procedural wave drains as it plays, so each line gets a new one, fed the clip's samples.
 	USoundWaveProcedural* Wave = NewObject<USoundWaveProcedural>(this);
 	Wave->SetSampleRate(Rate);
@@ -360,14 +296,14 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 	Wave->Duration = static_cast<float>(Bytes) / (2.f * Channels * Rate);
 	Wave->SoundGroup = SOUNDGROUP_Voice;
 	Wave->bLooping = false;
-	// The clip at the level (bp.VoiceVolume), limited sample by sample: a level over 1 must not clip the output.
-	TourVoiceGain = VoiceVolume();
+	// The clip at the level (bp.VoiceLevel: twice the level as gain), limited sample by sample: a gain over 1 must not clip.
+	TourVoiceGain = BpAudio::VoiceGain();
 	TArray<uint8> Scaled;
 	Scaled.SetNumUninitialized(Bytes);
 	for (int32 At = 0; At + 1 < Bytes; At += 2)
 	{
 		const int16 In = static_cast<int16>(File->GetData()[Offset + At] | (File->GetData()[Offset + At + 1] << 8));
-		const float Out = LimitSample(static_cast<float>(In) / 32768.f * TourVoiceGain);
+		const float Out = BpAudio::LimitSample(static_cast<float>(In) / 32768.f * TourVoiceGain);
 		const int16 Sample = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(Out * 32767.f), -32768, 32767));
 		Scaled[At] = static_cast<uint8>(Sample & 0xFF);
 		Scaled[At + 1] = static_cast<uint8>((Sample >> 8) & 0xFF);
@@ -401,35 +337,6 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: says %s (%.1f s) level=%.2f dist_cm=%.0f attenuation=%.2f headroom_db=%.0f%s"), Clip, Wave->Duration, TourVoiceGain, SeatDistCm, Attenuation, HeadroomDb, TourVoice.IsValid() ? TEXT("") : TEXT(", no audio device: silent"));
 }
 
-float ABpTable::VoiceVolume()
-{
-	return FMath::Clamp(CVarVoiceVolume.GetValueOnGameThread(), 0.f, 3.f);
-}
-
-void ABpTable::StepVoiceVolume(float Delta)
-{
-	IConsoleVariable* Var = CVarVoiceVolume.AsVariable();
-	const float Stepped = FMath::Clamp(FMath::GridSnap(VoiceVolume() + Delta, 0.25f), 0.f, 3.f);
-	Var->Set(Stepped, ECVF_SetByConsole);
-	UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume stepped to %.2f"), Stepped);
-}
-
-void ABpTable::LoadVoiceVolume()
-{
-	static bool bDone = false;
-	if (bDone) return;
-	bDone = true;
-	CVarVoiceVolume.AsVariable()->SetOnChangedCallback(FConsoleVariableDelegate::CreateStatic(&SaveVoiceVolume));
-	float Saved = 0.f;
-	if (GConfig && GConfig->GetFloat(VoiceSettingsSection, VoiceSettingsKey, Saved, GGameUserSettingsIni))
-	{
-		bLoadingVoice = true;
-		CVarVoiceVolume.AsVariable()->Set(FMath::Clamp(Saved, 0.f, 3.f), ECVF_SetByConsole);
-		bLoadingVoice = false;
-		UE_LOG(LogBpTable, Log, TEXT("BpTour: voice volume %.2f (saved)"), VoiceVolume());
-	}
-}
-
 bool ABpTable::IsVoicePlaying() const
 {
 	const UAudioComponent* Voice = TourVoice.Get();
@@ -459,7 +366,7 @@ void ABpTable::TickTour()
 	if (UAudioComponent* Voice = TourVoice.Get(); Voice && Voice->IsPlaying())
 	{
 		if (Now >= TourVoiceEndsAt) Voice->Stop();
-		else if (TourVoiceGain >= 0.f && !FMath::IsNearlyEqual(TourVoiceGain, VoiceVolume(), 0.01f)) PreviewVoice();
+		else if (TourVoiceGain >= 0.f && !FMath::IsNearlyEqual(TourVoiceGain, BpAudio::VoiceGain(), 0.01f)) PreviewVoice();
 	}
 	// Away (no focus): nothing advances. A cold start counts its delay from the focus; a running step holds.
 	if (!TourHasFocus())

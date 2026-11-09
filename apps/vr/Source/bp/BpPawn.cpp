@@ -1,10 +1,12 @@
 #include "BpPawn.h"
 
+#include "BpAudio.h"
 #include "BpGameMode.h"
 #include "BpHands.h"
 #include "BpLink.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "EngineUtils.h"
@@ -137,7 +139,7 @@ void ABpPawn::BeginPlay()
 		for (TActorIterator<AActor> It(GetWorld()); It && !bCaptureHands; ++It) bCaptureHands = It->ActorHasTag(CaptureHandsTag);
 		if (bCaptureHands) SetRestHandsVisible(false);
 	}
-	ABpTable::LoadVoiceVolume();
+	BpAudio::LoadSettings();
 	MakeWristPanel();
 	MakeFrameMeter();
 	// Seated calibration (headset-plan code item 1): once the head is tracked, the table comes to the seated eye.
@@ -158,7 +160,14 @@ void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnProduct().Remove(WristProductHandle);
 		Link->OnFocuses().Remove(WristFocusHandle);
 	}
-	if (ABpTable* Table = WristTable.Get()) Table->OnRoomModeChanged().Remove(RoomHandle);
+	if (ABpTable* Table = WristTable.Get())
+	{
+		Table->OnRoomModeChanged().Remove(RoomHandle);
+		Table->OnScanBandChanged().Remove(WristBandHandle);
+		Table->OnLampAskChanged().Remove(WristAskHandle);
+		Table->SetDeckHeld(false);
+	}
+	if (Music) Music->Stop();
 	FCoreDelegates::VRHeadsetPutOnHead.Remove(HeadOnHandle);
 	FCoreDelegates::VRHeadsetRemovedFromHead.Remove(HeadOffHandle);
 	Super::EndPlay(EndPlayReason);

@@ -133,6 +133,9 @@ private:
 		float PulledCm = 0.f;
 		/** BpHands.Push: the same gesture away from the eye. */
 		bool bPush = false;
+		/** BpHands.Tap: released where it closed, whatever the id; BpHands.Pull and Push: moved, whatever the id. */
+		bool bTap = false;
+		bool bMove = false;
 		/** BpHands.Point: how long the hand points (no pinch) before it lowers. BpHands.Lasso: the features, and the path its
 		 *  ray follows across the map while pinched (world points), one a frame. */
 		float HoldForS = 0.f;

@@ -1656,17 +1656,36 @@ private:
 	int32 TourAsks = 0;
 	int32 TourTaps = 0;
 	void TickTour();
-	/** The voice's level (bp.VoiceVolume, 0..3; saved across runs in the app's user settings): the pawn's wrist control steps it.
-	 *  Above 1 the clip is limited sample by sample (SpeakTour), so the top of the range never clips the speaker. */
+	/** The voice's level is BpAudio's (bp.VoiceLevel, BpAudio.h): SpeakTour plays a clip at BpAudio::VoiceGain(), limited
+	 *  sample by sample above 0.8 full scale, so the top of the range never clips the speaker. */
 public:
-	static float VoiceVolume();
-	static void StepVoiceVolume(float Delta);
-	/** Reads the saved level, once a run (the pawn at BeginPlay). */
-	static void LoadVoiceVolume();
 	/** Hear the level now: the line playing again, or "Like this." when none plays. */
 	void PreviewVoice();
-private:
+	/** A tour line is sounding (the music ducks under it, BpAudio.cpp). */
 	bool IsVoicePlaying() const;
+
+	// ---- The console and the pad (BpConsole.cpp, BpPad.cpp; night two W1) -------------------------------------------------
+	/** The deck's slot: its front screen's resting pose in the table's space (the console's open panel stands there). */
+	FTransform ConsoleSlotPose() const { return DeckPose(0.f, 0.f); }
+	/** The target eye in the table's space (the console's bar is turned to it). */
+	FVector ConsoleEyeLocal() const { return EyeLocal(); }
+	/** The console open over the deck (room mode): the deck's screens and spines stay hidden until it is released. */
+	void SetDeckHeld(bool bHeld);
+	bool IsDeckHeld() const { return bDeckHeld; }
+	/** The decision waiting for a yes or no: the deck's front screen when it is a decision (room mode), else the decision
+	 *  card's finding. Its finding id, its title, and where it waits ("deck" or "card"); false when none waits. */
+	bool WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const;
+	/** Approve or decline the waiting decision through what its surface calls (DeckApprove/DeckDecline, CardTap). */
+	bool DecideWaiting(bool bApprove, const TCHAR* Route);
+	/** The pad's focus at the table's level: the kind ("wing" or "room") and the ids a step walks through, in reading order
+	 *  on the paper (far to near, left to right): the site plan's wings, or the entered wing's rooms. Empty in room mode. */
+	void FocusSiblings(FString& OutKind, TArray<FString>& OutIds) const;
+	/** The open decisions in the store (proposed findings), for the console's status line. */
+	int32 OpenDecisionCount() const;
+	/** A scan is walking the table now (a real one or the sample), as ScanBand says it. */
+	bool IsScanRunning() const { return bHasScanOutcome && ScanOutcome.bRunning; }
+private:
+	bool bDeckHeld = false;
 	float TourVoiceGain = -1.f;
 	void EnterTourStep(int32 Step);
 	/** The step's line in Glim's voice at the lamp's head (Content/BpData/voice/tour/<Clip>.wav, apps/vr/tools/tour-voice.ts);

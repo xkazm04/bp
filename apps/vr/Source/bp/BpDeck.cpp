@@ -1066,7 +1066,8 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 void ABpTable::ApplyDeckPoses()
 {
 	if (DeckCards.Num() < 4) return;
-	const float Room = DeckRoom.IsEmpty() || CVarDeck.GetValueOnGameThread() == 0 ? 0.f : DeckEase(RoomFade);
+	// The console open over the slot (night two W1) holds the deck hidden until it closes.
+	const float Room = DeckRoom.IsEmpty() || CVarDeck.GetValueOnGameThread() == 0 || bDeckHeld ? 0.f : DeckEase(RoomFade);
 	const float T = DeckEase(DeckSwapT);
 	for (int32 Index = 0; Index < 4; ++Index)
 	{
@@ -1338,6 +1339,59 @@ void ABpTable::DeckNextRoom()
 		return;
 	}
 	SwitchRoom(Next, TEXT("queue"));
+}
+
+void ABpTable::SetDeckHeld(bool bHeld)
+{
+	if (bHeld == bDeckHeld) return;
+	bDeckHeld = bHeld;
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s"), bHeld ? TEXT("held hidden (the console is open over it)") : TEXT("given back (the console closed)"));
+	ApplyDeckPoses();
+}
+
+bool ABpTable::WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const
+{
+	OutId.Reset();
+	OutTitle.Reset();
+	OutWhere.Reset();
+	// The deck's front screen when it is a decision and shows (room mode, not held under the console), else the card's.
+	if (!DeckRoom.IsEmpty() && !bDeckHeld && DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KDecision)
+	{
+		OutId = DeckScreens[DeckAt].Proposal;
+		OutWhere = TEXT("deck");
+	}
+	else if (RoomModeId.IsEmpty() && bCardShown && !CardShownId.IsEmpty() && Card && Card->IsVisible())
+	{
+		OutId = CardShownId;
+		OutWhere = TEXT("card");
+	}
+	if (OutId.IsEmpty()) return false;
+	for (const FBpProposal& P : FBpLinkModule::Get().GetScanState().Scan.proposals)
+	{
+		if (P.id == OutId) { OutTitle = P.title; break; }
+	}
+	if (OutTitle.IsEmpty()) OutTitle = OutId;
+	return true;
+}
+
+bool ABpTable::DecideWaiting(bool bApprove, const TCHAR* Route)
+{
+	FString Id, Title, Where;
+	if (!WaitingDecision(Id, Title, Where))
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s by the %s refused: no decision waits"), bApprove ? TEXT("approve") : TEXT("decline"), Route);
+		return false;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s %s on the %s by the %s"), bApprove ? TEXT("approve") : TEXT("decline"), *Id, *Where, Route);
+	// The tour counts it as the decision it asks for, as a hand's tap on the screen or the card.
+	NoteHand(TEXT("tap"));
+	if (Where == TEXT("deck"))
+	{
+		if (bApprove) DeckApprove();
+		else DeckDecline();
+	}
+	else CardTap(bApprove ? TEXT("card:approve") : TEXT("card:decline"));
+	return true;
 }
 
 FVector ABpTable::GetDeckFrontWorld() const
