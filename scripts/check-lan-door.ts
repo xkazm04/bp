@@ -37,10 +37,12 @@ for (const a of ['10.0.0.1', '10.255.255.255', '172.16.0.1', '172.31.255.255', '
 for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '8.8.8.8', '172.15.255.255', '172.32.0.1', '100.63.255.255', '100.128.0.1', '192.169.0.1', '11.0.0.1', '169.254.1.1', '0.0.0.0', 'fe80::1', 'fd7a:115c:a1e0::1', '192.168.1.256', 'localhost', '', undefined])
   check(`refused: ${a === undefined ? 'undefined' : JSON.stringify(a)}`, !privatePeer(a));
 const all = [...SCOPES];
-for (const [m, p] of [['POST', '/api/companion/cards/c1'], ['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
+// table link v2 (owner, 2026-11-09): POST cards/<id>, POST morning and DELETE scans/<job> are now verbs (decide, decide,
+// scan); scripts/check-table-link.ts holds them. Everything below stays out of reach.
+for (const [m, p] of [['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
   ['POST', '/api/products/kettle/releases/r1/build'], ['POST', '/api/products/kettle/releases/r1/finish'], ['POST', '/api/products/kettle/waves/w1/dispatch'],
-  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['DELETE', '/api/products/kettle/scans/j-1'], ['POST', '/api/products/kettle/focuses'],
-  ['POST', '/api/products/kettle/proposals/kf-001'], ['POST', '/api/companion/morning'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x'], ['POST', '/api/products/kettle/proposals/kf-001/approve/x'],
+  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/focuses'], ['GET', '/lan/where'], ['DELETE', '/api/products/kettle/scans'],
+  ['POST', '/api/products/kettle/proposals/kf-001'], ['GET', '/api/companion/morning?view=agent'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x'], ['POST', '/api/products/kettle/proposals/kf-001/approve/x'],
   ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
 check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
@@ -244,7 +246,10 @@ check("decide: the decline reaches the route as the paired device (Kettle is no 
 r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
 check("decide: the approve reaches the route as the paired device (D12; Kettle is no live store: the route's 404)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
 refused("decide: never the free decide (the plan's POST .../proposals/<id>)", await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001', { token: tokenE, body: { decision: 'decline', note: 'x' } }));
-refused("decide: never the deck's steering", await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } }));
+// table link v2 (owner, 2026-11-09): the deck's steering is now a person's decision from the table; without `shown` the
+// route answers its own 400, which proves the door let it through and the route took the pairing as a person
+r = await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } });
+check("decide: the deck's steering reaches the route as a person (table link v2): its own 400 for a missing shown", r.status === 400 && /must say what it showed/.test(r.body), `${r.status} ${r.body}`);
 // scan (directed-scans): decide's ceremony, over POST .../scans. A plain approve drops it; only an approve that names it grants it.
 const NF = nonce();
 const codeF = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NF, device: 'quest-f', scopes: ['read', 'scan'] } })).json.code);

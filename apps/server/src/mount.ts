@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isLoopbackAddr } from '@bp/core/scan/local-only';
 import { recordRefusal, type RefusalReason } from '@bp/core/scan/refusals';
+import { DECIDER_SEAL_HEADER } from '@bp/core/server/decider-header';
 
 /** The largest request body the server reads (bytes); a longer one answers 413. bp's writes are small JSON documents. */
 export const MAX_BODY = 4 * 1024 * 1024;
@@ -115,8 +116,13 @@ function refused(req: IncomingMessage, status: number | 'abort', reason: Refusal
   recordRefusal({ status, reason, method: req.method ?? '?', path: (req.url ?? '').split('?')[0], peer: a === undefined ? null : isLoopbackAddr(a) });
 }
 
+/** A loopback caller's device, from its Authorization (main.ts passes device-auth.ts loopbackDevice): null for a plain
+ *  loopback call, the headers its pairing adds (x-bp-device, and the decider seal when it may decide), or 'refused' for a
+ *  Bearer that names no live pairing (401, before any route runs: the headset pairs again). */
+export type DeviceHook = (authorization: string | undefined) => Record<string, string> | 'refused' | null;
+
 /** The request listener: route, adapt, call, stream back. */
-export function listener(routes: Route[]) {
+export function listener(routes: Route[], device?: DeviceHook) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     // The socket peer must be this machine (LOOPBACK_PEER was this mount's own copy of the rule; it is now the shared
     // isLoopbackAddr the X-Forwarded-For hop check uses). The handlers' guards check only headers, which any LAN client
@@ -125,7 +131,12 @@ export function listener(routes: Route[]) {
       refused(req, 403, 'foreign-peer');
       return json(res, 403, { error: 'only served to this machine' });
     }
-    return dispatch(routes, req, res);
+    const overlay = device?.(req.headers.authorization) ?? null;
+    if (overlay === 'refused') {
+      // not a refusal-record line: REFUSAL_REASONS (scan/refusals.ts) is a closed vocabulary owned outside this mount
+      return json(res, 401, { error: 'device token unknown, expired or revoked: pair again' }, { 'cache-control': 'no-store' });
+    }
+    return dispatch(routes, req, res, undefined, overlay ?? undefined);
   };
 }
 
@@ -136,7 +147,8 @@ export function listener(routes: Route[]) {
 export interface Forwarded { url: URL; headers: Headers }
 
 /** Route, adapt, call, stream back: the listener's work after its peer check, and the door's after its own. */
-export async function dispatch(routes: Route[], req: IncomingMessage, res: ServerResponse, fwd?: Forwarded): Promise<void> {
+/** `overlay` (a loopback caller authenticated by its device token): headers set over the client's own, after the seal strip. */
+export async function dispatch(routes: Route[], req: IncomingMessage, res: ServerResponse, fwd?: Forwarded, overlay?: Record<string, string>): Promise<void> {
   // A Host no URL can carry and a malformed percent-escape both throw here; uncaught, they would end the process.
   let url: URL, route: Route | undefined, params: Params | null = null;
   try {
@@ -163,6 +175,9 @@ export async function dispatch(routes: Route[], req: IncomingMessage, res: Serve
     for (const [k, v] of Object.entries(req.headers)) if (v !== undefined) for (const one of Array.isArray(v) ? v : [v]) headers.append(k, one);
     const remote = req.socket.remoteAddress ?? '';
     headers.set('x-forwarded-for', headers.has('x-forwarded-for') ? `${headers.get('x-forwarded-for')}, ${remote}` : remote);
+    // the decider seal is this process's own mark (decider.server.ts): a client never brings it in; only a token earns it
+    headers.delete(DECIDER_SEAL_HEADER);
+    for (const [k, v] of Object.entries(overlay ?? {})) headers.set(k, v);
   }
   const abort = new AbortController();
   res.on('close', () => { if (!res.writableFinished) abort.abort(); });

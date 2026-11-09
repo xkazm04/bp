@@ -8,6 +8,7 @@
 // owner's word only, kept in the log: a deferred decision leaves the deck until tomorrow morning, a held one stays, marked.
 import fs from 'node:fs';
 import path from 'node:path';
+import type { DeciderMarks } from '../../decider.server.ts';
 import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
 import { briefMapOf, briefMapOfStructure, type BriefMap } from '../../../scan/brief.ts';
 import { evidenceOpts } from '../../../scan/track.ts';
@@ -95,7 +96,8 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
     const { lenses, ...mf } = whereOf(p), { contains, bounds } = evidenceOpts(l, lenses);
     facts.push({ slug: p.slug, name: p.name, scan, ...mf, orders: ordersOf(p, scan.proposals, now), evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
     const rows = readSteer(p);
-    steer.push(...rows);
+    // the deck carries the SteerRow shape (morning-deck schema); who decided and where stays in the log's own row
+    steer.push(...rows.map(({ surface: _s, device: _d, shown: _w, ...r }: SteerRow & Partial<DeciderMarks>) => r));
     renderOnRead(p, rows, now);
   }
   const deck = buildDeck(facts, steer, from, now, readTrail(), cut);
@@ -108,7 +110,10 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
 export type SteerResult = { status: 200; row: SteerRow } | { status: 400 | 403 | 404 | 409 | 503; error: string };
 
 /** One verdict on one open decision. */
-export async function steer(product: string, proposal: string, verdict: Verdict, now = Date.now()): Promise<SteerResult> {
+/** `marks`: who decided and where (decider.server.ts). A table's row carries them (surface vr, device, shown) and its approve
+ *  says so in the store note; the page's row keeps the plain SteerRow shape (morning-deck-1), so a row without `surface` is
+ *  the page's, and decisions.jsonl records both. */
+export async function steer(product: string, proposal: string, verdict: Verdict, now = Date.now(), marks?: DeciderMarks): Promise<SteerResult> {
   const p = findProduct(product);
   if (!p || !hasStore(p)) return { status: 404, error: `no live product ${product}` };
   const { read } = snapshots(product), x = read[0]?.scan.proposals.find((r) => r.id === proposal);
@@ -130,11 +135,11 @@ export async function steer(product: string, proposal: string, verdict: Verdict,
     const off = writesOff();
     if (off) return { status: 403, error: off };
     try {
-      const r = decide(storeFile(p), proposal, verdict === 'approve' ? { decision: 'approve', note: 'Morning Watch' } : { decision: 'decline', note: note! }, by);
+      const r = decide(storeFile(p), proposal, verdict === 'approve' ? { decision: 'approve', note: marks?.surface === 'vr' ? `Morning Watch, from the table (${marks.device ?? 'a headset'})` : 'Morning Watch' } : { decision: 'decline', note: note! }, by);
       if (!r.ok) return { status: r.status === 404 ? 404 : 409, error: r.status === 404 ? `no proposal ${proposal}` : `${proposal} was decided first` };
     } catch (e) { return { status: 503, error: `decision failed: ${(e as Error).message}` }; }
   }
-  const row: SteerRow = { at: new Date(now).toISOString(), product, proposal, verdict, title: x.title, by, ...(verdict === 'defer' ? { until: new Date(now + DEFER_MS).toISOString() } : {}), ...(note ? { note } : {}) };
+  const row: SteerRow = { at: new Date(now).toISOString(), product, proposal, verdict, title: x.title, by, ...(verdict === 'defer' ? { until: new Date(now + DEFER_MS).toISOString() } : {}), ...(note ? { note } : {}), ...(marks?.surface === 'vr' ? marks : {}) };
   try {
     fs.mkdirSync(path.dirname(logFile(p)), { recursive: true });
     fs.appendFileSync(logFile(p), JSON.stringify(row) + '\n');

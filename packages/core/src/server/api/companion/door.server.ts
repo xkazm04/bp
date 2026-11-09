@@ -99,9 +99,10 @@ export const listPolicies = (): PolicyGrant[] => {
   const d = readJson<{ policies?: PolicyGrant[] }>('policies.json', {});
   return Array.isArray(d.policies) ? d.policies : [];
 };
-export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number }): PolicyGrant {
+/** `grantedBy` (decider.server.ts DeciderMarks): who granted it and where; kept on the grant itself. */
+export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number; grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } }): PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } } {
   const now = Date.now();
-  const grant: PolicyGrant = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString() };
+  const grant: PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } } = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString(), ...(p.grantedBy ? { grantedBy: p.grantedBy } : {}) };
   writeJson('policies.json', { policies: [grant, ...listPolicies()] });
   return grant;
 }
@@ -311,12 +312,15 @@ export async function fileCard(tool: unknown, args: unknown, o: Origin): Promise
 export type AnswerResult = { ok: true; card: Card } | { ok: false; status: 404 | 409; error: string; card?: Card };
 /** The human path (POST /cards/[id]): approve runs the tool once, decline runs nothing; any other state is a 409.
  *  The `approved` row is written before the first await, so a second answer racing this one already sees it. */
-export async function answerCard(id: string, decision: 'approve' | 'decline', o: Origin): Promise<AnswerResult> {
+/** `marks` (decider.server.ts): who answered and where; every row the answer writes carries them. A headset's approve runs
+ *  the tool WITHOUT the page's human token (its routes sign as they do for any approve), so a table can never reach a
+ *  human-only route through a card; the route refuses the tools that set standing permissions before this runs. */
+export async function answerCard(id: string, decision: 'approve' | 'decline', o: Origin, marks: { surface: 'web' | 'vr'; device?: string; shown?: string } = { surface: 'web' }): Promise<AnswerResult> {
   const c = current().get(id);
   if (!c) return { ok: false, status: 404, error: `no card ${id}` };
   if (c.state !== 'pending') return { ok: false, status: 409, error: `card ${id} is ${c.state}, not pending`, card: c };
-  if (decision === 'decline') return { ok: true, card: put({ ...c, state: 'declined', decidedBy: 'human' }) };
+  if (decision === 'decline') return { ok: true, card: put({ ...c, state: 'declined', decidedBy: 'human', ...marks }) };
   const t = toolOf(c.tool);
-  if (!t) return { ok: true, card: put({ ...c, state: 'failed', decidedBy: 'human', result: `no tool ${c.tool}` }) };
-  return { ok: true, card: await execute(put({ ...c, state: 'approved', decidedBy: 'human' }), t, o, true) };
+  if (!t) return { ok: true, card: put({ ...c, state: 'failed', decidedBy: 'human', result: `no tool ${c.tool}`, ...marks }) };
+  return { ok: true, card: await execute(put({ ...c, state: 'approved', decidedBy: 'human', ...marks }), t, o, marks.surface === 'web') };
 }

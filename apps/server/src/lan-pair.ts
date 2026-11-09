@@ -6,6 +6,9 @@
 //   pair approve <code> [--scope read,place] [--days 30]   (decide, the headset's pinch: a repeat declined or the card approved, only when named here)
 //                                               the one mint gate: type the code the headset shows; narrow the scopes
 //                                               (read, standup, place; default: what the device asked for) and the days
+//                                               a headset at the table (table link v2, docs/concepts/vr-light-table/
+//                                               table-link-v2.md): --scope standup,place,focus,decide,scan; `decide` lets it
+//                                               make a person's decisions (a morning verdict, a card, a bounded policy grant)
 //   pair deny <code>                            refuse a request
 //   pair revoke <id>                            remove a pairing: through the server when it runs (its requests in flight
 //                                               are cut), else straight from $BP_HOME/lan/paired.json

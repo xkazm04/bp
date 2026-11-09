@@ -13,11 +13,16 @@
 // --lan-host (default: the first private-range IPv4 interface) port --lan-port (default 3101). Without --lan none of it
 // loads and nothing changes; with it, the /lan/pair route lines and `lan door: ...` lines follow. The owner's side is
 // `npm run server -- pair <list|open|approve|deny|revoke>` (lan-pair.ts), against the running server.
+// Opt-in, the ceremony alone (table link v2, docs/concepts/vr-light-table/table-link-v2.md section 4): --pair serves the
+// pairing routes on the loopback listener only (a headset on the USB tether pairs over the cable), with no LAN listener.
+// Either way, a loopback request that carries `Authorization: Bearer <token>` is authenticated against $BP_HOME/lan/paired.json
+// (device-auth.ts): a live pairing's device id (and, with `decide`, the decider seal) joins the request; any other Bearer is 401.
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostKettleSims } from './kettle-sim.ts';
 import { listener, loadRoutes } from './mount.ts';
+import { loopbackDevice } from './device-auth.ts';
 import { setSelfOrigin } from '@bp/core/server/api/companion/door.server';
 
 // `pair ...` is the owner's command line for the LAN door, not a server start
@@ -47,14 +52,15 @@ let athenaToken = '';
 if (athena && athenaTokenFile) { try { athenaToken = athena.readToken(athenaTokenFile); } catch (e) { die((e as Error).message); } }
 // the LAN door, when asked for: its address and port are settled now, so a bad flag fails before anything binds
 const LAN = process.argv.includes('--lan');
+const PAIR_ONLY = !LAN && process.argv.includes('--pair');
 const lanHostFlag = arg('--lan-host'), lanPortFlag = arg('--lan-port');
 if (!LAN && (lanHostFlag !== undefined || lanPortFlag !== undefined)) die('--lan-host and --lan-port need --lan');
-const door = LAN ? await import('./lan-door.ts') : null;
+const door = LAN || PAIR_ONLY ? await import('./lan-door.ts') : null;
 const LAN_PORT = Number(lanPortFlag ?? door?.LAN_PORT ?? 0);
 if (LAN && !(/^\d{1,5}$/.test(lanPortFlag ?? '0') && LAN_PORT >= 0 && LAN_PORT <= 65535)) die(`not a port: ${JSON.stringify(lanPortFlag)} (an integer 0-65535)`);
-const LAN_HOST = door ? lanHostFlag ?? door.lanAddress() ?? die('--lan: no private-range IPv4 interface found; name one with --lan-host') : '';
-if (door && !/^\d{1,3}(\.\d{1,3}){3}$/.test(LAN_HOST)) die(`--lan-host takes an IPv4 address, not ${JSON.stringify(LAN_HOST)}`);
-if (door && LAN_HOST === '0.0.0.0') die('--lan-host 0.0.0.0 is every interface; the door binds one LAN address');
+const LAN_HOST = LAN ? lanHostFlag ?? door?.lanAddress() ?? die('--lan: no private-range IPv4 interface found; name one with --lan-host') : '';
+if (LAN && !/^\d{1,3}(\.\d{1,3}){3}$/.test(LAN_HOST)) die(`--lan-host takes an IPv4 address, not ${JSON.stringify(LAN_HOST)}`);
+if (LAN && LAN_HOST === '0.0.0.0') die('--lan-host 0.0.0.0 is every interface; the door binds one LAN address');
 // the handler tree, found through the package (any module in it resolves; its directory's parent is api/)
 const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/core/server/api/products/route'))), '..');
 
@@ -62,7 +68,7 @@ const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/cor
 try { hostKettleSims(); } catch (e) { die(`cannot build the Kettle sims: ${(e as Error).message}`); }
 const routes = await loadRoutes(API).catch((e: unknown) => die(`cannot load the routes: ${(e as Error).message}`));
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
-const server = http.createServer(listener(routes));
+const server = http.createServer(listener(routes, (authorization) => loopbackDevice(authorization)));
 // listen failures (EADDRINUSE, an unresolvable --host) end with one line and exit 1, not an uncaught throw
 server.on('error', (e: NodeJS.ErrnoException) => die(`cannot listen on ${HOST}:${PORT}: ${e.code ?? ''} ${e.message}`));
 server.listen(PORT, HOST, () => {
@@ -77,13 +83,14 @@ server.listen(PORT, HOST, () => {
   if (ATHENA) void attachAthena(ATHENA, port);
   // a door that cannot start (an unwritable or occupied $BP_HOME/lan) ends with one line too, not an unhandled rejection
   if (door) attachDoor(port).catch((e: unknown) => die(`cannot open the LAN door: ${(e as Error).message}`));
+  if (PAIR_ONLY) console.log('lan door: --pair: the pairing ceremony on this loopback listener only (POST /pair, /pair/claim), no LAN listener');
 });
 
 let lanDoor: import('./lan-door.ts').LanDoor | null = null;
 /** Open the LAN door: its owner routes join the loopback mount, then the door listens when there is a reason to. */
 async function attachDoor(loopbackPort: number): Promise<void> {
   if (!door) return;
-  lanDoor = new door.LanDoor({ routes, loopbackPort, host: LAN_HOST, port: LAN_PORT });
+  lanDoor = new door.LanDoor({ routes, loopbackPort, host: LAN_HOST, port: LAN_PORT, lan: LAN });
   const mine = lanDoor.adminRoutes();
   routes.push(...mine);
   for (const r of mine) console.log(`route ${r.methods.join(',')} ${r.path}`);

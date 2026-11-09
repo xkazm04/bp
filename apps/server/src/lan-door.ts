@@ -33,8 +33,13 @@
 //    with { ids }, 1..50). `scan`: POST .../scans, a scan or directed scan started from the table. `decide` and `scan` have
 //    their own ceremony: a device may ask for them, but
 //    only the owner's approve that names them (`--scope ...,decide`) grants them; a plain approve drops them. Never the plan's
-//    free decide (proposals/<id>), cards/<id>, human-token, dispatch, build
+//    free decide (proposals/<id>), human-token, dispatch, build
 //    or finish, and none of this server's own /lan or /athena routes.
+//    Table link v2 (owner, 2026-11-09; docs/concepts/vr-light-table/table-link-v2.md section 5): `decide` adds a person's
+//    decisions from the table (the Morning Watch verdict, a card's answer, a policy grant and its revoke: the routes take
+//    them only with the decider seal, which this door adds for a pairing that holds `decide`, device-auth.ts), `standup`
+//    adds the morning deck, the inbox, the policy list and the voice routes, `scan` adds the cancel, `read` adds the product
+//    list and the shots, and `any` live pairing reaches the liveness probe (/api/health) and GET /pair/me.
 // 5. The rewrite. Only Content-Type and Accept are copied from the device; Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
 //    `x-bp-device` or `x-bp-human` the device sent is dropped (W1's rule, baton.server.ts).
@@ -50,9 +55,9 @@ import path from 'node:path';
 import http from 'node:http';
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { DEVICE_HEADER } from '@bp/core/server/api/session/baton.server';
 import { jsonOnly, localHost, localOnly } from '@bp/core/scan/local-only';
 import { dispatch, type Route } from './mount.ts';
+import { deviceOverlay } from './device-auth.ts';
 
 // ------------------------------------------------------------------------------------------------ the numbers (a contract)
 export const LAN_PORT = 3101;
@@ -101,7 +106,11 @@ export function lanAddress(): string | null {
 }
 
 // ------------------------------------------------------------------------------------------------ the verbs
-interface Verb { scope: Scope; method: 'GET' | 'POST'; path: RegExp; query?: string }
+/** `scope: 'any'`: any live pairing. `query`: the exact query, or a pattern the whole query must match (absent: none). */
+interface Verb { scope: Scope | 'any'; method: 'GET' | 'POST' | 'DELETE'; path: RegExp; query?: string | RegExp }
+const ISO = '[0-9TZ:.-]{10,40}';
+/** The morning deck's window: since and/or opened, each an ISO time (no `+`: send UTC with Z). */
+const MORNING_QUERY = new RegExp(`^(?:since|opened)=${ISO}(?:&(?:since|opened)=${ISO})?$`);
 // SLUG: the registry's own rule (registry.server.ts SLUG_RE, focus.ts), so the door never forwards a slug no product can have (E6, D3)
 const SLUG = '[a-z0-9][a-z0-9-]{0,62}', ID = '[A-Za-z0-9_.-]{1,80}';
 const products = (rest: string) => new RegExp(`^/api/products/${SLUG}/${rest}$`);
@@ -127,6 +136,23 @@ export const VERBS: readonly Verb[] = [
   { scope: 'decide', method: 'POST', path: products(`proposals/${ID}/approve`) },
   { scope: 'decide', method: 'POST', path: products('proposals/approve') },
   { scope: 'scan', method: 'POST', path: products('scans') },
+  // table link v2 (owner, 2026-11-09)
+  { scope: 'any', method: 'GET', path: /^\/api\/health$/ },
+  { scope: 'read', method: 'GET', path: /^\/api\/products$/ },
+  { scope: 'read', method: 'GET', path: products(`shots/(?:${ID}/){0,4}${ID}`) },
+  { scope: 'standup', method: 'GET', path: /^\/api\/companion\/morning$/ },
+  { scope: 'standup', method: 'GET', path: /^\/api\/companion\/morning$/, query: MORNING_QUERY },
+  { scope: 'standup', method: 'GET', path: /^\/api\/companion\/inbox$/ },
+  { scope: 'standup', method: 'GET', path: /^\/api\/companion\/inbox$/, query: /^limit=\d{1,3}$/ },
+  { scope: 'standup', method: 'GET', path: /^\/api\/companion\/policies$/ },
+  // the voice routes: their handlers land separately (another builder, 2026-11-09); until then the mount answers 404
+  { scope: 'standup', method: 'POST', path: /^\/api\/companion\/listen$/ },
+  { scope: 'standup', method: 'POST', path: /^\/api\/companion\/say$/ },
+  { scope: 'decide', method: 'POST', path: /^\/api\/companion\/morning$/ },
+  { scope: 'decide', method: 'POST', path: new RegExp(`^/api/companion/cards/${ID}$`) },
+  { scope: 'decide', method: 'POST', path: /^\/api\/companion\/policies$/ },
+  { scope: 'decide', method: 'DELETE', path: new RegExp(`^/api/companion/policies/${ID}$`) },
+  { scope: 'scan', method: 'DELETE', path: products(`scans/${ID}`) },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */
@@ -134,9 +160,10 @@ export function verbOf(scopes: readonly Scope[], method: string, target: string)
   if (!/^\/[\x21-\x7e]*$/.test(target) || /%|\/\/|\/\.\.?(\/|\?|$)/.test(target)) return null;
   const q = target.indexOf('?');
   const p = q < 0 ? target : target.slice(0, q), query = q < 0 ? '' : target.slice(q + 1);
-  const has = (s: Scope) => scopes.includes(s) || (s === 'read' && scopes.includes('standup'));
-  const v = VERBS.find((x) => x.method === method && x.path.test(p) && (x.query ?? '') === query);
-  return v && has(v.scope) ? { path: p, query } : null;
+  const has = (s: Scope | 'any') => s === 'any' || scopes.includes(s) || (s === 'read' && scopes.includes('standup'));
+  const queryOk = (x: Verb) => (x.query instanceof RegExp ? x.query.test(query) : (x.query ?? '') === query);
+  const v = VERBS.find((x) => x.method === method && x.path.test(p) && queryOk(x) && has(x.scope));
+  return v ? { path: p, query } : null;
 }
 
 // ------------------------------------------------------------------------------------------------ the registry
@@ -213,7 +240,12 @@ export interface DoorOptions {
   /** Where the peer address is read: the socket. A check's harness substitutes it; nothing in this server does. */
   peerOf?: (req: IncomingMessage) => string | undefined;
   log?: (line: string) => void;
+  /** false: the ceremony and the loopback routes only, never a LAN listener (`--pair`, a tethered headset). Default true. */
+  lan?: boolean;
 }
+
+/** What the ceremony answers, transport-free: a JSON answer, or a refusal cause (the LAN door's bare 403, the tether's 403). */
+type Answer = { status: number; body: Record<string, unknown> } | { refuse: string };
 
 const bare = (res: ServerResponse): void => {
   if (res.headersSent) { res.destroy(); return; }
@@ -295,7 +327,7 @@ export class LanDoor {
   async converge(): Promise<void> {
     this.prune();
     const reason = this.windowUntil > this.now() || this.pending.some((p) => p.state === 'approved') || this.live().length > 0;
-    if (reason && !this.server) await this.listen();
+    if (reason && !this.server && this.o.lan !== false) await this.listen();
     else if (!reason && this.server) { await this.close(); this.log('lan door: closed (nothing paired, no pairing window)'); }
   }
   openWindow(): number {
@@ -367,8 +399,15 @@ export class LanDoor {
     if (!privatePeer(peer)) { this.refusalRow('peer', peer); return bare(res); }
     const target = req.url ?? '';
     try {
-      if (req.method === 'POST' && target === '/pair') return await this.pairRequest(req, res, peer as string);
-      if (req.method === 'POST' && target === '/pair/claim') return await this.pairClaim(req, res, peer as string);
+      if (req.method === 'POST' && (target === '/pair' || target === '/pair/claim')) {
+        const b = await readSmallJson(req);
+        const a = target === '/pair' ? this.requestPairing(b, peer as string) : this.claimPairing(b, peer as string);
+        return 'refuse' in a ? await this.refuse(res, a.refuse, peer) : sendJson(res, a.status, a.body);
+      }
+      if (req.method === 'GET' && target === '/pair/me') {
+        const m = TOKEN.exec(req.headers.authorization ?? ''), a = m ? this.me(m[1]) : null;
+        return a ? sendJson(res, 200, a) : await this.refuse(res, 'me', peer);
+      }
       return await this.forward(req, res, peer as string);
     } catch (e) {
       this.log(`lan door: ${(e as Error).message}`);
@@ -383,19 +422,20 @@ export class LanDoor {
     return hit;
   }
 
-  private async pairRequest(req: IncomingMessage, res: ServerResponse, peer: string): Promise<void> {
+  /** POST /pair: a pending request (or the existing view of a retried one). `peer`: the socket's address, or `loopback`. */
+  requestPairing(b: Record<string, unknown> | null, peer: string): Answer {
     this.prune();
-    const b = await readSmallJson(req);
+    const no = (cause: string): Answer => { if (peer === 'loopback') this.refusalRow(cause, peer); return { refuse: cause }; };
     if (!b || typeof b.nonce !== 'string' || !NONCE.test(b.nonce) || typeof b.device !== 'string' || !DEVICE.test(b.device)
-      || (b.scopes !== undefined && !isScopes(b.scopes))) return this.refuse(res, 'pair-body', peer);
+      || (b.scopes !== undefined && !isScopes(b.scopes))) return no('pair-body');
     const known = this.findByNonce(b.nonce);
     if (known) {
       // a retried request: the existing view, never a reset (a resolved record stays resolved); only from its own peer
-      if (known.peer !== peer || known.state === 'denied') return this.refuse(res, 'pair-repeat', peer);
-      return sendJson(res, known.state === 'pending' ? 201 : 200, { state: known.state === 'pending' ? 'pending' : 'approved', code: known.code, expiresAt: new Date(known.until).toISOString() });
+      if (known.peer !== peer || known.state === 'denied') return no('pair-repeat');
+      return { status: known.state === 'pending' ? 201 : 200, body: { state: known.state === 'pending' ? 'pending' : 'approved', code: known.code, expiresAt: new Date(known.until).toISOString() } };
     }
-    if (this.windowUntil <= this.now()) return this.refuse(res, 'no-window', peer);
-    if (this.pending.filter((x) => x.state === 'pending').length >= MAX_PENDING) return this.refuse(res, 'pending-cap', peer);
+    if (this.windowUntil <= this.now()) return no('no-window');
+    if (this.pending.filter((x) => x.state === 'pending').length >= MAX_PENDING) return no('pending-cap');
     let code: string;
     do code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.pending.some((p) => p.code === code));
@@ -406,24 +446,25 @@ export class LanDoor {
     this.pending.push(p);
     this.ledger({ event: 'pair-request', device: p.device, peer, scopes: p.requested });
     this.log(`lan door: pairing request from ${p.device} at ${peer} for ${p.requested.join(',')}: code ${code} (npm run server -- pair approve ${code})`);
-    return sendJson(res, 201, { state: 'pending', code, expiresAt: new Date(p.until).toISOString() });
+    return { status: 201, body: { state: 'pending', code, expiresAt: new Date(p.until).toISOString() } };
   }
 
-  private async pairClaim(req: IncomingMessage, res: ServerResponse, peer: string): Promise<void> {
+  /** POST /pair/claim: 202 while pending, the token exactly once after approval, 410 after that. */
+  claimPairing(b: Record<string, unknown> | null, peer: string): Answer {
     this.prune();
-    const b = await readSmallJson(req);
+    const no = (cause: string): Answer => { if (peer === 'loopback') this.refusalRow(cause, peer); return { refuse: cause }; };
     const p = b && typeof b.nonce === 'string' && NONCE.test(b.nonce) ? this.findByNonce(b.nonce) : undefined;
     // the claimant is the approved identity: the nonce's holder, from the address the request came from
-    if (!p || p.peer !== peer) return this.refuse(res, 'claim-unknown', peer);
-    if (p.state === 'denied') return this.refuse(res, 'claim-denied', peer);
-    if (p.state === 'pending') return sendJson(res, 202, { state: 'pending' });
+    if (!p || p.peer !== peer) return no('claim-unknown');
+    if (p.state === 'denied') return no('claim-denied');
+    if (p.state === 'pending') return { status: 202, body: { state: 'pending' } };
     if (p.state === 'claimed') {
       this.ledger({ event: 'claim-again', device: p.device, peer, id: p.pairingId });
-      return sendJson(res, 410, { state: 'claimed' });
+      return { status: 410, body: { state: 'claimed' } };
     }
     // approved: mint now, deliver once, keep only the fingerprint
     const rows = this.rows().filter((r) => Date.parse(r.expiresAt) > this.now());
-    if (rows.length >= MAX_PAIRED) return this.refuse(res, 'paired-cap', peer);
+    if (rows.length >= MAX_PAIRED) return no('paired-cap');
     const token = randomBytes(32).toString('base64url');
     let id: string;
     do id = randomBytes(4).toString('hex'); while (rows.some((r) => r.id === id));
@@ -437,7 +478,26 @@ export class LanDoor {
     p.pairingId = id;
     this.ledger({ event: 'claim', device: p.device, peer, id, scopes: row.scopes, expiresAt: row.expiresAt });
     this.log(`lan door: ${deviceId(row)} claimed its token (${row.scopes.join(',')} until ${row.expiresAt})`);
-    return sendJson(res, 200, { token, device: deviceId(row), scopes: row.scopes, expiresAt: row.expiresAt });
+    return { status: 200, body: { token, device: deviceId(row), scopes: row.scopes, expiresAt: row.expiresAt } };
+  }
+
+  /** GET /pair/me: what a live token is, or null (unknown, expired, revoked). Never the token or its fingerprint. */
+  me(token: string): { device: string; scopes: Scope[]; expiresAt: string } | null {
+    const presented = fingerprintOf(token), t = this.now();
+    let hit: Pairing | undefined;
+    for (const r of this.rows()) if (timingSafeEqual(Buffer.from(r.fingerprint, 'hex'), presented) && !hit) hit = r;
+    return hit && Date.parse(hit.expiresAt) > t ? { device: deviceId(hit), scopes: hit.scopes, expiresAt: hit.expiresAt } : null;
+  }
+
+  /** GET /lan/where (loopback only): where a tethered headset finds this door, so nobody types an address in VR. */
+  where(): { door: { address: string; port: number } | null; listening: boolean; window: string | null; pairing: true } {
+    const t = this.now();
+    return {
+      door: this.o.lan === false ? null : { address: this.o.host, port: this.port ?? this.o.port },
+      listening: this.server !== null,
+      window: this.windowUntil > t ? new Date(this.windowUntil).toISOString() : null,
+      pairing: true,
+    };
   }
 
   private async forward(req: IncomingMessage, res: ServerResponse, peer: string): Promise<void> {
@@ -457,7 +517,8 @@ export class LanDoor {
     for (const k of ['content-type', 'accept']) { const v = req.headers[k]; if (typeof v === 'string') headers.set(k, v); }
     headers.set('host', `127.0.0.1:${this.o.loopbackPort}`);
     headers.set('x-forwarded-for', '127.0.0.1');
-    headers.set(DEVICE_HEADER, deviceId(hit));
+    // x-bp-device from the pairing, and the decider seal when it holds `decide` (device-auth.ts; table-link-v2.md section 2)
+    for (const [k, v] of Object.entries(deviceOverlay(hit))) headers.set(k, v);
     const id = hit.id, set = this.inflight.get(id) ?? new Set<ServerResponse>();
     this.inflight.set(id, set);
     set.add(res);
@@ -561,6 +622,44 @@ export class LanDoor {
         return (await this.revoke(b.id)) ? Response.json({ ok: true }) : Response.json({ error: `no pairing ${b.id}` }, { status: 404 });
       }),
       write('sync', async () => { await this.converge(); return Response.json(this.status()); }),
+      // the tether's side of the ceremony and its address book (table-link-v2.md section 4): the same answers as the LAN
+      // door's /pair and /pair/claim, a refusal as a 403 naming its cause (a loopback caller can read the ledger and call the
+      // CLI's routes anyway, so the cause hides nothing from it that the LAN's bare 403 hides from the network)
+      ...(['/pair', '/pair/claim'] as const).map((p): Route => ({
+        path: p, file, methods: ['POST'],
+        handlers: {
+          POST: async (req) => {
+            const denied = localOnly(req) ?? jsonOnly(req);
+            if (denied) return Response.json({ error: denied }, { status: denied.startsWith('body must') ? 415 : 403 });
+            let b: unknown = null;
+            try { b = await req.json(); } catch { /* refused below as pair-body or claim-unknown */ }
+            const body = b && typeof b === 'object' && !Array.isArray(b) ? (b as Record<string, unknown>) : null;
+            const a = p === '/pair' ? this.requestPairing(body, 'loopback') : this.claimPairing(body, 'loopback');
+            if ('refuse' in a) return Response.json({ error: `pairing refused: ${a.refuse}` }, { status: 403, headers: { 'cache-control': 'no-store' } });
+            void this.converge();
+            return Response.json(a.body, { status: a.status, headers: { 'cache-control': 'no-store' } });
+          },
+        },
+        match: (q) => (q === p ? {} : null),
+      })),
+      {
+        path: '/pair/me', file, methods: ['GET'],
+        handlers: {
+          GET: (req) => {
+            const denied = localHost(req);
+            if (denied) return Response.json({ error: denied }, { status: 403 });
+            const m = TOKEN.exec(req.headers.get('authorization') ?? ''), a = m ? this.me(m[1]) : null;
+            return a ? Response.json(a, { headers: { 'cache-control': 'no-store' } })
+              : Response.json({ error: 'device token unknown, expired or revoked: pair again' }, { status: 401, headers: { 'cache-control': 'no-store' } });
+          },
+        },
+        match: (q) => (q === '/pair/me' ? {} : null),
+      },
+      {
+        path: '/lan/where', file, methods: ['GET'],
+        handlers: { GET: (req) => { const denied = localHost(req); return denied ? Response.json({ error: denied }, { status: 403 }) : Response.json(this.where(), { headers: { 'cache-control': 'no-store' } }); } },
+        match: (q) => (q === '/lan/where' ? {} : null),
+      },
     ];
   }
 }

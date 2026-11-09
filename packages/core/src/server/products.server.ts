@@ -108,6 +108,13 @@ export function kettleSample(slug: string): { structureFile: string; eventsFile:
   return { structureFile: path.join(KETTLE_DATA, 'kettle.app-structure.json'), eventsFile: path.join(KETTLE_DATA, 'kettle.events.jsonl') };
 }
 
+/** Kettle's screenshots (apps/web/public/sample-shots, beside the web app's other sample files), or null when `slug` is not
+ *  the built-in sample (or a product shadows it). The shots route serves them under its own path rules. */
+export function kettleShotsDir(slug: string): string | null {
+  // BP_KETTLE_SHOTS: a check's throwaway directory (check-table-link.ts), so it never writes into the web's public files
+  return kettleSample(slug) ? path.resolve(process.env.BP_KETTLE_SHOTS || path.resolve(KETTLE_DATA, '../../../apps/web/public/sample-shots')) : null;
+}
+
 /** The sample's map and events as one read, with the `rev` both the structure and plan routes answer: sha1 of the map, a
  *  NUL, then the events (none read as ''), 16 hex characters. The one site that fingerprints the sample. Throws when the
  *  map cannot be read. */
