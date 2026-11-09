@@ -170,6 +170,18 @@ export const NAV: readonly string[] = ['Schedule', 'Members', 'Payments', 'Check
 /** A sample screenshot's file under public/: `sample-shots/<item>-<phase>-<theme>.svg`. */
 export const shotFile = (key: string, phase: 'before' | 'after', theme: 'light' | 'dark'): string => `sample-shots/${key}-${phase}-${theme}.svg`;
 
+/** The Kettle findings (packages/core/data/kettle.findings.json) that carry a generated "before" screen: eight open findings a
+ *  person triages by looking, made by scripts/fixtures/kettle-finding-shots.mjs (Codex CLI image generation; its manifest holds
+ *  each prompt). Each file is apps/web/public/sample-shots/finding-<id>.png, 1280x720; the VR bundle carries the same files. */
+export const FINDING_SHOTS: readonly string[] = ['kf-011', 'kf-053', 'kf-020', 'kf-045', 'kf-052', 'kf-024', 'kf-055', 'kf-041'];
+/** A finding shot's Shot.path: a bare file name, the same `<file>` the Kettle shots route (`/api/products/kettle/shots/<file>`)
+ *  and the VR bundle's `kettle/shots/` folder answer; the web serves it from public/sample-shots/ (packages/core/src/train/shots.ts shotSrc). */
+export const findingShotFile = (id: string): string => `finding-${id}.png`;
+/** The harness label on a finding shot: a generated sample screen, never a capture. */
+export const FINDING_SHOT_HARNESS = 'generated-sample';
+/** Size of a finding shot, as Shot.size. */
+export const FINDING_SHOT_SIZE = '1280x720';
+
 // ------------------------------------------------------------------------------------------- helpers
 function hash(s: string): number {
   let h = 2166136261;
@@ -282,6 +294,13 @@ export class TrainSim {
             report: { feature: f, size: '1600x900', theme, minTextPx: 14, minTextAt: 'text ' + texts[0], textElements: texts.length, consoleErrors: [] }, proposal_id: id, phase });
         }
       });
+    }
+    // the generated "before" screens of eight Kettle findings, on the finding's own run and feature (absent findings skip)
+    for (const id of FINDING_SHOTS) {
+      const p = this.prop(id);
+      if (!p) continue;
+      this.shots.push({ id: ++this.shotId, run_id: p.run_id, feature: p.feature, path: findingShotFile(id), size: FINDING_SHOT_SIZE, theme: 'light', harness_module: FINDING_SHOT_HARNESS,
+        captured_at: p.created_at, report: { generated: true, note: 'generated sample screen, not a capture (scripts/fixtures/kettle-finding-shots.manifest.json)', consoleErrors: [] }, proposal_id: id, phase: 'before' });
     }
     this.settle(this.packs.map((k) => k.id), this.iso());
   }

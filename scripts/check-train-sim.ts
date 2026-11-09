@@ -10,13 +10,15 @@
 //   - suggest, create (400 / 409 nothing free / 409 version exists), build with each toggle (gh off 412; gate -> failed;
 //     conflict -> the item with the most files back to rework by skill:lens-scan), merge, finish -> tagged, items
 //     released, settled packs closed; one notify per tick; the build's timeline;
-//   - commit diffs (message trailers, 20-120 line patches, 400 / 404) and shotSrc for a live and a Kettle shot.
+//   - commit diffs (message trailers, 20-120 line patches, 400 / 404) and shotSrc for a live and a Kettle shot;
+//   - over the real Kettle findings: one generated `before` Shot row per FINDING_SHOTS finding (bare file name, the finding's
+//     run and feature, harness 'generated-sample'), its file in public/sample-shots, served at /sample-shots/<file>.
 // Run: node scripts/check-train-sim.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~5 s.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ScanSim } from '../packages/core/src/model/scan-sim.ts';
-import { SAMPLE_ITEMS } from '../packages/core/src/model/train-sim.ts';
+import { FINDING_SHOTS, FINDING_SHOT_HARNESS, SAMPLE_ITEMS, findingShotFile } from '../packages/core/src/model/train-sim.ts';
 import { compareOf, type LensFields } from '../packages/core/src/scan/compare.ts';
 import { isJobNote, type ScanJob } from '../packages/core/src/scan/jobs.ts';
 import { shotSrc } from '../packages/core/src/train/shots.ts';
@@ -245,6 +247,18 @@ try {
   const live: Shot = { id: 1, run_id: 'r', feature: 'f', path: 'shots/r-20261015150739-6052/p-c02a61-before/stage and depths-light-1600x900.png', captured_at: '' };
   check('shotSrc: a live shot = live.ts shotUrl', shotSrc('athena', live) === shotUrl('athena', live) && shotSrc('a b', live) === shotUrl('a b', live), shotSrc('athena', live));
   check('shotSrc: a Kettle shot = /<path>', shotSrc(null, { path: 'sample-shots/des1-booking-before-light.svg' }) === '/sample-shots/des1-booking-before-light.svg');
+  check('shotSrc: a Kettle finding shot (a bare file name) = /sample-shots/<file>', shotSrc(null, { path: 'finding-kf-020.png' }) === '/sample-shots/finding-kf-020.png' && shotSrc('kettle', { path: 'finding-kf-020.png' }) === '/api/products/kettle/shots/finding-kf-020.png');
+  // ------------------------------------------------------------------ the findings' generated before screens
+  const findings = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.findings.json'), 'utf8')) as Proposal[];
+  const ks = new ScanSim({ now: () => clock, findings });
+  try {
+    ks.bind({ order, manifest: (l) => manifests.get(l), value: mapValue });
+    const fs8 = ks.snapshot().shots.filter((s) => s.harness_module === FINDING_SHOT_HARNESS), fp = new Map(findings.map((p) => [p.id, p]));
+    check('finding shots: one before row per FINDING_SHOTS finding, on its run and feature, a bare file that exists', fs8.length === FINDING_SHOTS.length && FINDING_SHOTS.every((id) => fs8.filter((s) => s.proposal_id === id).length === 1)
+      && fs8.every((s) => s.phase === 'before' && s.path === findingShotFile(s.proposal_id!) && s.run_id === fp.get(s.proposal_id!)?.run_id && s.feature === fp.get(s.proposal_id!)?.feature && fs.existsSync(path.join(ROOT, 'apps/web/public', shotSrc(null, s)))),
+      `${fs8.length} rows: ${fs8.map((s) => s.path).join(', ')}`);
+    check('finding shots: none without the findings (the sim seeds only findings it holds)', !snap().shots.some((s) => s.harness_module === FINDING_SHOT_HARNESS));
+  } finally { ks.dispose(); }
 } finally { sim.dispose(); }
 
 console.log(failed ? `check-train-sim: ${failed} failed, ${passed} passed` : `check-train-sim: ${passed} checks passed`);

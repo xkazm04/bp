@@ -10,7 +10,8 @@
 // Kettle also gets sample-focuses.json, the sim's GET /focuses answer: the two sample focuses the bundle's Scan tab lists, whose
 // scan is the table's local sample and never a request (BpSampleScan.cpp). A live product's bundle gets none: its saved
 // focuses are real, and a real focus must not be offered as a sample. --only <file> writes that one part and leaves the rest
-// of the bundle, bundle.json included, as it is.
+// of the bundle, bundle.json included, as it is. Kettle also gets shots/finding-<id>.png, the generated "before" screens
+// scan.json's Shot rows name (path = the bare file name), copied from apps/web/public/sample-shots/.
 // --briefs (ROADMAP F2) adds briefs.json: { <proposal id>: <the brief route's body> } for every open proposal in scan.json,
 // so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
 // bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
@@ -74,6 +75,24 @@ for (const [file, route] of PARTS.filter(([f]) => !only || f === only)) {
   fs.writeFileSync(path.join(dir, file), body);
   if (file === 'structure.json') rev = JSON.parse(body).rev ?? null;
   console.log(`ok    ${route} -> ${path.relative(REPO, path.join(dir, file)).replace(/\\/g, '/')} (${(body.length / 1024).toFixed(1)} KB)`);
+}
+// Kettle's finding screens: every Shot row of scan.json whose path is a bare file name (finding-<id>.png, made by
+// scripts/fixtures/kettle-finding-shots.mjs) is copied from apps/web/public/sample-shots/ into <bundle>/shots/<file>, the
+// same <file> the PC serves at /api/products/kettle/shots/<file>; files no row names are removed. The SVG sample shots of the
+// release train (sample-shots/...) stay out: the table draws no compare panel. Staged with BpData (DefaultGame.ini).
+if (slug === 'kettle' && !failed && (!only || only === 'scan.json')) {
+  const rows = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).shots ?? []).filter((s) => /^[\w.-]+\.png$/.test(s.path ?? ''));
+  const shotsDir = path.join(dir, 'shots'), want = new Set(rows.map((s) => s.path));
+  fs.mkdirSync(shotsDir, { recursive: true });
+  for (const f of fs.readdirSync(shotsDir)) if (!want.has(f)) fs.rmSync(path.join(shotsDir, f));
+  let bytes = 0;
+  for (const f of want) {
+    const src = path.join(REPO, 'apps/web/public/sample-shots', f);
+    if (!fs.existsSync(src)) { failed++; console.log(`FAIL  shot ${f}: not in apps/web/public/sample-shots`); continue; }
+    fs.copyFileSync(src, path.join(shotsDir, f));
+    bytes += fs.statSync(src).size;
+  }
+  console.log(`ok    ${want.size} finding shots -> ${path.relative(REPO, shotsDir).replace(/\\/g, '/')}/ (${(bytes / 1024).toFixed(1)} KB)`);
 }
 if (args.includes('--briefs') && !failed && !only) {
   const open = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).proposals ?? []).filter((p) => p.status === 'proposed').map((p) => p.id);

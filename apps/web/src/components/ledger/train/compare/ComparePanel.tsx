@@ -177,7 +177,7 @@ const Body = memo(function Body({ c, now, prev, T, lens, nameOf, view, onView, w
       <div className="tr-cmp-rail" data-role="tr-cmp-rail">
       <Measurement c={c} now={now} prev={prev} />
       {/* the brief beside the judgement: how like approvals fared on main, the owner's declines, undo, cost */}
-      <BriefDrawer id={p.id} className="tr-sec tr-brief" />
+      <BriefDrawer id={p.id} className="tr-sec tr-brief" screen={false} />
       <section className="tr-sec"><h4>The item · {p.standard}</h4><ItemText body={p.body ?? p.title} /></section>
       </div>
     </div>

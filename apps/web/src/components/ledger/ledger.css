@@ -96,6 +96,14 @@ button.lg-chip:hover { border-color: var(--ink-2); color: var(--ink-hi); }
 .lg-brief { flex: none; width: clamp(280px, 28%, 400px); overflow: auto; padding: 10px 12px; border-left: 1px solid var(--ink-3); background: var(--card); font-size: 13px; }
 .lg-brief h4, .tr-brief h4 { margin: 0 0 6px; font: 500 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
 .lg-brief-n { margin: 0; font-size: 12px; color: var(--ink-2); }
+/* the finding's before screen: a thumbnail that opens to the drawer's width (840 px at most) */
+.lg-brief-shot { margin: 0 0 8px; }
+.lg-brief-shot button { display: block; width: min(100%, 200px); padding: 0; border: 1px solid var(--ink-3); background: var(--shot-bg); cursor: zoom-in; }
+.lg-brief-shot.big button { width: min(100%, 840px); cursor: zoom-out; }
+.lg-brief-shot button:hover, .lg-brief-shot button:focus-visible { border-color: var(--ink); }
+.lg-brief-shot img { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; object-fit: contain; }
+.lg-brief-shot figcaption { margin-top: 3px; font: 500 12px var(--mono); letter-spacing: 0.04em; color: var(--ink-2); }
+.lg-brief-shot figcaption b { font-weight: 500; color: var(--ink); text-transform: uppercase; }
 .lg-brief-b { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .lg-brief-b small { flex-basis: 100%; font-size: 12px; color: var(--ink-2); }
 .lg-brief-d { margin-top: 10px; }

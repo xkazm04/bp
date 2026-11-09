@@ -1,0 +1,111 @@
+{
+  "about": "Generated \"before\" screens of eight Kettle findings (fictional product, sample data). Written by scripts/fixtures/kettle-finding-shots.mjs --generate; verified by --check (npm run check:finding-shots). Never hand-edit.",
+  "selection": "Open findings (proposed or approved) of packages/core/data/kettle.findings.json in the ledger order (score.ts: tier first, none in Kettle; then byWorth over estValue; ties by created_at, id); per lens the first whose problem shows on a screen, plus a second design finding. See the script header for ranks.",
+  "rules": "No real brand names, logos or trademarks; no faces or identifiable people (initials badges only); no real personal data. Each image was looked at before it was kept.",
+  "images": [
+    {
+      "proposal_id": "kf-011",
+      "file": "finding-kf-011.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: Payments > \"Paper invoices\", the upload-to-payment flow. A scanned invoice preview card on the left; on the right the extracted fields (Supplier, Amount, Due date) are half-rendered: the Amount field shows the literal text \"NaN\", the Due date field shows \"undefined\", and the \"Match to payment\" button is greyed out with no reason. A slim red bar at the bottom of the page reads \"3 errors in console\". Field labels are very small, faint grey text.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1f7-8e1c-7ea3-b039-aeca11235c24",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 202256,
+      "sha256": "f6d26c67a5caeff16ba1d524cf4a72fbb6a0feb2300614f6696d6c2689f02b58"
+    },
+    {
+      "proposal_id": "kf-053",
+      "file": "finding-kf-053.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: Reports > \"Payout reconciliation\", a table with columns Date, Payout, Amount, Status, Note. Rows show amounts like 412.00 and 1,280.50 and status chips \"Matched\" in green. In one row the Note cell is broken: raw markup leaks into the page, the cell shows the literal text <b onmouseover=alert(1)>refund</b> and a large bold red word \"PAID\" injected over the neighbouring cells, breaking the table layout. Highlight that row with a thin red outline.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1f8-246e-7c80-9f3d-8a58120885b8",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 266083,
+      "sha256": "609f3ed164cd618083826315f5eb368f745613972c438be7ae5470f4aa4270f4"
+    },
+    {
+      "proposal_id": "kf-020",
+      "file": "finding-kf-020.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: Payments > \"Bank debit\", a page meant to list direct-debit mandates. The main card has the header \"Mandates\" and a table header (Member, Mandate, Status, Next collection) but no rows and no explanation: the body is blank white except the raw text \"null\" in grey monospace in the top left and a spinner that never resolves. A side card titled \"Last collection\" shows \"Error: 500\" in plain grey text with no action button.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1f6-bccc-75d0-8197-e058d233195f",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 151121,
+      "sha256": "337ee957d92a9b9b0b68f05a1ab2eabefacf0cc5cd1eae167e0f92c8b097acc0"
+    },
+    {
+      "proposal_id": "kf-045",
+      "file": "finding-kf-045.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: the member checkout for \"10-class pack\", price 120.00. A promo code field contains \"SPRING20\" and a green check with the text \"Code applied\", yet the order summary below still shows Subtotal 120.00, Discount 0.00, Total 120.00. A blue \"Pay 120.00\" button. The mismatch between \"Code applied\" and the unchanged total is the point: make both easy to read.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1f8-ce17-7ef0-8dfd-55e3dadc5e1c",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 242701,
+      "sha256": "7b6d3091aa657712d064e48038d402ef0805cb9ee728f9b82058420687b41f7a"
+    },
+    {
+      "proposal_id": "kf-052",
+      "file": "finding-kf-052.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: Reports > \"SMS reminders\". A large card with a progress bar at 40% and the text \"Building report... 47 s\" and a note \"Rebuilt on every open\". Beside it a small cost card: \"SMS provider calls this month\" with the big number \"18,420\" and a grey sparkline climbing steeply, and the line \"Estimated 2,840 USD / month\". A list of reminder rows below is greyed out behind a loading shimmer.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1f9-8507-7e50-8e94-1c551e4847ba",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 191718,
+      "sha256": "62978ffaacd6c65284d513b961aea6ad841eaf7dbb82f8dfe576e1f1e255887a"
+    },
+    {
+      "proposal_id": "kf-024",
+      "file": "finding-kf-024.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: a sign-in page of Kettle, centered card, title \"Sign in with a link\". The card shows the message \"Check your inbox: we sent you a sign-in link\" with a \"Resend link\" button and the small line \"Sent 14 minutes ago\". On the right side a small status panel titled \"System status\" shows green dots and \"All systems operational\", while a red note under the card reads \"No sign-in emails delivered since 09:12\". No email address is shown.",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1fa-10ca-7330-bec0-0d9690801720",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 259488,
+      "sha256": "65ba4843f95177c58cbef31110264551fecf10b4c441e06a9e4eb8a8848ff10f"
+    },
+    {
+      "proposal_id": "kf-055",
+      "file": "finding-kf-055.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: Members > \"Class packs & credits\", a long scrolling grid of pack cards (5-class pack, 10-class pack, 20-class pack, Intro week) with prices. The grid is caught mid-scroll and visibly janky: the lower half of the cards are blank grey placeholder tiles, one row is duplicated and offset, and a small dark performance overlay in the bottom right reads \"Frame p95 21.7 ms\" with a red bar above a dashed line labelled \"16.7 ms budget\".",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1fa-ac49-74e2-8f27-f771bf9f4b19",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 204954,
+      "sha256": "6eba0323c9d3bcd00694fcb32b6a020192333d1650a340658aaebf639df47894"
+    },
+    {
+      "proposal_id": "kf-041",
+      "file": "finding-kf-041.png",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. The image: a flat, crisp desktop web app UI screenshot, 16:9 landscape, no browser chrome, no device frame, no perspective, no people. The app is \"Kettle\", fictional software for a small fitness and yoga studio called \"Riverside studio\". Consistent design system: a white top bar with the plain text wordmark \"Kettle\" at the left (text only, no logo mark) and \"Riverside studio\" at the right; a light grey left navigation column with the items Schedule, Members, Payments, Check-in, Reports; page background #f4f5f7, white cards with 1 px #d9dde3 borders and 10 px corner radius, dark slate text #1c2230, muted grey #5b6475, one blue accent #2f6fde for primary buttons and links, red #d4483f only for errors; a clean geometric sans-serif typeface, large readable text. In the top right corner of the content area, a small outlined orange stamp reading \"SAMPLE SCREEN\". Hard rules: no real company, product or brand names, no logos or trademarks, no faces, photos or illustrations of people (any person appears only as a round badge with two initials), no real personal data (member numbers like M-1042 instead of names, no email addresses or phone numbers). Keep every visible word short and spelled exactly as given here.\n\nScreen: \"Instructor mode\" setup wizard. A top stepper reads \"Step 1 of 9\" with nine small numbered circles, only the first filled. The page asks for many fields before anything useful: Display name, Bio, Certifications, Payout details, Tax form, Availability, Room preferences. A blue \"Next\" button and a grey \"Save draft\" link at the bottom. A small grey hint at the top right: \"About 25 minutes to finish\".",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c1fb-782e-7710-8d53-fdc995895ce1",
+      "date": "2026-11-09",
+      "source_size": "1672x941",
+      "size": "1280x720",
+      "bytes": 204501,
+      "sha256": "5331aaaa5ace8a4e424118a04f07d921b36cb246626cad2e5cdede220bd95ac8"
+    }
+  ]
+}
