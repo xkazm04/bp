@@ -1,0 +1,65 @@
+{
+  "file": "bed.wav",
+  "format": {
+    "codec": "pcm_s16le",
+    "rate": 32000,
+    "channels": 2
+  },
+  "seconds": 135,
+  "frames": 4320000,
+  "loop": {
+    "startFrame": 0,
+    "endFrame": 4320000,
+    "note": "the whole file is the loop: play it end to end and queue it again",
+    "cutFromSource": {
+      "headS": 8.25,
+      "endS": 143.25,
+      "continuationS": 71.25,
+      "periodS": 72,
+      "periodCorr": 0.683,
+      "crossfadeS": 3,
+      "score": 1.645,
+      "onsetCorr": 0.225,
+      "levelDiffDb": 0.08,
+      "sourceS": 150.05
+    }
+  },
+  "loudness": {
+    "targetLufs": -24,
+    "ceilingDb": -6,
+    "sourceLufs": -15.8,
+    "gainDb": -8.2,
+    "integratedLufs": -24,
+    "truePeakDbtp": -9.7,
+    "samplePeakDb": -9.73
+  },
+  "seam": {
+    "stepAtJoin": 0.0006,
+    "stepP999": 0.0251,
+    "levelJumpDb": 19.29,
+    "levelJumpMedianDb": 19.63,
+    "levelJumpMaxDb": 23.68,
+    "levelNearSeamDb": [
+      -26.23,
+      -30.31
+    ],
+    "crossfadeDb": [
+      -27.1,
+      -30.63,
+      -30.23
+    ]
+  },
+  "generation": {
+    "by": "ElevenLabs music API",
+    "endpoint": "https://api.elevenlabs.io/v1/music",
+    "outputFormat": "mp3_44100_128",
+    "model_id": "music_v1",
+    "music_length_ms": 150000,
+    "force_instrumental": true,
+    "prompt": "Mellow lo-fi hip hop instrumental for concentrating at a desk in the evening. Slow, dusty, laid-back drums with a soft swing around 75 BPM, warm electric piano chords with a gentle tremolo, a round soft bass, light vinyl crackle and tape hiss. Calm and steady from the first bar to the last: it starts straight on the groove, has no build-ups, drops or breaks, and ends on the groove with no fade-out. Original melody. No vocals, no speech, no samples of voices.",
+    "generatedAt": "2026-11-09T20:03:06.861Z",
+    "songId": "rhW4mZtPHG9pDv9JGTA6",
+    "originalSha256": "44c319f5d272403bdaedec88af120a003963ed0eb186aaf699c0ec8063256c28"
+  },
+  "tool": "apps/vr/tools/music-bed.ts"
+}

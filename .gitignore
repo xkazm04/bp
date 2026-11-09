@@ -72,6 +72,8 @@ apps/vr/Content/BpData/*
 !apps/vr/Content/BpData/kettle/
 # The lamp's tour voice (apps/vr/tools/tour-voice.ts): product-free clips every build ships
 !apps/vr/Content/BpData/voice/
+# The background music bed (apps/vr/tools/music-bed.ts): one product-free looping track every build ships
+!apps/vr/Content/BpData/music/
 # Licences that must travel with shipped third-party assets (the font's SIL OFL)
 !apps/vr/Content/BpData/licenses/
 *.sln
