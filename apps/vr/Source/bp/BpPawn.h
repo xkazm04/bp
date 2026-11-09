@@ -144,6 +144,8 @@ public:
 	FString GetConsoleLine() const;
 	/** BpConsole.Stat: the console's line, its draws, and whether its widget (and the wrist's) ticks now. */
 	void LogConsoleStat() const;
+	/** BpConsole.Rows: the open page's rows, logged (night two W2a: a headless check of the PC LINK and SCAN pages). */
+	void LogConsoleRows();
 	/** The console's text classes where it stands (BpView.TextCard). */
 	void ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const;
 	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
@@ -264,6 +266,21 @@ private:
 	/** The pinch that armed a row, bouncing, must not also confirm it: a second pinch sooner than this does nothing. */
 	static constexpr double WristConfirmGuardS = 0.4;
 	void OnWristProduct(const FString& Slug);
+	/** The PC link (night two W2a): the wrist's one word and the console's PC LINK page follow it. */
+	FDelegateHandle WristLinkHandle;
+	void OnWristLink(const struct FBpLinkStatus& Status);
+	/** What the armed row's second press runs: `focus:<id>` (a directed scan), `scan:this` (a plain scan of the place) or
+	 *  `scan:every` (every lens); WristArmedFocus holds the focus id, or `@this` / `@every`. Empty when nothing is armed. */
+	FString ArmedAct() const;
+	/** The SCAN page's last word on a cancel (its job's words), and the clock that redraws the page each second while a job
+	 *  runs on it (a timer, only while the page is open). */
+	FString ConsoleScanWords;
+	FTimerHandle ConsoleClockTimer;
+	void TickConsoleClock();
+	/** The bar's SHOW ON PC: the table's place to the web (BpLink ShowOnPc); its answer in words, shown on the bar a while. */
+	void ShowOnPc();
+	FString ConsoleBarWords;
+	double ConsoleBarWordsUntil = 0.0;
 	FString WristRoomMode;
 	struct FWristBox
 	{

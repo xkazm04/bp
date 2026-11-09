@@ -162,6 +162,7 @@ void ABpPawn::MakeWristPanel()
 	WristOnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpPawn::OnWristOnboarding);
 	WristProductHandle = Link.OnProduct().AddUObject(this, &ABpPawn::OnWristProduct);
 	WristFocusHandle = Link.OnFocuses().AddUObject(this, &ABpPawn::OnWristFocuses);
+	WristLinkHandle = Link.OnLinkStatus().AddUObject(this, &ABpPawn::OnWristLink);
 	MakeConsole();
 	ReceiveScanState(Link.GetScanState());
 }
@@ -174,6 +175,19 @@ void ABpPawn::OnWristOnboarding(const FBpOnboardingState&)
 void ABpPawn::OnWristFocuses(const FBpFocusList&)
 {
 	RefreshWrist();
+}
+
+void ABpPawn::OnWristLink(const FBpLinkStatus&)
+{
+	RefreshWrist();
+}
+
+FString ABpPawn::ArmedAct() const
+{
+	if (WristArmedFocus.IsEmpty()) return FString();
+	if (WristArmedFocus == TEXT("@this")) return TEXT("scan:this");
+	if (WristArmedFocus == TEXT("@every")) return TEXT("scan:every");
+	return TEXT("focus:") + WristArmedFocus;
 }
 
 void ABpPawn::WristArmFocus(const FString& FocusId)
@@ -303,15 +317,66 @@ void ABpPawn::PanelAct(const FString& Act)
 		RefreshWrist();
 		return;
 	}
-	// START on the wrist: the armed focus's second pinch.
+	// START on the wrist: the armed row's second pinch.
 	if (Act == TEXT("scan:start"))
 	{
 		if (WristArmedFocus.IsEmpty()) { UE_LOG(LogBpTable, Log, TEXT("BpPawn: scan:start with nothing armed")); return; }
-		PanelAct(TEXT("focus:") + WristArmedFocus);
+		PanelAct(ArmedAct());
+		return;
+	}
+	// The PC link (the console's PC LINK page, BpConsole.cpp): pair, cancel, unpair, ask where.
+	if (Act.StartsWith(TEXT("link:")))
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		const FString What = Act.Mid(5);
+		if (What == TEXT("pair")) Link.Pair();
+		else if (What == TEXT("cancel")) Link.CancelPair();
+		else if (What == TEXT("unpair")) Link.Unpair();
+		else if (What == TEXT("where")) Link.Where();
+		RefreshWrist();
+		return;
+	}
+	// A job's CANCEL on the SCAN page: DELETE .../scans/<job> (scope scan); the sample's stops the local walk.
+	if (Act.StartsWith(TEXT("job:cancel:")))
+	{
+		const FString JobId = Act.Mid(11);
+		if (JobId == TEXT("sample"))
+		{
+			if (Table) Table->CancelSampleScan();
+			ConsoleScanWords = TEXT("The sample scan stopped.");
+			RefreshWrist();
+			return;
+		}
+		ConsoleScanWords = TEXT("Cancelling…");
+		TWeakObjectPtr<ABpPawn> Self(this);
+		FBpLinkModule::Get().CancelScan(JobId, [Self](int32, const FString& Words)
+		{
+			if (ABpPawn* Pawn = Self.Get())
+			{
+				Pawn->ConsoleScanWords = Words;
+				Pawn->RefreshWrist();
+			}
+		});
+		RefreshWrist();
+		return;
+	}
+	// A finding in the SCAN page's feed: its decision screen when the room's deck has it, else the decision card asks about it.
+	if (Act.StartsWith(TEXT("finding:")) && Table)
+	{
+		const FString Id = Act.Mid(8);
+		const FBpProposal* Found = FBpLinkModule::Get().GetScanState().Scan.proposals.FindByPredicate([&Id](const FBpProposal& P) { return P.id == Id; });
+		const bool bDeck = Found && Table->DeckFocusProposal(Id, Found->feature);
+		if (!bDeck)
+		{
+			Table->AskCard(Id);
+			Table->ShowCard(true);
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: finding %s opened on the %s"), *Id, bDeck ? TEXT("deck") : TEXT("decision card"));
+		CloseConsole();
 		return;
 	}
 	// A row armed: only that row goes on. Anything else disarms, and the rest of the scan's controls do only that.
-	if (!WristArmedFocus.IsEmpty() && Act != TEXT("focus:") + WristArmedFocus && !Act.StartsWith(TEXT("toggle:")))
+	if (!WristArmedFocus.IsEmpty() && Act != ArmedAct() && !Act.StartsWith(TEXT("toggle:")))
 	{
 		WristDisarm();
 		if (Act.StartsWith(TEXT("focus:")) || Act.StartsWith(TEXT("scan:")))
@@ -356,6 +421,49 @@ void ABpPawn::PanelAct(const FString& Act)
 		Link.SetProduct(Slug);
 		return;
 	}
+	// SCAN THIS and EVERY LENS (owner, 2026-11-09: a plain and an every-lens scan may start on a live product from VR), through
+	// the same armed step a directed scan takes: the first press arms (the wrist shows START), a second press starts it.
+	if ((Act == TEXT("scan:this") || Act == TEXT("scan:every")) && Table)
+	{
+		const FString Token = Act == TEXT("scan:this") ? TEXT("@this") : TEXT("@every");
+		const double Now = FPlatformTime::Seconds();
+		if (WristArmedFocus != Token || Table->DirectedTarget() != WristArmedTarget)
+		{
+			WristArmedFocus = Token;
+			WristArmedTarget = Table->DirectedTarget();
+			WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+			WristArmedAt = Now;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: %s"), *Act, Token == TEXT("@this") ? *FString::Printf(TEXT("Scan %s with %s"), *WristArmedLabel, *BpWords::Lens(Table->GetActiveLens())) : TEXT("Scan everything with every lens"));
+		}
+		else if (Now - WristArmedAt < WristConfirmGuardS)
+		{
+			return;
+		}
+		else
+		{
+			const FString Target = WristArmedTarget;
+			WristDisarm();
+			bWristScanStarting = true;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			TWeakObjectPtr<ABpPawn> Self(this);
+			const auto Done = [Self](bool bOk, const FString& Words)
+			{
+				ABpPawn* Pawn = Self.Get();
+				if (!Pawn) return;
+				Pawn->bWristScanStarting = false;
+				Pawn->WristScanWords = Words;
+				Pawn->bWristScanRefused = !bOk;
+				Pawn->RefreshWrist();
+			};
+			if (Token == TEXT("@this")) Table->StartPlain(Target, FString(), Done);
+			else Table->StartEveryLens(Done);
+		}
+		RefreshWrist();
+		return;
+	}
 	if (Act.StartsWith(TEXT("focus:")) && Table)
 	{
 		const FString FocusId = Act.Mid(6);
@@ -368,7 +476,7 @@ void ABpPawn::PanelAct(const FString& Act)
 			WristScanWords = TEXT("That focus is gone. Open the page again.");
 			bWristScanRefused = true;
 		}
-		else if (WristArmedFocus.IsEmpty() || Table->DirectedTarget() != WristArmedTarget)
+		else if (WristArmedFocus != FocusId || Table->DirectedTarget() != WristArmedTarget)
 		{
 			// First pinch, or the table moved under an armed row: the words must say what will happen now.
 			WristArmedFocus = FocusId;
@@ -678,8 +786,10 @@ void ABpPawn::DrawWrist()
 	if (bPlan) Table->ScanBand(BandHead, BandBody);
 	const bool bSample = !FBpLinkModule::Get().HasPcLink() && FBpLinkModule::Get().HasSampleFocuses();
 	const bool bTour = bPlan && Table->IsTourRunning();
-	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
-		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody);
+	// The link in one word (night two W2a): CABLE, WI-FI, OFFLINE or PAIRING, at the card's top right.
+	const FString LinkWord = FBpLinkModule::RouteWord(FBpLinkModule::Get().GetLinkStatus());
+	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
+		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord);
 	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
 	Key += TEXT("|h") + WristHover;
 	if (Key == WristKey) return;
@@ -736,8 +846,22 @@ void ABpPawn::DrawWrist()
 		Kicker = bSample ? TEXT("SAMPLE SCAN · READY") : TEXT("SCAN · READY");
 		KickerInk = BpSheet::Amber;
 		CardEdge = BpSheet::Amber;
-		Title = FString::Printf(TEXT("Scan %s for:"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel);
-		Words = Armed ? Armed->Note : FString();
+		const FString Place = WristArmedLabel.IsEmpty() ? FString(TEXT("this place")) : WristArmedLabel;
+		if (WristArmedFocus == TEXT("@this"))
+		{
+			Title = FString::Printf(TEXT("Scan %s"), *Place);
+			Words = FString::Printf(TEXT("%s · %s"), bPlan ? *BpWords::Lens(Table->GetActiveLens()) : TEXT("the lens shown"), bSample ? TEXT("a sample: nothing is read or written") : TEXT("a plain scan on your PC"));
+		}
+		else if (WristArmedFocus == TEXT("@every"))
+		{
+			Title = TEXT("Scan everything with every lens");
+			Words = TEXT("One job on your PC reads each enabled lens.");
+		}
+		else
+		{
+			Title = FString::Printf(TEXT("Scan %s for:"), *Place);
+			Words = Armed ? Armed->Note : FString();
+		}
 		Buttons = { { TEXT("START"), EBtn::Amber, TEXT("scan:start") }, { TEXT("CANCEL"), EBtn::Edge, TEXT("scan:cancel") } };
 		break;
 	}
@@ -768,10 +892,14 @@ void ABpPawn::DrawWrist()
 	{
 		const float BtnY0 = CardBox.Max.Y - 18.f - WBtnH;
 		const float LinesH = (Buttons.Num() > 0 ? BtnY0 : CardBox.Max.Y) - CardBox.Min.Y - 16.f;
+		const float LinkW = BpSheet::TextWidth(LinkWord, KickerFont);
+		const FLinearColor LinkInk = LinkWord == TEXT("PAIRING") ? BpSheet::Amber : LinkWord == TEXT("OFFLINE") ? BpSheet::Ink.CopyWithNewOpacity(0.7f) : BpSheet::Accent;
 		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Kicker, KickerFont, TextW))).Font(KickerFont).ColorAndOpacity(FSlateColor(KickerInk))
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Kicker, KickerFont, TextW - LinkW - 28.f))).Font(KickerFont).ColorAndOpacity(FSlateColor(KickerInk))]
+				+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text(FText::FromString(LinkWord)).Font(KickerFont).ColorAndOpacity(FSlateColor(LinkInk))]
 			];
 		// The title takes up to two lines (three with no words under it), the words what is left.
 		const float TitlePitch = WTitleCap / static_cast<float>(BpType::CapPerEm) * 1.2f, WordsPitch = WTextCap / static_cast<float>(BpType::CapPerEm) * 1.2f;
@@ -822,6 +950,6 @@ void ABpPawn::DrawWrist()
 		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()[Over]);
 	WristPanel->RequestRenderUpdate();
-	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist card=%s%s%s"), Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : TEXT("calm"),
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : TEXT("calm"),
 		Card == ECard::Decision ? *FString::Printf(TEXT(" %s on the %s"), *DecisionId, *DecisionWhere) : TEXT(""), bBand ? *FString::Printf(TEXT(" band \"%s\""), *BandHead) : TEXT(""));
 }

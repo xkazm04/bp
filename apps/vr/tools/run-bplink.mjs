@@ -5,7 +5,7 @@
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server | --bundle] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
-//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]] [--url <base>]
+//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]] [--url <base>] [--link auto]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -124,7 +124,10 @@ const render = runtime || flag('--window') ? (flag('--window') ? ['-windowed', '
 const exec = opt('--exec');
 const holdS = Number(opt('--hold', runtime ? '14400' : '5'));
 const vr = flag('--vr') || runtime ? ['-vr'] : [];
-const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', ...(flag('--sound') ? [] : ['-nosound']), '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
+// --link auto: no -BpLinkUrl, so BpLink chooses its route (the cable, then the saved Wi-Fi door, else the bundle) as a headset
+// does, with the cable moved to this run's server (-BpLinkCable=<url>, not saved). Night two W2a's table link v2 checks.
+const autoLink = opt('--link') === 'auto' && !flag('--bundle');
+const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', ...(flag('--sound') ? [] : ['-nosound']), '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', autoLink ? `-BpLinkCable=${url}` : `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
   ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };

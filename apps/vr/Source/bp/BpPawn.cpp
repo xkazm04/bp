@@ -159,7 +159,9 @@ void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnOnboarding().Remove(WristOnboardingHandle);
 		Link->OnProduct().Remove(WristProductHandle);
 		Link->OnFocuses().Remove(WristFocusHandle);
+		Link->OnLinkStatus().Remove(WristLinkHandle);
 	}
+	GetWorldTimerManager().ClearTimer(ConsoleClockTimer);
 	if (ABpTable* Table = WristTable.Get())
 	{
 		Table->OnRoomModeChanged().Remove(RoomHandle);

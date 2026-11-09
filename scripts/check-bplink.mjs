@@ -286,6 +286,47 @@ export function addToDraftProblems(cppText) {
     ? [] : ['an empty draft gets no package holding the new ids after the loop (the PATCH would send packages: [])'];
 }
 
+/**
+ * Table link v2 (night two W2a), read off BpLink.cpp so the client and the server cannot drift: the keys each link function
+ * reads from an answer (`Try...Field(TEXT("k"))` inside FBpLinkModule::<fn>, lambdas included), the keys PostPair sends, the
+ * scopes it asks for, and what is wrong with how requests are made ([] when nothing): every request but the ceremony's own
+ * two (POST /pair, /pair/claim, which must not carry a stale token) starts at NewRequest, which sets
+ * `Authorization: Bearer <token>`; and the link's routes are requested in code.
+ */
+export function linkSource(cppText) {
+  const code = stripCxx(cppText), lit = stripCxx(cppText, true);
+  const body = (fn) => {
+    const head = new RegExp(`\\bFBpLinkModule::${fn}\\s*\\(`).exec(code);
+    const span = head && braceSpan(code, head.index + head[0].length);
+    return span ? { code: code.slice(span[0], span[1]), lit: lit.slice(span[0], span[1]) } : null;
+  };
+  const reads = (fn) => { const b = body(fn); return b ? [...new Set([...b.lit.matchAll(/Try\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]))] : null; };
+  const sets = (fn) => { const b = body(fn); return b ? [...new Set([...b.lit.matchAll(/Set\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]))] : null; };
+  const problems = [];
+  const nr = /TSharedRef<IHttpRequest,\s*ESPMode::ThreadSafe>\s+NewRequest\s*\(\s*\)/.exec(code);
+  const nrSpan = nr && braceSpan(code, nr.index + nr[0].length);
+  const nrLit = nrSpan ? lit.slice(nrSpan[0], nrSpan[1]) : '';
+  if (!/SetHeader\(\s*TEXT\("Authorization"\)\s*,\s*TEXT\("Bearer "\)\s*\+\s*GToken\s*\)/.test(nrLit)) problems.push('NewRequest does not set Authorization: Bearer <GToken>');
+  const mg = /MakeGet\s*\([^)]*\)\s*\{/.exec(code);
+  if (!mg || !/=\s*NewRequest\(\)/.test(code.slice(mg.index, mg.index + 300))) problems.push('MakeGet does not start at NewRequest');
+  const raw = [...code.matchAll(/FHttpModule::Get\(\)\.CreateRequest\(\)/g)].map((m) => m.index);
+  const inside = (i, fn) => { const head = new RegExp(`\\bFBpLinkModule::${fn}\\s*\\(`).exec(code); const s = head && braceSpan(code, head.index + head[0].length); return !!s && i >= s[0] && i < s[1]; };
+  const stray = raw.filter((i) => !(nrSpan && i >= nrSpan[0] && i < nrSpan[1]) && !inside(i, 'PostPair') && !inside(i, 'SendClaim'));
+  if (stray.length) problems.push(`${stray.length} request(s) made with FHttpModule::Get().CreateRequest() outside NewRequest, PostPair and SendClaim: they would go out without the token`);
+  for (const route of ['/api/health', '/lan/where', '/pair', '/pair/claim', '/pair/me', '/api/session/place', '/scans/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  const cancel = body('CancelScan');
+  if (!cancel || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(cancel.lit)) problems.push('CancelScan does not send DELETE');
+  const scopes = /PairScopes\s*=\s*TEXT\("([^"]*)"\)/.exec(lit)?.[1]?.split(',') ?? null;
+  if (!scopes) problems.push('no FBpLinkModule::PairScopes literal');
+  return {
+    problems, scopes,
+    reads: { health: reads('ProbeCandidate'), where: reads('ReceiveWhere'), pair: reads('PostPair'), claim: reads('SendClaim'), me: reads('AskPairMe'), cancel: reads('CancelScan') },
+    pairSends: sets('PostPair'),
+  };
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -313,7 +354,10 @@ async function main() {
   const wantEventLines = wantEvents.length + seedBy('events');
 
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-bplink-'));
-  const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  // --pair: the pairing ceremony on the loopback listener (table link v2 section 4), so the link block below can pin it; its
+  // registry lives in the temp directory (BP_HOME), never the owner's.
+  const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0', '--pair'],
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, BP_HOME: path.join(cwd, 'bp-home') } });
   let out = '';
   child.stdout.on('data', (d) => (out += d));
   child.stderr.on('data', (d) => (out += d));
@@ -544,6 +588,55 @@ async function main() {
       // permanent control: the rule refuses a BpLink.h that goes back to the PublicIncludePaths spelling
       check('build: the one-spelling rule refuses a BpLink.h that includes "BpSchema.h"',
         otherSpelling(schemaIncludes(sources[0].replace('"Schema/BpSchema.h"', '"BpSchema.h"'))).length > 0);
+
+      // ---- Table link v2 (night two W2a): the requests the headset's link makes, against this server run with --pair ----
+      const send = (method, p, body, headers = {}) => new Promise((resolve) => {
+        const data = body === undefined ? undefined : JSON.stringify(body);
+        const r = http.request({ host: '127.0.0.1', port, path: p, method, headers: { host: `localhost:${port}`, accept: 'application/json', ...(data ? { 'content-type': 'application/json' } : {}), ...headers } }, (res) => {
+          let s = ''; res.on('data', (d) => (s += d)); res.on('end', () => { let json = null; try { json = JSON.parse(s); } catch { /* not JSON */ } resolve({ status: res.statusCode, json, body: s }); });
+        });
+        r.on('error', (e) => resolve({ status: 0, json: null, body: e.message }));
+        if (data) r.write(data);
+        r.end();
+      });
+      const ls = linkSource(cppText);
+      check('link source: every request but POST /pair and /pair/claim starts at NewRequest (Authorization: Bearer), and the link\'s routes and the DELETE are in code', ls.problems.length === 0, ls.problems.join(' | '));
+      // permanent control: a request made around NewRequest, and a NewRequest that forgets the header, are refused
+      check('link source: the rule refuses a stray CreateRequest and a NewRequest without the Bearer header',
+        linkSource(cppText.replace('Request->SetVerb(TEXT("DELETE"));', 'Request = FHttpModule::Get().CreateRequest(); Request->SetVerb(TEXT("DELETE"));')).problems.length > 0
+        && linkSource(cppText.replace('TEXT("Bearer ") + GToken', 'GToken')).problems.length > 0);
+      const keysIn = (obj, keys, skip = []) => (keys ?? ['(function not found)']).filter((k) => !skip.includes(k) && !(obj && Object.prototype.hasOwnProperty.call(obj, k)));
+
+      const h1 = await send('GET', '/api/health'), h2 = await send('GET', '/api/health');
+      check('link: GET /api/health answers 200 { ok: true, boot, at }, the same boot on a second read', h1.status === 200 && h1.json?.ok === true && typeof h1.json?.boot === 'string' && typeof h1.json?.at === 'string' && h2.json?.boot === h1.json?.boot, h1.body.slice(0, 120));
+      check(`link: every key BpLink reads from /api/health (${ls.reads.health}) is in the answer`, keysIn(h1.json, ls.reads.health).length === 0, `missing ${keysIn(h1.json, ls.reads.health)}`);
+      const wh = await send('GET', '/lan/where');
+      check('link: GET /lan/where (--pair) answers { door: null, listening, window, pairing: true }', wh.status === 200 && wh.json?.door === null && typeof wh.json?.listening === 'boolean' && wh.json?.pairing === true && 'window' in (wh.json ?? {}), wh.body.slice(0, 160));
+      check(`link: every top-level key BpLink reads from /lan/where (${ls.reads.where}) is in the answer (address, port: the door's)`, keysIn(wh.json, ls.reads.where, ['address', 'port']).length === 0, `missing ${keysIn(wh.json, ls.reads.where, ['address', 'port'])}`);
+      // The body PostPair sends, built from the keys it sets (never retyped): nonce, device, scopes.
+      const nonce = Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+      const pairBody = Object.fromEntries((ls.pairSends ?? []).map((k) => [k, k === 'nonce' ? nonce : k === 'device' ? 'check-bplink' : k === 'scopes' ? ls.scopes : '']));
+      check('link: PostPair sends exactly { nonce, device, scopes }', JSON.stringify([...(ls.pairSends ?? [])].sort()) === JSON.stringify(['device', 'nonce', 'scopes']), `${ls.pairSends}`);
+      const pr = await send('POST', '/pair', pairBody);
+      check('link: POST /pair with that body answers 201 { state: pending, code (6 of A-Z2-9 less I, O), expiresAt }', pr.status === 201 && pr.json?.state === 'pending' && /^[A-HJ-NP-Z2-9]{6}$/.test(pr.json?.code ?? ''), pr.body.slice(0, 120));
+      check(`link: every key BpLink reads from POST /pair (${ls.reads.pair}) is in the answer`, keysIn(pr.json, ls.reads.pair).length === 0, `missing ${keysIn(pr.json, ls.reads.pair)}`);
+      const c1 = await send('POST', '/pair/claim', { nonce });
+      check('link: POST /pair/claim before the approve answers 202 { state: pending }', c1.status === 202 && c1.json?.state === 'pending', c1.body.slice(0, 120));
+      const ap = await send('POST', '/lan/pair/approve', { code: pr.json?.code, scopes: ls.scopes });
+      const c2 = await send('POST', '/pair/claim', { nonce });
+      check(`link: after the owner's approve (${ap.status}), the claim answers 200 { token, device, scopes: [${ls.scopes}], expiresAt }`, c2.status === 200 && typeof c2.json?.token === 'string' && JSON.stringify(c2.json?.scopes) === JSON.stringify(ls.scopes), c2.body.replace(/"token":"[^"]*"/, '"token":"<token>"').slice(0, 160));
+      check(`link: every key BpLink reads from the claim (${ls.reads.claim}) is in the answer`, keysIn(c2.json, ls.reads.claim).length === 0, `missing ${keysIn(c2.json, ls.reads.claim)}`);
+      const me = await send('GET', '/pair/me', undefined, { authorization: `Bearer ${c2.json?.token ?? 'none'}` });
+      check(`link: GET /pair/me with the Bearer answers 200 with every key BpLink reads (${ls.reads.me})`, me.status === 200 && keysIn(me.json, ls.reads.me).length === 0, me.body.slice(0, 160));
+      const bad = await send('GET', '/api/health', undefined, { authorization: 'Bearer not-a-token' });
+      check('link: a dead token is answered 401 "... pair again" before any route (BpLink forgets it on that 401)', bad.status === 401 && /pair again/.test(bad.json?.error ?? ''), bad.body.slice(0, 120));
+      const job = await send('POST', '/api/products/kettle/scans', { lens: 'development', scope: { kind: 'all', label: 'Everything', features: [] } });
+      const del = await send('DELETE', `/api/products/kettle/scans/${job.json?.id ?? 'none'}`);
+      check(`link: DELETE .../scans/<job> cancels it (200 { status: cancelled }), and BpLink reads ${ls.reads.cancel} from it`, job.status === 202 && del.status === 200 && del.json?.status === 'cancelled' && keysIn(del.json, ls.reads.cancel).length === 0, `${job.status} ${del.status} ${del.body.slice(0, 120)}`);
+      const gone = await send('DELETE', '/api/products/kettle/scans/no-such-job');
+      check('link: DELETE of an unknown job answers 404 (the console says it is gone)', gone.status === 404, `${gone.status}`);
+      const place = await send('POST', '/api/session/place', { place: { product: 'kettle', hash: '', level: 'L0', from: 'vr' } }, { 'x-bp-device': 'vr-table' });
+      check('link: SHOW ON PC with no baton claimed answers 409 (BpLink then sends the place as the shared focus)', place.status === 409, `${place.status} ${place.body.slice(0, 120)}`);
     }
   } finally {
     // the child holds its working directory until it has exited (Windows), so wait before removing it

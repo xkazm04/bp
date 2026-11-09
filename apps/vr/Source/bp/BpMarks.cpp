@@ -1073,15 +1073,8 @@ void ABpTable::StartScan(const FString& Id, const FString& Lens)
 		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, %s is no wing, room, bay or feature of the plan"), *Id);
 		return;
 	}
-	if (!FBpLinkModule::Get().IsKettle())
-	{
-		// A live product (the owner's ruling, FAD, relaxed 2026-11-08 for directed scans only, StartDirected): a plain scan
-		// never starts from the table; the beam replays its last scan.
-		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused to POST a plain scan of %s:%s for %s, a live product; replaying its last completed scan instead"),
-			*Kind, *ScopeId, *FBpLinkModule::Get().GetProductSlug());
-		StartReplay(Kind + TEXT(":") + ScopeId, Features);
-		return;
-	}
+	// A live product too (owner, 2026-11-09, table link v2 section 0): this is the operator's console door (BpScan.Start); a
+	// hand reaches a plain scan only through the console's armed SCAN THIS (StartPlain).
 	const FString UseLens = Lens.IsEmpty() ? ActiveLens : Lens;
 	UE_LOG(LogBpTable, Log, TEXT("BpScan: POST scans lens=%s scope=%s:%s label=\"%s\" features=%d"), *UseLens, *Kind, *ScopeId, *Label, Features.Num());
 	FBpLinkModule::Get().PostScan(UseLens, Kind, ScopeId, Label, Features, [](int32 Status, const FString& Body)
@@ -1129,6 +1122,89 @@ void ABpTable::StartDirected(const FString& FocusId, const FString& InTarget, TF
 		return;
 	}
 	StartDirectedRead(FocusId, Target, OnDone);
+}
+
+int32 ABpTable::PlanTileCount() const
+{
+	return SheetPlan.IsValid() ? SheetPlan->tiles.Num() : 0;
+}
+
+void ABpTable::StartPlain(const FString& InTarget, const FString& InLens, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: plain: %s: %s"), bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
+	FString Lens = InLens.IsEmpty() ? ActiveLens : InLens;
+	if (Lens.IsEmpty() && SheetPlan.IsValid() && SheetPlan->lenses.Num() > 0) Lens = SheetPlan->lenses[0];
+	if (Link.IsFromBundle())
+	{
+		// The bundle: the sample walk, with the sample focus on this lens (else the first), and it says it is a sample.
+		const TArray<FBpSavedFocus>& Samples = Link.GetFocusList().Focuses;
+		const FBpSavedFocus* Pick = Samples.FindByPredicate([&Lens](const FBpSavedFocus& F) { return F.Lens == Lens; });
+		if (!Pick && Samples.Num() > 0) Pick = &Samples[0];
+		if (!Pick || !Link.HasSampleFocuses())
+		{
+			Finish(false, TEXT("This build has no sample scan to run. Connect to your PC to scan."));
+			return;
+		}
+		StartSampleScan(Pick->Id, Target, OnDone);
+		return;
+	}
+	if (!SheetPlan.IsValid())
+	{
+		Finish(false, TEXT("The table has no plan yet."));
+		return;
+	}
+	if (Lens.IsEmpty())
+	{
+		Finish(false, TEXT("The plan names no lens to scan with."));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (Target == TEXT("site"))
+	{
+		Kind = TEXT("all");
+		Label = TEXT("Everything");
+	}
+	else if (!BuildScanScope(Target, Kind, ScopeId, Label, Features))
+	{
+		Finish(false, FString::Printf(TEXT("%s is no wing, room, bay or feature of the plan."), *Target));
+		return;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScan: plain POST lens=%s scope=%s:%s label=\"%s\" features=%d"), *Lens, *Kind, *ScopeId, *Label, Features.Num());
+	Link.PostScan(Lens, Kind, ScopeId, Label, Features, [Finish, Label, Lens](int32 Status, const FString& Body)
+	{
+		if (Status == 202) Finish(true, FString::Printf(TEXT("Started: %s · %s"), *Label, *BpWords::Lens(Lens)));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	});
+}
+
+void ABpTable::StartEveryLens(TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: every lens: %s: %s"), bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	if (Link.IsFromBundle())
+	{
+		Finish(false, TEXT("Every lens needs your PC: the sample walks one lens (SCAN THIS)."));
+		return;
+	}
+	// jobs.ts ALL_LENSES: one job over every enabled lens, one running slot (section 5: { lens: all, scope: { kind: all, label, features: [] } }).
+	Link.PostScan(TEXT("all"), TEXT("all"), FString(), TEXT("Everything"), TArray<FString>(), [Finish](int32 Status, const FString& Body)
+	{
+		if (Status == 202) Finish(true, TEXT("Started: everything · every lens"));
+		// table-link-v2.md section 9: a product whose scanner has no every-lens job (Kettle's simulation) answers unknown-lens.
+		else if (Status == 400 && Body.Contains(TEXT("unknown-lens"))) Finish(false, TEXT("This product scans one lens at a time: its scanner has no every-lens job. Use SCAN THIS or a saved focus."));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	});
 }
 
 void ABpTable::StartDirectedRead(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone)

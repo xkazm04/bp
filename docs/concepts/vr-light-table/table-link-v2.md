@@ -316,7 +316,35 @@ $ curl http://127.0.0.1:3200/api/health -H 'authorization: Bearer <token>'
 With `--pair` instead of `--lan`: `GET /lan/where` answers `{"door":null,"listening":false,"window":"...","pairing":true}`
 and `POST /pair` works on the tether.
 
-## 10. Residual risks (plain words)
+## 10. The headset's side (night two W2a, BpLink)
+
+What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pins its requests against a live `--pair` server
+(the keys each link function reads must be in the answers; every request but the ceremony's own two starts at `NewRequest`).
+
+- **The route**, in order: an explicit `-BpLinkUrl` (or `BP_LINK_URL`; `bundle` reads the sample only); the cable
+  (`http://127.0.0.1:3100`, saved as `CableUrl`; `-BpLinkCable=` moves it for a PC check, unsaved) if `GET /api/health`
+  answers; the saved Wi-Fi door (learned from `GET /lan/where`, only with a token) if it answers; else the build's bundled
+  sample. Health is asked every 5 s while on the sample and every 15 s while linked (timeout 2 s); a door that does not answer
+  backs off 5 s doubling to 60 s. Two misses in a row fall back to the sample (said once); the PC coming back is linked
+  without a restart; a new `boot` reads everything again (product, scans, products, shared focus).
+- **The token** is kept in GameUserSettings (`[/Script/BpLink.BpLinkSettings]`: `Token`, `Device`, `Scopes`, `ExpiresAt`,
+  `CableUrl`, `WifiUrl`), shown as its last 4 characters, never logged. It goes out as `Authorization: Bearer` on every request
+  except `POST /pair` and `POST /pair/claim`. A 401 on the tether, or the door's bare 403 on `/api/health` or `/pair/me`, forgets
+  it and the console says "pair again". `UNPAIR` forgets it here only; `pair revoke <id>` ends it on the PC. On the headset the
+  token sits in the app's private storage in plain text (no Android keystore yet): a recorded deviation, like the cleartext wire.
+- **Android and cleartext**: nothing was added to the manifest. UE 5.8's Android HTTP is libcurl over native sockets
+  (`HTTP.Build.cs` links libcurl for the Android group; `AndroidPlatformHttp.cpp` creates `FCurlHttpManager`/`FCurlHttpRequest`),
+  and Android's `usesCleartextTraffic` / network security config is honoured only by the Java stack (`NetworkSecurityPolicy`), so
+  it does not apply. UE's manifest already holds `INTERNET`, `ACCESS_NETWORK_STATE` and `ACCESS_WIFI_STATE`. Adding
+  `usesCleartextTraffic` would widen the Java side for nothing. **The token travels in cleartext on the LAN** (section 11).
+- **Found, not fixed here (server side):** the LAN door's `GET .../plan` verb takes no query, so `?layout=islands` (the table's
+  layout) is refused over Wi-Fi with the bare 403. Over Wi-Fi BpLink asks `/plan` with no query and draws the default layout
+  (logged). One line in `lan-door.ts` (`query: 'layout=islands'` or an optional pattern) would close it. `/stream`,
+  `/api/onboarding` and `.../onboarding/feed` are not door verbs either: over Wi-Fi the table shows no onboarding.
+- **SHOW ON PC** sends `POST /api/session/place` (scope `place`); with no baton claimed (409) the place goes out as the shared
+  focus (`POST /api/session/focus` publish), which the web follows.
+
+## 11. Residual risks (plain words)
 
 - **A program on the PC can still decide.** The human token's own residual (door.server.ts) stands: any local program can
   forge the browser headers, and it can also run the `pair` CLI's loopback routes and approve a pairing for itself. The

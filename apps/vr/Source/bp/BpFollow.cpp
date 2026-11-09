@@ -191,9 +191,18 @@ void ABpTable::NotePlaceMoved()
 
 void ABpTable::PublishRestingPlace()
 {
+	FString Where;
+	const FBpFollowPlace Place = RestingPlace(Where);
+	UE_LOG(LogBpTable, Log, TEXT("BpFollow: the owner rests on %s %s; publishing"), Place.Kind.IsEmpty() ? TEXT("the site") : *Place.Kind, *Place.Id);
+	// BpLink skips it when it is the shared focus already (the echo rule) or publishing is off.
+	if (FBpLinkModule::Get().PublishPlace(Place)) ShowCaption(TEXT("Shared from this table"), Where);
+}
+
+FBpFollowPlace ABpTable::RestingPlace(FString& Where) const
+{
 	// Where the table rests: a room's map (room mode) or a room lifted at L2, a wing lifted at L1, else the site plan.
 	FBpFollowPlace Place;
-	FString Where;
+	Where.Reset();
 	const FString Room = !RoomModeId.IsEmpty() ? RoomModeId : Level == EBpLevel::L2 ? RoomId : FString();
 	if (!Room.IsEmpty())
 	{
@@ -218,9 +227,7 @@ void ABpTable::PublishRestingPlace()
 		Place.Level = TEXT("L0");
 		Where = TEXT("Site plan");
 	}
-	UE_LOG(LogBpTable, Log, TEXT("BpFollow: the owner rests on %s %s; publishing"), Place.Kind.IsEmpty() ? TEXT("the site") : *Place.Kind, *Place.Id);
-	// BpLink skips it when it is the shared focus already (the echo rule) or publishing is off.
-	if (FBpLinkModule::Get().PublishPlace(Place)) ShowCaption(TEXT("Shared from this table"), Where);
+	return Place;
 }
 
 bool ABpTable::Goto(const FString& Id)

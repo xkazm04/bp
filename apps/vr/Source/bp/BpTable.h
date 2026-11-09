@@ -571,6 +571,17 @@ public:
 	 *  DirectedTarget()), through the same scope-building StartScan has. A focus the table has not read is fetched first. OnDone
 	 *  says whether the job is queued and, either way, words for the wrist (the refusal or failure, never a silent nothing). */
 	void StartDirected(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** A plain scan of Target with Lens (empty: the lens the table shows), the console's SCAN THIS after its second press (owner,
+	 *  2026-11-09: on a live product too). From the bundle it is the sample walk of a sample focus on that lens. OnDone in words. */
+	void StartPlain(const FString& Target, const FString& Lens, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** The every-lens scan of everything (POST scans { lens: all, scope: all }), the console's EVERY LENS after its second press.
+	 *  Refused from the bundle (the sample walks one lens). */
+	void StartEveryLens(TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** Stops the bundle's sample walk (the SCAN page's CANCEL on it). */
+	void CancelSampleScan() { EndSampleScan(); }
+	/** Where the table rests, as a place another surface can show (the room shown or lifted, the wing lifted, else the site), and
+	 *  its name in Where. PublishRestingPlace sends it as the shared focus; the console's SHOW ON PC as the place baton. */
+	struct FBpFollowPlace RestingPlace(FString& Where) const;
 	/** The sample scan (BpSampleScan.cpp; only from the bundle): walks Target ("site", a wing, room, bay or feature id; empty:
 	 *  DirectedTarget()) feature by feature on a timer, through the same marks as a real scan. It writes nothing and POSTs nothing.
 	 *  Refused, logged, with a server: a server-linked table can never run one. BpScan.Sample is its console door. */
@@ -586,6 +597,8 @@ public:
 	/** BpLevel.* console commands sent before the plan arrived; ApplyPlan runs them in order. */
 	static TArray<FString>& PendingLevelCommands();
 	bool HasPlan() const { return SheetPlan.IsValid(); }
+	/** The plan's features (tiles), 0 with no plan: an every-feature scan's "of m". */
+	int32 PlanTileCount() const;
 
 	// ---- Room mode (BpRoom.cpp): the API WP2's screen deck and WP3's switching call, and BpRoom.* ---------------------------
 	/** The paper dives into this room's map (from L1 or L2 the levels come home first). Another room while one is shown:
@@ -866,6 +879,9 @@ private:
 		int32 RoomsRead = 0;
 		int32 RoomsTotal = 0;
 		FString RunId;
+		/** How many scanners are reading now, and each one's lens and rooms read of its own ("Design 2/5 · Security 0/3"). */
+		int32 Readers = 0;
+		FString Readings;
 	};
 	FScanOutcome ScanOutcome;
 	bool bHasScanOutcome = false;

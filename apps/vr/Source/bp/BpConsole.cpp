@@ -23,6 +23,8 @@
 #include "BpWords.h"
 #include "Components/WidgetComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Schema/BpSchemaVocab.h"
+#include "TimerManager.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SDPIScaler.h"
@@ -39,7 +41,7 @@ struct FBpConsoleRow
 	FString Detail;
 	FString Tag;
 	/** 0 plain, 1 the one the table shows (an accent bar), 2 amber (waiting, building, armed), 3 red (refused, stopped),
-	 *  4 a note (words across the row, no plate). */
+	 *  4 a note (words across the row, no plate), 5 the pairing code (its Label large and spaced, its Tag at the right). */
 	uint8 Tone = 0;
 	struct FButton
 	{
@@ -78,6 +80,8 @@ namespace
 	constexpr float RowsY0 = 156.f, RowH = 92.f, RowGap = 4.f;
 	constexpr float PagerY0 = 642.f, PagerY1 = 702.f;
 	constexpr float CapLabel = 28.f, CapSmall = 24.f, CapTitle = 36.f, CapBar = 28.f, CapBarStatus = 26.f;
+	/** The pairing code's caps (PC LINK): 52 px, 1.6 cm, read from the seat and from the PC beside it. */
+	constexpr float CapCode = 52.f;
 
 	FSlateFontInfo Font(const TCHAR* Style, float CapPx)
 	{
@@ -117,6 +121,13 @@ namespace
 		{
 			if (ABpPawn* Pawn = ConsolePawn(World)) Pawn->LogConsoleStat();
 		}));
+	FAutoConsoleCommandWithWorld CmdConsoleRows(
+		TEXT("BpConsole.Rows"),
+		TEXT("BpConsole.Rows: logs the open page's sub-line and every row (label, detail, tag, buttons), for a headless check of what the console says."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (ABpPawn* Pawn = ConsolePawn(World)) Pawn->LogConsoleRows();
+		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdConsoleOpen(
 		TEXT("BpConsole.Open"),
 		TEXT("BpConsole.Open [page]: opens the console on a page (home, rooms, scan, standup, ask, projects, packages, settings); BpConsole.Open close puts it back to its bar."),
@@ -143,6 +154,7 @@ struct FBpConsolePages
 			{ TEXT("projects"), TEXT("PROJECTS"), TEXT("E"), &ProjectsRows, &ProjectsSummary, nullptr, nullptr },
 			{ TEXT("packages"), TEXT("PACKAGES"), TEXT("F"), &PackagesRows, &PackagesSummary, nullptr, nullptr },
 			{ TEXT("settings"), TEXT("SETTINGS"), TEXT("G"), &SettingsRows, &SettingsSummary, nullptr, nullptr },
+			{ TEXT("link"), TEXT("PC LINK"), TEXT("H"), &LinkRows, &LinkSummary, &LinkOpen, nullptr },
 		};
 		return Pages;
 	}
@@ -191,26 +203,105 @@ struct FBpConsolePages
 		return FString::Printf(TEXT("%d rooms · %d open findings"), Ranks.Num(), Open);
 	}
 
-	// SCAN: the saved focuses (the wrist's SCAN tab): a press arms one for the place the table shows, a second starts it.
+	// SCAN (night two W2a, the web's Agents panel at the table): the start actions (SCAN THIS, EVERY LENS: a press arms, a
+	// second starts, as the directed scan's row does), every running and queued scanner as a row (lens, scope, n of m features,
+	// the feature being read, its clock) with CANCEL (DELETE .../scans/<job>), finished ones for ScanLingerS, the saved focuses
+	// (directed), and the findings as they land, newest first (a press opens one on the deck or the decision card). From the
+	// bundle the page drives the sample walk and says "sample".
+	static constexpr double ScanLingerS = 20.0;
 	static bool ScanReady() { const FBpLinkModule& L = FBpLinkModule::Get(); return L.HasPcLink() || L.HasSampleFocuses(); }
-	static void ScanOpen(ABpPawn&) { if (ScanReady()) FBpLinkModule::Get().GetFocuses(); }
+	static void ScanOpen(ABpPawn& Pawn)
+	{
+		if (ScanReady()) FBpLinkModule::Get().GetFocuses();
+		Pawn.ConsoleScanWords.Reset();
+		// The jobs' clocks: one redraw a second while this page is open (a timer; it stops itself when the page closes).
+		if (UWorld* World = Pawn.GetWorld()) World->GetTimerManager().SetTimer(Pawn.ConsoleClockTimer, &Pawn, &ABpPawn::TickConsoleClock, 1.f, true);
+	}
+	static FString Clock(double Seconds)
+	{
+		const int32 S = FMath::Max(0, FMath::FloorToInt(Seconds));
+		return S >= 3600 ? FString::Printf(TEXT("%d:%02d:%02d"), S / 3600, (S / 60) % 60, S % 60) : FString::Printf(TEXT("%d:%02d"), S / 60, S % 60);
+	}
+	static double SecondsSince(const FString& Iso)
+	{
+		FDateTime At;
+		return FDateTime::ParseIso8601(*Iso, At) ? (FDateTime::UtcNow() - At).GetTotalSeconds() : -1.0;
+	}
+	/** One job's progress as jobProgress reads it: features read of its run, of how many, and the one being read. */
+	static void JobProgress(const FBpScanState& State, const FBpScanJob& Job, int32 PlanTiles, int32& Read, int32& Of, FString& Current)
+	{
+		Read = 0;
+		Of = Job.scope.kind == BpVocab::ScanScope::Kind::All ? PlanTiles : Job.scope.features.Num();
+		Current.Reset();
+		if (Job.run_id.IsEmpty()) return;
+		const bool bAnyLens = Job.lens == TEXT("all");
+		TSet<FString> Seen;
+		for (const FBpMeasurement& M : State.Scan.measurements) if (M.run_id == Job.run_id && (bAnyLens || M.lens == Job.lens)) Seen.Add(M.feature);
+		for (const FBpActivity& A : State.Scan.activity)
+		{
+			if (A.run_id != Job.run_id || A.feature.IsEmpty()) continue;
+			if (A.kind == BpVocab::Activity::Kind::Measured) Seen.Add(A.feature);
+			if (A.kind == BpVocab::Activity::Kind::Reading || A.kind == BpVocab::Activity::Kind::Measured) Current = A.feature;
+		}
+		Read = Seen.Num();
+	}
+	static FString JobStatusWord(const FString& Status)
+	{
+		if (Status == BpVocab::ScanJob::Status::Running) return TEXT("RUNNING");
+		if (Status == BpVocab::ScanJob::Status::Queued) return TEXT("QUEUED");
+		if (Status == BpVocab::ScanJob::Status::Done) return TEXT("DONE");
+		if (Status == BpVocab::ScanJob::Status::Failed) return TEXT("FAILED");
+		if (Status == BpVocab::ScanJob::Status::Cancelled) return TEXT("CANCELLED");
+		return Status.ToUpper();
+	}
+	/** The scanners the page lists: measure and propose jobs queued or running, and the ones that ended in the last ScanLingerS. */
+	static TArray<const FBpScanJob*> ScanJobs(bool& bAnyLive)
+	{
+		bAnyLive = false;
+		TArray<const FBpScanJob*> Out;
+		for (const FBpScanJob& Job : FBpLinkModule::Get().GetScanState().Jobs)
+		{
+			if (Job.kind != BpVocab::ScanJob::Kind::Measure && Job.kind != BpVocab::ScanJob::Kind::Propose) continue;
+			const bool bLive = Job.status == BpVocab::ScanJob::Status::Running || Job.status == BpVocab::ScanJob::Status::Queued;
+			const double Ended = SecondsSince(Job.ended_at);
+			if (!bLive && !(Ended >= 0.0 && Ended < ScanLingerS)) continue;
+			bAnyLive |= bLive || Ended >= 0.0;
+			Out.Add(&Job);
+		}
+		// Running first, then queued, then the finished ones; within each, the newest first.
+		Out.Sort([](const FBpScanJob& A, const FBpScanJob& B)
+		{
+			const auto Rank = [](const FBpScanJob& J) { return J.status == BpVocab::ScanJob::Status::Running ? 0 : J.status == BpVocab::ScanJob::Status::Queued ? 1 : 2; };
+			return Rank(A) != Rank(B) ? Rank(A) < Rank(B) : A.queued_at > B.queued_at;
+		});
+		return Out;
+	}
 	static void ScanRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
 	{
-		if (!ScanReady())
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		ABpTable* T = Table(Pawn);
+		const bool bSample = !Link.HasPcLink();
+		const FString Place = T ? T->DirectedLabel(T->DirectedTarget()) : FString();
+		const FString PlaceWords = Place.IsEmpty() ? FString(TEXT("the site")) : Place;
+		const FString LensWords = T ? BpWords::Lens(T->GetActiveLens()) : FString();
+		bool bAnyLive = false;
+		const TArray<const FBpScanJob*> Jobs = bSample ? TArray<const FBpScanJob*>() : ScanJobs(bAnyLive);
+		int32 Running = 0, Queued = 0;
+		for (const FBpScanJob* Job : Jobs)
 		{
-			Sub = TEXT("Scans start from the PC's saved focuses");
-			Out.Add(Note(TEXT("Connect to your PC to scan: a focus is saved there, and this table runs it on the place it shows.")));
+			Running += Job->status == BpVocab::ScanJob::Status::Running ? 1 : 0;
+			Queued += Job->status == BpVocab::ScanJob::Status::Queued ? 1 : 0;
+		}
+		if (!ScanReady() && !Link.IsFromBundle())
+		{
+			Sub = TEXT("Scans run on your PC");
+			Out.Add(Note(TEXT("Waiting for your PC's scan list… (PC LINK says how this headset reaches it)")));
 			return;
 		}
-		const FBpLinkModule& Link = FBpLinkModule::Get();
-		const bool bSample = !Link.HasPcLink();
-		ABpTable* T = Table(Pawn);
-		const FString Place = T ? T->DirectedLabel(T->DirectedTarget()) : FString();
-		const FBpFocusList& List = Link.GetFocusList();
 		Sub = Pawn.bWristScanStarting ? FString(TEXT("Starting the scan…"))
-			: bSample ? FString::Printf(TEXT("Sample scan of %s · it reads and writes nothing"), Place.IsEmpty() ? TEXT("the site") : *Place)
-			: !List.bHasFocuses && List.Error.IsEmpty() ? FString(TEXT("Reading the saved focuses…"))
-			: FString::Printf(TEXT("%d saved · a press arms one for %s, a second starts it"), List.Focuses.Num(), Place.IsEmpty() ? TEXT("the site") : *Place);
+			: bSample ? FString::Printf(TEXT("Sample · %s · it reads and writes nothing"), *PlaceWords)
+			: FString::Printf(TEXT("On your PC · %d running · %d queued · %s"), Running, Queued, *PlaceWords);
+		// What the last start or cancel said: a refusal stays until dismissed.
 		if (Pawn.bWristScanRefused && !Pawn.WristScanWords.IsEmpty())
 		{
 			FBpConsoleRow Row;
@@ -221,32 +312,182 @@ struct FBpConsolePages
 			Row.Tone = 3;
 			Out.Add(Row);
 		}
-		FString Head, Body;
-		if (T) T->ScanBand(Head, Body);
-		if (!Head.IsEmpty()) Out.Add(Note(FString::Printf(TEXT("%s · %s"), *Head, *Body), 2));
-		if (List.Focuses.Num() == 0)
+		else if (!Pawn.ConsoleScanWords.IsEmpty()) Out.Add(Note(Pawn.ConsoleScanWords));
+		// The start actions: SCAN THIS (the place shown, the lens shown) and EVERY LENS; the armed one says PRESS AGAIN.
 		{
-			Out.Add(Note(!List.Error.IsEmpty() ? List.Error : !List.bHasFocuses ? FString(TEXT("Reading…")) : FString(TEXT("Save a focus on the PC first."))));
-			return;
+			const bool bThis = Pawn.WristArmedFocus == TEXT("@this"), bEvery = Pawn.WristArmedFocus == TEXT("@every");
+			FBpConsoleRow Row;
+			Row.Label = bThis ? FString::Printf(TEXT("Scan %s?"), *PlaceWords) : bEvery ? FString(TEXT("Every lens, everything?")) : FString::Printf(TEXT("Scan %s"), *PlaceWords);
+			Row.Detail = bThis || bEvery ? FString(TEXT("Press again to start · anything else cancels"))
+				: bSample ? FString::Printf(TEXT("%s · a sample walk"), *LensWords) : FString::Printf(TEXT("%s · or every lens at once"), *LensWords);
+			Row.Tone = bThis || bEvery ? 2 : 0;
+			Row.Buttons = { { bThis ? TEXT("START") : TEXT("SCAN THIS"), TEXT("scan:this"), bThis } };
+			if (!bSample) Row.Buttons.Add({ bEvery ? TEXT("START") : TEXT("EVERY LENS"), TEXT("scan:every"), bEvery });
+			Out.Add(Row);
 		}
+		// The scanners.
+		if (bSample)
+		{
+			FString Head, Body;
+			if (T) T->ScanBand(Head, Body);
+			if (!Head.IsEmpty() && T && T->IsScanRunning())
+			{
+				FBpConsoleRow Row;
+				Row.Label = Head;
+				Row.Detail = Body;
+				Row.Tag = TEXT("SAMPLE");
+				Row.Tone = 2;
+				Row.Buttons = { { TEXT("CANCEL"), TEXT("job:cancel:sample") } };
+				Out.Add(Row);
+			}
+		}
+		else
+		{
+			const int32 Tiles = T && T->HasPlan() ? T->PlanTileCount() : 0;
+			for (const FBpScanJob* Job : Jobs)
+			{
+				const bool bRunning = Job->status == BpVocab::ScanJob::Status::Running, bQueued = Job->status == BpVocab::ScanJob::Status::Queued;
+				int32 Read = 0, Of = 0;
+				FString Current;
+				JobProgress(Link.GetScanState(), *Job, Tiles, Read, Of, Current);
+				FBpConsoleRow Row;
+				const FString Lens = Job->lens == TEXT("all") ? FString(TEXT("Every lens")) : BpWords::Lens(Job->lens);
+				Row.Label = FString::Printf(TEXT("%s · %s"), *Lens, Job->scope.label.IsEmpty() ? TEXT("Everything") : *Job->scope.label);
+				TArray<FString> Parts;
+				if (!Job->focus.IsEmpty()) Parts.Add(TEXT("Directed"));
+				if (bQueued) Parts.Add(FString::Printf(TEXT("waiting %s"), *Clock(SecondsSince(Job->queued_at))));
+				else
+				{
+					Parts.Add(Of > 0 ? FString::Printf(TEXT("%d of %d"), FMath::Min(Read, Of), Of) : FString::Printf(TEXT("%d read"), Read));
+					if (bRunning && !Current.IsEmpty() && T) { const FString Name = T->DirectedLabel(Current); Parts.Add(TEXT("reading ") + (Name.IsEmpty() ? Current : Name)); }
+					if (bRunning) Parts.Add(Clock(SecondsSince(Job->started_at.IsEmpty() ? Job->queued_at : Job->started_at)));
+				}
+				Row.Detail = FString::Join(Parts, TEXT(" · "));
+				Row.Tag = JobStatusWord(Job->status);
+				Row.Tone = bRunning ? 1 : bQueued ? 2 : Job->status == BpVocab::ScanJob::Status::Done ? 0 : 3;
+				if (bRunning || bQueued) Row.Buttons = { { TEXT("CANCEL"), TEXT("job:cancel:") + Job->id } };
+				Out.Add(Row);
+			}
+			if (Jobs.Num() == 0) Out.Add(Note(TEXT("No scanner is running on your PC.")));
+		}
+		// The saved focuses (a directed scan): a press arms one for the place shown, a second starts it.
+		const FBpFocusList& List = Link.GetFocusList();
 		for (const FBpSavedFocus& F : List.Focuses)
 		{
 			FBpConsoleRow Row;
 			Row.Act = TEXT("focus:") + F.Id;
 			Row.Label = F.Note.Replace(TEXT("\n"), TEXT(" "));
 			const FString* Short = Link.FindLensShort(F.Lens);
-			Row.Detail = FString::Printf(TEXT("%s · %s"), Short ? **Short : *BpWords::Lens(F.Lens).Left(3).ToUpper(), *BpWords::Lens(F.Lens));
+			Row.Detail = FString::Printf(TEXT("Directed · %s · %s"), Short ? **Short : *BpWords::Lens(F.Lens).Left(3).ToUpper(), *BpWords::Lens(F.Lens));
 			const bool bArmed = F.Id == Pawn.WristArmedFocus;
-			Row.Tag = bArmed ? (bSample ? TEXT("PRESS AGAIN: SAMPLE") : TEXT("PRESS AGAIN TO START")) : FString();
+			Row.Tag = bArmed ? (bSample ? TEXT("PRESS AGAIN: SAMPLE") : TEXT("PRESS AGAIN TO START")) : FString(TEXT("FOCUS"));
 			Row.Tone = bArmed ? 2 : 0;
 			Out.Add(Row);
 		}
+		if (!List.Error.IsEmpty() && List.Focuses.Num() == 0) Out.Add(Note(List.Error));
+		// The findings as they land, newest first.
+		const FBpScanState& State = Link.GetScanState();
+		TArray<const FBpProposal*> Feed;
+		for (const FBpProposal& P : State.Scan.proposals) Feed.Add(&P);
+		Feed.Sort([](const FBpProposal& A, const FBpProposal& B) { return A.created_at > B.created_at; });
+		if (Feed.Num() > 0) Out.Add(Note(bSample ? TEXT("The sample's findings, newest first") : TEXT("Findings as they land, newest first"), 4));
+		for (int32 Index = 0; Index < Feed.Num() && Index < ScanFeedRows; ++Index)
+		{
+			const FBpProposal& P = *Feed[Index];
+			FBpConsoleRow Row;
+			Row.Act = TEXT("finding:") + P.id;
+			Row.Label = P.title.IsEmpty() ? P.id : P.title;
+			const int32* Tier = State.Tiers.Find(P.id);
+			const FString Age = SecondsSince(P.created_at) >= 0.0 && SecondsSince(P.created_at) < 3600.0 ? FString::Printf(TEXT(" · %s ago"), *Clock(SecondsSince(P.created_at))) : FString();
+			Row.Detail = FString::Printf(TEXT("%s · %s%s"), *BpWords::Lens(P.lens), Tier ? *BpWords::TierSays(*Tier) : TEXT("untriaged"), *Age);
+			Row.Tag = Tier ? FString::Printf(TEXT("T%d"), *Tier) : FString(TEXT("OPEN"));
+			Row.Tone = Tier && *Tier <= 1 ? 2 : 0;
+			Out.Add(Row);
+		}
 	}
+	static constexpr int32 ScanFeedRows = 6;
 	static FString ScanSummary(ABpPawn&)
 	{
-		if (!ScanReady()) return TEXT("Needs your PC");
-		const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
-		return List.bHasFocuses ? FString::Printf(TEXT("%d saved focuses"), List.Focuses.Num()) : FString(TEXT("Saved focuses"));
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		if (!Link.HasPcLink()) return Link.HasSampleFocuses() ? FString(TEXT("Sample scan · reads nothing")) : FString(TEXT("Needs your PC"));
+		bool bAny = false;
+		int32 Live = 0;
+		for (const FBpScanJob* Job : ScanJobs(bAny)) Live += Job->status == BpVocab::ScanJob::Status::Running || Job->status == BpVocab::ScanJob::Status::Queued ? 1 : 0;
+		return Live > 0 ? FString::Printf(TEXT("%d %s at work"), Live, Live == 1 ? TEXT("scanner") : TEXT("scanners")) : FString(TEXT("Nothing running · start one"));
+	}
+
+	// PC LINK (night two W2a, table link v2): how this headset reaches the PC, the pairing (PAIR shows the code and the exact
+	// command the owner types on the PC; CANCEL; UNPAIR), what it may do, and the Wi-Fi door it learned.
+	static void LinkOpen(ABpPawn&) {}
+	static void LinkRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
+	{
+		const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
+		Sub = TEXT("How this headset reaches your PC, and what it may do there");
+		{
+			FBpConsoleRow Row;
+			Row.Label = FBpLinkModule::RouteWords(S);
+			Row.Detail = S.Route != EBpLinkRoute::None ? FString::Printf(TEXT("Your PC at %s"), *S.BaseUrl.Replace(TEXT("http://"), TEXT("")))
+				: S.bBundleOnly ? FString(TEXT("This build was started to read its sample only"))
+				: FString(TEXT("Looking for your PC every 5 s: the cable first, then Wi-Fi"));
+			Row.Tag = FBpLinkModule::RouteWord(S);
+			Row.Tone = S.Route != EBpLinkRoute::None ? 1 : 2;
+			Out.Add(Row);
+		}
+		if (S.Pair == EBpPairState::Waiting)
+		{
+			FBpConsoleRow Code;
+			Code.Label = S.Code;
+			FDateTime Until;
+			const double Left = FDateTime::ParseIso8601(*S.CodeExpiresAt, Until) ? (Until - FDateTime::UtcNow()).GetTotalSeconds() : -1.0;
+			Code.Tag = Left >= 0.0 ? FString::Printf(TEXT("%s LEFT"), *Clock(Left)) : FString(TEXT("WAITING"));
+			Code.Tone = 5;
+			Out.Add(Code);
+			Out.Add(Note(FString::Printf(TEXT("On the PC type:  npm run server -- pair approve %s --scope %s"), *S.Code, FBpLinkModule::PairScopes), 2));
+			FBpConsoleRow Cancel;
+			Cancel.Label = TEXT("Waiting for your PC to approve");
+			Cancel.Detail = TEXT("The code lasts two minutes");
+			Cancel.Buttons = { { TEXT("CANCEL"), TEXT("link:cancel") } };
+			Out.Add(Cancel);
+		}
+		else if (S.Pair == EBpPairState::Asking)
+		{
+			Out.Add(Note(TEXT("Asking the PC for a code…"), 2));
+		}
+		else if (S.Pair == EBpPairState::Paired)
+		{
+			FBpConsoleRow Row;
+			Row.Label = FString::Printf(TEXT("Paired as %s"), S.Device.IsEmpty() ? TEXT("this headset") : *S.Device);
+			FDateTime Until;
+			Row.Detail = FString::Printf(TEXT("Token …%s%s"), *S.TokenTail, FDateTime::ParseIso8601(*S.ExpiresAt, Until) ? *FString::Printf(TEXT(" · until %s"), *Until.ToString(TEXT("%Y-%m-%d"))) : TEXT(""));
+			Row.Buttons = { { TEXT("UNPAIR"), TEXT("link:unpair") }, { TEXT("PAIR AGAIN"), TEXT("link:pair") } };
+			Out.Add(Row);
+			TArray<FString> Can;
+			for (const FString& Scope : S.Scopes) Can.Add(FBpLinkModule::ScopeWords(Scope));
+			Out.Add(Note(Can.Num() > 0 ? TEXT("It may ") + FString::Join(Can, TEXT(", ")) + TEXT(".") : FString(TEXT("The PC has not said what it may do yet."))));
+		}
+		else
+		{
+			FBpConsoleRow Row;
+			Row.Label = TEXT("Not paired");
+			Row.Detail = S.Route != EBpLinkRoute::None ? FString(TEXT("PAIR shows a code; you approve it on the PC")) : FString(TEXT("Connect first: the cable, or the PC's server"));
+			Row.Buttons = { { TEXT("PAIR"), TEXT("link:pair"), S.Route != EBpLinkRoute::None } };
+			Out.Add(Row);
+			Out.Add(Note(TEXT("Paired, it may run the stand-up, make your decisions, start and cancel scans, and reach your PC over Wi-Fi.")));
+		}
+		{
+			FBpConsoleRow Row;
+			Row.Label = S.WifiUrl.IsEmpty() ? FString(TEXT("No Wi-Fi door known")) : FString::Printf(TEXT("Wi-Fi door %s"), *S.WifiUrl.Replace(TEXT("http://"), TEXT("")));
+			Row.Detail = S.WifiUrl.IsEmpty() ? FString(TEXT("Learned from the PC over the cable (its server runs with --lan)")) : FString(TEXT("Used when the cable is out, once paired"));
+			if (S.Route == EBpLinkRoute::Cable) Row.Buttons = { { TEXT("ASK PC"), TEXT("link:where") } };
+			Out.Add(Row);
+		}
+		if (!S.Message.IsEmpty() && S.Pair != EBpPairState::Waiting) Out.Add(Note(S.Message, S.bMessageBad ? 3 : 4));
+	}
+	static FString LinkSummary(ABpPawn&)
+	{
+		const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
+		if (S.Pair == EBpPairState::Waiting) return FString::Printf(TEXT("Code %s · approve it on the PC"), *S.Code);
+		return FString::Printf(TEXT("%s · %s"), *FBpLinkModule::RouteWords(S), S.Pair == EBpPairState::Paired ? TEXT("paired") : TEXT("not paired"));
 	}
 
 	// STAND-UP: a stub tonight (a later wave runs it here); it says what waits and what it needs.
@@ -303,12 +544,12 @@ struct FBpConsolePages
 		const FString Open = Link.GetProductSlug();
 		int32 Building = 0;
 		for (const FBpProductEntry& E : Onboarding.Products) Building += E.IsBuilding() ? 1 : 0;
-		Sub = FString::Printf(TEXT("%d projects · %s open"), Onboarding.Products.Num(), *Link.NameOf(Open));
+		Sub = FString::Printf(TEXT("%d projects on your PC · %s open"), Onboarding.Products.Num(), *Link.NameOf(Open));
 		if (Building > 0) Sub += FString::Printf(TEXT(" · %d onboarding"), Building);
 		if (Onboarding.Products.Num() == 0)
 		{
-			Sub = FString::Printf(TEXT("%s open"), *Link.NameOf(Open));
-			Out.Add(Note(Link.IsFromBundle() ? FString(TEXT("Offline: this build carries one sample project. Your PC lists the others.")) : FString(TEXT("Reading the projects…"))));
+			Sub = FString::Printf(TEXT("%s open%s"), *Link.NameOf(Open), Link.IsFromBundle() ? TEXT(" · the sample") : TEXT(""));
+			Out.Add(Note(Link.IsFromBundle() ? FString(TEXT("Offline: this build carries one sample project. Your PC lists your real ones once it is linked (PC LINK).")) : FString(TEXT("Reading the projects…"))));
 			return;
 		}
 		TArray<const FBpProductEntry*> Order;
@@ -329,6 +570,8 @@ struct FBpConsolePages
 			}
 			else if (E.IsStopped()) Row.Detail = E.Phase.IsEmpty() ? FString(TEXT("Stopped")) : FString::Printf(TEXT("Stopped at %s"), *FBpLinkModule::PhaseLabel(E.Phase));
 			else Row.Detail = E.bHasMap ? TEXT("Ready") : TEXT("No map yet");
+			// The built-in sample says so (night two W2a): the PC's own products are the real ones.
+			if (E.Slug == TEXT("kettle")) Row.Detail = TEXT("The sample · ") + Row.Detail;
 			Row.Tag = bHere ? TEXT("HERE") : E.IsBuilding() ? TEXT("WATCH") : TEXT("OPEN");
 			Row.Tone = bHere ? 1 : E.IsBuilding() || E.State == TEXT("queued") ? 2 : E.IsStopped() ? 3 : 0;
 			Out.Add(Row);
@@ -373,13 +616,24 @@ struct FBpConsolePages
 	static FString LinkLine()
 	{
 		const FBpLinkModule& Link = FBpLinkModule::Get();
-		if (Link.IsFromBundle()) return TEXT("PC link: none · this build reads its bundled sample and sends nothing");
-		if (Link.HasPcLink()) return TEXT("PC link: connected · scans, the companion and approvals reach your PC");
-		return TEXT("PC link: looking for your PC…");
+		const FBpLinkStatus& S = Link.GetLinkStatus();
+		if (S.Route == EBpLinkRoute::None) return FString::Printf(TEXT("PC link: %s · nothing is sent"), *FBpLinkModule::RouteWords(S));
+		return FString::Printf(TEXT("PC link: %s · %s"), *FBpLinkModule::RouteWords(S), S.Pair == EBpPairState::Paired ? TEXT("paired: scans, decisions and the stand-up reach your PC") : TEXT("not paired: PC LINK pairs it"));
 	}
 	static void SettingsRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
 	{
 		Sub = LinkLine();
+		{
+			// The PC link's own page, from settings.
+			const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
+			FBpConsoleRow Row;
+			Row.Act = TEXT("open:link");
+			Row.Label = TEXT("PC LINK");
+			Row.Detail = FString::Printf(TEXT("%s · %s"), *FBpLinkModule::RouteWords(S), S.Pair == EBpPairState::Paired ? TEXT("paired") : S.Pair == EBpPairState::Waiting ? TEXT("a code is waiting") : TEXT("not paired"));
+			Row.Tag = FBpLinkModule::RouteWord(S);
+			Row.Tone = S.Route != EBpLinkRoute::None ? 0 : 2;
+			Out.Add(Row);
+		}
 		const auto Value = [&Out](const TCHAR* Label, const TCHAR* Detail, float Level, const TCHAR* Minus, const TCHAR* Plus)
 		{
 			FBpConsoleRow Row;
@@ -556,6 +810,27 @@ void ABpPawn::LogConsoleStat() const
 		ConsolePanel ? ConsolePanel->IsComponentTickEnabled() : -1, ConsolePanel ? ConsolePanel->IsVisible() : -1, WristPanel ? WristPanel->IsComponentTickEnabled() : -1);
 }
 
+void ABpPawn::LogConsoleRows()
+{
+	const FBpConsolePage* Page = bConsoleOpen ? FBpConsolePages::Find(ConsolePageKey) : nullptr;
+	if (!Page)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: rows: %s (no list page open)"), *GetConsoleLine());
+		return;
+	}
+	TArray<FBpConsoleRow> Rows;
+	FString Sub;
+	Page->Rows(*this, Rows, Sub);
+	UE_LOG(LogBpTable, Log, TEXT("BpConsole: rows %s \"%s\" (%d rows)"), Page->Key, *Sub, Rows.Num());
+	for (const FBpConsoleRow& Row : Rows)
+	{
+		TArray<FString> Buttons;
+		for (const FBpConsoleRow::FButton& B : Row.Buttons) Buttons.Add(B.Word + TEXT("=") + B.Act);
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole:   [%d] %s | %s | %s%s%s"), Row.Tone, *Row.Label, *Row.Detail, *Row.Tag,
+			Row.Act.IsEmpty() ? TEXT("") : *(TEXT(" | act ") + Row.Act), Buttons.Num() ? *(TEXT(" | ") + FString::Join(Buttons, TEXT(", "))) : TEXT(""));
+	}
+}
+
 FString ABpPawn::GetConsoleLine() const
 {
 	if (!bConsoleOpen) return TEXT("bar");
@@ -591,7 +866,9 @@ void ABpPawn::RefreshConsole()
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Product = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
 	const bool bCanBack = Table->HasPlan() && (!Table->GetRoomModeId().IsEmpty() || Table->GetBpLevel() != EBpLevel::L0);
-	const FString Status = ConsoleStatus();
+	// SHOW ON PC (night two W2a): the table's place to the web, on the bar while a PC is linked; its answer stands a while.
+	const bool bShowPc = Table->HasPlan() && Link.HasPcLink();
+	const FString Status = !ConsoleBarWords.IsEmpty() && FPlatformTime::Seconds() < ConsoleBarWordsUntil ? ConsoleBarWords : ConsoleStatus();
 
 	// What it shows, as words: the redraw key.
 	const FBpConsolePage* Page = bConsoleOpen && ConsolePageKey != TEXT("home") ? FBpConsolePages::Find(ConsolePageKey) : nullptr;
@@ -602,7 +879,7 @@ void ABpPawn::RefreshConsole()
 	if (bConsoleOpen && !Page) for (const FBpConsolePage& Each : FBpConsolePages::Registry()) Summaries.Add(Each.Summary(*this));
 	const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Rows.Num(), ConsoleRowsPerPage));
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
-	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel);
+	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -642,8 +919,11 @@ void ABpPawn::RefreshConsole()
 		Button(FBox2f(FVector2f(14.f, Y0), FVector2f(214.f, Y1)), TEXT("MENU"), EBtn::Fill, TEXT("menu"), Font(TEXT("Bold"), CapBar));
 		const float BackW = bCanBack ? 200.f : 0.f;
 		if (bCanBack) Button(FBox2f(FVector2f(LW - 14.f - BackW, Y0), FVector2f(LW - 14.f, Y1)), TEXT("‹  BACK"), EBtn::Edge, TEXT("bar:back"), Font(TEXT("Bold"), CapBar));
+		const float PcW = bShowPc ? 250.f : 0.f;
+		const float PcX1 = LW - 14.f - (bCanBack ? BackW + 12.f : 0.f);
+		if (bShowPc) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("SHOW ON PC"), EBtn::Edge, TEXT("bar:pc"), Font(TEXT("Bold"), CapBar));
 		const FSlateFontInfo NameFont = Font(TEXT("Bold"), CapBar), StatusFont = Font(TEXT("Regular"), CapBarStatus);
-		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f);
+		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc ? PcW + 12.f : 0.f);
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextW * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		Put(FBox2f(FVector2f(TextX, 0.f), FVector2f(TextX + TextW, BarLH)),
@@ -721,6 +1001,20 @@ void ABpPawn::RefreshConsole()
 				const FBpConsoleRow& Row = Rows[At];
 				const float Y0 = RowsY0 + Index * (RowH + RowGap);
 				const FBox2f Box(FVector2f(Pad, Y0), FVector2f(LW - Pad, Y0 + RowH));
+				if (Row.Tone == 5)
+				{
+					// The pairing code (PC LINK): six characters, large and spaced, on an amber plate the owner reads from across
+					// the desk; its tag (the time left) at the right.
+					const FSlateFontInfo CodeFont = Font(TEXT("Bold"), CapCode);
+					FString Spaced;
+					for (const TCHAR C : Row.Label) { if (!Spaced.IsEmpty()) Spaced += TEXT("  "); Spaced += C; }
+					Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.6f)).Edge(BpSheet::Amber).EdgePx(3.f).Bar(BpSheet::Amber).BarPx(8.f));
+					Put(FBox2f(Box.Min + FVector2f(32.f, 0.f), Box.Max - FVector2f(24.f, 0.f)),
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Spaced)).Font(CodeFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Row.Tag)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
+					continue;
+				}
 				if (Row.Tone == 4 || (Row.Act.IsEmpty() && Row.Buttons.Num() == 0 && Row.Tone == 2 && Row.Detail.IsEmpty()))
 				{
 					// A note: words across the row, two lines at most, on a quiet rule.
@@ -879,9 +1173,53 @@ void ABpPawn::ConsoleTap(const FString& Id)
 		if (Table) Table->Back();
 		return;
 	}
+	if (Act == TEXT("bar:pc"))
+	{
+		ShowOnPc();
+		return;
+	}
 	const FBpConsolePage* Page = FBpConsolePages::Find(ConsolePageKey);
 	if (Page && Page->Tap && Page->Tap(*this, Act)) { RefreshConsole(); return; }
 	PanelAct(Act);
+	RefreshConsole();
+}
+
+void ABpPawn::ShowOnPc()
+{
+	ABpTable* Table = WristTable.Get();
+	if (!Table) return;
+	FString Where;
+	FBpFollowPlace Place = Table->RestingPlace(Where);
+	if (Place.Say.IsEmpty()) Place.Say = Where;
+	ConsoleBarWords = TEXT("Sending the place to your PC…");
+	ConsoleBarWordsUntil = FPlatformTime::Seconds() + 6.0;
+	RefreshConsole();
+	TWeakObjectPtr<ABpPawn> Self(this);
+	FBpLinkModule::Get().ShowOnPc(Place, [Self](bool bOk, const FString& Words)
+	{
+		ABpPawn* Pawn = Self.Get();
+		if (!Pawn) return;
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: show on PC: %s"), *Words);
+		Pawn->ConsoleBarWords = Words;
+		Pawn->ConsoleBarWordsUntil = FPlatformTime::Seconds() + 6.0;
+		Pawn->RefreshConsole();
+		// The words go back to the status when their time is up: one redraw, by timer.
+		if (UWorld* World = Pawn->GetWorld())
+		{
+			FTimerHandle Once;
+			World->GetTimerManager().SetTimer(Once, FTimerDelegate::CreateWeakLambda(Pawn, [Pawn]() { Pawn->ConsoleBarWords.Reset(); Pawn->RefreshConsole(); }), 6.1f, false);
+		}
+	});
+}
+
+void ABpPawn::TickConsoleClock()
+{
+	// The SCAN page's clocks, once a second while it is open; the redraw happens only when a word changed (RefreshConsole's key).
+	if (!bConsoleOpen || ConsolePageKey != TEXT("scan"))
+	{
+		GetWorldTimerManager().ClearTimer(ConsoleClockTimer);
+		return;
+	}
 	RefreshConsole();
 }
 

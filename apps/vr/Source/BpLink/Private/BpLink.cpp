@@ -21,6 +21,13 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Engine/Engine.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/DateTime.h"
+#include "Misc/Guid.h"
+#if PLATFORM_ANDROID
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 DEFINE_LOG_CATEGORY(LogBpLink);
 
@@ -28,9 +35,48 @@ IMPLEMENT_MODULE(FBpLinkModule, BpLink)
 
 namespace
 {
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> MakeGet(const FString& Url, const TCHAR* Accept)
+	/**
+	 * The device token (table link v2, night two W2a): once this headset is paired it goes out as `Authorization: Bearer`
+	 * on EVERY request, cable and Wi-Fi alike (table-link-v2.md section 8). It is never logged; the console shows its last
+	 * four characters. A request that carried it and answered 401 (the tether's "pair again") raises GUnauthorized on the
+	 * game thread, and the link's tick forgets the token.
+	 */
+	FString GToken;
+	bool GUnauthorized = false;
+	/** A route is up (cable or Wi-Fi): the pollers run only then, or from the bundle. */
+	bool GRouteLive = false;
+	/** The LAN door forwards /plan with no query (lan-door.ts), so over Wi-Fi the plan is asked without ?layout=islands. */
+	bool GPlanIslands = true;
+	/** A read found no PC (a connection that did not connect): the link's tick asks /api/health at once. */
+	bool GProbeNow = false;
+	/** -BpLinkUrl= (or BP_LINK_URL) when it names a server: the chooser asks only it. */
+	FString GExplicitUrl;
+
+	/** Every BpLink request starts here: the verb, the URL, and the token when there is one. */
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> NewRequest()
 	{
 		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+		if (!GToken.IsEmpty())
+		{
+			Request->SetHeader(TEXT("Authorization"), TEXT("Bearer ") + GToken);
+			const uint32 Sent = GetTypeHash(GToken);
+			// A request that rebinds this (the /stream read) gives it up; the next request with the token still reports.
+			Request->OnStatusCodeReceived().BindLambda([Sent](FHttpRequestPtr, int32 Code)
+			{
+				if (Code != 401) return;
+				FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Sent](float)
+				{
+					if (!GToken.IsEmpty() && GetTypeHash(GToken) == Sent) GUnauthorized = true;
+					return false;
+				}));
+			});
+		}
+		return Request;
+	}
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> MakeGet(const FString& Url, const TCHAR* Accept)
+	{
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 		Request->SetVerb(TEXT("GET"));
 		Request->SetURL(Url);
 		Request->SetHeader(TEXT("Accept"), Accept);
@@ -240,8 +286,17 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		FBpLinkSnapshot Snapshot;
 		if (!bConnected || !Response.IsValid() || Response->GetResponseCode() != 200)
 		{
+			const int32 Code = Response.IsValid() ? Response->GetResponseCode() : 0;
 			UE_LOG(LogBpLink, Error, TEXT("BpLink: GET %s/structure failed (connected=%d, status=%d). Is `npm run server` running?"),
-				*Root, bConnected, Response.IsValid() ? Response->GetResponseCode() : 0);
+				*Root, bConnected, Code);
+			// The PC answered and refused this product (404, 403): a product problem, not a lost link. The table keeps the link.
+			// The PC did not answer while a route was up: the link's tick asks /api/health now, and two misses go to the bundle.
+			if (Code > 0 || GRouteLive)
+			{
+				if (Code == 0) GProbeNow = true;
+				OnDone(false, Snapshot);
+				return;
+			}
 			// No server (a headset with no PC): the build's bundled snapshot, when it has one for this product.
 			const bool bBundled = FBpLinkClient::ReadBundle(Slug, Snapshot);
 			OnDone(bBundled, Snapshot);
@@ -268,7 +323,9 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// into FBpAppStructure. A failed or unparseable answer logs its own Error and the fetch goes on: structure, events
 		// and rev still stand, and bHasPlan stays false. Snapshot is MOVED into this continuation as into the /stream one.
 		// The islands view: the server spaces wings and rooms apart for the table (VR computes no layout of its own).
-		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"));
+		// Over Wi-Fi the LAN door forwards /plan only with no query (lan-door.ts VERBS): there the default layout is asked.
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = GPlanIslands ? MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"))
+			: MakeGet(Root + TEXT("/plan"), TEXT("application/json"));
 		TrackProductRequest(Plan);
 		Plan->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Gen, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr PlanResponse, bool bPlanConnected) mutable
 		{
@@ -612,7 +669,15 @@ void FBpLinkModule::StartupModule()
 	// finding: libcurl error 7 in the cook log). BpLink.Fetch still asks on demand.
 	if (!IsRunningCommandlet())
 	{
-		FetchProduct();
+		// The link (night two W2a): the saved pairing and doors, then the route. -BpLinkUrl=bundle reads the bundle at once;
+		// otherwise nothing is read until /api/health answered on a route (or none did, and the bundle stands in).
+		LoadLink();
+		if (LinkStatus.bBundleOnly)
+		{
+			LinkStatus.bDecided = true;
+			FetchProduct();
+		}
+		LinkTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickLink), 0.25f);
 		ScanTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickScanPoll), 0.1f);
 		// The shared focus: hello, follow and the poll (FollowPollS), on the same core ticker.
 		FollowTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateRaw(this, &FBpLinkModule::TickFollow), 0.1f);
@@ -623,6 +688,8 @@ void FBpLinkModule::StartupModule()
 
 void FBpLinkModule::ShutdownModule()
 {
+	FTSTicker::GetCoreTicker().RemoveTicker(LinkTicker);
+	LinkStatusDelegate.Clear();
 	FTSTicker::GetCoreTicker().RemoveTicker(ScanTicker);
 	FTSTicker::GetCoreTicker().RemoveTicker(FollowTicker);
 	FTSTicker::GetCoreTicker().RemoveTicker(OnboardingTicker);
@@ -652,6 +719,8 @@ namespace
 
 bool FBpLinkModule::TickScanPoll(float)
 {
+	// No route yet (the first /api/health is out) and not the bundle: nothing to ask.
+	if (!GFromBundle && !GRouteLive) return true;
 	const double Now = FPlatformTime::Seconds();
 	if (ScanPartsOut == 0 && Now >= NextScanPollS)
 	{
@@ -876,7 +945,7 @@ void FBpLinkModule::FetchBrief(const FString& ProposalId, TFunction<void(bool, c
 		return;
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("GET"));
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/brief"));
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
@@ -931,7 +1000,7 @@ void FBpLinkModule::SendDecision(const TCHAR* Verb, const FString& ProposalId, T
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
 	DecisionsOut.Add(ProposalId);
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/proposals/") + FGenericPlatformHttp::UrlEncode(ProposalId) + TEXT("/") + What);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -980,7 +1049,7 @@ void FBpLinkModule::ApproveDecisions(const TArray<FString>& ProposalIds, TFuncti
 	FString Text;
 	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
 	const FString Slug = GetProductSlug();
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + Slug + TEXT("/proposals/approve"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -1028,22 +1097,17 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 	TFunction<void(int32, const FString&)> OnDone, const FString& InFocus)
 {
 	const FString Focus = InFocus.TrimStartAndEnd();
-	// Kettle's scans are simulated; a live product's run a real lens scan on a real repo. The owner's ruling (FAD, relaxed
-	// 2026-11-08): a plain scan still never starts on a live product from the table, a directed one (a saved focus, confirmed by
-	// a second pinch) may. The bundle has no server to keep either.
+	// Kettle's scans are simulated; a live product's run a real lens scan on a real repo. The owner's ruling (2026-11-09, table
+	// link v2 section 0): a plain, a directed and an every-lens scan may start on a live product from the table, each behind the
+	// table's second press (the console's armed row, the wrist's START). The bundle has no server to keep any.
 	const auto Refuse = [this, &OnDone](const FString& Why)
 	{
 		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused POST %s/scans: %s"), *GetProductSlug(), *Why);
 		if (OnDone) OnDone(0, Why);
 	};
-	if (GFromBundle)
+	if (GFromBundle || !GRouteLive)
 	{
 		Refuse(TEXT("The table reads the build's bundled snapshot, and no server keeps a scan"));
-		return;
-	}
-	if (!IsKettle() && Focus.IsEmpty())
-	{
-		Refuse(FString::Printf(TEXT("%s is a live product: the table starts only a directed scan on it, never a plain one"), *GetProductSlug()));
 		return;
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
@@ -1062,17 +1126,51 @@ void FBpLinkModule::PostScan(const FString& Lens, const FString& Kind, const FSt
 	FString Text;
 	FJsonSerializer::Serialize(Body, TJsonWriterFactory<>::Create(&Text));
 
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + TEXT("/scans"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
 	Request->SetContentAsString(Text);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST %s/scans %s"), *GetProductSlug(), *Text);
 	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
 		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->NextScanPollS = 0.0;
 		if (OnDone) OnDone(Status, Response.IsValid() ? Response->GetContentAsString() : FString());
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::CancelScan(const FString& JobId, TFunction<void(int32, const FString&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive || JobId.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: refused DELETE %s/scans/%s: no PC keeps a job here"), *GetProductSlug(), *JobId);
+		if (OnDone) OnDone(0, TEXT("No PC is linked, so there is no job to cancel."));
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	const FString Slug = GetProductSlug();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("DELETE"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + Slug + TEXT("/scans/") + FGenericPlatformHttp::UrlEncode(JobId));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: DELETE %s/scans/%s (cancel)"), *Slug, *JobId);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Slug, JobId](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		FString JobStatus;
+		TSharedPtr<FJsonObject> Json;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid()) Json->TryGetStringField(TEXT("status"), JobStatus);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: DELETE %s/scans/%s answered %d%s"), *Slug, *JobId, Status, JobStatus.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" (the job is %s)"), *JobStatus));
+		if (FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Module->NextScanPollS = 0.0;
+		const FString Words = Status == 200 ? FString(TEXT("Cancelled on your PC."))
+			: Status == 404 ? FString(TEXT("That job is gone from the PC already."))
+			: Status == 403 ? FString(TEXT("This headset may not cancel scans: pair it again with the scan scope."))
+			: ScanAnswerWords(Status, Body);
+		if (OnDone) OnDone(Status, Words);
 	});
 	Request->ProcessRequest();
 }
@@ -1085,7 +1183,7 @@ FString FBpLinkModule::ScanAnswerWords(int32 Status, const FString& Body)
 	if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid()) Json->TryGetStringField(TEXT("error"), Error);
 	// The LAN door refuses with a bare 403 whatever the cause (lan-door.ts), so this device cannot tell a missing `scan` scope
 	// from a revoked pairing; a standing order's 403 carries its own words.
-	if (Status == 403) return Error.IsEmpty() ? FString(TEXT("This headset may not start scans. On the PC, pair it again with the scan scope: npm run server -- pair approve <code> --scope read,scan")) : Error;
+	if (Status == 403) return Error.IsEmpty() ? FString(TEXT("This headset may not start scans. PAIR it again (console, PC LINK) and approve it with the scan scope: npm run server -- pair approve <code> --scope standup,place,focus,decide,scan")) : Error;
 	if (Status == 429) return TEXT("The scan queue is full. Try again when one has finished.");
 	if (Error == TEXT("unknown-lens")) return TEXT("This product has no such lens enabled.");
 	if (Error == TEXT("no-scan-method")) return TEXT("That lens has no way to scan yet: set it up on the PC first.");
@@ -1097,7 +1195,7 @@ FString FBpLinkModule::ScanAnswerWords(int32 Status, const FString& Body)
 
 bool FBpLinkModule::HasPcLink() const
 {
-	return !GFromBundle && ScanState.bHasJobs;
+	return !GFromBundle && GRouteLive && ScanState.bHasJobs;
 }
 
 bool FBpLinkModule::HasSampleFocuses() const
@@ -1163,7 +1261,7 @@ void FBpLinkModule::SendWave(const FString& Verb, const FString& Path, const FSt
 		return;
 	}
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(Verb);
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/products/") + GetProductSlug() + Path);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -1474,7 +1572,7 @@ void FBpLinkModule::SendPublish(const FBpFollowPlace& Place)
 		return;
 	}
 
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + FocusRoute);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -1538,8 +1636,8 @@ void FBpLinkModule::SetFollowing(bool bOn)
 
 bool FBpLinkModule::TickFollow(float)
 {
-	// The bundle has no server to keep a focus record.
-	if (GFromBundle) return true;
+	// The bundle has no server to keep a focus record; with no route there is no one to ask.
+	if (GFromBundle || !GRouteLive) return true;
 	const double Now = FPlatformTime::Seconds();
 	if (!bFollowOpOut)
 	{
@@ -1592,7 +1690,7 @@ void FBpLinkModule::SendFollowOp(const TCHAR* Op)
 		return;
 	}
 
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + FocusRoute);
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -1726,8 +1824,8 @@ namespace
 
 bool FBpLinkModule::TickOnboarding(float)
 {
-	// The bundle has no server, so no other product and no onboarding.
-	if (GFromBundle) return true;
+	// The bundle has no server, so no other product and no onboarding; nor does a table with no route.
+	if (GFromBundle || !GRouteLive) return true;
 	const double Now = FPlatformTime::Seconds();
 	if (!bProductsOut && Now >= NextProductsPollS)
 	{
@@ -2432,7 +2530,7 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 	Json->SetStringField(TEXT("text"), Text);
 	FString Wire;
 	FJsonSerializer::Serialize(Json, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Wire));
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
 	Request->SetVerb(TEXT("POST"));
 	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/turn"));
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
@@ -2466,6 +2564,904 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 		}
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"));
 		if (OnDone) OnDone(Turn);
+	});
+	Request->ProcessRequest();
+}
+
+// ---- The PC link (table link v2, night two W2a: docs/concepts/vr-light-table/table-link-v2.md) -----------------------------
+// The owner, 2026-11-09: "the Quest pairs with the PC over Wi-Fi by a code, so scans, stand-ups and your real projects work
+// untethered." The route, in order: an explicit -BpLinkUrl (or BP_LINK_URL); the cable (loopback :3100, adb reverse) if
+// GET /api/health answers; the saved Wi-Fi door (learned from GET /lan/where) if it answers; else the build's bundled sample.
+// The probe is a timer (LinkProbeAwayS on the bundle, LinkProbeLinkedS linked), never a per-frame cost, every request is
+// asynchronous with a LinkProbeTimeoutS limit, and a dead Wi-Fi door backs off (5 s doubling to 60 s). When the PC appears the
+// table moves from the bundle to the live link with no restart; when it goes (two misses) the table falls back and says so
+// once; a new `boot` is a restarted PC, and everything is read again. The pairing is section 4's ceremony; the token is sent as
+// Authorization: Bearer on every request (NewRequest), saved in GameUserSettings beside the audio levels, never logged.
+
+namespace
+{
+	const TCHAR* const LinkSection = TEXT("/Script/BpLink.BpLinkSettings");
+	const TCHAR* const DefaultCableUrl = TEXT("http://127.0.0.1:3100");
+
+	FString Trimmed(FString Url)
+	{
+		Url.TrimStartAndEndInline();
+		while (Url.EndsWith(TEXT("/"))) Url.LeftChopInline(1);
+		return Url;
+	}
+
+	/** The host of an http URL ("http://10.0.0.143:3101" -> "10.0.0.143:3101"). */
+	FString HostOf(const FString& Url)
+	{
+		FString Host = Url;
+		Host.RemoveFromStart(TEXT("http://"));
+		Host.RemoveFromStart(TEXT("https://"));
+		int32 Slash = INDEX_NONE;
+		if (Host.FindChar(TEXT('/'), Slash)) Host.LeftInline(Slash);
+		return Host;
+	}
+
+	bool IsLoopback(const FString& Url)
+	{
+		const FString Host = HostOf(Url).ToLower();
+		return Host.StartsWith(TEXT("127.")) || Host.StartsWith(TEXT("localhost")) || Host.StartsWith(TEXT("[::1]"));
+	}
+
+	/** 24 bytes from the platform's RNG as 48 hex characters (section 4: 22..128 of [A-Za-z0-9_-], 128 bits or more). Android
+	 *  reads /dev/urandom; elsewhere two GUIDs (CoCreateGuid on Windows: random version-4 GUIDs from the system RNG). */
+	FString MakeNonce()
+	{
+		uint8 Bytes[24] = {};
+		bool bOk = false;
+#if PLATFORM_ANDROID
+		const int Fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+		if (Fd >= 0)
+		{
+			bOk = read(Fd, Bytes, sizeof(Bytes)) == static_cast<ssize_t>(sizeof(Bytes));
+			close(Fd);
+		}
+#endif
+		if (!bOk)
+		{
+			for (int32 Part = 0; Part < 2; ++Part)
+			{
+				const FGuid Guid = FGuid::NewGuid();
+				FMemory::Memcpy(Bytes + Part * 12, &Guid, 12);
+			}
+		}
+		return BytesToHex(Bytes, UE_ARRAY_COUNT(Bytes)).ToLower();
+	}
+
+	/** The name this headset asks to be paired as (section 4: 1..40 of [A-Za-z0-9_.-]): the device's make and model on a headset
+	 *  ("Oculus|Quest 3S" -> "oculus-quest-3s"), "pc-table" on the PC. */
+	FString PairDeviceName()
+	{
+#if PLATFORM_ANDROID
+		const FString Raw = FPlatformMisc::GetDeviceMakeAndModel();
+#else
+		const FString Raw = TEXT("pc-table");
+#endif
+		FString Out;
+		for (const TCHAR C : Raw.ToLower())
+		{
+			const bool bKeep = FChar::IsAlnum(C) || C == TEXT('_') || C == TEXT('.') || C == TEXT('-');
+			if (bKeep) Out += C;
+			else if (!Out.EndsWith(TEXT("-"))) Out += TEXT('-');
+		}
+		Out = Out.Left(40);
+		while (Out.EndsWith(TEXT("-"))) Out.LeftChopInline(1);
+		return Out.IsEmpty() ? FString(TEXT("quest")) : Out;
+	}
+
+	/** The pairing id in `<device>:<pairing id>` (what `pair revoke` takes). */
+	FString PairingIdOf(const FString& Device)
+	{
+		FString Id;
+		return Device.Split(TEXT(":"), nullptr, &Id, ESearchCase::CaseSensitive, ESearchDir::FromEnd) ? Id : Device;
+	}
+
+	FString ErrorOf(const FString& Body)
+	{
+		FString Error;
+		TSharedPtr<FJsonObject> Json;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid()) Json->TryGetStringField(TEXT("error"), Error);
+		return Error;
+	}
+
+	/** A pairing refusal (section 4's causes) in words for the console. */
+	FString PairRefusalWords(int32 Status, const FString& Body)
+	{
+		const FString Error = ErrorOf(Body);
+		if (Status == 0) return TEXT("The PC did not answer. Is `npm run server` running?");
+		if (Status == 404) return TEXT("The PC's server runs without pairing. On the PC: npm run server -- --lan (or --pair), then PAIR again.");
+		if (Error.Contains(TEXT("no-window"))) return TEXT("The PC has no pairing window open. On the PC: npm run server -- pair open, then PAIR again.");
+		if (Error.Contains(TEXT("pending-cap"))) return TEXT("Too many codes are waiting on the PC. Wait two minutes, then PAIR again.");
+		if (Error.Contains(TEXT("paired-cap"))) return TEXT("The PC holds 8 pairings already. On the PC: npm run server -- pair list, revoke one, then PAIR again.");
+		if (Error.Contains(TEXT("claim-denied"))) return TEXT("The PC refused this code (pair deny).");
+		if (Error.Contains(TEXT("claim-unknown"))) return TEXT("The PC no longer knows this code: it lapsed. PAIR again.");
+		if (Status == 403) return Error.IsEmpty() ? FString(TEXT("The PC refused the pairing.")) : Error;
+		return Error.IsEmpty() ? FString::Printf(TEXT("The PC answered %d."), Status) : Error;
+	}
+
+	FBpLinkModule* LinkModule() { return FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")); }
+
+	FAutoConsoleCommand GPairCommand(TEXT("BpLink.Pair"),
+		TEXT("BpLink.Pair: ask the PC for a 6-character code (GET /lan/where, POST /pair), show it, and claim the token once the owner approves it: npm run server -- pair approve <code> --scope standup,place,focus,decide,scan. BpLink.Pair cancel stops waiting."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			FBpLinkModule* Module = LinkModule();
+			if (!Module) return;
+			if (Args.Num() > 0 && Args[0] == TEXT("cancel")) Module->CancelPair();
+			else Module->Pair();
+		}));
+	FAutoConsoleCommand GUnpairCommand(TEXT("BpLink.Unpair"), TEXT("BpLink.Unpair: forget this headset's token (the PC keeps the pairing until `npm run server -- pair revoke <id>`)."),
+		FConsoleCommandDelegate::CreateLambda([]() { if (FBpLinkModule* Module = LinkModule()) Module->Unpair(); }));
+	FAutoConsoleCommand GWhereCommand(TEXT("BpLink.Where"), TEXT("BpLink.Where: GET /lan/where over the cable and log the PC's Wi-Fi door; then the link as it stands."),
+		FConsoleCommandDelegate::CreateLambda([]() { if (FBpLinkModule* Module = LinkModule()) Module->Where(); }));
+	FAutoConsoleCommand GLinkCommand(TEXT("BpLink.Link"), TEXT("BpLink.Link: log the route, the doors and the pairing (never the token: its last 4 characters)."),
+		FConsoleCommandDelegate::CreateLambda([]()
+		{
+			FBpLinkModule* Module = LinkModule();
+			if (!Module) return;
+			const FBpLinkStatus& S = Module->GetLinkStatus();
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: link %s (%s) base=%s cable=%s wifi=%s boot=%s pair=%d device=%s token=%s scopes=[%s] until %s; %s"),
+				*FBpLinkModule::RouteWord(S), *FBpLinkModule::RouteWords(S), S.BaseUrl.IsEmpty() ? TEXT("-") : *S.BaseUrl, *S.CableUrl, S.WifiUrl.IsEmpty() ? TEXT("-") : *S.WifiUrl,
+				S.Boot.IsEmpty() ? TEXT("-") : *S.Boot, static_cast<int32>(S.Pair), S.Device.IsEmpty() ? TEXT("-") : *S.Device, S.TokenTail.IsEmpty() ? TEXT("none") : *(TEXT("...") + S.TokenTail),
+				*FString::Join(S.Scopes, TEXT(",")), S.ExpiresAt.IsEmpty() ? TEXT("-") : *S.ExpiresAt, *S.Message);
+		}));
+}
+
+const TCHAR* const FBpLinkModule::PairScopes = TEXT("standup,place,focus,decide,scan");
+
+FString FBpLinkModule::RouteWord(const FBpLinkStatus& S)
+{
+	if (S.Pair == EBpPairState::Waiting || S.Pair == EBpPairState::Asking) return TEXT("PAIRING");
+	return S.Route == EBpLinkRoute::Cable ? TEXT("CABLE") : S.Route == EBpLinkRoute::Wifi ? TEXT("WI-FI") : TEXT("OFFLINE");
+}
+
+FString FBpLinkModule::RouteWords(const FBpLinkStatus& S)
+{
+	if (S.Route == EBpLinkRoute::Cable) return TEXT("On the cable");
+	if (S.Route == EBpLinkRoute::Wifi) return TEXT("On Wi-Fi");
+	if (!S.bDecided) return TEXT("Looking for your PC…");
+	return S.bBundleOnly ? TEXT("Not connected: this build reads its sample") : TEXT("Not connected: showing the sample");
+}
+
+FString FBpLinkModule::ScopeWords(const FString& Scope)
+{
+	if (Scope == TEXT("read")) return TEXT("read your projects and their scans");
+	if (Scope == TEXT("standup")) return TEXT("run the stand-up with the companion");
+	if (Scope == TEXT("place")) return TEXT("hand places to the PC");
+	if (Scope == TEXT("focus")) return TEXT("follow and share the place");
+	if (Scope == TEXT("decide")) return TEXT("make your decisions");
+	if (Scope == TEXT("scan")) return TEXT("start and cancel scans");
+	return Scope;
+}
+
+void FBpLinkModule::LoadLink()
+{
+	FString Url;
+	if (!FParse::Value(FCommandLine::Get(), TEXT("BpLinkUrl="), Url) || Url.IsEmpty()) Url = FPlatformMisc::GetEnvironmentVariable(TEXT("BP_LINK_URL"));
+	Url = Trimmed(Url);
+	LinkStatus.bBundleOnly = Url == BundleUrl;
+	LinkStatus.bExplicit = !Url.IsEmpty();
+	GExplicitUrl = LinkStatus.bBundleOnly ? FString() : Url;
+	FString Token, Scopes;
+	if (GConfig)
+	{
+		GConfig->GetString(LinkSection, TEXT("Token"), Token, GGameUserSettingsIni);
+		GConfig->GetString(LinkSection, TEXT("Device"), LinkStatus.Device, GGameUserSettingsIni);
+		GConfig->GetString(LinkSection, TEXT("Scopes"), Scopes, GGameUserSettingsIni);
+		GConfig->GetString(LinkSection, TEXT("ExpiresAt"), LinkStatus.ExpiresAt, GGameUserSettingsIni);
+		GConfig->GetString(LinkSection, TEXT("CableUrl"), LinkStatus.CableUrl, GGameUserSettingsIni);
+		GConfig->GetString(LinkSection, TEXT("WifiUrl"), LinkStatus.WifiUrl, GGameUserSettingsIni);
+	}
+	// -BpLinkCable= moves the cable for a PC check (a server on a free port), and is not saved.
+	FString Cable;
+	if (FParse::Value(FCommandLine::Get(), TEXT("BpLinkCable="), Cable) && !Cable.IsEmpty()) LinkStatus.CableUrl = Cable;
+	LinkStatus.CableUrl = Trimmed(LinkStatus.CableUrl.IsEmpty() ? FString(DefaultCableUrl) : LinkStatus.CableUrl);
+	LinkStatus.WifiUrl = Trimmed(LinkStatus.WifiUrl);
+	Scopes.ParseIntoArray(LinkStatus.Scopes, TEXT(","));
+	// A token past its end is not kept (the PC refuses it anyway).
+	FDateTime Until;
+	if (!Token.IsEmpty() && !LinkStatus.ExpiresAt.IsEmpty() && FDateTime::ParseIso8601(*LinkStatus.ExpiresAt, Until) && Until < FDateTime::UtcNow()) Token.Reset();
+	GToken = Token;
+	LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+	LinkStatus.TokenTail = GToken.Right(4);
+	if (GToken.IsEmpty()) { LinkStatus.Device.Reset(); LinkStatus.Scopes.Reset(); LinkStatus.ExpiresAt.Reset(); }
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: link settings: %s; cable %s; Wi-Fi door %s; %s"),
+		LinkStatus.bBundleOnly ? TEXT("-BpLinkUrl=bundle (the sample only)") : LinkStatus.bExplicit ? *FString::Printf(TEXT("-BpLinkUrl=%s (only it is asked)"), *GExplicitUrl) : TEXT("the route is chosen"),
+		*LinkStatus.CableUrl, LinkStatus.WifiUrl.IsEmpty() ? TEXT("none known") : *LinkStatus.WifiUrl,
+		GToken.IsEmpty() ? TEXT("not paired") : *FString::Printf(TEXT("paired as %s (token ...%s)"), *LinkStatus.Device, *LinkStatus.TokenTail));
+}
+
+void FBpLinkModule::SaveLink() const
+{
+	if (!GConfig) return;
+	GConfig->SetString(LinkSection, TEXT("Token"), *GToken, GGameUserSettingsIni);
+	GConfig->SetString(LinkSection, TEXT("Device"), *LinkStatus.Device, GGameUserSettingsIni);
+	GConfig->SetString(LinkSection, TEXT("Scopes"), *FString::Join(LinkStatus.Scopes, TEXT(",")), GGameUserSettingsIni);
+	GConfig->SetString(LinkSection, TEXT("ExpiresAt"), *LinkStatus.ExpiresAt, GGameUserSettingsIni);
+	GConfig->SetString(LinkSection, TEXT("WifiUrl"), *LinkStatus.WifiUrl, GGameUserSettingsIni);
+	// The cable's URL is saved only when it is not the default (a -BpLinkCable run does not move the headset's cable).
+	if (!FCString::Strifind(FCommandLine::Get(), TEXT("BpLinkCable=")))
+	{
+		GConfig->SetString(LinkSection, TEXT("CableUrl"), *LinkStatus.CableUrl, GGameUserSettingsIni);
+	}
+	GConfig->Flush(false, GGameUserSettingsIni);
+}
+
+void FBpLinkModule::ChangedLink()
+{
+	++LinkStatus.Serial;
+	LinkStatusDelegate.Broadcast(LinkStatus);
+}
+
+TArray<TPair<FString, EBpLinkRoute>> FBpLinkModule::LinkCandidates() const
+{
+	TArray<TPair<FString, EBpLinkRoute>> Out;
+	if (!GExplicitUrl.IsEmpty())
+	{
+		Out.Emplace(GExplicitUrl, IsLoopback(GExplicitUrl) ? EBpLinkRoute::Cable : EBpLinkRoute::Wifi);
+		return Out;
+	}
+	Out.Emplace(LinkStatus.CableUrl, EBpLinkRoute::Cable);
+	// The door refuses every request without a live pairing's token: without one it is not worth asking.
+	if (!LinkStatus.WifiUrl.IsEmpty() && !GToken.IsEmpty()) Out.Emplace(LinkStatus.WifiUrl, EBpLinkRoute::Wifi);
+	return Out;
+}
+
+bool FBpLinkModule::TickLink(float)
+{
+	if (GUnauthorized)
+	{
+		GUnauthorized = false;
+		if (!GToken.IsEmpty()) ForgetToken(TEXT("The PC no longer knows this headset (it answered 401): pair again."));
+	}
+	if (LinkStatus.bBundleOnly) return true;
+	const double Now = FPlatformTime::Seconds();
+	if (GProbeNow)
+	{
+		GProbeNow = false;
+		NextProbeS = FMath::Min(NextProbeS, Now);
+	}
+	if (!bProbeOut && Now >= NextProbeS) ProbeLink();
+	if (LinkStatus.Pair == EBpPairState::Waiting && !bClaimOut && Now >= NextClaimS)
+	{
+		FDateTime Until;
+		if (FDateTime::ParseIso8601(*LinkStatus.CodeExpiresAt, Until) && FDateTime::UtcNow() > Until + FTimespan::FromSeconds(5.0))
+		{
+			UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair: code %s lapsed at %s before the PC approved it"), *LinkStatus.Code, *LinkStatus.CodeExpiresAt);
+			LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+			LinkStatus.Code.Reset();
+			LinkStatus.Message = TEXT("The code lapsed before the PC approved it (2 minutes). PAIR again.");
+			LinkStatus.bMessageBad = true;
+			ChangedLink();
+		}
+		else SendClaim();
+	}
+	if (LinkStatus.Pair == EBpPairState::Paired && LinkStatus.Route != EBpLinkRoute::None && Now >= NextPairMeS) AskPairMe();
+	return true;
+}
+
+void FBpLinkModule::ProbeLink()
+{
+	if (LinkStatus.Route == EBpLinkRoute::None)
+	{
+		ProbeCandidate(0);
+		return;
+	}
+	bProbeOut = true;
+	const FString Url = LinkStatus.BaseUrl;
+	const EBpLinkRoute Route = LinkStatus.Route;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url + TEXT("/api/health"), TEXT("application/json"));
+	Request->SetTimeout(LinkProbeTimeoutS);
+	Request->OnProcessRequestComplete().BindLambda([Url, Route](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module) return;
+		Module->bProbeOut = false;
+		// The route moved meanwhile (a loss, or another link): this answer is about the old one.
+		if (Module->LinkStatus.Route != Route || Module->LinkStatus.BaseUrl != Url) return;
+		const double Now = FPlatformTime::Seconds();
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		FString Boot;
+		TSharedPtr<FJsonObject> Json;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid()) Json->TryGetStringField(TEXT("boot"), Boot);
+		if (Status == 200 || Status == 401)
+		{
+			Module->ProbeMisses = 0;
+			Module->NextProbeS = Now + LinkProbeLinkedS;
+			if (!Boot.IsEmpty() && !Module->LinkStatus.Boot.IsEmpty() && Boot != Module->LinkStatus.Boot)
+			{
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: the PC restarted (boot %s -> %s): reading everything again"), *Module->LinkStatus.Boot, *Boot);
+				Module->LinkStatus.Boot = Boot;
+				Module->RefetchAll(TEXT("the PC restarted"));
+				Module->ChangedLink();
+			}
+			else if (!Boot.IsEmpty()) Module->LinkStatus.Boot = Boot;
+			return;
+		}
+		// Over Wi-Fi a bare 403 on /api/health (any live pairing may ask it) is a pairing the PC no longer has.
+		if (Route == EBpLinkRoute::Wifi && Status == 403)
+		{
+			Module->ForgetToken(TEXT("The PC no longer knows this headset (the Wi-Fi door refused it): pair again on the cable."));
+			return;
+		}
+		if (++Module->ProbeMisses >= 2)
+		{
+			Module->LinkLost(Status == 0 ? FString(TEXT("no answer")) : FString::Printf(TEXT("/api/health answered %d"), Status));
+			return;
+		}
+		// One miss: asked again soon, before the table is told.
+		Module->NextProbeS = Now + 2.0;
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ProbeCandidate(int32 Index)
+{
+	const TArray<TPair<FString, EBpLinkRoute>> Candidates = LinkCandidates();
+	const double Now = FPlatformTime::Seconds();
+	// A Wi-Fi door that has not answered waits out its backoff.
+	while (Candidates.IsValidIndex(Index) && Candidates[Index].Value == EBpLinkRoute::Wifi && GExplicitUrl.IsEmpty() && Now < WifiRetryS) ++Index;
+	if (!Candidates.IsValidIndex(Index))
+	{
+		bProbeOut = false;
+		NextProbeS = Now + LinkProbeAwayS;
+		if (!LinkStatus.bDecided)
+		{
+			// The first decision: no PC answers, so the build's sample stands in (and the probe keeps looking).
+			LinkStatus.bDecided = true;
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: no PC answered (%s); the table reads the build's sample and keeps looking every %.0f s"),
+				*FString::JoinBy(Candidates, TEXT(", "), [](const TPair<FString, EBpLinkRoute>& C) { return C.Key; }), LinkProbeAwayS);
+			LinkStatus.Message = TEXT("No PC answered. Plug in the cable (adb reverse) or start the PC's server.");
+			LinkStatus.bMessageBad = false;
+			ReadBundleNow();
+			ChangedLink();
+		}
+		return;
+	}
+	bProbeOut = true;
+	const FString Url = Candidates[Index].Key;
+	const EBpLinkRoute Route = Candidates[Index].Value;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url + TEXT("/api/health"), TEXT("application/json"));
+	Request->SetTimeout(LinkProbeTimeoutS);
+	Request->OnProcessRequestComplete().BindLambda([Url, Route, Index](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module) return;
+		// Linked by some other path meanwhile: nothing to decide.
+		if (Module->LinkStatus.Route != EBpLinkRoute::None) { Module->bProbeOut = false; return; }
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		FString Boot;
+		TSharedPtr<FJsonObject> Json;
+		bool bOk = false;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid())
+		{
+			Json->TryGetBoolField(TEXT("ok"), bOk);
+			Json->TryGetStringField(TEXT("boot"), Boot);
+		}
+		// The tether answers 401 for a dead token before any route: the PC is there (the token goes, the link stands).
+		if (bOk || (Status == 401 && Route == EBpLinkRoute::Cable))
+		{
+			Module->bProbeOut = false;
+			if (Route == EBpLinkRoute::Wifi) { Module->WifiBackoffS = 5.f; Module->WifiRetryS = 0.0; }
+			Module->LinkUp(Url, Route, Boot);
+			return;
+		}
+		if (Route == EBpLinkRoute::Wifi)
+		{
+			if (Status == 403)
+			{
+				Module->bProbeOut = false;
+				Module->ForgetToken(TEXT("The PC no longer knows this headset (the Wi-Fi door refused it): pair again on the cable."));
+				return;
+			}
+			Module->WifiRetryS = FPlatformTime::Seconds() + Module->WifiBackoffS;
+			UE_LOG(LogBpLink, Verbose, TEXT("BpLink: the Wi-Fi door %s did not answer (%d); asked again in %.0f s"), *Url, Status, Module->WifiBackoffS);
+			Module->WifiBackoffS = FMath::Min(Module->WifiBackoffS * 2.f, 60.f);
+		}
+		Module->ProbeCandidate(Index + 1);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::LinkUp(const FString& Url, EBpLinkRoute Route, const FString& Boot)
+{
+	const bool bWasDecided = LinkStatus.bDecided;
+	LinkStatus.Route = Route;
+	LinkStatus.BaseUrl = Url;
+	LinkStatus.Boot = Boot;
+	LinkStatus.bDecided = true;
+	LinkStatus.Message = FString::Printf(TEXT("%s: %s"), *RouteWords(LinkStatus), *HostOf(Url));
+	LinkStatus.bMessageBad = false;
+	GRouteLive = true;
+	GFromBundle = false;
+	// The LAN door forwards /plan with no query (lan-door.ts): the islands view is asked only on the cable.
+	GPlanIslands = Route == EBpLinkRoute::Cable || !GExplicitUrl.IsEmpty();
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>(Url);
+	GClient->SetBaseUrl(Url);
+	ProbeMisses = 0;
+	bLossSaid = false;
+	NextProbeS = FPlatformTime::Seconds() + LinkProbeLinkedS;
+	NextPairMeS = 0.0;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: linked %s at %s (boot %s)%s%s"), Route == EBpLinkRoute::Cable ? TEXT("on the cable") : TEXT("on Wi-Fi"), *Url, Boot.IsEmpty() ? TEXT("?") : *Boot,
+		bWasDecided ? TEXT(": the table leaves the sample for the live link") : TEXT(""), GToken.IsEmpty() ? TEXT("; not paired") : *FString::Printf(TEXT("; paired as %s"), *LinkStatus.Device));
+	if (!GPlanIslands) UE_LOG(LogBpLink, Log, TEXT("BpLink: over Wi-Fi the plan is read without ?layout=islands (the LAN door forwards /plan with no query): the default layout"));
+	RefetchAll(bWasDecided ? TEXT("linked again") : TEXT("linked"));
+	ChangedLink();
+}
+
+void FBpLinkModule::LinkLost(const FString& Why)
+{
+	if (LinkStatus.Route == EBpLinkRoute::None) return;
+	const FString Was = LinkStatus.BaseUrl;
+	LinkStatus.Route = EBpLinkRoute::None;
+	LinkStatus.BaseUrl.Reset();
+	LinkStatus.Boot.Reset();
+	GRouteLive = false;
+	ProbeMisses = 0;
+	NextProbeS = FPlatformTime::Seconds() + LinkProbeAwayS;
+	if (LinkStatus.Pair == EBpPairState::Asking || LinkStatus.Pair == EBpPairState::Waiting)
+	{
+		LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+		LinkStatus.Code.Reset();
+	}
+	LinkStatus.Message = TEXT("The PC stopped answering: the sample stands in until it is back.");
+	LinkStatus.bMessageBad = true;
+	if (!bLossSaid)
+	{
+		bLossSaid = true;
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: the PC stopped answering at %s (%s); the table falls back to the build's sample and looks again every %.0f s"), *Was, *Why, LinkProbeAwayS);
+	}
+	ReadBundleNow();
+	ChangedLink();
+}
+
+void FBpLinkModule::RefetchAll(const TCHAR* Why)
+{
+	// Whatever the old route still has out is dropped (the product generation), and every side is read from its start.
+	++GProductGen;
+	const int32 Cancelled = CancelProductRequests();
+	const int32 Serial = ScanState.Serial;
+	ScanState = FBpScanState();
+	ScanState.Serial = Serial + 1;
+	ScanPartsOut = 0;
+	for (uint32& Hash : ScanBodyHash) Hash = 0;
+	bScanBundled = false;
+	NextScanPollS = 0.0;
+	const int32 FocusSerial = FocusList.Serial;
+	FocusList = FBpFocusList();
+	FocusList.Serial = FocusSerial + 1;
+	Briefs.Reset();
+	bBriefsBundled = false;
+	DecisionsOut.Reset();
+	bWaveWriteOut = false;
+	ResetBuildup();
+	FeedsOut.Reset();
+	NextProductsPollS = NextOnboardingPollS = 0.0;
+	bProductsOut = bOnboardingOut = false;
+	bFollowSaid = false;
+	FollowRev = -1;
+	NextFollowPollS = NextFollowHelloS = 0.0;
+	bFollowPollOut = bFollowOpOut = bPublishOut = false;
+	bHasNextPublish = false;
+	bHasSharedSpot = false;
+	bCompanionTurnOut = false;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: %s: reading %s, its scans, the products and the shared focus from %s (%d requests of the old route dropped)"),
+		Why, *GetProductSlug(), *GClient->GetBaseUrl(), Cancelled);
+	ScanStateDelegate.Broadcast(ScanState);
+	FocusesDelegate.Broadcast(FocusList);
+	FetchProduct();
+}
+
+void FBpLinkModule::ReadBundleNow()
+{
+	++GProductGen;
+	CancelProductRequests();
+	GFromBundle = true;
+	const int32 Serial = ScanState.Serial;
+	ScanState = FBpScanState();
+	ScanState.Serial = Serial + 1;
+	ScanPartsOut = 0;
+	for (uint32& Hash : ScanBodyHash) Hash = 0;
+	bScanBundled = false;
+	NextScanPollS = 0.0;
+	const int32 FocusSerial = FocusList.Serial;
+	FocusList = FBpFocusList();
+	FocusList.Serial = FocusSerial + 1;
+	Briefs.Reset();
+	bBriefsBundled = false;
+	DecisionsOut.Reset();
+	ResetBuildup();
+	// The PC's products are not the sample's: the PROJECTS page lists what the bundle carries until the PC is back.
+	const int32 OnboardingSerial = Onboarding.Serial;
+	Onboarding = FBpOnboardingState();
+	Onboarding.Serial = OnboardingSerial + 1;
+	OnboardingDelegate.Broadcast(Onboarding);
+	ScanStateDelegate.Broadcast(ScanState);
+	FocusesDelegate.Broadcast(FocusList);
+	const FString Slug = GetProductSlug();
+	FBpLinkSnapshot Snapshot;
+	if (FBpLinkClient::ReadBundle(Slug, Snapshot))
+	{
+		LogProduct(Slug, Snapshot);
+		ReceiveSnapshot(true, Snapshot);
+	}
+	else if (bHasPlan)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: the build carries no sample of %s: the table keeps the plan it drew, read-only"), *Slug);
+	}
+	else
+	{
+		ReceiveSnapshot(false, Snapshot);
+	}
+}
+
+void FBpLinkModule::ForgetToken(const FString& Why)
+{
+	const FString Was = LinkStatus.Device;
+	GToken.Reset();
+	LinkStatus.TokenTail.Reset();
+	LinkStatus.Device.Reset();
+	LinkStatus.Scopes.Reset();
+	LinkStatus.ExpiresAt.Reset();
+	if (LinkStatus.Pair == EBpPairState::Paired) LinkStatus.Pair = EBpPairState::Unpaired;
+	LinkStatus.Message = Why;
+	LinkStatus.bMessageBad = true;
+	SaveLink();
+	UE_LOG(LogBpLink, Warning, TEXT("BpLink: pairing %s dropped: %s"), Was.IsEmpty() ? TEXT("(unnamed)") : *Was, *Why);
+	// The Wi-Fi door takes no request without a token: that route is gone with it.
+	if (LinkStatus.Route == EBpLinkRoute::Wifi)
+	{
+		LinkLost(TEXT("no token for the Wi-Fi door"));
+		// The words are the pairing's, not "the PC stopped answering".
+		LinkStatus.Message = Why + TEXT(" (Wi-Fi needs a pairing.)");
+		LinkStatus.bMessageBad = true;
+	}
+	ChangedLink();
+}
+
+void FBpLinkModule::Pair()
+{
+	if (LinkStatus.Pair == EBpPairState::Asking || LinkStatus.Pair == EBpPairState::Waiting)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: already %s"), LinkStatus.Code.IsEmpty() ? TEXT("asking") : *FString::Printf(TEXT("waiting on code %s"), *LinkStatus.Code));
+		return;
+	}
+	if (LinkStatus.Route == EBpLinkRoute::None)
+	{
+		LinkStatus.Message = TEXT("Not connected: plug in the cable (or start the PC's server), then PAIR.");
+		LinkStatus.bMessageBad = true;
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair refused: no route to a PC"));
+		ChangedLink();
+		return;
+	}
+	PairNonce = MakeNonce();
+	LinkStatus.Pair = EBpPairState::Asking;
+	LinkStatus.Code.Reset();
+	LinkStatus.Message = TEXT("Asking the PC for a code…");
+	LinkStatus.bMessageBad = false;
+	ChangedLink();
+	// /lan/where is the tether's (loopback only): the Wi-Fi door is learned there, then the code is asked. Over Wi-Fi the code is
+	// asked straight from the door (POST /pair is open on it).
+	if (LinkStatus.Route == EBpLinkRoute::Cable) Where();
+	else PostPair();
+}
+
+void FBpLinkModule::Where()
+{
+	if (LinkStatus.Route != EBpLinkRoute::Cable)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: where: /lan/where is asked over the cable only (the route is %s); the Wi-Fi door known: %s"),
+			*RouteWord(LinkStatus), LinkStatus.WifiUrl.IsEmpty() ? TEXT("none") : *LinkStatus.WifiUrl);
+		return;
+	}
+	const bool bThenPair = LinkStatus.Pair == EBpPairState::Asking;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(LinkStatus.BaseUrl + TEXT("/lan/where"), TEXT("application/json"));
+	Request->SetTimeout(5.f);
+	Request->OnProcessRequestComplete().BindLambda([bThenPair](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		Module->ReceiveWhere(Status, Response.IsValid() ? Response->GetContentAsString() : FString(), bThenPair);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ReceiveWhere(int32 Status, const FString& Body, bool bThenPair)
+{
+	bool bPairing = Status == 404;
+	if (Status == 200)
+	{
+		// { door: { address, port } | null, listening, window, pairing }
+		TSharedPtr<FJsonObject> Json;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid())
+		{
+			bool bListening = false;
+			FString Window;
+			Json->TryGetBoolField(TEXT("pairing"), bPairing);
+			Json->TryGetBoolField(TEXT("listening"), bListening);
+			Json->TryGetStringField(TEXT("window"), Window);
+			const TSharedPtr<FJsonObject>* Door = nullptr;
+			FString Address;
+			int32 Port = 0;
+			if (Json->TryGetObjectField(TEXT("door"), Door) && (*Door)->TryGetStringField(TEXT("address"), Address) && (*Door)->TryGetNumberField(TEXT("port"), Port) && !Address.IsEmpty() && Port > 0)
+			{
+				const FString Door2 = FString::Printf(TEXT("http://%s:%d"), *Address, Port);
+				if (Door2 != LinkStatus.WifiUrl)
+				{
+					LinkStatus.WifiUrl = Door2;
+					SaveLink();
+				}
+			}
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: where: Wi-Fi door %s (listening %d), pairing window %s, pairing %s"), Address.IsEmpty() ? TEXT("none (the server runs without --lan)") : *LinkStatus.WifiUrl,
+				bListening, Window.IsEmpty() ? TEXT("closed") : *FString::Printf(TEXT("open until %s"), *Window), bPairing ? TEXT("served") : TEXT("off"));
+			ChangedLink();
+		}
+	}
+	else
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: where: GET /lan/where answered %d"), Status);
+	}
+	if (!bThenPair || LinkStatus.Pair != EBpPairState::Asking) return;
+	if (Status == 0 || (Status == 200 && !bPairing))
+	{
+		LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+		LinkStatus.Message = Status == 0 ? PairRefusalWords(0, FString()) : FString(TEXT("The PC's server runs without pairing. On the PC: npm run server -- --lan (or --pair), then PAIR again."));
+		LinkStatus.bMessageBad = true;
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair: %s"), *LinkStatus.Message);
+		ChangedLink();
+		return;
+	}
+	PostPair();
+}
+
+void FBpLinkModule::PostPair()
+{
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("nonce"), PairNonce);
+	Body->SetStringField(TEXT("device"), PairDeviceName());
+	TArray<FString> Scopes;
+	FString(PairScopes).ParseIntoArray(Scopes, TEXT(","));
+	TArray<TSharedPtr<FJsonValue>> ScopeValues;
+	for (const FString& Scope : Scopes) ScopeValues.Add(MakeShared<FJsonValueString>(Scope));
+	Body->SetArrayField(TEXT("scopes"), ScopeValues);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	// No token on the ceremony's own requests: a stale one would be answered 401 before /pair runs.
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(LinkStatus.BaseUrl + TEXT("/pair"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Text);
+	Request->SetTimeout(5.f);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: POST %s/pair as %s for [%s]"), *LinkStatus.BaseUrl, *PairDeviceName(), PairScopes);
+	Request->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module || Module->LinkStatus.Pair != EBpPairState::Asking) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Answer = Response.IsValid() ? Response->GetContentAsString() : FString();
+		TSharedPtr<FJsonObject> Json;
+		FString Code, ExpiresAt;
+		if ((Status == 201 || Status == 200) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Answer), Json) && Json.IsValid()
+			&& Json->TryGetStringField(TEXT("code"), Code) && !Code.IsEmpty())
+		{
+			Json->TryGetStringField(TEXT("expiresAt"), ExpiresAt);
+			FBpLinkStatus& S = Module->LinkStatus;
+			S.Pair = EBpPairState::Waiting;
+			S.Code = Code;
+			S.CodeExpiresAt = ExpiresAt;
+			S.Message = FString::Printf(TEXT("On the PC: npm run server -- pair approve %s --scope %s"), *Code, PairScopes);
+			S.bMessageBad = false;
+			Module->NextClaimS = FPlatformTime::Seconds() + PairClaimS;
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: code %s shown (until %s); on the PC: npm run server -- pair approve %s --scope %s"), *Code, *ExpiresAt, *Code, PairScopes);
+			Module->ChangedLink();
+			return;
+		}
+		Module->LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+		Module->LinkStatus.Message = PairRefusalWords(Status, Answer);
+		Module->LinkStatus.bMessageBad = true;
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair: POST /pair answered %d %.200s"), Status, *Answer);
+		Module->ChangedLink();
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::SendClaim()
+{
+	if (LinkStatus.Route == EBpLinkRoute::None) return;
+	bClaimOut = true;
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetStringField(TEXT("nonce"), PairNonce);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	// The claim is the one request that goes out without the old token: a re-pair must not be answered 401 for a dead one.
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(LinkStatus.BaseUrl + TEXT("/pair/claim"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Text);
+	Request->SetTimeout(5.f);
+	Request->OnProcessRequestComplete().BindLambda([](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module) return;
+		Module->bClaimOut = false;
+		if (Module->LinkStatus.Pair != EBpPairState::Waiting) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Answer = Response.IsValid() ? Response->GetContentAsString() : FString();
+		FBpLinkStatus& S = Module->LinkStatus;
+		if (Status == 202 || Status == 0)
+		{
+			// Not yet approved (or no answer this time): asked again in PairClaimS until the code lapses.
+			Module->NextClaimS = FPlatformTime::Seconds() + PairClaimS;
+			return;
+		}
+		TSharedPtr<FJsonObject> Json;
+		FString Token;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Answer), Json) && Json.IsValid() && Json->TryGetStringField(TEXT("token"), Token) && !Token.IsEmpty())
+		{
+			GToken = Token;
+			S.Pair = EBpPairState::Paired;
+			S.TokenTail = Token.Right(4);
+			S.Device.Reset();
+			S.Scopes.Reset();
+			S.ExpiresAt.Reset();
+			Json->TryGetStringField(TEXT("device"), S.Device);
+			Json->TryGetStringArrayField(TEXT("scopes"), S.Scopes);
+			Json->TryGetStringField(TEXT("expiresAt"), S.ExpiresAt);
+			S.Code.Reset();
+			S.Message = FString::Printf(TEXT("Paired: this headset is %s on your PC."), *S.Device);
+			S.bMessageBad = false;
+			Module->SaveLink();
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: paired as %s (token ...%s), scopes [%s], until %s; every request now carries it"),
+				*S.Device, *S.TokenTail, *FString::Join(S.Scopes, TEXT(",")), *S.ExpiresAt);
+			Module->NextPairMeS = 0.0;
+			Module->ChangedLink();
+			return;
+		}
+		S.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+		S.Code.Reset();
+		S.Message = Status == 410 ? FString(TEXT("That code was claimed already. PAIR again.")) : PairRefusalWords(Status, Answer);
+		S.bMessageBad = true;
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair: POST /pair/claim answered %d %.200s"), Status, *Answer);
+		Module->ChangedLink();
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::CancelPair()
+{
+	if (LinkStatus.Pair != EBpPairState::Asking && LinkStatus.Pair != EBpPairState::Waiting) return;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: cancelled%s (the request lapses on the PC by itself)"), LinkStatus.Code.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" code %s"), *LinkStatus.Code));
+	LinkStatus.Pair = GToken.IsEmpty() ? EBpPairState::Unpaired : EBpPairState::Paired;
+	LinkStatus.Code.Reset();
+	LinkStatus.Message = TEXT("Pairing cancelled.");
+	LinkStatus.bMessageBad = false;
+	ChangedLink();
+}
+
+void FBpLinkModule::Unpair()
+{
+	if (GToken.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: unpair: not paired"));
+		return;
+	}
+	const FString Id = PairingIdOf(LinkStatus.Device);
+	ForgetToken(FString::Printf(TEXT("Forgotten on this headset. To remove it on the PC too: npm run server -- pair revoke %s"), *Id));
+	LinkStatus.bMessageBad = false;
+	ChangedLink();
+}
+
+void FBpLinkModule::AskPairMe()
+{
+	NextPairMeS = FPlatformTime::Seconds() + PairMeS;
+	if (GToken.IsEmpty() || LinkStatus.Route == EBpLinkRoute::None) return;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(LinkStatus.BaseUrl + TEXT("/pair/me"), TEXT("application/json"));
+	Request->SetTimeout(5.f);
+	const EBpLinkRoute Route = LinkStatus.Route;
+	Request->OnProcessRequestComplete().BindLambda([Route](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		if (!Module || GToken.IsEmpty()) return;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		FBpLinkStatus& S = Module->LinkStatus;
+		if (Status == 200)
+		{
+			TSharedPtr<FJsonObject> Json;
+			if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid())
+			{
+				const FString Was = FString::Printf(TEXT("%s|%s|%s"), *S.Device, *FString::Join(S.Scopes, TEXT(",")), *S.ExpiresAt);
+				Json->TryGetStringField(TEXT("device"), S.Device);
+				// TryGetStringArrayField appends: the scopes are read fresh, not onto the last read.
+				TArray<FString> Scopes;
+				if (Json->TryGetStringArrayField(TEXT("scopes"), Scopes)) S.Scopes = MoveTemp(Scopes);
+				Json->TryGetStringField(TEXT("expiresAt"), S.ExpiresAt);
+				const FString Now = FString::Printf(TEXT("%s|%s|%s"), *S.Device, *FString::Join(S.Scopes, TEXT(",")), *S.ExpiresAt);
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: pair/me: %s, scopes [%s], until %s"), *S.Device, *FString::Join(S.Scopes, TEXT(",")), *S.ExpiresAt);
+				if (Was != Now)
+				{
+					Module->SaveLink();
+					Module->ChangedLink();
+				}
+			}
+			return;
+		}
+		// The tether's 401 is handled by every request's hook; the door's bare 403 on /pair/me (any live pairing) is the same news.
+		if (Status == 403 && Route == EBpLinkRoute::Wifi) Module->ForgetToken(TEXT("The PC no longer knows this headset (the Wi-Fi door refused it): pair again on the cable."));
+		else if (Status != 401) UE_LOG(LogBpLink, Warning, TEXT("BpLink: pair/me answered %d"), Status);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::ShowOnPc(const FBpFollowPlace& InPlace, TFunction<void(bool, const FString&)> OnDone)
+{
+	FBpFollowPlace Place = InPlace;
+	if (Place.Product.IsEmpty()) Place.Product = GetProductSlug();
+	if (GFromBundle || !GRouteLive)
+	{
+		if (OnDone) OnDone(false, TEXT("No PC is linked: plug in the cable or pair over Wi-Fi first."));
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	// place.ts Place: { product, hash, level, target?, from: 'vr' }; the page's own hash is the web's to write, so it is ''.
+	TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("product"), Place.Product);
+	Json->SetStringField(TEXT("hash"), FString());
+	Json->SetStringField(TEXT("level"), Place.Level.IsEmpty() ? FString(TEXT("L0")) : Place.Level);
+	if (!IsSiteKind(Place.Kind, Place.Id))
+	{
+		TSharedRef<FJsonObject> Target = MakeShared<FJsonObject>();
+		Target->SetStringField(TEXT("kind"), Place.Kind);
+		Target->SetStringField(TEXT("id"), Place.Id);
+		Json->SetObjectField(TEXT("target"), Target);
+	}
+	Json->SetStringField(TEXT("from"), TEXT("vr"));
+	TSharedRef<FJsonObject> Body = MakeShared<FJsonObject>();
+	Body->SetObjectField(TEXT("place"), Json);
+	FString Text;
+	FJsonSerializer::Serialize(Body, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Text));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/session/place"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetHeader(TEXT("x-bp-device"), DeviceId);
+	Request->SetContentAsString(Text);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: show on PC: POST /api/session/place %s"), *Text);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Place](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = LinkModule();
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Answer = Response.IsValid() ? Response->GetContentAsString() : FString();
+		const FString Where = Place.Say.IsEmpty() ? FString(TEXT("this place")) : Place.Say;
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: show on PC: the place baton answered %d %.200s"), Status, *Answer);
+		if (Status == 200)
+		{
+			if (OnDone) OnDone(true, FString::Printf(TEXT("Your PC shows %s (the place baton)."), *Where));
+			return;
+		}
+		if (Status == 0 || !Module)
+		{
+			if (OnDone) OnDone(false, TEXT("The PC did not answer."));
+			return;
+		}
+		// No baton claimed from the web (409/404), or the baton route refused: the place goes out as the shared focus instead,
+		// which every page following it flies to.
+		if (Module->bPublishOut)
+		{
+			Module->NextPublish = Place;
+			Module->bHasNextPublish = true;
+		}
+		else Module->SendPublish(Place);
+		if (OnDone) OnDone(true, FString::Printf(TEXT("Sent to your PC as the shared place: the web goes to %s."), *Where));
 	});
 	Request->ProcessRequest();
 }

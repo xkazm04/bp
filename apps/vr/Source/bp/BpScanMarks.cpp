@@ -105,6 +105,12 @@ void ABpTable::RefreshScanMarks()
 		ClearScanMarks();
 		if (bHad) ReapplyRestVolumes();
 		SetScanStatus(FString(), FString());
+		// The PC went away (night two W2a: the table falls back to the bundle): its scans are no longer news on the wrist.
+		if (bHasScanOutcome && !ScanOutcome.bSample)
+		{
+			bHasScanOutcome = false;
+			ScanBandChanged.Broadcast();
+		}
 		return;
 	}
 	const FBpScanState& State = Link.GetScanState();
@@ -153,6 +159,7 @@ void ABpTable::RefreshScanMarks()
 	// What the status says: the newest track that put a mark on a room, and whether any such track is still reading.
 	FScanOutcome Outcome;
 	bool bAnyReading = false;
+	TArray<FString> Readings;
 	for (const FTrack& Track : Tracks)
 	{
 		const bool bRunning = Track.Status == BpVocab::ScanJob::Status::Running;
@@ -225,6 +232,14 @@ void ABpTable::RefreshScanMarks()
 			Mark.Done += Read.Contains(Tile.id) ? 1 : 0;
 			Mark.bLit |= Tile.id == Current;
 		}
+		// Several scanners at once (night two W2a): each reading one is counted on its own, so the band and the title block name
+		// them all, not only the newest.
+		if (bRunning && !bStale && ByRoom.Num() > 0)
+		{
+			int32 TrackRead = 0;
+			for (const auto& Pair : ByRoom) TrackRead += Pair.Value.Done >= Pair.Value.Total ? 1 : 0;
+			Readings.Add(FString::Printf(TEXT("%s %d/%d"), *BpWords::Lens(Track.Lens), TrackRead, ByRoom.Num()));
+		}
 		for (auto& Pair : ByRoom)
 		{
 			Pair.Value.bScanned = Pair.Value.Done >= Pair.Value.Total;
@@ -248,21 +263,41 @@ void ABpTable::RefreshScanMarks()
 	// The status: read or reading. A room counts as read when the store says every one of its features in scope was.
 	Outcome.bRunning = bAnyReading;
 	Outcome.RoomsTotal = Marks.Num();
+	Outcome.Readers = Readings.Num();
+	Outcome.Readings = FString::Join(Readings, TEXT(" · "));
 	for (const auto& Pair : Marks) Outcome.RoomsRead += Pair.Value.bScanned ? 1 : 0;
 	if (Marks.Num() > 0 && (bAnyReading || Outcome.RoomsRead > 0))
 	{
 		const FString Lens = BpWords::Lens(Outcome.Lens);
 		const FString Focus = Outcome.Focus.Replace(TEXT("\n"), TEXT(" "));
 		const TCHAR* const RoomWord = Outcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms");
-		SetScanStatus(FString::Printf(TEXT("%s  ·  %s"), bAnyReading ? TEXT("Scanning") : TEXT("Scan"), *Lens),
-			bAnyReading ? FString::Printf(TEXT("%d of %d %s"), Outcome.RoomsRead, Outcome.RoomsTotal, RoomWord) + (Focus.IsEmpty() ? FString() : TEXT("  ·  ") + Focus)
-				: FString::Printf(TEXT("%d %s read"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms")));
+		if (Outcome.Readers > 1)
+		{
+			// Several at once: the count, then each one's lens and rooms read of its own rooms.
+			SetScanStatus(FString::Printf(TEXT("Scanning  ·  %d scans"), Outcome.Readers), Outcome.Readings + TEXT(" rooms"));
+		}
+		else
+		{
+			SetScanStatus(FString::Printf(TEXT("%s  ·  %s"), bAnyReading ? TEXT("Scanning") : TEXT("Scan"), *Lens),
+				bAnyReading ? FString::Printf(TEXT("%d of %d %s"), Outcome.RoomsRead, Outcome.RoomsTotal, RoomWord) + (Focus.IsEmpty() ? FString() : TEXT("  ·  ") + Focus)
+					: FString::Printf(TEXT("%d %s read"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms")));
+		}
 		SetScanOutcome(Outcome);
 	}
 	// A room holding on through the store's last rows (bJustEnded) keeps the status it has, rather than blinking off for a beat.
 	else if (Marks.Num() == 0)
 	{
 		SetScanStatus(FString(), FString());
+		// Nothing reads any more and the reader is gone (cancelled, or a restarted PC lost its jobs): the band stops saying
+		// "scanning"; what it last produced stays.
+		if (bHasScanOutcome && ScanOutcome.bRunning && !ScanOutcome.bSample)
+		{
+			FScanOutcome Stopped = ScanOutcome;
+			Stopped.bRunning = false;
+			Stopped.Readers = 0;
+			Stopped.Readings.Reset();
+			SetScanOutcome(Stopped);
+		}
 	}
 	DrawScanMarks(Marks);
 }

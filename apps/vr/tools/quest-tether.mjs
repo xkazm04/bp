@@ -2,8 +2,11 @@
 // The tether route (docs/concepts/vr-light-table/run-locally.md, "Over the cable"): a wired Quest reaches the PC's apps/server
 // through `adb reverse`, with no LAN pairing and no manifest change. The APK's default BpLink URL is http://127.0.0.1:3100, and
 // on the headset that port is the PC's once the reverse stands. UE's Android HTTP is libcurl over native sockets, so Android's
-// cleartext switch, which only the Java network stack honours, does not apply. This script does the reverse and prints the state.
-// It changes nothing else: start the server yourself, and relaunch the app afterwards (it reads the product once, at launch).
+// cleartext switch, which only the Java network stack honours, does not apply (read in the engine, 2026-11-09: HTTP.Build.cs
+// links libcurl for the Android group, and AndroidPlatformHttp.cpp makes FCurlHttpManager and FCurlHttpRequest; the manifest UE
+// writes already holds INTERNET, ACCESS_NETWORK_STATE and ACCESS_WIFI_STATE). This script does the reverse and prints the state.
+// It changes nothing else: start the server yourself. The app needs no relaunch: BpLink asks /api/health every 5 s while it
+// shows the sample and moves to the live link when the PC answers (table link v2, night two W2a).
 //
 //   node apps/vr/tools/quest-tether.mjs [--port 3100] [--remove]
 //

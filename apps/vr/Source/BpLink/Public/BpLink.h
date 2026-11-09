@@ -268,6 +268,61 @@ struct BPLINK_API FBpBuildupBatch
 };
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpBuildup, const FBpBuildupBatch&);
 
+/** Which way BpLink reaches the PC (table link v2, night two W2a): none (the build's bundled sample), the cable (adb reverse to
+ *  loopback :3100, or an explicit loopback -BpLinkUrl), or Wi-Fi (the LAN door learned from GET /lan/where, or an explicit
+ *  non-loopback -BpLinkUrl). */
+enum class EBpLinkRoute : uint8
+{
+	None,
+	Cable,
+	Wifi,
+};
+
+/** The pairing ceremony as this headset sees it (table-link-v2.md section 4). */
+enum class EBpPairState : uint8
+{
+	/** No token kept. */
+	Unpaired,
+	/** GET /lan/where and POST /pair are out. */
+	Asking,
+	/** A code is shown; POST /pair/claim every 2 s until the owner approves it on the PC. */
+	Waiting,
+	/** A token is kept and sent as Authorization: Bearer on every request. */
+	Paired,
+};
+
+/** The link as the console and the wrist show it. Never carries the token: TokenTail is its last 4 characters. */
+struct BPLINK_API FBpLinkStatus
+{
+	EBpLinkRoute Route = EBpLinkRoute::None;
+	/** -BpLinkUrl named the server (or `bundle`): the chooser does not look anywhere else. */
+	bool bExplicit = false;
+	bool bBundleOnly = false;
+	/** Whether the first route decision has been made (until then nothing is polled). */
+	bool bDecided = false;
+	/** Where the requests go now (empty on the bundle), the cable's URL, and the Wi-Fi door learned from the PC. */
+	FString BaseUrl;
+	FString CableUrl;
+	FString WifiUrl;
+	/** /api/health's boot id: a new one is a restarted PC, and everything is read again. */
+	FString Boot;
+	EBpPairState Pair = EBpPairState::Unpaired;
+	/** While Waiting: the 6-character code to type on the PC, and when the request lapses (ISO). */
+	FString Code;
+	FString CodeExpiresAt;
+	/** The pairing (from the claim, then GET /pair/me): `<device>:<pairing id>`, its scopes and its end. */
+	FString Device;
+	TArray<FString> Scopes;
+	FString ExpiresAt;
+	FString TokenTail;
+	/** The last thing worth saying about the link, in words; bMessageBad: a refusal or a lost pairing (red). */
+	FString Message;
+	bool bMessageBad = false;
+	/** Bumped on every change. */
+	int32 Serial = 0;
+};
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpLinkStatus, const FBpLinkStatus&);
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -373,11 +428,46 @@ public:
 	bool IsFromBundle() const;
 
 	/** POST .../scans { lens, scope[, focus] }: the web's way to start a lens scan (blueprint-ui.md, "POST /api/products/<slug>/scans").
-	 *  OnDone gets the HTTP status (202 when queued) and the body. Refused from the bundle, always, and on a live product unless
-	 *  Focus is non-empty (the owner's ruling of 2026-11-08: a directed scan may start from the table, a plain one still may
-	 *  not). A refusal sends nothing, is logged, and hands OnDone status 0 with the reason as Body. */
+	 *  OnDone gets the HTTP status (202 when queued) and the body. Lens `all` with Kind `all` is the every-lens scan. Refused from
+	 *  the bundle (no server keeps a scan). A plain, a directed and an every-lens scan may start on a live product (owner,
+	 *  2026-11-09; the table asks for a second press first). A refusal sends nothing, is logged, and hands OnDone status 0 with
+	 *  the reason as Body. */
 	void PostScan(const FString& Lens, const FString& Kind, const FString& Id, const FString& Label, const TArray<FString>& Features,
 		TFunction<void(int32 Status, const FString& Body)> OnDone, const FString& Focus = FString());
+	/** DELETE .../scans/<job> (table-link-v2.md section 5, scope `scan`): cancels a queued or running job. OnDone gets the status
+	 *  (200 with the cancelled ScanJob; 404 unknown; 0 refused or no answer) and words for the console. */
+	void CancelScan(const FString& JobId, TFunction<void(int32 Status, const FString& Words)> OnDone);
+
+	// ---- The PC link (table link v2, night two W2a) --------------------------------------------------------------------
+	/** The route, the pairing and the last word about them. */
+	const FBpLinkStatus& GetLinkStatus() const { return LinkStatus; }
+	FOnBpLinkStatus& OnLinkStatus() { return LinkStatusDelegate; }
+	/** One word for the wrist: CABLE, WI-FI, OFFLINE, or PAIRING while a code is shown. */
+	static FString RouteWord(const FBpLinkStatus& Status);
+	/** The state in plain words ("On the cable", "On Wi-Fi", "Not connected: showing the sample"). */
+	static FString RouteWords(const FBpLinkStatus& Status);
+	/** A scope in words ("scan" -> "start and cancel scans"). */
+	static FString ScopeWords(const FString& Scope);
+	/** The scopes this headset asks for (the owner's approve command names the same list). */
+	static const TCHAR* const PairScopes;
+	/** BpLink.Pair: GET /lan/where over the cable (keeps the Wi-Fi door), POST /pair, then POST /pair/claim every 2 s until the
+	 *  owner approves the code on the PC or it lapses. Needs a route. */
+	void Pair();
+	/** Stops waiting for a code (the request lapses on the PC by itself). */
+	void CancelPair();
+	/** BpLink.Unpair: forgets the token here (the PC keeps the pairing until `npm run server -- pair revoke <id>`). */
+	void Unpair();
+	/** BpLink.Where: GET /lan/where over the cable, logged, the door kept. */
+	void Where();
+	/** The console's SHOW ON PC: POST /api/session/place (the place baton, scope `place`) with the table's place; when no baton is
+	 *  claimed (409/404) the place goes out as the shared focus instead, which the web follows. OnDone gets words. */
+	void ShowOnPc(const FBpFollowPlace& Place, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** Health every LinkProbeLinkedS while linked, LinkProbeAwayS while on the bundle; a request lasts LinkProbeTimeoutS. */
+	static constexpr float LinkProbeLinkedS = 15.f;
+	static constexpr float LinkProbeAwayS = 5.f;
+	static constexpr float LinkProbeTimeoutS = 2.f;
+	static constexpr float PairClaimS = 2.f;
+	static constexpr float PairMeS = 60.f;
 	/** What a PostScan answer that was not 202 means, in words the table can show: the refusal Body at status 0, no answer at
 	 *  all, a LAN door 403 (bare, for a pairing without the `scan` scope), a standing order, a full queue, a route's refusal. */
 	static FString ScanAnswerWords(int32 Status, const FString& Body);
@@ -484,6 +574,42 @@ public:
 	void SetPublishing(bool bOn);
 
 private:
+	// ---- The PC link (night two W2a) ----
+	FBpLinkStatus LinkStatus;
+	FOnBpLinkStatus LinkStatusDelegate;
+	FTSTicker::FDelegateHandle LinkTicker;
+	bool TickLink(float DeltaSeconds);
+	/** Asks /api/health on the route in use (linked) or on each candidate in turn (away). */
+	void ProbeLink();
+	void ProbeCandidate(int32 Index);
+	/** The candidates in order: the explicit URL, else the cable, then the saved Wi-Fi door (only with a token). */
+	TArray<TPair<FString, EBpLinkRoute>> LinkCandidates() const;
+	void LinkUp(const FString& Url, EBpLinkRoute Route, const FString& Boot);
+	void LinkLost(const FString& Why);
+	/** Every request of the old route dropped and the product, scans, products and follow read again. */
+	void RefetchAll(const TCHAR* Why);
+	/** The build's sample, read in place of the PC (its snapshot when it has the open product, and its scan answers). */
+	void ReadBundleNow();
+	void ChangedLink();
+	void SaveLink() const;
+	void LoadLink();
+	void ForgetToken(const FString& Why);
+	void SendClaim();
+	void AskPairMe();
+	void PostPair();
+	void ReceiveWhere(int32 Status, const FString& Body, bool bThenPair);
+	bool bProbeOut = false;
+	double NextProbeS = 0.0;
+	int32 ProbeMisses = 0;
+	/** The Wi-Fi door's backoff while it does not answer (5 s doubling to 60 s). */
+	double WifiRetryS = 0.0;
+	float WifiBackoffS = 5.f;
+	bool bClaimOut = false;
+	double NextClaimS = 0.0;
+	double NextPairMeS = 0.0;
+	FString PairNonce;
+	/** The answer to the first decision that went to the bundle was said once (a loss is said once until the next link). */
+	bool bLossSaid = false;
 	FOnBpProduct ProductDelegate;
 	// ---- Products and onboarding (spark onboarding-vr WP-V1) ----
 	FBpOnboardingState Onboarding;

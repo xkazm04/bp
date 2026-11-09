@@ -177,7 +177,8 @@ void ABpTable::SetScanStatus(const FString& Title, const FString& Sub)
 void ABpTable::SetScanOutcome(const FScanOutcome& Outcome)
 {
 	const bool bSame = bHasScanOutcome && ScanOutcome.bSample == Outcome.bSample && ScanOutcome.bRunning == Outcome.bRunning && ScanOutcome.RoomsRead == Outcome.RoomsRead
-		&& ScanOutcome.RoomsTotal == Outcome.RoomsTotal && ScanOutcome.Lens == Outcome.Lens && ScanOutcome.RunId == Outcome.RunId;
+		&& ScanOutcome.RoomsTotal == Outcome.RoomsTotal && ScanOutcome.Lens == Outcome.Lens && ScanOutcome.RunId == Outcome.RunId
+		&& ScanOutcome.Readers == Outcome.Readers && ScanOutcome.Readings == Outcome.Readings;
 	ScanOutcome = Outcome;
 	bHasScanOutcome = true;
 	if (!bSame) ScanBandChanged.Broadcast();
@@ -195,6 +196,13 @@ void ABpTable::ScanBand(FString& Head, FString& Body) const
 		Head = FString::Printf(TEXT("SAMPLE SCAN · %s"), *Lens.ToUpper());
 		Body = ScanOutcome.bRunning ? FString::Printf(TEXT("%d of %d %s · nothing is read or written"), ScanOutcome.RoomsRead, ScanOutcome.RoomsTotal, ScanOutcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"))
 			: FString::Printf(TEXT("%s. A sample finds nothing: a room's deck holds the findings it already has."), *RoomsRead);
+		return;
+	}
+	if (ScanOutcome.bRunning && ScanOutcome.Readers > 1)
+	{
+		// Several scanners at once: each one named, with its own rooms (the band showed only the newest before night two W2a).
+		Head = FString::Printf(TEXT("SCANNING · %d SCANS"), ScanOutcome.Readers);
+		Body = ScanOutcome.Readings + TEXT(" rooms");
 		return;
 	}
 	Head = FString::Printf(TEXT("%s · %s"), ScanOutcome.bRunning ? TEXT("SCANNING") : TEXT("SCAN"), *Lens.ToUpper());
