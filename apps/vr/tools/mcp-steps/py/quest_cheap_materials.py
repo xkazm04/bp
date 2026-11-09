@@ -27,6 +27,9 @@ m = fresh("M_BackdropUnlit")
 m.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
 m.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
 m.set_editor_property("two_sided", True)  # as the imported instance overrides it
+# The backdrop carries a built lightmap: without this usage flag the tier drew the default material in its place
+# (night-two w0: the editor logged "M_BackdropUnlit missing usage flag StaticLighting" and the window went dark).
+m.set_editor_property("used_with_static_lighting", True)
 tex = mel.create_material_expression(m, unreal.MaterialExpressionTextureSample, -600, 0)
 tex.set_editor_property("texture", eal.load_asset("/Game/Bp/Art/CityBackdrop/final/Textures/city_backdrop_basecolor"))
 strength = mel.create_material_expression(m, unreal.MaterialExpressionConstant, -600, 300)
