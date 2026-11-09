@@ -130,6 +130,20 @@ namespace
 			if (!FindPlay(World, Pawn, Table) || !Pawn->Seat(EyeCm)) UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Seat [eye_above_floor_cm] (needs a playing world with the bp pawn and a table)"));
 		}));
 
+#if !UE_BUILD_SHIPPING
+	FAutoConsoleCommandWithWorldAndArgs CmdBench(
+		TEXT("BpView.Bench"),
+		TEXT("BpView.Bench [pitch_deg] [yaw_deg]: for a headset lying still on a desk. Turns and moves the pawn so that the headset's view, wherever it points, is the seated target view over the table (default pitch the target pose's, yaw 0; a yaw looks aside, e.g. at the shelves). The device then renders what a seated person sees, for measurements and screen captures with nobody wearing it. Non-Shipping builds only."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			ABpPawn* Pawn = nullptr;
+			ABpTable* Table = nullptr;
+			const float Pitch = Args.Num() > 0 ? FCString::Atof(*Args[0]) : ABpGameMode::TargetPitchDeg;
+			const float Yaw = Args.Num() > 1 ? FCString::Atof(*Args[1]) : 0.f;
+			if (!FindPlay(World, Pawn, Table) || !Pawn->Bench(Pitch, Yaw)) UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Bench [pitch_deg] [yaw_deg] (needs a playing world with the bp pawn and a table)"));
+		}));
+#endif
+
 	FAutoConsoleCommandWithWorldAndArgs CmdFakeHead(
 		TEXT("BpView.FakeHead"),
 		TEXT("BpView.FakeHead on|off|unknown [seconds]: what a headset put on or taken off would do, or a runtime with no presence signal (unknown), after that many seconds (the seat guard's check, with the Simulator)."),
@@ -303,6 +317,23 @@ bool ABpPawn::Seat(float EyeAboveFloorCm)
 	UE_LOG(LogBpTable, Log, TEXT("BpView: seat %s%s eye_above_floor_cm=%.1f table_top_cm=%.1f eye_above_top_cm=%.1f (target %.0f) moved_cm=%.1f turned_deg=%.1f runtime=%s"),
 		IsHeadsetOn() ? TEXT("headset") : TEXT("flat"), EyeAboveFloorCm > 0.f ? TEXT(" (eye height given)") : TEXT(""), Eye.Z - FloorZ, TopAboveFloor, Eye.Z - FloorZ - TopAboveFloor, ABpGameMode::TargetEyeAboveTopCm,
 		FVector::Dist(Was.GetLocation(), At), FMath::FindDeltaAngleDegrees(Was.Rotator().Yaw, HeadYaw), *RuntimeName());
+	return true;
+}
+
+bool ABpPawn::Bench(float PitchDeg, float YawDeg)
+{
+	TActorIterator<ABpTable> It(GetWorld());
+	if (!It || !Camera) return false;
+	const FTransform Table = It->GetActorTransform();
+	// The target pose's eye over the table as it stands now (Seat's own EyeOnTable), looking down the table.
+	const FVector EyeOnTable(-(ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, TableTopCm() + ABpGameMode::TargetEyeAboveTopCm);
+	const FTransform Want(Table.GetRotation() * FRotator(PitchDeg, YawDeg, 0.f).Quaternion(), Table.GetLocation() + Table.GetRotation().RotateVector(EyeOnTable));
+	// The camera rides the pawn: world = CameraInPawn * Pawn, so the pawn goes to CameraInPawn^-1 * Want.
+	const FTransform Cam(Camera->GetComponentQuat(), Camera->GetComponentLocation());
+	const FTransform Self(GetActorQuat(), GetActorLocation());
+	const FTransform To = Cam.GetRelativeTransform(Self).Inverse() * Want;
+	SetActorLocationAndRotation(To.GetLocation(), To.GetRotation(), false, nullptr, ETeleportType::TeleportPhysics);
+	UE_LOG(LogBpTable, Log, TEXT("BpView: bench pitch=%.1f yaw=%.1f eye=(%.0f,%.0f,%.0f): the resting headset now sees the seated view"), PitchDeg, YawDeg, Want.GetLocation().X, Want.GetLocation().Y, Want.GetLocation().Z);
 	return true;
 }
 

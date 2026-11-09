@@ -128,6 +128,8 @@ public:
 	 *  logged). Without a headset it seats the flat view's eye the same way, for checks. EyeAboveFloorCm over 0 seats as if
 	 *  the eye stood that high (BpView.Seat's argument). Logs `BpView: seat ...`. */
 	bool Seat(float EyeAboveFloorCm = -1.f);
+	/** BpView.Bench: puts the view of a headset lying still at the seated target view (measurements with nobody wearing it). */
+	bool Bench(float PitchDeg, float YawDeg);
 	static constexpr float SeatTopMinCm = 55.f;
 	/** A runtime whose floor is wrong (Steam Link on a Quest 3S, Lynx 2026-10-29: a seated eye read 67.5 cm over it) puts a
 	 *  headset eye under SeatEyeMinCm. The seat then corrects the floor once, raising the pawn (the tracking origin) so the
