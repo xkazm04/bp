@@ -60,8 +60,8 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarTierGlass(
 		TEXT("bp.QuestTier.Glass"),
-		1,
-		TEXT("The lit translucent glass over the paper while the Quest tier is on: 1 shown, 0 hidden."),
+		0,
+		TEXT("The lit translucent glass over the paper while the Quest tier is on: 1 shown, 0 hidden (default: on the device it costs 2.0 ms and a capture pair from the seated view shows no difference, 2026-11-09)."),
 		ECVF_Default);
 
 	TAutoConsoleVariable<int32> CVarTierUnlitBackdrop(
