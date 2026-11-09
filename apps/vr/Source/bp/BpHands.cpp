@@ -1001,6 +1001,6 @@ void UBpHands::UpdateAim()
 		AimMarks->SetCustomDataValue(Index, 1, Mark.Color.G, false);
 		AimMarks->SetCustomDataValue(Index, 2, Mark.Color.B, false);
 	}
-	AimMarks->MarkRenderStateDirty();
+	// The instance data manager already carries these changes to the renderer: no proxy rebuilt every aiming frame.
 	AimShown = Marks.Num();
 }
