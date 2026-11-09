@@ -18,6 +18,6 @@ namespace BpTier
 	 *  changed; ABpTable's tick calls it. Logs `BpTier: ...` when it switches. */
 	void Apply(UWorld* World);
 
-	/** The live hand shadow's capture rate while the tier is on (bp.QuestTier.HandShadowHz; the PC captures every frame). */
+	/** The live hand shadow's capture rate while the tier is on, 0 for none (bp.QuestTier.HandShadowHz, read live; the PC captures every frame). */
 	float HandShadowHz();
 }

@@ -951,6 +951,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UTextureRenderTarget2D> HandDepth;
 	FTimerHandle HandCaptureTimer;
+	/** The rate the capture timer runs at now, and whether the last look found a hand by the paper (TickHandCapture). */
+	float HandCaptureHz = 0.f;
+	bool bHandWasNear = false;
 	/** The decision card. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> Card;
@@ -1049,6 +1052,9 @@ private:
 	 *  surface over it) feeds M_BlueprintPaper's occlusion term. The posed capture hands are still, so they are captured
 	 *  once; with a headset (tracked hands on the pawn) every frame. */
 	void StartHandShadow();
+	/** The Quest tier's capture loop: captures only while a visible hand is by the paper, once more as it leaves. */
+	void TickHandCapture();
+	bool IsHandNearPaper() const;
 	void ReceiveScanState(const struct FBpScanState& State);
 	void BuildPins(const struct FBpScanState& State);
 	void PlacePins();

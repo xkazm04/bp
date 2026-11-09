@@ -2,7 +2,10 @@
 //   - the studio's haze cards (level actors on M_HazeShaft / M_HazeVeil instances) hide: they are large translucent
 //     planes stacked in front of the walls, overdraw the headset's tiled GPU pays for every covered pixel twice per eye;
 //   - the scan's veil stays hidden (BpMarks.cpp): the scan line alone is the scan's one additive card;
-//   - the live hand shadow is captured at bp.QuestTier.HandShadowHz instead of every frame (BpTable.cpp).
+//   - the live hand shadow is captured at bp.QuestTier.HandShadowHz, only while a hand is by the paper (BpTable.cpp);
+//   - the city backdrop draws one unlit texture instead of the imported lit master (bp.QuestTier.UnlitBackdrop);
+//   - the frame's leftover glass quad collapses in the vertex shader instead of shading the paper's area (bp.QuestTier.CollapseQuad);
+//   - bp.QuestTier.Glass 0 hides the table's glass over the paper; it stays on until the headset judges the look.
 // bp.QuestTier.Report logs every visible primitive with its triangles and blend, the input for the next cut on device.
 #include "BpTier.h"
 
@@ -36,13 +39,134 @@ namespace
 	TAutoConsoleVariable<float> CVarHandShadowHz(
 		TEXT("bp.QuestTier.HandShadowHz"),
 		36.f,
-		TEXT("The live hand shadow's capture rate while the Quest tier is on (half of 72 Hz by default); read when the shadow starts."),
+		TEXT("The live hand shadow's capture rate while the Quest tier is on and a hand is by the paper (half of 72 Hz by default); 0 stops it. Read live."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarTierGlass(
+		TEXT("bp.QuestTier.Glass"),
+		1,
+		TEXT("The lit translucent glass over the paper while the Quest tier is on: 1 shown, 0 hidden."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarTierUnlitBackdrop(
+		TEXT("bp.QuestTier.UnlitBackdrop"),
+		1,
+		TEXT("While the Quest tier is on: 1 the city backdrop draws M_BackdropUnlit, 0 its imported material."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarTierCollapseQuad(
+		TEXT("bp.QuestTier.CollapseQuad"),
+		1,
+		TEXT("While the Quest tier is on: 1 the frame's hidden glass quad draws M_Collapsed (no pixels), 0 M_Hidden (masked, every pixel shaded and discarded)."),
 		ECVF_Default);
 
 	/** What Apply hid, so that switching the tier off shows exactly those again. */
 	TWeakObjectPtr<UWorld> AppliedWorld;
 	bool bAppliedOn = false;
 	TArray<TWeakObjectPtr<UPrimitiveComponent>> HiddenByTier;
+
+	/** A material slot the tier swapped, so that switching back restores exactly it. */
+	struct FSwap
+	{
+		TWeakObjectPtr<UMeshComponent> Mesh;
+		int32 Slot = 0;
+		TWeakObjectPtr<UMaterialInterface> Original;
+	};
+
+	/** The tier's live switches, each applied only when it changes. */
+	TWeakObjectPtr<UWorld> SwitchWorld;
+	bool bGlassHidden = false, bBackdropSwapped = false, bQuadSwapped = false;
+	TArray<TWeakObjectPtr<UPrimitiveComponent>> HiddenGlass;
+	TArray<FSwap> BackdropSwaps, QuadSwaps;
+
+	bool IsTableGlass(const UPrimitiveComponent& Prim)
+	{
+		for (int32 Index = 0; Index < Prim.GetNumMaterials(); ++Index)
+		{
+			const UMaterialInterface* Mat = Prim.GetMaterial(Index);
+			const UMaterial* Base = Mat ? Mat->GetMaterial() : nullptr;
+			if (Base && Base->GetName() == TEXT("M_TableGlass")) return true;
+		}
+		return false;
+	}
+
+	void SetSwap(UWorld* World, bool bWant, bool& bState, TArray<FSwap>& Swaps, const TCHAR* FromName, const TCHAR* ToPath, bool bTableOwned)
+	{
+		if (bWant == bState) return;
+		bState = bWant;
+		if (!bWant)
+		{
+			for (const FSwap& Each : Swaps)
+			{
+				if (UMeshComponent* Mesh = Each.Mesh.Get()) Mesh->SetMaterial(Each.Slot, Each.Original.Get());
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpTier: %s restored on %d slot(s)"), FromName, Swaps.Num());
+			Swaps.Reset();
+			return;
+		}
+		UMaterialInterface* To = LoadObject<UMaterialInterface>(nullptr, ToPath);
+		if (!To)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpTier: %s is missing; %s stays"), ToPath, FromName);
+			return;
+		}
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->IsA<ABpTable>() != bTableOwned || (!bTableOwned && !It->IsA<AStaticMeshActor>())) continue;
+			TArray<UStaticMeshComponent*> Meshes;
+			It->GetComponents(Meshes);
+			for (UStaticMeshComponent* Mesh : Meshes)
+			{
+				if (!Mesh || Mesh->IsA<UInstancedStaticMeshComponent>()) continue;
+				for (int32 Slot = 0; Slot < Mesh->GetNumMaterials(); ++Slot)
+				{
+					UMaterialInterface* Mat = Mesh->GetMaterial(Slot);
+					if (!Mat || Mat->GetName() != FromName) continue;
+					Swaps.Add({ Mesh, Slot, Mat });
+					Mesh->SetMaterial(Slot, To);
+				}
+			}
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpTier: %s swapped for %s on %d slot(s)"), FromName, ToPath, Swaps.Num());
+	}
+
+	void ApplySwitches(UWorld* World, bool bOn)
+	{
+		if (SwitchWorld.Get() != World)
+		{
+			SwitchWorld = World;
+			bGlassHidden = bBackdropSwapped = bQuadSwapped = false;
+			HiddenGlass.Reset();
+			BackdropSwaps.Reset();
+			QuadSwaps.Reset();
+		}
+		const bool bHideGlass = bOn && CVarTierGlass.GetValueOnGameThread() == 0;
+		if (bHideGlass != bGlassHidden)
+		{
+			bGlassHidden = bHideGlass;
+			if (bHideGlass)
+			{
+				for (TActorIterator<AStaticMeshActor> It(World); It; ++It)
+				{
+					UStaticMeshComponent* Comp = It->GetStaticMeshComponent();
+					if (!Comp || !Comp->IsVisible() || !IsTableGlass(*Comp)) continue;
+					Comp->SetVisibility(false);
+					HiddenGlass.Add(Comp);
+				}
+			}
+			else
+			{
+				for (const TWeakObjectPtr<UPrimitiveComponent>& Each : HiddenGlass)
+				{
+					if (UPrimitiveComponent* Prim = Each.Get()) Prim->SetVisibility(true);
+				}
+				HiddenGlass.Reset();
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpTier: table glass %s"), bHideGlass ? TEXT("hidden") : TEXT("shown"));
+		}
+		SetSwap(World, bOn && CVarTierUnlitBackdrop.GetValueOnGameThread() != 0, bBackdropSwapped, BackdropSwaps, TEXT("city_backdrop_emissive"), TEXT("/Game/Bp/Materials/M_BackdropUnlit.M_BackdropUnlit"), false);
+		SetSwap(World, bOn && CVarTierCollapseQuad.GetValueOnGameThread() != 0, bQuadSwapped, QuadSwaps, TEXT("M_Hidden"), TEXT("/Game/Bp/Materials/M_Collapsed.M_Collapsed"), true);
+	}
 
 	bool IsHazeCard(const UPrimitiveComponent& Prim)
 	{
@@ -211,13 +335,14 @@ bool BpTier::IsOn(const UWorld* World)
 
 float BpTier::HandShadowHz()
 {
-	return FMath::Max(1.f, CVarHandShadowHz.GetValueOnGameThread());
+	return FMath::Max(0.f, CVarHandShadowHz.GetValueOnGameThread());
 }
 
 void BpTier::Apply(UWorld* World)
 {
 	if (!World) return;
 	const bool bOn = IsOn(World);
+	ApplySwitches(World, bOn);
 	if (AppliedWorld.Get() == World && bAppliedOn == bOn) return;
 	const bool bFirst = AppliedWorld.Get() != World;
 	AppliedWorld = World;

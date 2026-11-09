@@ -27,6 +27,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
 #include "HAL/IConsoleManager.h"
+#include "Components/SkinnedMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Misc/PackageName.h"
@@ -303,6 +304,9 @@ namespace
 	constexpr float HandShadowStrength = 0.5f;  // r9 said 0.3; at 0.3 to 0.45 the shadow moved the paper by 4 % (fac/a, c)
 	constexpr float HandPlaneCm = 1.f;
 	constexpr int32 HandDepthWidthPx = 512;
+	// The Quest tier captures the hands only within this of the paper (added to the hand's own bounds); away, it just looks.
+	constexpr double HandShadowNearCm = 25.0;
+	constexpr float HandShadowIdleHz = 4.f;
 	constexpr float HandCaptureDelayS = 0.5f;
 	constexpr float PaperInkGlow = 1.0f;
 	/** The paper's own rim light (M_BlueprintPaper's EdgeGlow, EdgeSpread and EdgeHalo; defaults 2.5, 2.5, 0.25): a
@@ -743,7 +747,7 @@ void ABpTable::StartHandShadow()
 	if (bTierRate)
 	{
 		// The start delay's one-shot timer has fired; its handle carries the capture loop now.
-		GetWorldTimerManager().SetTimer(HandCaptureTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { if (HandCapture) HandCapture->CaptureScene(); }), 1.f / BpTier::HandShadowHz(), true);
+		TickHandCapture();
 	}
 	PaperMid->SetTextureParameterValue(TEXT("HandTex"), HandDepth);
 	PaperMid->SetVectorParameterValue(TEXT("HandScale"), FLinearColor(1.f, -1.f, 0.f, 0.f));
@@ -752,6 +756,41 @@ void ABpTable::StartHandShadow()
 	PaperMid->SetScalarParameterValue(TEXT("HandOcc"), HandShadowStrength);
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: hand shadow from %d actor(s), %s, %dx%d"), Hands.Num(), bTierRate ? *FString::Printf(TEXT("at %.0f Hz (quest tier)"), BpTier::HandShadowHz()) : bLive ? TEXT("every frame") : TEXT("captured once"),
 		HandDepth->SizeX, HandDepth->SizeY);
+}
+
+void ABpTable::TickHandCapture()
+{
+	if (!HandCapture) return;
+	const float Hz = BpTier::HandShadowHz();
+	const bool bNear = Hz > 0.f && IsHandNearPaper();
+	// One capture after the last hand leaves, so that its shadow does not stay on the paper.
+	if (bNear || bHandWasNear) HandCapture->CaptureScene();
+	if (bNear != bHandWasNear) UE_LOG(LogBpTable, Log, TEXT("BpTable: hand shadow %s"), bNear ? TEXT("capturing") : TEXT("idle"));
+	bHandWasNear = bNear;
+	const float Want = bNear ? Hz : HandShadowIdleHz;
+	if (Want != HandCaptureHz)
+	{
+		HandCaptureHz = Want;
+		GetWorldTimerManager().SetTimer(HandCaptureTimer, this, &ABpTable::TickHandCapture, 1.f / Want, true);
+	}
+}
+
+bool ABpTable::IsHandNearPaper() const
+{
+	const APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	if (!Pawn) return false;
+	TArray<USkinnedMeshComponent*> Meshes;
+	Pawn->GetComponents(Meshes);
+	const FTransform Table = GetActorTransform();
+	const double PaperZ = PlacedHeightCm - GlassRecessCm;
+	for (const USkinnedMeshComponent* Mesh : Meshes)
+	{
+		if (!Mesh || !Mesh->IsRegistered() || !Mesh->IsVisible()) continue;
+		const FVector Local = Table.InverseTransformPosition(Mesh->Bounds.Origin);
+		const double Reach = Mesh->Bounds.SphereRadius + HandShadowNearCm;
+		if (FMath::Abs(Local.X) <= PaperDepthCm * 0.5 + Reach && FMath::Abs(Local.Y) <= PaperWidthCm * 0.5 + Reach && FMath::Abs(Local.Z - PaperZ) <= Reach) return true;
+	}
+	return false;
 }
 
 void ABpTable::LoadArt()
