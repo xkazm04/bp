@@ -16,6 +16,7 @@ export const REFUSAL_REASONS = [
   'opaque-origin', // a write's Origin is `null`
   'cross-site', // a write's Sec-Fetch-Site is cross-site
   'not-json', // a body's Content-Type is not application/json
+  'not-wav', // an audio body's Content-Type is not audio/wav (the voice link's listen route)
   'foreign-peer', // the socket peer is not this machine (apps/server)
   'body-too-large', // the body passed MAX_BODY (apps/server)
   'malformed-url', // a URL or Host no URL can carry (apps/server)

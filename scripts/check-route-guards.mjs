@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Gate: every exported handler in packages/core/src/server/api/**/route.ts opens with its localhost guard. GET ->
-// localHost (or localOnly); POST/PATCH/PUT/DELETE -> localOnly, plus jsonOnly before any body parse. "Opens with" = the
+// localHost (or localOnly); POST/PATCH/PUT/DELETE -> localOnly, plus jsonOnly before any body parse (wavOnly for the one
+// audio body, the voice link's listen route: the same cross-site rule for a WAV body). "Opens with" = the
 // guard call is the first statement and is followed by `if (x) return`. scripts/check-local-only.ts tests the guard
 // functions; this proves the handlers call them. The handlers live in core so every mount runs the same guarded code:
 // each apps/web/src/app/api/**/route.ts must be a thin mount (only `export { <methods> } from '@bp/core/server/api/
@@ -71,7 +72,7 @@ function audit(h) {
   const open = body.match(new RegExp(String.raw`^\s*const\s+(\w+)\s*=\s*${need}\(\s*\w+\s*\);?\s*if\s*\(\s*(\w+)\s*\)\s*return(?!\w)`));
   if (!open || open[1] !== open[3]) bad.push(method === 'GET' ? 'localHost' : 'localOnly');
   if (method !== 'GET' && PARSE.test(body)) {
-    const j = body.search(/\bjsonOnly\s*\(/), p = body.search(PARSE);
+    const j = body.search(/\b(?:jsonOnly|wavOnly)\s*\(/), p = body.search(PARSE);
     if (j < 0 || (open && j < open[0].length) || j > p) bad.push('jsonOnly');
   }
   return bad;
@@ -124,7 +125,7 @@ ${h.body}` }],
     if (!g || audit(h).length) continue; // only handlers that pass today
     const dropped = { ...h, body: h.body.replace(/(localHost|localOnly)\(\s*\w+\s*\)/, 'null') };
     const late = { ...h, body: `const t0 = Date.now();\n${h.body}` };
-    const noJson = /\bjsonOnly\s*\(/.test(h.body) ? { ...h, body: h.body.replace(/jsonOnly\(\s*\w+\s*\)/, 'null') } : null;
+    const noJson = /\b(?:jsonOnly|wavOnly)\s*\(/.test(h.body) ? { ...h, body: h.body.replace(/(?:jsonOnly|wavOnly)\(\s*\w+\s*\)/, 'null') } : null;
     for (const [what, m] of [['guard dropped', dropped], ['work before guard', late], ['jsonOnly dropped', noJson]]) {
       if (!m) continue;
       controls++;

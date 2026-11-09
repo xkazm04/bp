@@ -69,3 +69,10 @@ export function jsonOnly(req: Request): string | null {
   const t = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
   return refuse(req, 415, t === 'application/json' ? null : no('not-json', `body must be application/json (Content-Type: ${t || 'none'})`));
 }
+
+/** A WAV body must say so, for the same reason as jsonOnly: audio/wav is not a CORS-safelisted type, so a cross-site page
+ *  cannot send one without a preflight bp never grants. audio/wave and audio/x-wav are the same format's other names. */
+export function wavOnly(req: Request): string | null {
+  const t = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  return refuse(req, 415, t === 'audio/wav' || t === 'audio/wave' || t === 'audio/x-wav' ? null : no('not-wav', `body must be audio/wav (Content-Type: ${t || 'none'})`));
+}

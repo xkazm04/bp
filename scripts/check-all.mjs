@@ -78,7 +78,19 @@ const OPT_OUT = {
   // runner on the same condition). It is exempt ONLY when this runner also found no python: a skip on a machine
   // that has python is a real hole and fails.
   'check:python-syntax': { when: () => !hasPython, why: 'python not on PATH (accepted by design)' },
+  // check-voice-link's live half speaks and transcribes through ElevenLabs: with no key, no network or no ffmpeg there is
+  // nothing to run it against (its offline half still runs). Exempt ONLY when this runner, too, finds one of the three
+  // missing: a skip on a machine with the key, the network and ffmpeg is a real hole and fails.
+  'check:voice-link': { when: () => !speechReachable(), why: 'no ElevenLabs key, network or ffmpeg (the live half needs all three)' },
 };
+/** The key is set (env or the repo's .env, never read beyond its presence), api.elevenlabs.io resolves and ffmpeg runs. */
+function speechReachable() {
+  let env = '';
+  try { env = fs.readFileSync(path.join(ROOT, '.env'), 'utf8'); } catch { /* no .env */ }
+  const key = !!process.env.ELEVEN_LABS_API_KEY?.trim() || /^\s*ELEVEN_LABS_API_KEY\s*=\s*"?[^"\s]/m.test(env);
+  const dns = spawnSync(process.execPath, ['-e', "require('dns').lookup('api.elevenlabs.io',(e)=>process.exit(e?1:0))"], { stdio: 'ignore', timeout: 5000 }).status === 0;
+  return key && dns && spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status === 0;
+}
 /** The SKIP lines of a result that the suite does not forgive. */
 const unforgiven = (name, skips, optOut = OPT_OUT) => (optOut[name]?.when() ? [] : skips);
 const skipped = new Map();
