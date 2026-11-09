@@ -1,6 +1,7 @@
 // A scan on the rooms (spark directed-scans P5): the plan's L0 marks at the table (apps/web/src/engine/render/scans.ts,
-// `roomScans`): a room being read shows a lit wall in the lens accent and a rail for done/total, a finished room a quiet
-// wall and a tick, cleared a few seconds after the job ends. Everything is worked out from the scan side BpLink already
+// `roomMarks`): a room lights only once it holds the feature being read or has a reading (a lit wall in the lens accent and a
+// rail for done/total), a room not yet reached draws nothing, a finished room a quiet wall and a tick, cleared a few seconds
+// after the job ends. Everything is worked out from the scan side BpLink already
 // polls (the jobs, and the store's measurements and activity rows, jobProgress's reading), so it is built on a discrete
 // change and costs nothing while no scan runs: one instanced mesh, empty and hidden when idle, with the lens accent on its
 // one material instance. M_EdgeGlow takes its colour per material instance, not per mesh instance, so the marks wear the
@@ -193,6 +194,8 @@ void ABpTable::RefreshScanMarks()
 		const bool bAll = Track.Kind == BpVocab::ScanScope::Kind::All;
 		const TSet<FString> Want(Track.Features);
 		TSet<FString> Read;
+		// The feature being read (views.ts `current`): the last reading or measured row in scope.
+		FString Current;
 		bool bStale = false;
 		if (!Track.RunId.IsEmpty())
 		{
@@ -210,6 +213,7 @@ void ABpTable::RefreshScanMarks()
 				const bool bNoImpact = A.kind == BpVocab::Activity::Kind::Note && A.text.StartsWith(NoImpactPrefix);
 				if (bNoImpact && Feature.IsEmpty()) A.text.Mid(FCString::Strlen(NoImpactPrefix)).TrimStart().Split(TEXT(":"), &Feature, nullptr);
 				if ((bNoImpact || A.kind == BpVocab::Activity::Kind::Measured) && !Feature.IsEmpty() && (bAll || Want.Contains(Feature))) Read.Add(Feature);
+				if ((A.kind == BpVocab::Activity::Kind::Reading || A.kind == BpVocab::Activity::Kind::Measured) && !A.feature.IsEmpty() && (bAll || Want.Contains(A.feature))) Current = A.feature;
 			}
 			bStale = bRunning && Newest.GetTicks() > 0 && (UtcNow - Newest).GetTotalMinutes() >= ScanStaleMinutes;
 		}
@@ -229,10 +233,12 @@ void ABpTable::RefreshScanMarks()
 			Mark.Lens = Track.Lens;
 			++Mark.Total;
 			Mark.Done += Read.Contains(Tile.id) ? 1 : 0;
+			Mark.bLit |= Tile.id == Current;
 		}
 		for (auto& Pair : ByRoom)
 		{
 			Pair.Value.bScanned = Pair.Value.Done >= Pair.Value.Total;
+			Pair.Value.bLit |= Pair.Value.Done > 0;
 			// A stalled, failed or short-finished scan is no longer reading: it keeps only the rooms it finished. The instant a job
 			// reads `done` the store's last rows may be one answer behind (/scans and /scan answer separately): the room holds on
 			// through that read rather than blinking off before its tick.
@@ -281,6 +287,8 @@ void ABpTable::DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks)
 	for (int32 Room : RoomIndices)
 	{
 		const FScanRoomMark& Mark = Marks[Room];
+		// A room the reader has not reached is in the status's count but draws nothing (`roomMarks`'s lit).
+		if (!Mark.bLit && !Mark.bScanned) continue;
 		Key += FString::Printf(TEXT("%d:%d/%d:%d:%s;"), Room, Mark.Done, Mark.Total, Mark.bScanned, *Mark.Lens);
 		NewestLens = Mark.Lens;
 	}
@@ -290,7 +298,7 @@ void ABpTable::DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks)
 
 	ScanMarks->ClearInstances();
 	ScanMarkRooms.Reset();
-	if (Marks.Num() > 0)
+	if (!Key.IsEmpty())
 	{
 		TArray<FTransform> Places;
 		TArray<float> Data;
@@ -303,6 +311,7 @@ void ABpTable::DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks)
 		for (int32 Room : RoomIndices)
 		{
 			const FScanRoomMark& Mark = Marks[Room];
+			if (!Mark.bLit && !Mark.bScanned) continue;
 			ScanMarkRooms.Add(Room);
 			const FBpPlanBox& Box = SheetPlan->rooms[Room].box;
 			const FVector2D A = PlanToPaperCm(FVector2D(Box.x, Box.y)), B = PlanToPaperCm(FVector2D(Box.x + Box.w, Box.y + Box.h));

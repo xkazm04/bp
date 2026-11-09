@@ -280,6 +280,7 @@ void ABpPawn::MakeWristPanel()
 		RoomHandle = It->OnRoomModeChanged().AddUObject(this, &ABpPawn::OnWristRoomChanged);
 		WristRoomMode = It->GetRoomModeId();
 		WristBandHandle = It->OnScanBandChanged().AddUObject(this, &ABpPawn::RefreshWrist);
+		WristAskHandle = It->OnLampAskChanged().AddUObject(this, &ABpPawn::RefreshWrist);
 	}
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpPawn::ReceiveScanState);
@@ -297,6 +298,25 @@ void ABpPawn::OnWristOnboarding(const FBpOnboardingState&)
 
 void ABpPawn::OnWristFocuses(const FBpFocusList&)
 {
+	RefreshWrist();
+}
+
+void ABpPawn::WristArmFocus(const FString& FocusId)
+{
+	ABpTable* Table = WristTable.Get();
+	if (!Table) return;
+	bWristScan = true;
+	bWristAsk = bWristRooms = bWristProjects = false;
+	const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
+	const int32 At = List.Focuses.IndexOfByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+	WristPage = At == INDEX_NONE ? 0 : At / WristRoomsPerPage;
+	WristArmedFocus = FocusId;
+	WristArmedTarget = Table->DirectedTarget();
+	WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+	WristArmedAt = FPlatformTime::Seconds();
+	WristScanWords.Reset();
+	bWristScanRefused = false;
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s by the lamp: Scan %s"), *FocusId, *WristArmedLabel);
 	RefreshWrist();
 }
 
@@ -401,6 +421,24 @@ void ABpPawn::WristTap(const FString& Id)
 		RefreshWrist();
 		return;
 	}
+	if (Id == TEXT("wrist:tab:ask"))
+	{
+		bWristAsk = true;
+		bWristRooms = bWristProjects = bWristScan = false;
+		RefreshWrist();
+		return;
+	}
+	if (Id.StartsWith(TEXT("wrist:ask:")) && Table)
+	{
+		const FString What = Id.Mid(10);
+		if (What == TEXT("next")) Table->AskNextStep(TEXT("wrist"));
+		else if (What == TEXT("here")) Table->AskPlanHere(TEXT("wrist"));
+		else if (What == TEXT("scan")) Table->AskScanThis(TEXT("wrist"));
+		else if (What == TEXT("act")) Table->LampAct(TEXT("wrist"));
+		RefreshWrist();
+		return;
+	}
+	if (Id.StartsWith(TEXT("wrist:tab:"))) bWristAsk = false;
 	if (Id == TEXT("wrist:tab:projects"))
 	{
 		bWristProjects = true;
@@ -680,9 +718,12 @@ void ABpPawn::RefreshWrist()
 	const bool bScanTab = Link.HasPcLink() || Link.HasSampleFocuses();
 	const bool bSampleTab = bScanTab && !Link.HasPcLink();
 	if (!bScanTab) bWristScan = false;
-	const bool bScan = bScanTab && bWristScan;
-	const bool bRooms = bRoomTab && bWristRooms && !bScan;
-	const bool bProjects = bWristProjects && !bRooms && !bScan;
+	const bool bAskTab = Table && Table->HasPlan();
+	if (!bAskTab) bWristAsk = false;
+	const bool bAsk = bAskTab && bWristAsk;
+	const bool bScan = bScanTab && bWristScan && !bAsk;
+	const bool bRooms = bRoomTab && bWristRooms && !bScan && !bAsk;
+	const bool bProjects = bWristProjects && !bRooms && !bScan && !bAsk;
 	const FBpOnboardingState& Onboarding = Link.GetOnboarding();
 	const FString Open = Link.GetProductSlug();
 	TArray<ABpTable::FRoomRank> Ranks;
@@ -715,7 +756,9 @@ void ABpPawn::RefreshWrist()
 		Key += TEXT("|band ") + ScanBandHead + TEXT("/") + ScanBandBody;
 		for (const FBpSavedFocus& F : FocusList.Focuses) Key += FString::Printf(TEXT("%s:%s:%s;"), *F.Id, *F.Lens, *F.Note);
 	}
+	if (bAsk) Key += FString::Printf(TEXT("|ask %s|%s|%d"), *Table->GetLampAnswer(), *Table->LampOfferLabel(), Table->IsLampAsking());
 	Key += bRoomTab ? TEXT("|tabs3") : TEXT("|tabs2");
+	if (bAskTab) Key += TEXT("+ask");
 	if (bScanTab) Key += TEXT("+scan");
 	const bool bSeat = IsHeadsetOn();
 	if (bSeat) Key += TEXT("|seat");
@@ -846,14 +889,15 @@ void ABpPawn::RefreshWrist()
 		static const FSlateRoundedBoxBrush TabOff(Cyan.CopyWithNewOpacity(0.06f), 10.f, CyanEdge.CopyWithNewOpacity(0.5f), 2.f);
 		const FSlateFontInfo TabFont = CapFont(TEXT("Bold"), 20.f);
 		struct FTabSpec { const TCHAR* Text; bool bOn; const TCHAR* Id; };
-		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects && !bScan, TEXT("wrist:tab:packages") } };
+		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects && !bScan && !bAsk, TEXT("wrist:tab:packages") } };
+		if (bAskTab) Tabs.Add({ TEXT("ASK"), bAsk, TEXT("wrist:tab:ask") });
 		if (bRoomTab) Tabs.Add({ TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms") });
 		if (bScanTab) Tabs.Add({ TEXT("SCAN"), bScan, TEXT("wrist:tab:scan") });
 		// The scan tab can over-fill the row with SEAT and TOUR: then the tabs close up rather than run off the panel.
 		float Need = bSeat ? WristSeatW + WristTabGap : 0.f;
 		if (!bRoomTab && Table && Table->HasPlan()) Need += WristSeatW + WristTabGap;
 		for (const FTabSpec& Spec : Tabs) Need += FMath::Max(WristTabMinW, WristTextWidth(Spec.Text, TabFont) + 2.f * WristTabPadX) + WristTabGap;
-		const bool bCloseUp = bScanTab && Need - WristTabGap > WristX1 - WristX0;
+		const bool bCloseUp = (bScanTab || bAskTab) && Need - WristTabGap > WristX1 - WristX0;
 		const float TabMinW = bCloseUp ? 0.f : WristTabMinW, TabPadX = bCloseUp ? 8.f : WristTabPadX, TabGap = bCloseUp ? 6.f : WristTabGap;
 		// Laid out from the right.
 		for (int32 Index = Tabs.Num() - 1; Index >= 0; --Index)
@@ -1019,6 +1063,43 @@ void ABpPawn::RefreshWrist()
 			];
 			Put(Box, SNew(SBorder).BorderImage(bHere ? &RoomHere : &RoomRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)[Line]);
 			WristBoxes.Add({ TEXT("wrist:room:") + Rank.Id, Box });
+		}
+	}
+	// The ASK tab (BpAsk.cpp): the lamp's three fixed asks, what it last answered, and the row that does what the answer offers.
+	if (bAsk)
+	{
+		List = SNew(SVerticalBox);
+		Title = TEXT("ASK");
+		Sub = Table->IsLampAsking() ? FString(TEXT("Asking the companion…")) : FString(TEXT("Ask the lamp. A pinch on it does the first."));
+		static const FSlateRoundedBoxBrush AskRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+		static const FSlateRoundedBoxBrush AnswerCard(GlassLit.CopyWithNewOpacity(0.5f), 12.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
+		static const FSlateRoundedBoxBrush ActRow(Amber.CopyWithNewOpacity(0.16f), 10.f, Amber, 2.5f);
+		const FSlateFontInfo RowFont = CapFont(TEXT("Bold"), 25.f), BodyFont = CapFont(TEXT("Regular"), 22.f), ActFont = CapFont(TEXT("Bold"), 23.f);
+		struct FAskRow { const TCHAR* Words; const TCHAR* Id; };
+		const FAskRow AskRows[] = { { TEXT("What should I do next?"), TEXT("wrist:ask:next") }, { TEXT("Plan my next step here"), TEXT("wrist:ask:here") }, { TEXT("Scan this"), TEXT("wrist:ask:scan") } };
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(AskRows); ++Index)
+		{
+			const FBox2f Box(FVector2f(WristX0, WristRowTop + Index * WristRowStep), FVector2f(WristX1, WristRowTop + Index * WristRowStep + WristRowH));
+			Put(Box, SNew(SBorder).BorderImage(&AskRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(AskRows[Index].Words)).Font(RowFont).ColorAndOpacity(FSlateColor(FLinearColor::White))]);
+			WristBoxes.Add({ AskRows[Index].Id, Box });
+		}
+		const FString Answer = Table->GetLampAnswer();
+		const FString Offer = Table->LampOfferLabel();
+		if (!Answer.IsEmpty())
+		{
+			const float Top = WristRowTop + 3 * WristRowStep;
+			const FBox2f Box(FVector2f(WristX0, Top), FVector2f(WristX1, WristPrev.Min.Y - 6.f));
+			const FString Clipped = Answer.Len() > 260 ? Answer.Left(260).TrimEnd() + BpType::Ellipsis() : Answer;
+			Put(Box, SNew(SBorder).BorderImage(&AnswerCard).Padding(FMargin(16.f, 8.f)).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(Clipped)).Font(BodyFont).ColorAndOpacity(FSlateColor(FLinearColor::White)).WrapTextAt(WristX1 - WristX0 - 44.f)
+				]);
+		}
+		if (!Offer.IsEmpty())
+		{
+			const FBox2f Box(FVector2f(WristX0, WristPrev.Min.Y), FVector2f(WristX1, WristPrev.Max.Y));
+			Put(Box, SNew(SBorder).BorderImage(&ActRow).Padding(FMargin(14.f, 0.f)).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Offer)).Font(ActFont).ColorAndOpacity(FSlateColor(Amber))]);
+			WristBoxes.Add({ TEXT("wrist:ask:act"), Box });
 		}
 	}
 	// The Scan tab (P5): what a pinch would start, armed; a refusal in words; else the saved focuses, a page of them.

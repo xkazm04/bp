@@ -810,6 +810,22 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		bAimHitLocal = false;
 		return true;
 	}
+	// The lamp's head on the site plan too: a pinch asks it what to do next (BpAsk.cpp).
+	{
+		FVector Head;
+		if (LampHead(Head))
+		{
+			const FVector ToHead = Head - WorldOrigin;
+			const double Along = FVector::DotProduct(ToHead, WorldDir.GetSafeNormal());
+			if (Along > 0.0 && (ToHead - WorldDir.GetSafeNormal() * Along).SizeSquared() <= FMath::Square(LampHeadRadiusCm))
+			{
+				OutKind = TEXT("lamp");
+				OutId = TEXT("lamp");
+				bAimHitLocal = false;
+				return true;
+			}
+		}
+	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
 	const FTransform WingT = WingGroupTransform(Ew);
 
@@ -967,7 +983,7 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	if (Id.StartsWith(TEXT("deck:"))) return DeckAim(Id, OutWorld);
 	if (Id.StartsWith(TEXT("card:"))) return CardAim(Id, OutWorld);
 	// WP3: the lamp's head, a key plan room, the room map's middle.
-	if (Id == TEXT("lamp")) return !RoomModeId.IsEmpty() && LampHead(OutWorld);
+	if (Id == TEXT("lamp")) return LampHead(OutWorld);
 	if (Id.StartsWith(TEXT("minimap:")))
 	{
 		const FString Room = Id.Mid(8);

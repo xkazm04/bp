@@ -36,6 +36,7 @@ enum class EBpRoomEntry : uint8
 DECLARE_MULTICAST_DELEGATE_OneParam(FBpRoomModeChanged, const FString& /* RoomId */);
 /** A scan's status or result changed (a room read, a scan begun, finished or gone): the wrist's Scan tab reads it again. */
 DECLARE_MULTICAST_DELEGATE(FBpScanBandChanged);
+DECLARE_MULTICAST_DELEGATE(FBpLampAskChanged);
 
 class UCanvas;
 class UCanvasRenderTarget2D;
@@ -620,6 +621,8 @@ public:
 	void DeckDecline();
 	/** A feature's first screen to the front: its most urgent decision, else its sheet. */
 	bool DeckFocus(const FString& FeatureId);
+	/** That finding's decision screen in front (else the feature's first); false when the room's queue has neither. */
+	bool DeckFocusProposal(const FString& ProposalId, const FString& FeatureId);
 	/** A hand's tap (HitTest's "deck:<control>" or "feature:<id>"). */
 	void DeckTap(const FString& Id);
 	/** The front screen's resting centre in the world (BpView.Pose deck aims at it). */
@@ -665,6 +668,29 @@ public:
 	void AskLamp(const FString& FeatureId);
 	/** The lamp's head in the world (its hit sphere's centre); false when the level has no lamp. */
 	bool LampHead(FVector& OutWorld) const;
+	/** The lamp's asks (BpAsk.cpp): what to do next; the next step in the room in view; scan the place in view. Each answers at
+	 *  once from the store, and the first two also ask the companion with a PC link. Its answer's one action waits on LampAct. */
+	void AskNextStep(const TCHAR* Route);
+	void AskPlanHere(const TCHAR* Route);
+	void AskScanThis(const TCHAR* Route);
+	/** Does what the last answer offers (open the finding on the deck, or arm the scan); false when it offers nothing. */
+	bool LampAct(const TCHAR* Route);
+	/** A pinch on the lamp's head: the offer, else "What should I do next?". */
+	void LampPinched();
+	/** What the last answer said (its title and why, or the companion's reply), and what its action would do; empty when none. */
+	FString GetLampAnswer() const { return LampAnswer; }
+	FString LampOfferLabel() const;
+	bool IsLampAsking() const { return bLampTurnOut; }
+	FBpLampAskChanged& OnLampAskChanged() { return LampAskChanged; }
+	/** The lamp's stations and rides (BpLampTravel.cpp): goes to the station nearest a point in the table's space and turns to
+	 *  it (bp.LampTravel 0: only turns). Home is its site or room place. */
+	void PresentLamp(const FVector& TargetLocal, const TCHAR* Why);
+	void LampToStation(int32 Station, const FVector& TargetLocal, const TCHAR* Why = TEXT("console"));
+	void LampGoHome(const TCHAR* Why);
+	/** The paper's height in the table's space (where a presented target lies). */
+	double GetPaperZ() const;
+	/** The stations in the table's space, for BpView.Fov. */
+	void LampStationsLocal(TArray<FVector>& Out) const;
 	/** HitTest's last plane point (table space), for GetAimHit. */
 	mutable FVector AimHitLocal = FVector::ZeroVector;
 	mutable bool bAimHitLocal = false;
@@ -1009,6 +1035,8 @@ private:
 		int32 Done = 0;
 		int32 Total = 0;
 		bool bScanned = false;
+		/** The walk has reached it: it holds the feature being read, or has a reading. An unreached room draws nothing. */
+		bool bLit = false;
 		FString Lens;
 	};
 	/** Puts these marks on the rooms: the one batch, dressed in the newest lens's accent; nothing when they are what is shown. */
@@ -1285,6 +1313,8 @@ private:
 	bool StartReplay(const FString& Scope, const TArray<FString>& Features);
 	/** The scanned place: the union of these features' tiles (ScanPlanBox) and its wing (ScanWing, "*" across wings). */
 	void SetScanPlace(const TArray<FString>& Features, bool bAll);
+	/** The lamp goes to the place being scanned (a station near it). */
+	void PresentScanPlace(const TCHAR* Why);
 	bool bCardShown = false;
 	FString CardProposal;
 	/** BpCard.Ask <proposal id>: the open finding the card asks about, ahead of the room rule (empty: the rule). */
@@ -1550,6 +1580,61 @@ private:
 	/** The lamp says Line on its caption for LampCaptionS; a notice (an onboarding milestone) shows outside room mode too. */
 	void SayLamp(const FString& Line, bool bNotice = false);
 	void ApplyLampWidgets();
+	/** The lamp's rides (BpLampTravel.cpp): the path in table cm and its running length, the ride's clock (-1 none), its duration,
+	 *  whether it is a reduced-motion cut, the from and to height and yaw, where it stands at a station and which, and what it faces. */
+	TArray<FVector2D> LampPath;
+	TArray<double> LampPathLen;
+	float LampTravelT = -1.f;
+	float LampRideS = 1.f;
+	float LampSettleT = -1.f;
+	static constexpr float LampSettleS = 0.25f;
+	static constexpr float LampCutS = 0.2f;
+	/** How long a station holds with no caption to send it home (a scan). */
+	static constexpr float LampStationIdleS = 8.f;
+	bool bLampRideCut = false;
+	bool bLampToHome = false;
+	bool bLampAtStation = false;
+	bool bLampHidden = false;
+	int32 LampStation = INDEX_NONE;
+	double LampRideFromZ = 0.0, LampRideToZ = 0.0, LampRideFromYaw = 0.0, LampRideToYaw = 0.0;
+	double LampStationYaw = 0.0;
+	FVector LampRideTo = FVector::ZeroVector, LampRideHome = FVector::ZeroVector, LampStationAtLocal = FVector::ZeroVector, LampFaceTarget = FVector::ZeroVector;
+	FVector LampLeanAxis = FVector::ZeroVector;
+	float LampLeanNow = 0.f;
+	/** The caption's table-space Y: left by default, the mirror side when the lamp stands on the right of the site plan. */
+	double LampCaptionY = CaptionYCm;
+	FTimerHandle LampHomeTimer;
+	FVector LampHomeAt(double& OutYaw) const;
+	FVector LampStationAt(int32 Station, const FVector& HomeAt) const;
+	int32 PickLampStation(const FVector& TargetLocal) const;
+	void StartLampRide(const FVector& To, double ToYaw, const FString& What);
+	void ArriveLamp();
+	void SetLampHidden(bool bHide);
+	bool TickLampTravel(float DeltaSeconds);
+	/** Where a ride has the lamp now (table space), its yaw and the lean; false when no ride or settle runs. */
+	bool LampRidePose(FVector& OutAt, double& OutYaw, FVector& OutLeanAxis, float& OutLeanDeg) const;
+	/** The lamp's asks' answer (BpAsk.cpp): what it offers, which room, feature and finding, the words on the wrist and the hint. */
+	enum class ELampOffer : uint8 { None, OpenFinding, ScanHere };
+	ELampOffer LampOffer = ELampOffer::None;
+	FString LampOfferRoom;
+	FString LampOfferFeature;
+	FString LampOfferProposal;
+	FString LampAnswer;
+	FString LampHint;
+	bool bLampTurnOut = false;
+	/** The finding to bring to the deck once the room LampAct switched to has its queue. */
+	FString PendingDeckProposal;
+	FString PendingDeckFeature;
+	FBpLampAskChanged LampAskChanged;
+	void LampNotifyAsk();
+	void SetLampOffer(ELampOffer Offer, const FString& Room, const FString& Feature, const FString& Proposal);
+	void ClearLampOffer();
+	FString LampCaptionFit(const FString& Text) const;
+	void LampSayAnswer(const FString& Subject, const FString& Why, const FString& Hint, const FString& ShortWhy = FString());
+	FVector LampTargetForFeature(const FString& FeatureId) const;
+	FVector LampTargetForRoom(const FString& InRoomId) const;
+	FString LampRoomOf(const FString& FeatureId) const;
+	void LampAskTurn(FString&& Text);
 	/** The tour's state (BpTour.cpp): the step (-1 not running), when it began and when the person last acted (world
 	 *  seconds), whether the lamp already showed this step, the line it keeps on the caption, what it points at, and the
 	 *  asks and decisions counted since the step began. TickTour runs from TickSwitch at the actor's tick rate. */

@@ -380,6 +380,7 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 			bScanReplay = false;
 			SetScanPlace(Job->scope.features, Job->scope.kind == TEXT("all"));
 			UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s lens=%s scope=%s:%s features=%d"), *Job->id, *Job->lens, *Job->scope.kind, *Job->scope.id, Job->scope.features.Num());
+			PresentScanPlace(TEXT("scan"));
 		}
 		ScanRun = Job->run_id;
 		// The feature being read: the run's latest reading or measured row (blueprint-ui.md, Views: "current").
@@ -793,6 +794,11 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		Item.HorizSpacingAdjust = Text.Tracking;
 		Canvas->DrawItem(Item);
 	}
+}
+
+void ABpTable::PresentScanPlace(const TCHAR* Why)
+{
+	if (ScanPlanBox.bIsValid) PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(ScanPlanBox.GetCenter()), 0.f)), Why);
 }
 
 void ABpTable::SetScanPlace(const TArray<FString>& Features, bool bAll)

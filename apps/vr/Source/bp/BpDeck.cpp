@@ -441,6 +441,14 @@ void ABpTable::OnDeckRoomChanged(const FString& InRoomId)
 	}
 	BuildDeckQueue();
 	ShowDeckAt(0, 0, 0);
+	// The lamp's answer named a finding in this room: it goes to the front as the room opens.
+	if (!PendingDeckProposal.IsEmpty())
+	{
+		const FString Proposal = PendingDeckProposal, Feature = PendingDeckFeature;
+		PendingDeckProposal.Reset();
+		PendingDeckFeature.Reset();
+		DeckFocusProposal(Proposal, Feature);
+	}
 	// The type against the floor, at the front screen's farthest corner from the target eye (BpType: 6 px in the capture).
 	const FTransform Pose = DeckPose(0.f, 0.f);
 	const FVector Eye = EyeLocal();
@@ -1125,6 +1133,15 @@ bool ABpTable::DeckShow(int32 Place)
 		return false;
 	}
 	if (Place - 1 != DeckAt || DeckPage != 0) ShowDeckAt(Place - 1, 0, Place - 1 >= DeckAt ? 1 : -1);
+	return true;
+}
+
+bool ABpTable::DeckFocusProposal(const FString& ProposalId, const FString& FeatureId)
+{
+	const int32 Found = DeckScreens.IndexOfByPredicate([&ProposalId](const FDeckScreen& S) { return S.Proposal == ProposalId; });
+	if (Found == INDEX_NONE) return DeckFocus(FeatureId);
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: focus %s -> screen %d"), *ProposalId, Found + 1);
+	if (Found != DeckAt || DeckPage != 0) ShowDeckAt(Found, 0, Found >= DeckAt ? 1 : -1);
 	return true;
 }
 

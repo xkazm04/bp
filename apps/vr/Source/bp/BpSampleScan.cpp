@@ -79,6 +79,8 @@ bool ABpTable::StartSampleScan(const FString& FocusId, const FString& InTarget, 
 	const float Step = FMath::Min(FMath::Clamp(CVarSampleStep.GetValueOnGameThread(), 0.05f, 3.f), FMath::Clamp(CVarSampleMax.GetValueOnGameThread(), 5.f, 300.f) / SampleTiles.Num());
 	GetWorldTimerManager().SetTimer(SampleTimer, this, &ABpTable::StepSampleScan, Step, true, Step);
 	UE_LOG(LogBpTable, Log, TEXT("BpSample: walking %s for %s (%d features, one per %.2f s); no request is made"), bSite ? TEXT("the site") : *Label, *SampleLens, SampleTiles.Num(), Step);
+	// The lamp goes to the place being walked.
+	PresentScanPlace(TEXT("sample scan"));
 	// The first step's row and marks now, not one step later.
 	SampleAt = -1;
 	StepSampleScan();
@@ -140,18 +142,21 @@ void ABpTable::EndSampleScan()
 void ABpTable::SampleMarks(TMap<int32, FScanRoomMark>& OutMarks) const
 {
 	if (!SheetPlan.IsValid()) return;
-	// Every room in scope is lit from the start, as a real job's are; a room's rail fills as its features are read.
+	// Every room in scope counts from the start (the title block's "n of m rooms"); it draws only once the walk has reached it
+	// (DrawScanMarks), so a room lights as the walk enters it and its rail fills as its features are read.
 	for (int32 Index = 0; Index < SampleTiles.Num(); ++Index)
 	{
 		FScanRoomMark& Mark = OutMarks.FindOrAdd(TileRoom[SampleTiles[Index]]);
 		Mark.Lens = SampleLens;
 		++Mark.Total;
 		Mark.Done += Index < SampleAt ? 1 : 0;
+		Mark.bLit |= Index == SampleAt;
 	}
 	const bool bReduced = ReducedMotion();
 	for (auto& Pair : OutMarks)
 	{
 		Pair.Value.bScanned = Pair.Value.Done >= Pair.Value.Total;
+		Pair.Value.bLit |= Pair.Value.Done > 0;
 		// Reduced motion: no creeping rail; a room is unread until it is read.
 		if (bReduced && !Pair.Value.bScanned) Pair.Value.Done = 0;
 	}

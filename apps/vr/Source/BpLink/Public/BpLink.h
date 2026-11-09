@@ -80,12 +80,34 @@ struct BPLINK_API FBpScanState
 	/** Each proposal's expected_delta by its id, where the raw /scan answer has one (spark vr-room-layers WP2: the screen
 	 *  deck's before -> after figure); the generated double reads an absent one as 0, a move nobody proposed. */
 	TMap<FString, double> Deltas;
+	/** Each proposal's stored score (scan-score/1) by id, where the raw /scan answer has one, and the ids of the rows written
+	 *  under scan-finding/1 (any v5 key on the wire): the generated double and int32 read an absent key as 0, and a row's worth
+	 *  (scan/score.ts worthOf) turns on presence. */
+	TMap<FString, double> Scores;
+	TSet<FString> ScoredV5;
 	/** Bumped on every read that changed something, so a consumer can skip a state it has seen. */
 	int32 Serial = 0;
 };
 
 /** Fired on the game thread when a poll brought back something new. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
+
+/** What POST /api/companion/turn ended as (companion-link.md section 2), for the lamp to put in words. */
+struct BPLINK_API FBpCompanionTurn
+{
+	/** Ok: the turn ended `done`; Busy: 409 thread_busy; Failed: the turn ended failed or interrupted; Unreached: no answer. */
+	enum class EOutcome : uint8 { Ok, Busy, Failed, Unreached };
+	EOutcome Outcome = EOutcome::Unreached;
+	/** The reply's text (the `text` deltas, joined). */
+	FString Text;
+	/** The `failure` class of a failed turn, or the error text of a refused one. */
+	FString Failure;
+	/** A pending card's summary (a GATED tool: answered in the web app only, contract section 4); empty when none. */
+	FString CardSummary;
+	/** The last `focus` command's target, in plan ids; empty when the turn pointed at nothing. */
+	FString FocusKind;
+	FString FocusId;
+};
 
 /** One focus saved on the PC for reuse (packages/core/src/scan/focus.ts SavedFocus): a lens and what it is to look for. */
 struct BPLINK_API FBpSavedFocus
@@ -371,6 +393,12 @@ public:
 	 *  behind it. Never true with a server: HasPcLink and this exclude each other. */
 	bool HasSampleFocuses() const;
 
+	/** POST /api/companion/turn { conversationId?, product, text } (companion-link.md section 2; the lamp's fixed asks). The
+	 *  whole Server-Sent-Event body is read when the turn ends (the lamp shows the reply, not deltas; incremental reading is
+	 *  a later change). Refused without a PC link: nothing is sent, OnDone gets Unreached. One conversation per session, kept
+	 *  here. A 409 reads Busy (wait and retry, never queue). OnDone runs on the game thread. Never approves a card. */
+	void PostCompanionTurn(const FString& Text, TFunction<void(const FBpCompanionTurn&)> OnDone);
+
 	/** Adds an open finding to the product's draft wave the way the web's ledger does (spark vr-room-layers WP2, the screen
 	 *  deck's Approve): with no draft wave, POST .../waves a new one (the composer's defaults: "Wave <n>", one package
 	 *  "Package 1", opus, high); else PATCH .../waves/<id> the newest draft (or the one this process last wrote to) with
@@ -539,7 +567,10 @@ private:
 	void PollScan();
 	bool TickScanPoll(float DeltaSeconds);
 	void TakeScanBody(int32 Part, FString Body);
-	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas);
+	void ReceiveScanPart(int32 Part, TSharedPtr<struct FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas, TMap<FString, double> Scores, TSet<FString> ScoredV5);
+	/** The lamp's companion conversation (one per session, companion-lamp-plan.md U4) and whether a turn is out. */
+	FString CompanionConversation;
+	bool bCompanionTurnOut = false;
 
 	FBpScanState ScanState;
 	FOnBpScanState ScanStateDelegate;

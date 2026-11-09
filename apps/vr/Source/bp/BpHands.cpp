@@ -138,7 +138,7 @@ namespace
 	 *  key plan room, the wrist's tabs and rows (ABpTable's hands' rule). */
 	bool IsTap(const FString& Id)
 	{
-		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("card:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
+		return IsCrumb(Id) || Id == TEXT("lamp") || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("card:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
 	}
 
 	/** What a hold acts on (ABpTable's hands' rule): the lamp's head, a feature's glyph, a key plan room. */
@@ -463,6 +463,13 @@ void UBpHands::PinchEnded(FSlot& S)
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
 		T->SwitchRoom(S.HoverId.Mid(8), TEXT("keyplan"));
+		return;
+	}
+	// A pinch released on the lamp's head: the lamp's next-step ask, or what its answer offers (BpAsk.cpp).
+	if (!S.bFired && T && S.HoverKind == TEXT("lamp"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on lamp"));
+		T->LampPinched();
 		return;
 	}
 	// Released on the decision card's buttons (ROADMAP F8): a tap; Decline on a repeat declines it in the store.

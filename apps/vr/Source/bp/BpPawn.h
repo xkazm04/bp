@@ -110,6 +110,9 @@ public:
 	FVector GetWristWorld() const;
 	bool WristAim(const FString& Id, FVector& OutWorld) const;
 	void WristTap(const FString& Id);
+	/** Opens the Scan tab with that focus armed for the place the table shows, as a first pinch on its row would (the lamp's
+	 *  "Scan this"): a second pinch starts it. */
+	void WristArmFocus(const FString& FocusId);
 	/** The control a hand's ray is on (UBpHands, the aim cursor): it lights, since no cursor is drawn over the panel. */
 	void SetWristHover(const FString& Id);
 	/** The wrist panel's text classes where it stands (BpView.TextCard): the rooms tab's names and counts, a package's
@@ -206,6 +209,9 @@ private:
 	/** The Scan tab (P5): shown, the focus armed (its id, and the place and words it would run with), when it was armed, what
 	 *  the last start said, and whether that was a refusal or failure (a card until dismissed) rather than news (the sub-line). */
 	bool bWristScan = false;
+	/** The ASK tab (BpAsk.cpp): the lamp's fixed asks, its last answer, and the row that does what it offers. */
+	bool bWristAsk = false;
+	FDelegateHandle WristAskHandle;
 	FString WristArmedFocus;
 	FString WristArmedTarget;
 	FString WristArmedLabel;

@@ -769,6 +769,8 @@ void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
 		// The proposals that carry a tier: an absent key is untriaged, which the generated int32 cannot tell from 0.
 		TMap<FString, int32> Tiers;
 		TMap<FString, double> Deltas;
+		TMap<FString, double> Scores;
+		TSet<FString> ScoredV5;
 		const TSharedPtr<FJsonObject>* Snapshot = nullptr;
 		const TArray<TSharedPtr<FJsonValue>>* Proposals = nullptr;
 		if (bOk && Part == 1 && Json->TryGetObjectField(TEXT("snapshot"), Snapshot) && (*Snapshot)->TryGetArrayField(TEXT("proposals"), Proposals))
@@ -782,9 +784,16 @@ void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
 				if ((*Row)->TryGetNumberField(TEXT("tier"), Tier)) Tiers.Add(Id, Tier);
 				double Delta = 0.0;
 				if ((*Row)->TryGetNumberField(TEXT("expected_delta"), Delta)) Deltas.Add(Id, Delta);
+				double Score = 0.0;
+				if ((*Row)->TryGetNumberField(TEXT("score"), Score)) Scores.Add(Id, Score);
+				// scan/score.ts isV5: any scan-finding/1 judgement key present on the row.
+				for (const TCHAR* Key : { TEXT("score"), TEXT("impact"), TEXT("effort"), TEXT("confidence"), TEXT("category"), TEXT("predicted_verdict"), TEXT("band"), TEXT("mvp") })
+				{
+					if ((*Row)->HasField(Key)) { ScoredV5.Add(Id); break; }
+				}
 			}
 		}
-		AsyncTask(ENamedThreads::GameThread, [Part, Gen, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas)]() mutable
+		AsyncTask(ENamedThreads::GameThread, [Part, Gen, Wire, bOk, Failed, Tiers = MoveTemp(Tiers), Deltas = MoveTemp(Deltas), Scores = MoveTemp(Scores), ScoredV5 = MoveTemp(ScoredV5)]() mutable
 		{
 			FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
 			if (!Module || Gen != GProductGen) return;
@@ -795,16 +804,16 @@ void FBpLinkModule::TakeScanBody(int32 Part, FString Body)
 				Module->ScanBodyHash[Part] = 0;
 				return;
 			}
-			Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers), MoveTemp(Deltas));
+			Module->ReceiveScanPart(Part, Wire, MoveTemp(Tiers), MoveTemp(Deltas), MoveTemp(Scores), MoveTemp(ScoredV5));
 		});
 	});
 }
 
-void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas)
+void FBpLinkModule::ReceiveScanPart(int32 Part, TSharedPtr<FBpScanWire> Wire, TMap<FString, int32> Tiers, TMap<FString, double> Deltas, TMap<FString, double> Scores, TSet<FString> ScoredV5)
 {
 	const bool bFirst = Part == 0 ? !ScanState.bHasJobs : Part == 1 ? !ScanState.bHasScan : !ScanState.bHasWaves;
 	if (Part == 0) { ScanState.Jobs = MoveTemp(Wire->jobs); ScanState.bHasJobs = true; }
-	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.Tiers = MoveTemp(Tiers); ScanState.Deltas = MoveTemp(Deltas); ScanState.bHasScan = true; }
+	else if (Part == 1) { ScanState.Scan = MoveTemp(Wire->snapshot); ScanState.Tiers = MoveTemp(Tiers); ScanState.Deltas = MoveTemp(Deltas); ScanState.Scores = MoveTemp(Scores); ScanState.ScoredV5 = MoveTemp(ScoredV5); ScanState.bHasScan = true; }
 	else { ScanState.Waves = MoveTemp(Wire->waves); ScanState.bHasWaves = true; }
 	++ScanState.Serial;
 	if (bFirst)
@@ -2336,6 +2345,125 @@ void FBpLinkModule::FetchIslandsPlan(TFunction<void(bool, const FBpPlan&)> OnDon
 		const bool bOk = Status == 200 && ParsePlanBody(Response->GetContentAsString(), Snapshot, Refused);
 		if (!bOk) UE_LOG(LogBpLink, Log, TEXT("BpLink: GET %s answered %d%s"), *Url, Status, Refused.IsEmpty() ? TEXT("") : *(TEXT(": ") + Refused));
 		OnDone(bOk, Snapshot.Plan);
+	});
+	Request->ProcessRequest();
+}
+
+// ---- The companion's turn (companion-link.md section 2) ---------------------------------------------------------------------
+
+namespace
+{
+	/** One SSE body's `data:` lines as JSON objects, in order (`event:` lines are not needed: every event carries `type`). */
+	void ReadTurnEvents(const FString& Body, FBpCompanionTurn& Out, FString& OutConversation)
+	{
+		TArray<FString> Lines;
+		Body.ParseIntoArrayLines(Lines, false);
+		Out.Outcome = FBpCompanionTurn::EOutcome::Failed;
+		bool bEnded = false;
+		for (const FString& Line : Lines)
+		{
+			if (!Line.StartsWith(TEXT("data:"))) continue;
+			TSharedPtr<FJsonObject> Event;
+			if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line.Mid(5).TrimStart()), Event) || !Event.IsValid()) continue;
+			FString Type;
+			Event->TryGetStringField(TEXT("type"), Type);
+			if (Type == TEXT("start")) Event->TryGetStringField(TEXT("conversationId"), OutConversation);
+			else if (Type == TEXT("text"))
+			{
+				FString Delta;
+				if (Event->TryGetStringField(TEXT("delta"), Delta)) Out.Text += Delta;
+			}
+			else if (Type == TEXT("card"))
+			{
+				const TSharedPtr<FJsonObject>* Card = nullptr;
+				if (Event->TryGetObjectField(TEXT("card"), Card))
+				{
+					FString State;
+					(*Card)->TryGetStringField(TEXT("state"), State);
+					// A pending card is the person's (contract section 4); a policy's result is not asked of anyone.
+					if (State == TEXT("pending")) (*Card)->TryGetStringField(TEXT("summary"), Out.CardSummary);
+				}
+			}
+			else if (Type == TEXT("focus"))
+			{
+				const TSharedPtr<FJsonObject>* Focus = nullptr;
+				const TSharedPtr<FJsonObject>* Target = nullptr;
+				if (Event->TryGetObjectField(TEXT("focus"), Focus) && (*Focus)->TryGetObjectField(TEXT("target"), Target))
+				{
+					(*Target)->TryGetStringField(TEXT("kind"), Out.FocusKind);
+					(*Target)->TryGetStringField(TEXT("id"), Out.FocusId);
+				}
+			}
+			else if (Type == TEXT("end"))
+			{
+				bEnded = true;
+				FString Outcome;
+				Event->TryGetStringField(TEXT("outcome"), Outcome);
+				Out.Outcome = Outcome == TEXT("done") ? FBpCompanionTurn::EOutcome::Ok : FBpCompanionTurn::EOutcome::Failed;
+				if (Outcome != TEXT("done")) Event->TryGetStringField(TEXT("failure"), Out.Failure);
+				if (Outcome == TEXT("interrupted")) Out.Failure = Outcome;
+			}
+		}
+		if (!bEnded && Out.Failure.IsEmpty()) Out.Failure = TEXT("the turn stopped without an end event");
+	}
+}
+
+void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const FBpCompanionTurn&)> OnDone)
+{
+	if (!HasPcLink() || GFromBundle)
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn not sent: no PC link"));
+		if (OnDone) OnDone(FBpCompanionTurn());
+		return;
+	}
+	if (bCompanionTurnOut)
+	{
+		FBpCompanionTurn Busy;
+		Busy.Outcome = FBpCompanionTurn::EOutcome::Busy;
+		Busy.Failure = TEXT("thread_busy");
+		if (OnDone) OnDone(Busy);
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	if (!CompanionConversation.IsEmpty()) Json->SetStringField(TEXT("conversationId"), CompanionConversation);
+	Json->SetStringField(TEXT("product"), GetProductSlug());
+	Json->SetStringField(TEXT("text"), Text);
+	FString Wire;
+	FJsonSerializer::Serialize(Json, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Wire));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = FHttpModule::Get().CreateRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/turn"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("text/event-stream"));
+	Request->SetContentAsString(Wire);
+	// A model turn with its tools can run minutes; the answer is read whole when it ends.
+	Request->SetTimeout(240.f);
+	bCompanionTurnOut = true;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn posted (conversation %s): %s"), CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation, *Text);
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		if (Module) Module->bCompanionTurnOut = false;
+		FBpCompanionTurn Turn;
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		if (Status == 409)
+		{
+			Turn.Outcome = FBpCompanionTurn::EOutcome::Busy;
+			Turn.Failure = TEXT("thread_busy");
+		}
+		else if (Status == 200)
+		{
+			FString Conversation;
+			ReadTurnEvents(Response->GetContentAsString(), Turn, Conversation);
+			if (Module && !Conversation.IsEmpty()) Module->CompanionConversation = Conversation;
+		}
+		else if (Status != 0)
+		{
+			Turn.Outcome = FBpCompanionTurn::EOutcome::Failed;
+			Turn.Failure = FString::Printf(TEXT("the server answered %d"), Status);
+		}
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"));
+		if (OnDone) OnDone(Turn);
 	});
 	Request->ProcessRequest();
 }

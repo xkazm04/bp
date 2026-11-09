@@ -307,6 +307,31 @@ void ABpTable::EnterTourStep(int32 Step)
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: step %s"), StepName(Step));
 	SayTour(Line);
+	// The lamp goes to what the step is about (BpLampTravel.cpp): a station near it, or home for the opening and the close.
+	switch (Step)
+	{
+	case ETourStep::LiftWing:
+		if (const FBpPlanWing* Wing = FindWing(TourWing)) PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w * 0.5, Wing->box.y + Wing->box.h * 0.5)), 0.f)), TEXT("tour"));
+		break;
+	case ETourStep::LiftRoom:
+	case ETourStep::StepIn:
+		PresentLamp(LampTargetForRoom(Step == ETourStep::StepIn && !RoomId.IsEmpty() ? RoomId : TourRoom), TEXT("tour"));
+		break;
+	case ETourStep::Ask:
+		if (!TourFeature.IsEmpty()) PresentLamp(LampTargetForFeature(TourFeature), TEXT("tour"));
+		break;
+	case ETourStep::Decide:
+		LampLookAt = DeckPose(0.f, 0.f).GetLocation();
+		LampLookTarget = 1.f;
+		SetActorTickInterval(0.f);
+		break;
+	case ETourStep::StepOut:
+	case ETourStep::HandOff:
+		LampGoHome(TEXT("tour"));
+		break;
+	default:
+		break;
+	}
 	// The lamp's "Like this." finishes before the next line; any other line is cut by the next.
 	const UAudioComponent* Voice = TourVoice.Get();
 	if (Voice && Now < TourVoiceEndsAt && TourVoiceClip == TEXT("shown")) TourVoiceNext = StepName(Step);

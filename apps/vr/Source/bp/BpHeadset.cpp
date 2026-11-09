@@ -220,6 +220,9 @@ namespace
 			for (const BpType::FClassSample& Each : Classes) Marks.Add({ Each.Name, Each.Foot });
 			Marks.Add({ TEXT("deck front screen"), Table->GetDeckFrontWorld() });
 			Marks.Add({ TEXT("lamp caption (centre)"), Table->GetCaptionWorld() });
+			TArray<FVector> Stations;
+			Table->LampStationsLocal(Stations);
+			for (int32 Index = 0; Index < Stations.Num(); ++Index) Marks.Add({ FString::Printf(TEXT("lamp station %d"), Index), Table->GetActorTransform().TransformPosition(Stations[Index]) });
 			const double W = ABpTable::PaperWidthCm, D = ABpTable::PaperDepthCm;
 			Marks.Add({ TEXT("paper far-left corner"), Table->PaperToWorld(FVector2D(0.0, 0.0)) });
 			Marks.Add({ TEXT("paper far-right corner"), Table->PaperToWorld(FVector2D(W, 0.0)) });

@@ -295,7 +295,7 @@ void ABpTable::FindLamp()
 FVector ABpTable::GetCaptionWorld() const
 {
 	// Where ApplyLampWidgets puts it (the component stays at the table's origin until it first shows).
-	return GetActorTransform().TransformPosition(FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm));
+	return GetActorTransform().TransformPosition(FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm));
 }
 
 bool ABpTable::LampHead(FVector& OutWorld) const
@@ -316,7 +316,11 @@ void ABpTable::PlaceLamp()
 {
 	if (!Lamp.IsValid()) return;
 	const FTransform& Table = GetActorTransform();
-	const bool bHome = LampAway <= 0.f && LampLook <= 0.f;
+	FVector RideAt, LeanAxis;
+	double RideYaw = 0.0;
+	float LeanDeg = 0.f;
+	const bool bRide = LampRidePose(RideAt, RideYaw, LeanAxis, LeanDeg);
+	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation;
 	const auto SetMovable = [](AActor* Actor, uint8 Mobility)
 	{
 		const EComponentMobility::Type Want = static_cast<EComponentMobility::Type>(Mobility);
@@ -351,16 +355,44 @@ void ABpTable::PlaceLamp()
 	const FVector Eye = EyeLocal();
 	const double RoomYaw = LampYawToward(RoomAt, FMath::Lerp(DeckPose(0.f, 0.f).GetLocation(), Eye, static_cast<double>(LampRoomFaceShare)));
 	const float A = SwitchEase(LampAway);
-	const FVector At = FMath::Lerp(RestAt, RoomAt, static_cast<double>(A));
+	FVector At = FMath::Lerp(RestAt, RoomAt, static_cast<double>(A));
 	double Yaw = RestYaw + FMath::FindDeltaAngleDegrees(RestYaw, RoomYaw) * A;
-	if (LampLook > 0.f) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
-	const FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+	// A ride (or a station it stands at) overrides the home place; a home-bound ride follows a home still moving.
+	if (bRide)
+	{
+		At = RideAt;
+		Yaw = RideYaw;
+		if (bLampToHome) At += FMath::Lerp(RestAt, RoomAt, static_cast<double>(A)) - LampRideHome;
+	}
+	else if (bLampAtStation)
+	{
+		At = LampStationAtLocal;
+		Yaw = LampStationYaw;
+	}
+	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
+	FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+	if (LeanDeg != 0.f && !LeanAxis.IsNearlyZero()) Turn = FQuat(LeanAxis.GetSafeNormal(), FMath::DegreesToRadians(LeanDeg)) * Turn;
 	const FTransform World(Table.GetRotation() * Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), Table.TransformPosition(At), LampRest.GetScale3D());
 	Lamp->SetActorTransform(World);
 	for (int32 Index = 0; Index < LampGroup.Num(); ++Index)
 	{
 		if (AActor* Each = LampGroup[Index].Get()) Each->SetActorTransform(LampGroupRel[Index] * World);
 	}
+}
+
+FString ABpTable::LampCaptionFit(const FString& Text) const
+{
+	// One line of the plate, cut as CaptionLines cuts a line (BpType's rule), by the measured width SayLamp lays out to.
+	const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), CaptionCapCm * CaptionPxPerCm);
+	const float MaxW = CaptionWidthCm * CaptionPxPerCm - 2.f * 22.f - 12.f;
+	const FString Flat = Text.Replace(TEXT("\n"), TEXT(" "));
+	if (CaptionWidth(Flat, Font) <= MaxW) return Flat;
+	for (int32 Keep = Flat.Len() - 1; Keep > 0; --Keep)
+	{
+		const FString Cut = Flat.Left(Keep).TrimEnd() + BpType::Ellipsis();
+		if (CaptionWidth(Cut, Font) <= MaxW) return Cut;
+	}
+	return Flat;
 }
 
 // ---- Urgency, the next room and the switch ----------------------------------------------------------------------------
@@ -518,8 +550,8 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 			]);
 		LampCaption->RequestRedraw();
 		UE_LOG(LogBpTable, Log, TEXT("BpType: lamp caption cap_cm=%.2f; %.1f cm from the target eye: %.1f px"), CaptionCapCm,
-			FVector::Dist(EyeLocal(), FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm)),
-			CaptionCapCm * 800.0 / FVector::Dist(EyeLocal(), FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm)));
+			FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)),
+			CaptionCapCm * 800.0 / FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)));
 	}
 	SetActorTickInterval(0.f);
 	ApplyLampWidgets();
@@ -532,7 +564,7 @@ void ABpTable::ApplyLampWidgets()
 	{
 		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice);
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
-		const FVector At(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm);
+		const FVector At(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm);
 		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / CaptionPxPerCm)));
 		const float Fade = FMath::Clamp(LampCaptionClock / 0.4f, 0.f, 1.f);
 		LampCaption->SetTintColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, Fade));
@@ -631,6 +663,7 @@ void ABpTable::AskLamp(const FString& FeatureId)
 	LampLookTarget = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: ask %s"), *FeatureId);
 	++TourAsks;
+	PresentLamp(LampLookAt, TEXT("ask"));
 	SayLamp(FString::Printf(TEXT("%s:\n%s · %s · %s"), *Tile.name, *Findings, *Health, *Scan));
 }
 
@@ -640,6 +673,8 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 	// The lamp's tour (BpTour.cpp) reads where the table is, at whatever rate the actor ticks.
 	TickTour();
 	const bool bReduced = SwitchReduced();
+	// A ride along the edges (BpLampTravel.cpp), or its settle.
+	bBusy |= TickLampTravel(DeltaSeconds);
 	// The lamp to its place and turn.
 	const float WasAway = LampAway, WasLook = LampLook;
 	if (LampAway != LampAwayTarget) LampAway = bReduced ? LampAwayTarget : FMath::FInterpConstantTo(LampAway, LampAwayTarget, DeltaSeconds, 1.f / LampMoveS);
@@ -660,6 +695,9 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 			LampLine.Reset();
 			bLampNotice = false;
 			LampLookTarget = 0.f;
+			// The answer has had its time: its offer lapses, and the lamp goes back to rest.
+			if (LampOffer != ELampOffer::None) { ClearLampOffer(); LampNotifyAsk(); }
+			if (TourStep < 0 && (bLampAtStation || LampTravelT >= 0.f)) LampGoHome(TEXT("caption ended"));
 		}
 		ApplyLampWidgets();
 		bBusy = true;
