@@ -13,6 +13,7 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpPawn.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -63,6 +64,10 @@ namespace
 	/** With open decisions left in the room (D15), the summary's bar holds APPROVE ALL (n) first and NEXT ROOM narrower after it. */
 	const FBox2f ApproveAllBox(FVector2f(PadX, BarY), FVector2f(PadX + 330.f, BarY + BarH));
 	const FBox2f NextRoomNarrowBox(FVector2f(PadX + 350.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
+	/** The route from a room to scanning it: a small pill on the top row between the chips and the id, on every screen of the room's deck (a
+	 *  pinch opens the wrist's Scan tab, which the room in view scopes already). Only when a scan can be started here. */
+	const FBox2f ScanBox(FVector2f(LW - PadX - 648.f, 18.f), FVector2f(LW - PadX - 318.f, 70.f));
+	bool DeckScanRoute() { const FBpLinkModule& L = FBpLinkModule::Get(); return L.HasPcLink() || L.HasSampleFocuses(); }
 	/** A spine (FAI): the next screens' edges right of the front, laid out on SW x SH px at the same density. */
 	constexpr float SW = ABpTable::DeckSpineWidthCm * DeckLayoutPxPerCm;
 	constexpr float SH = ABpTable::DeckHeightCm * 0.92f * DeckLayoutPxPerCm;
@@ -1286,6 +1291,12 @@ void ABpTable::DeckTap(const FString& Id)
 	else if (Id == TEXT("deck:approve")) DeckApprove();
 	else if (Id == TEXT("deck:decline")) DeckDecline();
 	else if (Id == TEXT("deck:nextroom")) DeckNextRoom();
+	else if (Id == TEXT("deck:scan"))
+	{
+		// The route to the wrist's Scan tab, the one place a scan starts: the panel is already scoped to this room.
+		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		if (ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr) Pawn->WristTap(TEXT("wrist:tab:scan"));
+	}
 	else if (Id == TEXT("deck:approveall")) DeckApproveAll();
 	else if (Id.StartsWith(TEXT("feature:"))) DeckFocus(Id.Mid(8));
 }
@@ -1390,7 +1401,8 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
 	FString Why;
 	const bool bAll = bEnd && DeckOpenIds().Num() > 0;
-	if (bAll && ApproveAllBox.IsInside(Px)) OutId = TEXT("deck:approveall");
+	if (DeckScanRoute() && ScanBox.IsInside(Px)) OutId = TEXT("deck:scan");
+	else if (bAll && ApproveAllBox.IsInside(Px)) OutId = TEXT("deck:approveall");
 	else if (bEnd && (bAll ? NextRoomNarrowBox : NextRoomBox).IsInside(Px) && !NextRoom(Why).IsEmpty()) OutId = TEXT("deck:nextroom");
 	else if (bDecision && DeckRepeat(DeckAt) && RepeatDeclineBox.IsInside(Px)) OutId = TEXT("deck:decline");
 	else if (bDecision && DeckRepeat(DeckAt) && RepeatApproveBox.IsInside(Px)) OutId = TEXT("deck:approve");
@@ -1407,7 +1419,7 @@ bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 	if (DeckRoom.IsEmpty() || DeckCards.Num() < 4) return false;
 	const bool bRepeat = DeckRepeat(DeckAt);
 	const FBox2f* Box = Id == TEXT("deck:approve") ? (bRepeat ? &RepeatApproveBox : &ApproveBox) : Id == TEXT("deck:decline") ? (bRepeat ? &RepeatDeclineBox : &DeclineBox) : Id == TEXT("deck:prev") ? &PrevBox : Id == TEXT("deck:next") ? &NextBox
-		: Id == TEXT("deck:nextroom") ? (DeckOpenIds().Num() > 0 ? &NextRoomNarrowBox : &NextRoomBox) : Id == TEXT("deck:approveall") ? &ApproveAllBox : nullptr;
+		: Id == TEXT("deck:nextroom") ? (DeckOpenIds().Num() > 0 ? &NextRoomNarrowBox : &NextRoomBox) : Id == TEXT("deck:approveall") ? &ApproveAllBox : Id == TEXT("deck:scan") ? &ScanBox : nullptr;
 	if (!Box) return false;
 	const FVector2f Centre = Box->GetCenter();
 	const float Scale = DeckPxPerCm / DeckLayoutPxPerCm;
@@ -1579,6 +1591,7 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	Place(PrevBox, Button(bPrev ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("‹  PREV"), bPrev ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
 	Place(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Counter]);
 	Place(NextBox, Button(bNext ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("NEXT  ›"), bNext ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
+	if (DeckScanRoute()) Place(ScanBox, Button(bPaper ? &TabPaper : &TabGlass, FString(), TEXT("SCAN THIS ROOM"), ControlInk));
 	if (bDecision && DeckRepeat(ScreenIndex))
 	{
 		Place(RepeatDeclineBox, Button(&ApproveBrush, TEXT("✕"), TEXT("DECLINE · REPEAT"), Ink));

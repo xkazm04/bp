@@ -279,6 +279,7 @@ void ABpPawn::MakeWristPanel()
 		WristTable = *It;
 		RoomHandle = It->OnRoomModeChanged().AddUObject(this, &ABpPawn::OnWristRoomChanged);
 		WristRoomMode = It->GetRoomModeId();
+		WristBandHandle = It->OnScanBandChanged().AddUObject(this, &ABpPawn::RefreshWrist);
 	}
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpPawn::ReceiveScanState);
@@ -441,9 +442,9 @@ void ABpPawn::WristTap(const FString& Id)
 	else if (Id == TEXT("wrist:tab:scan"))
 	{
 		FBpLinkModule& Link = FBpLinkModule::Get();
-		if (Link.IsFromBundle() || !Link.HasPcLink())
+		if (!Link.HasPcLink() && !Link.HasSampleFocuses())
 		{
-			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist scan tab: no PC link"));
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist scan tab: no PC link and no sample focuses"));
 			return;
 		}
 		bWristScan = true;
@@ -542,6 +543,7 @@ void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 	Add(TEXT("wrist focus note"), 23.0);
 	Add(TEXT("wrist focus lens"), 19.0);
 	Add(TEXT("wrist scan card"), 23.0);
+	Add(TEXT("wrist scan band"), 19.0);
 }
 
 void ABpPawn::ApplyWristPose()
@@ -674,8 +676,9 @@ void ABpPawn::RefreshWrist()
 	const bool bTabs = true;
 	FBpLinkModule& LinkRef = FBpLinkModule::Get();
 	const FBpLinkModule& Link = LinkRef;
-	// The Scan tab (P5): a PC link only, never in the bundle or the APK.
-	const bool bScanTab = !Link.IsFromBundle() && Link.HasPcLink();
+	// The Scan tab (P5): a PC link, or the bundle's sample focuses (a local sample, that says so; BpSampleScan.cpp).
+	const bool bScanTab = Link.HasPcLink() || Link.HasSampleFocuses();
+	const bool bSampleTab = bScanTab && !Link.HasPcLink();
 	if (!bScanTab) bWristScan = false;
 	const bool bScan = bScanTab && bWristScan;
 	const bool bRooms = bRoomTab && bWristRooms && !bScan;
@@ -700,11 +703,16 @@ void ABpPawn::RefreshWrist()
 	}
 	const FBpFocusList& FocusList = Link.GetFocusList();
 	const FString ScanPlace = Table ? Table->DirectedLabel(Table->DirectedTarget()) : FString();
+	FString ScanBandHead, ScanBandBody;
 	if (bScan)
 	{
 		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(FocusList.Focuses.Num(), WristRoomsPerPage));
 		WristPage = FMath::Clamp(WristPage, 0, Pages - 1);
 		Key += FString::Printf(TEXT("|scan p%d f%d a=%s t=%s s=%d r=%d w=%s e=%s|"), WristPage, FocusList.Serial, *WristArmedFocus, *ScanPlace, bWristScanStarting, bWristScanRefused, *WristScanWords, *FocusList.Error);
+		if (Table) Table->ScanBand(ScanBandHead, ScanBandBody);
+		// A sample tab says what a sample is, before one has run.
+		if (bSampleTab && ScanBandHead.IsEmpty()) { ScanBandHead = TEXT("SAMPLE SCAN"); ScanBandBody = TEXT("It walks this place on the table. Nothing is read or written."); }
+		Key += TEXT("|band ") + ScanBandHead + TEXT("/") + ScanBandBody;
 		for (const FBpSavedFocus& F : FocusList.Focuses) Key += FString::Printf(TEXT("%s:%s:%s;"), *F.Id, *F.Lens, *F.Note);
 	}
 	Key += bRoomTab ? TEXT("|tabs3") : TEXT("|tabs2");
@@ -1022,6 +1030,7 @@ void ABpPawn::RefreshWrist()
 		const FSlateFontInfo NoteFont = CapFont(TEXT("Regular"), 23.f), LensFont = CapFont(TEXT("Bold"), 19.f), CardFont = CapFont(TEXT("Bold"), 24.f);
 		const int32 Saved = FocusList.Focuses.Num();
 		Sub = bWristScanStarting ? FString(TEXT("Starting the scan…"))
+			: bSampleTab ? FString::Printf(TEXT("Sample scan · %s"), ScanPlace.IsEmpty() ? TEXT("the site") : *ScanPlace)
 			: !WristScanWords.IsEmpty() && !bWristScanRefused ? WristScanWords
 			: !FocusList.bHasFocuses && FocusList.Error.IsEmpty() ? FString(TEXT("Reading the saved focuses…"))
 			: FString::Printf(TEXT("%d saved · would scan %s"), Saved, ScanPlace.IsEmpty() ? TEXT("the site") : *ScanPlace);
@@ -1039,7 +1048,7 @@ void ABpPawn::RefreshWrist()
 				const FString Clipped = Note.Len() > 320 ? Note.Left(320).TrimEnd() + BpType::Ellipsis() : Note;
 				Words->AddSlot().AutoHeight()
 				[
-					SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("Scan %s for:"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel))).Font(CardFont).ColorAndOpacity(FSlateColor(Cyan)).WrapTextAt(WrapW)
+					SNew(STextBlock).Text(FText::FromString((bSampleTab ? FString::Printf(TEXT("Sample scan of %s for:"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel) : FString::Printf(TEXT("Scan %s for:"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel)))).Font(CardFont).ColorAndOpacity(FSlateColor(Cyan)).WrapTextAt(WrapW)
 				];
 				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
 				[
@@ -1048,7 +1057,7 @@ void ABpPawn::RefreshWrist()
 				Words->AddSlot().FillHeight(1.f)[SNew(SBox)];
 				Words->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
 				[
-					SNew(STextBlock).Text(FText::FromString(TEXT("PINCH AGAIN TO START"))).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
+					SNew(STextBlock).Text(FText::FromString(bSampleTab ? TEXT("PINCH AGAIN TO START A SAMPLE SCAN") : TEXT("PINCH AGAIN TO START"))).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
 				];
 				WristBoxes.Add({ TEXT("wrist:focus:") + WristArmedFocus, Whole });
 				static const FSlateRoundedBoxBrush CancelBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
@@ -1090,6 +1099,7 @@ void ABpPawn::RefreshWrist()
 		else
 		{
 			static const FSlateRoundedBoxBrush FocusRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+			static const FSlateRoundedBoxBrush BandBrush(Cyan.CopyWithNewOpacity(0.05f), 10.f, Amber.CopyWithNewOpacity(0.7f), 2.f);
 			for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
 			{
 				const int32 At = WristPage * WristRoomsPerPage + Index;
@@ -1112,6 +1122,23 @@ void ABpPawn::RefreshWrist()
 						]
 					]);
 				WristBoxes.Add({ TEXT("wrist:focus:") + F.Id, Box });
+			}
+			// The scan on the table, or the one just run, under the rows: what it says and what it produced. A full page has no
+			// room for the band and a pager wants the row under it: then its words go on the sub-line.
+			if (!ScanBandHead.IsEmpty())
+			{
+				const int32 Shown = FMath::Min(WristRoomsPerPage, Saved - WristPage * WristRoomsPerPage);
+				if (Saved <= WristRoomsPerPage && Shown < WristRoomsPerPage)
+				{
+					const float Top = WristRowTop + Shown * WristRowStep;
+					Put(FBox2f(FVector2f(WristX0, Top), FVector2f(WristX1, Top + 116.f)), SNew(SBorder).BorderImage(&BandBrush).Padding(FMargin(14.f, 8.f)).VAlign(VAlign_Center)
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(ScanBandHead)).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 5.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(ScanBandBody)).Font(CapFont(TEXT("Regular"), 19.f)).ColorAndOpacity(FSlateColor(FLinearColor::White)).WrapTextAt(WristX1 - WristX0 - 40.f)]
+						]);
+				}
+				else Sub = FString::Printf(TEXT("%s · %s"), *ScanBandHead, *ScanBandBody);
 			}
 		}
 	}

@@ -213,6 +213,7 @@ private:
 	FString WristScanWords;
 	bool bWristScanRefused = false;
 	bool bWristScanStarting = false;
+	FDelegateHandle WristBandHandle;
 	FDelegateHandle WristFocusHandle;
 	void OnWristFocuses(const FBpFocusList& List);
 	void WristDisarm();

@@ -247,6 +247,21 @@ namespace
 			WithPlannedTables(World, TEXT("BpScan.Directed ") + FString::Join(Args, TEXT(" ")), [&Focus, &Target](ABpTable& Table) { Table.StartDirected(Focus, Target, nullptr); });
 		}));
 
+	/** BpScan.Sample <focus id> [room id|site]: the bundle's local sample scan, directly (the proof that a server refuses one). */
+	FAutoConsoleCommandWithWorldAndArgs CmdScanSample(
+		TEXT("BpScan.Sample"),
+		TEXT("BpScan.Sample <focus id> [room id|site]: the bundle's sample scan, no server involved (refused, logged, on a table a server answers). No place: the room the table shows, or the site."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpScan: usage BpScan.Sample <focus id> [room id|site]"));
+				return;
+			}
+			const FString Focus = Args[0], Target = Args.Num() > 1 ? Args[1] : FString();
+			WithPlannedTables(World, TEXT("BpScan.Sample ") + FString::Join(Args, TEXT(" ")), [&Focus, &Target](ABpTable& Table) { Table.StartSampleScan(Focus, Target, nullptr); });
+		}));
+
 	/** BpCard.Show [1|0]: show or hide the decision card. */
 	FAutoConsoleCommandWithWorldAndArgs CmdCardShow(
 		TEXT("BpCard.Show"),
@@ -387,7 +402,7 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 		}
 		bScanLive = ScanPlanBox.bIsValid;
 	}
-	else if (!bScanReplay)
+	else if (!bScanReplay && !bScanSample)
 	{
 		if (bScanLive) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s ended"), *ScanJob);
 		bScanLive = false;
@@ -1051,6 +1066,13 @@ void ABpTable::StartDirected(const FString& FocusId, const FString& InTarget, TF
 {
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
+	// The bundle: no server keeps a scan, so the only scan here is the local sample. It is a different door, not a mode of this one:
+	// nothing below runs for it, and nothing it does reaches PostScan.
+	if (Link.IsFromBundle())
+	{
+		StartSampleScan(FocusId, Target, OnDone);
+		return;
+	}
 	// A focus the table has not read yet (the console, before the Scan tab was ever opened): read them once, then go on.
 	if (!Link.GetFocusList().Focuses.ContainsByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; }) && !Link.IsFromBundle())
 	{

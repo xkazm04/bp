@@ -28,10 +28,11 @@ export const NEUTRAL = [
   ['Chrome 1600x1000', 'desktop browser 1600x1000'],
   ['QR Platba (SPD) code', 'bank QR payment code'],
   ['Multibanco entity', 'bank-transfer entity'],
+  ['framer motion', 'motion'],
 ];
 
 /** Brand and product names that must not reach the headset's sample (whole words, any case). */
-export const BRANDS = /\b(google|apple|ios|pixel|chrome|safari|next\.js|react native|multibanco|platba|stripe|paypal|mailchimp|twilio|whatsapp|instagram|facebook|firebase|sendgrid|klarna|revolut|mastercard)\b/i;
+export const BRANDS = /\b(google|apple|ios|pixel|chrome|safari|next\.js|react native|multibanco|platba|stripe|paypal|mailchimp|twilio|whatsapp|instagram|facebook|firebase|sendgrid|framer|klarna|revolut|mastercard)\b/i;
 
 export const neutralize = (text) => NEUTRAL.reduce((t, [from, to]) => t.split(from).join(to), text);
 

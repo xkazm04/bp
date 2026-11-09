@@ -1058,9 +1058,11 @@ void ABpTable::DrawRoomSheet(UCanvas* Canvas, int32 Width, int32 Height)
 		};
 		double TitleCap = 0.0, SubCap = 0.0;
 		const double TitleTop = Top + 1.3;
-		const FString Title = FitRow(RoomTitle, BpType::Title, TitleTop, TitleCap);
+		// A scan's status takes the block's two rows while it runs, as on the site plan's block (SetScanStatus).
+		const bool bScanStatus = !ScanStatusTitle.IsEmpty();
+		const FString Title = FitRow(bScanStatus ? ScanStatusTitle.ToUpper() : RoomTitle, BpType::Title, TitleTop, TitleCap);
 		const double SubTop = TitleTop + TitleCap + 1.0;
-		const FString Sub = FitRow(RoomSubtitle, BpType::TitleSub, SubTop, SubCap);
+		const FString Sub = FitRow(bScanStatus ? ScanStatusSub.ToUpper() : RoomSubtitle, BpType::TitleSub, SubTop, SubCap);
 		const double TitleW = Put(Title, BpType::Title, U0, TitleTop, TitleCap, RoomPaperInk);
 		const double SubW = Put(Sub, BpType::TitleSub, U0, SubTop, SubCap, RoomCyan.CopyWithNewOpacity(0.9f));
 		const double R = U0 + FMath::Max(TitleW, SubW) + 1.0, Bottom = SubTop + SubCap + 1.0;

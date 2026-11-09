@@ -660,6 +660,30 @@ bool FBpLinkModule::TickScanPoll(float)
 	return true;
 }
 
+namespace
+{
+	/** One GET .../focuses answer's rows into List (the route's and the bundle's sample-focuses.json, the same shape). */
+	bool ReadFocusRows(const FString& Body, FBpFocusList& List)
+	{
+		TSharedPtr<FJsonObject> Json;
+		const TArray<TSharedPtr<FJsonValue>>* Rows = nullptr;
+		if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) || !Json.IsValid() || !Json->TryGetArrayField(TEXT("focuses"), Rows)) return false;
+		List.bHasFocuses = true;
+		List.Focuses.Reset();
+		for (const TSharedPtr<FJsonValue>& Value : *Rows)
+		{
+			const TSharedPtr<FJsonObject>* Row = nullptr;
+			FBpSavedFocus Focus;
+			if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Focus.Id)) continue;
+			(*Row)->TryGetStringField(TEXT("lens"), Focus.Lens);
+			(*Row)->TryGetStringField(TEXT("note"), Focus.Note);
+			(*Row)->TryGetStringField(TEXT("created_at"), Focus.CreatedAt);
+			List.Focuses.Add(MoveTemp(Focus));
+		}
+		return true;
+	}
+}
+
 void FBpLinkModule::PollScan()
 {
 	if (GFromBundle)
@@ -674,6 +698,20 @@ void FBpLinkModule::PollScan()
 			if (!ReadBundleFile(GetProductSlug(), Files[Part], Body)) continue;
 			++ScanPartsOut;
 			TakeScanBody(Part, MoveTemp(Body));
+		}
+		// The bundle's sample focuses, when it has them (Kettle's): the Scan tab stands on these, and only a sample can follow.
+		FString Samples;
+		if (ReadBundleFile(GetProductSlug(), TEXT("sample-focuses.json"), Samples))
+		{
+			++FocusList.Serial;
+			if (ReadFocusRows(Samples, FocusList))
+			{
+				FocusList.bSample = true;
+				FocusList.Error.Reset();
+				UE_LOG(LogBpLink, Log, TEXT("BpLink: %s's bundle lists %d sample focuses (a scan of one is the table's local sample; nothing is sent)"), *GetProductSlug(), FocusList.Focuses.Num());
+				FocusesDelegate.Broadcast(FocusList);
+			}
+			else UE_LOG(LogBpLink, Error, TEXT("BpLink: the bundled %s/sample-focuses.json did not parse"), *GetProductSlug());
 		}
 		return;
 	}
@@ -1051,11 +1089,16 @@ bool FBpLinkModule::HasPcLink() const
 	return !GFromBundle && ScanState.bHasJobs;
 }
 
+bool FBpLinkModule::HasSampleFocuses() const
+{
+	return GFromBundle && FocusList.bSample;
+}
+
 void FBpLinkModule::GetFocuses(TFunction<void(const FBpFocusList&)> OnDone)
 {
 	if (GFromBundle)
 	{
-		FocusList.Error = TEXT("The table reads the build's bundled snapshot, and no server keeps a focus");
+		if (!FocusList.bSample) FocusList.Error = TEXT("The table reads the build's bundled snapshot, and no server keeps a focus");
 		if (OnDone) OnDone(FocusList);
 		return;
 	}
@@ -1072,22 +1115,8 @@ void FBpLinkModule::GetFocuses(TFunction<void(const FBpFocusList&)> OnDone)
 		FBpFocusList& List = Module->FocusList;
 		++List.Serial;
 		List.Error.Reset();
-		TSharedPtr<FJsonObject> Json;
-		const TArray<TSharedPtr<FJsonValue>>* Rows = nullptr;
-		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), Json) && Json.IsValid() && Json->TryGetArrayField(TEXT("focuses"), Rows))
+		if (Status == 200 && ReadFocusRows(Response->GetContentAsString(), List))
 		{
-			List.bHasFocuses = true;
-			List.Focuses.Reset();
-			for (const TSharedPtr<FJsonValue>& Value : *Rows)
-			{
-				const TSharedPtr<FJsonObject>* Row = nullptr;
-				FBpSavedFocus Focus;
-				if (!Value.IsValid() || !Value->TryGetObject(Row) || !(*Row)->TryGetStringField(TEXT("id"), Focus.Id)) continue;
-				(*Row)->TryGetStringField(TEXT("lens"), Focus.Lens);
-				(*Row)->TryGetStringField(TEXT("note"), Focus.Note);
-				(*Row)->TryGetStringField(TEXT("created_at"), Focus.CreatedAt);
-				List.Focuses.Add(MoveTemp(Focus));
-			}
 			UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has %d saved focuses"), *Slug, List.Focuses.Num());
 		}
 		else

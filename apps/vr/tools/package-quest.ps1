@@ -55,7 +55,7 @@ if ($code -eq 0) {
     $manifest = Join-Path $VrRoot 'Saved\StagedBuilds\Android_ASTC\Manifest_UFSFiles_Android.txt'
     if (-not (Test-Path $manifest)) { Write-Host "FAIL: no staged file list at $manifest"; exit 1 }
     $staged = Get-Content $manifest
-    $need = @('bp/Content/BpData/kettle/plan.json', 'bp/Content/BpData/voice/tour/welcome.wav', 'bp/Content/Bp/Fonts/', 'bp/Content/Bp/Materials/M_BlueprintPaper',
+    $need = @('bp/Content/BpData/kettle/plan.json', 'bp/Content/BpData/kettle/sample-focuses.json', 'bp/Content/BpData/voice/tour/welcome.wav', 'bp/Content/Bp/Fonts/', 'bp/Content/Bp/Materials/M_BlueprintPaper',
         'bp/Content/Bp/Art/SurveyPin/', 'bp/Content/Bp/Art/FixtureKit/', 'bp/Content/Bp/Art/LightTableFrame/', 'bp/Content/Maps/LightTable')
     foreach ($n in $need) {
         if (-not ($staged | Where-Object { $_ -like "*$n*" })) { Write-Host "FAIL: the package has no $n"; $code = 1 }

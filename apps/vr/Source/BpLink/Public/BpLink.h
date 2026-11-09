@@ -102,6 +102,9 @@ struct BPLINK_API FBpFocusList
 {
 	TArray<FBpSavedFocus> Focuses;
 	bool bHasFocuses = false;
+	/** Read from the bundle's sample-focuses.json, not from a server: there is nothing to POST them to, and the table's only
+	 *  answer to one is its local sample (ABpTable::StartSampleScan). Which plane a focus came from travels with the list. */
+	bool bSample = false;
 	/** Why the last read failed, in words; empty after one that answered. */
 	FString Error;
 	int32 Serial = 0;
@@ -356,14 +359,17 @@ public:
 	static FString ScanAnswerWords(int32 Status, const FString& Body);
 
 	/** GET .../focuses: the open product's saved focuses, into GetFocusList(). OnFocuses fires and OnDone runs when it
-	 *  answers (with Error set when it failed); an answer for a product the table has left is dropped. From the bundle there
-	 *  is nothing to ask: Error says so and nothing is sent. Game thread. */
+	 *  answers (with Error set when it failed); an answer for a product the table has left is dropped. From the bundle nothing
+	 *  is sent: the list is the bundle's sample focuses (bSample) when it has them, else Error says so. Game thread. */
 	void GetFocuses(TFunction<void(const FBpFocusList&)> OnDone = nullptr);
 	const FBpFocusList& GetFocusList() const { return FocusList; }
 	FOnBpFocuses& OnFocuses() { return FocusesDelegate; }
 	/** Whether a server is answering this session: not the bundle, and the job list has been read. The wrist's Scan tab
 	 *  stands only then. */
 	bool HasPcLink() const;
+	/** Whether the session reads the bundle and the bundle lists sample focuses: the Scan tab then stands with a local sample
+	 *  behind it. Never true with a server: HasPcLink and this exclude each other. */
+	bool HasSampleFocuses() const;
 
 	/** Adds an open finding to the product's draft wave the way the web's ledger does (spark vr-room-layers WP2, the screen
 	 *  deck's Approve): with no draft wave, POST .../waves a new one (the composer's defaults: "Wave <n>", one package

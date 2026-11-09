@@ -7,6 +7,10 @@
 // Without --url it starts apps/server itself (`--port 0` in an empty cwd, as run-bplink does) and stops it afterwards. It
 // writes apps/vr/Content/BpData/<slug>/: structure.json, plan.json (the islands layout the table draws), scans.json,
 // scan.json, waves.json (the scan side: pins, the scan line, the wrist's waves) and bundle.json (when and from where).
+// Kettle also gets sample-focuses.json, the sim's GET /focuses answer: the two sample focuses the bundle's Scan tab lists, whose
+// scan is the table's local sample and never a request (BpSampleScan.cpp). A live product's bundle gets none: its saved
+// focuses are real, and a real focus must not be offered as a sample. --only <file> writes that one part and leaves the rest
+// of the bundle, bundle.json included, as it is.
 // --briefs (ROADMAP F2) adds briefs.json: { <proposal id>: <the brief route's body> } for every open proposal in scan.json,
 // so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
 // bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
@@ -35,7 +39,10 @@ const PARTS = [
   ['scans.json', '/scans'],
   ['scan.json', '/scan'],
   ['waves.json', '/waves'],
+  ...(slug === 'kettle' ? [['sample-focuses.json', '/focuses']] : []),
 ];
+const only = opt('--only');
+if (only && !PARTS.some(([file]) => file === only)) { console.log(`REFUSED: ${only} is not a part of ${slug}'s bundle (${PARTS.map(([f]) => f).join(', ')})`); process.exit(2); }
 
 let server = null, url = opt('--url');
 if (!url) {
@@ -59,7 +66,7 @@ function stop() { if (server && server.exitCode === null) spawnSync('taskkill.ex
 const dir = path.join(VR, 'Content', 'BpData', slug);
 fs.mkdirSync(dir, { recursive: true });
 let failed = 0, rev = null;
-for (const [file, route] of PARTS) {
+for (const [file, route] of PARTS.filter(([f]) => !only || f === only)) {
   const res = await fetch(`${url}/api/products/${slug}${route}`).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
   // Neutral words (bundle-words.mjs): the bundle rides in the competition APK, which may name no brand.
   const body = neutralize(await res.text());
@@ -68,7 +75,7 @@ for (const [file, route] of PARTS) {
   if (file === 'structure.json') rev = JSON.parse(body).rev ?? null;
   console.log(`ok    ${route} -> ${path.relative(REPO, path.join(dir, file)).replace(/\\/g, '/')} (${(body.length / 1024).toFixed(1)} KB)`);
 }
-if (args.includes('--briefs') && !failed) {
+if (args.includes('--briefs') && !failed && !only) {
   const open = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).proposals ?? []).filter((p) => p.status === 'proposed').map((p) => p.id);
   const briefs = {};
   for (const id of open) {
@@ -83,6 +90,6 @@ if (args.includes('--briefs') && !failed) {
   console.log(`ok    ${open.length} briefs -> ${path.relative(REPO, path.join(dir, 'briefs.json')).replace(/\\/g, '/')} (${(text.length / 1024).toFixed(1)} KB, ${repeats} repeat${repeats === 1 ? '' : 's'})`);
 }
 stop();
-fs.writeFileSync(path.join(dir, 'bundle.json'), JSON.stringify({ product: slug, savedAt: new Date().toISOString(), rev, from: server ? 'apps/server (started by bundle-data.mjs)' : url }, null, 2) + '\n');
+if (!only) fs.writeFileSync(path.join(dir, 'bundle.json'), JSON.stringify({ product: slug, savedAt: new Date().toISOString(), rev, from: server ? 'apps/server (started by bundle-data.mjs)' : url }, null, 2) + '\n');
 console.log(failed ? `\n${failed} route(s) failed; the bundle is incomplete` : `\nbundled ${slug} (rev ${rev}); rebuild the app to stage it`);
 process.exit(failed ? 1 : 0);

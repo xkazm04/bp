@@ -2261,6 +2261,11 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	CardDecided.Reset();
 	DeckBriefAsked.Reset();
 	BriefFor.Reset();
+	// The sample scan (only ever from a bundle) and what the wrist kept of the last scan.
+	EndSampleScan();
+	bHasScanOutcome = false;
+	ScanOutcome = FScanOutcome();
+	SetScanStatus(FString(), FString());
 	// The scan's room marks and what they remembered of the old product's jobs.
 	ClearScanMarks();
 	ScanMarkLive.Reset();
@@ -2737,7 +2742,10 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const FBpLinkModule& Link = FBpLinkModule::Get();
 		const FString Product = Link.GetProductName().IsEmpty() ? Link.GetProductSlug() : Link.GetProductName();
 		FString Sub = Cased(BpType::TitleSub, TitleLensLine.IsEmpty() ? Product : FString::Printf(TEXT("%s  ·  lens %s"), *Product, *BpWords::Lens(TitleLensLine)));
-		const FString Title = Names[static_cast<int32>(Level)];
+		// A scan's status, while one runs and for its linger, on the block's own two rows: nothing new on the table.
+		const bool bScanStatus = !ScanStatusTitle.IsEmpty();
+		if (bScanStatus) Sub = Cased(BpType::TitleSub, ScanStatusSub);
+		FString Title = bScanStatus ? Cased(BpType::Title, ScanStatusTitle) : FString(Names[static_cast<int32>(Level)]);
 		// Each row's cap meets the floor at its own baseline; the floor is taken across the block's likely width. The block
 		// stands on the border's near rule (FO): laid out once from a trial top, then moved down onto the rule and laid out
 		// again there (the floors change with v).
@@ -2767,11 +2775,19 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		Top -= NearRule - Bottom;
 		// A long product name (WP-V1's finding: it pushed the block off the paper): the second line is cut at TitleMaxCm with
 		// an ellipsis (never set smaller than its floor), and the block slides to stay inside what the target framing sees.
-		if (WidthCm(Sub, BpType::TitleSub, SubCap) > TitleMaxCm)
+		// A scan's status (the count first) gets a shorter line than a title: the block stands clear of the left forearm.
+		const double SubMaxCm = bScanStatus ? 28.0 : TitleMaxCm;
+		if (WidthCm(Sub, BpType::TitleSub, SubCap) > SubMaxCm)
 		{
 			FString Cut = Sub;
-			while (Cut.Len() > 3 && WidthCm(Cut + BpType::Ellipsis(), BpType::TitleSub, SubCap) > TitleMaxCm) Cut = Cut.LeftChop(1).TrimEnd();
+			while (Cut.Len() > 3 && WidthCm(Cut + BpType::Ellipsis(), BpType::TitleSub, SubCap) > SubMaxCm) Cut = Cut.LeftChop(1).TrimEnd();
 			Sub = Cut + BpType::Ellipsis();
+		}
+		if (bScanStatus && WidthCm(Title, BpType::Title, TitleCap) > TitleMaxCm)
+		{
+			FString Cut = Title;
+			while (Cut.Len() > 3 && WidthCm(Cut + BpType::Ellipsis(), BpType::Title, TitleCap) > TitleMaxCm) Cut = Cut.LeftChop(1).TrimEnd();
+			Title = Cut + BpType::Ellipsis();
 		}
 		const double TitleW = WidthCm(Title, BpType::Title, TitleCap), SubW = WidthCm(Sub, BpType::TitleSub, SubCap);
 		const double UnitW = WidthCm(TEXT("CM"), BpType::Figure, FigCap);

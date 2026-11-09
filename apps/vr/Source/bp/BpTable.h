@@ -34,6 +34,8 @@ enum class EBpRoomEntry : uint8
 /** Room mode changed: the room the table now shows, empty when it went back to the site plan. Fired when the change is
  *  asked for, before the fade (WP2's screen deck and WP3's switching listen here). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FBpRoomModeChanged, const FString& /* RoomId */);
+/** A scan's status or result changed (a room read, a scan begun, finished or gone): the wrist's Scan tab reads it again. */
+DECLARE_MULTICAST_DELEGATE(FBpScanBandChanged);
 
 class UCanvas;
 class UCanvasRenderTarget2D;
@@ -568,6 +570,14 @@ public:
 	 *  DirectedTarget()), through the same scope-building StartScan has. A focus the table has not read is fetched first. OnDone
 	 *  says whether the job is queued and, either way, words for the wrist (the refusal or failure, never a silent nothing). */
 	void StartDirected(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** The sample scan (BpSampleScan.cpp; only from the bundle): walks Target ("site", a wing, room, bay or feature id; empty:
+	 *  DirectedTarget()) feature by feature on a timer, through the same marks as a real scan. It writes nothing and POSTs nothing.
+	 *  Refused, logged, with a server: a server-linked table can never run one. BpScan.Sample is its console door. */
+	bool StartSampleScan(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** What the wrist's Scan tab says about the scan on the table now or just run (Head its first line, Body its second); empty
+	 *  when none has run in this session. A sample says it is a sample; findings are counted only for a real scan's run. */
+	void ScanBand(FString& Head, FString& Body) const;
+	FBpScanBandChanged& OnScanBandChanged() { return ScanBandChanged; }
 
 	/** Brightens one wing, room or crumb (HitTest's kinds and ids); an empty Id clears it. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
@@ -816,6 +826,27 @@ private:
 	 *  from then, on this clock, not the server's. */
 	TSet<FString> ScanMarkLive;
 	TMap<FString, double> ScanMarkEnded;
+	/** What a scan says on the title block while it runs and for its linger, and nothing otherwise (a real or a sample scan,
+	 *  BpScanMarks.cpp and BpSampleScan.cpp; set on a discrete change only). Title takes the block's first row, Sub its second. */
+	FString ScanStatusTitle;
+	FString ScanStatusSub;
+	void SetScanStatus(const FString& Title, const FString& Sub);
+	/** The scan the wrist's band tells of; bHasScanOutcome until the product changes. RunId is a real scan's run (its findings'
+	 *  run_id in the store); empty for a sample and for a job the store has no run for yet. */
+	struct FScanOutcome
+	{
+		bool bSample = false;
+		bool bRunning = false;
+		FString Lens;
+		FString Focus;
+		int32 RoomsRead = 0;
+		int32 RoomsTotal = 0;
+		FString RunId;
+	};
+	FScanOutcome ScanOutcome;
+	bool bHasScanOutcome = false;
+	void SetScanOutcome(const FScanOutcome& Outcome);
+	FBpScanBandChanged ScanBandChanged;
 	/** The pointed room's furniture, lifted with its copy (FP): one batch per glyph batch, empty unless a room is pointed. */
 	UPROPERTY()
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> GlyphLift;
@@ -972,6 +1003,16 @@ private:
 	/** Rebuilt on a scan-state change and when a finished job's marks are due to go; never per frame. */
 	void RefreshScanMarks();
 	void ClearScanMarks();
+	/** One room's marks (the plan's L0 marks at the table: done of total in the scan's scope, finished or not, the lens). */
+	struct FScanRoomMark
+	{
+		int32 Done = 0;
+		int32 Total = 0;
+		bool bScanned = false;
+		FString Lens;
+	};
+	/** Puts these marks on the rooms: the one batch, dressed in the newest lens's accent; nothing when they are what is shown. */
+	void DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks);
 	/** The marks' visibility and fade, with the levels (ApplyRestVolumes). */
 	void ApplyScanMarks();
 	/** A marked room's own rest walls dim, so the accent owns the outline: the factor for this room (1 when unmarked). */
@@ -1220,6 +1261,19 @@ private:
 	/** The replay of a past run (a live product): its rows' features and whether each row is a measured one, the row the
 	 *  line is on, and the time on it (negative while resting between passes). */
 	bool bScanReplay = false;
+	/** The sample scan running (or lingering on its result): the bundle's local walk (BpSampleScan.cpp), never a server's job.
+	 *  Which of the plan's tiles it walks and in what order, how far it has got, and the lens and focus it says. */
+	bool bScanSample = false;
+	bool bSampleDone = false;
+	TArray<int32> SampleTiles;
+	int32 SampleAt = 0;
+	FString SampleLens;
+	FString SampleFocus;
+	FTimerHandle SampleTimer;
+	void StepSampleScan();
+	void EndSampleScan();
+	/** The rooms the sample has reached, as the marks read them. */
+	void SampleMarks(TMap<int32, FScanRoomMark>& OutMarks) const;
 	TArray<FString> ReplayFeatures;
 	TArray<bool> ReplayMeasured;
 	int32 ReplayAt = 0;

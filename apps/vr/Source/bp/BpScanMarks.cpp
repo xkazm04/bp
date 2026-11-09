@@ -5,11 +5,14 @@
 // change and costs nothing while no scan runs: one instanced mesh, empty and hidden when idle, with the lens accent on its
 // one material instance. M_EdgeGlow takes its colour per material instance, not per mesh instance, so the marks wear the
 // newest job's accent (two lenses scanning at once share it, the newest job's rooms winning, as `roomMarks` already lets the
-// newest job win a room). Only at the site level: a lift or a room's map hides them. From the bundle, never: its job list is a
-// saved answer, and a saved `running` job would read as a reader at work.
+// newest job win a room). Only at the site level: a lift or a room's map hides them. From the bundle, never from its job list: a
+// saved `running` job would read as a reader at work. A bundle's sample scan (BpSampleScan.cpp) draws through the same marks.
+// While any of this runs, the title block says so (SetScanStatus: the lens, its short focus, n of m rooms, then "m rooms read" for
+// the linger, a word for read that never says clean), and the wrist's Scan tab keeps what it produced (ScanBand).
 #include "BpTable.h"
 
 #include "BpLink.h"
+#include "BpWords.h"
 #include "Schema/BpSchemaVocab.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -51,6 +54,14 @@ namespace
 	constexpr double ScanStaleMinutes = 10.0;
 	/** jobProgress's NO_IMPACT: an activity note saying a feature was judged with nothing for this lens to measure. */
 	const TCHAR* const NoImpactPrefix = TEXT("no impact:");
+	/** focusOfRunNote (focus.ts): the text after `focus:<metric> ` in a directed run's note; empty on a plain run. */
+	FString FocusOfRunNote(const FString& Note)
+	{
+		const int32 At = Note.Find(TEXT("focus:"));
+		if (At == INDEX_NONE) return FString();
+		const int32 Space = Note.Find(TEXT(" "), ESearchCase::CaseSensitive, ESearchDir::FromStart, At);
+		return Space == INDEX_NONE ? FString() : Note.Mid(Space + 1).TrimStartAndEnd();
+	}
 	/** isJobNote (jobs.ts): `bp-job:<id>`, or `bp-job:<id> <more>`, never a bare prefix. */
 	bool IsJobNote(const FString& Note, const FString& JobId)
 	{
@@ -89,11 +100,20 @@ void ABpTable::RefreshScanMarks()
 	if (!ScanMarks) return;
 	GetWorldTimerManager().ClearTimer(ScanMarkTimer);
 	const FBpLinkModule& Link = FBpLinkModule::Get();
+	if (bScanSample && SheetPlan.IsValid())
+	{
+		// The sample's marks stand in for a job's: it is a bundle's local walk, and no server's job ever reads as one.
+		TMap<int32, FScanRoomMark> Marks;
+		SampleMarks(Marks);
+		DrawScanMarks(Marks);
+		return;
+	}
 	if (!SheetPlan.IsValid() || Link.IsFromBundle())
 	{
 		const bool bHad = ScanMarkRooms.Num() > 0;
 		ClearScanMarks();
 		if (bHad) ReapplyRestVolumes();
+		SetScanStatus(FString(), FString());
 		return;
 	}
 	const FBpScanState& State = Link.GetScanState();
@@ -101,13 +121,6 @@ void ABpTable::RefreshScanMarks()
 	const FDateTime UtcNow = FDateTime::UtcNow();
 	double Soonest = TNumericLimits<double>::Max();
 
-	struct FMark
-	{
-		int32 Done = 0;
-		int32 Total = 0;
-		bool bScanned = false;
-		FString Lens;
-	};
 	// What is on the rooms: this server's jobs, then the runs in the store no job here claims. The web and this server keep
 	// separate job lists, so a scan started on the other side reaches this table only as a store run (foreignRunJobs in
 	// packages/core/src/scan/views.ts: a one-lens run that reads feature by feature, a measure run or a directed propose run).
@@ -121,6 +134,7 @@ void ABpTable::RefreshScanMarks()
 		FString RunId;
 		FString StartedAt;
 		FString EndedAt;
+		FString Focus;
 	};
 	TArray<FTrack> Tracks;
 	for (const FBpScanJob& Job : State.Jobs)
@@ -128,7 +142,7 @@ void ABpTable::RefreshScanMarks()
 		if (Job.kind != BpVocab::ScanJob::Kind::Measure || Job.lens.IsEmpty() || Job.scope.kind.IsEmpty()) continue;
 		FString RunId = Job.run_id;
 		if (RunId.IsEmpty()) if (const FBpRun* Named = State.Scan.runs.FindByPredicate([&Job](const FBpRun& R) { return IsJobNote(R.note, Job.id); })) RunId = Named->id;
-		Tracks.Add({ Job.id, Job.lens, Job.status, Job.scope.kind, Job.scope.features, RunId, Job.started_at.IsEmpty() ? Job.queued_at : Job.started_at, Job.ended_at });
+		Tracks.Add({ Job.id, Job.lens, Job.status, Job.scope.kind, Job.scope.features, RunId, Job.started_at.IsEmpty() ? Job.queued_at : Job.started_at, Job.ended_at, Job.focus });
 	}
 	for (const FBpRun& Run : State.Scan.runs)
 	{
@@ -140,11 +154,14 @@ void ABpTable::RefreshScanMarks()
 		TArray<FString> Features;
 		if (Run.scope.JsonObject.IsValid()) Run.scope.JsonObject->TryGetStringArrayField(TEXT("features"), Features);
 		// The run's own status words are the job's for these three; a store run with no feature list covers everything.
-		Tracks.Add({ TEXT("run:") + Run.id, Run.lenses[0], Run.status, Features.Num() > 0 ? FString(BpVocab::ScanScope::Kind::Selection) : FString(BpVocab::ScanScope::Kind::All), MoveTemp(Features), Run.id, Run.started_at, Run.ended_at });
+		Tracks.Add({ TEXT("run:") + Run.id, Run.lenses[0], Run.status, Features.Num() > 0 ? FString(BpVocab::ScanScope::Kind::Selection) : FString(BpVocab::ScanScope::Kind::All), MoveTemp(Features), Run.id, Run.started_at, Run.ended_at, FocusOfRunNote(Run.note) });
 	}
 	// Oldest first, so a newer scan's lens and counts win a room (roomMarks).
 	Tracks.Sort([](const FTrack& A, const FTrack& B) { return A.StartedAt < B.StartedAt; });
-	TMap<int32, FMark> Marks;
+	TMap<int32, FScanRoomMark> Marks;
+	// What the status says: the newest track that put a mark on a room, and whether any such track is still reading.
+	FScanOutcome Outcome;
+	bool bAnyReading = false;
 	for (const FTrack& Track : Tracks)
 	{
 		const bool bRunning = Track.Status == BpVocab::ScanJob::Status::Running;
@@ -203,12 +220,12 @@ void ABpTable::RefreshScanMarks()
 			if (bAll) for (const FBpPlanTile& Tile : SheetPlan->tiles) Read.Add(Tile.id);
 			else Read = Want;
 		}
-		TMap<int32, FMark> ByRoom;
+		TMap<int32, FScanRoomMark> ByRoom;
 		for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
 		{
 			const FBpPlanTile& Tile = SheetPlan->tiles[Index];
 			if ((!bAll && !Want.Contains(Tile.id)) || !TileRoom.IsValidIndex(Index) || !SheetPlan->rooms.IsValidIndex(TileRoom[Index])) continue;
-			FMark& Mark = ByRoom.FindOrAdd(TileRoom[Index]);
+			FScanRoomMark& Mark = ByRoom.FindOrAdd(TileRoom[Index]);
 			Mark.Lens = Track.Lens;
 			++Mark.Total;
 			Mark.Done += Read.Contains(Tile.id) ? 1 : 0;
@@ -220,10 +237,42 @@ void ABpTable::RefreshScanMarks()
 			// reads `done` the store's last rows may be one answer behind (/scans and /scan answer separately): the room holds on
 			// through that read rather than blinking off before its tick.
 			const bool bJustEnded = bDone && ScanMarkEnded.Contains(Track.Id) && Now - ScanMarkEnded[Track.Id] < ScanStoreCatchUpS && ScanMarkRooms.Contains(Pair.Key);
-			if (Pair.Value.bScanned || (bRunning && !bStale) || bJustEnded) Marks.Add(Pair.Key, Pair.Value);
+			if (Pair.Value.bScanned || (bRunning && !bStale) || bJustEnded)
+			{
+				Marks.Add(Pair.Key, Pair.Value);
+				Outcome.Lens = Track.Lens;
+				Outcome.Focus = Track.Focus;
+				Outcome.RunId = Track.RunId;
+				bAnyReading |= bRunning && !bStale;
+			}
 		}
 	}
+	if (Soonest < TNumericLimits<double>::Max()) GetWorldTimerManager().SetTimer(ScanMarkTimer, this, &ABpTable::RefreshScanMarks, FMath::Max(0.05f, static_cast<float>(Soonest - Now)), false);
 
+	// The status: read or reading. A room counts as read when the store says every one of its features in scope was.
+	Outcome.bRunning = bAnyReading;
+	Outcome.RoomsTotal = Marks.Num();
+	for (const auto& Pair : Marks) Outcome.RoomsRead += Pair.Value.bScanned ? 1 : 0;
+	if (Marks.Num() > 0 && (bAnyReading || Outcome.RoomsRead > 0))
+	{
+		const FString Lens = BpWords::Lens(Outcome.Lens);
+		const FString Focus = Outcome.Focus.Replace(TEXT("\n"), TEXT(" "));
+		const TCHAR* const RoomWord = Outcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms");
+		SetScanStatus(FString::Printf(TEXT("%s  ·  %s"), bAnyReading ? TEXT("Scanning") : TEXT("Scan"), *Lens),
+			bAnyReading ? FString::Printf(TEXT("%d of %d %s"), Outcome.RoomsRead, Outcome.RoomsTotal, RoomWord) + (Focus.IsEmpty() ? FString() : TEXT("  ·  ") + Focus)
+				: FString::Printf(TEXT("%d %s read"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms")));
+		SetScanOutcome(Outcome);
+	}
+	// A room holding on through the store's last rows (bJustEnded) keeps the status it has, rather than blinking off for a beat.
+	else if (Marks.Num() == 0)
+	{
+		SetScanStatus(FString(), FString());
+	}
+	DrawScanMarks(Marks);
+}
+
+void ABpTable::DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks)
+{
 	FString Key;
 	FString NewestLens;
 	TArray<int32> RoomIndices;
@@ -231,11 +280,10 @@ void ABpTable::RefreshScanMarks()
 	RoomIndices.Sort();
 	for (int32 Room : RoomIndices)
 	{
-		const FMark& Mark = Marks[Room];
+		const FScanRoomMark& Mark = Marks[Room];
 		Key += FString::Printf(TEXT("%d:%d/%d:%d:%s;"), Room, Mark.Done, Mark.Total, Mark.bScanned, *Mark.Lens);
 		NewestLens = Mark.Lens;
 	}
-	if (Soonest < TNumericLimits<double>::Max()) GetWorldTimerManager().SetTimer(ScanMarkTimer, this, &ABpTable::RefreshScanMarks, FMath::Max(0.05f, static_cast<float>(Soonest - Now)), false);
 	if (Key == ScanMarksKey) return;
 	ScanMarksKey = Key;
 	UE_LOG(LogBpTable, Log, TEXT("BpScan: marks %s"), Key.IsEmpty() ? TEXT("none") : *Key);
@@ -254,7 +302,7 @@ void ABpTable::RefreshScanMarks()
 		};
 		for (int32 Room : RoomIndices)
 		{
-			const FMark& Mark = Marks[Room];
+			const FScanRoomMark& Mark = Marks[Room];
 			ScanMarkRooms.Add(Room);
 			const FBpPlanBox& Box = SheetPlan->rooms[Room].box;
 			const FVector2D A = PlanToPaperCm(FVector2D(Box.x, Box.y)), B = PlanToPaperCm(FVector2D(Box.x + Box.w, Box.y + Box.h));

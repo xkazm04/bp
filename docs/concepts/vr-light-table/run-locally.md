@@ -78,6 +78,34 @@ so the desk and the headset share one companion (`docs/blueprint-ui.md`, "One co
 - **No server answering?** BpLink falls back to the bundled snapshot and says so in the log. Writes (scans, draft
   waves) are refused until a server answers.
 
+## Over the cable (a real directed scan from the Quest, no LAN pairing)
+
+The standalone APK (`standalone-plan.md`) defaults to `http://127.0.0.1:3100` and falls back to the bundled snapshot when
+nothing answers there. With the Quest on USB, `adb reverse` makes that address the PC's server, so the table reads the
+server and a directed scan started on the wrist runs for real, with nothing paired and no manifest change.
+
+Why no `usesCleartextTraffic` is needed: UE's Android HTTP is libcurl over native sockets
+(`Runtime/Online/HTTP/Private/Android/AndroidPlatformHttp.cpp`, `FCurlHttpRequest`). Android's cleartext switch is honoured by
+the Java network stack only; the packaged manifest has `android.permission.INTERNET` and no cleartext attribute. (By code
+reading; a first real run on the device is the check.) The reverse's connection arrives at the server from the PC's own
+loopback, so the server's loopback-only door applies and the LAN door is not involved.
+
+```bash
+npm run server                                 # on the PC, port 3100
+node apps/vr/tools/quest-tether.mjs            # adb reverse tcp:3100 tcp:3100, then prints the device, the reverses and whether :3100 answers
+adb shell am force-stop com.developersblueprint.vr   # then start the app from the headset: it reads the product once, at launch
+adb logcat -d -s UE | findstr BpLink           # which source it read (Development APK)
+```
+
+`node apps/vr/tools/quest-tether.mjs --remove` takes the reverse down again: while it stands and a server runs, the APK reads
+that server instead of the bundled snapshot, so remove it before checking the build as a judge will see it.
+
+**Which source it read.** In a Development APK, logcat shows `BpLink: reading kettle from http://127.0.0.1:3100`, and then
+either `BpLink: Kettle wings=5` alone (the server answered) or `BpLink: GET .../structure failed`, `BpLink: reading kettle
+from the build's bundled snapshot`, `BpLink: kettle's bundle lists 2 sample focuses` (the fallback). A Shipping APK compiles
+UE's logs out: there, the wrist's Scan tab says it (`Sample scan · <place>` from the bundle; `N saved · would scan <place>` and a
+real scan from the server), and a bundle's table never lists the PC's saved focuses.
+
 ## When something fails
 
 - **"Is `npm run server` running?"** The server did not answer. With `run-bplink` it starts its own; read
