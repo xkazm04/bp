@@ -64,6 +64,7 @@ public:
 	 *  hand (the posed capture pair, or a tracked wrist). Its size on the arm and its pixel density: */
 	static constexpr float WristPanelWidthCm = 13.f;  // FO: 13 x 10.5 (from 11 x 9.5), room for readable sub-lines (element 11)
 	static constexpr float WristPanelHeightCm = 10.5f;
+	float WristTintShown = -1.f;
 	static constexpr float WristPanelPxPerCm = 50.f;
 	static constexpr float WristPanelForwardCm = 26.f;
 	static constexpr float WristPanelSideCm = -23.f;

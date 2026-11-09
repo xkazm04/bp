@@ -500,6 +500,7 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 		// The lenses' words as their manifests say them (the web reads the same manifests from the same answer).
 		LensNames.Reset();
 		LensAccents.Reset();
+		LensShorts.Reset();
 		FieldLabels.Reset();
 		FieldUnits.Reset();
 		for (const FBpLensEntry& Lens : Snapshot.Structure.lenses)
@@ -507,6 +508,7 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 			const FString& Id = Lens.manifest.id.IsEmpty() ? Lens.id : Lens.manifest.id;
 			if (!Lens.manifest.name.IsEmpty()) LensNames.Add(Id, Lens.manifest.name);
 			if (!Lens.manifest.presentation.accent.dark.IsEmpty()) LensAccents.Add(Id, Lens.manifest.presentation.accent.dark);
+			if (!Lens.manifest.Short_.IsEmpty()) LensShorts.Add(Id, Lens.manifest.Short_);
 			for (const FBpField& Field : Lens.manifest.fields)
 			{
 				if (!Field.label.IsEmpty()) FieldLabels.Add(Id + TEXT("/") + Field.key, Field.label);

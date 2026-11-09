@@ -9,6 +9,7 @@
 #include "BpPawn.h"
 
 #include "BpGameMode.h"
+#include "BpSheet.h"
 #include "BpLink.h"
 #include "BpTable.h"
 #include "BpType.h"
@@ -57,6 +58,7 @@ namespace
 	TAutoConsoleVariable<float> CVarWristOffsetY(TEXT("bp.WristOffsetYCm"), -9.2f, TEXT("The wrist panel's offset along the left grip's Y, out of the palm (cm; negative: out of the back of the hand)."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarWristOffsetZ(TEXT("bp.WristOffsetZCm"), 1.8f, TEXT("The wrist panel's offset along the left grip's Z, toward the wrist (cm)."), ECVF_Default);
 	TAutoConsoleVariable<int32> CVarWristPreview(TEXT("bp.WristPreview"), 0, TEXT("A flat check of the wrist pose: 1 hangs the panel from a modelled resting left hand (30 cm forward, 18 left, 40 down from the eye, palm down, forearm forward) with the bp.Wrist* pose, so a flat capture shows the angle."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristTint(TEXT("bp.WristTint"), 1.f, TEXT("The wrist sheet's brightness, 0.4 to 1.5 (1: the capture's)."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarWristPreviewDeg(TEXT("bp.WristPreviewDeg"), 0.f, TEXT("With bp.WristPreview 1: the hand turned this far along the arc that squares the panel to the eye (degrees)."), ECVF_Default);
 
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
@@ -162,7 +164,7 @@ namespace
 	constexpr float WristVoiceTop = 66.f;
 	constexpr float WristVoiceBottom = 106.f;
 	constexpr float WristVoiceBtnW = 72.f;
-	constexpr float WristVoiceLabelW = 152.f;
+	constexpr float WristVoiceLabelW = 138.f;
 	constexpr float WristVoiceGap = 6.f;
 	constexpr float WristVoiceW = WristVoiceBtnW * 2.f + WristVoiceLabelW + WristVoiceGap * 2.f;
 	constexpr float WristVoiceStep = 0.25f;
@@ -230,15 +232,16 @@ void ABpPawn::MakeWristPanel()
 	WristPanel->SetDrawSize(FVector2D(WristPanelWidthCm * WristPanelPxPerCm, WristPanelHeightCm * WristPanelPxPerCm));
 	WristPanel->SetDrawAtDesiredSize(false);
 	WristPanel->SetPivot(FVector2D(0.5, 0.5));
-	WristPanel->SetBlendMode(EWidgetBlendMode::Transparent);
+	// Wave 4: opaque (the sheet is the whole quad), cheaper than the glass it replaces and the type no longer fights the forearm.
+	WristPanel->SetBlendMode(EWidgetBlendMode::Opaque);
 	WristPanel->SetTwoSided(false);
 	WristPanel->SetBackgroundColor(FLinearColor::Transparent);
 	WristPanel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WristPanel->SetCastShadow(false);
 	WristPanel->SetWindowFocusable(false);
 	WristPanel->SetManuallyRedraw(true);
-	// Over 1 so its cyan and amber reach the bloom, as the concept's panel glows.
-	WristPanel->SetTintColorAndOpacity(FLinearColor(1.3f, 1.3f, 1.3f, 1.f));
+	// bp.WristTint: the sheet's brightness for a device check (TickWristLive applies it live).
+	WristPanel->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 1.f));
 	const FVector Offset(WristPanelForwardCm, WristPanelSideCm, WristPanelDownCm);
 	if (IsHeadsetOn())
 	{
@@ -640,6 +643,15 @@ void ABpPawn::SetWristHover(const FString& Id)
 void ABpPawn::TickWristLive()
 {
 	ApplyWristPose();
+	if (WristPanel)
+	{
+		const float Tint = FMath::Clamp(CVarWristTint.GetValueOnGameThread(), 0.4f, 1.5f);
+		if (Tint != WristTintShown)
+		{
+			WristTintShown = Tint;
+			WristPanel->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, 1.f));
+		}
+	}
 	const float Volume = ABpTable::VoiceVolume();
 	if (Volume != WristVoiceShown)
 	{
@@ -773,13 +785,14 @@ void ABpPawn::RefreshWrist()
 	// blue glass, a lit cyan edge with a soft outer glow and a pale sheen along its top, and larger, brighter type.
 	// FAF (the judges: "opaque slate, not lit glass"): a lighter glass the forearm and the paper show through, a brighter lit
 	// edge and glow, a stronger sheen, and lit rows; the type in white and near-white for contrast through the glass.
-	static const FSlateRoundedBoxBrush Panel(GlassLit.CopyWithNewOpacity(0.8f), 20.f, CyanEdge, 4.5f);  // 0.66 of 1C4E8E read milky, the rail white through a row
+	// Wave 4 (the web's drawing-set language): the panel is an opaque sheet with a double-rule wall, one quad with no overdraw of its own.
+	static const FSlateRoundedBoxBrush Panel(FLinearColor::Transparent, 0.f);
 	// FAB (element 11, the judges: the concept's panel has an emissive edge): two glow rings outside the lit edge, the
 	// inner one bright enough to bloom.
-	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.16f), 32.f);
-	static const FSlateRoundedBoxBrush EdgeGlowInner(Cyan.CopyWithNewOpacity(0.0f), 24.f, CyanEdge.CopyWithNewOpacity(0.85f), 5.f);
-	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.12f), 14.f);
-	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.12f), 12.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
+	static const FSlateRoundedBoxBrush EdgeGlow(FLinearColor::Transparent, 0.f);
+	static const FSlateRoundedBoxBrush EdgeGlowInner(FLinearColor::Transparent, 0.f);
+	const FString SectionLetter = bProjects ? TEXT("A") : bAsk ? TEXT("C") : bRooms ? TEXT("D") : bScan ? TEXT("E") : TEXT("B");
+	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.12f), 0.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
 	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
 	// FAF (pof's draft has two packages, the judges' "only two sparse rows"): up to two rows stand taller, with their tier
 	// line, so the panel reads full; three or four keep FR's compact rows.
@@ -836,17 +849,13 @@ void ABpPawn::RefreshWrist()
 	{
 		// FAH (WP1's review: Kettle's panel read blank): the empty state as a row of its own, an empty package outline, the
 		// way to fill it, and an empty ring.
-		static const FSlateRoundedBoxBrush EmptyRow(Cyan.CopyWithNewOpacity(0.05f), 12.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
+		static const FSlateRoundedBoxBrush EmptyRow(Cyan.CopyWithNewOpacity(0.05f), 0.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
 		List->AddSlot().AutoHeight().Padding(0.f, 12.f, 0.f, 0.f)
 		[
 			SNew(SBorder).BorderImage(&EmptyRow).Padding(FMargin(12.f, 14.f))
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SBpBlocks).Count(1)
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(12.f, 0.f)
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(4.f, 0.f)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
@@ -856,18 +865,6 @@ void ABpPawn::RefreshWrist()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 7.f, 0.f, 0.f)
 					[
 						SNew(STextBlock).Text(FText::FromString(TEXT("Approve a decision to start one"))).Font(CapFont(TEXT("Regular"), 21.f)).ColorAndOpacity(FSlateColor(CyanText))
-					]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SOverlay)
-					+ SOverlay::Slot()
-					[
-						SNew(SBpRing).Fraction(0.f)
-					]
-					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT("0"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 					]
 				]
 			]
@@ -885,8 +882,8 @@ void ABpPawn::RefreshWrist()
 	float RowLeft = WristX1;
 	if (bTabs)
 	{
-		static const FSlateRoundedBoxBrush TabOn(Cyan.CopyWithNewOpacity(0.32f), 10.f, CyanEdge, 2.5f);
-		static const FSlateRoundedBoxBrush TabOff(Cyan.CopyWithNewOpacity(0.06f), 10.f, CyanEdge.CopyWithNewOpacity(0.5f), 2.f);
+		static const FSlateRoundedBoxBrush TabOn(BpSheet::Accent.CopyWithNewOpacity(0.16f), 0.f, CyanEdge.CopyWithNewOpacity(0.6f), 1.5f);
+		static const FSlateRoundedBoxBrush TabOff(FLinearColor::Transparent, 0.f, CyanEdge.CopyWithNewOpacity(0.38f), 1.5f);
 		const FSlateFontInfo TabFont = CapFont(TEXT("Bold"), 20.f);
 		struct FTabSpec { const TCHAR* Text; bool bOn; const TCHAR* Id; };
 		TArray<FTabSpec> Tabs = { { TEXT("PROJECTS"), bProjects, TEXT("wrist:tab:projects") }, { TEXT("PACKAGES"), !bRooms && !bProjects && !bScan && !bAsk, TEXT("wrist:tab:packages") } };
@@ -910,12 +907,14 @@ void ABpPawn::RefreshWrist()
 				[
 					SNew(STextBlock).Text(FText::FromString(Spec.Text)).Font(TabFont).ColorAndOpacity(FSlateColor(Spec.bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.8f)))
 				]);
+			// The lit tab's accent bar along its foot (the ledger's tabs).
+			if (Spec.bOn) Put(FBox2f(FVector2f(Box.Min.X, Box.Max.Y - 4.f), Box.Max), SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(BpSheet::Accent));
 			WristBoxes.Add({ Spec.Id, Box });
 		}
 	}
 	if (bSeat)
 	{
-		static const FSlateRoundedBoxBrush SeatBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
+		static const FSlateRoundedBoxBrush SeatBrush(FLinearColor::Transparent, 0.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
 		const FBox2f WristSeat(FVector2f(RowLeft - WristSeatW, WristTabTop), FVector2f(RowLeft, WristTabBottom));
 		RowLeft -= WristSeatW + WristTabGap;
 		Put(WristSeat, SNew(SBorder).BorderImage(&SeatBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -927,7 +926,7 @@ void ABpPawn::RefreshWrist()
 	// TOUR on the site plan (BpTour.cpp): the lamp's tour again, by hand; room mode's third tab leaves the row no room.
 	if (!bRoomTab && Table && Table->HasPlan())
 	{
-		static const FSlateRoundedBoxBrush TourBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
+		static const FSlateRoundedBoxBrush TourBrush(FLinearColor::Transparent, 0.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
 		const FBox2f WristTour(FVector2f(RowLeft - WristSeatW, WristTabTop), FVector2f(RowLeft, WristTabBottom));
 		RowLeft -= WristSeatW + WristTabGap;
 		Put(WristTour, SNew(SBorder).BorderImage(&TourBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -938,8 +937,8 @@ void ABpPawn::RefreshWrist()
 	}
 	// The voice's level, on the row under the tabs, right; the sub-line stops short of it.
 	{
-		static const FSlateRoundedBoxBrush VoiceBtn(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
-		static const FSlateRoundedBoxBrush VoiceLabel(Cyan.CopyWithNewOpacity(0.05f), 10.f, CyanEdge.CopyWithNewOpacity(0.35f), 1.5f);
+		static const FSlateRoundedBoxBrush VoiceBtn(Cyan.CopyWithNewOpacity(0.10f), 0.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
+		static const FSlateRoundedBoxBrush VoiceLabel(Cyan.CopyWithNewOpacity(0.05f), 0.f, CyanEdge.CopyWithNewOpacity(0.35f), 1.5f);
 		const FBox2f Minus(FVector2f(WristX1 - WristVoiceW, WristVoiceTop), FVector2f(WristX1 - WristVoiceW + WristVoiceBtnW, WristVoiceBottom));
 		const FBox2f Label(FVector2f(Minus.Max.X + WristVoiceGap, WristVoiceTop), FVector2f(Minus.Max.X + WristVoiceGap + WristVoiceLabelW, WristVoiceBottom));
 		const FBox2f Plus(FVector2f(Label.Max.X + WristVoiceGap, WristVoiceTop), FVector2f(WristX1, WristVoiceBottom));
@@ -969,9 +968,9 @@ void ABpPawn::RefreshWrist()
 		Sub = FString::Printf(TEXT("%d projects · %s open"), Onboarding.Products.Num(), *Link.NameOf(Open));
 		if (Building > 0) Sub += FString::Printf(TEXT(" · %d onboarding"), Building);
 		if (!Onboarding.bHasProducts) Sub = TEXT("Reading the projects…");
-		static const FSlateRoundedBoxBrush ProjectRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
-		static const FSlateRoundedBoxBrush ProjectHere(Cyan.CopyWithNewOpacity(0.30f), 10.f, Amber, 3.f);
-		static const FSlateRoundedBoxBrush ProjectBuilding(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
+		static const FSlateRoundedBoxBrush ProjectRow(Cyan.CopyWithNewOpacity(0.10f), 0.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+		static const FSlateRoundedBoxBrush ProjectHere(Cyan.CopyWithNewOpacity(0.30f), 0.f, Amber, 3.f);
+		static const FSlateRoundedBoxBrush ProjectBuilding(Amber.CopyWithNewOpacity(0.10f), 0.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
 		const FSlateFontInfo NameFont = CapFont(TEXT("Bold"), 25.f), StateFont = CapFont(TEXT("Bold"), 19.f);
 		for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
 		{
@@ -1027,8 +1026,8 @@ void ABpPawn::RefreshWrist()
 		int32 Findings = 0;
 		if (Wave) for (const FBpWavePackage& Package : Wave->packages) Findings += Package.ids.Num();
 		Sub = FString::Printf(TEXT("By urgency · %d rooms · draft %d %s"), Ranks.Num(), Findings, Findings == 1 ? TEXT("finding") : TEXT("findings"));
-		static const FSlateRoundedBoxBrush RoomRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
-		static const FSlateRoundedBoxBrush RoomHere(Cyan.CopyWithNewOpacity(0.30f), 10.f, Amber, 3.f);
+		static const FSlateRoundedBoxBrush RoomRow(Cyan.CopyWithNewOpacity(0.10f), 0.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+		static const FSlateRoundedBoxBrush RoomHere(Cyan.CopyWithNewOpacity(0.30f), 0.f, Amber, 3.f);
 		const FSlateFontInfo NameFont = CapFont(TEXT("Bold"), 25.f), CountFont = CapFont(TEXT("Bold"), 19.f);
 		for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
 		{
@@ -1071,9 +1070,9 @@ void ABpPawn::RefreshWrist()
 		List = SNew(SVerticalBox);
 		Title = TEXT("ASK");
 		Sub = Table->IsLampAsking() ? FString(TEXT("Asking the companion…")) : FString(TEXT("Ask the lamp. A pinch on it does the first."));
-		static const FSlateRoundedBoxBrush AskRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
-		static const FSlateRoundedBoxBrush AnswerCard(GlassLit.CopyWithNewOpacity(0.5f), 12.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
-		static const FSlateRoundedBoxBrush ActRow(Amber.CopyWithNewOpacity(0.16f), 10.f, Amber, 2.5f);
+		static const FSlateRoundedBoxBrush AskRow(Cyan.CopyWithNewOpacity(0.10f), 0.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+		static const FSlateRoundedBoxBrush AnswerCard(GlassLit.CopyWithNewOpacity(0.5f), 0.f, Amber.CopyWithNewOpacity(0.85f), 2.f);
+		static const FSlateRoundedBoxBrush ActRow(Amber.CopyWithNewOpacity(0.16f), 0.f, Amber, 2.5f);
 		const FSlateFontInfo RowFont = CapFont(TEXT("Bold"), 25.f), BodyFont = CapFont(TEXT("Regular"), 22.f), ActFont = CapFont(TEXT("Bold"), 23.f);
 		struct FAskRow { const TCHAR* Words; const TCHAR* Id; };
 		const FAskRow AskRows[] = { { TEXT("What should I do next?"), TEXT("wrist:ask:next") }, { TEXT("Plan my next step here"), TEXT("wrist:ask:here") }, { TEXT("Scan this"), TEXT("wrist:ask:scan") } };
@@ -1118,8 +1117,8 @@ void ABpPawn::RefreshWrist()
 		const FBox2f Whole(FVector2f(WristX0, WristRowTop), FVector2f(WristX1, WristRowTop + 4 * WristRowStep + WristRowH));
 		if (bScanCard)
 		{
-			static const FSlateRoundedBoxBrush ArmedCard(GlassLit.CopyWithNewOpacity(0.55f), 12.f, Amber, 3.f);
-			static const FSlateRoundedBoxBrush RefusedCard(Stopped.CopyWithNewOpacity(0.16f), 12.f, Stopped, 3.f);
+			static const FSlateRoundedBoxBrush ArmedCard(GlassLit.CopyWithNewOpacity(0.55f), 0.f, Amber, 3.f);
+			static const FSlateRoundedBoxBrush RefusedCard(Stopped.CopyWithNewOpacity(0.16f), 0.f, Stopped, 3.f);
 			const float WrapW = WristX1 - WristX0 - 48.f;
 			TSharedRef<SVerticalBox> Words = SNew(SVerticalBox);
 			if (!WristArmedFocus.IsEmpty())
@@ -1141,7 +1140,7 @@ void ABpPawn::RefreshWrist()
 					SNew(STextBlock).Text(FText::FromString(bSampleTab ? TEXT("PINCH AGAIN TO START A SAMPLE SCAN") : TEXT("PINCH AGAIN TO START"))).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
 				];
 				WristBoxes.Add({ TEXT("wrist:focus:") + WristArmedFocus, Whole });
-				static const FSlateRoundedBoxBrush CancelBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
+				static const FSlateRoundedBoxBrush CancelBrush(Cyan.CopyWithNewOpacity(0.08f), 0.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
 				const FBox2f Cancel(WristPrev.Min, FVector2f(WristX0 + 180.f, WristPrev.Max.Y));
 				Put(Cancel, SNew(SBorder).BorderImage(&CancelBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
@@ -1170,7 +1169,7 @@ void ABpPawn::RefreshWrist()
 		}
 		else if (Saved == 0)
 		{
-			static const FSlateRoundedBoxBrush EmptyFocus(Cyan.CopyWithNewOpacity(0.05f), 12.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
+			static const FSlateRoundedBoxBrush EmptyFocus(Cyan.CopyWithNewOpacity(0.05f), 0.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
 			const FString Empty = !FocusList.Error.IsEmpty() ? FocusList.Error : !FocusList.bHasFocuses ? FString(TEXT("Reading…")) : FString(TEXT("Save a focus on the PC first"));
 			Put(FBox2f(FVector2f(WristX0, WristRowTop), FVector2f(WristX1, WristRowTop + WristRowH)), SNew(SBorder).BorderImage(&EmptyFocus).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)
 				[
@@ -1179,15 +1178,17 @@ void ABpPawn::RefreshWrist()
 		}
 		else
 		{
-			static const FSlateRoundedBoxBrush FocusRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
-			static const FSlateRoundedBoxBrush BandBrush(Cyan.CopyWithNewOpacity(0.05f), 10.f, Amber.CopyWithNewOpacity(0.7f), 2.f);
+			static const FSlateRoundedBoxBrush FocusRow(Cyan.CopyWithNewOpacity(0.10f), 0.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
+			static const FSlateRoundedBoxBrush BandBrush(Cyan.CopyWithNewOpacity(0.05f), 0.f, Amber.CopyWithNewOpacity(0.7f), 2.f);
 			for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
 			{
 				const int32 At = WristPage * WristRoomsPerPage + Index;
 				if (!FocusList.Focuses.IsValidIndex(At)) break;
 				const FBpSavedFocus& F = FocusList.Focuses[At];
-				const FString Lens = WristCut(BpWords::Lens(F.Lens).ToUpper(), LensFont, 150.f);
-				const float LensW = WristTextWidth(Lens, LensFont) + 18.f;
+				// The lens as the web's marker: its short code on an amber pin (the manifest's, else the name's first letters).
+				const FString* LensShort = Link.FindLensShort(F.Lens);
+				const FString Lens = LensShort ? *LensShort : BpWords::Lens(F.Lens).Left(3).ToUpper();
+				const float LensW = 68.f + 18.f;
 				const FString Note = WristCut(F.Note.Replace(TEXT("\n"), TEXT(" ")), NoteFont, WristX1 - WristX0 - 28.f - LensW);
 				const FBox2f Box(FVector2f(WristX0, WristRowTop + Index * WristRowStep), FVector2f(WristX1, WristRowTop + Index * WristRowStep + WristRowH));
 				Put(Box, SNew(SBorder).BorderImage(&FocusRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)
@@ -1195,7 +1196,7 @@ void ABpPawn::RefreshWrist()
 						SNew(SHorizontalBox)
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 18.f, 0.f)
 						[
-							SNew(STextBlock).Text(FText::FromString(Lens)).Font(LensFont).ColorAndOpacity(FSlateColor(Amber))
+							BpSheet::Pin(Lens, LensFont, 42.f, BpSheet::Amber, 68.f)
 						]
 						+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
 						[
@@ -1226,7 +1227,7 @@ void ABpPawn::RefreshWrist()
 	// The pager: the rooms tab's always, the projects tab's and the scan tab's once there is more than a page (WP-V1).
 	if (bRooms || (bProjects && Onboarding.Products.Num() > WristRoomsPerPage) || (bScan && !bScanCard && FocusList.Focuses.Num() > WristRoomsPerPage))
 	{
-		static const FSlateRoundedBoxBrush PagerBrush(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
+		static const FSlateRoundedBoxBrush PagerBrush(Cyan.CopyWithNewOpacity(0.08f), 0.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
 		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(bRooms ? Ranks.Num() : bScan ? FocusList.Focuses.Num() : Onboarding.Products.Num(), WristRoomsPerPage));
 		const auto PagerTab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
 		{
@@ -1247,14 +1248,15 @@ void ABpPawn::RefreshWrist()
 	// The control a hand's ray is on: an amber edge, what a pinch would act on (the aim cursor stops short of the panel).
 	if (const FWristBox* Hovered = WristBoxes.FindByPredicate([this](const FWristBox& Each) { return Each.Id == WristHover; }))
 	{
-		static const FSlateRoundedBoxBrush HoverEdge(Amber.CopyWithNewOpacity(0.12f), 10.f, Amber, 3.f);
+		static const FSlateRoundedBoxBrush HoverEdge(Amber.CopyWithNewOpacity(0.12f), 0.f, Amber, 3.f);
 		Put(Hovered->Box, SNew(SBorder).BorderImage(&HoverEdge));
 	}
 	// The title where the tabs leave it room; else the lit tab names the panel (WP-V1: three tabs and SEAT fill the row).
 	const float TitleRight = WristX0 + WristTextWidth(Title, CapFont(TEXT("Bold"), 25.f)) + 12.f;
 	if (TitleRight > RowLeft + WristTabGap) Title.Reset();
-	WristPanel->SetSlateWidget(
+		WristPanel->SetSlateWidget(
 		SNew(SOverlay)
+		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()
 		[
 		SNew(SBorder).BorderImage(&EdgeGlow).Padding(5.f)
@@ -1272,22 +1274,23 @@ void ABpPawn::RefreshWrist()
 				SNew(STextBlock).Text(FText::FromString(Title)).Font(CapFont(TEXT("Bold"), 25.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
 			]
 			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 3.f, 0.f, 0.f)
 			[
-				SNew(STextBlock).Text(FText::FromString(WristCut(Sub, CapFont(TEXT("Regular"), 18.f), WristX1 - WristX0 - WristVoiceW - 14.f))).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 10.f, 0.f)
+				[
+					BpSheet::Bubble(SectionLetter, CapFont(TEXT("Bold"), 14.f), 28.f, BpSheet::Ink)
+				]
+				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(FText::FromString(WristCut(Sub, CapFont(TEXT("Regular"), 18.f), WristX1 - WristX0 - WristVoiceW - 14.f - 36.f))).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
+				]
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				List
 			]
 		]
-		]
-		+ SOverlay::Slot().VAlign(VAlign_Top).Padding(FMargin(14.f, 4.f, 14.f, 0.f))
-		[
-			SNew(SBox).HeightOverride(30.f)
-			[
-				SNew(SBorder).BorderImage(&Sheen)
-			]
 		]
 		]
 		]

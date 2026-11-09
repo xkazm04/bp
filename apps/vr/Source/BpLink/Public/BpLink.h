@@ -345,6 +345,8 @@ public:
 	/** A lens's accent as its manifest gives it for a dark surface (presentation.accent.dark, "#rrggbb"), the colour the web marks
 	 *  its scans in; null when the manifest gives none. */
 	const FString* FindLensAccent(const FString& Lens) const { return LensAccents.Find(Lens); }
+	/** The lens's short code as the web's chips say it (manifest `short`: BIZ, DES, ...), or null. */
+	const FString* FindLensShort(const FString& Lens) const { return LensShorts.Find(Lens); }
 	/** A lens field's label and unit (manifest.fields[]: the web's metric name and unit, rail/wide/review.tsx) by the lens and
 	 *  the field's key; null when the manifest has no such field or it names none. */
 	const FString* FindFieldLabel(const FString& Lens, const FString& Key) const { return FieldLabels.Find(Lens + TEXT("/") + Key); }
@@ -591,6 +593,7 @@ private:
 	TMap<FString, FString> FeatureSummaries;
 	TMap<FString, FString> LensNames;
 	TMap<FString, FString> LensAccents;
+	TMap<FString, FString> LensShorts;
 	FBpFocusList FocusList;
 	FOnBpFocuses FocusesDelegate;
 	/** By "<lens>/<key>". */

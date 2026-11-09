@@ -843,8 +843,6 @@ private:
 	/** A scan on the rooms: lit walls, rails and ticks in one edge-glow batch, empty and hidden while no scan runs. */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> ScanMarks;
-	UPROPERTY(Transient)
-	TObjectPtr<UMaterialInstanceDynamic> ScanMarksMid;
 	FTimerHandle ScanMarkTimer;
 	TSet<int32> ScanMarkRooms;
 	FString ScanMarksKey;

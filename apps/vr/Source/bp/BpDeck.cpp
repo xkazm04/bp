@@ -14,6 +14,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpSheet.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -185,7 +186,7 @@ namespace
 	const FLinearColor CyanText(FColor(0xEC, 0xF9, 0xFF));
 	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
 	/** The glass: a dark blue, nearly opaque so the deck behind and the city through the window do not read through. */
-	const FLinearColor GlassDark(FColor(0x08, 0x16, 0x2E));
+	const FLinearColor GlassDark(FColor(0x12, 0x3A, 0x72));
 	/** The paper and its ink (the card's, BpMarks.cpp). */
 	const FLinearColor PaperTone(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor PaperEdge(FColor(0xFF, 0xE2, 0xB0));
@@ -219,14 +220,14 @@ namespace
 
 	const FSlateBrush* ChipBrush(uint8 Chip, bool bPaper)
 	{
-		static const FSlateRoundedBoxBrush OutlineGlass(FLinearColor::Transparent, 10.f, Cyan.CopyWithNewOpacity(0.75f), 2.f);
-		static const FSlateRoundedBoxBrush OutlinePaper(FLinearColor::Transparent, 10.f, Ink.CopyWithNewOpacity(0.6f), 2.f);
-		static const FSlateRoundedBoxBrush AmberFill(Amber, 10.f);
-		static const FSlateRoundedBoxBrush CyanFill(Cyan.CopyWithNewOpacity(0.9f), 10.f);
-		static const FSlateRoundedBoxBrush CyanFillPaper(FLinearColor(FColor(0x0B, 0x2A, 0x6B)), 10.f);
-		static const FSlateRoundedBoxBrush GoodFill(GoodInk, 10.f);
-		static const FSlateRoundedBoxBrush WatchFill(FLinearColor(FColor(0xE0, 0x9A, 0x2A)), 10.f);
-		static const FSlateRoundedBoxBrush BadFill(BadInk, 10.f);
+		static const FSlateRoundedBoxBrush OutlineGlass(FLinearColor::Transparent, 4.f, Cyan.CopyWithNewOpacity(0.75f), 2.f);
+		static const FSlateRoundedBoxBrush OutlinePaper(FLinearColor::Transparent, 4.f, Ink.CopyWithNewOpacity(0.6f), 2.f);
+		static const FSlateRoundedBoxBrush AmberFill(Amber, 4.f);
+		static const FSlateRoundedBoxBrush CyanFill(Cyan.CopyWithNewOpacity(0.9f), 4.f);
+		static const FSlateRoundedBoxBrush CyanFillPaper(FLinearColor(FColor(0x0B, 0x2A, 0x6B)), 4.f);
+		static const FSlateRoundedBoxBrush GoodFill(GoodInk, 4.f);
+		static const FSlateRoundedBoxBrush WatchFill(FLinearColor(FColor(0xE0, 0x9A, 0x2A)), 4.f);
+		static const FSlateRoundedBoxBrush BadFill(BadInk, 4.f);
 		switch (Chip)
 		{
 		case CAmber: return &AmberFill;
@@ -266,6 +267,13 @@ namespace
 	}
 
 	/** bp.Deck 0 hides the deck in room mode (the budget's baseline: room mode with and without it, one session). */
+	/** Wave 4: every screen on the blueprint sheet (the web's language); 1 brings back the warm paper feature sheets. */
+	TAutoConsoleVariable<int32> CVarDeckPaper(TEXT("bp.DeckPaper"), 0, TEXT("Feature sheets on warm paper: 0 the blueprint sheet (wave 4, default), 1 the old paper."), ECVF_Default);
+	/** The sheet's brightness on the deck (under the bloom threshold; was 0.9 on the glass). */
+	TAutoConsoleVariable<float> CVarDeckTint(TEXT("bp.DeckTint"), 0.95f, TEXT("The deck screens' brightness, 0.5 to 1.2."), ECVF_Default);
+
+	bool PaperScreen(uint8 Kind) { return Kind == KSheet && CVarDeckPaper.GetValueOnGameThread() != 0; }
+
 	TAutoConsoleVariable<int32> CVarDeck(TEXT("bp.Deck"), 1, TEXT("The screen deck in room mode: 1 shown (default), 0 hidden (a profiling baseline)."), ECVF_Default);
 
 	/** Runs Fn on every table with a plan; before any has one the command waits for the plan, as BpRoom.* does. */
@@ -676,7 +684,8 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		const int32* Tier = State.Tiers.Find(P->id);
 		TArray<TPair<FString, uint8>> Items;
 		Items.Emplace(LensWord(P->lens) + TEXT(" LENS"), COutline);
-		if (P->risk > 0.0) Items.Emplace(FString::Printf(TEXT("RISK %s / 10"), *Number(P->risk)), P->risk >= PinTagRiskMin ? CAmber : COutline);
+		// The ledger's mark, number and band colour (useLedger.ts riskBand), the word beside it where the ledger has a column header.
+		if (P->risk > 0.0) Items.Emplace(FString::Printf(TEXT("%s %s RISK"), BpSheet::RiskMark(P->risk), *Number(P->risk)), P->risk >= 7.0 ? CBad : P->risk >= 4.0 ? CAmber : COutline);
 		if (Tier) Items.Emplace(FString::Printf(TEXT("T%d  %s"), *Tier, *TierWord(*Tier)), *Tier <= PinTagTierMax ? CAmber : COutline);
 		if (!P->kind.IsEmpty() && P->kind != TEXT("fix")) Items.Emplace(P->kind.Replace(TEXT("-"), TEXT(" ")).ToUpper(), COutline);
 		if (InDraft(P->id)) Items.Emplace(TEXT("IN DRAFT WAVE"), CCyan);
@@ -1075,8 +1084,8 @@ void ABpTable::ApplyDeckPoses()
 		Screen->SetRelativeTransform(bShow ? DeckPose(Slot, Side) : DeckPose(Index < 3 ? static_cast<float>(Index) : 0.f, 0.f));
 		if (!bShow) continue;
 		// The glass under 1 (the card's FO rule: the bloom threshold); the paper as the card's.
-		const bool bPaper = DeckScreens.IsValidIndex(Each.Screen) && DeckScreens[Each.Screen].Kind == KSheet;
-		const float Tint = bPaper ? 0.82f : 0.9f;
+		const bool bPaper = DeckScreens.IsValidIndex(Each.Screen) && PaperScreen(DeckScreens[Each.Screen].Kind);
+		const float Tint = bPaper ? 0.82f : FMath::Clamp(CVarDeckTint.GetValueOnGameThread(), 0.5f, 1.2f);
 		Screen->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, Alpha));
 		// The front draws over the ones behind it.
 		Screen->SetTranslucentSortPriority(12 - FMath::RoundToInt(Slot * 2.f));
@@ -1451,21 +1460,18 @@ bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) const
 {
 	const FDeckScreen& Screen = DeckScreens[ScreenIndex];
-	const bool bPaper = Screen.Kind == KSheet;
+	const bool bPaper = PaperScreen(Screen.Kind);
 	const bool bDecision = Screen.Kind == KDecision;
 	// Opaque at the core (FAH: at 0.93 the city's lit windows, many times brighter than the panel, and the screens behind
 	// read through it); the glass is its edge, its glow and its sheen.
-	static const FSlateRoundedBoxBrush GlassPanel(GlassDark, 22.f, CyanEdge.CopyWithNewOpacity(0.95f), 4.f);
-	static const FSlateRoundedBoxBrush GlassGlow(Cyan.CopyWithNewOpacity(0.14f), 30.f);
-	static const FSlateRoundedBoxBrush GlassSheen(FLinearColor(1.f, 1.f, 1.f, 0.045f), 12.f);
-	static const FSlateRoundedBoxBrush PaperPanel(PaperTone, 18.f, PaperEdge.CopyWithNewOpacity(0.95f), 4.f);
-	static const FSlateRoundedBoxBrush PaperGlowBrush(PaperGlow.CopyWithNewOpacity(0.16f), 30.f);
-	static const FSlateRoundedBoxBrush ApproveBrush(Amber, 12.f);
-	static const FSlateRoundedBoxBrush DeclineBrush(FLinearColor::Transparent, 12.f, CyanEdge.CopyWithNewOpacity(0.9f), 3.f);
-	static const FSlateRoundedBoxBrush TabGlass(Cyan.CopyWithNewOpacity(0.10f), 12.f, Cyan.CopyWithNewOpacity(0.7f), 2.5f);
-	static const FSlateRoundedBoxBrush TabPaper(Ink.CopyWithNewOpacity(0.05f), 12.f, Ink.CopyWithNewOpacity(0.55f), 2.5f);
-	static const FSlateRoundedBoxBrush TabOff(FLinearColor::Transparent, 12.f, Cyan.CopyWithNewOpacity(0.18f), 2.f);
-	static const FSlateRoundedBoxBrush TabOffPaper(FLinearColor::Transparent, 12.f, Ink.CopyWithNewOpacity(0.18f), 2.f);
+	static const FSlateRoundedBoxBrush PaperPanel(PaperTone, 0.f, PaperEdge.CopyWithNewOpacity(0.95f), 4.f);
+	static const FSlateRoundedBoxBrush PaperGlowBrush(PaperGlow.CopyWithNewOpacity(0.16f), 0.f);
+	static const FSlateRoundedBoxBrush ApproveBrush(Amber, 0.f);
+	static const FSlateRoundedBoxBrush DeclineBrush(FLinearColor::Transparent, 0.f, CyanEdge.CopyWithNewOpacity(0.9f), 3.f);
+	static const FSlateRoundedBoxBrush TabGlass(Cyan.CopyWithNewOpacity(0.10f), 0.f, Cyan.CopyWithNewOpacity(0.7f), 2.5f);
+	static const FSlateRoundedBoxBrush TabPaper(Ink.CopyWithNewOpacity(0.05f), 0.f, Ink.CopyWithNewOpacity(0.55f), 2.5f);
+	static const FSlateRoundedBoxBrush TabOff(FLinearColor::Transparent, 0.f, Cyan.CopyWithNewOpacity(0.18f), 2.f);
+	static const FSlateRoundedBoxBrush TabOffPaper(FLinearColor::Transparent, 0.f, Ink.CopyWithNewOpacity(0.18f), 2.f);
 
 	const auto Label = [](const FString& Text, uint8 Style, const FLinearColor& Color)
 	{
@@ -1473,13 +1479,24 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	};
 	const auto Chip = [&Label, bPaper](const FString& Text, uint8 Look)
 	{
-		return SNew(SBorder).BorderImage(ChipBrush(Look, bPaper)).Padding(FMargin(14.f, 7.f)).VAlign(VAlign_Center)
-			[
-				Label(Text, SKicker, ChipText(Look, bPaper))
-			];
+		// A leading risk mark (▲ ◆ ▽) sets in Slate's default face: Barlow has no such glyphs.
+		const bool bMark = Text.StartsWith(TEXT("▲")) || Text.StartsWith(TEXT("◆")) || Text.StartsWith(TEXT("▽"));
+		TSharedRef<SHorizontalBox> Inside = SNew(SHorizontalBox);
+		if (bMark) Inside->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 8.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Text.Left(1))).Font(FCoreStyle::GetDefaultFontStyle("Bold", 18)).ColorAndOpacity(FSlateColor(ChipText(Look, bPaper)))];
+		Inside->AddSlot().AutoWidth().VAlign(VAlign_Center)[Label(bMark ? Text.Mid(1).TrimStart() : Text, SKicker, ChipText(Look, bPaper))];
+		return SNew(SBorder).BorderImage(ChipBrush(Look, bPaper)).Padding(FMargin(14.f, 7.f)).VAlign(VAlign_Center)[Inside];
 	};
 
 	TSharedRef<SVerticalBox> Column = SNew(SVerticalBox);
+	// The page's sections take letters (the web's lettered bubbles), in order.
+	int32 Section = 0;
+	const auto SectionBubble = [&Section, bPaper]()
+	{
+		FSlateFontInfo Letter = DeckFont(SKicker);
+		Letter.Size *= 0.8f;
+		Letter.LetterSpacing = 0;
+		return BpSheet::Bubble(FString(1, &TEXT("ABCDEFGHIJKLMNOPQRSTUVWXYZ")[FMath::Min(Section++, 25)]), Letter, 34.f, bPaper ? BpSheet::PaperLo : BpSheet::Ink);
+	};
 	const TArray<FDeckRow>& Page = Screen.Pages.IsValidIndex(PageIndex) ? Screen.Pages[PageIndex] : TArray<FDeckRow>();
 	for (const FDeckRow& Row : Page)
 	{
@@ -1488,6 +1505,13 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 		{
 		case RText:
 			// row style 1: a bullet's indent; 2: the brief's quoted decline, in amber
+			if (Row.Style == SHead)
+			{
+				Content = SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 14.f, 0.f)[SectionBubble()]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Label(Row.Texts[0], Row.Style, TextColor(Row.Style, bPaper))];
+				break;
+			}
 			Content = SNew(SBox).VAlign(VAlign_Center).Padding(FMargin(Row.Styles.Contains(1) ? BulletIndentPx : 0.f, 0.f, 0.f, 0.f))
 				[
 					Label(Row.Texts[0], Row.Style, Row.Styles.Contains(2) ? Amber : TextColor(Row.Style, bPaper))
@@ -1524,7 +1548,12 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 30.f, 0.f)
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[Label(TEXT("METRIC"), SHead, TextColor(SHead, bPaper))]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 12.f, 0.f)[SectionBubble()]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Label(TEXT("METRIC"), SHead, TextColor(SHead, bPaper))]
+					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)[Label(Row.Texts[0], SLede, TextColor(SLede, bPaper))]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Figure(Row.Texts[1], Row.Texts[4], Big)];
@@ -1644,10 +1673,8 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 			SNew(SBox).WidthOverride(LW).HeightOverride(LH)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(SBorder).BorderImage(bPaper ? &PaperGlowBrush : &GlassGlow)]
-				+ SOverlay::Slot().Padding(8.f)[SNew(SBorder).BorderImage(bPaper ? &PaperPanel : &GlassPanel)]
-				// The glass's pale sheen along its top edge (the wrist panel's).
-				+ SOverlay::Slot().VAlign(VAlign_Top).Padding(FMargin(26.f, 12.f, 26.f, 0.f))[SNew(SBox).HeightOverride(bPaper ? 0.f : 18.f)[SNew(SBorder).BorderImage(&GlassSheen)]]
+				// The sheet: opaque, the web's double wall and grid; the old warm paper only behind bp.DeckPaper.
+				+ SOverlay::Slot()[bPaper ? TSharedRef<SWidget>(SNew(SOverlay) + SOverlay::Slot()[SNew(SBorder).BorderImage(&PaperGlowBrush)] + SOverlay::Slot().Padding(8.f)[SNew(SBorder).BorderImage(&PaperPanel)]) : TSharedRef<SWidget>(SNew(BpSheet::SSheet).GridPx(48.f).RulePx(5.f))]
 				+ SOverlay::Slot().Padding(FMargin(PadX, PadTop, PadX, LH - BarY + BarGap))[Column]
 				+ SOverlay::Slot()[Bar]
 			]
@@ -1658,9 +1685,9 @@ TSharedRef<SWidget> ABpTable::SpineWidget(int32 ScreenIndex) const
 {
 	// A screen's edge (FAI): its surface, and along it, reading up, its kind and its title, cut to the spine's length.
 	const FDeckScreen& Screen = DeckScreens[ScreenIndex];
-	const bool bPaper = Screen.Kind == KSheet;
-	static const FSlateRoundedBoxBrush GlassSpine(GlassDark, 14.f, CyanEdge.CopyWithNewOpacity(0.8f), 3.f);
-	static const FSlateRoundedBoxBrush PaperSpine(PaperTone, 12.f, PaperEdge.CopyWithNewOpacity(0.9f), 3.f);
+	const bool bPaper = PaperScreen(Screen.Kind);
+	static const FSlateRoundedBoxBrush GlassSpine(GlassDark, 0.f, CyanEdge.CopyWithNewOpacity(0.8f), 3.f);
+	static const FSlateRoundedBoxBrush PaperSpine(PaperTone, 0.f, PaperEdge.CopyWithNewOpacity(0.9f), 3.f);
 	const FString Kind = Screen.Kind == KDecision ? TEXT("DECISION") : bPaper ? TEXT("FEATURE SHEET") : TEXT("ROOM SUMMARY");
 	FString Title;
 	if (Screen.Kind == KDecision)

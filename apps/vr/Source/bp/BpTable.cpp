@@ -1,5 +1,6 @@
 // The light table (lynx-plan L3.2, L3.3). See BpTable.h for the frame of reference and the named constants.
 #include "BpTable.h"
+#include "BpSheet.h"
 
 #include "BpGameMode.h"
 #include "BpLink.h"
@@ -157,6 +158,10 @@ namespace
 		if (const UObject* Font = ABpTable::TextFontObject()) return FSlateFontInfo(Font, Size, FName(Style));
 		return FCoreStyle::GetDefaultFontStyle(FName(Style), Size);
 	}
+
+	/** Wave 4: the wing's lettered bubble (the web's "(A) BUSINESS") beside its name: this many caps across, this far from the name. */
+	constexpr double WingBubbleCaps = 1.55;
+	constexpr double WingBubbleGapCaps = 0.55;
 
 	/** The sheet's text (FC1, set by BpType's recipes since FC3). Above each wing its tag and name (lookdev 00's "WING 03"),
 	 *  clear of the rest walls' glowing tops; the room names in their header strips where they meet the floor; the title
@@ -481,9 +486,9 @@ ABpTable::ABpTable()
 	// The pointed room's raised copy (FK), with the rest extrusions' layout.
 	HighlightShell = MakeVolumes(TEXT("HighlightShell"));
 	HighlightShell->NumCustomDataFloats = VolumeCustomFloats + 1;
-	// A scan's lit walls, rails and ticks (BpScanMarks.cpp), with the rest extrusions' layout; hidden until a scan runs.
+	// A scan's drawn rules, meters and ticks (BpScanMarks.cpp), with the rest extrusions' layout; hidden until a scan runs.
 	ScanMarks = MakeVolumes(TEXT("ScanMarks"));
-	ScanMarks->NumCustomDataFloats = VolumeCustomFloats + 1;
+	ScanMarks->NumCustomDataFloats = 3;
 	ScanMarks->SetVisibility(false);
 	// The pins, tags included: placed in the actor's space (they follow a lifted wing or room by their transforms); custom
 	// data 0 to 3 is the tag's atlas cell.
@@ -494,7 +499,8 @@ ABpTable::ABpTable()
 	// the cube (100 cm, pivot at its centre), a square stem 2.4 mm across reading as the pin's round one.
 	PinBeads = MakeVolumes(TEXT("PinBeads"));
 	PinBeads->NumCustomDataFloats = 0;
-	PinBeads->SetStaticMesh(EngineSphere);
+	// The plan's marker (wave 4: flat squares, not spheres): the bead on the paper reads as the web's rounded-square pin.
+	PinBeads->SetStaticMesh(EngineCube);
 	PinStems = MakeVolumes(TEXT("PinStems"));
 	PinStems->NumCustomDataFloats = 0;
 	// Each bead's halo (FG): the unit sphere again, PinHaloScale times the bead, additive (M_PinHalo).
@@ -1030,14 +1036,17 @@ void ABpTable::BuildWingLabels()
 		const double CmPerSlate = Spec.NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm);
 		const float Pad = static_cast<float>(LabelBackPadCm / CmPerSlate);
 		const bool bTag = !Spec.Tag.IsEmpty();
-		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
+		// The lettered bubble and the name (the tag's words were "WING A"; the bubble says the letter, as the web's sections do).
+		const double NamePx = LabelFontSize * SlatePxPerPoint * TypeCapPerEm;
+		const FString Letter = bTag ? Spec.Tag.Right(1) : FString();
+		TSharedRef<SHorizontalBox> Lines = SNew(SHorizontalBox);
 		if (bTag)
 		{
-			Lines->AddSlot().AutoHeight()[
-				SNew(STextBlock).Text(FText::FromString(Spec.Tag)).Font(LabelFont(TEXT("Regular"), static_cast<float>(LabelFontSize * Spec.TagCap / Spec.NameCap))).ColorAndOpacity(FSlateColor(CyanWhite))
+			Lines->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, static_cast<float>(WingBubbleGapCaps * NamePx), 0.f)[
+				BpSheet::Bubble(Letter, LabelFont(TEXT("Bold"), static_cast<float>(LabelFontSize * 0.74)), static_cast<float>(WingBubbleCaps * NamePx), CyanWhite)
 			];
 		}
-		Lines->AddSlot().AutoHeight()[
+		Lines->AddSlot().AutoWidth().VAlign(VAlign_Center)[
 			SNew(STextBlock).Text(FText::FromString(Spec.Name)).Font(LabelFont(TEXT("Regular"), LabelFontSize)).ColorAndOpacity(FSlateColor(WarmPaper))
 		];
 		UWidgetComponent* Label = MakeLabel(SNew(SBorder).BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush")).BorderBackgroundColor(FloatLabelBacking).Padding(Pad)[Lines],
@@ -2591,7 +2600,7 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		// A floating label is a widget in its own face (LabelFont, Regular, untracked) on a backing LabelBackPadCm wider each
 		// side: the wider of its measure and the sheet's keeps neighbours apart in either face (FAD; on Kettle the two agree
 		// within 1 cm).
-		const double FloatW = bFloat ? MeasureText(Name, LabelFont(TEXT("Regular"), LabelFontSize)).X * NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm) + 2.0 * LabelBackPadCm : 0.0;
+		const double FloatW = bFloat ? (MeasureText(Name, LabelFont(TEXT("Regular"), LabelFontSize)).X * NameCap / (LabelFontSize * SlatePxPerPoint * TypeCapPerEm) + 2.0 * LabelBackPadCm + (WingBubbleCaps + WingBubbleGapCaps) * NameCap) : 0.0;
 		const double NameW = FMath::Max(WidthCm(Name, BpType::WingName, NameCap), FloatW);
 		const double MaxU = FMath::Min(B.X + 0.5 * NameW, PaperWidthCm - PaperTopClearCm);
 		// WingLabelApartCm from the previous label where the row has the room, else WingLabelGapCm (pof's eight wings fill it).

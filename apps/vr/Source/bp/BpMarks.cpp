@@ -3,6 +3,7 @@
 // polls (GET .../scans, .../scan, .../waves); nothing here invents a finding, a job or a place. Places are the plan's
 // boxes, as the sheet draws them (BpTable.h's frame of reference).
 #include "BpTable.h"
+#include "BpSheet.h"
 
 #include "BpGameMode.h"
 #include "BpTier.h"
@@ -114,6 +115,9 @@ namespace
 	{
 		return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style));
 	}
+
+	/** Wave 4: the soft halos round the beads, off by default (a translucent sprite per bead; the plan's marker has none). */
+	TAutoConsoleVariable<int32> CVarPinHalos(TEXT("bp.PinHalos"), 0, TEXT("The soft translucent halos round the pins' beads: 0 off (wave 4, the default), 1 on."));
 
 	/** The survey pin as modelled (ArtSource/survey-pin): its height, and its tag's height (the tag sits at the top). */
 	constexpr double PinModelCm = 6.38;
@@ -542,7 +546,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		}
 		else
 		{
-			const FString Risk = FString::Printf(TEXT("RISK %d"), Pin.Risk);
+			// The ledger's mark and number (DrawTags draws the mark): the same words as the PC's risk column.
+			const FString Risk = FString::FromInt(Pin.Risk);
 			Pin.Line2 = { Risk + More, Risk };
 		}
 	}
@@ -574,7 +579,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	TArray<FTransform> Beads;
 	Beads.Init(FTransform::Identity, PinList.Num() + Cells);
 	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
-	if (Beads.Num() > 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
+	if (Beads.Num() > 0 && CVarPinHalos.GetValueOnGameThread() != 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
 	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
 	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
@@ -704,7 +709,8 @@ void ABpTable::PlacePins()
 		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
-		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * Site)));
+		// The plan's marker: a flat square on the paper (the cube's scale is cm / 100), a hair above it so it never fights the paper.
+		BeadPlaces.Add(FTransform(FQuat::Identity, Foot + Group.TransformVector(FVector(0.0, 0.0, 0.1)), FVector(FVector2D(PinBeadCm * 1.3f / 100.f), 0.16f / 100.f) * Site));
 		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale * Site)));
 		if (!Pin.bTagged) continue;
 		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
@@ -717,7 +723,7 @@ void ABpTable::PlacePins()
 		// The head bead (FAB, element 7: the concept's glowing amber bead at the top of each stem, under the tag), its
 		// centre one radius under the tag's foot, so the stem runs into it.
 		const FVector HeadBead = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale - PinHeadBeadCm * 0.5));
-		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * Site)));
+		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm / 100.f, PinHeadBeadCm / 100.f, PinHeadBeadCm * 0.4f / 100.f) * Site));
 		HaloPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * PinHaloScale * Site)));
 	}
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
@@ -770,6 +776,11 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
 		const auto FitsAt = [&](const FString& Text, float Tracking) { return !Text.IsEmpty() && Measure(Text, Bold).X + Tracking * Text.Len() <= Room; };
 		const auto Fits = [&](const FString& Text) { return FitsAt(Text, Track); };
+		// The second line starts after the risk mark, in the ledger's three bands (useLedger.ts riskBand): drawn, since the tag's face has no such glyphs.
+		const float MarkPx = Cap * 0.92f, MarkGap = 12.f;
+		const bool bRiskLine = PinList[Index].Tier < 0;
+		const double PinRisk = PinList[Index].Risk;
+		const auto FitsLine2 = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room - (bRiskLine ? MarkPx + MarkGap : 0.f); };
 		// The finding's id, else its part after the prefix (a live store's "P-4A6A4F" is two letters over the tag at the
 		// floor; the hex alone still names it in its product, as a short commit sha does).
 		FString Id = PinList[Index].Line1;
@@ -779,8 +790,36 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		if (Fits(Id)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, Track });
 		else if (FitsAt(Id, 0.f)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, 0.f });
 		// The second line as it fits: the risk and the count, else the risk alone.
-		const FString* Line2 = PinList[Index].Line2.FindByPredicate(Fits);
-		if (Line2) Texts.Add({ *Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
+		const FString* Line2 = PinList[Index].Line2.FindByPredicate(FitsLine2);
+		if (Line2)
+		{
+			const float LineTop = Min.Y + 26.f + Cap + 20.f;
+			float TextX = Min.X + Pad;
+			FLinearColor LineInk = CountInk;
+			if (bRiskLine)
+			{
+				// ▲ high, ◆ medium, ▽ low, in the ledger's colours darkened for the tag's paper.
+				const FVector2D O(TextX, LineTop);
+				const float H = Cap, W = MarkPx;
+				LineInk = PinRisk >= 7.0 ? FLinearColor(FColor(0xA8, 0x1F, 0x15)) : PinRisk >= 4.0 ? FLinearColor(FColor(0x7A, 0x4A, 0x0C)) : FLinearColor(FColor(0x1E, 0x45, 0x72));
+				const auto Tri = [&](const FVector2D& P0, const FVector2D& P1, const FVector2D& P2)
+				{
+					FCanvasUVTri T;
+					T.V0_Color = T.V1_Color = T.V2_Color = LineInk;
+					T.V0_Pos = P0; T.V1_Pos = P1; T.V2_Pos = P2;
+					Tris.Add(T);
+				};
+				if (PinRisk >= 7.0) Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W, H), O + FVector2D(0.0, H));
+				else if (PinRisk >= 4.0)
+				{
+					Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W, H * 0.5), O + FVector2D(W * 0.5, H));
+					Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W * 0.5, H), O + FVector2D(0.0, H * 0.5));
+				}
+				else Tri(O + FVector2D(0.0, 0.0), O + FVector2D(W, 0.0), O + FVector2D(W * 0.5, H));
+				TextX += W + MarkGap;
+			}
+			Texts.Add({ *Line2, FVector2D(TextX, Top(LineTop)), Bold, LineInk, Track });
+		}
 	}
 	if (Tris.Num() > 0)
 	{
