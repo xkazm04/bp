@@ -28,7 +28,7 @@ namespace BpAudio
 	constexpr float VoiceStep = 0.1f;
 	constexpr float MusicStep = 0.05f;
 	/** Reads the saved levels and toggles (once a run: the pawn at BeginPlay), migrating the old voice key, and from then on
-	 *  saves each change. The toggles saved beside them: bp.WristFace, bp.WristHand, bp.ReducedMotion ([/Script/bp.BpSettings]). */
+	 *  saves each change. The toggles saved beside them: bp.WristFace, bp.WristHand, bp.ReducedMotion, bp.Room ([/Script/bp.BpSettings]). */
 	void LoadSettings();
 	/** A sample scaled by a gain, through a soft knee above 0.8 full scale: loud at the top of the range, never clipped. */
 	float LimitSample(float X);

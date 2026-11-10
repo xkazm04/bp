@@ -4,6 +4,7 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpSurround.h"
 #include "BpTier.h"
 #include "BpType.h"
 #include "BpWords.h"
@@ -658,6 +659,8 @@ void ABpTable::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	// The Quest tier (BpTier.h) follows bp.QuestTier at the tick's rate; nothing happens while it stays as it is.
 	BpTier::Apply(GetWorld());
+	// Your room (BpSurround.h) follows bp.Room: the studio fades out to the passthrough room, or back.
+	BpSurround::Tick(GetWorld(), DeltaSeconds);
 	const float Height = HeightCvarCm();
 	if (!FMath::IsNearlyEqual(Height, PlacedHeightCm, 0.01f))
 	{

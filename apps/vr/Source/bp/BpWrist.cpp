@@ -591,7 +591,7 @@ void ABpPawn::PanelAct(const FString& Act)
 	if (Act.StartsWith(TEXT("toggle:")))
 	{
 		const FString What = Act.Mid(7);
-		const TCHAR* Name = What == TEXT("face") ? TEXT("bp.WristFace") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("motion") ? TEXT("bp.ReducedMotion") : nullptr;
+		const TCHAR* Name = What == TEXT("face") ? TEXT("bp.WristFace") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("room") ? TEXT("bp.Room") : nullptr;
 		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
 		{
 			Var->Set(Var->GetInt() != 0 ? 0 : 1, ECVF_SetByConsole);

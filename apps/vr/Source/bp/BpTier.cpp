@@ -17,6 +17,7 @@
 // and one line of what each switch swapped or switched off.
 #include "BpTier.h"
 
+#include "BpSurround.h"
 #include "BpTable.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/LocalLightComponent.h"
@@ -510,6 +511,8 @@ namespace
 		}
 		UE_LOG(LogBpTable, Log, TEXT("BpTier: switches cheap_lit=%d slot(s) (%d from MI_QL_, %d built) unlit_backdrop=%d quad=%d glass_hidden=%d lights=%d off=%d%s"),
 			CheapSwaps.Num(), CheapFromInstance, CheapBuilt, BackdropSwaps.Num(), QuadSwaps.Num(), HiddenGlass.Num(), LightsMode, LightsOff.Num(), *Would);
+		// Your room (BpSurround.cpp): the mode, the passthrough layer and what the room hid.
+		UE_LOG(LogBpTable, Log, TEXT("BpTier: %s"), *BpSurround::ReportLine());
 		for (int32 Index = 0; Index < Rows.Num() && Index < 40; ++Index)
 		{
 			UE_LOG(LogBpTable, Log, TEXT("BpTier:   %8lld %s %s"), Rows[Index].Tris, Rows[Index].bTranslucent ? TEXT("T") : TEXT("o"), *Rows[Index].Name);
@@ -607,6 +610,21 @@ bool BpTier::IsOn(const UWorld* World)
 float BpTier::HandShadowHz()
 {
 	return FMath::Max(0.f, CVarHandShadowHz.GetValueOnGameThread());
+}
+
+bool BpTier::IsTableGlass(const UPrimitiveComponent& Prim)
+{
+	return ::IsTableGlass(Prim);
+}
+
+void BpTier::TablePoints(UWorld* World, TArray<FVector>& Out)
+{
+	::TablePoints(World, Out);
+}
+
+bool BpTier::LightReaches(const ULocalLightComponent& Light, const TArray<FVector>& Points)
+{
+	return Reaches(Light, Points);
 }
 
 void BpTier::Apply(UWorld* World)

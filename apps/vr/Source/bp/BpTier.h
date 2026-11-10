@@ -7,6 +7,8 @@
 #include "CoreMinimal.h"
 
 class UWorld;
+class UPrimitiveComponent;
+class ULocalLightComponent;
 
 namespace BpTier
 {
@@ -20,4 +22,13 @@ namespace BpTier
 
 	/** The live hand shadow's capture rate while the tier is on, 0 for none (bp.QuestTier.HandShadowHz, read live; the PC captures every frame). */
 	float HandShadowHz();
+
+	/** Whether a primitive draws the table's glass (M_TableGlass). */
+	bool IsTableGlass(const UPrimitiveComponent& Prim);
+
+	/** Where the paper and the lamp are, sampled (the paper at its height and the air over it, the lamp and its stations). */
+	void TablePoints(UWorld* World, TArray<FVector>& Out);
+
+	/** Whether a local light reaches any of the points (its attenuation radius and, for a spot, its outer cone). */
+	bool LightReaches(const ULocalLightComponent& Light, const TArray<FVector>& Points);
 }

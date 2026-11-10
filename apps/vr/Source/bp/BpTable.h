@@ -704,6 +704,8 @@ public:
 	double GetPaperZ() const;
 	/** The stations in the table's space, for BpView.Fov. */
 	void LampStationsLocal(TArray<FVector>& Out) const;
+	/** The lamp agent and what moves with it (its halo, its lights), for your room's rule (BpSurround.cpp). */
+	void LampActors(TArray<AActor*>& Out) const;
 	/** HitTest's last plane point (table space), for GetAimHit. */
 	mutable FVector AimHitLocal = FVector::ZeroVector;
 	mutable bool bAimHitLocal = false;

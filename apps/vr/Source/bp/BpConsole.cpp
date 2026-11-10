@@ -4,7 +4,7 @@
 // operating in blueprint without dependency of the pins and drag movement"; "the wrist panel is overpopulated with
 // options, we need to migrate into the main frame".
 //
-// At rest it is a bar: MENU, the product, one status phrase, BACK whenever the table has somewhere to go back to. Opened it
+// At rest it is a bar: MENU, the product, one status phrase, YOUR ROOM / STUDIO (BpSurround.h), BACK whenever the table has somewhere to go back to. Opened it
 // is a panel of pages: HOME's tiles, then each page a titled list, ConsoleRowsPerPage rows a page with a pager, BACK top
 // left and CLOSE top right. The pages are a registry (FBpConsolePages::Registry): one entry per page with its title, its
 // rows builder, HOME's one-line summary of it, what it does when it opens, and an optional tap handler; a row's press is an
@@ -703,6 +703,15 @@ struct FBpConsolePages
 			Out.Add(Row);
 		}
 		{
+			// Your room (BpSurround.cpp, night two W4): the table in the wearer's own room, or the studio; on the bar too.
+			const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
+			FBpConsoleRow Row;
+			Row.Label = TEXT("ROOM");
+			Row.Detail = bRoom ? TEXT("The table stands in your own room") : TEXT("The studio around the table");
+			Row.Buttons = { { bRoom ? TEXT("YOUR ROOM") : TEXT("STUDIO"), TEXT("toggle:room") } };
+			Out.Add(Row);
+		}
+		{
 			// Talk to the lamp (BpTalk.cpp): ON turns it off in one press; OFF opens the sheet, where ALLOW is the choice.
 			const bool bOn = ABpTable::TalkConsent() == 1;
 			FBpConsoleRow Row;
@@ -929,7 +938,8 @@ void ABpPawn::RefreshConsole()
 	if (bConsoleOpen && !Page) for (const FBpConsolePage& Each : FBpConsolePages::Registry()) Summaries.Add(Each.Summary(*this));
 	const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Rows.Num(), ConsoleRowsPerPage));
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
-	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc);
+	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
+	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -966,7 +976,7 @@ void ABpPawn::RefreshConsole()
 
 	if (!bConsoleOpen)
 	{
-		// The bar: MENU, the product and the status, BACK.
+		// The bar: MENU, the product and the status, YOUR ROOM / STUDIO, BACK.
 		const float Y0 = 12.f, Y1 = BarLH - 12.f;
 		Button(FBox2f(FVector2f(14.f, Y0), FVector2f(214.f, Y1)), TEXT("MENU"), EBtn::Fill, TEXT("menu"), Font(TEXT("Bold"), CapBar));
 		const float BackW = bCanBack ? 200.f : 0.f;
@@ -976,8 +986,12 @@ void ABpPawn::RefreshConsole()
 		const float PcX1 = LW - 14.f - (bCanBack ? BackW + 12.f : 0.f);
 		if (bShowPc) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("SHOW ON PC"), EBtn::Edge, TEXT("bar:pc"), Font(TEXT("Bold"), CapBar));
 		if (bTakeBack) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("TAKE BACK"), EBtn::Amber, TEXT("standup:revoke"), Font(TEXT("Bold"), CapBar));
+		// Your room (BpSurround.cpp, night two W4): YOUR ROOM / STUDIO, what surrounds the table now; a tap switches it.
+		const float RoomW = 230.f;
+		const float RoomX1 = PcX1 - (bShowPc || bTakeBack ? PcW + 12.f : 0.f);
+		Button(FBox2f(FVector2f(RoomX1 - RoomW, Y0), FVector2f(RoomX1, Y1)), bRoom ? TEXT("YOUR ROOM") : TEXT("STUDIO"), EBtn::Edge, TEXT("toggle:room"), Font(TEXT("Bold"), CapBar));
 		const FSlateFontInfo NameFont = Font(TEXT("Bold"), CapBar), StatusFont = Font(TEXT("Regular"), CapBarStatus);
-		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack ? PcW + 12.f : 0.f);
+		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack ? PcW + 12.f : 0.f) - (RoomW + 12.f);
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextW * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		Put(FBox2f(FVector2f(TextX, 0.f), FVector2f(TextX + TextW, BarLH)),

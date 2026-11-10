@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Your room (BpSurround.cpp, night two W4): the passthrough feature is optional. The Meta XR plugin's OculusMobile_APL.xml
+     adds com.oculus.feature.PASSTHROUGH with android:required="true" when Passthrough Enabled is on; this app shows the
+     studio without it, so a headset without passthrough must still install and run it. Whichever plugin runs first: an
+     addFeature that finds the name already there adds nothing, so this one either adds the line as optional or, after the
+     plugin's, sets the plugin's line to required="false". -->
+<root xmlns:android="http://schemas.android.com/apk/res/android">
+	<androidManifestUpdates>
+		<addFeature android:name="com.oculus.feature.PASSTHROUGH" android:required="false"/>
+		<loopElements tag="uses-feature">
+			<setStringFromAttribute result="BpFeatureName" tag="$" name="android:name"/>
+			<setBoolIsEqual result="bBpPassthroughFeature" arg1="$S(BpFeatureName)" arg2="com.oculus.feature.PASSTHROUGH"/>
+			<if condition="bBpPassthroughFeature">
+				<true>
+					<addAttribute tag="$" name="android:required" value="false"/>
+				</true>
+			</if>
+		</loopElements>
+	</androidManifestUpdates>
+</root>

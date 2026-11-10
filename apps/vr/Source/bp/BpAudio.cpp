@@ -62,6 +62,7 @@ namespace
 		{ TEXT("bp.WristFace"), SettingsSection, TEXT("WristFace"), 0.f, 1.f },
 		{ TEXT("bp.WristHand"), SettingsSection, TEXT("WristHand"), 0.f, 1.f },
 		{ TEXT("bp.ReducedMotion"), SettingsSection, TEXT("ReducedMotion"), 0.f, 1.f },
+		{ TEXT("bp.Room"), SettingsSection, TEXT("Room"), 0.f, 1.f },
 	};
 	bool bLoading = false;
 

@@ -58,6 +58,9 @@ public:
 	static const FName CaptureHandsTag;
 	static const FName CaptureWristTag;
 
+	/** Your room switched (BpSurround.cpp, bp.Room): the console's YOUR ROOM / STUDIO redraws, whoever switched it. */
+	void OnRoomChanged() { RefreshConsole(); }
+
 	/** The wrist panel (spark vr-fidelity-40 FC1, element 11): the concept's "Packages", the latest wave's packages with
 	 *  their progress rings, read from GET .../waves and the findings' statuses (BpLink's scan state). With no posed hand
 	 *  it hangs above the left rest hand, at WristPanel*Cm from the eye, turned to face it; SetWristParent moves it onto a
