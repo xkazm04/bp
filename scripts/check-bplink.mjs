@@ -325,9 +325,24 @@ export function linkSource(cppText) {
   for (const route of ['/api/companion/morning', '/api/companion/cards', '/api/companion/cards/', '/api/companion/policies', '/api/companion/policies/']) {
     if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
   }
-  for (const fn of ['PostMorningVerdict', 'AnswerCompanionCard', 'GrantPolicy']) {
+  for (const fn of ['PostMorningVerdict', 'AnswerCompanionCard', 'GrantPolicy', 'AskOnboard']) {
     const b = body(fn);
     if (!b || !/SetStringField\(\s*TEXT\("shown"\)/.test(b.lit)) problems.push(`${fn} does not send shown`);
+  }
+  // Wave EV, add a project from the headset (table-link-v2.md section 14, S4): the offer, the ask and its answer are requested
+  // in code, only past CanOnboard (a pairing whose /pair/me scopes hold `onboard`), and the ask sends exactly { candidate, shown }.
+  for (const route of ['/api/onboarding/candidates', '/api/onboarding/start', '/api/onboarding/requests/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  for (const fn of ['GetOnboardCandidates', 'AskOnboard', 'GetOnboardAsk']) {
+    const b = body(fn);
+    if (!b || !/CanOnboard\(\)/.test(b.code)) problems.push(`${fn} does not refuse without CanOnboard()`);
+  }
+  const canOnboard = body('CanOnboard');
+  if (!canOnboard || !/Scopes\.Contains\(\s*TEXT\("onboard"\)\s*\)/.test(canOnboard.lit)) problems.push('CanOnboard does not read `onboard` from the pairing\'s scopes');
+  {
+    const askSets = sets('AskOnboard');
+    if (JSON.stringify([...(askSets ?? [])].sort()) !== JSON.stringify(['candidate', 'shown'])) problems.push(`AskOnboard sends ${askSets}, not exactly { candidate, shown }`);
   }
   // A refusal's `words` (the voice routes' 429 budget: { error: "budget", words: "<a sentence>" }) is what the person reads:
   // AnswerWords and RefusalWords read it before `error`.
@@ -347,7 +362,7 @@ export function linkSource(cppText) {
   if (!grant || !/PolicyTools\(\)\.Contains/.test(grant.code) || !/Hours\s*>\s*PolicyMaxHours/.test(grant.code) || !/MinTier\s*<\s*1/.test(grant.code)) problems.push('GrantPolicy does not refuse a grant past the bound (tools, minTier 1..3, hours) before sending');
   return {
     problems, scopes, policyTools, maxHours,
-    reads: { health: reads('ProbeCandidate'), where: reads('ReceiveWhere'), pair: reads('PostPair'), claim: reads('SendClaim'), me: reads('AskPairMe'), cancel: reads('CancelScan') },
+    reads: { health: reads('ProbeCandidate'), where: reads('ReceiveWhere'), pair: reads('PostPair'), claim: reads('SendClaim'), me: reads('AskPairMe'), cancel: reads('CancelScan'), candidates: reads('GetOnboardCandidates') },
     pairSends: sets('PostPair'),
   };
 }
@@ -653,8 +668,26 @@ async function main() {
         if (data) r.write(data);
         r.end();
       });
+      // Wave EV, the YESTERDAY sheet: the generated FBpMorningCard carries `outcomes` (FromJson reads it, no raw literal), the
+      // stand-up reads that card through BpVocab, and the bundled sample's outcomes card names screens the bundle carries.
+      {
+        const schemaH = fs.readFileSync(path.join(ROOT, 'packages/schema/generated/ue/BpSchema.h'), 'utf8');
+        const standup = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpStandup.cpp'), 'utf8'));
+        const morning = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/vr/Content/BpData/kettle/morning.json'), 'utf8'));
+        const card = (morning.cards ?? []).find((c) => c.kind === 'outcomes');
+        const shots = path.join(ROOT, 'apps/vr/Content/BpData/kettle/shots');
+        const files = card ? card.outcomes.flatMap((o) => [o.before, o.after]).filter(Boolean) : [];
+        const missing = files.filter((f) => !fs.existsSync(path.join(shots, f)));
+        check(`outcomes: FBpMorningCard has TArray<FBpOutcome> outcomes, BpStandup reads Kind::Outcomes and ->outcomes, and the sample's card (${card?.outcomes?.length ?? 0} outcomes, ${files.length} screens) names only screens the bundle carries`,
+          /TArray<FBpOutcome>\s+outcomes;/.test(schemaH) && /MorningCard::Kind::Outcomes/.test(standup) && /->outcomes\b/.test(standup) && !!card && card.outcomes.length >= 1 && missing.length === 0,
+          `missing ${missing}`);
+      }
       const ls = linkSource(cppText);
       check('link source: every request but POST /pair and /pair/claim starts at NewRequest (Authorization: Bearer), and the link\'s routes and the DELETE are in code', ls.problems.length === 0, ls.problems.join(' | '));
+      // permanent control (wave EV): a CanOnboard that stops reading the scope, and an ask that sends a third key, are refused
+      check('link source: the rule refuses a CanOnboard that ignores the onboard scope and an AskOnboard that sends more than { candidate, shown }',
+        linkSource(cppText.replace('LinkStatus.Scopes.Contains(TEXT("onboard"))', 'true')).problems.length > 0
+        && linkSource(cppText.replace('Json->SetStringField(TEXT("candidate"), Candidate);', 'Json->SetStringField(TEXT("candidate"), Candidate); Json->SetStringField(TEXT("model"), Candidate);')).problems.length > 0);
       // permanent control: a request made around NewRequest, and a NewRequest that forgets the header, are refused
       check('link source: the rule refuses a stray CreateRequest and a NewRequest without the Bearer header',
         linkSource(cppText.replace('Request->SetVerb(TEXT("DELETE"));', 'Request = FHttpModule::Get().CreateRequest(); Request->SetVerb(TEXT("DELETE"));')).problems.length > 0
@@ -726,6 +759,20 @@ async function main() {
       check(`link: every key BpLink reads from the claim (${ls.reads.claim}) is in the answer`, keysIn(c2.json, ls.reads.claim).length === 0, `missing ${keysIn(c2.json, ls.reads.claim)}`);
       const me = await send('GET', '/pair/me', undefined, { authorization: `Bearer ${c2.json?.token ?? 'none'}` });
       check(`link: GET /pair/me with the Bearer answers 200 with every key BpLink reads (${ls.reads.me})`, me.status === 200 && keysIn(me.json, ls.reads.me).length === 0, me.body.slice(0, 160));
+      // Wave EV: the scopes BpLink asks for include `onboard`; the owner's approve named it here, so /pair/me lists it (what
+      // CanOnboard reads), and the onboarding routes answer the headset's Bearer in the contract's shapes. Nothing is started:
+      // an id the PC does not offer is 404 with a sentence, an unknown ask is 404.
+      {
+        const bearer = { authorization: `Bearer ${c2.json?.token ?? 'none'}` };
+        check('link: PairScopes asks for onboard, and /pair/me lists it after an approve that names it', (ls.scopes ?? []).includes('onboard') && (me.json?.scopes ?? []).includes('onboard'), `${ls.scopes} / ${JSON.stringify(me.json?.scopes)}`);
+        const cand = await send('GET', '/api/onboarding/candidates', undefined, bearer);
+        check(`link: GET /api/onboarding/candidates with an onboard Bearer answers 200 { candidates[], roots, held }, every top-level key BpLink reads (${ls.reads.candidates}) in it`,
+          cand.status === 200 && Array.isArray(cand.json?.candidates) && typeof cand.json?.held === 'number' && keysIn(cand.json, ls.reads.candidates, ['id', 'name', 'hint', 'state']).length === 0, `${cand.status} ${cand.body.slice(0, 160)}`);
+        const start = await send('POST', '/api/onboarding/start', { candidate: 'f'.repeat(24), shown: 'Ask your PC to read nothing? check-bplink' }, bearer);
+        check('link: POST /api/onboarding/start { candidate, shown } for an id the PC does not offer answers 404 with a sentence (nothing asked)', start.status === 404 && typeof start.json?.error === 'string' && start.json.error.includes(' '), `${start.status} ${start.body.slice(0, 160)}`);
+        const reqd = await send('GET', `/api/onboarding/requests/${'0'.repeat(24)}`, undefined, bearer);
+        check('link: GET /api/onboarding/requests/<24 hex> for no ask of this pairing answers 404 (the headset says "did not answer in time")', reqd.status === 404, `${reqd.status} ${reqd.body.slice(0, 120)}`);
+      }
       const bad = await send('GET', '/api/health', undefined, { authorization: 'Bearer not-a-token' });
       check('link: a dead token is answered 401 "... pair again" before any route (BpLink forgets it on that 401)', bad.status === 401 && /pair again/.test(bad.json?.error ?? ''), bad.body.slice(0, 120));
       const job = await send('POST', '/api/products/kettle/scans', { lens: 'development', scope: { kind: 'all', label: 'Everything', features: [] } });

@@ -74,6 +74,11 @@ lenses, scans and waves, drawn for a headset.
 > was measured on the headset and what still needs a person wearing it: [`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md).
 > The paragraphs below are the history.
 
+> **2026-11-10 (day two, wave EV, "reason to come back").** Proven on the PC (the sample and a linked demo server), not yet
+> on the headset: the stand-up's YESTERDAY sheet (what earlier approvals became, BEFORE and AFTER side by side), its
+> welcome-back opening, PROJECTS' ADD A PROJECT (the headset asks, you confirm on the PC's Headsets page), and PC LINK's
+> pairing words naming the Headsets page. How to run each: [`run-locally.md`](run-locally.md).
+
 Planned, not started. Nothing in this folder is built. Execution happens on the GPU workstation;
 this checkout only holds the plan.
 

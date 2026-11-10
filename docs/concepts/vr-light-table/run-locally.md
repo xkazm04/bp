@@ -143,6 +143,25 @@ with **STOP** while it runs, and the decision log keeps the ask and your answer.
 with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_FILE`, and the page's look alone with
 `/headsets?fixture=ask`.
 
+**The headset's side** (wave EV, 2026-11-10): MENU > PROJECTS lists your projects and, under them, **ADD A PROJECT**: the
+folders the PC offers (name, hint, NEW / READ BEFORE / BEING READ), and one quiet line for the folders it holds back. A pick
+shows the terms ("Ask your PC to read <name>? You confirm it there ...") with **ASK** and **CANCEL**; ASK sends them as
+`shown`. While the ask waits, the page says "Waiting for your click on your PC · Headsets · CONFIRM" with the time left, the
+bar says "Asked your PC · <name>" and the wrist "ASKED YOUR PC" (the headset polls every 2 s, only while it waits and the
+headset has focus). Confirmed, the table switches to the new project and draws its build-up from the feed; declined, the
+reason with **ASK AGAIN**; expired or forgotten by a restarted server, "Your PC did not answer in time." A headset paired
+without the Onboard tick says so on PROJECTS. With no PC (the sample) the section says it needs PC LINK. The PC LINK page's
+pairing step now reads "Open Developer's Blueprint on your PC, go to Headsets, and type this code there."; the terminal
+command stays as the small FOR THE PC line (it never names `onboard`: only the page's tick grants a paid run).
+
+**YESTERDAY on the stand-up** (wave EV): the deck's `outcomes` card (table-link-v2.md section 3.7) is a sheet of its own,
+one outcome at a time: the title, BUILT with its commit (cyan) or FAILED with its reason (red), who approved it and when,
+and BEFORE and AFTER side by side when both screens exist (decoded halved, 640x360 each, released when the outcome or the
+sheet leaves). PREV and NEXT step through the outcomes; the plan raises each one's room. A returning morning opens with
+"Welcome back. Since <yesterday 08:10>:" (linked: the last stand-up 10 minutes or more ago; the sample: at least a calendar
+day ago, `BpStandup.Last 30`); the first stand-up introduces the sheet instead. The bar and the MENU's STAND-UP tile say
+"2 built, 1 failed since yesterday" until today's stand-up has been held.
+
 The web app hands `/api/companion/*` and `/api/session/*` to the server only for a page opened as `localhost` or
 `127.x.x.x` (a page at `[::1]` gets the web app's own companion routes); open the Headsets page at
 `http://127.0.0.1:3010/headsets`.
@@ -150,7 +169,7 @@ The web app hands `/api/companion/*` and `/api/session/*` to the server only for
 The command line still works, as the fallback (a terminal on the PC: no page token, table-link-v2.md section 12, deviation 6):
 
 ```bash
-npm run server -- pair approve <code> --scope standup,place,focus,decide,scan
+npm run server -- pair approve <code> --scope standup,place,focus,decide,scan   # add ,onboard only on purpose (paid runs)
 npm run server -- pair open                 # a new 2-minute window, when PAIR is refused for lack of one
 npm run server -- pair list                 # pairings and open requests (never the code)
 npm run server -- pair revoke <id>          # ends a pairing on the PC
@@ -196,7 +215,9 @@ GameUserSettings.ini: on the Quest the engine deleted that file at every launch 
 | `BpConsole.Rows`, `BpConsole.Stat` | Logs the open page's rows; the console's state |
 | `BpPad.Press <A\|B\|X\|Y\|Menu\|Up\|Down\|Left\|Right\|Home>` | A controller press through the real handler |
 | `BpStandup.Act <next\|prev\|approve\|defer\|hold\|decline\|plan\|handover\|grant\|revoke\|...>`, `BpStandup.Line` | Drives the stand-up; logs its card |
-| `BpStandup.Forget`, `BpStandup.Last <hours>` | A first morning again; a returning morning |
+| `BpStandup.Forget`, `BpStandup.Last <hours>` | A first morning again; a returning morning (30: the sample's welcome back) |
+| `BpStandup.Act todecision` | On a failed YESTERDAY outcome that waits again: its decision sheet |
+| `bp.AddProject 1\|0` | PROJECTS' ADD A PROJECT shown when linked (default 1) |
 | `BpTalk.Say <text>`, `BpTalk.Hold <s>`, `BpTalk.Consent allow\|notnow\|unset`, `BpTalk.Cancel`, `BpTalk.Stat` | Talk to the lamp without or with the microphone |
 | `BpLink.Pair [cancel]`, `BpLink.Unpair`, `BpLink.Where`, `BpLink.Link` | Pairing and the route (the token shows as its last 4 characters) |
 | `BpStore.Dump` | Logs the saved file's path and key names, never values (non-Shipping) |

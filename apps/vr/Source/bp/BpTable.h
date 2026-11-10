@@ -1913,6 +1913,9 @@ public:
 	FString StandupShow(const FString& Kind, const FString& Id, const FString& Line);
 	/** The lamp says Line (a notice: shown on the site plan too), for the stand-up and the tour's close. */
 	void StandupSay(const FString& Line) { SayLamp(Line, true); }
+	/** The stand-up's spoken opening (wave EV), through the scan theatre's voice queue: a bundled clip (voice/scan/<Clip>.wav)
+	 *  on the sample, else one line through the PC's say (the caption carries it when there is none). */
+	void StandupVoice(const FString& Clip, const FString& Say) { TheatreVoice(Clip, Say); }
 	/** The room a feature, bay or room id stands in on this plan (empty: none). */
 	FString StandupRoomOf(const FString& Id) const;
 	/** A room's or wing's name on this plan (empty: none). */

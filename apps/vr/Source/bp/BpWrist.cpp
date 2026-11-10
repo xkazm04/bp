@@ -903,7 +903,7 @@ void ABpPawn::DrawWrist()
 		Key += TEXT("|s") + SuKicker + SuTitle + SuWords;
 		for (const TPair<FString, FString>& B : SuButtons) Key += TEXT("/") + B.Key;
 	}
-	Key += TEXT("|h") + WristHover + (bWristHoverDown ? TEXT("|down") : TEXT(""));
+	Key += TEXT("|h") + WristHover + (bWristHoverDown ? TEXT("|down") : TEXT("")) + TEXT("|m") + ConsoleMark;
 	if (Key == WristKey) return;
 	WristKey = Key;
 	WristBoxes.Reset();
@@ -939,6 +939,8 @@ void ABpPawn::DrawWrist()
 		{
 			const float W = Text[I] + Spare;
 			Button(FBox2f(FVector2f(X, WTopY0), FVector2f(X + W, WTopY0 + WTopH)), Words[I], Looks[I], Ids[I], TopFont);
+			// Wave EV: a tour step's target on the wrist wears the console targets' amber edge (the talk step's TALK).
+			if (ConsoleMark == TEXT("wrist:") + FString(Ids[I])) Put(FBox2f(FVector2f(X, WTopY0), FVector2f(X + W, WTopY0 + WTopH)).ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
 			X += W + WGap;
 		}
 	}
@@ -996,6 +998,8 @@ void ABpPawn::DrawWrist()
 		Kicker = SuKicker;
 		if (Kicker.EndsWith(TEXT(" · SAMPLE"))) { Kicker = Kicker.LeftChop(9); bSampleChip = true; }
 		Tone = Kicker == TEXT("THE COMPANION ASKS") ? BpSheet::Accent : BpSheet::Amber;
+		// YESTERDAY (wave EV): the card in the colour of what the approval became.
+		if (Kicker.StartsWith(TEXT("YESTERDAY"))) Tone = SuWords.StartsWith(TEXT("Built")) ? BpSheet::Accent : SuWords.StartsWith(TEXT("Failed")) ? BpSheet::Red : BpSheet::Amber;
 		Title = SuTitle;
 		Words = SuWords;
 		for (int32 Index = 0; Index < SuButtons.Num(); ++Index)
@@ -1054,6 +1058,8 @@ void ABpPawn::DrawWrist()
 	}
 	const float TitleH = BpSheet::Lines(TitleFit) * WPitch(WTitleCap), WordsH = BpSheet::Lines(WordsFit) * WPitch(WTextCap);
 	float FrameH = 20.f + TitleH + (TitleH > 0.f && WordsH > 0.f ? 10.f : 0.f) + WordsH + 20.f;
+	// YESTERDAY's stamp (BUILT, FAILED) stands under its words, never over them (wave EV).
+	if (Card == ECard::Standup && Kicker.StartsWith(TEXT("YESTERDAY"))) FrameH += 70.f;
 	const int32 N = Buttons.Num();
 	// The band (the scan on the table or just run): its head and its words, whole.
 	const bool bBand = !BandHead.IsEmpty();
@@ -1095,15 +1101,18 @@ void ABpPawn::DrawWrist()
 	}
 
 	// An answered decision (the stand-up's, no answers left): its verdict as the sheet's stamp, at the card's foot right.
-	if (Card == ECard::Standup && N == 0 && Kicker.StartsWith(TEXT("DECISION")) && !Words.IsEmpty())
+	const bool bYesterday = Card == ECard::Standup && Kicker.StartsWith(TEXT("YESTERDAY"));
+	if (Card == ECard::Standup && ((N == 0 && Kicker.StartsWith(TEXT("DECISION"))) || bYesterday) && !Words.IsEmpty())
 	{
 		FString Verdict = Words, Rest2;
+		// The first line only (YESTERDAY's words say who approved it under it).
+		Verdict.Split(TEXT("\n"), &Verdict, &Rest2);
 		if (Verdict.Split(TEXT(" · "), &Verdict, &Rest2) || Verdict.Split(TEXT(":"), &Verdict, &Rest2)) {}
 		Verdict = Verdict.TrimStartAndEnd().ToUpper();
 		if (Verdict.Len() <= 12)
 		{
 			const FSlateFontInfo StampFont = CapFont(TEXT("Bold"), 34.f);
-			const FLinearColor StampInk = Verdict.StartsWith(TEXT("APPROVED")) ? BpSheet::Accent : Verdict.StartsWith(TEXT("DECLINED")) ? BpSheet::Red : BpSheet::Amber;
+			const FLinearColor StampInk = Verdict.StartsWith(TEXT("APPROVED")) || Verdict.StartsWith(TEXT("BUILT")) ? BpSheet::Accent : Verdict.StartsWith(TEXT("DECLINED")) || Verdict.StartsWith(TEXT("FAILED")) ? BpSheet::Red : BpSheet::Amber;
 			const float SW = BpSheet::TextWidth(Verdict, StampFont) + 48.f, SH = 74.f;
 			const FVector2f C(WX1 - SW * 0.5f - 26.f, FrameY1 - SH * 0.5f - 22.f);
 			Put(FBox2f(C - FVector2f(SW, SH) * 0.5f, C + FVector2f(SW, SH) * 0.5f), SNew(SBox).RenderTransformPivot(FVector2D(0.5, 0.5)).RenderTransform(FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(-7.f))))

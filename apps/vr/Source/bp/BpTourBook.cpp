@@ -70,6 +70,9 @@ namespace BpTourBook
 			{ TEXT("scan-done-one-two"), TEXT("Done. One room read, two new findings.") },
 			{ TEXT("scan-done-one-one"), TEXT("Done. One room read, one new finding.") },
 			{ TEXT("scan-done-one-none"), TEXT("Done. One room read, nothing new.") },
+			// Wave EV, the stand-up's opening on the sample (BpStandup.cpp): a returning morning, and the first one.
+			{ TEXT("standup-welcome"), TEXT("Welcome back. Here is what your approvals became.") },
+			{ TEXT("standup-yesterday"), TEXT("Here is what yesterday's approvals became.") },
 		};
 		return All;
 	}

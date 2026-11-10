@@ -492,6 +492,9 @@ public:
 	static FString ScopeWords(const FString& Scope);
 	/** The scopes this headset asks for (the owner's approve command names the same list). */
 	static const TCHAR* const PairScopes;
+	/** The scopes the FOR THE PC command line names (wave EV): PairScopes without `onboard`, so a copied command never grants a
+	 *  paid agent run; the owner grants that by ticking "Add projects" on the Headsets page. */
+	static const TCHAR* const ApproveScopes;
 	/** BpLink.Pair: GET /lan/where over the cable (keeps the Wi-Fi door), POST /pair, then POST /pair/claim every 2 s until the
 	 *  owner approves the code on the PC or it lapses. Needs a route. */
 	void Pair();
@@ -526,6 +529,21 @@ public:
 	/** Whether the session reads the bundle and the bundle lists sample focuses: the Scan tab then stands with a local sample
 	 *  behind it. Never true with a server: HasPcLink and this exclude each other. */
 	bool HasSampleFocuses() const;
+
+	// ---- Add a project from the headset (wave EV; table-link-v2.md section 14, S4: the headset asks, the owner confirms) ----
+	/** Linked, paired, and the pairing holds `onboard` (read from /pair/me's scopes). */
+	bool CanOnboard() const;
+	/** GET /api/onboarding/candidates: the folders the PC offers (id, name, hint, state) and how many it holds back. Status 0
+	 *  with Error when nothing was sent (no PC, no scope). OnDone on the game thread. */
+	struct FOnboardCandidate { FString Id; FString Name; FString Hint; FString State; };
+	struct FOnboardCandidates { int32 Status = 0; FString Error; TArray<FOnboardCandidate> Candidates; int32 Held = 0; int32 Roots = 0; };
+	void GetOnboardCandidates(TFunction<void(const FOnboardCandidates&)> OnDone);
+	/** POST /api/onboarding/start { candidate, shown } (an ASK: 202 { request, name, state: waiting }), and GET
+	 *  /api/onboarding/requests/<request> (what became of it: waiting, confirmed with slug and job, declined with reason,
+	 *  expired). Errors are the server's sentence (Error); 409 carries the slug being read; 429 its retryAfterS. */
+	struct FOnboardAsk { int32 Status = 0; FString Request; FString Name; FString State; FString Slug; FString Job; FString Reason; FString Error; int32 RetryAfterS = 0; };
+	void AskOnboard(const FString& Candidate, const FString& Shown, TFunction<void(const FOnboardAsk&)> OnDone);
+	void GetOnboardAsk(const FString& Request, TFunction<void(const FOnboardAsk&)> OnDone);
 
 	/** POST /api/companion/turn { conversationId?, product, text } (companion-link.md section 2; the lamp's fixed asks). The
 	 *  whole Server-Sent-Event body is read when the turn ends (the lamp shows the reply, not deltas; incremental reading is

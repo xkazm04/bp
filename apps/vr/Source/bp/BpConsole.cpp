@@ -23,7 +23,9 @@
 #include "BpType.h"
 #include "BpWords.h"
 #include "Components/WidgetComponent.h"
+#include "Containers/Ticker.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/App.h"
 #include "Schema/BpSchemaVocab.h"
 #include "TimerManager.h"
 #include "Styling/CoreStyle.h"
@@ -158,6 +160,55 @@ namespace
 		}));
 }
 
+namespace
+{
+	// ---- ADD A PROJECT on PROJECTS (wave EV; table-link-v2.md section 14, S4) -----------------------------------------------
+	// Linked and holding `onboard`, PROJECTS lists the folders the PC offers under the projects. A pick shows the terms; ASK sends
+	// them as `shown`; the PC's Headsets page confirms (the run starts only there); the headset polls the ask every AskPollS while
+	// it waits (never per frame; not while the app has lost the headset's focus) and, confirmed, switches to the new product and
+	// draws its build-up from the feed. The state lives here, one table per app.
+	struct FBpAddProject
+	{
+		bool bReading = false;
+		bool bRead = false;
+		int32 Status = 0;
+		FString Error;
+		TArray<FBpLinkModule::FOnboardCandidate> Candidates;
+		int32 Held = 0;
+		/** The folder picked (the confirm sheet shows while nothing was asked yet). */
+		FString PickId, PickName, PickHint;
+		bool bSending = false;
+		/** The ask out, and what became of it: waiting, confirmed, declined, expired; or refused (the start's error). */
+		FString Request;
+		double AskedAt = 0.0;
+		FString State;
+		FString Words;
+		FString Slug;
+		FTSTicker::FDelegateHandle Poll;
+		int32 Polls = 0;
+	};
+	FBpAddProject GAdd;
+	/** The contract's ASK_TTL_MS, and the poll's period while an ask waits. */
+	constexpr double AskTtlS = 600.0;
+	constexpr float AskPollS = 2.f;
+	TAutoConsoleVariable<int32> CVarAddProject(TEXT("bp.AddProject"), 1, TEXT("PROJECTS' ADD A PROJECT (wave EV): 1 shown when linked (default), 0 hidden."), ECVF_Default);
+
+	/** The terms the confirm sheet shows, which are also what the ask says it showed. What the adopt job writes into the folder
+	 *  (onboarding-job.server.ts's prompt: its map under .ai/lens-scan and .claude/lens-scan, a .gitignore line, no commit) is
+	 *  said as an instruction, because it is one: the run is not sandboxed to it (table-link-v2.md section 12). */
+	FString AddTerms(const FString& Name)
+	{
+		return FString::Printf(TEXT("Ask your PC to read %s? You confirm it there: on your PC open Headsets and press CONFIRM. Your PC then starts an agent that reads this folder and draws it on the table. It takes a few minutes and spends from your account. The agent is told to write only its map into the folder (.ai/lens-scan, .claude/lens-scan and a .gitignore line) and to commit nothing."), *Name);
+	}
+	FString AddStateWord(const FString& State)
+	{
+		if (State == TEXT("new")) return TEXT("NEW");
+		if (State == TEXT("registered")) return TEXT("READ BEFORE");
+		if (State == TEXT("onboarding")) return TEXT("BEING READ");
+		return State.ToUpper();
+	}
+}
+
 // ---- The pages ----------------------------------------------------------------------------------------------------------
 
 struct FBpConsolePages
@@ -169,7 +220,7 @@ struct FBpConsolePages
 			{ TEXT("scan"), TEXT("SCAN"), TEXT("B"), &ScanRows, &ScanSummary, &ScanOpen, nullptr },
 			{ TEXT("standup"), TEXT("STAND-UP"), TEXT("C"), &StandupRows, &StandupSummary, &StandupOpen, nullptr },
 			{ TEXT("ask"), TEXT("ASK"), TEXT("D"), &AskRows, &AskSummary, nullptr, nullptr },
-			{ TEXT("projects"), TEXT("PROJECTS"), TEXT("E"), &ProjectsRows, &ProjectsSummary, nullptr, nullptr },
+			{ TEXT("projects"), TEXT("PROJECTS"), TEXT("E"), &ProjectsRows, &ProjectsSummary, &ProjectsOpen, &ProjectsTap },
 			{ TEXT("packages"), TEXT("PACKAGES"), TEXT("F"), &PackagesRows, &PackagesSummary, nullptr, nullptr },
 			{ TEXT("settings"), TEXT("SETTINGS"), TEXT("G"), &SettingsRows, &SettingsSummary, nullptr, nullptr },
 			{ TEXT("link"), TEXT("PC LINK"), TEXT("H"), &LinkRows, &LinkSummary, &LinkOpen, nullptr },
@@ -618,8 +669,8 @@ struct FBpConsolePages
 	static void LinkRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
 	{
 		// Night two V7: the page speaks to the wearer. What is connected now, the next step in one sentence, the code large while
-		// pairing, PAIR and UNPAIR; a command the PC needs is only a small secondary line labelled FOR THE PC. The PC has no
-		// pairing screen: the owner approves the code in the terminal where the PC's server runs (run-locally.md, table-link-v2.md).
+		// pairing, PAIR and UNPAIR; a command the PC needs is only a small secondary line labelled FOR THE PC. Since 2026-11-10 the
+		// PC's Headsets page takes the code (the terminal's approve still works: the FOR THE PC line).
 		const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
 		const bool bLinked = S.Route != EBpLinkRoute::None;
 		const auto ForPc = [](const FString& Command) { return Note(TEXT("FOR THE PC  ·  ") + Command); };
@@ -647,11 +698,12 @@ struct FBpConsolePages
 			Code.Tone = 5;
 			Out.Add(Code);
 			FBpConsoleRow Cancel;
-			Cancel.Label = TEXT("Approve this code on your PC");
-			Cancel.Detail = TEXT("Type it where your PC's server runs. It lasts two minutes.");
+			// Wave EV: the PC's Headsets page takes the code (apps/web/src/headsets); the terminal stays the small FOR THE PC line.
+			Cancel.Label = TEXT("Type this code on your PC");
+			Cancel.Detail = TEXT("Open Developer's Blueprint on your PC, go to Headsets, and type this code there. It lasts two minutes.");
 			Cancel.Buttons = { { TEXT("CANCEL"), TEXT("link:cancel") } };
 			Out.Add(Cancel);
-			Out.Add(ForPc(FString::Printf(TEXT("npm run server -- pair approve %s --scope %s"), *S.Code, FBpLinkModule::PairScopes)));
+			Out.Add(ForPc(FString::Printf(TEXT("npm run server -- pair approve %s --scope %s"), *S.Code, FBpLinkModule::ApproveScopes)));
 		}
 		else if (S.Pair == EBpPairState::Asking)
 		{
@@ -714,6 +766,8 @@ struct FBpConsolePages
 	{
 		if (Pawn.LiveGrant()) return Pawn.StandupBarStatus();
 		const int32 Waiting = Plan(Pawn) ? Table(Pawn)->OpenDecisionCount() : 0;
+		// Wave EV: what came of yesterday's approvals leads, before the page is opened.
+		if (const FString Yesterday = Pawn.StandupYesterdayWords(); !Yesterday.IsEmpty()) return Yesterday.Left(1).ToUpper() + Yesterday.Mid(1);
 		if (!FBpLinkModule::Get().HasPcLink()) return TEXT("The sample morning · 3 decisions");
 		// The companion's requests pending on the PC count here too (night two V2).
 		const int32 Requests = Pawn.StandupPendingRequests();
@@ -782,8 +836,17 @@ struct FBpConsolePages
 			Empty.Tag = TEXT("1");
 			Empty.Buttons = { { TEXT("OPEN PC LINK"), TEXT("open:link"), true } };
 			Out.Add(Empty);
+			// Wave EV: adding one of your own needs the PC (the sample has no onboarding).
+			Out.Add(Note(TEXT("ADD A PROJECT")));
+			FBpConsoleRow Add;
+			Add.Label = TEXT("Add a project needs your PC");
+			Add.Detail = TEXT("PC LINK connects it; then your PC offers the folders next to your projects.");
+			Add.Buttons = { { TEXT("OPEN PC LINK"), TEXT("open:link"), true } };
+			Out.Add(Add);
 			return;
 		}
+		// Wave EV: an ask in hand (picked, waiting, or answered) takes the page.
+		if (AddRows(Pawn, Out, Sub)) return;
 		TArray<const FBpProductEntry*> Order;
 		for (const FBpProductEntry& E : Onboarding.Products) if (E.IsBuilding()) Order.Add(&E);
 		for (const FBpProductEntry& E : Onboarding.Products) if (!E.IsBuilding()) Order.Add(&E);
@@ -800,7 +863,13 @@ struct FBpConsolePages
 				Row.Detail = E.Phase.IsEmpty() ? FString(TEXT("Building")) : FString::Printf(TEXT("Building · %s"), *FBpLinkModule::PhaseLabel(E.Phase));
 				if (E.Of > 0 && (E.ProgressPhase.IsEmpty() || E.ProgressPhase == E.Phase)) Row.Detail += FString::Printf(TEXT(" %d/%d"), E.N, E.Of);
 			}
-			else if (E.IsStopped()) Row.Detail = E.Phase.IsEmpty() ? FString(TEXT("Stopped")) : FString::Printf(TEXT("Stopped at %s"), *FBpLinkModule::PhaseLabel(E.Phase));
+			else if (E.IsStopped())
+			{
+				Row.Detail = E.Phase.IsEmpty() ? FString(TEXT("Stopped")) : FString::Printf(TEXT("Stopped at %s"), *FBpLinkModule::PhaseLabel(E.Phase));
+				// Wave EV: the failure in the PC's fixed words, and what the person can do (it stays registered).
+				if (!E.Error.IsEmpty()) Row.Detail += TEXT(": ") + E.Error;
+				if (!E.bHasMap) Row.Detail += TEXT(" · it stays on your PC: read it again from Projects there");
+			}
 			else Row.Detail = E.bHasMap ? TEXT("Ready") : TEXT("No map yet");
 			// The built-in sample says so (night two W2a): the PC's own products are the real ones.
 			if (E.Slug == TEXT("kettle")) Row.Detail = TEXT("The sample · ") + Row.Detail;
@@ -808,6 +877,274 @@ struct FBpConsolePages
 			Row.Tone = bHere ? 1 : E.IsBuilding() || E.State == TEXT("queued") ? 2 : E.IsStopped() ? 3 : 0;
 			Out.Add(Row);
 		}
+		AddListRows(Pawn, Out);
+	}
+
+	// ---- ADD A PROJECT (wave EV) ------------------------------------------------------------------------------------------
+	static void ProjectsOpen(ABpPawn& Pawn)
+	{
+		// The folders are read each time the page opens (ids change when the PC restarts); never while an ask is in hand.
+		if (GAdd.PickId.IsEmpty() && GAdd.Request.IsEmpty()) AddRead(Pawn);
+	}
+	static void AddRead(ABpPawn& Pawn)
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		if (!Link.CanOnboard() || CVarAddProject.GetValueOnGameThread() == 0 || GAdd.bReading) return;
+		GAdd.bReading = true;
+		TWeakObjectPtr<ABpPawn> Self(&Pawn);
+		Link.GetOnboardCandidates([Self](const FBpLinkModule::FOnboardCandidates& Read)
+		{
+			GAdd.bReading = false;
+			GAdd.bRead = true;
+			GAdd.Status = Read.Status;
+			GAdd.Error = Read.Error;
+			GAdd.Candidates = Read.Candidates;
+			GAdd.Held = Read.Held;
+			UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: %d folders offered, %d held%s"), Read.Candidates.Num(), Read.Held, Read.Error.IsEmpty() ? TEXT("") : *(TEXT(", ") + Read.Error));
+			if (ABpPawn* P = Self.Get()) P->RefreshConsole();
+		});
+	}
+	/** The list's part of the page: under the projects, ADD A PROJECT and the folders the PC offers (or why there are none). */
+	static void AddListRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out)
+	{
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		if (CVarAddProject.GetValueOnGameThread() == 0 || !Link.HasPcLink()) return;
+		Out.Add(Note(TEXT("ADD A PROJECT")));
+		if (!Link.CanOnboard())
+		{
+			FBpConsoleRow Row;
+			Row.Label = TEXT("This headset may not add projects");
+			Row.Detail = TEXT("On your PC: Headsets, pair again with 'Add projects' ticked.");
+			Row.Buttons = { { TEXT("PC LINK"), TEXT("open:link"), false } };
+			Row.Tone = 2;
+			Out.Add(Row);
+			return;
+		}
+		// "Your PC is reading <name>" stands while its read runs; once it is done or stopped, its project's row says so instead.
+		const FBpProductEntry* Reading = GAdd.State == TEXT("confirmed") ? Link.FindProduct(GAdd.Slug) : nullptr;
+		if (!GAdd.Words.IsEmpty() && !(Reading && !Reading->IsBuilding())) Out.Add(Note(GAdd.Words, GAdd.State == TEXT("refused") ? 3 : 4));
+		// Not read yet (or read again after an answer changed the offer): one read, guarded against a second while it is out.
+		if (!GAdd.bRead) { AddRead(Pawn); Out.Add(Note(TEXT("Asking your PC which folders it offers"))); return; }
+		if (!GAdd.Error.IsEmpty()) { FBpConsoleRow Row; Row.Label = GAdd.Error; Row.Tone = 3; Row.Buttons = { { TEXT("TRY AGAIN"), TEXT("add:read"), true } }; Out.Add(Row); return; }
+		if (GAdd.Candidates.Num() == 0) Out.Add(Note(TEXT("Your PC offers no folders next to your projects.")));
+		for (const FBpLinkModule::FOnboardCandidate& C : GAdd.Candidates)
+		{
+			FBpConsoleRow Row;
+			Row.Act = TEXT("add:pick:") + C.Id;
+			Row.Label = C.Name;
+			Row.Detail = C.Hint;
+			Row.Tag = AddStateWord(C.State);
+			Row.Tone = C.State == TEXT("onboarding") ? 2 : 0;
+			Out.Add(Row);
+		}
+		if (GAdd.Held > 0) Out.Add(Note(FString::Printf(TEXT("%d more %s carry their own agent settings: start those on your PC."), GAdd.Held, GAdd.Held == 1 ? TEXT("folder") : TEXT("folders"))));
+	}
+	/** The ask in hand takes the page: the confirm sheet, the wait, or what the PC answered. False: the list shows. */
+	static bool AddRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
+	{
+		if (GAdd.PickId.IsEmpty()) return false;
+		const FString Name = GAdd.PickName;
+		if (GAdd.Request.IsEmpty() && GAdd.State.IsEmpty())
+		{
+			// The confirm sheet, in the hand-over sheet's pattern: fixed terms, then ASK and CANCEL.
+			Sub = TEXT("ADD A PROJECT · CONFIRM · nothing is asked before ASK");
+			FBpConsoleRow Head;
+			Head.Label = FString::Printf(TEXT("Ask your PC to read %s?"), *Name);
+			Head.Detail = GAdd.PickHint;
+			Head.Tone = 2;
+			Out.Add(Head);
+			Out.Add(Note(TEXT("You confirm it there: on your PC open Headsets and press CONFIRM. Your PC then starts an agent that reads this folder and draws it on the table.")));
+			Out.Add(Note(TEXT("It takes a few minutes and spends from your account.")));
+			Out.Add(Note(TEXT("The agent is told to write only its map into the folder (.ai/lens-scan, .claude/lens-scan, a .gitignore line) and to commit nothing.")));
+			FBpConsoleRow Act;
+			Act.Label = GAdd.bSending ? TEXT("Asking your PC") : TEXT("Ask, or go back to the list");
+			Act.Buttons = { { GAdd.bSending ? TEXT("ASKING") : TEXT("ASK"), GAdd.bSending ? FString() : FString(TEXT("add:ask")), true }, { TEXT("CANCEL"), TEXT("add:cancel"), false } };
+			Out.Add(Act);
+			return true;
+		}
+		if (GAdd.State == TEXT("waiting"))
+		{
+			Sub = TEXT("ADD A PROJECT · ASKED YOUR PC · you can do something else meanwhile");
+			const double Left = AskTtlS - (FPlatformTime::Seconds() - GAdd.AskedAt);
+			FBpConsoleRow Head;
+			Head.Label = TEXT("Waiting for your click on your PC · Headsets · CONFIRM");
+			Head.Detail = FString::Printf(TEXT("%s · %s left"), *Name, *Clock(Left));
+			Head.Tag = TEXT("WAITING");
+			Head.Tone = 2;
+			Out.Add(Head);
+			Out.Add(Note(TEXT("The bar and your wrist say it while you do something else. CANCEL only stops waiting here; the ask lapses by itself.")));
+			FBpConsoleRow Act;
+			Act.Label = Name;
+			Act.Buttons = { { TEXT("CANCEL"), TEXT("add:cancel"), false } };
+			Out.Add(Act);
+			return true;
+		}
+		// Answered: declined (its reason, amber), expired or gone ("did not answer in time"), refused (the server's sentence).
+		Sub = TEXT("ADD A PROJECT · YOUR PC ANSWERED");
+		FBpConsoleRow Head;
+		Head.Label = GAdd.Words;
+		Head.Detail = Name;
+		Head.Tone = GAdd.State == TEXT("refused") ? 3 : 2;
+		Out.Add(Head);
+		FBpConsoleRow Act;
+		Act.Label = TEXT("Ask again, or go back to the list");
+		Act.Buttons = { { TEXT("ASK AGAIN"), TEXT("add:again"), true }, { TEXT("THE LIST"), TEXT("add:cancel"), false } };
+		Out.Add(Act);
+		return true;
+	}
+	static void AddStopPoll()
+	{
+		if (GAdd.Poll.IsValid()) FTSTicker::GetCoreTicker().RemoveTicker(GAdd.Poll);
+		GAdd.Poll.Reset();
+	}
+	/** What became of the ask, from one answer of GET /api/onboarding/requests/<request> (or the ask's own refusal). */
+	static void AddAnswered(ABpPawn& Pawn, const FBpLinkModule::FOnboardAsk& Ask)
+	{
+		const FString Was = GAdd.State;
+		if (Ask.Status == 200 && Ask.State == TEXT("waiting")) { GAdd.State = TEXT("waiting"); }
+		else if (Ask.Status == 200 && Ask.State == TEXT("confirmed") && !Ask.Slug.IsEmpty())
+		{
+			AddStopPoll();
+			GAdd.State = TEXT("confirmed");
+			GAdd.Slug = Ask.Slug;
+			GAdd.Words = FString::Printf(TEXT("Your PC is reading %s. Its plan draws on the table as it goes."), *GAdd.PickName);
+			UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: confirmed on the PC: %s, job %s; the table switches to it"), *Ask.Slug, *Ask.Job);
+			if (ABpTable* T = Pawn.WristTable.Get()) T->StandupSay(FString::Printf(TEXT("Your PC confirmed it.\nReading %s now."), *GAdd.PickName));
+			const FString Slug = Ask.Slug;
+			GAdd.PickId.Reset();
+			GAdd.Request.Reset();
+			GAdd.bRead = false;
+			FBpLinkModule::Get().SetProduct(Slug);
+		}
+		else if (Ask.Status == 200 && Ask.State == TEXT("declined"))
+		{
+			AddStopPoll();
+			GAdd.State = TEXT("declined");
+			GAdd.Words = Ask.Reason.IsEmpty() ? FString(TEXT("Your PC declined it.")) : FString::Printf(TEXT("Your PC declined it: %s."), *Ask.Reason.TrimChar(TEXT('.')));
+		}
+		else if ((Ask.Status == 200 && Ask.State == TEXT("expired")) || Ask.Status == 404)
+		{
+			AddStopPoll();
+			GAdd.State = TEXT("expired");
+			GAdd.Words = TEXT("Your PC did not answer in time.");
+		}
+		// Anything else (no answer this time): keep waiting; the ask's own clock still ends it.
+		if (GAdd.State == TEXT("waiting") && FPlatformTime::Seconds() - GAdd.AskedAt > AskTtlS + 10.0)
+		{
+			AddStopPoll();
+			GAdd.State = TEXT("expired");
+			GAdd.Words = TEXT("Your PC did not answer in time.");
+		}
+		if (GAdd.State != Was) UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: the ask is %s%s"), *GAdd.State, GAdd.Words.IsEmpty() ? TEXT("") : *(TEXT(": ") + GAdd.Words));
+		Pawn.RefreshConsole();
+		Pawn.DrawWrist();
+	}
+	static void AddStartPoll(ABpPawn& Pawn)
+	{
+		AddStopPoll();
+		TWeakObjectPtr<ABpPawn> Self(&Pawn);
+		GAdd.Poll = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Self](float)
+		{
+			ABpPawn* P = Self.Get();
+			if (!P || GAdd.State != TEXT("waiting") || GAdd.Request.IsEmpty()) { GAdd.Poll.Reset(); return false; }
+			// The headset taken off or the app in the background: no poll (the next one when focus is back).
+			if (FApp::UseVRFocus() && !FApp::HasVRFocus()) return true;
+			++GAdd.Polls;
+			const FString Request = GAdd.Request;
+			FBpLinkModule::Get().GetOnboardAsk(Request, [Self, Request](const FBpLinkModule::FOnboardAsk& Ask)
+			{
+				ABpPawn* Q = Self.Get();
+				if (!Q || GAdd.Request != Request) return;
+				AddAnswered(*Q, Ask);
+			});
+			return true;
+		}), AskPollS);
+	}
+	static bool ProjectsTap(ABpPawn& Pawn, const FString& Act)
+	{
+		if (!Act.StartsWith(TEXT("add:"))) return false;
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: %s"), *Act);
+		if (Act == TEXT("add:read")) { AddRead(Pawn); return true; }
+		if (Act.StartsWith(TEXT("add:pick:")))
+		{
+			const FString Id = Act.Mid(9);
+			const FBpLinkModule::FOnboardCandidate* C = GAdd.Candidates.FindByPredicate([&Id](const FBpLinkModule::FOnboardCandidate& Each) { return Each.Id == Id; });
+			if (!C) return true;
+			GAdd.PickId = C->Id;
+			GAdd.PickName = C->Name;
+			GAdd.PickHint = C->Hint;
+			GAdd.State.Reset();
+			GAdd.Words.Reset();
+			GAdd.Request.Reset();
+			Pawn.ConsolePageAt = 0;
+			return true;
+		}
+		if (Act == TEXT("add:cancel"))
+		{
+			// CANCEL stops waiting here only (the ask lapses on the PC by itself).
+			AddStopPoll();
+			const bool bWasWaiting = GAdd.State == TEXT("waiting");
+			GAdd.PickId.Reset();
+			GAdd.Request.Reset();
+			GAdd.State.Reset();
+			GAdd.Words = bWasWaiting ? FString(TEXT("Stopped waiting. The ask lapses on your PC by itself.")) : FString();
+			Pawn.ConsolePageAt = 0;
+			AddRead(Pawn);
+			return true;
+		}
+		if (Act == TEXT("add:again"))
+		{
+			GAdd.State.Reset();
+			GAdd.Words.Reset();
+			GAdd.Request.Reset();
+		}
+		if ((Act == TEXT("add:ask") || Act == TEXT("add:again")) && !GAdd.PickId.IsEmpty() && !GAdd.bSending)
+		{
+			// `shown`: the name and hint as displayed, and the terms' sentence.
+			const FString Shown = FString::Printf(TEXT("%s\n%s\n%s"), *GAdd.PickName, *GAdd.PickHint, *AddTerms(GAdd.PickName));
+			GAdd.bSending = true;
+			TWeakObjectPtr<ABpPawn> Self(&Pawn);
+			const FString Name = GAdd.PickName;
+			Link.AskOnboard(GAdd.PickId, Shown, [Self, Name](const FBpLinkModule::FOnboardAsk& Ask)
+			{
+				GAdd.bSending = false;
+				ABpPawn* P = Self.Get();
+				if (!P) return;
+				if (Ask.Status == 202 && !Ask.Request.IsEmpty())
+				{
+					GAdd.Request = Ask.Request;
+					GAdd.AskedAt = FPlatformTime::Seconds();
+					GAdd.State = TEXT("waiting");
+					GAdd.Polls = 0;
+					UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: asked your PC to read %s (request %s); waiting for CONFIRM on its Headsets page"), *Name, *Ask.Request);
+					if (ABpTable* T = P->WristTable.Get()) T->StandupSay(TEXT("Asked your PC.\nConfirm it there: Headsets, CONFIRM."));
+					AddStartPoll(*P);
+				}
+				else if (Ask.Status == 409 && !Ask.Slug.IsEmpty())
+				{
+					// Already being read: watch that one.
+					UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: %s is already being read (%s): watching it"), *Name, *Ask.Slug);
+					GAdd.PickId.Reset();
+					GAdd.State.Reset();
+					GAdd.Words = FString::Printf(TEXT("%s is being read already: watching it."), *Name);
+					GAdd.bRead = false;
+					if (FBpLinkModule::Get().GetProductSlug() != Ask.Slug) FBpLinkModule::Get().SetProduct(Ask.Slug);
+				}
+				else
+				{
+					// 403 (a held folder), 404 (the list is stale: read again), 429 (the bound), 400: the server's sentence.
+					GAdd.State = TEXT("refused");
+					GAdd.Words = !Ask.Error.IsEmpty() ? Ask.Error : FBpLinkModule::AnswerWords(Ask.Status, FString());
+					if (Ask.Status == 429 && Ask.RetryAfterS > 0) GAdd.Words += FString::Printf(TEXT(" Try again in %d minutes."), FMath::Max(1, Ask.RetryAfterS / 60));
+					if (Ask.Status == 404) { GAdd.PickId.Reset(); GAdd.State.Reset(); GAdd.bRead = false; AddRead(*P); }
+				}
+				P->RefreshConsole();
+				P->DrawWrist();
+			});
+			return true;
+		}
+		return true;
 	}
 	static FString ProjectsSummary(ABpPawn&)
 	{
@@ -1204,6 +1541,8 @@ FString ABpPawn::ConsoleStatus() const
 	if (!Table || !Table->HasPlan()) return TEXT("Reading the plan");
 	// Talking to the lamp says so here as well as on the lamp and the wrist (voice-io: visibly active while in use).
 	if (!Table->TalkStateWord().IsEmpty()) return FString::Printf(TEXT("%s · %s"), *Table->TalkStateWord(), *Table->TalkStateLine());
+	// Wave EV: an ask out to the PC says so while the person does something else.
+	if (GAdd.State == TEXT("waiting")) return FString::Printf(TEXT("Asked your PC · %s · confirm it on Headsets"), *GAdd.PickName);
 	FString Head, Body;
 	Table->ScanBand(Head, Body);
 	if (!WristArmedFocus.IsEmpty()) return FString::Printf(TEXT("A scan of %s is ready on your wrist"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel);
@@ -1219,15 +1558,26 @@ FString ABpPawn::ConsoleStatus() const
 		return N > 0 ? FString::Printf(TEXT("%d %s on the screens"), N, N == 1 ? TEXT("decision") : TEXT("decisions")) : FString::Printf(TEXT("Nothing to decide in %s"), *Place);
 	}
 	const int32 Waiting = Table->OpenDecisionCount();
-	const FString Words = Waiting > 0 ? FString::Printf(TEXT("%d %s waiting"), Waiting, Waiting == 1 ? TEXT("decision") : TEXT("decisions")) : FString(TEXT("Nothing waiting"));
+	FString Words = Waiting > 0 ? FString::Printf(TEXT("%d %s waiting"), Waiting, Waiting == 1 ? TEXT("decision") : TEXT("decisions")) : FString(TEXT("Nothing waiting"));
+	// Wave EV: before today's stand-up, what came of yesterday's approvals leads the bar ("2 built since yesterday").
+	if (const FString Yesterday = StandupYesterdayWords(); !Yesterday.IsEmpty() && Table->GetBpLevel() == EBpLevel::L0) Words = Yesterday.Left(1).ToUpper() + Yesterday.Mid(1) + TEXT(" · ") + Words;
 	if (Table->GetBpLevel() != EBpLevel::L0) return FString::Printf(TEXT("%s · %s"), *Table->DirectedLabel(Table->DirectedTarget()), *Words);
 	return Words;
+}
+
+bool ABpPawn::OnboardAskWaiting(FString& OutName) const
+{
+	if (GAdd.State != TEXT("waiting")) return false;
+	OutName = GAdd.PickName;
+	return true;
 }
 
 void ABpPawn::RefreshConsole()
 {
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
+	// Wave EV: what came of yesterday, read once in a while for the bar and the tile (throttled inside; nothing per frame).
+	if (Table->HasPlan()) StandupPeekYesterday();
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Product = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
 	const bool bCanBack = Table->HasPlan() && (!Table->GetRoomModeId().IsEmpty() || Table->GetBpLevel() != EBpLevel::L0);
@@ -1699,6 +2049,8 @@ void ABpPawn::SetConsoleMark(const FString& Id)
 	if (Id == ConsoleMark) return;
 	ConsoleMark = Id;
 	RefreshConsole();
+	// Wave EV: a mark may be on the wrist (`wrist:talk`, the tour's talk step).
+	DrawWrist();
 }
 
 void ABpPawn::ConsoleTap(const FString& Id)

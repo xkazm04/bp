@@ -115,6 +115,26 @@ struct FBpStandupState
 	double StampAt = -100.0;
 	int32 StampFrame = 0;
 	FTimerHandle StampTimer;
+	/** The YESTERDAY sheet (wave EV): the outcome shown on an `outcomes` card, and its two screens (0 before, 1 after), each
+	 *  with its own brush; their textures are the pawn's (StandupOutcomeShots), released when the outcome or the page goes. */
+	int32 OutcomeAt = 0;
+	/** The outcomes card the sheet shows (entering it again from elsewhere starts at its first outcome, PREV from after it at its last). */
+	FString OutcomeCardShown;
+	bool bOutcomeFromEnd = false;
+	struct FOutcomeShot
+	{
+		FString Path;
+		TSharedPtr<FSlateBrush> Brush;
+		bool bLoading = false;
+		bool bMissing = false;
+		bool bSample = false;
+	};
+	FString OutcomeShotFor;
+	FOutcomeShot OutcomeShots[2];
+	uint32 OutcomeGen = 0;
+	/** The opening (wave EV): a returning person is welcomed back ("Since yesterday 08:10:"); a first stand-up is introduced. */
+	bool bWelcome = false;
+	bool bOpeningSaid = false;
 };
 
 namespace
@@ -255,6 +275,115 @@ namespace
 		return Newest;
 	}
 
+	// ---- YESTERDAY (wave EV): what earlier approvals became, from the deck's `outcomes` cards -------------------------------
+
+	bool IsOutcomes(const FBpMorningCard* Card) { return Card && Card->kind == BpVocab::MorningCard::Kind::Outcomes && Card->outcomes.Num() > 0; }
+
+	/** The outcomes card a sheet shows (null: none). */
+	const FBpMorningCard* OutcomesOf(const FBpStandupState& S, int32 SheetAt)
+	{
+		if (!S.Sheets.IsValidIndex(SheetAt) || S.Sheets[SheetAt].Kind != FBpStandupSheet::EKind::Deck || !S.Deck.cards.IsValidIndex(S.Sheets[SheetAt].Card)) return nullptr;
+		const FBpMorningCard* Card = &S.Deck.cards[S.Sheets[SheetAt].Card];
+		return IsOutcomes(Card) ? Card : nullptr;
+	}
+
+	/** The outcome shown on the sheet shown (null: not a YESTERDAY sheet). */
+	const FBpOutcome* ShownOutcome(const FBpStandupState& S)
+	{
+		const FBpMorningCard* Card = OutcomesOf(S, S.At);
+		return Card && Card->outcomes.IsValidIndex(S.OutcomeAt) ? &Card->outcomes[S.OutcomeAt] : nullptr;
+	}
+
+	/** Every outcome on the deck, counted: approved, built, failed, building, waiting. */
+	struct FOutcomeCount { int32 All = 0, Built = 0, Failed = 0, Building = 0, Waiting = 0; };
+	FOutcomeCount CountOutcomes(const FBpMorningDeck& Deck)
+	{
+		FOutcomeCount C;
+		for (const FBpMorningCard& Card : Deck.cards)
+		{
+			if (!IsOutcomes(&Card)) continue;
+			for (const FBpOutcome& O : Card.outcomes)
+			{
+				++C.All;
+				C.Built += O.outcome == BpVocab::Outcome::Outcome::Built ? 1 : 0;
+				C.Failed += O.outcome == BpVocab::Outcome::Outcome::Failed ? 1 : 0;
+				C.Building += O.outcome == BpVocab::Outcome::Outcome::Building ? 1 : 0;
+				C.Waiting += O.outcome == BpVocab::Outcome::Outcome::Waiting ? 1 : 0;
+			}
+		}
+		return C;
+	}
+
+	/** "2 built, 1 failed" (the parts that are not zero, in the deck's order). */
+	FString OutcomeParts(const FOutcomeCount& C)
+	{
+		TArray<FString> Parts;
+		if (C.Built) Parts.Add(FString::Printf(TEXT("%d built"), C.Built));
+		if (C.Failed) Parts.Add(FString::Printf(TEXT("%d failed"), C.Failed));
+		if (C.Building) Parts.Add(FString::Printf(TEXT("%d building"), C.Building));
+		if (C.Waiting) Parts.Add(FString::Printf(TEXT("%d %s"), C.Waiting, C.Waiting == 1 ? TEXT("waits") : TEXT("wait")));
+		return FString::Join(Parts, TEXT(", "));
+	}
+
+	/** The day of an ISO time in words, as the headset's clock reads it: "today", "yesterday", or "on 7 Nov". The bundled sample
+	 *  is one fixed night: its approvals are always yesterday's. */
+	FString DayWords(const FString& Iso, bool bSample)
+	{
+		if (bSample) return TEXT("yesterday");
+		FDateTime At;
+		if (!FDateTime::ParseIso8601(*Iso, At)) return FString();
+		const FTimespan Offset = FDateTime::Now() - FDateTime::UtcNow();
+		const FDateTime Local = At + Offset, Now = FDateTime::Now();
+		const int32 Days = (Now.GetDate() - Local.GetDate()).GetDays();
+		if (Days <= 0) return TEXT("today");
+		if (Days == 1) return TEXT("yesterday");
+		static const TCHAR* const M[] = { TEXT("Jan"), TEXT("Feb"), TEXT("Mar"), TEXT("Apr"), TEXT("May"), TEXT("Jun"), TEXT("Jul"), TEXT("Aug"), TEXT("Sep"), TEXT("Oct"), TEXT("Nov"), TEXT("Dec") };
+		return FString::Printf(TEXT("on %d %s"), Local.GetDay(), M[FMath::Clamp(Local.GetMonth(), 1, 12) - 1]);
+	}
+
+	/** Who approved it and when: "you, at the table, yesterday 09:51". */
+	FString ApprovedWords(const FBpOutcome& O, bool bSample)
+	{
+		const TCHAR* Where = O.decided_by == BpVocab::Outcome::DecidedBy::Vr ? TEXT("at the table") : TEXT("on your PC");
+		return FString::Printf(TEXT("you, %s, %s %s"), Where, *DayWords(O.decided_at, bSample), *LocalClock(O.decided_at)).TrimEnd();
+	}
+
+	/** The "Yesterday you approved 3: 2 built, 1 failed" line (empty: no outcomes on the deck). */
+	FString YesterdayLine(const FBpStandupState& S)
+	{
+		const FOutcomeCount C = CountOutcomes(S.Deck);
+		if (C.All == 0) return FString();
+		FString Day = TEXT("yesterday");
+		for (const FBpMorningCard& Card : S.Deck.cards) if (IsOutcomes(&Card)) { Day = DayWords(Card.outcomes[0].decided_at, S.bSample); break; }
+		const FString Lead = Day == TEXT("yesterday") ? FString(TEXT("Yesterday you approved")) : Day == TEXT("today") ? FString(TEXT("Earlier today you approved")) : FString(TEXT("Since then you approved"));
+		return FString::Printf(TEXT("%s %d: %s"), *Lead, C.All, *OutcomeParts(C));
+	}
+
+	/** The decision card on this morning's deck for the same proposal (a failed outcome that waits again), INDEX_NONE: none. */
+	int32 DecisionSheetFor(const FBpStandupState& S, const FString& Product, const FString& Proposal)
+	{
+		return S.Sheets.IndexOfByPredicate([&](const FBpStandupSheet& Sh)
+		{
+			if (Sh.Kind != FBpStandupSheet::EKind::Deck || !S.Deck.cards.IsValidIndex(Sh.Card)) return false;
+			const FBpMorningCard& C = S.Deck.cards[Sh.Card];
+			return C.kind == BpVocab::MorningCard::Kind::Decision && C.decision.proposal == Proposal && (Product.IsEmpty() || C.product.IsEmpty() || C.product == Product);
+		});
+	}
+
+	/** What came of yesterday for the MENU's tile and the bar, read before the page opens ("2 built since yesterday"); empty: nothing. */
+	FString GYesterdayWords;
+	double GYesterdayReadAt = -1.0e9;
+
+	/** "2 built, 1 failed since yesterday" from a deck (empty: nothing came of earlier approvals). */
+	FString YesterdayBarWords(const FBpMorningDeck& Deck, bool bSample)
+	{
+		const FOutcomeCount C = CountOutcomes(Deck);
+		if (C.All == 0) return FString();
+		FString Day = TEXT("yesterday");
+		for (const FBpMorningCard& Card : Deck.cards) if (IsOutcomes(&Card)) { Day = DayWords(Card.outcomes[0].decided_at, bSample); break; }
+		return FString::Printf(TEXT("%s %s"), *OutcomeParts(C), Day == TEXT("yesterday") ? TEXT("since yesterday") : TEXT("since your last stand-up"));
+	}
+
 	/** The companion's requests among the sheets. */
 	int32 CompanionSheets(const FBpStandupState& S) { return Algo::CountIf(S.Sheets, [](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion; }); }
 
@@ -333,6 +462,9 @@ FString ABpTable::StandupShow(const FString& Kind, const FString& Id, const FStr
 		if (!Line.IsEmpty()) SayLamp(Line, true);
 		return FString();
 	}
+	// Wave EV (the tour's open item, 655209bf): on the tour's stand-up step the tour's own line holds the caption, and the lamp
+	// stands home beside the sheet turned to it (beside a raised room it stood out of frame, behind the sheet).
+	const bool bTourHere = IsTourRunning();
 	// The whole plan in view: out of a room's map, the levels home, then the room raised where it stands.
 	if (!RoomModeId.IsEmpty()) ExitRoomMode();
 	if (Level != EBpLevel::L0) Home();
@@ -341,20 +473,25 @@ FString ABpTable::StandupShow(const FString& Kind, const FString& Id, const FStr
 	if (Wing)
 	{
 		SetHighlight(TEXT("wing"), Wing->id);
-		PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w * 0.5, Wing->box.y + Wing->box.h * 0.5)), 0.f)), TEXT("standup"));
+		if (!bTourHere) PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w * 0.5, Wing->box.y + Wing->box.h * 0.5)), 0.f)), TEXT("standup"));
 	}
 	else if (!Room.IsEmpty())
 	{
 		SetHighlight(TEXT("room"), Room);
 		const bool bFeature = Kind == TEXT("feature") && SheetPlan->tiles.ContainsByPredicate([&Id](const FBpPlanTile& T) { return T.id == Id; });
-		PresentLamp(bFeature ? LampTargetForFeature(Id) : LampTargetForRoom(Room), TEXT("standup"));
+		if (!bTourHere) PresentLamp(bFeature ? LampTargetForFeature(Id) : LampTargetForRoom(Room), TEXT("standup"));
+	}
+	if (bTourHere)
+	{
+		LampGoHome(TEXT("tour"));
+		TourLookAtConsole(TEXT("console:standup:approve"));
 	}
 	else
 	{
 		SetHighlight(FString(), FString());
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s:%s is on no level of this plan; the table stays"), *Kind, *Id);
 	}
-	if (!Line.IsEmpty())
+	if (!Line.IsEmpty() && !bTourHere)
 	{
 		// V8: the line is the sheet's own title: the voice says it, the box stays quiet (it hid behind the sheet's edge).
 		SayLamp(Line, true);
@@ -399,6 +536,18 @@ void ABpPawn::StandupClosed()
 	// The stamp's settle runs at 30 Hz on a handle inside the state: closed mid-settle and the state dropped, nothing could clear it.
 	if (Standup.IsValid()) GetWorldTimerManager().ClearTimer(Standup->StampTimer);
 	StandupReleaseShot();
+	StandupReleaseOutcomeShots();
+	// Closed, nothing can paint yesterday's screens after the console's next draw: the kept pair goes a moment later.
+	if (StandupOutcomeKept.Num() > 0)
+	{
+		FTimerHandle Drop;
+		GetWorldTimerManager().SetTimer(Drop, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (IsStandupOpen() || StandupOutcomeKept.Num() == 0) return;
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's kept screens let go (%d)"), StandupOutcomeKept.Num());
+			StandupOutcomeKept.Reset();
+		}), 2.f, false);
+	}
 	if (ABpTable* Table = WristTable.Get(); Table && Standup.IsValid() && !Standup->Room.IsEmpty()) Table->SetHighlight(FString(), FString());
 	// Unsent answers stay (the PC was gone): the page says what was not sent when it opens again. Otherwise nothing stays.
 	const bool bKeep = Standup.IsValid() && Standup->Answers.Num() > 0 && !Standup->bSample
@@ -435,6 +584,8 @@ void ABpPawn::StandupLoad()
 			return;
 		}
 		S.Deck = Read.Deck;
+		GYesterdayWords = YesterdayBarWords(S.Deck, S.bSample);
+		GYesterdayReadAt = FPlatformTime::Seconds();
 		// The sample's answers kept for the day (so "what you decided" stays honest after a restart).
 		if (S.bSample)
 		{
@@ -506,7 +657,14 @@ void ABpPawn::StandupBuildSheets()
 	// "Since your last stand-up": what moved on the plan since then, from the deck's own cards (built, released, raised).
 	FDateTime Last;
 	ABpTable* Table = WristTable.Get();
-	if (Table && FDateTime::ParseIso8601(*S.LastStandup, Last) && (FDateTime::UtcNow() - Last).GetTotalSeconds() >= SinceMinGapS)
+	// Away (wave EV): linked, the last stand-up is older than SinceMinGapS (the server answers with that window); the bundled
+	// sample is one fixed night that ignores `since`, so it simulates honestly: a returning morning is one at least a calendar
+	// day after the last stand-up (BpStandup.Last 30 makes one), never a second open on the same day.
+	const bool bHadLast = FDateTime::ParseIso8601(*S.LastStandup, Last);
+	const FTimespan LocalOffset = FDateTime::Now() - FDateTime::UtcNow();
+	const bool bAway = bHadLast && (S.bSample ? (FDateTime::Now().GetDate() - (Last + LocalOffset).GetDate()).GetDays() >= 1 : (FDateTime::UtcNow() - Last).GetTotalSeconds() >= SinceMinGapS);
+	S.bWelcome = bAway;
+	if (Table && bAway)
 	{
 		// Per room: what was built there (a built card's line ends " · <room name>"), what was released there, and the decisions
 		// raised in it that wait now.
@@ -552,7 +710,9 @@ void ABpPawn::StandupBuildSheets()
 			S.Marks.Emplace(Room, FString::Join(Parts, TEXT(" · ")));
 		}
 		if (S.Marks.Num() > 6) S.Marks.SetNum(6);
-		if (S.Marks.Num() > 0) S.Sheets.Add({ FBpStandupSheet::EKind::Since });
+		// The welcome back is the stand-up's opening when anything came of the time away: rooms that moved, or approvals that
+		// became something.
+		if (S.Marks.Num() > 0 || CountOutcomes(S.Deck).All > 0) S.Sheets.Add({ FBpStandupSheet::EKind::Since });
 	}
 	for (int32 Index = 0; Index < S.Deck.cards.Num(); ++Index)
 	{
@@ -580,10 +740,36 @@ void ABpPawn::StandupShowSheet()
 	S.MarkAt = -1;
 	ConsoleSel.Reset();
 	StandupLoadShot();
+	// The YESTERDAY sheet's screens go when it does (one sheet's images at a time).
+	if (!OutcomesOf(S, S.At)) { StandupReleaseOutcomeShots(); S.OutcomeCardShown.Reset(); }
 	if (!S.Sheets.IsValidIndex(S.At) || !Table) { RefreshConsole(); DrawWrist(); return; }
 	const FBpStandupSheet& Sheet = S.Sheets[S.At];
+	if (const FBpMorningCard* Outcomes = OutcomesOf(S, S.At))
+	{
+		// Entered from before it: its first outcome; stepped back into from after it: its last.
+		if (S.OutcomeCardShown != Outcomes->id)
+		{
+			S.OutcomeCardShown = Outcomes->id;
+			S.OutcomeAt = S.bOutcomeFromEnd ? Outcomes->outcomes.Num() - 1 : 0;
+		}
+		S.bOutcomeFromEnd = false;
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: sheet %d/%d outcomes %s \"%s\" (%d outcomes)"), S.At + 1, S.Sheets.Num(), *Outcomes->id, *Outcomes->headline, Outcomes->outcomes.Num());
+		StandupShowOutcome();
+		return;
+	}
+	S.bOutcomeFromEnd = false;
 	if (Sheet.Kind == FBpStandupSheet::EKind::Since)
 	{
+		// Wave EV: the welcome back is said once as the stand-up opens on it (a bundled clip for the sample's fixed words; linked,
+		// one line through the PC's say, the caption carrying it when there is none).
+		if (!S.bOpeningSaid)
+		{
+			S.bOpeningSaid = true;
+			const FOutcomeCount C = CountOutcomes(S.Deck);
+			const FString Said = FString::Printf(TEXT("Welcome back. Since %s %s: %s."), *DayWords(S.LastStandup, false), *LocalClock(S.LastStandup), C.All ? *OutcomeParts(C) : TEXT("here is what moved"));
+			Table->StandupVoice(S.bSample ? TEXT("standup-welcome") : TEXT(""), S.bSample ? FString() : Said);
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: the welcome back: \"%s\"%s"), *Said, S.bSample ? TEXT(" (the sample's clip: its fixed words)") : TEXT(""));
+		}
 		// The replay: each changed room raised in turn, its words on the lamp's caption; any press skips it.
 		S.MarkAt = 0;
 		const FTimerDelegate Step = FTimerDelegate::CreateUObject(this, &ABpPawn::StandupTickSince);
@@ -958,6 +1144,40 @@ void ABpPawn::StandupPeekRequests()
 	});
 }
 
+void ABpPawn::StandupPeekYesterday()
+{
+	// One read of the morning (the sample's file, or the PC's deck) at most every ten minutes, never while the page is open (it
+	// reads its own); the answer redraws the bar and the tile once if their words change.
+	const double Now = FPlatformTime::Seconds();
+	if (IsStandupOpen() || Now - GYesterdayReadAt < 600.0) return;
+	GYesterdayReadAt = Now;
+	FString Last;
+	FBpStore::GetString(Section, TEXT("LastStandup"), Last);
+	FDateTime At;
+	const FString Since = FDateTime::ParseIso8601(*Last, At) && (FDateTime::UtcNow() - At).GetTotalDays() < 7.0 ? Last : FString();
+	TWeakObjectPtr<ABpPawn> Self(this);
+	FBpLinkModule::Get().GetMorning(Since, [Self](const FBpMorningRead& Read)
+	{
+		if (!Read.bOk) return;
+		const FString Words = YesterdayBarWords(Read.Deck, Read.bSample);
+		if (Words == GYesterdayWords) return;
+		GYesterdayWords = Words;
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday, before the page opens: %s"), Words.IsEmpty() ? TEXT("nothing came of earlier approvals") : *Words);
+		if (ABpPawn* Pawn = Self.Get()) { Pawn->RefreshConsole(); Pawn->DrawWrist(); }
+	});
+}
+
+FString ABpPawn::StandupYesterdayWords() const
+{
+	if (GYesterdayWords.IsEmpty() || IsStandupOpen()) return FString();
+	// Once today's stand-up has been held, the bar and the tile stop saying it.
+	FString Last;
+	FBpStore::GetString(Section, TEXT("LastStandup"), Last);
+	FDateTime At;
+	if (FDateTime::ParseIso8601(*Last, At) && (At + (FDateTime::Now() - FDateTime::UtcNow())).GetDate() == FDateTime::Now().GetDate()) return FString();
+	return GYesterdayWords;
+}
+
 void ABpPawn::StandupReadPolicies()
 {
 	if (FBpLinkModule::Get().IsFromBundle() || !FBpLinkModule::Get().HasPcLink()) return;
@@ -1090,10 +1310,31 @@ void ABpPawn::StandupAct(const FString& Act)
 	if (Act == TEXT("next") || Act == TEXT("prev"))
 	{
 		if (S.Sheets.Num() == 0) return;
-		const int32 To = FMath::Clamp(S.At + (Act == TEXT("next") ? 1 : -1), 0, S.Sheets.Num() - 1);
+		const int32 Step = Act == TEXT("next") ? 1 : -1;
+		// The YESTERDAY sheet steps through its outcomes first (wave EV), then on to the sheet beside it.
+		if (const FBpMorningCard* Outcomes = OutcomesOf(S, S.At); Outcomes && Outcomes->outcomes.IsValidIndex(S.OutcomeAt + Step))
+		{
+			S.OutcomeAt += Step;
+			StandupShowOutcome();
+			return;
+		}
+		const int32 To = FMath::Clamp(S.At + Step, 0, S.Sheets.Num() - 1);
 		if (To == S.At) return;
 		S.At = To;
 		S.bTour = false;
+		S.bOutcomeFromEnd = Step < 0;
+		StandupShowSheet();
+		return;
+	}
+	if (Act == TEXT("todecision"))
+	{
+		// A failed outcome that waits again among this morning's decisions: its decision sheet.
+		const FBpOutcome* O = ShownOutcome(S);
+		const FBpMorningCard* Outcomes = OutcomesOf(S, S.At);
+		const int32 To = O && Outcomes ? DecisionSheetFor(S, Outcomes->product, O->proposal) : INDEX_NONE;
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: to the decision of %s: %s"), O ? *O->proposal : TEXT("-"), To == INDEX_NONE ? TEXT("none on this deck") : *FString::Printf(TEXT("sheet %d"), To + 1));
+		if (To == INDEX_NONE) return;
+		S.At = To;
 		StandupShowSheet();
 		return;
 	}
@@ -1255,6 +1496,105 @@ void ABpPawn::StandupLoadShot()
 	});
 }
 
+// ---- YESTERDAY: one outcome at a time (wave EV) ---------------------------------------------------------------------------
+
+void ABpPawn::StandupShowOutcome()
+{
+	if (!Standup.IsValid()) return;
+	FBpStandupState& S = *Standup;
+	const FBpMorningCard* Card = OutcomesOf(S, S.At);
+	ABpTable* Table = WristTable.Get();
+	if (!Card || !Table) { RefreshConsole(); DrawWrist(); return; }
+	S.OutcomeAt = FMath::Clamp(S.OutcomeAt, 0, Card->outcomes.Num() - 1);
+	const FBpOutcome& O = Card->outcomes[S.OutcomeAt];
+	// The plan raises its room as decisions do (the card's own place when the outcome names none); the lamp goes beside it.
+	const FString RoomId = !O.room.IsEmpty() ? O.room : Card->place.target.id;
+	const FString Word = O.outcome == BpVocab::Outcome::Outcome::Built ? TEXT("Built") : O.outcome == BpVocab::Outcome::Outcome::Failed ? TEXT("Failed")
+		: O.outcome == BpVocab::Outcome::Outcome::Building ? TEXT("Building") : TEXT("Waiting");
+	S.Room = Table->StandupShow(RoomId.IsEmpty() ? FString() : FString(TEXT("room")), RoomId, FString::Printf(TEXT("%s: %s"), *Word, *O.title));
+	// A first stand-up (no earlier one on this headset) introduces the sheet once, on its first outcome.
+	if (!S.bOpeningSaid && !S.bWelcome && S.OutcomeAt == 0)
+	{
+		S.bOpeningSaid = true;
+		Table->StandupVoice(S.bSample ? TEXT("standup-yesterday") : TEXT(""), S.bSample ? FString() : FString(TEXT("Here is what yesterday's approvals became.")));
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday %d/%d %s %s \"%s\"%s%s, approved by %s (room %s)"), S.OutcomeAt + 1, Card->outcomes.Num(), *O.outcome, *O.proposal, *O.title,
+		O.commit.IsEmpty() ? TEXT("") : *(TEXT(" commit ") + O.commit), O.reason.IsEmpty() ? TEXT("") : *(TEXT(" reason \"") + O.reason + TEXT("\"")), *ApprovedWords(O, S.bSample), S.Room.IsEmpty() ? TEXT("none raised") : *S.Room);
+	StandupLoadOutcomeShots();
+	RefreshConsole();
+	DrawWrist();
+}
+
+void ABpPawn::StandupReleaseOutcomeShots()
+{
+	if (Standup.IsValid())
+	{
+		++Standup->OutcomeGen;
+		Standup->OutcomeShotFor.Reset();
+		for (FBpStandupState::FOutcomeShot& Shot : Standup->OutcomeShots) Shot = FBpStandupState::FOutcomeShot();
+	}
+	if (StandupOutcomeShots.Num() == 0) return;
+	int32 Bytes = 0;
+	for (const TObjectPtr<UTexture2D>& Texture : StandupOutcomeShots) if (Texture) Bytes += Texture->GetSizeX() * Texture->GetSizeY() * 4;
+	UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's screens released (%d, %.0f KB)"), StandupOutcomeShots.Num(), Bytes / 1024.0);
+	// Kept one release longer (the last two), as the deck's and the decision sheet's are: a widget that still paints them this
+	// frame never holds a freed texture.
+	StandupOutcomeKept = MoveTemp(StandupOutcomeShots);
+	StandupOutcomeShots.Reset();
+}
+
+void ABpPawn::StandupLoadOutcomeShots()
+{
+	if (!Standup.IsValid()) return;
+	FBpStandupState& S = *Standup;
+	const FBpOutcome* O = ShownOutcome(S);
+	const FBpMorningCard* Card = OutcomesOf(S, S.At);
+	const FString For = O && Card ? Card->id + TEXT("/") + O->proposal : FString();
+	if (For == S.OutcomeShotFor && !For.IsEmpty()) return;
+	StandupReleaseOutcomeShots();
+	if (For.IsEmpty()) return;
+	S.OutcomeShotFor = For;
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	// The sample's screens are bare names under the bundle's shots; a live product's are its store's Shot paths.
+	const FString Product = S.bSample ? Link.GetProductSlug() : Card->product;
+	const FString Paths[2] = { O->before, O->after };
+	const uint32 Gen = S.OutcomeGen;
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FBpStandupState::FOutcomeShot& Shot = S.OutcomeShots[Index];
+		Shot.Path = Paths[Index];
+		if (Shot.Path.IsEmpty()) continue;
+		Shot.bLoading = true;
+		const double Asked = FPlatformTime::Seconds();
+		TWeakObjectPtr<ABpPawn> Self(this);
+		const TWeakPtr<FBpStandupState> Weak = Standup;
+		FetchBeforeShot(Product, Shot.Path, [Self, Weak, Gen, Index, Asked](UTexture2D* Texture, bool bSample)
+		{
+			ABpPawn* Pawn = Self.Get();
+			const TSharedPtr<FBpStandupState> Pin = Weak.Pin();
+			if (!Pawn || !Pin.IsValid() || Pawn->Standup != Pin || Pin->OutcomeGen != Gen) return;
+			FBpStandupState::FOutcomeShot& Shot = Pin->OutcomeShots[Index];
+			Shot.bLoading = false;
+			if (!Texture)
+			{
+				Shot.bMissing = true;
+				UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's %s screen %s could not be read"), Index == 0 ? TEXT("before") : TEXT("after"), *Shot.Path);
+				Pawn->RefreshConsole();
+				return;
+			}
+			Shot.bSample = bSample;
+			Pawn->StandupOutcomeShots.Add(Texture);
+			Shot.Brush = MakeShared<FSlateBrush>();
+			Shot.Brush->SetResourceObject(Texture);
+			Shot.Brush->ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+			Shot.Brush->DrawAs = ESlateBrushDrawType::Image;
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's %s screen %s drawn at %dx%d (%.0f KB in memory, %.0f ms to read and decode)%s"), Index == 0 ? TEXT("before") : TEXT("after"), *Shot.Path,
+				Texture->GetSizeX(), Texture->GetSizeY(), Texture->GetSizeX() * Texture->GetSizeY() * 4 / 1024.0, (FPlatformTime::Seconds() - Asked) * 1000.0, bSample ? TEXT(", a sample screen") : TEXT(""));
+			Pawn->RefreshConsole();
+		});
+	}
+}
+
 const FBpShot* ABpPawn::FindBeforeShot(const FString& Proposal)
 {
 	if (Proposal.IsEmpty()) return nullptr;
@@ -1270,9 +1610,11 @@ void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunc
 		// Decoded off the game thread, halved until it is at most 800 px wide (the sheet draws it about 340 px wide). The module
 		// is loaded here, on the game thread (the module manager's rule); the worker only uses it.
 		IImageWrapperModule* Wrappers = &FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-		Async(EAsyncExecution::ThreadPool, [Then, bSample, Png, Wrappers]()
+		// PNG, or JPEG (an outcome's screen may be one, wave EV), told by its bytes.
+		const EImageFormat Format = Wrappers->DetectImageFormat(Png.GetData(), Png.Num()) == EImageFormat::JPEG ? EImageFormat::JPEG : EImageFormat::PNG;
+		Async(EAsyncExecution::ThreadPool, [Then, bSample, Png, Wrappers, Format]()
 		{
-			TSharedPtr<IImageWrapper> Image = Wrappers->CreateImageWrapper(EImageFormat::PNG);
+			TSharedPtr<IImageWrapper> Image = Wrappers->CreateImageWrapper(Format);
 			TArray64<uint8> Raw;
 			int32 W = 0, H = 0;
 			if (Image.IsValid() && Image->SetCompressed(Png.GetData(), Png.Num()) && Image->GetRaw(ERGBFormat::BGRA, 8, Raw))
@@ -1331,6 +1673,12 @@ FString ABpPawn::GetStandupLine() const
 	FString Kind = Sheet.Kind == FBpStandupSheet::EKind::Since ? TEXT("since") : Sheet.Kind == FBpStandupSheet::EKind::Companion ? TEXT("companion") : S.Deck.cards.IsValidIndex(Sheet.Card) ? S.Deck.cards[Sheet.Card].kind : TEXT("?");
 	const FString Id = Sheet.Kind == FBpStandupSheet::EKind::Companion ? Sheet.Companion.Id : S.Deck.cards.IsValidIndex(Sheet.Card) ? S.Deck.cards[Sheet.Card].id : FString();
 	FString Line = FString::Printf(TEXT("%s %d/%d %s %s"), S.bSample ? TEXT("sample") : TEXT("linked"), S.At + 1, S.Sheets.Num(), *Kind, *Id);
+	if (const FBpOutcome* O = ShownOutcome(S))
+	{
+		const auto ShotWord = [](const FBpStandupState::FOutcomeShot& Shot) { return Shot.Path.IsEmpty() ? TEXT("none") : Shot.Brush.IsValid() ? TEXT("drawn") : Shot.bLoading ? TEXT("loading") : TEXT("missing"); };
+		Line += FString::Printf(TEXT(" outcome=%d/%d %s %s before=%s after=%s"), S.OutcomeAt + 1, OutcomesOf(S, S.At)->outcomes.Num(), *O->outcome, *O->proposal, ShotWord(S.OutcomeShots[0]), ShotWord(S.OutcomeShots[1]));
+	}
+	if (S.bWelcome) Line += TEXT(" welcome");
 	if (!S.Armed.IsEmpty()) Line += TEXT(" armed=") + S.Armed;
 	if (const FBpStandupAnswer* A = S.Answers.Find(Id)) Line += FString::Printf(TEXT(" answer=%s/%d \"%s\""), *A->Verdict, static_cast<int32>(A->State), *A->Words);
 	if (S.bConfirm) Line += TEXT(" confirm");
@@ -1377,6 +1725,21 @@ FString ABpPawn::StandupBarStatus() const
 bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& OutWords, TArray<TPair<FString, FString>>& OutButtons) const
 {
 	OutButtons.Reset();
+	if (IsStandupOpen() && ShownOutcome(*Standup))
+	{
+		// YESTERDAY on the wrist (wave EV): which outcome, what became of it as the card's stamp, who approved it and when.
+		const FBpStandupState& S = *Standup;
+		const FBpOutcome& O = *ShownOutcome(S);
+		const FBpMorningCard* Card = OutcomesOf(S, S.At);
+		OutKicker = FString::Printf(TEXT("YESTERDAY · %d OF %d%s"), S.OutcomeAt + 1, Card->outcomes.Num(), S.bSample ? TEXT(" · SAMPLE") : TEXT(""));
+		OutTitle = O.title;
+		const FString Became = O.outcome == BpVocab::Outcome::Outcome::Built ? (O.commit.IsEmpty() ? FString(TEXT("Built")) : FString::Printf(TEXT("Built · %s"), *O.commit))
+			: O.outcome == BpVocab::Outcome::Outcome::Failed ? FString(TEXT("Failed")) : O.outcome == BpVocab::Outcome::Outcome::Building ? FString(TEXT("Building")) : FString(TEXT("Waiting · approved, not built yet"));
+		OutWords = FString::Printf(TEXT("%s\nApproved by %s."), *Became, *ApprovedWords(O, S.bSample));
+		if (O.outcome == BpVocab::Outcome::Outcome::Failed && DecisionSheetFor(S, Card->product, O.proposal) != INDEX_NONE) OutButtons.Emplace(TEXT("TO ITS DECISION"), TEXT("standup:todecision"));
+		OutButtons.Emplace(TEXT("NEXT"), TEXT("standup:next"));
+		return true;
+	}
 	if (IsStandupOpen() && Standup->Sheets.IsValidIndex(Standup->At))
 	{
 		const FBpStandupState& S = *Standup;
@@ -1413,6 +1776,15 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 			return true;
 		}
 	}
+	if (FString Asked; !IsStandupOpen() && OnboardAskWaiting(Asked))
+	{
+		// Wave EV: an ask to read a new project waits for the owner's click on the PC; the person may do something else.
+		OutKicker = TEXT("ASKED YOUR PC");
+		OutTitle = Asked;
+		OutWords = TEXT("Waiting for your click on your PC: Headsets, CONFIRM.");
+		OutButtons.Emplace(TEXT("PROJECTS"), TEXT("open:projects"));
+		return true;
+	}
 	if (const int32 Requests = IsStandupOpen() ? 0 : StandupPendingRequests(); Requests > 0)
 	{
 		// The companion's requests waiting on the PC (night two V2): the wrist says so and opens the stand-up on them.
@@ -1439,6 +1811,9 @@ FString ABpPawn::StandupKey() const
 	const FBpStandupState& S = *Standup;
 	FString Key = FString::Printf(TEXT("|su%d%d|%s|%d/%d|%s|%d%d%d|%d|%s|%s|%d%d|%s|%d"), S.bLoading, S.bSample, *S.Error, S.At, S.Sheets.Num(), *S.Armed, S.bShotLoading, S.bShotMissing, S.ShotBrush.IsValid(),
 		static_cast<int32>(S.Plan), *S.PlanWords, *S.PlanText.Left(64), S.bConfirm, S.bGrantOut, *S.GrantWords, S.MarkAt);
+	// YESTERDAY: the outcome shown and its two screens' states (a screen landing redraws the sheet once).
+	Key += FString::Printf(TEXT("|o%d"), S.OutcomeAt);
+	for (const FBpStandupState::FOutcomeShot& Shot : S.OutcomeShots) Key += FString::Printf(TEXT("%d%d%d"), Shot.bLoading, Shot.bMissing, Shot.Brush.IsValid());
 	for (const TPair<FString, FBpStandupAnswer>& Each : S.Answers) Key += FString::Printf(TEXT("|%s=%s%d%s"), *Each.Key, *Each.Value.Verdict, static_cast<int32>(Each.Value.State), *Each.Value.Words);
 	for (const FBpCardLine& Line : S.CloseLines) Key += TEXT("|c") + Line.text;
 	for (const FBpStandupSheet& Sh : S.Sheets) if (Sh.Kind == FBpStandupSheet::EKind::Companion) Key += TEXT("|r") + Sh.Companion.Id;
@@ -1598,9 +1973,18 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	if (Sheet.Kind == FBpStandupSheet::EKind::Since)
 	{
 		// The replay: the rooms that changed since the last stand-up, each raised in turn on the plan.
+		// Wave EV: the stand-up's true opening for a returning person. "Welcome back. Since yesterday 08:10:", what the approvals
+		// became (the outcomes' headline), what moved on the plan (the replay), and what waits.
 		Text(FBox2f(FVector2f(InX, FrameY0 + 20.f), FVector2f(TextX1, FrameY0 + 52.f)), FString::Printf(TEXT("SINCE YOUR LAST STAND-UP · %s"), *AgoWords(S.LastStandup).ToUpper()), SmallBold, BpSheet::Accent);
-		Text(FBox2f(FVector2f(InX, FrameY0 + 60.f), FVector2f(TextX1, FrameY0 + 124.f)), TEXT("What changed on the plan"), HeadFont, BpSheet::InkHi);
-		float Y = FrameY0 + 140.f;
+		Text(FBox2f(FVector2f(InX, FrameY0 + 60.f), FVector2f(TextX1, FrameY0 + 124.f)), FString::Printf(TEXT("Welcome back. Since %s %s:"), *DayWords(S.LastStandup, false), *LocalClock(S.LastStandup)), HeadFont, BpSheet::InkHi);
+		float Y = FrameY0 + 128.f;
+		{
+			TArray<FItem> Lead;
+			for (const FBpMorningCard& Each : S.Deck.cards) if (IsOutcomes(&Each)) Lead.Add({ Each.headline, ToneInk(Each.tone == BpVocab::MorningCard::Tone::Calm ? FString(BpVocab::CardLine::Tone::Good) : Each.tone) });
+			if (Lead.Num() > 2) { const FString All = YesterdayLine(S); Lead.Reset(); Lead.Add({ All, BpSheet::Amber }); }
+			Y = Lines(InX, TextX1, Y, Frame.Max.Y - 60.f, Lead, 1) + 4.f;
+		}
+		const float RowH = S.Marks.Num() > 3 ? 40.f : 46.f;
 		for (int32 Index = 0; Index < S.Marks.Num(); ++Index)
 		{
 			const bool bNow = S.MarkAt - 1 == Index;
@@ -1608,11 +1992,148 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			Mark(InX, Y + 10.f, bNow ? BpSheet::Amber : S.MarkAt < 0 || Index < S.MarkAt ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.35f));
 			Put(FBox2f(FVector2f(InX + 28.f, Y), FVector2f(InX + 450.f, Y + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Name, SmallBold, 420.f))).Font(SmallBold).ColorAndOpacity(FSlateColor(bNow ? BpSheet::Amber : BpSheet::InkHi)));
 			Put(FBox2f(FVector2f(InX + 460.f, Y), FVector2f(TextX1, Y + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(S.Marks[Index].Value, SmallFont, TextX1 - InX - 460.f))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink)));
-			Y += 50.f;
+			Y += RowH;
+			if (Y + RowH > Frame.Max.Y - 50.f) break;
 		}
-		Status = S.MarkAt >= 0 ? FString::Printf(TEXT("Raising each room on the plan, %d of %d · NEXT or B skips"), FMath::Max(1, S.MarkAt), S.Marks.Num()) : FString(TEXT("Each room was raised on the plan in turn."));
+		// What waits now.
+		if (Of > 0) Text(FBox2f(FVector2f(InX, Frame.Max.Y - 46.f), FVector2f(Frame.Max.X - 460.f, Frame.Max.Y - 4.f)), FString::Printf(TEXT("%d %s for you this morning."), Of, Of == 1 ? TEXT("decision waits") : TEXT("decisions wait")), SmallBold, BpSheet::Amber, 1, VAlign_Center);
+		Status = S.Marks.Num() == 0 ? FString(TEXT("Nothing moved on the plan · NEXT, or the right stick")) : S.MarkAt >= 0 ? FString::Printf(TEXT("Raising each room on the plan, %d of %d · NEXT or B skips"), FMath::Max(1, S.MarkAt), S.Marks.Num()) : FString(TEXT("Each room was raised on the plan in turn."));
 		TitleBlock(SheetNo, Project);
 		Buttons = { Prev, S.MarkAt >= 0 ? FRowButton{ TEXT("SKIP"), EBtn::Edge, TEXT("standup:skip"), 170.f } : Next };
+		bPager = false;
+	}
+	else if (const FBpOutcome* O = IsOutcomes(Card) && Card->outcomes.IsValidIndex(S.OutcomeAt) ? &Card->outcomes[S.OutcomeAt] : nullptr)
+	{
+		// YESTERDAY (wave EV): what an approval became, one at a time, large. The product's proof that approving leads somewhere:
+		// the title, a chip for what became of it, who approved it and when, then its screens, BEFORE and AFTER side by side over
+		// the sheet's lower part. The title block moves to the sheet's top right so the screens own the bottom.
+		const int32 N = Card->outcomes.Num();
+		const bool bBuilt = O->outcome == BpVocab::Outcome::Outcome::Built, bFailed = O->outcome == BpVocab::Outcome::Outcome::Failed;
+		const bool bBuilding = O->outcome == BpVocab::Outcome::Outcome::Building;
+		const FLinearColor Tone = bBuilt ? BpSheet::Accent : bFailed ? BpSheet::Red : BpSheet::Amber;
+		const float BlockW = 440.f, BlockH = 46.f;
+		{
+			const FBox2f Block(FVector2f(Frame.Max.X - BlockW, Frame.Min.Y), FVector2f(Frame.Max.X, Frame.Min.Y + BlockH));
+			Put(Block, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.5f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
+			Put(FBox2f(FVector2f(Block.Min.X + 104.f, Block.Min.Y + 8.f), FVector2f(Block.Min.X + 106.f, Block.Max.Y - 8.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f)));
+			Put(FBox2f(Block.Min + FVector2f(14.f, 0.f), FVector2f(Block.Min.X + 100.f, Block.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(SheetNo)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
+			Put(FBox2f(FVector2f(Block.Min.X + 120.f, Block.Min.Y), Block.Max - FVector2f(12.f, 0.f)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Project, SmallFont, BlockW - 134.f))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+		}
+		// The kicker row: YESTERDAY · 2 OF 3, and the outcome's chip beside it (BUILT · de3041b in the system's cyan, FAILED red).
+		const FString Day = DayWords(O->decided_at, S.bSample).ToUpper();
+		FString Kicker = FString::Printf(TEXT("%s · %d OF %d"), Day == TEXT("YESTERDAY") ? TEXT("YESTERDAY") : *(TEXT("APPROVED ") + Day), S.OutcomeAt + 1, N);
+		const FString Chip = bBuilt ? (O->commit.IsEmpty() ? FString(TEXT("BUILT")) : FString::Printf(TEXT("BUILT · %s"), *O->commit)) : bFailed ? FString(TEXT("FAILED")) : bBuilding ? FString(TEXT("BUILDING")) : FString(TEXT("WAITING"));
+		// A first stand-up introduces the sheet on its first outcome, when the words fit beside the chip.
+		if (!S.bWelcome && S.OutcomeAt == 0 && Day == TEXT("YESTERDAY"))
+		{
+			const FString Intro = FString::Printf(TEXT("WHAT YESTERDAY'S APPROVALS BECAME · 1 OF %d"), N);
+			if (BpSheet::TextWidth(Intro, SmallBold) + 20.f + BpSheet::TextWidth(Chip, SmallBold) + 28.f <= Frame.Max.X - BlockW - 16.f - InX) Kicker = Intro;
+		}
+		const float KickW = BpSheet::TextWidth(Kicker, SmallBold);
+		Text(FBox2f(FVector2f(InX, FrameY0 + 4.f), FVector2f(InX + KickW + 8.f, FrameY0 + 4.f + 40.f)), Kicker, SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.85f), 1, VAlign_Center);
+		const float ChipW = BpSheet::TextWidth(Chip, SmallBold) + 28.f, ChipX = InX + KickW + 20.f;
+		Put(FBox2f(FVector2f(ChipX, FrameY0 + 6.f), FVector2f(ChipX + ChipW, FrameY0 + 6.f + 38.f)), BpSheet::Pin(Chip, SmallBold, 38.f, Tone, ChipW));
+		// Its step strip under the block: one tick per outcome in its colour, the one shown filled.
+		{
+			const float TickW = 34.f, TickGap = 8.f;
+			float X = ChipX + ChipW + 24.f;
+			for (int32 Index = 0; Index < N && X + TickW <= Frame.Max.X - BlockW - 16.f; ++Index, X += TickW + TickGap)
+			{
+				const FBpOutcome& Each = Card->outcomes[Index];
+				const FLinearColor Ink = Each.outcome == BpVocab::Outcome::Outcome::Built ? BpSheet::Accent : Each.outcome == BpVocab::Outcome::Outcome::Failed ? BpSheet::Red : BpSheet::Amber;
+				Put(FBox2f(FVector2f(X, FrameY0 + 21.f), FVector2f(X + TickW, FrameY0 + 29.f)), SNew(BpSheet::SPlate).Fill(Index == S.OutcomeAt ? Ink : FLinearColor::Transparent).Edge(Ink.CopyWithNewOpacity(0.85f)).EdgePx(1.5f));
+			}
+		}
+		// The title, large: one line at 30 px when it fits, else one at 26, else two at 26 (the screens give way, never the words).
+		float Y = FrameY0 + 54.f;
+		const float TitleCap = BpSheet::TextWidth(O->title, Font(TEXT("Bold"), 30.f)) <= TextX1 - InX ? 30.f : 26.f;
+		const FSlateFontInfo TitleFont = Font(TEXT("Bold"), TitleCap);
+		const FString TitleFit = BpSheet::Wrap(O->title, TitleFont, TextX1 - InX, 2);
+		const int32 TitleLines = LineCount(TitleFit);
+		Put(FBox2f(FVector2f(InX, Y), FVector2f(TextX1, Y + TitleLines * Pitch(TitleCap) + 4.f)), SNew(STextBlock).Text(FText::FromString(TitleFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		Y += TitleLines * Pitch(TitleCap) + 2.f;
+		// Who approved it and when; then, for a failure, its reason as one wrapped sentence in red.
+		const FString Approved = FString::Printf(TEXT("Approved by %s%s"), *ApprovedWords(*O, S.bSample), O->wave.IsEmpty() || S.bSample ? TEXT("") : *FString::Printf(TEXT(" · wave %s"), *O->wave));
+		const bool bBefore = !O->before.IsEmpty(), bAfter = !O->after.IsEmpty();
+		const int32 Screens = (bBefore ? 1 : 0) + (bAfter ? 1 : 0);
+		// The screens' band: two side by side over the full width; one at the right with the words beside it; none: words only.
+		const float BandY1 = Frame.Max.Y - 10.f;
+		// Who approved it and when stands in the sheet's status line (under the frame), so the screens keep the height.
+		const float LeftX1 = Screens == 1 ? Pad + 690.f : TextX1;
+		Y += 4.f;
+		const int32 Jump = bFailed ? DecisionSheetFor(S, Card->product, O->proposal) : INDEX_NONE;
+		TArray<FItem> Words;
+		if (bFailed && !O->reason.IsEmpty()) Words.Add({ O->reason, BpSheet::Red });
+		if (bFailed) Words.Add({ Jump != INDEX_NONE ? FString(TEXT("It waits in this morning's decisions.")) : FString(TEXT("It is not among this morning's decisions.")), Jump != INDEX_NONE ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.6f) });
+		if (bBuilding) Words.Add({ TEXT("Being built now on your PC."), BpSheet::Amber });
+		if (O->outcome == BpVocab::Outcome::Outcome::Waiting) Words.Add({ TEXT("Approved, not built yet: it waits for a wave."), BpSheet::Amber });
+		if (Screens == 0)
+		{
+			const FString Place = !S.Room.IsEmpty() && WristTable.IsValid() ? WristTable->StandupPlaceName(S.Room) : FString();
+			Words.Add({ Place.IsEmpty() ? FString(TEXT("No screens for this one.")) : FString::Printf(TEXT("No screens for this one: its room, %s, is raised on the plan."), *Place), BpSheet::Ink.CopyWithNewOpacity(0.7f) });
+		}
+		// A failure's reason with two screens: one wrapped sentence above them (at most two lines, the screens give way).
+		if (Screens == 2 && Words.Num() > 0)
+		{
+			const FString Fit = BpSheet::Wrap(Words[0].Words, SmallFont, TextX1 - InX - 28.f, 2);
+			Mark(InX, Y + Pitch(CapSmall) * 0.5f - 8.f, Words[0].Ink);
+			Put(FBox2f(FVector2f(InX + 28.f, Y), FVector2f(TextX1, Y + LineCount(Fit) * Pitch(CapSmall) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(SmallFont).ColorAndOpacity(FSlateColor(Words[0].Ink)));
+			Y += LineCount(Fit) * Pitch(CapSmall) + 8.f;
+			Words.RemoveAt(0);
+		}
+		const float BandY0 = Screens == 1 ? FrameY0 + 54.f + TitleLines * Pitch(TitleCap) + 10.f : Y + 4.f;
+		if (Screens != 2) Lines(InX, LeftX1, Y + 2.f, BandY1, Words, 2);
+		// One screen in its frame with its caption strip (BEFORE / AFTER, SAMPLE when it is one); the loading and missing faces.
+		const auto Screen = [&](const FBox2f& Img, const FBpStandupState::FOutcomeShot& Shot, const FString& Caption, const FLinearColor& CapInk)
+		{
+			if (Shot.Brush.IsValid())
+			{
+				Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(CapInk.CopyWithNewOpacity(0.9f)).EdgePx(2.f));
+				// The widget holds its brush (a sheet redrawn while an outcome leaves never paints a released one).
+				const TSharedPtr<FSlateBrush> Brush = Shot.Brush;
+				Put(Img, SNew(SImage).Image_Lambda([Brush]() { return Brush.Get(); }));
+			}
+			else
+			{
+				Put(Img, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
+				Put(Img, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
+					.Text(FText::FromString(Shot.bLoading ? TEXT("READING THE SCREEN") : TEXT("THE SCREEN DID NOT READ"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+			}
+			// Sample and live differ only by the header's SAMPLE / FROM YOUR PC chip (the brief): no tag on the screens. The caption
+			// is whole: with no room for its place it says only BEFORE or AFTER.
+			const float CapH = 40.f, CapW = Img.GetSize().X - 30.f;
+			const FString CapFit = BpSheet::TextWidth(Caption, SmallBold) <= CapW ? Caption : Caption.Left(Caption.Find(TEXT(" · ")) == INDEX_NONE ? Caption.Len() : Caption.Find(TEXT(" · ")));
+			Put(FBox2f(FVector2f(Img.Min.X, Img.Max.Y - CapH), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)).Bar(CapInk).BarPx(6.f));
+			Put(FBox2f(FVector2f(Img.Min.X + 18.f, Img.Max.Y - CapH), FVector2f(Img.Max.X - 12.f, Img.Max.Y)), SNew(SBox).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(FText::FromString(CapFit)).Font(SmallBold).ColorAndOpacity(FSlateColor(CapInk))]);
+		};
+		const FString Place = !S.Room.IsEmpty() && WristTable.IsValid() ? WristTable->StandupPlaceName(S.Room).ToUpper() : FString();
+		const FString BeforeCap = Place.IsEmpty() ? FString(TEXT("BEFORE")) : TEXT("BEFORE · ") + Place;
+		const FString AfterCap = bBuilt && !O->commit.IsEmpty() ? FString::Printf(TEXT("AFTER · %s"), *O->commit) : FString(TEXT("AFTER"));
+		if (Screens == 2)
+		{
+			// Side by side, 16:9, as large as the band allows; an arrow between them reads before to after.
+			const float Gap = 44.f, AvailW = TextX1 - InX, H = FMath::Min(BandY1 - BandY0, (AvailW - Gap) * 0.5f * 9.f / 16.f), W = H * 16.f / 9.f;
+			const float X0 = InX + (AvailW - (2.f * W + Gap)) * 0.5f;
+			const FBox2f A(FVector2f(X0, BandY1 - H), FVector2f(X0 + W, BandY1)), B(FVector2f(X0 + W + Gap, BandY1 - H), FVector2f(X0 + 2.f * W + Gap, BandY1));
+			Screen(A, S.OutcomeShots[0], BeforeCap, BpSheet::Ink);
+			Screen(B, S.OutcomeShots[1], AfterCap, Tone);
+			Put(FBox2f(FVector2f(A.Max.X, A.Min.Y), FVector2f(B.Min.X, A.Max.Y)), SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(FText::FromString(TEXT("›"))).Font(Font(TEXT("Bold"), 48.f)).ColorAndOpacity(FSlateColor(Tone))]);
+		}
+		else if (Screens == 1)
+		{
+			const float X0 = LeftX1 + 30.f, W = TextX1 - X0, H = FMath::Min(BandY1 - BandY0, W * 9.f / 16.f);
+			const FBox2f A(FVector2f(TextX1 - H * 16.f / 9.f, BandY1 - H), FVector2f(TextX1, BandY1));
+			Screen(A, S.OutcomeShots[bBefore ? 0 : 1], bBefore ? BeforeCap : AfterCap, bBefore ? BpSheet::Ink : Tone);
+		}
+		// The foot: PREV and NEXT step through the outcomes, then on; a failure that waits again offers its decision.
+		const bool bFirst = S.At == 0 && S.OutcomeAt == 0, bEnd = bLast && S.OutcomeAt >= N - 1;
+		Buttons = { { TEXT("‹  PREV"), bFirst ? EBtn::Off : EBtn::Edge, TEXT("standup:prev"), 150.f } };
+		if (Jump != INDEX_NONE) Buttons.Add({ TEXT("TO ITS DECISION"), EBtn::Amber, TEXT("standup:todecision"), 300.f });
+		Buttons.Add({ TEXT("NEXT  ›"), bEnd ? EBtn::Off : EBtn::Fill, TEXT("standup:next"), 150.f });
+		Status = FString::Printf(TEXT("%s · %s"), *Approved, S.OutcomeAt < N - 1 ? TEXT("NEXT for the next one") : TEXT("NEXT goes on to this morning"));
+		StatusInk = BpSheet::Ink.CopyWithNewOpacity(0.85f);
 		bPager = false;
 	}
 	else if (bDecision)
@@ -1945,6 +2466,12 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		if (bOpen && Requests > 0)
 		{
 			Items.Insert(FItem{ FString::Printf(TEXT("%d %s and %d %s from the companion wait for you."), Of, Of == 1 ? TEXT("decision") : TEXT("decisions"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests")), BpSheet::Amber }, 0);
+		}
+		// Wave EV: the opening counts what came of the earlier approvals ("Yesterday you approved 3: 2 built, 1 failed").
+		if (bOpen)
+		{
+			const FOutcomeCount C = CountOutcomes(S.Deck);
+			if (C.All > 0) Items.Insert(FItem{ YesterdayLine(S) + TEXT("."), C.Failed ? BpSheet::Amber : BpSheet::Accent }, 0);
 		}
 		const bool bTable = bOpen && S.Deck.products.Num() > 1;
 		const bool bFigures = bOpen && !bTable;

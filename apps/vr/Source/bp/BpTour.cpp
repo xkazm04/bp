@@ -573,7 +573,23 @@ void ABpTable::EnterTourId(const FString& Id)
 		const FBpPlanRoom* Room = FindRoom(TourRoom);
 		TourWing = Room ? Room->parentId : (Plan.wings.Num() > 0 ? Plan.wings[0].id : FString());
 		SetHighlight(TEXT("wing"), TourWing);
-		if (const FBpPlanWing* Wing = FindWing(TourWing)) PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w * 0.5, Wing->box.y + Wing->box.h * 0.5)), 0.f)), TEXT("tour"));
+		if (const FBpPlanWing* Wing = FindWing(TourWing))
+		{
+			const FVector Target = WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Wing->box.x + Wing->box.w * 0.5, Wing->box.y + Wing->box.h * 0.5)), 0.f));
+			// Wave EV (655209bf's open item): the lamp clearly goes to the wing it names. The nearest station to a left wing is
+			// the left side's, beside the lamp's home, where the ride read as staying put: the tour takes the nearest of the others.
+			TArray<FVector> Stations;
+			LampStationsLocal(Stations);
+			int32 Best = INDEX_NONE;
+			double BestD = TNumericLimits<double>::Max();
+			for (int32 Index = 1; Index < Stations.Num(); ++Index)
+			{
+				const double D = FVector2D::Distance(FVector2D(Stations[Index]), FVector2D(Target));
+				if (D < BestD) { BestD = D; Best = Index; }
+			}
+			if (Best != INDEX_NONE) LampToStation(Best, Target, TEXT("tour"));
+			else PresentLamp(Target, TEXT("tour"));
+		}
 	}
 	else if (Id == TEXT("open-room"))
 	{
@@ -627,6 +643,8 @@ void ABpTable::EnterTourId(const FString& Id)
 		if (Pawn && Pawn->IsConsoleOpen()) Pawn->CloseConsole();
 		TourHoldsAt = TalkHoldsCounted;
 		LampGoHome(TEXT("tour"));
+		// Wave EV (655209bf's open item): the wrist's TALK is the step's target, marked as the console's targets are.
+		TourMark(TEXT("wrist:talk"));
 	}
 	else if (Id == TEXT("hand-off"))
 	{

@@ -183,6 +183,13 @@ public:
 	int32 StandupPendingRequests() const;
 	/** A read of the pending cards only (HOME opening, linked): the count above, nothing shown. */
 	void StandupPeekRequests();
+	/** Wave EV: what came of earlier approvals, read before the page opens (at most every ten minutes), for the MENU's STAND-UP
+	 *  tile and the bar ("2 built since yesterday"); empty once today's stand-up has been held, or when nothing came of them. */
+	void StandupPeekYesterday();
+	FString StandupYesterdayWords() const;
+	/** Wave EV: an ask to read a new project is out to the PC (PROJECTS' ADD A PROJECT): the folder's name for the bar and the
+	 *  wrist ("ASKED YOUR PC · <name>"). BpConsole.cpp. */
+	bool OnboardAskWaiting(FString& OutName) const;
 	/** The talk's state moved (BpTalk.cpp): the console's bar and the wrist redraw if what they show changed. */
 	void TalkChanged();
 	/** The console may show the conversation (bp.TalkSheet on, and no stand-up or consent sheet open): the lamp's own caption
@@ -398,6 +405,12 @@ private:
 	 *  (the deck's card crashed on exactly that, 2026-11-10). */
 	UPROPERTY(Transient)
 	TObjectPtr<class UTexture2D> StandupShotKept;
+	/** The YESTERDAY sheet's screens (wave EV): the outcome's before and after at once, each decoded halved (640x360 from a
+	 *  1280x720 shot, 900 KB each); released when the outcome or the sheet leaves, the last pair kept one release longer. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> StandupOutcomeShots;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> StandupOutcomeKept;
 	/** The grant this headset made or read (GET policies), kept past the page: the bar and the wrist say "Handed over until". */
 	TSharedPtr<struct FBpPolicy> StandupGrant;
 	FTimerHandle StandupTimer;
@@ -408,6 +421,10 @@ private:
 	void StandupBuildSheets();
 	void StandupShowSheet();
 	void StandupLoadShot();
+	/** YESTERDAY (wave EV): the outcome shown raised on the plan, and its two screens loaded and released. */
+	void StandupShowOutcome();
+	void StandupLoadOutcomeShots();
+	void StandupReleaseOutcomeShots();
 public:
 	/** Night two V7: the finding's "before" screen, one path for the stand-up's decision sheet and a room's decision card
 	 *  (BpDeck.cpp): the Shot row of the scan the table holds for the proposal (the product on the table only), and its PNG

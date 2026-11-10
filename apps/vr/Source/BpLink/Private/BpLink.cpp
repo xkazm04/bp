@@ -2761,7 +2761,9 @@ namespace
 		}));
 }
 
-const TCHAR* const FBpLinkModule::PairScopes = TEXT("standup,place,focus,decide,scan");
+// Wave EV: `onboard` is asked for too; the owner grants it only by ticking "Add projects" on the Headsets page (named-only).
+const TCHAR* const FBpLinkModule::PairScopes = TEXT("standup,place,focus,decide,scan,onboard");
+const TCHAR* const FBpLinkModule::ApproveScopes = TEXT("standup,place,focus,decide,scan");
 
 FString FBpLinkModule::RouteWord(const FBpLinkStatus& S)
 {
@@ -2785,6 +2787,7 @@ FString FBpLinkModule::ScopeWords(const FString& Scope)
 	if (Scope == TEXT("focus")) return TEXT("follow and share the place");
 	if (Scope == TEXT("decide")) return TEXT("make your decisions");
 	if (Scope == TEXT("scan")) return TEXT("start and cancel scans");
+	if (Scope == TEXT("onboard")) return TEXT("ask to read a new project (you confirm it on your PC)");
 	return Scope;
 }
 
@@ -3299,10 +3302,10 @@ void FBpLinkModule::PostPair()
 			S.Pair = EBpPairState::Waiting;
 			S.Code = Code;
 			S.CodeExpiresAt = ExpiresAt;
-			S.Message = FString::Printf(TEXT("On the PC: npm run server -- pair approve %s --scope %s"), *Code, PairScopes);
+			S.Message = FString::Printf(TEXT("On the PC: npm run server -- pair approve %s --scope %s"), *Code, ApproveScopes);
 			S.bMessageBad = false;
 			Module->NextClaimS = FPlatformTime::Seconds() + PairClaimS;
-			UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: code %s shown (until %s); on the PC: npm run server -- pair approve %s --scope %s"), *Code, *ExpiresAt, *Code, PairScopes);
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: pair: code %s shown (until %s); on the PC: npm run server -- pair approve %s --scope %s"), *Code, *ExpiresAt, *Code, ApproveScopes);
 			Module->ChangedLink();
 			return;
 		}
@@ -3558,7 +3561,8 @@ namespace
 	{
 		if (Path.IsEmpty() || Path.Len() > 200 || Path.StartsWith(TEXT("/")) || Path.Contains(TEXT(".."))) return false;
 		for (const TCHAR C : Path) if (!(FChar::IsAlnum(C) || C == TEXT('_') || C == TEXT('.') || C == TEXT('-') || C == TEXT('/'))) return false;
-		return Path.EndsWith(TEXT(".png"));
+		// The outcomes card's screens may be png, jpg or webp (table-link-v2.md 3.7); the headset decodes png and jpg.
+		return Path.EndsWith(TEXT(".png")) || Path.EndsWith(TEXT(".jpg")) || Path.EndsWith(TEXT(".jpeg"));
 	}
 }
 
@@ -3949,7 +3953,7 @@ void FBpLinkModule::FetchShot(const FString& Product, const FString& Path, TFunc
 		Later(true, MoveTemp(Cached), false);
 		return;
 	}
-	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/products/") + Product + TEXT("/shots/") + Path, TEXT("image/png"));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/products/") + Product + TEXT("/shots/") + Path, TEXT("image/png, image/jpeg"));
 	Request->SetTimeout(20.f);
 	Request->OnProcessRequestComplete().BindLambda([OnDone, Cache, Path](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
@@ -3960,6 +3964,150 @@ void FBpLinkModule::FetchShot(const FString& Product, const FString& Path, TFunc
 		if (bOk) FFileHelper::SaveArrayToFile(Bytes, *Cache);
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: shot %s answered %d (%d bytes)%s"), *Path, Status, Bytes.Num(), bOk ? TEXT(", cached") : TEXT(""));
 		if (OnDone) OnDone(bOk, Bytes, false);
+	});
+	Request->ProcessRequest();
+}
+
+// ---- Add a project from the headset (wave EV; table-link-v2.md section 14, S4) -------------------------------------------
+// The owner, 2026-11-10: "lets you onboard your own project from the headset". After the review the same day a headset no
+// longer starts a read: it ASKS (POST /api/onboarding/start { candidate, shown } answers 202 { request, state: waiting }), and
+// the owner confirms on the PC's Headsets page; the headset polls GET /api/onboarding/requests/<request>. Only a pairing that
+// holds `onboard` (named at the approve; /pair/me lists it) may ask. Every answer's words are the server's, shown as they are.
+
+bool FBpLinkModule::CanOnboard() const
+{
+	return !GFromBundle && GRouteLive && LinkStatus.Pair == EBpPairState::Paired && LinkStatus.Scopes.Contains(TEXT("onboard"));
+}
+
+namespace
+{
+	/** An ask's answer (the start's or the request's), read as it came. */
+	FBpLinkModule::FOnboardAsk ReadOnboardAsk(int32 Status, const FString& Body)
+	{
+		FBpLinkModule::FOnboardAsk Ask;
+		Ask.Status = Status;
+		TSharedPtr<FJsonObject> Json;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid())
+		{
+			Json->TryGetStringField(TEXT("request"), Ask.Request);
+			Json->TryGetStringField(TEXT("name"), Ask.Name);
+			Json->TryGetStringField(TEXT("state"), Ask.State);
+			Json->TryGetStringField(TEXT("slug"), Ask.Slug);
+			Json->TryGetStringField(TEXT("job"), Ask.Job);
+			Json->TryGetStringField(TEXT("reason"), Ask.Reason);
+			Json->TryGetStringField(TEXT("error"), Ask.Error);
+			Json->TryGetNumberField(TEXT("retryAfterS"), Ask.RetryAfterS);
+		}
+		if (Status == 0 && Ask.Error.IsEmpty()) Ask.Error = Body.IsEmpty() ? FString(TEXT("Your PC did not answer.")) : Body;
+		return Ask;
+	}
+
+	/** A request id is 24 lower-case hex (the contract's), never anything else in a path. */
+	bool IsHex24(const FString& Id)
+	{
+		if (Id.Len() != 24) return false;
+		for (const TCHAR C : Id) if (!((C >= TEXT('0') && C <= TEXT('9')) || (C >= TEXT('a') && C <= TEXT('f')))) return false;
+		return true;
+	}
+}
+
+void FBpLinkModule::GetOnboardCandidates(TFunction<void(const FOnboardCandidates&)> OnDone)
+{
+	if (!CanOnboard())
+	{
+		FOnboardCandidates Out;
+		Out.Error = TEXT("This headset may not add projects.");
+		if (OnDone) FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([OnDone, Out](float) { OnDone(Out); return false; }));
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/onboarding/candidates"), TEXT("application/json"));
+	Request->SetTimeout(20.f);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: GET /api/onboarding/candidates"));
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FOnboardCandidates Out;
+		Out.Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		TSharedPtr<FJsonObject> Json;
+		const bool bJson = FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid();
+		if (Out.Status == 200 && bJson)
+		{
+			const TArray<TSharedPtr<FJsonValue>>* List = nullptr;
+			if (Json->TryGetArrayField(TEXT("candidates"), List))
+			{
+				for (const TSharedPtr<FJsonValue>& Each : *List)
+				{
+					const TSharedPtr<FJsonObject> Row = Each.IsValid() ? Each->AsObject() : nullptr;
+					if (!Row.IsValid()) continue;
+					FOnboardCandidate C;
+					Row->TryGetStringField(TEXT("id"), C.Id);
+					Row->TryGetStringField(TEXT("name"), C.Name);
+					Row->TryGetStringField(TEXT("hint"), C.Hint);
+					Row->TryGetStringField(TEXT("state"), C.State);
+					if (IsHex24(C.Id) && !C.Name.IsEmpty()) Out.Candidates.Add(C);
+				}
+			}
+			Json->TryGetNumberField(TEXT("held"), Out.Held);
+			Json->TryGetNumberField(TEXT("roots"), Out.Roots);
+		}
+		else Out.Error = Out.Status == 0 ? FString(TEXT("Your PC did not answer.")) : AnswerWords(Out.Status, Body);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: candidates answered %d: %d offered, %d held, %d roots%s"), Out.Status, Out.Candidates.Num(), Out.Held, Out.Roots, Out.Error.IsEmpty() ? TEXT("") : *(TEXT(", ") + Out.Error));
+		if (OnDone) OnDone(Out);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::AskOnboard(const FString& Candidate, const FString& Shown, TFunction<void(const FOnboardAsk&)> OnDone)
+{
+	const FString Said = ShownText(Shown);
+	FString Refused;
+	if (!CanOnboard()) Refused = TEXT("This headset may not add projects.");
+	else if (!IsHex24(Candidate)) Refused = TEXT("Not a folder your PC offers.");
+	else if (Said.IsEmpty()) Refused = TEXT("An ask from the table must say what it showed.");
+	if (!Refused.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: onboard ask not sent: %s"), *Refused);
+		if (OnDone) OnDone(ReadOnboardAsk(0, Refused));
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("candidate"), Candidate);
+	Json->SetStringField(TEXT("shown"), Said);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/onboarding/start"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Condensed(Json));
+	Request->SetTimeout(20.f);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST /api/onboarding/start %s, shown \"%s\""), *Candidate, *Said.Replace(TEXT("\n"), TEXT(" / ")));
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		const FOnboardAsk Ask = ReadOnboardAsk(Status, Body);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: onboard ask answered %d: request %s state %s%s%s"), Status, *Ask.Request, *Ask.State, Ask.Slug.IsEmpty() ? TEXT("") : *(TEXT(" slug ") + Ask.Slug), Ask.Error.IsEmpty() ? TEXT("") : *(TEXT(", ") + Ask.Error));
+		if (OnDone) OnDone(Ask);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::GetOnboardAsk(const FString& RequestId, TFunction<void(const FOnboardAsk&)> OnDone)
+{
+	if (!CanOnboard() || !IsHex24(RequestId))
+	{
+		if (OnDone) OnDone(ReadOnboardAsk(0, CanOnboard() ? TEXT("Not an ask.") : TEXT("This headset may not add projects.")));
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/onboarding/requests/") + RequestId, TEXT("application/json"));
+	Request->SetTimeout(10.f);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, RequestId](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		const FOnboardAsk Ask = ReadOnboardAsk(Status, Body);
+		UE_LOG(LogBpLink, Verbose, TEXT("BpLink: ask %s answered %d %s"), *RequestId, Status, *Ask.State);
+		if (OnDone) OnDone(Ask);
 	});
 	Request->ProcessRequest();
 }

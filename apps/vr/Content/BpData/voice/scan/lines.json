@@ -28,6 +28,8 @@
     "scan-done-two-three": "Done. Two rooms read, three new findings.",
     "scan-done-one-two": "Done. One room read, two new findings.",
     "scan-done-one-one": "Done. One room read, one new finding.",
-    "scan-done-one-none": "Done. One room read, nothing new."
+    "scan-done-one-none": "Done. One room read, nothing new.",
+    "standup-welcome": "Welcome back. Here is what your approvals became.",
+    "standup-yesterday": "Here is what yesterday's approvals became."
   }
 }
