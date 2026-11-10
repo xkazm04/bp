@@ -6,9 +6,9 @@
 //                      deck's screen in room mode); with the console open, the four ways move its selection. A flick is one
 //                      step; held, it repeats after bp.PadRepeatDelayS every bp.PadRepeatS; under bp.PadDeadZone nothing.
 //   A (right)          select: enter the focused place, or press the console's selected control.
-//   B (right)          back: a console page to HOME, then the console closed, then the table's Back().
+//   B (right)          a talk in flight cancelled first; else back: a console page to HOME, then the console closed, then Back().
 //   Y (left), Menu     the console, opened or closed.
-//   X (left)           the lamp about the place in view ("Plan my next step here", the old wrist ASK row).
+//   X (left)           held: talk to the lamp (BpTalk.cpp); a tap: the lamp about the place in view ("Plan my next step here").
 //   Stick click        home: the site plan.
 // The keys are polled each frame the way the trigger is (APlayerController key state: UE 5.8's OpenXR input builds its
 // legacy actions for every XR key the Meta plugin binds, with no mapping asset), and BpPad.Press runs the same handler. A
@@ -121,6 +121,16 @@ void ABpPawn::TickPad(float DeltaSeconds)
 		{
 			const bool bDown = PC->IsInputKeyDown(Each.Key);
 			bool& bWas = PadKeysDown.FindOrAdd(Each.Key.GetFName());
+			// X is push to talk (BpTalk.cpp): held, it talks to the lamp; a tap under ABpTable::TalkMinHoldS is the old X.
+			if (FCString::Strcmp(Each.Button, TEXT("X")) == 0 && bDown != bWas)
+			{
+				UE_LOG(LogBpTable, Log, TEXT("BpPad: key %s %s"), *Each.Key.ToString(), bDown ? TEXT("down") : TEXT("up"));
+				ABpTable* Talker = WristTable.Get();
+				const bool bTap = Talker ? Talker->TalkHold(TEXT("x"), bDown) : !bDown;
+				if (!bDown && bTap) PadQueue.Add(Each.Button);
+				bWas = bDown;
+				continue;
+			}
 			if (bDown && !bWas)
 			{
 				UE_LOG(LogBpTable, Log, TEXT("BpPad: key %s"), *Each.Key.ToString());
@@ -190,6 +200,8 @@ void ABpPawn::RunPad(const FString& Button)
 	bPadActive = true;
 	UE_LOG(LogBpTable, Log, TEXT("BpPad: press %s (console %s, level L%d%s, focus %s)"), *Button, *GetConsoleLine(), Table ? static_cast<int32>(Table->GetBpLevel()) : -1,
 		Table && !Table->GetRoomModeId().IsEmpty() ? *FString::Printf(TEXT(" room mode %s"), *Table->GetRoomModeId()) : TEXT(""), PadFocusId.IsEmpty() ? TEXT("none") : *GetFocusLine());
+	// B first cancels a talk in flight (BpTalk.cpp: a turn being thought about, the listening, the lamp's spoken reply).
+	if (Button == TEXT("B") && Table && Table->TalkCancel(TEXT("B"))) return;
 	if (Button == TEXT("Y") || Button == TEXT("Menu"))
 	{
 		if (bConsoleOpen) CloseConsole();

@@ -1681,6 +1681,32 @@ public:
 	void PreviewVoice();
 	/** A tour line is sounding (the music ducks under it, BpAudio.cpp). */
 	bool IsVoicePlaying() const;
+	/** The music ducks: a voice line sounds, or the wearer is talking to the lamp (BpTalk.cpp). */
+	bool IsMusicDucked() const { return IsVoicePlaying() || IsTalkListening(); }
+
+	// ---- Talk to the lamp (BpTalk.cpp; night two W3, docs/concepts/vr-light-table/voice-link.md) -------------------------
+	/** Push to talk from a source (x, lamp, wrist, console): down opens the microphone (once the wearer has said ALLOW on the
+	 *  consent sheet), up sends it. A hold under TalkMinHoldS is ignored, and up then returns true (a tap: the source does its
+	 *  old tap). Nothing is recorded on the bundle: there a hold plays the scripted sample exchange. */
+	bool TalkHold(const TCHAR* Source, bool bDown);
+	static constexpr float TalkMinHoldS = 0.4f;
+	/** B, or a pinch on the lamp: cancels a turn being thought about, the listening, or the lamp's spoken reply. True when
+	 *  something was cancelled. */
+	bool TalkCancel(const TCHAR* Why);
+	/** BpTalk.Say: the turn from text (no microphone). BpTalk.File: a WAV sent as if recorded. */
+	void TalkFromText(const FString& Text, const TCHAR* Route);
+	void TalkFromWav(const TArray<uint8>& Wav, const TCHAR* Route);
+	bool IsTalkListening() const;
+	/** Anything of a talk in flight (listening, hearing, thinking, speaking): its one word for the wrist and the bar. */
+	FString TalkStateWord() const;
+	FString TalkStateLine() const;
+	/** The consent (GameUserSettings [/Script/bp.BpTalk] Consent): 0 not asked, 1 ALLOW, 2 NOT NOW. */
+	static int32 TalkConsent();
+	static void SetTalkConsent(int32 Value);
+	/** A voice line from bytes (a WAV) at the lamp's head, at the tour's level; false when it is not a 16-bit PCM WAV. */
+	bool PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip);
+	void StopVoice();
+	void LogTalk() const;
 
 	// ---- The console and the pad (BpConsole.cpp, BpPad.cpp; night two W1) -------------------------------------------------
 	/** The deck's slot: its front screen's resting pose in the table's space (the console's open panel stands there). */
@@ -1715,6 +1741,16 @@ public:
 	/** A room's id by its name on this plan (the deck's lines name rooms), empty when none has it. */
 	FString StandupRoomByName(const FString& Name) const;
 private:
+	/** The talk's state (BpTalk.cpp): made at the first hold, never ticked while idle. */
+	TSharedPtr<struct FBpTalkState> Talk;
+	bool TickTalk(float DeltaSeconds);
+	void TalkBegin();
+	void TalkSend();
+	void TalkTurn(const FString& Heard);
+	void TalkSpeak(const FString& Reply);
+	void TalkSample();
+	void TalkSays(const FString& Line, float Seconds = 0.f);
+	void TalkIdle();
 	bool bDeckHeld = false;
 	float TourVoiceGain = -1.f;
 	void EnterTourStep(int32 Step);

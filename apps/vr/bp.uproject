@@ -25,6 +25,10 @@
 			"Enabled": true
 		},
 		{
+			"Name": "AudioCapture",
+			"Enabled": true
+		},
+		{
 			"Name": "ModelContextProtocol",
 			"Enabled": true,
 			"TargetAllowList": [

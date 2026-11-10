@@ -341,6 +341,8 @@ bool ABpTable::LampAct(const TCHAR* Route)
 void ABpTable::LampPinched()
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpLamp: pinched (offer %d)"), static_cast<int32>(LampOffer));
+	// A pinch on the lamp cancels a talk in flight first (BpTalk.cpp: a turn being thought about, its spoken reply).
+	if (TalkCancel(TEXT("pinch"))) return;
 	if (LampOffer != ELampOffer::None) LampAct(TEXT("pinch"));
 	else AskNextStep(TEXT("pinch"));
 }

@@ -296,6 +296,12 @@ void ABpPawn::WristTap(const FString& Id)
 		ConsoleTap(TEXT("console:") + Act);
 		return;
 	}
+	// TALK is held, not tapped (the hands' hold, BpHands.cpp): a tap says so.
+	if (Act == TEXT("talk"))
+	{
+		if (ABpTable* Table = WristTable.Get()) Table->StandupSay(TEXT("Hold TALK and speak;\nlet go to send."));
+		return;
+	}
 	PanelAct(Act);
 }
 
@@ -308,6 +314,39 @@ void ABpPawn::PanelAct(const FString& Act)
 	{
 		StandupAct(Act.Mid(8));
 		RefreshWrist();
+		return;
+	}
+	// Talking to the lamp (BpTalk.cpp): the consent sheet's answers, SETTINGS' off, the wrist's cancel.
+	if (Act.StartsWith(TEXT("talk:")))
+	{
+		const FString What = Act.Mid(5);
+		if (What == TEXT("allow"))
+		{
+			ABpTable::SetTalkConsent(1);
+			CloseConsole();
+			if (Table) Table->StandupSay(TEXT("Thank you. Hold to talk to me:\nX, a pinch on me, or TALK on your wrist."));
+		}
+		else if (What == TEXT("notnow"))
+		{
+			ABpTable::SetTalkConsent(2);
+			// The way to ask without talking.
+			OpenConsole(TEXT("ask"));
+		}
+		else if (What == TEXT("off"))
+		{
+			ABpTable::SetTalkConsent(2);
+		}
+		else if (What == TEXT("cancel") && Table)
+		{
+			Table->TalkCancel(TEXT("wrist"));
+		}
+		RefreshConsole();
+		DrawWrist();
+		return;
+	}
+	if (Act == TEXT("room:next") && Table)
+	{
+		Table->SwitchToNextRoom();
 		return;
 	}
 	if (Act.StartsWith(TEXT("open:")))
@@ -788,7 +827,9 @@ void ABpPawn::DrawWrist()
 	ABpTable* Table = WristTable.Get();
 	const bool bPlan = Table && Table->HasPlan();
 	// What the card shows, most pressing first: an armed scan, a scan's refusal, the decision waiting, the lamp's offer.
-	enum class ECard : uint8 { Armed, Refused, Decision, Offer, Calm, Standup };
+	enum class ECard : uint8 { Armed, Refused, Decision, Offer, Calm, Standup, Talk };
+	// Talking to the lamp (BpTalk.cpp) comes first while it is in flight: the wearer must see it is listening.
+	const FString TalkWord = bPlan ? Table->TalkStateWord() : FString();
 	FString DecisionId, DecisionTitle, DecisionWhere;
 	const bool bDecision = bPlan && Table->WaitingDecision(DecisionId, DecisionTitle, DecisionWhere);
 	const FString Offer = bPlan ? Table->LampOfferLabel() : FString();
@@ -797,7 +838,7 @@ void ABpPawn::DrawWrist()
 	TArray<TPair<FString, FString>> SuButtons;
 	const bool bStandupCard = StandupWristCard(SuKicker, SuTitle, SuWords, SuButtons);
 	const bool bStandupFirst = bStandupCard && IsStandupOpen();
-	const ECard Card = bStandupFirst ? ECard::Standup : !WristArmedFocus.IsEmpty() ? ECard::Armed : bWristScanRefused && !WristScanWords.IsEmpty() ? ECard::Refused
+	const ECard Card = !TalkWord.IsEmpty() ? ECard::Talk : bStandupFirst ? ECard::Standup : !WristArmedFocus.IsEmpty() ? ECard::Armed : bWristScanRefused && !WristScanWords.IsEmpty() ? ECard::Refused
 		: bDecision ? ECard::Decision : !Offer.IsEmpty() ? ECard::Offer : bStandupCard ? ECard::Standup : ECard::Calm;
 	FString BandHead, BandBody;
 	if (bPlan) Table->ScanBand(BandHead, BandBody);
@@ -808,6 +849,7 @@ void ABpPawn::DrawWrist()
 	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
 		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord);
 	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
+	if (Card == ECard::Talk) Key += TEXT("|t") + TalkWord + Table->TalkStateLine();
 	if (Card == ECard::Standup)
 	{
 		Key += TEXT("|s") + SuKicker + SuTitle + SuWords;
@@ -841,12 +883,12 @@ void ABpPawn::DrawWrist()
 		WristBoxes.Add({ TEXT("wrist:") + Id, Box });
 	};
 
-	// The top row: MENU (the console), SEAT, TOUR.
+	// The top row: MENU (the console), TALK (held: push to talk, BpTalk.cpp), TOUR. SEAT is on SETTINGS › TABLE.
 	{
 		const float W = (WX1 - WX0 - 2.f * WGap);
 		const float MenuW = W * 0.42f, SideW = (W - MenuW) * 0.5f;
 		Button(FBox2f(FVector2f(WX0, WTopY0), FVector2f(WX0 + MenuW, WTopY1)), bConsoleOpen ? TEXT("CLOSE") : TEXT("MENU"), EBtn::Fill, TEXT("menu"));
-		Button(FBox2f(FVector2f(WX0 + MenuW + WGap, WTopY0), FVector2f(WX0 + MenuW + WGap + SideW, WTopY1)), TEXT("SEAT"), EBtn::Edge, TEXT("seat"));
+		Button(FBox2f(FVector2f(WX0 + MenuW + WGap, WTopY0), FVector2f(WX0 + MenuW + WGap + SideW, WTopY1)), TalkWord.IsEmpty() ? TEXT("TALK") : TalkWord, TalkWord == TEXT("LISTENING") ? EBtn::Amber : EBtn::Edge, TEXT("talk"));
 		Button(FBox2f(FVector2f(WX1 - SideW, WTopY0), FVector2f(WX1, WTopY1)), bTour ? TEXT("STOP TOUR") : TEXT("TOUR"), EBtn::Edge, TEXT("tour"));
 	}
 
@@ -910,6 +952,13 @@ void ABpPawn::DrawWrist()
 			const bool bTake = SuButtons[Index].Value == TEXT("standup:revoke");
 			Buttons.Add({ SuButtons[Index].Key, Index == 0 && !bTake ? EBtn::Amber : bTake ? EBtn::Amber : EBtn::Edge, SuButtons[Index].Value });
 		}
+		break;
+	case ECard::Talk:
+		Kicker = TalkWord == TEXT("SAMPLE") ? TalkWord : TEXT("TALK · ") + TalkWord;
+		KickerInk = BpSheet::Amber;
+		CardEdge = BpSheet::Amber;
+		Words = Table->TalkStateLine();
+		if (TalkWord == TEXT("THINKING") || TalkWord == TEXT("ANSWERING") || TalkWord == TEXT("SAMPLE")) Buttons = { { TEXT("CANCEL"), EBtn::Edge, TEXT("talk:cancel") } };
 		break;
 	case ECard::Offer:
 		Kicker = TEXT("THE LAMP SUGGESTS");
@@ -991,6 +1040,13 @@ void ABpPawn::DrawWrist()
 		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()[Over]);
 	WristPanel->RequestRenderUpdate();
-	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Talk ? *(TEXT("talk ") + TalkWord) : Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
 		Card == ECard::Decision ? *FString::Printf(TEXT(" %s on the %s"), *DecisionId, *DecisionWhere) : TEXT(""), bBand ? *FString::Printf(TEXT(" band \"%s\""), *BandHead) : TEXT(""));
+}
+
+void ABpPawn::TalkChanged()
+{
+	// Both redraw only when what they show changed (their keys).
+	RefreshConsole();
+	DrawWrist();
 }

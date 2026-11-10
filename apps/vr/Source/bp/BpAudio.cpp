@@ -276,7 +276,7 @@ void ABpPawn::TickMusic()
 	}
 	if (bMusicPaused) return;
 	// Under a tour line: ducked.
-	const bool bDuck = Table && Table->IsVoicePlaying();
+	const bool bDuck = Table && Table->IsMusicDucked();
 	if (bDuck != bMusicDucked)
 	{
 		bMusicDucked = bDuck;

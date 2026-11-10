@@ -188,6 +188,10 @@ private:
 	FString HoldId;
 	float HeldS = 0.f;
 	bool bHoldFired = false;
+	/** Push to talk by hand (BpTalk.cpp): a pinch held on the lamp or on the wrist's TALK; how long, and the source. */
+	bool bTalkHeld = false;
+	float TalkHeldS = 0.f;
+	FString TalkSource;
 
 	TWeakObjectPtr<ABpTable> Table;
 

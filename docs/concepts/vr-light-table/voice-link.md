@@ -155,6 +155,8 @@ Synthesis is billed by characters, about 0.45 credits per character on `eleven_v
    live in the headset, and they are not built yet. Until they are, the headset must send the header only after the
    wearer has accepted the disclosure in the app, and must show that it is listening while the recording is sent and
    transcribed.
+   *Headset side, 2026-11-10 (night two W3, apps/vr/Source/bp/BpTalk.cpp):* the consent sheet (console page TALK: plain words, ALLOW and NOT NOW, saved, turned off in one press in SETTINGS) and the listening indicator (lamp caption LISTENING with a level meter, the wrist and the console bar) are built; the header goes out only from `PostListen` past its consent guard (`check:bplink`). What remains of the deviation: the consent record lives on the headset only, so the server still trusts the header.
 3. **No vocabulary biasing (decode-time-vocabulary-biasing).** The product knows its words (feature names, "approve",
    "decline"), and the engine misheard "kettle wing" as "Kettlewing" in the round trip. The route sends no key terms
    yet.
+4. **The level meter is coarse (stt-pipeline, metering).** The listening caption shows the input level as eight steps redrawn only when the step changes (a widget redraw per frame would cost the Quest's budget), and the lamp's light follows the level only where that light can change at run time. A flat meter still tells "the microphone hears nothing" apart; a finer meter is the closing step.

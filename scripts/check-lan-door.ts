@@ -46,6 +46,8 @@ for (const [m, p] of [['GET', '/api/companion/cards/c1'], ['GET', '/api/companio
   ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
 check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
+// The voice link (night two W3): listen and say ride the standup scope, as the turn does; read alone may not.
+check('standup allows POST listen and say (voice link); read alone refuses both', ['/api/companion/listen', '/api/companion/say'].every((p) => verbOf(['standup'], 'POST', p) !== null && verbOf(['read'], 'POST', p) === null && verbOf(['standup'], 'GET', p) === null));
 // night two W2b: the table's layout over Wi-Fi. /plan takes exactly ?layout=islands (and no query), under read; nothing wider
 check('read: /plan takes ?layout=islands, the table\'s layout, exactly that query and nothing wider', verbOf(['read'], 'GET', '/api/products/kettle/plan?layout=islands') !== null
   && verbOf(['read'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['place', 'focus', 'decide', 'scan'], 'GET', '/api/products/kettle/plan?layout=islands') === null

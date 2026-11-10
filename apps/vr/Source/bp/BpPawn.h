@@ -165,6 +165,11 @@ public:
 	bool OpenStandupForTour();
 	bool StandupAnsweredSince(double Since) const;
 	FString StandupLastVerdictWords() const;
+	/** A spoken request raised a pending companion card (BpTalk.cpp): the STAND-UP page opens on it, as the stand-up's plan
+	 *  shows one (GET /api/companion/cards; answered with `shown`). */
+	void StandupShowCompanionCards();
+	/** The talk's state moved (BpTalk.cpp): the console's bar and the wrist redraw if what they show changed. */
+	void TalkChanged();
 
 	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
 	 *  scan:start, scan:cancel, scan:dismiss, ask:next|here|scan|act, seat, tour, voice:minus|plus, music:minus|plus,

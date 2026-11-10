@@ -627,6 +627,17 @@ public:
 	/** POST /api/companion/cards/<id> { decision, shown } (scope decide; contract 3.2). Refused here from the bundle or with no
 	 *  `shown`. */
 	void AnswerCompanionCard(const FString& Id, bool bApprove, const FString& Shown, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	// ---- The voice link (night two W3, docs/concepts/vr-light-table/voice-link.md; scope standup) ------------------------
+	/** POST /api/companion/listen: one mono 16-bit WAV (16 kHz) in, its words out. bConsented is the wearer's ALLOW on the
+	 *  consent sheet: without it nothing is sent (status 0) and no `x-bp-speech-consent` header ever goes out. Refused here
+	 *  from the bundle or with no route, or over the caps (30 s, 3,000,000 bytes). OnDone gets the status, the text, `heard`
+	 *  (speech, no-speech, silence), the server's ms and the body (an error's { error }). The body is never logged. */
+	void PostListen(const TArray<uint8>& Wav, bool bConsented, TFunction<void(int32 Status, const FString& Text, const FString& Heard, int32 Ms, const FString& Body)> OnDone);
+	/** POST /api/companion/say { text }: the lamp's voice for a line, a mono 16-bit 24 kHz WAV at the tour clips' level.
+	 *  OnDone gets the status, the WAV (empty on a refusal), and the body of a refusal. */
+	void PostSay(const FString& Text, TFunction<void(int32 Status, const TArray<uint8>& Wav, const FString& Body)> OnDone);
+	static constexpr int32 ListenMaxBytes = 3000000;
+	static constexpr float ListenMaxS = 30.f;
 	/** GET /api/companion/policies (scope standup): every grant, newest first, expired ones too. */
 	void GetPolicies(TFunction<void(bool bOk, const TArray<FBpPolicy>& Policies)> OnDone);
 	/** POST /api/companion/policies (scope decide; contract 3.4), never wider than VR_POLICY_BOUND: one product (never "*"), a

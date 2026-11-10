@@ -106,6 +106,8 @@ struct FBpStandupState
 	/** The tour opens the stand-up on its first open decision, not on the opening card, and keeps it there once answered (the
 	 *  lamp's closing line is about that card). */
 	bool bJumpToDecision = false;
+	/** A spoken request raised a pending card (BpTalk.cpp): once the morning is read, the pending cards are pulled in. */
+	bool bPullCards = false;
 	bool bTour = false;
 };
 
@@ -420,6 +422,7 @@ void ABpPawn::StandupLoad()
 			if (First != INDEX_NONE) S.At = First;
 		}
 		Pawn->StandupShowSheet();
+		if (S.bPullCards) Pawn->StandupShowCompanionCards();
 	});
 	RefreshConsole();
 }
@@ -818,6 +821,48 @@ void ABpPawn::StandupPlanDay()
 		});
 	});
 	RefreshConsole();
+}
+
+void ABpPawn::StandupShowCompanionCards()
+{
+	// The STAND-UP page first (its morning is read when it opens); the cards follow once it has been read.
+	if (!IsStandupOpen()) OpenConsole(TEXT("standup"));
+	if (!Standup.IsValid()) return;
+	if (Standup->bLoading)
+	{
+		Standup->bPullCards = true;
+		return;
+	}
+	Standup->bPullCards = false;
+	const TWeakObjectPtr<ABpPawn> Again(this);
+	FBpLinkModule::Get().GetCompanionCards([Again](bool bOk, const TArray<FBpCompanionCard>& Cards)
+	{
+		ABpPawn* P = Again.Get();
+		if (!P || !P->Standup.IsValid() || !bOk) return;
+		FBpStandupState& St = *P->Standup;
+		int32 First = INDEX_NONE;
+		for (const FBpCompanionCard& Card : Cards)
+		{
+			if (Card.State != TEXT("pending")) continue;
+			int32 At = St.Sheets.IndexOfByPredicate([&Card](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion && Sh.Companion.Id == Card.Id; });
+			if (At == INDEX_NONE)
+			{
+				FBpStandupSheet Sheet;
+				Sheet.Kind = FBpStandupSheet::EKind::Companion;
+				Sheet.Companion = Card;
+				At = St.Sheets.Add(Sheet);
+			}
+			// The newest pending card (the list is newest first) is the one the spoken request raised.
+			if (First == INDEX_NONE) First = At;
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: a spoken request: %d companion cards read, %s"), Cards.Num(), First == INDEX_NONE ? TEXT("none pending") : *FString::Printf(TEXT("showing sheet %d"), First + 1));
+		if (First != INDEX_NONE)
+		{
+			St.At = First;
+			P->StandupShowSheet();
+		}
+		P->RefreshConsole();
+	});
 }
 
 void ABpPawn::StandupReadPolicies()
@@ -1628,7 +1673,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			const bool bMay = bLinked && Link.CanDecide();
 			Buttons = { Prev,
 				{ S.Plan == FBpStandupState::EPlan::Asking ? TEXT("PLANNING…") : TEXT("PLAN MY DAY"), bLinked && S.Plan != FBpStandupState::EPlan::Asking ? EBtn::Amber : EBtn::Off, TEXT("standup:plan"), 240.f },
-				LiveGrant() ? FRowButton{ TEXT("TAKE BACK"), EBtn::Edge, TEXT("standup:revoke"), 230.f } : FRowButton{ TEXT("HAND OVER FOR TODAY"), bMay ? EBtn::Edge : EBtn::Off, TEXT("standup:handover"), 430.f },
+				LiveGrant() ? FRowButton{ TEXT("TAKE BACK"), EBtn::Edge, TEXT("standup:revoke"), 230.f } : FRowButton{ TEXT("HAND OVER"), bMay ? EBtn::Edge : EBtn::Off, TEXT("standup:handover"), 260.f },
 				{ TEXT("DONE"), EBtn::Fill, TEXT("standup:done"), 150.f } };
 			Status = S.bSample ? FString(TEXT("Sample: both need your PC (PC LINK connects it). Nothing was sent."))
 				: !bLinked ? FString(TEXT("Your PC is gone: PLAN MY DAY and HAND OVER need it."))

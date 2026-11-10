@@ -621,6 +621,40 @@ async function main() {
       check('link source: the rule refuses a stray CreateRequest and a NewRequest without the Bearer header',
         linkSource(cppText.replace('Request->SetVerb(TEXT("DELETE"));', 'Request = FHttpModule::Get().CreateRequest(); Request->SetVerb(TEXT("DELETE"));')).problems.length > 0
         && linkSource(cppText.replace('TEXT("Bearer ") + GToken', 'GToken')).problems.length > 0);
+
+      // ---- The voice link (night two W3, voice-link.md): what BpLink's PostListen and PostSay send ----------------------
+      // Live, and free: a silent 16 kHz mono WAV is answered before any key or cloud call (heard "silence"), and the same body
+      // without the consent header is refused 403 no-consent. In the source: the consent header goes out only from PostListen,
+      // only past its bConsented guard, and both routes start at NewRequest (the Bearer).
+      {
+        const wav = (() => {
+          const n = 16000, b = Buffer.alloc(44 + n * 2);
+          b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16);
+          b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(16000, 24); b.writeUInt32LE(32000, 28); b.writeUInt16LE(2, 32);
+          b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+          return b;
+        })();
+        const listen = (headers) => new Promise((resolve) => {
+          const r = http.request({ host: '127.0.0.1', port, path: '/api/companion/listen', method: 'POST', headers: { host: `localhost:${port}`, 'content-type': 'audio/wav', 'content-length': wav.length, ...headers } }, (res) => {
+            let s = ''; res.on('data', (d) => (s += d)); res.on('end', () => { let json = null; try { json = JSON.parse(s); } catch { /* not JSON */ } resolve({ status: res.statusCode, json }); });
+          });
+          r.on('error', () => resolve({ status: 0, json: null }));
+          r.end(wav);
+        });
+        const quiet = await listen({ 'x-bp-speech-consent': 'cloud' });
+        check('voice: POST /api/companion/listen with consent and a silent 16 kHz WAV answers 200 heard silence (nothing leaves the PC)', quiet.status === 200 && quiet.json?.heard === 'silence', `${quiet.status} ${JSON.stringify(quiet.json)}`);
+        const bare = await listen({});
+        check('voice: the same WAV without x-bp-speech-consent is refused 403 no-consent', bare.status === 403 && bare.json?.error === 'no-consent', `${bare.status} ${JSON.stringify(bare.json)}`);
+        const code = stripCxx(cppText);
+        const fn = (name) => { const at = code.indexOf(`void FBpLinkModule::${name}(`); return at < 0 ? '' : code.slice(at, code.indexOf('\nvoid FBpLinkModule::', at + 10)); };
+        const lit = stripCxx(cppText, true);
+        const listenLit = (() => { const at = lit.indexOf('void FBpLinkModule::PostListen('); return at < 0 ? '' : lit.slice(at, lit.indexOf('\nvoid FBpLinkModule::', at + 10)); })();
+        const consentAt = listenLit.indexOf('"x-bp-speech-consent"'), guardAt = listenLit.indexOf('if (!bConsented)'), sendAt = listenLit.indexOf('ProcessRequest()');
+        check('voice source: PostListen and PostSay start at NewRequest and POST their routes; the consent header is set only in PostListen, after its bConsented refusal',
+          /NewRequest\(\)/.test(fn('PostListen')) && /NewRequest\(\)/.test(fn('PostSay')) && listenLit.includes('"/api/companion/listen"')
+          && guardAt >= 0 && consentAt > guardAt && sendAt > consentAt && (lit.match(/"x-bp-speech-consent"/g) ?? []).length === 1,
+          `guard ${guardAt}, header ${consentAt}, send ${sendAt}`);
+      }
       // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/decider.server.ts), read as text.
       {
         const decider = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/decider.server.ts'), 'utf8');

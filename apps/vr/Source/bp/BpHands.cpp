@@ -176,7 +176,9 @@ namespace
 	/** What a hold acts on (ABpTable's hands' rule): the lamp's head, a feature's glyph, a key plan room. */
 	bool IsHoldable(const FString& Kind)
 	{
-		return Kind == TEXT("lamp") || Kind == TEXT("feature") || Kind == TEXT("minimap");
+		// The lamp's own hold is push to talk now (BpTalk.cpp, a pinch held on it); its old 0.8 s point ("the next room") is
+		// the console's ROOMS › NEXT ROOM (night two W3).
+		return Kind == TEXT("feature") || Kind == TEXT("minimap");
 	}
 
 	bool IsLive(EBpTracking State)
@@ -678,6 +680,30 @@ void UBpHands::UpdateHold(float DeltaTime)
 	// The speaking hand, pointing without a pinch, at something a hold acts on.
 	ABpTable* T = FindTable();
 	const FSlot* Speaking = Speaker();
+	// Push to talk by hand: a pinch that closed on the lamp's head, or on the wrist's TALK, held. Down at once (the microphone
+	// opens when the wearer already allowed it); past ABpTable::TalkMinHoldS the pinch is spent, so its release taps nothing.
+	{
+		const bool bOnLamp = Speaking && Speaking->bPinch && Speaking->TargetKind == TEXT("lamp");
+		const bool bOnTalk = Speaking && Speaking->bPinch && Speaking->HoverKind == TEXT("wrist") && Speaking->HoverId == TEXT("wrist:talk");
+		const bool bHeld = T && (bOnLamp || bOnTalk);
+		if (bHeld && !bTalkHeld)
+		{
+			bTalkHeld = true;
+			TalkHeldS = 0.f;
+			TalkSource = bOnLamp ? TEXT("lamp") : TEXT("wrist");
+			T->TalkHold(*TalkSource, true);
+		}
+		else if (bHeld)
+		{
+			TalkHeldS += DeltaTime;
+			if (TalkHeldS >= ABpTable::TalkMinHoldS) const_cast<FSlot*>(Speaking)->bFired = true;
+		}
+		else if (bTalkHeld)
+		{
+			bTalkHeld = false;
+			if (T) T->TalkHold(*TalkSource, false);
+		}
+	}
 	FString Kind, Id;
 	if (T && Speaking && !Speaking->bPinch && Speaking->State == EBpTracking::Tracked && IsHoldable(Speaking->HoverKind))
 	{

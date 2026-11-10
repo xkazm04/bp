@@ -161,8 +161,29 @@ struct FBpConsolePages
 
 	static const FBpConsolePage* Find(const FString& Key)
 	{
+		// TALK is the consent sheet (BpTalk.cpp): opened by the first hold to talk and from SETTINGS, never a HOME tile.
+		static const FBpConsolePage Talk = { TEXT("talk"), TEXT("TALK TO THE LAMP"), TEXT("T"), &TalkRows, &TalkSummary, nullptr, nullptr };
+		if (Key == Talk.Key) return &Talk;
 		return Registry().FindByPredicate([&Key](const FBpConsolePage& Page) { return Key == Page.Key; });
 	}
+
+	// TALK: the consent sheet, in plain words (voice-io on-device-vs-cloud: disclosed, chosen affirmatively, revocable in one
+	// step, visibly active while in use). Nothing is recorded or sent before ALLOW.
+	static void TalkRows(ABpPawn&, TArray<FBpConsoleRow>& Out, FString& Sub)
+	{
+		const int32 Consent = ABpTable::TalkConsent();
+		Sub = Consent == 1 ? FString(TEXT("Allowed · SETTINGS › TALK turns it off")) : FString(TEXT("Your choice · you can change it in SETTINGS"));
+		Out.Add(Note(TEXT("Hold X, pinch and hold the lamp, or hold TALK on your wrist, and speak. Let go to send. The lamp says LISTENING while the microphone is on.")));
+		Out.Add(Note(TEXT("Your voice goes to your PC, and from your PC to a cloud speech service that turns it into words. The lamp's answer is spoken the same way."), 2));
+		Out.Add(Note(TEXT("Nothing you say is kept, on this headset or on your PC. The microphone is on only while you hold.")));
+		FBpConsoleRow Row;
+		Row.Label = TEXT("Talk to the lamp?");
+		Row.Detail = TEXT("Without it, MENU › ASK still asks the lamp");
+		Row.Buttons = { { TEXT("NOT NOW"), TEXT("talk:notnow") }, { TEXT("ALLOW"), TEXT("talk:allow"), true } };
+		Row.Tone = Consent == 1 ? 1 : 0;
+		Out.Add(Row);
+	}
+	static FString TalkSummary(ABpPawn&) { return ABpTable::TalkConsent() == 1 ? TEXT("Allowed") : TEXT("Not allowed"); }
 
 	static ABpTable* Table(ABpPawn& Pawn) { return Pawn.WristTable.Get(); }
 	static bool Plan(ABpPawn& Pawn) { return Table(Pawn) && Table(Pawn)->HasPlan(); }
@@ -175,6 +196,16 @@ struct FBpConsolePages
 		const TArray<ABpTable::FRoomRank> Ranks = Table(Pawn)->RoomsByUrgency();
 		const FString Shown = Table(Pawn)->GetRoomModeId();
 		int32 Urgent = 0;
+		if (!Shown.IsEmpty())
+		{
+			// The next room by the lamp's own pick (it was a 0.8 s point on the lamp before talking took the lamp's hold).
+			FBpConsoleRow Next;
+			Next.Act = TEXT("room:next");
+			Next.Label = TEXT("NEXT ROOM");
+			Next.Detail = TEXT("The lamp picks it and says why");
+			Next.Tag = TEXT("GO");
+			Out.Add(Next);
+		}
 		for (int32 At = 0; At < Ranks.Num(); ++At)
 		{
 			const ABpTable::FRoomRank& Rank = Ranks[At];
@@ -671,6 +702,15 @@ struct FBpConsolePages
 			Row.Buttons = { { CvarInt(TEXT("bp.ReducedMotion")) != 0 ? TEXT("REDUCED") : TEXT("FULL"), TEXT("toggle:motion") } };
 			Out.Add(Row);
 		}
+		{
+			// Talk to the lamp (BpTalk.cpp): ON turns it off in one press; OFF opens the sheet, where ALLOW is the choice.
+			const bool bOn = ABpTable::TalkConsent() == 1;
+			FBpConsoleRow Row;
+			Row.Label = TEXT("TALK");
+			Row.Detail = bOn ? TEXT("Your voice goes to your PC and a cloud speech service") : TEXT("Off: nothing is recorded");
+			Row.Buttons = { { bOn ? TEXT("ON") : TEXT("OFF"), bOn ? TEXT("talk:off") : TEXT("open:talk"), bOn } };
+			Out.Add(Row);
+		}
 	}
 	static FString SettingsSummary(ABpPawn&)
 	{
@@ -847,6 +887,8 @@ FString ABpPawn::ConsoleStatus() const
 {
 	ABpTable* Table = WristTable.Get();
 	if (!Table || !Table->HasPlan()) return TEXT("Reading the plan…");
+	// Talking to the lamp says so here as well as on the lamp and the wrist (voice-io: visibly active while in use).
+	if (!Table->TalkStateWord().IsEmpty()) return FString::Printf(TEXT("%s · %s"), *Table->TalkStateWord(), *Table->TalkStateLine());
 	FString Head, Body;
 	Table->ScanBand(Head, Body);
 	if (!WristArmedFocus.IsEmpty()) return FString::Printf(TEXT("A scan of %s is ready on your wrist"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel);

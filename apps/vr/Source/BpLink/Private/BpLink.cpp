@@ -2458,6 +2458,9 @@ namespace
 		Body.ParseIntoArrayLines(Lines, false);
 		Out.Outcome = FBpCompanionTurn::EOutcome::Failed;
 		bool bEnded = false;
+		// Text arrives as deltas; anything else between two of them (a tool call, a card) means a new block of the reply, and
+		// blocks are joined with a space so the caption and the voice do not read "empty.Kettle".
+		bool bBlockBreak = false;
 		for (const FString& Line : Lines)
 		{
 			if (!Line.StartsWith(TEXT("data:"))) continue;
@@ -2465,11 +2468,17 @@ namespace
 			if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line.Mid(5).TrimStart()), Event) || !Event.IsValid()) continue;
 			FString Type;
 			Event->TryGetStringField(TEXT("type"), Type);
+			if (Type != TEXT("text") && Type != TEXT("start")) bBlockBreak = true;
 			if (Type == TEXT("start")) Event->TryGetStringField(TEXT("conversationId"), OutConversation);
 			else if (Type == TEXT("text"))
 			{
 				FString Delta;
-				if (Event->TryGetStringField(TEXT("delta"), Delta)) Out.Text += Delta;
+				if (Event->TryGetStringField(TEXT("delta"), Delta) && !Delta.IsEmpty())
+				{
+					if (bBlockBreak && !Out.Text.IsEmpty() && !FChar::IsWhitespace(Out.Text[Out.Text.Len() - 1]) && !FChar::IsWhitespace(Delta[0])) Out.Text += TEXT(" ");
+					bBlockBreak = false;
+					Out.Text += Delta;
+				}
 			}
 			else if (Type == TEXT("card"))
 			{
@@ -3689,6 +3698,81 @@ void FBpLinkModule::AnswerCompanionCard(const FString& Id, bool bApprove, const 
 		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: card %s answered %d %.300s"), *Id, Status, *Body);
 		if (OnDone) OnDone(Status, Body);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::PostListen(const TArray<uint8>& Wav, bool bConsented, TFunction<void(int32, const FString&, const FString&, int32, const FString&)> OnDone)
+{
+	// Consent first (voice-link.md, deviation 2: the opt-in is the headset's): without the wearer's ALLOW nothing leaves.
+	FString Refused;
+	if (!bConsented) Refused = TEXT("no consent: nothing recorded is sent");
+	else if (GFromBundle || !GRouteLive) Refused = TEXT("no PC link");
+	else if (Wav.Num() <= 44 || Wav.Num() > ListenMaxBytes) Refused = FString::Printf(TEXT("a WAV of %d bytes is outside 45..%d"), Wav.Num(), ListenMaxBytes);
+	if (!Refused.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: listen not sent: %s"), *Refused);
+		if (OnDone) OnDone(0, FString(), FString(), 0, Refused);
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/listen"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("audio/wav"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetHeader(TEXT("x-bp-speech-consent"), TEXT("cloud"));
+	Request->SetContent(Wav);
+	// The server gives the engine 30 s; the request a little more.
+	Request->SetTimeout(40.f);
+	const double Sent = FPlatformTime::Seconds();
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST /api/companion/listen (%d bytes, consent cloud)"), Wav.Num());
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Sent](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		FString Text, Heard;
+		double Ms = 0.0;
+		TSharedPtr<FJsonObject> Json;
+		if (Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid())
+		{
+			Json->TryGetStringField(TEXT("text"), Text);
+			Json->TryGetStringField(TEXT("heard"), Heard);
+			Json->TryGetNumberField(TEXT("ms"), Ms);
+		}
+		// The words are the wearer's: the log names how many, never what (voice-link.md, privacy).
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: listen answered %d in %.0f ms (server %.0f ms): heard %s, %d chars"), Status, (FPlatformTime::Seconds() - Sent) * 1000.0, Ms, Heard.IsEmpty() ? TEXT("-") : *Heard, Text.Len());
+		if (OnDone) OnDone(Status, Text, Heard, FMath::RoundToInt(Ms), Status == 200 ? FString() : Body.Left(400));
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::PostSay(const FString& Text, TFunction<void(int32, const TArray<uint8>&, const FString&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive || Text.TrimStartAndEnd().IsEmpty())
+	{
+		if (OnDone) OnDone(0, TArray<uint8>(), GFromBundle || !GRouteLive ? FString(TEXT("no PC link")) : FString(TEXT("nothing to say")));
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("text"), Text.Left(4000));
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/say"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("audio/wav"));
+	Request->SetContentAsString(Condensed(Json));
+	Request->SetTimeout(40.f);
+	const double Sent = FPlatformTime::Seconds();
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Sent](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		TArray<uint8> Wav;
+		FString Body;
+		if (Status == 200) Wav = Response->GetContent();
+		else if (Response.IsValid()) Body = Response->GetContentAsString().Left(400);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: say answered %d in %.0f ms: %d bytes, cache %s, cut %s"), Status, (FPlatformTime::Seconds() - Sent) * 1000.0, Wav.Num(),
+			Response.IsValid() ? *Response->GetHeader(TEXT("x-bp-voice-cache")) : TEXT("-"), Response.IsValid() ? *Response->GetHeader(TEXT("x-bp-say-cut")) : TEXT("-"));
+		if (OnDone) OnDone(Status, Wav, Body);
 	});
 	Request->ProcessRequest();
 }

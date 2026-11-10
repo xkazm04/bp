@@ -705,7 +705,9 @@ void ABpTable::Tick(float DeltaSeconds)
 	const bool bFollowMoving = TickFollow(FMath::Min(DeltaSeconds, 0.05f));
 	// The build-up (BpBuildup.cpp) runs at the frame rate while it moves.
 	const bool bBuildMoving = TickBuildup(DeltaSeconds);
-	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving || bBuildMoving) SetActorTickInterval(0.f);
+	// Talking to the lamp (BpTalk.cpp) runs at the frame rate only while the microphone is open (its level on the caption).
+	const bool bTalkMoving = TickTalk(DeltaSeconds);
+	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving || bBuildMoving || bTalkMoving) SetActorTickInterval(0.f);
 	else if (GetActorTickInterval() == 0.f && !IsLevelMoving() && !IsRoomModeMoving() && !IsDeckMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 }
 

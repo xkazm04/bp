@@ -312,8 +312,16 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 		const FString Path = FPaths::ProjectContentDir() / TEXT("BpData/voice/tour") / (FString(Clip) + TEXT(".wav"));
 		if (!FFileHelper::LoadFileToArray(*File, *Path, FILEREAD_Silent)) UE_LOG(LogBpTable, Log, TEXT("BpTour: no voice clip %s (captions only)"), *Path);
 	}
+	PlayVoiceWav(*File, Clip);
+}
+
+bool ABpTable::PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip)
+{
+	const TArray<uint8>* File = &WavFile;
 	int32 Rate = 0, Channels = 0, Offset = 0, Bytes = 0;
-	if (File->Num() == 0 || !BpAudio::ReadWav(*File, Rate, Channels, Offset, Bytes) || Channels < 1) return;
+	if (File->Num() == 0 || !BpAudio::ReadWav(*File, Rate, Channels, Offset, Bytes) || Channels < 1) return false;
+	if (UAudioComponent* Voice = TourVoice.Get()) Voice->Stop();
+	TourVoiceClip = Clip;
 	// A procedural wave drains as it plays, so each line gets a new one, fed the clip's samples.
 	USoundWaveProcedural* Wave = NewObject<USoundWaveProcedural>(this);
 	Wave->SetSampleRate(Rate);
@@ -360,6 +368,14 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 	float HeadroomDb = 0.f;
 	if (GConfig) GConfig->GetFloat(TEXT("Audio"), TEXT("PlatformHeadroomDB"), HeadroomDb, GEngineIni);
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: says %s (%.1f s) level=%.2f dist_cm=%.0f attenuation=%.2f headroom_db=%.0f%s"), Clip, Wave->Duration, TourVoiceGain, SeatDistCm, Attenuation, HeadroomDb, TourVoice.IsValid() ? TEXT("") : TEXT(", no audio device: silent"));
+	return true;
+}
+
+void ABpTable::StopVoice()
+{
+	if (UAudioComponent* Voice = TourVoice.Get()) Voice->Stop();
+	TourVoiceEndsAt = 0.0;
+	TourVoiceNext.Reset();
 }
 
 bool ABpTable::IsVoicePlaying() const
