@@ -6,12 +6,13 @@
 # The environment is start-editor.ps1's (the bundled win-x64 .NET for UBT on ARM64) plus the user's ANDROID_HOME,
 # JAVA_HOME and NDKROOT, read from the registry so a shell opened before setup-android.ps1 still sees them. -Install
 # runs adb install -r on the one connected headset. The full UAT log is apps/vr/.cache/quest/uat.log.
-# Exit: UAT's exit code; 2 refused (no toolchain).
+# Exit: UAT's exit code; 2 refused (no toolchain). At the end it stops the Meta XR Simulator this run started (stop-xr-sim.ps1).
 param(
     [ValidateSet('Development', 'Shipping', 'DebugGame')][string]$Config = 'Development',
     [switch]$Install
 )
 $ErrorActionPreference = 'Stop'
+$RunStart = Get-Date
 
 $VrRoot = Split-Path -Parent $PSScriptRoot
 $Engine = if ($env:UE_ROOT) { $env:UE_ROOT } else { 'C:\Program Files\Epic Games\UE_5.8' }
@@ -69,4 +70,6 @@ if ($code -eq 0) {
     Write-Host "APK=$($apk.FullName) ($([math]::Round($apk.Length / 1MB)) MB)"
     if ($Install) { & adb install -r $apk.FullName; $code = $LASTEXITCODE }
 }
+# The cook starts the Meta XR Simulator and leaves it running (stop-xr-sim.ps1 says why): stop what this run started.
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'stop-xr-sim.ps1') -Since $RunStart
 exit $code
