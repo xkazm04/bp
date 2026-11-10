@@ -1708,8 +1708,17 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 				Put(FBox2f(FVector2f(InX, Y), FVector2f(InX + ChipW, Y + 40.f)), BpSheet::Pin(Chip, SmallBold, 40.f, bStop ? BpSheet::Red : BpSheet::Amber, ChipW));
 				FString Rest = Card->lines[1].text;
 				Rest.Split(TEXT(" · "), nullptr, &Rest);
+				// Night two V8: no ellipsis on the meta line ("reliability · r…"): when it does not fit beside the chip, its last part
+				// (the age) goes to a line of its own under the chip; the lens stays beside it.
+				FString Tail;
+				if (BpSheet::TextWidth(Rest, SmallFont) > ColX1 - InX - ChipW - 16.f) Rest.Split(TEXT(" · "), &Rest, &Tail, ESearchCase::CaseSensitive, ESearchDir::FromEnd);
 				Text(FBox2f(FVector2f(InX + ChipW + 16.f, Y), FVector2f(ColX1, Y + 40.f)), Rest, SmallFont, BpSheet::Ink, 1, VAlign_Center);
 				Y += 50.f;
+				if (!Tail.IsEmpty() && Y + Pitch(CapSmall) + 4.f <= Frame.Max.Y - 6.f)
+				{
+					Text(FBox2f(FVector2f(InX, Y - 4.f), FVector2f(ColX1, Y + Pitch(CapSmall))), Tail, SmallFont, BpSheet::Ink.CopyWithNewOpacity(0.7f), 2);
+					Y += Pitch(CapSmall) + 6.f;
+				}
 			}
 			TArray<FItem> Items;
 			const FString Stakes = Card->lines.Num() > 2 && Card->lines[2].tone.IsEmpty() ? Card->lines[2].text : FString();
