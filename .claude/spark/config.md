@@ -82,6 +82,8 @@ None declared.
 - A brief that tells a builder to start a server says: from the repo root, with `BP_HOME` on a scratch folder and free ports. The companion's tool server is found relative to the working directory; a server started elsewhere stalled every turn for 600 s (2026-11-10).
 - App state on the Quest goes through `FBpStore` (`Saved/BpTable.json`), never `GConfig`/GameUserSettings.ini (deleted at launch on Android). Materials of things that must show over passthrough are unlit or write scene alpha 0.
 - A feature that lets a second surface act for the person (a paired device, an agent) gets a read-only attacker's review before the night ends, with the contract in hand: the review of 2026-11-10 found a card approval that bypassed the grant bound.
+- A real adopt run registers the project in the REAL `bp.products.local.json` whatever `BP_PRODUCTS_FILE` says (the adopt skill's register step writes that path directly; the skill is a link into the registry checkout, so the fix is the registry's): a builder testing onboarding stubs the job runner as check:onboarding does, or cleans the real file and proves it (2026-11-10: a scratch project landed in the owner's registry).
+- When packages build in parallel, run the FULL `npm run check` after the first package commit and again once all have landed: on 2026-11-10 five checks went red only where three green packages met (a contract manifest, a README route list, a demo night another check counted, a clip format another package pinned).
 
 ## Wave defaults
 
