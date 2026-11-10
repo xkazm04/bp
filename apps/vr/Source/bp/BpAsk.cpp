@@ -158,8 +158,9 @@ void ABpTable::LampSayAnswer(const FString& Subject, const FString& Why, const F
 {
 	LampAnswer = Subject + TEXT("\n") + Why;
 	LampHint = Hint;
-	// Three plate lines: the title, why now, and what a pinch does; each cut to one line so the action is never lost.
-	SayLamp(LampCaptionFit(Subject) + TEXT("\n") + LampCaptionFit(ShortWhy.IsEmpty() ? Why : ShortWhy) + (Hint.IsEmpty() ? FString() : TEXT("\n") + LampCaptionFit(Hint)), true);
+	// The plate's parts: the title, why now, and what a pinch does. Night two V4: each whole (the plate wraps and grows with its
+	// lines; it used to cut each to one line: "Apply the console errors baseline to…").
+	SayLamp(Subject + TEXT("\n") + (ShortWhy.IsEmpty() ? Why : ShortWhy) + (Hint.IsEmpty() ? FString() : TEXT("\n") + Hint), true);
 	LampCaptionClock = FMath::Clamp(CVarLampAnswerS.GetValueOnGameThread(), 5.f, 40.f);
 	LampNotifyAsk();
 }

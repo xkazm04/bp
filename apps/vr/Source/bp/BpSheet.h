@@ -8,6 +8,7 @@
 #include "CoreMinimal.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
@@ -342,6 +343,88 @@ namespace BpSheet
 	private:
 		int32 Kind = 0;
 	};
+
+	// ---- Night two V4: the text size, the family's control, a fit that never cuts ------------------------------------------
+	/** SETTINGS › ACCESSIBILITY's TEXT SIZE (bp.TextSize, BpAudio.cpp: 1.0, 1.15, 1.3): the console, the wrist and the captions
+	 *  scale as a whole by it (their world size, so every layout holds by construction and the type grows with it). */
+	inline float TextScale()
+	{
+		static IConsoleVariable* Var = nullptr;
+		if (!Var) Var = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.TextSize"));
+		return Var ? FMath::Clamp(Var->GetFloat(), 1.f, 1.3f) : 1.f;
+	}
+
+	/** One control's looks: the primary (amber), the system's (cyan), a quiet edge, and one that cannot act now. */
+	enum class ELook : uint8 { Amber, Fill, Edge, Off };
+	/** The family's control (the console's, the stand-up's, the wrist's, the deck's): a fill and an edge by its look; under a
+	 *  hand's ray or the pad (bLit) the quiet one a step brighter; pressed (bDown) it sinks: darker and drawn 3 px in. */
+	inline TSharedRef<SWidget> Control(const FString& Word, const FSlateFontInfo& Font, ELook Look, bool bLit = false, bool bDown = false)
+	{
+		FLinearColor Fill = Look == ELook::Fill ? Accent : Look == ELook::Amber ? Amber : Look == ELook::Off ? FLinearColor::Transparent : RowFill(bLit);
+		const FLinearColor Edge = Look == ELook::Edge ? Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f) : Look == ELook::Off ? OffEdge() : FLinearColor::Transparent;
+		const FLinearColor Words = Look == ELook::Edge ? InkHi : Look == ELook::Off ? OffInk() : PaperLo;
+		if (bDown) Fill = Look == ELook::Edge ? Ink.CopyWithNewOpacity(0.32f) : Fill * 0.72f;
+		return SNew(SBox).Padding(bDown ? 3.f : 0.f)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()[SNew(SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f))
+				[
+					SNew(STextBlock).Text(FText::FromString(Word)).Font(Font).ColorAndOpacity(FSlateColor(Words))
+				]
+			];
+	}
+
+	/** A line's pitch for a cap height in a font of the family (Barlow's 1.2 em). */
+	inline float LinePitch(float CapPx, float CapPerEm) { return CapPx / CapPerEm * 1.2f; }
+	inline int32 Lines(const FString& Wrapped) { int32 N = 1; for (const TCHAR C : Wrapped) N += C == TEXT('\n') ? 1 : 0; return Wrapped.IsEmpty() ? 0 : N; }
+
+	/** Whole sentences, as many as fit MaxLines of MaxW (night two V4: a long reply is never cut inside a sentence, never with
+	 *  an ellipsis); the first sentence always, wrapped in full. bOutMore says whether any was left out. */
+	inline FString Sentences(const FString& Text, const FSlateFontInfo& Font, float MaxW, int32 MaxLines, bool& bOutMore)
+	{
+		bOutMore = false;
+		const FString All = Wrap(Text, Font, MaxW, 0);
+		if (MaxLines <= 0 || Lines(All) <= MaxLines) return All;
+		TArray<FString> Parts;
+		FString Rest = Text.Replace(TEXT("\n"), TEXT(" "));
+		while (true)
+		{
+			int32 Best = INDEX_NONE;
+			for (const TCHAR* End : { TEXT(". "), TEXT("? "), TEXT("! "), TEXT(": ") })
+			{
+				const int32 Found = Rest.Find(End);
+				if (Found != INDEX_NONE && (Best == INDEX_NONE || Found < Best)) Best = Found;
+			}
+			if (Best == INDEX_NONE) { Parts.Add(Rest); break; }
+			Parts.Add(Rest.Left(Best + 1));
+			Rest = Rest.Mid(Best + 2);
+		}
+		FString Kept = Parts[0];
+		for (int32 Index = 1; Index < Parts.Num(); ++Index)
+		{
+			const FString Try = Kept + TEXT(" ") + Parts[Index];
+			if (Lines(Wrap(Try, Font, MaxW, 0)) > MaxLines) { bOutMore = true; break; }
+			Kept = Try;
+		}
+		return Wrap(Kept, Font, MaxW, 0);
+	}
+
+	/** A status or a sub-line in one line, never cut inside a clause (night two V4): whole; else its trailing " · " clauses
+	 *  dropped one at a time; else its parenthesis; only then whole words with an ellipsis (a single clause too long). */
+	inline FString FitClause(const FString& Text, const FSlateFontInfo& Font, float MaxW)
+	{
+		FString Fit = Text;
+		while (TextWidth(Fit, Font) > MaxW)
+		{
+			const int32 At = Fit.Find(TEXT(" · "), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
+			if (At <= 0) break;
+			Fit = Fit.Left(At);
+		}
+		FString Plain, Aside;
+		if (TextWidth(Fit, Font) > MaxW && Fit.Split(TEXT(" ("), &Plain, &Aside)) Fit = Plain;
+		return TextWidth(Fit, Font) <= MaxW ? Fit : CutWords(Fit, Font, MaxW);
+	}
 
 	/** The risk band's mark and colour, as the ledger shows them (useLedger.ts riskBand; ▲ high, ◆ medium, ▽ low). */
 	inline const TCHAR* RiskMark(double Risk) { return Risk >= 7.0 ? TEXT("▲") : Risk >= 4.0 ? TEXT("◆") : TEXT("▽"); }

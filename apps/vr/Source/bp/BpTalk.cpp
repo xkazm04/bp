@@ -315,7 +315,7 @@ FString ABpTable::TalkStateWord() const
 	if (!Talk.IsValid()) return FString();
 	switch (Talk->Step)
 	{
-	case FBpTalkState::EStep::Arming: return TEXT("MICROPHONE…");
+	case FBpTalkState::EStep::Arming: return TEXT("MICROPHONE");
 	case FBpTalkState::EStep::Listening: return TEXT("LISTENING");
 	case FBpTalkState::EStep::Hearing: return TEXT("HEARING");
 	case FBpTalkState::EStep::Thinking: return TEXT("THINKING");
@@ -330,9 +330,9 @@ FString ABpTable::TalkStateLine() const
 	if (!Talk.IsValid() || Talk->Step == FBpTalkState::EStep::Idle) return FString();
 	switch (Talk->Step)
 	{
-	case FBpTalkState::EStep::Arming: return TEXT("Opening the microphone…");
+	case FBpTalkState::EStep::Arming: return TEXT("Opening the microphone");
 	case FBpTalkState::EStep::Listening: return TEXT("Listening: let go to send");
-	case FBpTalkState::EStep::Hearing: return TEXT("Turning your words into text on your PC…");
+	case FBpTalkState::EStep::Hearing: return TEXT("Turning your words into text on your PC");
 	case FBpTalkState::EStep::Thinking: return FString::Printf(TEXT("You: \"%s\" · thinking (B cancels)"), *Talk->Heard.Left(60));
 	case FBpTalkState::EStep::Speaking: return Talk->Reply.Left(90);
 	case FBpTalkState::EStep::Sample: return TEXT("A sample exchange: no microphone, nothing sent");
@@ -616,7 +616,7 @@ void ABpTable::TalkBegin()
 		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the lamp's light %s"), S.Light.IsValid() ? TEXT("follows the level") : TEXT("is static: the caption's meter shows the level"));
 	}
 	if (UPointLightComponent* Light = S.Light.Get()) S.LightBase = Light->Intensity;
-	TalkSays(TEXT("Opening the microphone…"), 60.f);
+	TalkSays(TEXT("Opening the microphone"), 60.f);
 }
 
 bool ABpTable::TickTalk(float DeltaSeconds)

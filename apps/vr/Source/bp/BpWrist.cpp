@@ -61,19 +61,26 @@ namespace
 		return Status == TEXT("done") || Status == TEXT("accepted") || Status == TEXT("released");
 	}
 
-	// ---- The quick-decision layout, in the panel's pixels (WristPanelWidthCm x WristPanelHeightCm at WristPanelPxPerCm) -----
-	// The type: buttons' caps 32 px, the card's title 30, its kicker, words and the band 26 (the five old styles under the
-	// 22' floor, 18 to 21 px, are gone): at the posed capture hand (0.6 of the size, about 45 cm out) 26 px is 24'.
+	// ---- The quick-decision layout (night two V4), in the panel's pixels: WristPanelWidthCm wide at WristPanelPxPerCm, as tall
+	// as what it shows needs and never less than WristPanelHeightCm (nothing on it is cut: a long title makes the panel taller).
+	// The type at its real size on the arm, 40 cm from the eye (50 px a cm): the decision's title 32 px caps (0.64 cm, 55'),
+	// the answers 30 (0.60 cm, 52'), the top row 28 (48'), the words 26 (45'), the strip, the chips and the band 24 (0.48 cm,
+	// 41', the smallest; the floor is 30'). bp.TextSize scales the panel as a whole.
 	constexpr float WristW = ABpPawn::WristPanelWidthCm * ABpPawn::WristPanelPxPerCm;
-	constexpr float WristH = ABpPawn::WristPanelHeightCm * ABpPawn::WristPanelPxPerCm;
-	constexpr float WX0 = 26.f;
-	constexpr float WX1 = WristW - 26.f;
-	constexpr float WGap = 14.f;
-	constexpr float WTopY0 = 24.f, WTopY1 = 100.f;
-	constexpr float WCardY0 = 116.f;
-	constexpr float WBandH = 92.f;
-	constexpr float WBtnH = 80.f;
-	constexpr float WButtonCap = 32.f, WTitleCap = 30.f, WTextCap = 26.f;
+	constexpr float WristMinH = ABpPawn::WristPanelHeightCm * ABpPawn::WristPanelPxPerCm;
+	constexpr float WX0 = 30.f;
+	constexpr float WX1 = WristW - 30.f;
+	constexpr float WGap = 12.f;
+	constexpr float WTopY0 = 22.f, WTopH = 72.f;
+	constexpr float WBtnH = 84.f;
+	constexpr float WButtonCap = 28.f, WAnswerCap = 30.f, WTitleCap = 32.f, WTextCap = 26.f, WSmallCap = 24.f;
+	/** The panel's drawn height now (DrawWrist sets it; the hit test and the aim read it). */
+	float GWristH = WristMinH;
+	/** The text size the panel's scale was last set for (TickWristLive). */
+	float GWristScale = 1.f;
+	/** How many times the wrist has been drawn (an idle panel is not: night two V4's idle count). */
+	int32 GWristDraws = 0;
+	float WPitch(float CapPx) { return BpSheet::LinePitch(CapPx, static_cast<float>(BpType::CapPerEm)); }
 
 	ABpPawn* WristPawn(UWorld* World)
 	{
@@ -138,14 +145,16 @@ void ABpPawn::MakeWristPanel()
 			FQuat Facing = FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).ToQuat();
 			Facing = FQuat(Facing.GetAxisX(), FMath::DegreesToRadians(WristCaptureRollDeg)) * Facing;
 			Facing = FQuat(Facing.GetAxisY(), FMath::DegreesToRadians(WristCaptureTiltDeg)) * Facing;
-			WristPanel->SetWorldTransform(FTransform(Facing, At, FVector(WristCaptureScale / WristPanelPxPerCm)));
+			WristPanel->SetWorldTransform(FTransform(Facing, At, FVector(WristCaptureScale * BpSheet::TextScale() / WristPanelPxPerCm)));
 		}
 		else
 		{
-			SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(1.0 / WristPanelPxPerCm)));
+			SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(BpSheet::TextScale() / WristPanelPxPerCm)));
 		}
 	}
 	WristPanel->RegisterComponent();
+	GWristScale = BpSheet::TextScale();
+	GWristH = WristMinH;
 	// No tick of its own while idle (night two W1): a change asks for one render, then it stops again.
 	WristPanel->SetTickMode(ETickMode::Disabled);
 	if (TActorIterator<ABpTable> It(GetWorld()); It)
@@ -243,7 +252,7 @@ bool ABpPawn::WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	if (Along < 0.0) return false;
 	// UWidgetComponent's mapping (as the deck's): widget x = -local Y, y = -local Z, from its pivot, in draw pixels.
 	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
-	const FVector2f Px(static_cast<float>(-Local.Y + WristW * 0.5f), static_cast<float>(-Local.Z + WristH * 0.5f));
+	const FVector2f Px(static_cast<float>(-Local.Y + WristW * 0.5f), static_cast<float>(-Local.Z + GWristH * 0.5f));
 	for (const FWristBox& Each : WristBoxes)
 	{
 		if (Each.Box.IsInside(Px))
@@ -265,7 +274,7 @@ bool ABpPawn::WristAim(const FString& Id, FVector& OutWorld) const
 	const FWristBox* Box = WristBoxes.FindByPredicate([&Id](const FWristBox& Each) { return Each.Id == Id; });
 	if (!WristPanel || !Box) return false;
 	const FVector2f C = Box->Box.GetCenter();
-	OutWorld = WristPanel->GetComponentTransform().TransformPosition(FVector(0.0, -(C.X - WristW * 0.5f), -(C.Y - WristH * 0.5f)));
+	OutWorld = WristPanel->GetComponentTransform().TransformPosition(FVector(0.0, -(C.X - WristW * 0.5f), -(C.Y - GWristH * 0.5f)));
 	return true;
 }
 
@@ -398,7 +407,7 @@ void ABpPawn::PanelAct(const FString& Act)
 			RefreshWrist();
 			return;
 		}
-		ConsoleScanWords = TEXT("Cancelling…");
+		ConsoleScanWords = TEXT("Cancelling");
 		TWeakObjectPtr<ABpPawn> Self(this);
 		FBpLinkModule::Get().CancelScan(JobId, [Self](int32, const FString& Words)
 		{
@@ -588,6 +597,20 @@ void ABpPawn::PanelAct(const FString& Act)
 		RefreshWrist();
 		return;
 	}
+	// SETTINGS › ACCESSIBILITY's choices (night two V4): set:<motion|text|captions|hand>:<value>, each a saved console variable.
+	if (Act.StartsWith(TEXT("set:")))
+	{
+		FString What, Value;
+		Act.Mid(4).Split(TEXT(":"), &What, &Value);
+		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : nullptr;
+		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
+		{
+			Var->Set(*Value, ECVF_SetByConsole);
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: %s %s"), Name, *Var->GetString());
+		}
+		RefreshWrist();
+		return;
+	}
 	if (Act.StartsWith(TEXT("toggle:")))
 	{
 		const FString What = Act.Mid(7);
@@ -611,10 +634,11 @@ void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 	const double CmPerPx = T.GetScale3D().X;
 	const auto Add = [&](const TCHAR* Name, double CapPx) { Out.Add({ Name, CapPx * CmPerPx, T.GetLocation(), T.GetUnitAxis(EAxis::Z) }); };
 	Add(TEXT("wrist button"), WButtonCap);
+	Add(TEXT("wrist answer"), WAnswerCap);
 	Add(TEXT("wrist title"), WTitleCap);
-	Add(TEXT("wrist kicker"), WTextCap);
 	Add(TEXT("wrist words"), WTextCap);
-	Add(TEXT("wrist scan band"), WTextCap);
+	Add(TEXT("wrist strip"), WSmallCap);
+	Add(TEXT("wrist scan band"), WSmallCap);
 }
 
 void ABpPawn::ApplyWristPose()
@@ -634,12 +658,12 @@ void ABpPawn::ApplyWristPose()
 		Rot = FRotator(Rot.Pitch, -Rot.Yaw, -Rot.Roll);
 	}
 	const float Turn = CVarWristPreviewDeg.GetValueOnGameThread();
-	const FString Applied = FString::Printf(TEXT("%.2f/%.2f/%.2f %.2f,%.2f,%.2f p%d %.1f h%d %s"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z, Preview, Turn, Hand, *GetActorLocation().ToString());
+	const FString Applied = FString::Printf(TEXT("%.2f/%.2f/%.2f %.2f,%.2f,%.2f p%d %.1f h%d s%.2f %s"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z, Preview, Turn, Hand, BpSheet::TextScale(), *GetActorLocation().ToString());
 	if (Applied == WristPoseApplied) return;
 	const bool bLog = !WristPoseApplied.IsEmpty();
 	WristPoseApplied = Applied;
 	bWristFaceInit = false;
-	const FTransform Relative(Rot, Off, FVector(1.0 / WristPanelPxPerCm));
+	const FTransform Relative(Rot, Off, FVector(BpSheet::TextScale() / WristPanelPxPerCm));
 	if (bHeadset)
 	{
 		SetWristParent(Hand == 1 ? HandGripRight.Get() : HandGripLeft.Get(), NAME_None, Relative);
@@ -735,6 +759,15 @@ void ABpPawn::TickWristLive()
 			WristTintShown = Tint;
 			WristPanel->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, 1.f));
 		}
+	}
+	// SETTINGS › ACCESSIBILITY's TEXT SIZE (bp.TextSize): the panel as a whole, so its layout holds at every step.
+	if (WristPanel && BpSheet::TextScale() != GWristScale)
+	{
+		const float Was = GWristScale;
+		GWristScale = BpSheet::TextScale();
+		if (IsHeadsetOn() || CVarWristPreview.GetValueOnGameThread() > 0) { WristPoseApplied.Reset(); ApplyWristPose(); }
+		else WristPanel->SetRelativeScale3D(WristPanel->GetRelativeScale3D() * (GWristScale / Was));
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist text size %.2f"), GWristScale);
 	}
 	// The hand moved to the other side (settings' HAND, or adb): the pose again.
 	const int32 Hand = CVarWristHand.GetValueOnGameThread() != 0 ? 1 : 0;
@@ -865,41 +898,42 @@ void ABpPawn::DrawWrist()
 	{
 		Over->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
-	const FSlateFontInfo ButtonFont = CapFont(TEXT("Bold"), WButtonCap), TitleFont = CapFont(TEXT("Bold"), WTitleCap);
-	const FSlateFontInfo KickerFont = CapFont(TEXT("Bold"), WTextCap), WordsFont = CapFont(TEXT("Regular"), WTextCap);
-	// A button: filled (the primary), outlined, or quiet; its word centred.
-	enum class EBtn : uint8 { Fill, Edge, Amber };
-	const auto Button = [&](const FBox2f& Box, const FString& Word, EBtn Look, const FString& Id)
+	const FSlateFontInfo TopFont = CapFont(TEXT("Bold"), WButtonCap), AnswerFont = CapFont(TEXT("Bold"), WAnswerCap), TitleFont = CapFont(TEXT("Bold"), WTitleCap);
+	const FSlateFontInfo WordsFont = CapFont(TEXT("Regular"), WTextCap), StripFont = CapFont(TEXT("Bold"), WSmallCap), SmallFont = CapFont(TEXT("Regular"), WSmallCap);
+	using BpSheet::ELook;
+	// One control family (BpSheet::Control, night two V4): the console's and the stand-up's buttons, the same amber and cyan.
+	const auto Button = [&](const FBox2f& Box, const FString& Word, ELook Look, const FString& Id, const FSlateFontInfo& Font)
 	{
-		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::PaperLo.CopyWithNewOpacity(0.55f);
-		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(0.85f) : FLinearColor::Transparent;
-		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : BpSheet::PaperLo;
-		Put(Box, SNew(SOverlay)
-			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
-			[
-				SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Word, ButtonFont, Box.GetSize().X - 24.f))).Font(ButtonFont).ColorAndOpacity(FSlateColor(Ink))
-			]);
-		WristBoxes.Add({ TEXT("wrist:") + Id, Box });
+		const FString Full = TEXT("wrist:") + Id;
+		Put(Box, BpSheet::Control(Word, Font, Look, Full == WristHover));
+		WristBoxes.Add({ Full, Box });
 	};
 
-	// The top row: MENU (the console), TALK (held: push to talk, BpTalk.cpp), TOUR. SEAT is on SETTINGS › TABLE.
+	// The top row: MENU (the console), TALK (held: push to talk, BpTalk.cpp; it says its state while one is in flight), TOUR.
+	// Each as wide as its word needs, the spare shared out, so LISTENING or STOP TOUR is never cut.
 	{
-		const float W = (WX1 - WX0 - 2.f * WGap);
-		const float MenuW = W * 0.42f, SideW = (W - MenuW) * 0.5f;
-		Button(FBox2f(FVector2f(WX0, WTopY0), FVector2f(WX0 + MenuW, WTopY1)), bConsoleOpen ? TEXT("CLOSE") : TEXT("MENU"), EBtn::Fill, TEXT("menu"));
-		Button(FBox2f(FVector2f(WX0 + MenuW + WGap, WTopY0), FVector2f(WX0 + MenuW + WGap + SideW, WTopY1)), TalkWord.IsEmpty() ? TEXT("TALK") : TalkWord, TalkWord == TEXT("LISTENING") ? EBtn::Amber : EBtn::Edge, TEXT("talk"));
-		Button(FBox2f(FVector2f(WX1 - SideW, WTopY0), FVector2f(WX1, WTopY1)), bTour ? TEXT("STOP TOUR") : TEXT("TOUR"), EBtn::Edge, TEXT("tour"));
+		const FString Words[3] = { bConsoleOpen ? TEXT("CLOSE") : TEXT("MENU"), TalkWord.IsEmpty() ? FString(TEXT("TALK")) : TalkWord, bTour ? TEXT("STOP TOUR") : TEXT("TOUR") };
+		const float Row = WX1 - WX0 - 2.f * WGap;
+		float Text[3], Sum = 0.f;
+		for (int32 I = 0; I < 3; ++I) { Text[I] = BpSheet::TextWidth(Words[I], TopFont); Sum += Text[I]; }
+		const float Spare = FMath::Max(0.f, (Row - Sum) / 3.f);
+		const ELook Looks[3] = { ELook::Fill, TalkWord == TEXT("LISTENING") ? ELook::Amber : ELook::Edge, ELook::Edge };
+		const TCHAR* Ids[3] = { TEXT("menu"), TEXT("talk"), TEXT("tour") };
+		float X = WX0;
+		for (int32 I = 0; I < 3; ++I)
+		{
+			const float W = Text[I] + Spare;
+			Button(FBox2f(FVector2f(X, WTopY0), FVector2f(X + W, WTopY0 + WTopH)), Words[I], Looks[I], Ids[I], TopFont);
+			X += W + WGap;
+		}
 	}
 
-	// The band (the scan on the table or just run) along the foot; the card fills the rest.
-	const bool bBand = !BandHead.IsEmpty();
-	const float CardY1 = bBand ? WristH - 24.f - WBandH - WGap : WristH - 24.f;
-	const FBox2f CardBox(FVector2f(WX0, WCardY0), FVector2f(WX1, CardY1));
-	const float TextW = WX1 - WX0 - 2.f * 22.f;
+	// What the card says: its strip (what it is showing), its title, its words, its answers. The tone is the family's meaning:
+	// amber waits for your answer, cyan is the system's or the lamp's, red did not happen.
 	FString Kicker, Title, Words;
-	FLinearColor KickerInk = BpSheet::Accent, CardEdge = BpSheet::Ink.CopyWithNewOpacity(0.45f);
-	struct FCardButton { FString Word; EBtn Look; FString Id; };
+	FLinearColor Tone = BpSheet::Amber;
+	bool bSampleChip = false;
+	struct FCardButton { FString Word; ELook Look; FString Id; };
 	TArray<FCardButton> Buttons;
 	switch (Card)
 	{
@@ -907,9 +941,8 @@ void ABpPawn::DrawWrist()
 	{
 		const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
 		const FBpSavedFocus* Armed = List.Focuses.FindByPredicate([this](const FBpSavedFocus& F) { return F.Id == WristArmedFocus; });
-		Kicker = bSample ? TEXT("SAMPLE SCAN · READY") : TEXT("SCAN · READY");
-		KickerInk = BpSheet::Amber;
-		CardEdge = BpSheet::Amber;
+		Kicker = TEXT("SCAN · READY TO START");
+		bSampleChip = bSample;
 		const FString Place = WristArmedLabel.IsEmpty() ? FString(TEXT("this place")) : WristArmedLabel;
 		if (WristArmedFocus == TEXT("@this"))
 		{
@@ -926,121 +959,197 @@ void ABpPawn::DrawWrist()
 			Title = FString::Printf(TEXT("Scan %s for:"), *Place);
 			Words = Armed ? Armed->Note : FString();
 		}
-		Buttons = { { TEXT("START"), EBtn::Amber, TEXT("scan:start") }, { TEXT("CANCEL"), EBtn::Edge, TEXT("scan:cancel") } };
+		Buttons = { { TEXT("START"), ELook::Amber, TEXT("scan:start") }, { TEXT("CANCEL"), ELook::Edge, TEXT("scan:cancel") } };
 		break;
 	}
 	case ECard::Refused:
 		Kicker = TEXT("THE SCAN DID NOT START");
-		KickerInk = BpSheet::Red;
-		CardEdge = BpSheet::Red;
+		Tone = BpSheet::Red;
 		Words = WristScanWords;
-		Buttons = { { TEXT("DISMISS"), EBtn::Edge, TEXT("scan:dismiss") } };
+		Buttons = { { TEXT("DISMISS"), ELook::Edge, TEXT("scan:dismiss") } };
 		break;
 	case ECard::Decision:
 		Kicker = DecisionWhere == TEXT("deck") ? TEXT("DECISION · ON THE SCREEN") : TEXT("DECISION · ON THE CARD");
+		bSampleChip = bSample;
 		Title = DecisionTitle;
-		Buttons = { { TEXT("APPROVE"), EBtn::Amber, TEXT("approve") }, { TEXT("DECLINE"), EBtn::Edge, TEXT("decline") } };
+		// Its one line of consequence (the brief's first line, as the deck's sheet leads with it), when the brief is in.
+		if (const FBpDecisionBrief* Brief = FBpLinkModule::Get().FindBrief(DecisionId); Brief && Brief->lines.Num() > 0) Words = Brief->lines[0];
+		Buttons = { { TEXT("APPROVE"), ELook::Amber, TEXT("approve") }, { TEXT("DECLINE"), ELook::Edge, TEXT("decline") } };
 		break;
 	case ECard::Standup:
+	{
 		Kicker = SuKicker;
-		KickerInk = BpSheet::Amber;
-		CardEdge = BpSheet::Amber;
+		if (Kicker.EndsWith(TEXT(" · SAMPLE"))) { Kicker = Kicker.LeftChop(9); bSampleChip = true; }
+		Tone = Kicker == TEXT("THE COMPANION ASKS") ? BpSheet::Accent : BpSheet::Amber;
 		Title = SuTitle;
 		Words = SuWords;
 		for (int32 Index = 0; Index < SuButtons.Num(); ++Index)
 		{
 			const bool bTake = SuButtons[Index].Value == TEXT("standup:revoke");
-			Buttons.Add({ SuButtons[Index].Key, Index == 0 && !bTake ? EBtn::Amber : bTake ? EBtn::Amber : EBtn::Edge, SuButtons[Index].Value });
+			const bool bLink = SuButtons[Index].Value == TEXT("open:link");
+			Buttons.Add({ SuButtons[Index].Key, bLink ? ELook::Fill : Index == 0 || bTake ? ELook::Amber : ELook::Edge, SuButtons[Index].Value });
 		}
 		break;
+	}
 	case ECard::Talk:
-		Kicker = TalkWord == TEXT("SAMPLE") ? TalkWord : TEXT("TALK · ") + TalkWord;
-		KickerInk = BpSheet::Amber;
-		CardEdge = BpSheet::Amber;
-		Words = Table->TalkStateLine();
-		if (TalkWord == TEXT("THINKING") || TalkWord == TEXT("ANSWERING") || TalkWord == TEXT("SAMPLE")) Buttons = { { TEXT("CANCEL"), EBtn::Edge, TEXT("talk:cancel") } };
+		Kicker = TalkWord == TEXT("SAMPLE") ? FString(TEXT("TALK")) : TEXT("TALK · ") + TalkWord;
+		bSampleChip = TalkWord == TEXT("SAMPLE");
+		Title = Table->TalkStateLine();
+		if (TalkWord == TEXT("THINKING") || TalkWord == TEXT("ANSWERING") || TalkWord == TEXT("SAMPLE")) Buttons = { { TEXT("CANCEL"), ELook::Edge, TEXT("talk:cancel") } };
 		break;
 	case ECard::Offer:
+	{
 		Kicker = TEXT("THE LAMP SUGGESTS");
+		Tone = BpSheet::Accent;
+		// Its first line is what it names (the title), the rest what it says of it, each line kept.
 		Words = Table->GetLampAnswer();
-		Buttons = { { Offer.ToUpper(), EBtn::Amber, TEXT("ask:act") } };
+		FString Rest;
+		if (Words.Split(TEXT("\n"), &Title, &Rest)) { Title.TrimStartAndEndInline(); Words = Rest; }
+		Buttons = { { Offer.ToUpper(), ELook::Amber, TEXT("ask:act") } };
 		break;
+	}
 	default:
 		Kicker = TEXT("NOTHING WAITING");
-		KickerInk = BpSheet::Ink.CopyWithNewOpacity(0.7f);
+		Tone = BpSheet::Ink.CopyWithNewOpacity(0.7f);
 		Words = bPlan ? TEXT("Rooms, scans, projects and settings are in the menu.") : TEXT("The table is reading the plan.");
 		break;
 	}
-	// The card: its kicker, its title and words, its buttons along its foot.
+
+	// ---- Measure, then place: the panel is as tall as its content (never cut), at least its rest height ----------------------
+	const float BarW = 6.f, InX0 = WX0 + BarW + 20.f, InX1 = WX1 - 20.f, TextW = InX1 - InX0;
+	// The strip: the kicker in its tone at the left, SAMPLE (amber, solid) and the link's word (a chip) at the right.
+	const FLinearColor LinkInk = LinkWord == TEXT("PAIRING") ? BpSheet::Amber : LinkWord == TEXT("OFFLINE") ? BpSheet::Ink.CopyWithNewOpacity(0.75f) : BpSheet::Accent;
+	const float ChipH = 38.f;
+	const float SampleW = bSampleChip ? BpSheet::ChipWidth(TEXT("SAMPLE"), StripFont) : 0.f, LinkW = LinkWord.IsEmpty() || bSampleChip ? 0.f : BpSheet::ChipWidth(LinkWord, StripFont);
+	const float ChipsW = SampleW + LinkW + (SampleW > 0.f && LinkW > 0.f ? 10.f : 0.f);
+	const FString KickerFit = BpSheet::Wrap(Kicker, StripFont, WX1 - WX0 - ChipsW - 16.f, 0);
+	const float StripY0 = WTopY0 + WTopH + 18.f;
+	const float StripH = FMath::Max(ChipH, BpSheet::Lines(KickerFit) * WPitch(WSmallCap));
+	const float RuleY = StripY0 + StripH + 8.f;
+	// The card's words: the title whole; the words whole, a lamp's long answer as whole sentences (never an ellipsis).
+	const FString TitleFit = Title.IsEmpty() ? FString() : BpSheet::Wrap(Title, TitleFont, TextW, 0);
+	bool bMore = false;
+	FString WordsFit;
 	{
-		const float BtnY0 = CardBox.Max.Y - 18.f - WBtnH;
-		const float LinesH = (Buttons.Num() > 0 ? BtnY0 : CardBox.Max.Y) - CardBox.Min.Y - 16.f;
-		const float LinkW = BpSheet::TextWidth(LinkWord, KickerFont);
-		const FLinearColor LinkInk = LinkWord == TEXT("PAIRING") ? BpSheet::Amber : LinkWord == TEXT("OFFLINE") ? BpSheet::Ink.CopyWithNewOpacity(0.7f) : BpSheet::Accent;
-		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Kicker, KickerFont, TextW - LinkW - 28.f))).Font(KickerFont).ColorAndOpacity(FSlateColor(KickerInk))]
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text(FText::FromString(LinkWord)).Font(KickerFont).ColorAndOpacity(FSlateColor(LinkInk))]
-			];
-		// The title takes up to two lines (three with no words under it), the words what is left.
-		const float TitlePitch = WTitleCap / static_cast<float>(BpType::CapPerEm) * 1.2f, WordsPitch = WTextCap / static_cast<float>(BpType::CapPerEm) * 1.2f;
-		const float Room = LinesH - WTextCap / static_cast<float>(BpType::CapPerEm) * 1.2f - 18.f;
-		int32 TitleLines = 0;
-		if (!Title.IsEmpty())
+		// Each line of the words whole (a lamp's long answer as whole sentences, never an ellipsis).
+		TArray<FString> Parts, Fits;
+		Words.ParseIntoArrayLines(Parts);
+		for (const FString& Part : Parts) Fits.Add(Card == ECard::Offer ? BpSheet::Sentences(Part, WordsFont, TextW, 4, bMore) : BpSheet::Wrap(Part, WordsFont, TextW, 0));
+		WordsFit = FString::Join(Fits, TEXT("\n"));
+	}
+	const float TitleH = BpSheet::Lines(TitleFit) * WPitch(WTitleCap), WordsH = BpSheet::Lines(WordsFit) * WPitch(WTextCap);
+	float FrameH = 20.f + TitleH + (TitleH > 0.f && WordsH > 0.f ? 10.f : 0.f) + WordsH + 20.f;
+	const int32 N = Buttons.Num();
+	// The band (the scan on the table or just run): its head and its words, whole.
+	const bool bBand = !BandHead.IsEmpty();
+	bool bBandMore = false;
+	const FString BandFit = bBand && !BandBody.IsEmpty() ? BpSheet::Sentences(BandBody, SmallFont, WX1 - WX0 - 40.f, 3, bBandMore) : FString();
+	const float BandH = bBand ? 14.f + WPitch(WSmallCap) + (BandFit.IsEmpty() ? 0.f : 4.f + BpSheet::Lines(BandFit) * WPitch(WSmallCap)) + 14.f : 0.f;
+	const auto Total = [&]() { return RuleY + 14.f + FrameH + (N > 0 ? 14.f + WBtnH : 0.f) + (bBand ? 14.f + BandH : 0.f) + 30.f; };
+	if (Total() < WristMinH) FrameH += WristMinH - Total();
+	const float H = FMath::CeilToFloat(Total());
+
+	// The strip and its rule.
+	Put(FBox2f(FVector2f(WX0, StripY0 + 4.f), FVector2f(WX1 - ChipsW - 12.f, StripY0 + StripH + 4.f)), SNew(SBox).VAlign(VAlign_Center)
+		[
+			SNew(STextBlock).Text(FText::FromString(KickerFit)).Font(StripFont).ColorAndOpacity(FSlateColor(Tone))
+		]);
+	{
+		float X = WX1;
+		const float CY = StripY0 + (StripH - ChipH) * 0.5f;
+		if (LinkW > 0.f) { Put(FBox2f(FVector2f(X - LinkW, CY), FVector2f(X, CY + ChipH)), BpSheet::Chip(LinkWord, StripFont, ChipH, LinkInk)); X -= LinkW + 10.f; }
+		if (SampleW > 0.f) Put(FBox2f(FVector2f(X - SampleW, CY), FVector2f(X, CY + ChipH)), BpSheet::Chip(TEXT("SAMPLE"), StripFont, ChipH, BpSheet::Amber, true));
+	}
+	Put(FBox2f(FVector2f(WX0, RuleY), FVector2f(WX1, RuleY + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+
+	// The card: the decision sheet's frame, its tone down its left edge; the title, then the words.
+	const float FrameY0 = RuleY + 14.f, FrameY1 = FrameY0 + FrameH;
+	Put(FBox2f(FVector2f(WX0, FrameY0), FVector2f(WX1, FrameY1)), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.45f)).EdgePx(2.f).Bar(Tone).BarPx(BarW));
+	{
+		float Y = FrameY0 + 20.f;
+		if (TitleH > 0.f)
 		{
-			TitleLines = FMath::Clamp(FMath::FloorToInt(Room / TitlePitch), 1, Words.IsEmpty() ? 3 : 2);
-			Lines->AddSlot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
-			[
-				SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(Title, TitleFont, TextW, TitleLines))).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))
-			];
+			Put(FBox2f(FVector2f(InX0, Y), FVector2f(InX1 + 8.f, Y + TitleH + 4.f)), SNew(STextBlock).Text(FText::FromString(TitleFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+			Y += TitleH + 10.f;
 		}
-		if (!Words.IsEmpty())
+		if (WordsH > 0.f)
 		{
-			const int32 WordLines = FMath::Max(1, FMath::FloorToInt((Room - TitleLines * TitlePitch) / WordsPitch));
-			Lines->AddSlot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)
-			[
-				SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(Words, WordsFont, TextW, WordLines))).Font(WordsFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))
-			];
+			Put(FBox2f(FVector2f(InX0, Y), FVector2f(InX1 + 8.f, Y + WordsH + 4.f)), SNew(STextBlock).Text(FText::FromString(WordsFit)).Font(WordsFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f))));
 		}
-		Put(CardBox, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.35f)).Edge(CardEdge).EdgePx(2.f));
-		Put(FBox2f(CardBox.Min + FVector2f(22.f, 16.f), FVector2f(CardBox.Max.X - 22.f, CardBox.Min.Y + 16.f + LinesH)), SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)[Lines]);
-		// Each button as wide as its word needs, the row's spare width shared out evenly (three answers fit: APPROVE is wider).
-		const int32 N = Buttons.Num();
-		const float RowW = CardBox.GetSize().X - 2.f * 18.f - FMath::Max(0, N - 1) * WGap;
+	}
+
+	// An answered decision (the stand-up's, no answers left): its verdict as the sheet's stamp, at the card's foot right.
+	if (Card == ECard::Standup && N == 0 && Kicker.StartsWith(TEXT("DECISION")) && !Words.IsEmpty())
+	{
+		FString Verdict = Words, Rest2;
+		if (Verdict.Split(TEXT(" · "), &Verdict, &Rest2) || Verdict.Split(TEXT(":"), &Verdict, &Rest2)) {}
+		Verdict = Verdict.TrimStartAndEnd().ToUpper();
+		if (Verdict.Len() <= 12)
+		{
+			const FSlateFontInfo StampFont = CapFont(TEXT("Bold"), 34.f);
+			const FLinearColor StampInk = Verdict.StartsWith(TEXT("APPROVED")) ? BpSheet::Accent : Verdict.StartsWith(TEXT("DECLINED")) ? BpSheet::Red : BpSheet::Amber;
+			const float SW = BpSheet::TextWidth(Verdict, StampFont) + 48.f, SH = 74.f;
+			const FVector2f C(WX1 - SW * 0.5f - 26.f, FrameY1 - SH * 0.5f - 22.f);
+			Put(FBox2f(C - FVector2f(SW, SH) * 0.5f, C + FVector2f(SW, SH) * 0.5f), SNew(SBox).RenderTransformPivot(FVector2D(0.5, 0.5)).RenderTransform(FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(-7.f))))
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(StampInk).EdgePx(4.f)]
+					+ SOverlay::Slot().Padding(7.f)[SNew(BpSheet::SPlate).Edge(StampInk.CopyWithNewOpacity(0.6f)).EdgePx(1.5f)]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Verdict)).Font(StampFont).ColorAndOpacity(FSlateColor(StampInk))]
+				]);
+		}
+	}
+	// The answers under the card: the primary (the first amber) the widest, the rest as wide as their words need.
+	float Y = FrameY1;
+	if (N > 0)
+	{
+		Y += 14.f;
+		const float Row = WX1 - WX0 - (N - 1) * WGap;
 		TArray<float> Widths;
 		float Need = 0.f;
-		for (const FCardButton& Each : Buttons) { Widths.Add(BpSheet::TextWidth(Each.Word, ButtonFont) + 30.f); Need += Widths.Last(); }
-		const float Spare = N > 0 ? (RowW - Need) / N : 0.f;
-		float X0 = CardBox.Min.X + 18.f;
+		for (const FCardButton& Each : Buttons)
+		{
+			const float W = BpSheet::TextWidth(Each.Word, AnswerFont) + 44.f;
+			Widths.Add(Each.Look == ELook::Amber && &Each == &Buttons[0] ? W * 1.45f : W);
+			Need += Widths.Last();
+		}
+		const float Spare = (Row - Need) / N;
+		float X = WX0;
 		for (int32 Index = 0; Index < N; ++Index)
 		{
-			const float BW = Spare >= 0.f ? Widths[Index] + Spare : RowW / N;
-			Button(FBox2f(FVector2f(X0, BtnY0), FVector2f(X0 + BW, BtnY0 + WBtnH)), Buttons[Index].Word, Buttons[Index].Look, Buttons[Index].Id);
-			X0 += BW + WGap;
+			const float W = Spare >= 0.f ? Widths[Index] + Spare : Row * Widths[Index] / Need;
+			Button(FBox2f(FVector2f(X, Y), FVector2f(X + W, Y + WBtnH)), Buttons[Index].Word, Buttons[Index].Look, Buttons[Index].Id, AnswerFont);
+			X += W + WGap;
 		}
+		Y += WBtnH;
 	}
 	if (bBand)
 	{
-		const FBox2f Band(FVector2f(WX0, WristH - 24.f - WBandH), FVector2f(WX1, WristH - 24.f));
-		Put(Band, SNew(BpSheet::SPlate).Fill(FLinearColor::Transparent).Edge(BpSheet::Amber.CopyWithNewOpacity(0.7f)).EdgePx(2.f).Bar(BpSheet::Amber).BarPx(6.f));
-		Put(FBox2f(Band.Min + FVector2f(22.f, 10.f), Band.Max - FVector2f(14.f, 8.f)),
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(BandHead.ToUpper(), KickerFont, TextW))).Font(KickerFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(BandBody, WordsFont, TextW))).Font(WordsFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))]);
+		Y += 14.f;
+		const FBox2f Band(FVector2f(WX0, Y), FVector2f(WX1, Y + BandH));
+		Put(Band, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(false)).Edge(BpSheet::Amber.CopyWithNewOpacity(0.55f)).EdgePx(2.f).Bar(BpSheet::Amber).BarPx(BarW));
+		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(BandHead.ToUpper(), StripFont, WX1 - WX0 - 40.f, 0))).Font(StripFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))];
+		if (!BandFit.IsEmpty()) Lines->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BandFit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))];
+		Put(FBox2f(Band.Min + FVector2f(26.f, 14.f), Band.Max - FVector2f(14.f, 10.f)), Lines);
 	}
 	// The control a hand's ray is on: an amber edge, what a pinch would act on (the aim cursor stops short of the panel).
 	if (const FWristBox* Hovered = WristBoxes.FindByPredicate([this](const FWristBox& Each) { return Each.Id == WristHover; }))
 	{
 		Put(Hovered->Box.ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
 	}
+	if (H != GWristH)
+	{
+		GWristH = H;
+		WristPanel->SetDrawSize(FVector2D(WristW, H));
+	}
 	WristPanel->SetSlateWidget(
 		SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()[Over]);
 	WristPanel->RequestRenderUpdate();
-	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Talk ? *(TEXT("talk ") + TalkWord) : Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
+	++GWristDraws;
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist drawn #%d (%.0f px tall) link=%s card=%s%s%s"), GWristDraws, GWristH, *LinkWord, Card == ECard::Talk ? *(TEXT("talk ") + TalkWord) : Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
 		Card == ECard::Decision ? *FString::Printf(TEXT(" %s on the %s"), *DecisionId, *DecisionWhere) : TEXT(""), bBand ? *FString::Printf(TEXT(" band \"%s\""), *BandHead) : TEXT(""));
 }
 

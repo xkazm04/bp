@@ -28,6 +28,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Misc/Crc.h"
 #include "Rendering/SlateRenderer.h"
+#include "Schema/BpSchemaVocab.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -52,14 +53,15 @@ namespace
 	constexpr float ContentW = LW - 2.f * PadX;
 	constexpr float ContentH = BarY - BarGap - PadTop;
 	/** The controls (layout px): Approve and Decline at the left (decisions only), the tabs and the counter at the right. */
-	const FBox2f ApproveBox(FVector2f(PadX, BarY), FVector2f(PadX + 280.f, BarY + BarH));
-	const FBox2f DeclineBox(FVector2f(PadX + 300.f, BarY), FVector2f(PadX + 580.f, BarY + BarH));
-	const FBox2f PrevBox(FVector2f(LW - PadX - 500.f, BarY), FVector2f(LW - PadX - 345.f, BarY + BarH));
-	const FBox2f CountBox(FVector2f(LW - PadX - 345.f, BarY), FVector2f(LW - PadX - 155.f, BarY + BarH));
-	const FBox2f NextBox(FVector2f(LW - PadX - 155.f, BarY), FVector2f(LW - PadX, BarY + BarH));
+	// Night two V4: APPROVE the widest (the stand-up's primary), the queue's PREV, count and NEXT quieter at the right.
+	const FBox2f ApproveBox(FVector2f(PadX, BarY), FVector2f(PadX + 330.f, BarY + BarH));
+	const FBox2f DeclineBox(FVector2f(PadX + 350.f, BarY), FVector2f(PadX + 600.f, BarY + BarH));
+	const FBox2f PrevBox(FVector2f(LW - PadX - 480.f, BarY), FVector2f(LW - PadX - 330.f, BarY + BarH));
+	const FBox2f CountBox(FVector2f(LW - PadX - 330.f, BarY), FVector2f(LW - PadX - 170.f, BarY + BarH));
+	const FBox2f NextBox(FVector2f(LW - PadX - 170.f, BarY), FVector2f(LW - PadX, BarY + BarH));
 	/** A repeat (F1, F8): DECLINE · REPEAT first and wider, APPROVE after it, before the tabs. */
-	const FBox2f RepeatDeclineBox(FVector2f(PadX, BarY), FVector2f(PadX + 400.f, BarY + BarH));
-	const FBox2f RepeatApproveBox(FVector2f(PadX + 420.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
+	const FBox2f RepeatDeclineBox(FVector2f(PadX, BarY), FVector2f(PadX + 440.f, BarY + BarH));
+	const FBox2f RepeatApproveBox(FVector2f(PadX + 460.f, BarY), FVector2f(PadX + 700.f, BarY + BarH));
 	/** The summary's NEXT ROOM button at the queue's end (WP3), where a decision's Approve and Decline stand. */
 	const FBox2f NextRoomBox(FVector2f(PadX, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** With open decisions left in the room (D15), the summary's bar holds APPROVE ALL (n) first and NEXT ROOM narrower after it. */
@@ -67,8 +69,14 @@ namespace
 	const FBox2f NextRoomNarrowBox(FVector2f(PadX + 350.f, BarY), FVector2f(PadX + 680.f, BarY + BarH));
 	/** The route from a room to scanning it: a small pill on the top row between the chips and the id, on every screen of the room's deck (a
 	 *  pinch opens the wrist's Scan tab, which the room in view scopes already). Only when a scan can be started here. */
-	const FBox2f ScanBox(FVector2f(LW - PadX - 648.f, 18.f), FVector2f(LW - PadX - 318.f, 70.f));
+	const FBox2f ScanBox(FVector2f(LW - PadX - 300.f, 26.f), FVector2f(LW - PadX, 80.f));
 	bool DeckScanRoute() { const FBpLinkModule& L = FBpLinkModule::Get(); return L.HasPcLink() || L.HasSampleFocuses(); }
+	/** The answer a decision screen carries as it slides away (night two V4: the stand-up's stamp), by proposal; set only while
+	 *  DeckApprove or DeckDecline draws the leaving screen. */
+	TMap<FString, FString> GDeckStamp;
+	/** bp.DeckSpines (night two V4): the next screens' spines, whose turned words could not be read from the seat; 0 hides them
+	 *  (the default; the counter says where the queue stands), 1 brings them back. */
+	TAutoConsoleVariable<int32> CVarDeckSpines(TEXT("bp.DeckSpines"), 0, TEXT("The deck's spines (the next two screens' edges beside the front): 0 hidden (night two V4 default: the counter says where the queue stands), 1 shown."), ECVF_Default);
 	/** A spine (FAI): the next screens' edges right of the front, laid out on SW x SH px at the same density. */
 	constexpr float SW = ABpTable::DeckSpineWidthCm * DeckLayoutPxPerCm;
 	constexpr float SH = ABpTable::DeckHeightCm * 0.92f * DeckLayoutPxPerCm;
@@ -607,10 +615,12 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 			for (const TPair<FString, uint8>& Item : Items) Sum += W(Item.Key) + 28.f + 12.f;
 			return Sum;
 		};
-		if (Width() > ContentW) Right.Reset();
+		// The top right is SCAN THIS ROOM's when a scan can start here (night two V4): the row stops short of it.
+		const float MaxW = ContentW - (DeckScanRoute() ? 330.f : 0.f);
+		if (Width() > MaxW || DeckScanRoute()) Right.Reset();
 		for (TPair<FString, uint8>& Item : Items)
 		{
-			if (Width() <= ContentW) break;
+			if (Width() <= MaxW) break;
 			int32 Cut = Item.Key.Find(TEXT("  "));
 			if (Cut != INDEX_NONE) Item.Key = Item.Key.Left(Cut);
 		}
@@ -938,6 +948,12 @@ void ABpTable::LayoutDeckScreen(FDeckScreen& Screen) const
 		bBody = true;
 	}
 	uint32 Stamp = GetTypeHash(Screen.Key);
+	if (Screen.Kind == KDecision)
+	{
+		// The flow's words still key the redraw (a brief or a draft landing changes the sheet); the sheet itself is one page.
+		for (const TArray<FDeckRow>& Page : Screen.Pages) for (const FDeckRow& Row : Page) for (const FString& Each : Row.Texts) Stamp = HashCombine(Stamp, GetTypeHash(Each));
+		Screen.Pages.SetNum(1);
+	}
 	for (const TArray<FDeckRow>& Page : Screen.Pages)
 	{
 		for (const FDeckRow& Row : Page)
@@ -987,6 +1003,9 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 	if (Direction != 0) bDeckTouched = true;
 	FDeckCard Old[4];
 	for (int32 Index = 0; Index < 4; ++Index) Old[Index] = DeckCardState[Index];
+	// The front's own widget, kept for it as it slides away (night two V4: it may carry its answer's stamp, and after a decline
+	// the queue no longer holds its screen to draw it again).
+	const TSharedPtr<SWidget> Leaving = DeckCards[0]->GetSlateWidget();
 	DeckAt = Screen;
 	DeckPage = FMath::Clamp(Page, 0, DeckScreens[Screen].Pages.Num() - 1);
 	const auto KeyOf = [this](int32 S, int32 P) { return DeckScreens[S].Key + FString::Printf(TEXT("#%d"), P); };
@@ -1039,6 +1058,7 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 		const bool bSame = Each.Key == DeckCardState[Index].Key && Each.Stamp == DeckCardState[Index].Stamp;
 		DeckCardState[Index] = Each;
 		if (Each.Key.IsEmpty() || bSame) continue;
+		if (Index == 3 && Each.Key == Old[0].Key && Leaving.IsValid()) { DeckCards[3]->SetSlateWidget(Leaving); DeckCards[3]->RequestRedraw(); continue; }
 		DeckCards[Index]->SetSlateWidget(DeckWidget(Each.Screen, Each.Page));
 		DeckCards[Index]->RequestRedraw();
 	}
@@ -1101,7 +1121,7 @@ void ABpTable::ApplySpines(float Room)
 		UWidgetComponent* Spine = DeckSpines[Place];
 		const int32 S = DeckAt + 1 + Place;
 		const float Alpha = (Place == 0 ? DeckBackAlpha1 : DeckBackAlpha2) * Room;
-		const bool bShow = !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(S) && !DeckSpineKey[Place].IsEmpty() && Alpha > 0.01f;
+		const bool bShow = CVarDeckSpines.GetValueOnGameThread() != 0 && !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(S) && !DeckSpineKey[Place].IsEmpty() && Alpha > 0.01f;
 		if (Spine->IsVisible() != bShow) Spine->SetVisibility(bShow);
 		Spine->SetRelativeTransform(SpinePose(Place + 1));
 		if (!bShow) continue;
@@ -1169,6 +1189,17 @@ bool ABpTable::DeckFocus(const FString& FeatureId)
 	return true;
 }
 
+/** Draws the front screen once more with its answer's stamp, so it carries it as ShowDeckAt slides it away. */
+static void StampFront(UWidgetComponent* Front, const FString& Id, const TCHAR* Word, TFunctionRef<TSharedRef<SWidget>()> Draw)
+{
+	if (!Front) return;
+	GDeckStamp.Add(Id, Word);
+	Front->SetSlateWidget(Draw());
+	Front->RequestRedraw();
+	GDeckStamp.Remove(Id);
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s stamped %s"), *Id, Word);
+}
+
 void ABpTable::DeckApprove()
 {
 	if (DeckRoom.IsEmpty() || !DeckScreens.IsValidIndex(DeckAt) || DeckScreens[DeckAt].Kind != KDecision)
@@ -1206,8 +1237,12 @@ void ABpTable::DeckApprove()
 		Self->DeckInDraft.Add(Id);
 		Self->RefreshDeck();
 	});
-	// Resolving advances: the next screen.
-	if (DeckAt + 1 < DeckScreens.Num()) ShowDeckAt(DeckAt + 1, 0, 1);
+	// Resolving advances: the next screen; the answered one carries its stamp as it slides away.
+	if (DeckAt + 1 < DeckScreens.Num())
+	{
+		StampFront(DeckCards.Num() > 0 ? DeckCards[0].Get() : nullptr, Id, TEXT("APPROVED"), [this]() { return DeckWidget(DeckAt, DeckPage); });
+		ShowDeckAt(DeckAt + 1, 0, 1);
+	}
 }
 
 TArray<FString> ABpTable::DeckOpenIds() const
@@ -1291,6 +1326,7 @@ void ABpTable::DeckDecline()
 		});
 		return;
 	}
+	StampFront(DeckCards.Num() > 0 ? DeckCards[0].Get() : nullptr, Id, TEXT("DECLINED"), [this]() { return DeckWidget(DeckAt, DeckPage); });
 	DeckDeclined.Add(Id);
 	UE_LOG(LogBpTable, Log, TEXT("BpDeck: decline %s: off this session's queue (memory only; the store is not written: it repeats no declined idea)"), *Id);
 	// The queue without it; the screen that was next comes forward.
@@ -1516,6 +1552,171 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	const FDeckScreen& Screen = DeckScreens[ScreenIndex];
 	const bool bPaper = PaperScreen(Screen.Kind);
 	const bool bDecision = Screen.Kind == KDecision;
+	if (bDecision)
+	{
+		// ---- A decision in a room, as the stand-up's decision sheet (night two V4) ----------------------------------------------
+		// The owner's device capture (2026-11-09, w2b-dev-handed-bar): five small lines of equal weight, a counter that said three
+		// things, tilted neighbours. Now the family's sheet: the lens and the risk as chips, SCAN THIS ROOM a quiet control at the
+		// top right; the title and its one line of consequence lead, the evidence quiet under them; APPROVE the primary, DECLINE
+		// beside it; the room's queue a calm "3 OF 16" between PREV and NEXT. The actions and the words sent do not change.
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		const FBpScanState& State = Link.GetScanState();
+		const FBpProposal* P = State.Scan.proposals.FindByPredicate([&Screen](const FBpProposal& X) { return X.id == Screen.Proposal; });
+		const FBpPlanTile* Tile = P && SheetPlan.IsValid() ? SheetPlan->tiles.FindByPredicate([P](const FBpPlanTile& T) { return T.id == P->feature; }) : nullptr;
+		const FBpPlanBay* Bay = Tile ? SheetPlan->bays.FindByPredicate([Tile](const FBpPlanBay& B) { return B.id == Tile->parentId; }) : nullptr;
+		const int32* Tier = P ? State.Tiers.Find(P->id) : nullptr;
+		const FBpDecisionBrief* Brief = P ? DeckBrief(P->id) : nullptr;
+		const bool bRepeat = Brief && FBpLinkModule::IsRepeat(*Brief);
+		bool bInDraft = P && DeckInDraft.Contains(P->id);
+		for (const FBpWave& Wave : State.Waves)
+		{
+			if (bInDraft || Wave.status != BpVocab::Wave::Status::Draft || !P) continue;
+			for (const FBpWavePackage& Package : Wave.packages) if (Package.ids.Contains(P->id)) bInDraft = true;
+		}
+		const auto SFont = [](const TCHAR* Style, float CapPx) { return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style)); };
+		const auto SPitch = [](float CapPx) { return BpSheet::LinePitch(CapPx, static_cast<float>(BpType::CapPerEm)); };
+		const FSlateFontInfo SmallBold = SFont(TEXT("Bold"), 24.f), Small = SFont(TEXT("Regular"), 24.f), Lead = SFont(TEXT("Regular"), 28.f), Head = SFont(TEXT("Bold"), 38.f);
+		const FSlateFontInfo LabelFont = SFont(TEXT("Bold"), 28.f), AnswerFont = SFont(TEXT("Bold"), 32.f);
+		TSharedRef<SCanvas> Canvas = SNew(SCanvas);
+		const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
+		{
+			Canvas->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
+		};
+		const auto Words = [&Put](const FBox2f& Box, const FString& Text, const FSlateFontInfo& Font, const FLinearColor& Color)
+		{
+			Put(Box, SNew(STextBlock).Text(FText::FromString(Text)).Font(Font).ColorAndOpacity(FSlateColor(Color)));
+		};
+		// The header: the chips (the lens, the risk with the ledger's mark, the tier, IN DRAFT), SCAN THIS ROOM at the right.
+		{
+			float X = PadX;
+			const float ChipY0 = 30.f, ChipH = 44.f;
+			const auto AddChip = [&](const FString& Text, const FLinearColor& Color, bool bSolid)
+			{
+				const float W = BpSheet::ChipWidth(Text, SmallBold);
+				if (X + W > ScanBox.Min.X - 16.f) return;
+				Put(FBox2f(FVector2f(X, ChipY0), FVector2f(X + W, ChipY0 + ChipH)), BpSheet::Chip(Text, SmallBold, ChipH, Color, bSolid));
+				X += W + 12.f;
+			};
+			if (P) AddChip(LensWord(P->lens) + TEXT(" LENS"), BpSheet::Accent, false);
+			if (P && P->risk > 0.0) AddChip(FString::Printf(TEXT("RISK %s"), *Number(P->risk)), BpSheet::RiskColor(P->risk), false);
+			if (Tier) AddChip(FString::Printf(TEXT("T%d %s"), *Tier, *TierWord(*Tier)), *Tier <= PinTagTierMax ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.85f), false);
+			if (bInDraft) AddChip(TEXT("IN DRAFT WAVE"), BpSheet::Accent, true);
+			if (DeckScanRoute()) Put(ScanBox, BpSheet::Control(TEXT("SCAN THIS ROOM"), LabelFont, BpSheet::ELook::Edge));
+			Put(FBox2f(FVector2f(PadX, 92.f), FVector2f(LW - PadX, 94.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+		}
+		// The frame: the decision, its consequence, the evidence; the title block at its foot (the finding's id, the product).
+		const FBox2f DFrame(FVector2f(PadX, 108.f), FVector2f(LW - PadX, 546.f));
+		const FLinearColor Tone = bRepeat ? BpSheet::Red : BpSheet::Amber;
+		Put(DFrame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(Tone).BarPx(8.f));
+		const float InX = DFrame.Min.X + 34.f, InX1 = DFrame.Max.X - 26.f, InW = InX1 - InX;
+		float Y = DFrame.Min.Y + 18.f;
+		// The kicker: which of the room's decisions this is (the lead under the title says where it lands).
+		int32 Nth = 0, Of = 0;
+		for (int32 Index = 0; Index < DeckScreens.Num(); ++Index) if (DeckScreens[Index].Kind == KDecision) { ++Of; if (Index == ScreenIndex) Nth = Of; }
+		FString Kicker = FString::Printf(TEXT("DECISION %d OF %d IN THIS ROOM"), Nth, Of);
+		if (bRepeat) Kicker += TEXT(" · REPEATS A DECLINE");
+		const FString KickerFit = BpSheet::Wrap(Kicker, SmallBold, InW, 0);
+		Words(FBox2f(FVector2f(InX, Y), FVector2f(InX1, Y + BpSheet::Lines(KickerFit) * SPitch(24.f) + 4.f)), KickerFit, SmallBold, Tone);
+		Y += BpSheet::Lines(KickerFit) * SPitch(24.f) + 6.f;
+		const FString TitleFit = BpSheet::Wrap(P ? P->title : Screen.Proposal, Head, InW, 0);
+		Words(FBox2f(FVector2f(InX, Y), FVector2f(InX1, Y + BpSheet::Lines(TitleFit) * SPitch(38.f) + 6.f)), TitleFit, Head, BpSheet::InkHi);
+		Y += BpSheet::Lines(TitleFit) * SPitch(38.f) + 10.f;
+		// The one line of consequence: the brief's first line (where the change lands, what depends on it); without a brief, where.
+		TArray<FString> Evidence = Brief ? Brief->lines : TArray<FString>();
+		FString First = Evidence.Num() > 0 ? Evidence[0] : P ? (Tile ? TEXT("On ") + Tile->name + (Bay ? TEXT(" in ") + Bay->name : FString()) : TEXT("On ") + P->feature) : FString();
+		if (Evidence.Num() > 0) Evidence.RemoveAt(0);
+		const FString LeadFit = BpSheet::Wrap(First, Lead, InW, 0);
+		Words(FBox2f(FVector2f(InX, Y), FVector2f(InX1, Y + BpSheet::Lines(LeadFit) * SPitch(28.f) + 4.f)), LeadFit, Lead, BpSheet::InkHi);
+		Y += BpSheet::Lines(LeadFit) * SPitch(28.f) + 14.f;
+		// The evidence, quiet: each line whole beside its square mark (the precedent, undo, cost; a quoted decline in amber); a
+		// line that would not fit whole above the title block is left for the next look, never cut.
+		int32 DeclinedLine = INDEX_NONE;
+		if (Brief) for (int32 Index = 0; Index < Brief->facts.Num(); ++Index) if (Brief->facts[Index].key == BpVocab::BriefFact::Key::Declined) DeclinedLine = Index - 1;
+		const float YMax = DFrame.Max.Y - 56.f;
+		// No brief (the sample's, or before it arrives): the finding's own words, quiet, as its evidence.
+		if (Evidence.Num() == 0 && P)
+		{
+			TArray<FString> Body;
+			P->body.ParseIntoArrayLines(Body, true);
+			for (const FString& Raw : Body)
+			{
+				FString Line = Plain(Raw);
+				if (Line.StartsWith(TEXT("#")) || Line.IsEmpty()) continue;
+				if (Line.StartsWith(TEXT("- ")) || Line.StartsWith(TEXT("* "))) Line = Line.Mid(2);
+				Evidence.Add(Line);
+				if (Evidence.Num() >= 3) break;
+			}
+			TArray<FString> Meta;
+			if (!P->size.IsEmpty()) Meta.Add(TEXT("Size ") + P->size);
+			if (!P->created_at.IsEmpty()) Meta.Add(TEXT("proposed ") + P->created_at.Left(10));
+			if (Meta.Num() > 0) Evidence.Add(FString::Join(Meta, TEXT(" · ")));
+		}
+		for (int32 Index = 0; Index < Evidence.Num() && Index < 4; ++Index)
+		{
+			const FString Fit = BpSheet::Wrap(Evidence[Index], Small, InW - 28.f, 0);
+			const float ItemH = BpSheet::Lines(Fit) * SPitch(24.f);
+			if (Y + ItemH > YMax) break;
+			const FLinearColor LineInk = Index == DeclinedLine ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.8f);
+			Put(FBox2f(FVector2f(InX, Y + SPitch(24.f) * 0.5f - 7.f), FVector2f(InX + 12.f, Y + SPitch(24.f) * 0.5f + 5.f)), SNew(BpSheet::SPlate).Fill(Index == DeclinedLine ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+			Words(FBox2f(FVector2f(InX + 28.f, Y), FVector2f(InX1, Y + ItemH + 4.f)), Fit, Small, LineInk);
+			Y += ItemH + 8.f;
+		}
+		// The title block: the finding's id, the product and whose morning (SAMPLE, or today's date).
+		{
+			const FString No = P ? P->id.ToUpper() : Screen.Proposal.ToUpper();
+			const FString ProductName = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
+			const FString Proj = ProductName.ToUpper() + TEXT(" · ") + (Link.HasPcLink() ? FDateTime::Now().ToString(TEXT("%d.%m.")) : FString(TEXT("SAMPLE")));
+			const float NoW = BpSheet::TextWidth(No, SmallBold), ProjW = BpSheet::TextWidth(Proj, Small);
+			const FBox2f Block(FVector2f(DFrame.Max.X - NoW - ProjW - 74.f, DFrame.Max.Y - 46.f), DFrame.Max);
+			Put(Block, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.5f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
+			Put(FBox2f(FVector2f(Block.Min.X + NoW + 30.f, Block.Min.Y + 8.f), FVector2f(Block.Min.X + NoW + 32.f, Block.Max.Y - 8.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f)));
+			Put(FBox2f(Block.Min + FVector2f(14.f, 0.f), FVector2f(Block.Min.X + NoW + 24.f, Block.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(No)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
+			Put(FBox2f(FVector2f(Block.Min.X + NoW + 46.f, Block.Min.Y), Block.Max), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Proj)).Font(Small).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+		}
+		// The status line: what an answer does, in the deck's own terms.
+		const FString Status = bRepeat ? FString(TEXT("You declined this idea before: DECLINE · REPEAT declines it in the store, APPROVE overrides.")) : FString(TEXT("APPROVE puts it in the draft wave; nothing is built."));
+		Put(FBox2f(FVector2f(PadX + 4.f, 552.f), FVector2f(LW - PadX, 592.f)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(Status, Small, LW - 2.f * PadX - 8.f, 0))).Font(Small).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+		// The answers (DeckHit's boxes): APPROVE the primary, DECLINE beside it; on a repeat DECLINE · REPEAT leads.
+		if (bRepeat)
+		{
+			Put(RepeatDeclineBox, BpSheet::Control(TEXT("DECLINE · REPEAT"), AnswerFont, BpSheet::ELook::Amber));
+			Put(RepeatApproveBox, BpSheet::Control(TEXT("APPROVE"), AnswerFont, BpSheet::ELook::Edge));
+		}
+		else
+		{
+			Put(ApproveBox, BpSheet::Control(TEXT("APPROVE"), AnswerFont, BpSheet::ELook::Amber));
+			Put(DeclineBox, BpSheet::Control(TEXT("DECLINE"), AnswerFont, BpSheet::ELook::Edge));
+		}
+		// The queue, calm: PREV, "3 OF 16", NEXT, quieter than the answers (shorter, edged).
+		const bool bPrevOk = DeckAt > 0, bNextOk = DeckAt + 1 < DeckScreens.Num();
+		Put(FBox2f(PrevBox.Min + FVector2f(0.f, 12.f), PrevBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("‹  PREV"), LabelFont, bPrevOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
+		Put(FBox2f(NextBox.Min + FVector2f(0.f, 12.f), NextBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("NEXT  ›"), LabelFont, bNextOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
+		Put(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d OF %d"), DeckAt + 1, DeckScreens.Num()))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+		// The answer taken lands as the stand-up's stamp, on the screen as it slides away (GDeckStamp, DeckApprove/DeckDecline).
+		if (const FString* Stamp = P ? GDeckStamp.Find(P->id) : nullptr)
+		{
+			const FLinearColor StampInk = Stamp->StartsWith(TEXT("APPROVED")) ? BpSheet::Accent : BpSheet::Red;
+			const FSlateFontInfo StampFont = SFont(TEXT("Bold"), 44.f);
+			const float StampW = BpSheet::TextWidth(*Stamp, StampFont) + 64.f, StampH = 96.f;
+			const FVector2f C(DFrame.Max.X - StampW * 0.5f - 60.f, DFrame.Min.Y + 120.f);
+			Put(FBox2f(C - FVector2f(StampW, StampH) * 0.5f, C + FVector2f(StampW, StampH) * 0.5f), SNew(SBox).RenderTransformPivot(FVector2D(0.5, 0.5)).RenderTransform(FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(-7.f))))
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(StampInk).EdgePx(5.f)]
+					+ SOverlay::Slot().Padding(9.f)[SNew(BpSheet::SPlate).Edge(StampInk.CopyWithNewOpacity(0.6f)).EdgePx(1.5f)]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(*Stamp)).Font(StampFont).ColorAndOpacity(FSlateColor(StampInk))]
+				]);
+		}
+		return SNew(SDPIScaler).DPIScale(DeckPxPerCm / DeckLayoutPxPerCm)
+			[
+				SNew(SBox).WidthOverride(LW).HeightOverride(LH)
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(48.f).RulePx(5.f)]
+					+ SOverlay::Slot()[Canvas]
+				]
+			];
+	}
 	// Opaque at the core (FAH: at 0.93 the city's lit windows, many times brighter than the panel, and the screens behind
 	// read through it); the glass is its edge, its glow and its sheen.
 	static const FSlateRoundedBoxBrush PaperPanel(PaperTone, 0.f, PaperEdge.CopyWithNewOpacity(0.95f), 4.f);
@@ -1679,7 +1880,7 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[Label(Text, SControl, Color)]
 			];
 	};
-	const FString Count = FString::Printf(TEXT("%d / %d"), DeckAt + 1, DeckScreens.Num());
+	const FString Count = FString::Printf(TEXT("%d OF %d"), DeckAt + 1, DeckScreens.Num());
 	TSharedRef<SVerticalBox> Counter = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)[Label(Count, SControl, ControlInk)];
 	if (Screen.Pages.Num() > 1) Counter->AddSlot().AutoHeight().HAlign(HAlign_Center).Padding(0.f, 4.f, 0.f, 0.f)[Label(FString::Printf(TEXT("PAGE %d OF %d"), PageIndex + 1, Screen.Pages.Num()), SMeta, TextColor(SMeta, bPaper))];
@@ -1688,10 +1889,15 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	{
 		Bar->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
-	Place(PrevBox, Button(bPrev ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("‹  PREV"), bPrev ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
+	// Night two V4: the family's controls (BpSheet::Control) on every screen; the pager quieter than the answers.
+	const FSlateFontInfo PagerFont = DeckFont(SControl);
+	const bool bSheetLook = !bPaper;
+	if (bSheetLook) Place(FBox2f(PrevBox.Min + FVector2f(0.f, 12.f), PrevBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("‹  PREV"), PagerFont, bPrev ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
+	else Place(PrevBox, Button(bPrev ? &TabPaper : &TabOffPaper, FString(), TEXT("‹  PREV"), bPrev ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
 	Place(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[Counter]);
-	Place(NextBox, Button(bNext ? (bPaper ? &TabPaper : &TabGlass) : (bPaper ? &TabOffPaper : &TabOff), FString(), TEXT("NEXT  ›"), bNext ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
-	if (DeckScanRoute()) Place(ScanBox, Button(bPaper ? &TabPaper : &TabGlass, FString(), TEXT("SCAN THIS ROOM"), ControlInk));
+	if (bSheetLook) Place(FBox2f(NextBox.Min + FVector2f(0.f, 12.f), NextBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("NEXT  ›"), PagerFont, bNext ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
+	else Place(NextBox, Button(bNext ? &TabPaper : &TabOffPaper, FString(), TEXT("NEXT  ›"), bNext ? ControlInk : ControlInk.CopyWithNewOpacity(0.3f)));
+	if (DeckScanRoute()) Place(ScanBox, bSheetLook ? BpSheet::Control(TEXT("SCAN THIS ROOM"), PagerFont, BpSheet::ELook::Edge) : Button(&TabPaper, FString(), TEXT("SCAN THIS ROOM"), ControlInk));
 	if (bDecision && DeckRepeat(ScreenIndex))
 	{
 		Place(RepeatDeclineBox, Button(&ApproveBrush, TEXT("✕"), TEXT("DECLINE · REPEAT"), Ink));
@@ -1708,7 +1914,7 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 	if (OpenCount > 0)
 	{
 		// D15: the decisions this room still holds, approved with one pinch.
-		Place(ApproveAllBox, Button(&ApproveBrush, TEXT("✓"), FString::Printf(TEXT("APPROVE ALL (%d)"), OpenCount), Ink));
+		Place(ApproveAllBox, BpSheet::Control(FString::Printf(TEXT("APPROVE ALL (%d)"), OpenCount), DeckFont(SControl), BpSheet::ELook::Amber));
 	}
 	const FBox2f& NextBoxHere = OpenCount > 0 ? NextRoomNarrowBox : NextRoomBox;
 	if (Next)
@@ -1718,7 +1924,7 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight()[Label(TEXT("NEXT ROOM  ›"), SControl, Ink)]
-				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[Label(CutToWidth(FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why), SMeta, NextBoxHere.GetSize().X - 44.f), SMeta, Ink)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[Label(TextWidth(FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why), SMeta) <= NextBoxHere.GetSize().X - 44.f ? FString::Printf(TEXT("%s  ·  %s"), *Next->name, *Why) : Next->name, SMeta, Ink)]
 			]);
 	}
 

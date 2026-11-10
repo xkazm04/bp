@@ -11,6 +11,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpSheet.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -58,7 +59,6 @@ namespace
 
 	const FLinearColor SwitchCyan(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor SwitchAmber(FColor(0xFF, 0xB5, 0x47));
-	const FLinearColor SwitchGlass(FColor(0x08, 0x16, 0x2E));
 
 	float SwitchEase(float Alpha)
 	{
@@ -544,23 +544,29 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
 	if (LampCaption)
 	{
-		static const FSlateRoundedBoxBrush Plate(SwitchGlass.CopyWithNewOpacity(0.96f), 18.f, SwitchAmber.CopyWithNewOpacity(0.9f), 3.f);
-		static const FSlateRoundedBoxBrush Glow(SwitchAmber.CopyWithNewOpacity(0.12f), 24.f);
+		// Night two V4: the sheet's family (BpSheet.h): its paper and ink, THE LAMP as a chip for who is speaking, the line
+		// wrapped whole (never cut), the plate as tall as its lines; it still leaves by itself (LampCaptionClock).
 		const float Cap = CaptionCapCm * CaptionPxPerCm;
-		const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), Cap);
-		const float W = CaptionWidthCm * CaptionPxPerCm, H = CaptionHeightCm * CaptionPxPerCm, Pad = 22.f;
-		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
-		for (const FString& Each : CaptionLines(Line, Font, W - 2.f * Pad - 12.f))
-		{
-			Lines->AddSlot().AutoHeight().Padding(0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Each)).Font(Font).ColorAndOpacity(FSlateColor(FLinearColor::White))];
-		}
+		const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), Cap), ChipFont = CaptionFont(TEXT("Bold"), Cap * 0.85f);
+		const float W = CaptionWidthCm * CaptionPxPerCm, Pad = 20.f;
+		const float Pitch = Cap / static_cast<float>(BpType::CapPerEm) * 1.2f, ChipH = Cap * 0.85f / static_cast<float>(BpType::CapPerEm) * 1.2f + 6.f;
+		TArray<FString> Parts, Wrapped;
+		Line.ParseIntoArrayLines(Parts);
+		for (const FString& Part : Parts) Wrapped.Add(BpSheet::Wrap(Part, Font, W - 2.f * Pad - 14.f, 0));
+		const FString Words = FString::Join(Wrapped, TEXT("\n"));
+		const float H = FMath::CeilToFloat(14.f + ChipH + 8.f + BpSheet::Lines(Words) * Pitch + 14.f);
+		LampCaption->SetDrawSize(FVector2D(W, H));
 		LampCaption->SetSlateWidget(
 			SNew(SBox).WidthOverride(W).HeightOverride(H)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(SBorder).BorderImage(&Glow)]
-				+ SOverlay::Slot().Padding(5.f)[SNew(SBorder).BorderImage(&Plate)]
-				+ SOverlay::Slot().Padding(FMargin(Pad, 8.f)).VAlign(VAlign_Center)[Lines]
+				+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(BpSheet::Amber).BarPx(6.f)]
+				+ SOverlay::Slot().Padding(FMargin(Pad + 6.f, 14.f, Pad, 14.f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(ChipH).WidthOverride(BpSheet::ChipWidth(TEXT("THE LAMP"), ChipFont))[BpSheet::Chip(TEXT("THE LAMP"), ChipFont, ChipH, BpSheet::Amber)]]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Words)).Font(Font).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
+				]
 			]);
 		LampCaption->RequestRedraw();
 		UE_LOG(LogBpTable, Log, TEXT("BpType: lamp caption cap_cm=%.2f; %.1f cm from the target eye: %.1f px"), CaptionCapCm,
@@ -577,10 +583,15 @@ void ABpTable::ApplyLampWidgets()
 	if (LampCaption)
 	{
 		// The talk's lines read on the console's conversation sheet (night two V2), not in this box, while it shows them.
-		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice) && !(bTalkCaption && TalkOnConsole());
+		// bp.Captions 1 (SETTINGS › ACCESSIBILITY › CAPTIONS ALWAYS): every line the lamp says, on the site plan too.
+		const IConsoleVariable* Always = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Captions"));
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || (Always && Always->GetInt() != 0)) && !(bTalkCaption && TalkOnConsole());
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
-		const FVector At(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm);
-		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / CaptionPxPerCm)));
+		// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
+		// names and the pin tags under it.
+		const float GrowCm = FMath::Max(0.f, static_cast<float>(LampCaption->GetDrawSize().Y) / CaptionPxPerCm - CaptionHeightCm);
+		const FVector At(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale());
+		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(BpSheet::TextScale() / CaptionPxPerCm)));
 		const float Fade = FMath::Clamp(LampCaptionClock / 0.4f, 0.f, 1.f);
 		LampCaption->SetTintColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, Fade));
 		LampCaption->SetTranslucentSortPriority(14);

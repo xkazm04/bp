@@ -696,7 +696,7 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 		A.Verdict = bApprove ? TEXT("approve") : TEXT("decline");
 		A.State = FBpStandupAnswer::EState::Sending;
 		A.Title = Sheet.Companion.Summary;
-		A.Words = TEXT("Sending to your PC…");
+		A.Words = TEXT("Sending to your PC");
 		A.At = FPlatformTime::Seconds();
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s companion card %s by %s"), *A.Verdict, *Id, Route);
 		TWeakObjectPtr<ABpPawn> Self(this);
@@ -765,7 +765,7 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 		return;
 	}
 	A.State = FBpStandupAnswer::EState::Sending;
-	A.Words = TEXT("Sending to your PC…");
+	A.Words = TEXT("Sending to your PC");
 	const FString CardId = Card.id, ProductName = Card.productName.IsEmpty() ? Card.product : Card.productName;
 	TWeakObjectPtr<ABpPawn> Self(this);
 	Link.PostMorningVerdict(Card.product, Card.decision.proposal, Verdict, Shown, [Self, CardId, Verdict, ProductName, Advance](int32 Status, const FString& Body)
@@ -830,7 +830,7 @@ void ABpPawn::StandupPlanDay()
 		Approved.Num() ? *FString::Join(Approved, TEXT("; ")) : TEXT("nothing yet"));
 	S.Plan = FBpStandupState::EPlan::Asking;
 	S.PlanText.Reset();
-	S.PlanWords = TEXT("Asking the companion… (it can take a few minutes)");
+	S.PlanWords = TEXT("Asking the companion (it can take a few minutes)");
 	S.PlanSentAt = FPlatformTime::Seconds();
 	if (ABpTable* Table = WristTable.Get()) Table->StandupSay(TEXT("Planning your day…"));
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: plan my day: one companion turn, %d approved findings"), Approved.Num());
@@ -1006,7 +1006,7 @@ void ABpPawn::StandupGrantNow()
 	if (!Standup.IsValid() || Standup->bGrantOut) return;
 	FBpStandupState& S = *Standup;
 	S.bGrantOut = true;
-	S.GrantWords = TEXT("Asking your PC to grant it…");
+	S.GrantWords = TEXT("Asking your PC to grant it");
 	S.bGrantBad = false;
 	const FString Product = GrantProduct(S);
 	TWeakObjectPtr<ABpPawn> Self(this);
@@ -1373,6 +1373,8 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 			if (!bOpen) { OutWords = A->Words; return true; }
 			if (!S.bSample && !FBpLinkModule::Get().CanDecide()) { OutWords = TEXT("Pair this headset to decide here (PC LINK)."); OutButtons.Emplace(TEXT("PC LINK"), TEXT("open:link")); return true; }
 			if (A) OutWords = A->Words;
+			// Its one line of consequence on the wrist too (night two V4: the sheet's lead), until an answer has words of its own.
+			else if (!bCompanion && Card) OutWords = Card->decision.brief.Short_;
 			if (bCompanion)
 			{
 				OutButtons.Emplace(TEXT("APPROVE"), TEXT("standup:approve"));
@@ -1475,12 +1477,24 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	const auto Lines = [&](float X0, float X1, float Y, float YMax, const TArray<FItem>& Items, int32 Wrap)
 	{
 		const float P = Pitch(CapSmall);
-		for (const FItem& Item : Items)
+		// Night two V4: an item whole (wrapped to as many lines as it needs, never an ellipsis); the first that does not fit whole
+		// stops the list, and "and N more" says what was left when a line is free for it.
+		(void)Wrap;
+		for (int32 At = 0; At < Items.Num(); ++At)
 		{
+			const FItem& Item = Items[At];
 			const int32 Room = FMath::FloorToInt((YMax - Y) / P);
-			if (Room < 1) break;
-			const FString Fit = BpSheet::Wrap(Item.Words, SmallFont, X1 - X0 - 28.f, FMath::Min(Wrap, Room));
+			const FString Fit = BpSheet::Wrap(Item.Words, SmallFont, X1 - X0 - 28.f, 0);
 			const int32 N = LineCount(Fit);
+			if (N > Room)
+			{
+				if (Room >= 1 && At > 0)
+				{
+					Put(FBox2f(FVector2f(X0 + 28.f, Y), FVector2f(X1, Y + P + 4.f)), SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("and %d more"), Items.Num() - At))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.6f))));
+					Y += P + 8.f;
+				}
+				break;
+			}
 			Mark(X0, Y + P * 0.5f - 8.f, Item.Ink);
 			Put(FBox2f(FVector2f(X0 + 28.f, Y), FVector2f(X1, Y + N * P + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink)));
 			Y += N * P + 8.f;
@@ -1513,7 +1527,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	{
 		const bool bFailed = !S.Error.IsEmpty();
 		Text(FBox2f(FVector2f(InX, FrameY0 + 22.f), FVector2f(Frame.Max.X - 26.f, FrameY0 + 56.f)), bFailed ? TEXT("THE MORNING DID NOT READ") : TEXT("STAND-UP"), SmallBold, bFailed ? BpSheet::Red : BpSheet::Accent);
-		Text(FBox2f(FVector2f(InX, FrameY0 + 64.f), FVector2f(Frame.Max.X - 26.f, FrameY0 + 190.f)), bFailed ? S.Error : TEXT("Reading the morning…"), HeadFont, BpSheet::InkHi, 2);
+		Text(FBox2f(FVector2f(InX, FrameY0 + 64.f), FVector2f(Frame.Max.X - 26.f, FrameY0 + 190.f)), bFailed ? S.Error : TEXT("Reading the morning"), HeadFont, BpSheet::InkHi, 2);
 		TitleBlock(TEXT("M-00"), ProductName.ToUpper() + TEXT(" · ") + DayWord);
 		if (bFailed) Row(Pad, LW - Pad, TArray<FRowButton>{ FRowButton{ TEXT("TRY AGAIN"), EBtn::Fill, TEXT("standup:retry"), 260.f } });
 		return;
@@ -1656,6 +1670,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			// The consequence: the brief's one line, large; then the tier chip with its class and age; then the evidence, quiet.
 			const FBpCardBrief& Brief = D->brief;
 			if (!Brief.Short_.IsEmpty()) Lead(Brief.Short_, BpSheet::InkHi, 3);
+			// The PC refused an approval from here (night two V4): its reason, whole, under the consequence.
+			if (Answer && Answer->State == FBpStandupAnswer::EState::Refused && !Answer->Words.IsEmpty()) Lead(Answer->Words, BpSheet::Red, 0);
 			if (Card->lines.Num() > 1)
 			{
 				const FString Chip = Tier.IsEmpty() ? FString(TEXT("UNTIERED")) : Tier.ToUpper();
@@ -1691,19 +1707,22 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		{
 			Put(Img, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
 			Put(Img, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
-				.Text(FText::FromString(S.bShotLoading ? TEXT("READING THE SCREEN…") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+				.Text(FText::FromString(S.bShotLoading ? TEXT("READING THE SCREEN") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
 		}
 		if (bScreen)
 		{
-			const float CapY = Img.Max.Y - 40.f;
-			Put(FBox2f(FVector2f(Img.Min.X, CapY), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)));
 			const FString Feature = WristTable.IsValid() ? WristTable->StandupPlaceName(Card->place.target.id) : Card->place.target.id;
 			// The screen's own "sample screen" label stays in the image; the caption says which screen, and SAMPLE when it is one.
+			// Night two V4: the caption wraps (it was cut: "BEFORE · PAYOUT…"), its strip as tall as its lines.
 			const bool bSampleShot = S.ShotBrush.IsValid() && S.bShotSample;
 			const float TagW = bSampleShot ? BpSheet::TextWidth(TEXT("SAMPLE"), SmallBold) + 28.f : 0.f;
 			const FString Caption = FString::Printf(TEXT("BEFORE · %s"), *(Feature.IsEmpty() ? Card->place.target.id : Feature)).ToUpper();
-			Text(FBox2f(FVector2f(ImgX0 + 12.f, CapY), FVector2f(ImgX1 - TagW - 12.f, CapY + 40.f)), BpSheet::CutWords(Caption, SmallBold, ImgX1 - TagW - 24.f - ImgX0), SmallBold, BpSheet::InkHi, 1, VAlign_Center);
-			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, CapY), FVector2f(ImgX1, CapY + 40.f)), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, TagW));
+			const FString CaptionFit = BpSheet::Wrap(Caption, SmallBold, ImgX1 - TagW - 24.f - ImgX0, 0);
+			const float CapH = FMath::Max(40.f, LineCount(CaptionFit) * Pitch(CapSmall) + 8.f);
+			const float CapY = Img.Max.Y - CapH;
+			Put(FBox2f(FVector2f(Img.Min.X, CapY), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)));
+			Put(FBox2f(FVector2f(ImgX0 + 12.f, CapY), FVector2f(ImgX1 - TagW - 12.f, Img.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(CaptionFit)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, Img.Max.Y - 40.f), FVector2f(ImgX1, Img.Max.Y)), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, TagW));
 		}
 		TitleBlock(SheetNo, Project);
 		// The answers. Approve is the primary (amber); LATER is the web's Defer (back tomorrow); DECLINE only on a repeat.
@@ -1777,7 +1796,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		}
 		if (Answer)
 		{
-			Status = Answer->Words;
+			// A refused approval's sentence is on the sheet (above); the status says what to do (night two V4).
+			Status = Answer->State == FBpStandupAnswer::EState::Refused && !bCompanion ? FString(TEXT("Answer this one at your PC.")) : Answer->Words;
 			StatusInk = Answer->State == FBpStandupAnswer::EState::Unsent ? BpSheet::Red : bRefused || Answer->State == FBpStandupAnswer::EState::Sending ? BpSheet::Amber : BpSheet::Accent;
 		}
 		else if (!bMay) { Status = Link.HasPcLink() ? TEXT("Pair this headset to decide here: PC LINK pairs it, with decide.") : TEXT("Your PC is gone: answers cannot be sent now. Those taken are kept."); StatusInk = BpSheet::Amber; }
@@ -1803,7 +1823,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			TArray<FItem> Bounds;
 			Bounds.Add({ FString::Printf(TEXT("Never stop-ship findings: tier %d to 3 only, on %s alone."), GrantMinTier, *Product), BpSheet::Red });
 			Lines(InX, Frame.Max.X - 460.f, Y + 14.f, Frame.Max.Y - 4.f, Bounds, 1);
-			Buttons = { { S.bGrantOut ? TEXT("GRANTING…") : FString::Printf(TEXT("GRANT UNTIL %s"), *Until), S.bGrantOut ? EBtn::Off : EBtn::Amber, TEXT("standup:grant"), 460.f }, { TEXT("CANCEL"), EBtn::Edge, TEXT("standup:cancel"), 200.f } };
+			Buttons = { { S.bGrantOut ? TEXT("GRANTING") : FString::Printf(TEXT("GRANT UNTIL %s"), *Until), S.bGrantOut ? EBtn::Off : EBtn::Amber, TEXT("standup:grant"), 460.f }, { TEXT("CANCEL"), EBtn::Edge, TEXT("standup:cancel"), 200.f } };
 			Status = S.GrantWords.IsEmpty() ? FString::Printf(TEXT("%d hours, until %s · TAKE BACK on the bar or the wrist ends it · nothing is granted before GRANT"), GrantHours, *Until) : S.GrantWords;
 			StatusInk = S.bGrantBad ? BpSheet::Red : BpSheet::Amber;
 		}
@@ -1851,7 +1871,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			const bool bLinked = !S.bSample && Link.HasPcLink();
 			const bool bMay = bLinked && Link.CanDecide();
 			Buttons = { Prev,
-				{ S.Plan == FBpStandupState::EPlan::Asking ? TEXT("PLANNING…") : TEXT("PLAN MY DAY"), bLinked && S.Plan != FBpStandupState::EPlan::Asking ? EBtn::Amber : EBtn::Off, TEXT("standup:plan"), 290.f },
+				{ S.Plan == FBpStandupState::EPlan::Asking ? TEXT("PLANNING") : TEXT("PLAN MY DAY"), bLinked && S.Plan != FBpStandupState::EPlan::Asking ? EBtn::Amber : EBtn::Off, TEXT("standup:plan"), 290.f },
 				LiveGrant() ? FRowButton{ TEXT("TAKE BACK"), EBtn::Edge, TEXT("standup:revoke"), 230.f } : FRowButton{ TEXT("HAND OVER"), bMay ? EBtn::Edge : EBtn::Off, TEXT("standup:handover"), 260.f },
 				{ TEXT("DONE"), EBtn::Fill, TEXT("standup:done"), 150.f } };
 			Status = S.bSample ? FString(TEXT("Sample: both need your PC (PC LINK connects it). Nothing was sent."))
@@ -1920,7 +1940,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			// The portfolio, as the web's: one row per product, what moved and what waits; the drawing set's schedule table.
 			const float TX0 = Pad + 640.f, TX1 = TextX1, RowH = 44.f;
 			float TY = FrameY0 + 64.f + HeadLines * Pitch(CapHead) + 10.f;
-			const float Cols[] = { TX0, TX1 - 330.f, TX1 - 255.f, TX1 - 180.f, TX1 - 70.f };
+			const float Cols[] = { TX0, TX1 - 404.f, TX1 - 304.f, TX1 - 204.f, TX1 - 100.f };
 			const TCHAR* Heads[] = { TEXT("PRODUCT"), TEXT("BUILT"), TEXT("FAIL"), TEXT("REL."), TEXT("WAIT") };
 			for (int32 C = 0; C < 5; ++C) Text(FBox2f(FVector2f(Cols[C], TY), FVector2f(C < 4 ? Cols[C + 1] - 8.f : TX1, TY + RowH)), Heads[C], SmallBold, BpSheet::Accent, 1, VAlign_Center);
 			TY += RowH;
@@ -1959,6 +1979,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	FString StatusFit = Status;
 	FString Plain, Aside;
 	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(" ("), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(" · "), &Plain, &Aside)) StatusFit = Plain;
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(". "), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
 	Text(FBox2f(FVector2f(Pad + 4.f, StatusY0), FVector2f(LW - Pad, StatusY1)), BpSheet::CutWords(StatusFit, SmallFont, LW - 2.f * Pad - 4.f), SmallFont, StatusInk, 1, VAlign_Center);
 	// The foot: PREV at the left edge, NEXT at the right, the card's own answers centred between them.
 	TArray<FRowButton> Middle;

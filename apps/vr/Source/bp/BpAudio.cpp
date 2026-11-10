@@ -36,6 +36,17 @@ namespace
 		0.f,
 		TEXT("A check only: above 0 the bed wraps to its first frame after this many seconds instead of at its end (135 s), so a run can see the wrap."),
 		ECVF_Default);
+	// SETTINGS › ACCESSIBILITY (night two V4): with bp.ReducedMotion and bp.WristHand, saved below with the rest.
+	TAutoConsoleVariable<float> CVarTextSize(
+		TEXT("bp.TextSize"),
+		1.f,
+		TEXT("Text size for the console, the wrist and the captions, 1.0 to 1.3 (SETTINGS › ACCESSIBILITY steps 1.0, 1.15, 1.3): each surface is scaled as a whole, so its type grows and its layout holds. Saved across runs."),
+		ECVF_Default);
+	TAutoConsoleVariable<int32> CVarCaptions(
+		TEXT("bp.Captions"),
+		0,
+		TEXT("The lamp's captions: 1 always on (every line the lamp says gets its caption, on the site plan too), 0 with its voice (the default, as before: the lines it says in a room and its notices). Saved across runs."),
+		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarTourFocus(
 		TEXT("bp.TourFocus"),
 		-1,
@@ -63,6 +74,8 @@ namespace
 		{ TEXT("bp.WristHand"), SettingsSection, TEXT("WristHand"), 0.f, 1.f },
 		{ TEXT("bp.ReducedMotion"), SettingsSection, TEXT("ReducedMotion"), 0.f, 1.f },
 		{ TEXT("bp.Room"), SettingsSection, TEXT("Room"), 0.f, 1.f },
+		{ TEXT("bp.TextSize"), SettingsSection, TEXT("TextSize"), 1.f, 1.3f },
+		{ TEXT("bp.Captions"), SettingsSection, TEXT("Captions"), 0.f, 1.f },
 	};
 	bool bLoading = false;
 

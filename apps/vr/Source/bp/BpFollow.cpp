@@ -12,6 +12,7 @@
 
 #include "BpGameMode.h"
 #include "BpLink.h"
+#include "BpSheet.h"
 #include "BpType.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Components/WidgetComponent.h"
@@ -25,8 +26,6 @@
 
 namespace
 {
-	const FLinearColor FollowCyan(FColor(0xBF, 0xE8, 0xFF));
-	const FLinearColor FollowGlass(FColor(0x08, 0x16, 0x2E));
 
 	/** The caption's font at a cap height in its widget's pixels (BpType's family, as the lamp's caption). */
 	FSlateFontInfo FollowFont(const TCHAR* Style, float CapPx)
@@ -288,23 +287,36 @@ void ABpTable::ShowCaption(const FString& Line1In, const FString& Where)
 	FollowLine = Line1In + TEXT("\n") + Where;
 	UE_LOG(LogBpTable, Log, TEXT("BpFollow: caption \"%s\""), *FollowLine.Replace(TEXT("\n"), TEXT(" / ")));
 	if (!FollowCaption) return;
-	static const FSlateRoundedBoxBrush Plate(FollowGlass.CopyWithNewOpacity(0.9f), 14.f, FollowCyan.CopyWithNewOpacity(0.45f), 2.f);
-	const float W = FollowCaptionWidthCm * FollowCaptionPxPerCm, H = FollowCaptionHeightCm * FollowCaptionPxPerCm, Pad = 22.f;
-	const FSlateFontInfo WhoFont = FollowFont(TEXT("Bold"), FollowCaptionCapCm * FollowCaptionPxPerCm);
-	const FSlateFontInfo WhereFont = FollowFont(TEXT("Regular"), FollowCaptionPlaceCapCm * FollowCaptionPxPerCm);
+	// Night two V4: the sheet's family (BpSheet.h): its paper and ink, a chip for what it is (FOLLOWING, SHARED), the words
+	// wrapped whole (the owner's capture cut "Digital waiver signing in Member Experien…"), the plate as tall as its lines.
+	const float W = FollowCaptionWidthCm * FollowCaptionPxPerCm, PadX = 22.f, PadY = 12.f;
+	const float WhoCap = FollowCaptionCapCm * FollowCaptionPxPerCm, WhereCap = FollowCaptionPlaceCapCm * FollowCaptionPxPerCm;
+	const FSlateFontInfo WhoFont = FollowFont(TEXT("Bold"), WhoCap), WhereFont = FollowFont(TEXT("Regular"), WhereCap), ChipFont = FollowFont(TEXT("Bold"), WhereCap);
 	FString Line1, Line2;
 	FollowLine.Split(TEXT("\n"), &Line1, &Line2);
+	FString Chip, Who = Line1;
+	if (Line1.StartsWith(TEXT("Following "))) { Chip = TEXT("FOLLOWING"); Who = Line1.Mid(10); }
+	else if (Line1.StartsWith(TEXT("Shared "))) { Chip = TEXT("SHARED"); Who = Line1.Mid(7); Who = Who.Left(1).ToUpper() + Who.Mid(1); }
+	const float ChipH = WhoCap / static_cast<float>(BpType::CapPerEm) * 1.2f;
+	const float ChipW = Chip.IsEmpty() ? 0.f : BpSheet::ChipWidth(Chip, ChipFont);
+	const float TextW = W - 2.f * PadX - 8.f;
+	const FString WhoFit = BpSheet::Wrap(Who, WhoFont, TextW - (ChipW > 0.f ? ChipW + 12.f : 0.f), 0);
+	const FString WhereFit = BpSheet::Wrap(Line2, WhereFont, TextW, 0);
+	const float H = PadY * 2.f + BpSheet::Lines(WhoFit) * ChipH + (WhereFit.IsEmpty() ? 0.f : 4.f + BpSheet::Lines(WhereFit) * WhereCap / static_cast<float>(BpType::CapPerEm) * 1.2f);
+	FollowCaption->SetDrawSize(FVector2D(W, FMath::CeilToFloat(H)));
+	TSharedRef<SHorizontalBox> Top = SNew(SHorizontalBox);
+	if (ChipW > 0.f) Top->AddSlot().AutoWidth().VAlign(VAlign_Top).Padding(0.f, 0.f, 12.f, 0.f)[SNew(SBox).WidthOverride(ChipW)[BpSheet::Chip(Chip, ChipFont, ChipH, BpSheet::Accent)]];
+	Top->AddSlot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(WhoFit)).Font(WhoFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
 	FollowCaption->SetSlateWidget(
 		SNew(SBox).WidthOverride(W).HeightOverride(H)
 		[
 			SNew(SOverlay)
-			+ SOverlay::Slot().Padding(3.f)[SNew(SBorder).BorderImage(&Plate)]
-			+ SOverlay::Slot().Padding(FMargin(Pad, 6.f)).VAlign(VAlign_Center)
+			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(BpSheet::Accent).BarPx(6.f)]
+			+ SOverlay::Slot().Padding(FMargin(PadX + 6.f, PadY, PadX, PadY))
 			[
 				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Line1)).Font(WhoFont).ColorAndOpacity(FSlateColor(FollowCyan)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
-				+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Line2)).Font(WhereFont)
-					.ColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.92f, 0.85f))).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+				+ SVerticalBox::Slot().AutoHeight()[Top]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(WhereFit)).Font(WhereFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f)))]
 			]
 		]);
 	FollowCaption->RequestRedraw();
@@ -324,7 +336,7 @@ void ABpTable::ApplyFollowCaption()
 	// On the near rim, square to the target view (its face toward the eye along the view's axis, not toward the eye's
 	// point): so close to the eye and off the view's centre, a plate turned to the point reads tilted in a capture.
 	const FVector At(FollowCaptionXCm, FollowCaptionYCm, PlacedHeightCm + FollowCaptionAboveTopCm);
-	FollowCaption->SetRelativeTransform(FTransform(FRotator(-ABpGameMode::TargetPitchDeg, 180.f, 0.f), At, FVector(1.0 / FollowCaptionPxPerCm)));
+	FollowCaption->SetRelativeTransform(FTransform(FRotator(-ABpGameMode::TargetPitchDeg, 180.f, 0.f), At, FVector(BpSheet::TextScale() / FollowCaptionPxPerCm)));
 	FollowCaption->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, FMath::InterpEaseInOut(0.f, 1.f, FollowCaptionAlpha, 2.f)));
 	FollowCaption->SetTranslucentSortPriority(14);
 }
