@@ -1,0 +1,104 @@
+{
+  "about": "Concept images for a projector-like main screen in the VR light table (apps/vr), not shipped in the app. Generated with the Codex CLI built-in image generation the way scripts/fixtures/kettle-finding-shots.mjs does (prompt on stdin, codex exec --json), with one real headset-seat capture attached as a reference image. Each image was looked at before it was kept.",
+  "rules": "No brand names, logos or people. Text in the images is the generator's; the layout matters, not the letters.",
+  "attempts": [
+    {
+      "concept": "stage",
+      "attempt": "1",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a2-1e62-7ef0-abc2-c9dfd9967a0e",
+      "date": "2026-11-10",
+      "exit": 0
+    },
+    {
+      "concept": "pinup",
+      "attempt": "1",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a2-1e43-7e20-afc8-56b9830275d3",
+      "date": "2026-11-10",
+      "exit": 0
+    },
+    {
+      "concept": "throw",
+      "attempt": "1",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a2-1e5f-73b3-bdbd-5afa176923fe",
+      "date": "2026-11-10",
+      "exit": 0
+    },
+    {
+      "concept": "throw2",
+      "attempt": "2",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f47-76a1-9c94-98061d052f3e",
+      "date": "2026-11-10",
+      "exit": 0
+    },
+    {
+      "concept": "stage2",
+      "attempt": "2",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f69-7322-ae1c-3774aa1e6902",
+      "date": "2026-11-10",
+      "exit": 0
+    },
+    {
+      "concept": "pinup",
+      "attempt": "2",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f65-7373-86e8-64914c0023ad",
+      "date": "2026-11-10",
+      "exit": 0
+    }
+  ],
+  "images": [
+    {
+      "file": "concept-1-throw.png",
+      "kept": "attempt 2 of 2 (attempt 1 had no keystone and a hard frame)",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. This is a concept art frame for a VR app, wide 16:9 landscape, at least 1536 px wide. The attached image reference.png is the real scene from the same seat today: keep its room, table, lamp character and style, but drop its fisheye vignette and its small floating panel. CAMERA: a seated person's eye, 115 cm above the floor and 43 cm above the table top, looking 10 degrees down, natural 90 degree horizontal field of view, no fisheye, no people, no hands in frame. THE ROOM: a dark architect's studio at night. Tall wooden bookshelves in warm shadow at the left; at the right a floor-to-ceiling window wall with black mullions and a night city of lit towers outside; dark walls, a warm wooden floor; very low ambient light. THE TABLE (the hero, filling the lower 40 percent of the frame): a 240 x 120 cm light table with a thin dark metal frame, its top a glowing blueprint in deep blue #0a2149 with lighter grid lines #1a4c8f and pale ink #dff0ff linework: five wings drawn as outlined wireframe room blocks with small labels, a compass rose in the middle, a title block at the near edge reading \"SITE PLAN - LEVEL 0\". One room near the centre-right is LIFTED: a wireframe box raised 15 cm above the table, glowing cyan #7fe0ff. Small amber #ffc35a pin markers on some rooms. The table's far wings must stay fully visible. GLIM, THE COMPANION: a white articulated desk lamp about 35 cm tall, a round white head with one glowing warm lens like an eye, a slim white jointed body and arms, friendly and simple like a stylized character, matte white plastic. THE MOMENT: Glim is presenting a decision to the person. The decision content (the same in every concept): title \"ESCAPE THE PAYOUT RECONCILIATION HTML SINKS\"; two small chips, a red one \"STOP-SHIP\" and a cyan outlined one \"SECURITY\"; two large app screenshots side by side labelled \"BEFORE\" and \"AFTER\", each a simple light-grey web app screen with a table of rows (the BEFORE one has one broken row outlined in red, the AFTER one is clean); a narrow column of three or four short fact lines; three large buttons \"APPROVE\" (filled amber #ffc35a with dark text), \"LATER\" and \"HOLD\" (outlined pale ink). A small title block in a corner with a sheet number \"D-03\". STYLE OF THE PROJECTED CONTENT: an architect's drawing set enlarged: blueprint blue sheet #10396a to #061a34, pale ink #dff0ff thin rules and frames, condensed sans-serif capitals for titles, amber only for the person's action, cyan only for the system, red only for the stop-ship chip. It must look like PROJECTED LIGHT landing on something, soft-edged and flat, NOT a glossy monitor, NOT glass, NOT a sci-fi hologram, no reflections, no bevels, no lens flares. Hard rules: no brand names, no logos, no people, no faces. Keep every word short and spelled exactly as given.\n\nCONCEPT 1, \"THE THROW\": a slide projector in a dark room. The studio's back wall is about 3 m from the eye, behind the far edge of the table, a plain dark plaster wall between the bookshelves (left) and the window wall (right). Glim stands on the table's far left corner, turned three quarters away from the viewer toward the wall, his lens throwing a soft, faint, narrow cone of warm-white light up and across to the wall (a subtle beam, a few dust motes, not a laser). On the wall, a large projected sheet about 2.4 m wide and 1.35 m tall, its centre slightly above eye height, filling the upper middle of the frame above the table's far edge without covering the table. The sheet is slightly KEYSTONED (a little wider at the top), its edges soft and slightly vignetted, the wall's plaster texture faintly showing through the light. It carries the decision layout: title across the top, the chips under it, BEFORE and AFTER screens side by side filling the middle, the fact column at the right, the three big buttons along the bottom, the title block in the bottom right corner. The light spills faintly onto the wall around the sheet and onto the top of the bookshelf edge; the rest of the room stays dark. EMPHASIS: make the projector reading unmistakable: the sheet is clearly keystoned (a trapezoid, top edge visibly wider than the bottom), its four edges soft and blooming with a slight falloff toward the corners, no hard frame line around it; Glim's head is turned to the wall with his lens facing it and a soft visible light cone runs from his lens to the sheet; the table seen from the low seat, its far edge close to the horizon line.",
+      "reference_image": "a real capture of the studio from the seat (bench v1-dev-studio_L.png, not committed)",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f47-76a1-9c94-98061d052f3e",
+      "date": "2026-11-10",
+      "source_size": "1672x941",
+      "size": "1672x941",
+      "bytes": 525719,
+      "sha256": "c54f0ff73cf23f28cb8624e2f8b161350fc762c1f02f4dd9687bc2651a2509c7"
+    },
+    {
+      "file": "concept-2-pinup.png",
+      "kept": "attempt 2 of 2 (attempt 1 equally good; 2 kept for Glim pointing at BEFORE and the visible light pool on the active sheet)",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. This is a concept art frame for a VR app, wide 16:9 landscape, at least 1536 px wide. The attached image reference.png is the real scene from the same seat today: keep its room, table, lamp character and style, but drop its fisheye vignette and its small floating panel. CAMERA: a seated person's eye, 115 cm above the floor and 43 cm above the table top, looking 10 degrees down, natural 90 degree horizontal field of view, no fisheye, no people, no hands in frame. THE ROOM: a dark architect's studio at night. Tall wooden bookshelves in warm shadow at the left; at the right a floor-to-ceiling window wall with black mullions and a night city of lit towers outside; dark walls, a warm wooden floor; very low ambient light. THE TABLE (the hero, filling the lower 40 percent of the frame): a 240 x 120 cm light table with a thin dark metal frame, its top a glowing blueprint in deep blue #0a2149 with lighter grid lines #1a4c8f and pale ink #dff0ff linework: five wings drawn as outlined wireframe room blocks with small labels, a compass rose in the middle, a title block at the near edge reading \"SITE PLAN - LEVEL 0\". One room near the centre-right is LIFTED: a wireframe box raised 15 cm above the table, glowing cyan #7fe0ff. Small amber #ffc35a pin markers on some rooms. The table's far wings must stay fully visible. GLIM, THE COMPANION: a white articulated desk lamp about 35 cm tall, a round white head with one glowing warm lens like an eye, a slim white jointed body and arms, friendly and simple like a stylized character, matte white plastic. THE MOMENT: Glim is presenting a decision to the person. The decision content (the same in every concept): title \"ESCAPE THE PAYOUT RECONCILIATION HTML SINKS\"; two small chips, a red one \"STOP-SHIP\" and a cyan outlined one \"SECURITY\"; two large app screenshots side by side labelled \"BEFORE\" and \"AFTER\", each a simple light-grey web app screen with a table of rows (the BEFORE one has one broken row outlined in red, the AFTER one is clean); a narrow column of three or four short fact lines; three large buttons \"APPROVE\" (filled amber #ffc35a with dark text), \"LATER\" and \"HOLD\" (outlined pale ink). A small title block in a corner with a sheet number \"D-03\". STYLE OF THE PROJECTED CONTENT: an architect's drawing set enlarged: blueprint blue sheet #10396a to #061a34, pale ink #dff0ff thin rules and frames, condensed sans-serif capitals for titles, amber only for the person's action, cyan only for the system, red only for the stop-ship chip. It must look like PROJECTED LIGHT landing on something, soft-edged and flat, NOT a glossy monitor, NOT glass, NOT a sci-fi hologram, no reflections, no bevels, no lens flares. Hard rules: no brand names, no logos, no people, no faces. Keep every word short and spelled exactly as given.\n\nCONCEPT 2, \"THE PIN-UP WALL\": an architect's pin-up review. Behind the table's far edge, about 2.6 m from the eye, a tall dark charcoal tackboard spans the view (a wide wall-mounted board, matte felt), and on it four separate sheets of projected light are \"pinned\" side by side with small pale pin dots at their corners, their tops roughly in a line, each with a thin pale ink border and a small title block: centre and largest (about 1.0 m wide), the DECISION sheet: the title \"ESCAPE THE PAYOUT RECONCILIATION HTML SINKS\", the STOP-SHIP and SECURITY chips, the fact lines, the APPROVE / LATER / HOLD buttons at its bottom; it is the BRIGHTEST, the active one. left of it, a large sheet \"BEFORE\" holding the before app screenshot; right of it, a large sheet \"AFTER\" holding the after app screenshot (each about 0.8 m wide); these two are a little dimmer. far right, a narrow tall sheet \"WAITING\" with a short list of four one-line items, dimmest of all. Glim stands at the table's far right corner, in front of the board and below the sheets, turned toward the centre sheet with one arm raised pointing at the BEFORE screen; a warm soft pool of his light falls on the centre sheet, making it the brightest. The board catches soft light around each sheet. The sheets sit above the table's far edge and do not hide it.",
+      "reference_image": "a real capture of the studio from the seat (bench v1-dev-studio_L.png, not committed)",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f65-7373-86e8-64914c0023ad",
+      "date": "2026-11-10",
+      "source_size": "1672x941",
+      "size": "1672x941",
+      "bytes": 561278,
+      "sha256": "9b511d2fe00768a721d22ec2378501a5b1e6e94744f672f7c20ae7a9eda3acbc"
+    },
+    {
+      "file": "concept-3-stage.png",
+      "kept": "attempt 2 of 2 (attempt 1 read as a flat banner, not a curve)",
+      "prompt": "Generate one image with your image generation tool. Do not run any shell commands and do not write any files; reply with the single word done. This is a concept art frame for a VR app, wide 16:9 landscape, at least 1536 px wide. The attached image reference.png is the real scene from the same seat today: keep its room, table, lamp character and style, but drop its fisheye vignette and its small floating panel. CAMERA: a seated person's eye, 115 cm above the floor and 43 cm above the table top, looking 10 degrees down, natural 90 degree horizontal field of view, no fisheye, no people, no hands in frame. THE ROOM: a dark architect's studio at night. Tall wooden bookshelves in warm shadow at the left; at the right a floor-to-ceiling window wall with black mullions and a night city of lit towers outside; dark walls, a warm wooden floor; very low ambient light. THE TABLE (the hero, filling the lower 40 percent of the frame): a 240 x 120 cm light table with a thin dark metal frame, its top a glowing blueprint in deep blue #0a2149 with lighter grid lines #1a4c8f and pale ink #dff0ff linework: five wings drawn as outlined wireframe room blocks with small labels, a compass rose in the middle, a title block at the near edge reading \"SITE PLAN - LEVEL 0\". One room near the centre-right is LIFTED: a wireframe box raised 15 cm above the table, glowing cyan #7fe0ff. Small amber #ffc35a pin markers on some rooms. The table's far wings must stay fully visible. GLIM, THE COMPANION: a white articulated desk lamp about 35 cm tall, a round white head with one glowing warm lens like an eye, a slim white jointed body and arms, friendly and simple like a stylized character, matte white plastic. THE MOMENT: Glim is presenting a decision to the person. The decision content (the same in every concept): title \"ESCAPE THE PAYOUT RECONCILIATION HTML SINKS\"; two small chips, a red one \"STOP-SHIP\" and a cyan outlined one \"SECURITY\"; two large app screenshots side by side labelled \"BEFORE\" and \"AFTER\", each a simple light-grey web app screen with a table of rows (the BEFORE one has one broken row outlined in red, the AFTER one is clean); a narrow column of three or four short fact lines; three large buttons \"APPROVE\" (filled amber #ffc35a with dark text), \"LATER\" and \"HOLD\" (outlined pale ink). A small title block in a corner with a sheet number \"D-03\". STYLE OF THE PROJECTED CONTENT: an architect's drawing set enlarged: blueprint blue sheet #10396a to #061a34, pale ink #dff0ff thin rules and frames, condensed sans-serif capitals for titles, amber only for the person's action, cyan only for the system, red only for the stop-ship chip. It must look like PROJECTED LIGHT landing on something, soft-edged and flat, NOT a glossy monitor, NOT glass, NOT a sci-fi hologram, no reflections, no bevels, no lens flares. Hard rules: no brand names, no logos, no people, no faces. Keep every word short and spelled exactly as given.\n\nCONCEPT 3, \"THE LIGHT STAGE\": no wall. Behind the table's far edge, about 2.4 m from the eye, a large CURVED sheet of soft light stands in the air like a theatre cyclorama, wrapping gently around the seat (a shallow arc about 120 degrees, its ends curving toward the viewer at the left and right edges of the frame), about 3.5 m long along the curve and 1.3 m tall, its bottom edge rising out of a thin bright line of cyan light along the table's far rim, its top edge fading softly into the dark. It is translucent at the edges only: the room is dimly visible through its faded top and ends. The content is laid out across the curve in zones: the centre zone holds the title, the chips and the BEFORE and AFTER screens side by side, large; the left zone holds the fact lines; the right zone holds the three big buttons APPROVE, LATER, HOLD stacked vertically; a small title block bottom right. Glim stands on the table at the foot of the stage, at the far rim slightly left of centre, small against the big curved sheet, turned up toward it with one arm pointing at the BEFORE screen; his warm lens glow mixes with the cool sheet. The sheet must not hide the table: the table's far wings and the lifted cyan room stay in front of it. EMPHASIS: the stage is clearly CURVED like a panoramic cyclorama: its left and right ends sweep forward toward the viewer and are seen at a steep angle at the frame edges, its content following the curve in perspective; a thin bright cyan line of light runs along the table's whole far rim and the sheet rises out of it like light leaving a slot; its top edge dissolves into darkness with no frame; Glim is small at its foot.",
+      "reference_image": "a real capture of the studio from the seat (bench v1-dev-studio_L.png, not committed)",
+      "tool": "codex-cli 0.166.0 exec, built-in image_generation, reference image -i v1-dev-studio_L.png",
+      "model": "not reported by codex exec",
+      "thread_id": "01a1c6a4-3f69-7322-ae1c-3774aa1e6902",
+      "date": "2026-11-10",
+      "source_size": "1672x941",
+      "size": "1672x941",
+      "bytes": 538621,
+      "sha256": "6bab24c53d3c247ca5bdc96b9709bf25d19a58c8d5a905a304e832d92006023c"
+    }
+  ]
+}
