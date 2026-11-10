@@ -373,6 +373,14 @@ void ABpTable::PlaceLamp()
 		At = LampStationAtLocal + FVector(0.0, LampAsideCm, 0.0);
 		Yaw = LampStationYaw;
 	}
+	// Waves PJ1/PJ2 (the device, 2026-11-10: from the seat Glim covered the far sheet's lower-left corner and its PREV): while a
+	// sheet is far he stands at the foot of it, on the table's far rim LEFT of the sheet, so his whole silhouette stays outside
+	// its rectangle from the seated eye (the sheet is at most about 22 degrees each side; he stands about 34 degrees left).
+	if (LampProj > 0.f && !bRide && !bLampAtStation)
+	{
+		const FVector FootAt(TableDepthCm * 0.5 - 7.0, -(TableWidthCm * 0.5 - 14.0), RestAt.Z);
+		At = FMath::Lerp(At, FootAt, static_cast<double>(SwitchEase(LampProj)));
+	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
 	// Wave PJ1: to the far sheet's point of interest while a sheet is thrown (TickLampManner eases LampProj).
 	if (LampProj > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, BpProjector::FarAimLocal())) * SwitchEase(LampProj);

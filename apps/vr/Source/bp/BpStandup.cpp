@@ -2692,18 +2692,23 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		else Middle.Add(B);
 	}
 	// PREV and NEXT stand quieter than the answers: shorter, and on a decision NEXT is an edge, never a second primary.
-	if (PrevButton) Button(FBox2f(FVector2f(Pad, BtnY0 + QuietIn), FVector2f(Pad + PrevButton->W, BtnY1 - QuietIn)), PrevButton->Word, PrevButton->Look, PrevButton->Act);
+	// Waves PJ1/PJ2: on a far surface they were 1.9 (wall) and 1.7 (stage) degrees tall, under the 2 degree floor: there they
+	// take 70 of the row's 78 layout px (2.5 and 2.3 degrees); the desk keeps its quieter 54.
+	const float PagerIn = bConsoleFar ? 4.f : QuietIn;
+	// Taller, their words set larger: wider too, or "PREV" is cut to "PR…".
+	const auto PagerW = [this](float W) { return bConsoleFar ? FMath::Max(W, 196.f) : W; };
+	if (PrevButton) Button(FBox2f(FVector2f(Pad, BtnY0 + PagerIn), FVector2f(Pad + PagerW(PrevButton->W), BtnY1 - PagerIn)), PrevButton->Word, PrevButton->Look, PrevButton->Act);
 	for (const FRowButton& B : Buttons)
 	{
-		if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) Button(FBox2f(FVector2f(LW - Pad - B.W, BtnY0 + QuietIn), FVector2f(LW - Pad, BtnY1 - QuietIn)), B.Word, bDecision && B.Look == EBtn::Fill ? EBtn::Edge : B.Look, B.Act);
+		if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) Button(FBox2f(FVector2f(LW - Pad - PagerW(B.W), BtnY0 + PagerIn), FVector2f(LW - Pad, BtnY1 - PagerIn)), B.Word, bDecision && B.Look == EBtn::Fill ? EBtn::Edge : B.Look, B.Act);
 	}
 	// The status line: under the frame over the full width; on a YESTERDAY sheet in the foot's row between PREV and NEXT, its
 	// other controls (TO ITS DECISION) quiet at the row's right before NEXT.
 	float StatusX0 = Pad + 4.f, StatusX1 = LW - Pad, StatusTop = StatusY0, StatusBottom = StatusY1;
 	if (bYesterdaySheet)
 	{
-		StatusX0 = Pad + (PrevButton ? PrevButton->W + 20.f : 4.f);
-		StatusX1 = LW - Pad - (bHasNext ? Next.W + 16.f : 0.f);
+		StatusX0 = Pad + (PrevButton ? PagerW(PrevButton->W) + 20.f : 4.f);
+		StatusX1 = LW - Pad - (bHasNext ? PagerW(Next.W) + 16.f : 0.f);
 		for (int32 Index = Middle.Num() - 1; Index >= 0; --Index)
 		{
 			const FRowButton& B = Middle[Index];
@@ -2713,7 +2718,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		StatusTop = BtnY0 + QuietIn;
 		StatusBottom = BtnY1 - QuietIn;
 	}
-	else Row(Pad + (PrevButton ? PrevButton->W + 16.f : 0.f), LW - Pad - (bHasNext ? Next.W + 16.f : 0.f), Middle);
+	else Row(Pad + (PrevButton ? PagerW(PrevButton->W) + 16.f : 0.f), LW - Pad - (bHasNext ? PagerW(Next.W) + 16.f : 0.f), Middle);
 	// The status fits by rule: a server's sentence too long for the line loses its parenthesis, then whole words go.
 	const float StatusW = StatusX1 - StatusX0 - 4.f;
 	FString StatusFit = Status;
@@ -2733,4 +2738,52 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			SNew(STextBlock).Text(FText::FromString(Pos)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))
 		]);
 	Put(FBox2f(FVector2f(HeadX1 - PosW - 18.f - WhoseW, 39.f), FVector2f(HeadX1 - PosW - 18.f, 79.f)), BpSheet::Chip(Whose, SmallBold, 40.f, S.bSample ? BpSheet::Amber : BpSheet::Accent, S.bSample));
+}
+
+void ABpPawn::StageFlank(bool bLeft, FString& OutTitle, TArray<FString>& OutLines) const
+{
+	// Wave PJ2, THE LIGHT STAGE's flanks: only for the stand-up's sheets (the rest of the pages keep both flanks dark).
+	OutTitle.Reset();
+	OutLines.Reset();
+	if (!bConsoleOpen || ConsolePageKey != TEXT("standup") || !Standup.IsValid() || Standup->bLoading || !Standup->Sheets.IsValidIndex(Standup->At)) return;
+	const FBpStandupState& S = *Standup;
+	const FBpStandupSheet& Shown = S.Sheets[S.At];
+	const FBpMorningCard* Card = S.Deck.cards.IsValidIndex(Shown.Card) ? &S.Deck.cards[Shown.Card] : nullptr;
+	if (bLeft)
+	{
+		// What waits: the morning's decisions still open, the one in hand amber.
+		int32 Open = 0;
+		for (int32 Index = 0; Index < S.Sheets.Num(); ++Index)
+		{
+			const FBpStandupSheet& Each = S.Sheets[Index];
+			const FBpMorningCard* C = S.Deck.cards.IsValidIndex(Each.Card) ? &S.Deck.cards[Each.Card] : nullptr;
+			const bool bCompanion = Each.Kind == FBpStandupSheet::EKind::Companion;
+			if (!bCompanion && !(C && C->kind == BpVocab::MorningCard::Kind::Decision)) continue;
+			const FString Id = bCompanion ? Each.Companion.Id : C->id;
+			if (S.Answers.Contains(Id) && Index != S.At) continue;
+			++Open;
+			const FString Head = bCompanion ? Each.Companion.Summary : C->headline;
+			OutLines.Add((Index == S.At ? TEXT("!") : TEXT("")) + Head);
+		}
+		if (Open > 0) OutTitle = FString::Printf(TEXT("WAITING · %d"), Open);
+		return;
+	}
+	// The context of the sheet in hand: a decision's evidence and its brief's facts; a companion's request, who filed it.
+	if (Shown.Kind == FBpStandupSheet::EKind::Companion)
+	{
+		OutTitle = TEXT("THE REQUEST");
+		OutLines.Add(TEXT("*") + Shown.Companion.Tool);
+		if (!Shown.Companion.Product.IsEmpty()) OutLines.Add(Shown.Companion.Product);
+		return;
+	}
+	if (!Card || Card->kind != BpVocab::MorningCard::Kind::Decision) return;
+	OutTitle = TEXT("WHAT IT TOUCHES");
+	for (int32 L = 1; L < Card->lines.Num(); ++L)
+	{
+		if (!Card->lines[L].text.IsEmpty()) OutLines.Add((L == 1 ? TEXT("*") : TEXT("")) + Card->lines[L].text);
+	}
+	for (const FBpBriefFact& Fact : Card->decision.brief.facts)
+	{
+		if (!Fact.text.IsEmpty()) OutLines.Add(Fact.text);
+	}
 }

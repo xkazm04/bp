@@ -2,6 +2,7 @@
 // and lays it out; this file only answers where a far surface stands, what a ray hits on it, and where a screen changed.
 #include "BpProjector.h"
 
+#include "BpGameMode.h"
 #include "BpTable.h"
 #include "Engine/Texture2D.h"
 #include "HAL/IConsoleManager.h"
@@ -9,15 +10,35 @@
 namespace
 {
 	TAutoConsoleVariable<int32> CVarProjector(TEXT("bp.Projector"), 0,
-		TEXT("The main screen (wave PJ1): 0 the desk console (default), 1 THE THROW (the open sheet far and large over the table's far rim), 2 THE LIGHT STAGE (not built yet: behaves as 1). Saved; SETTINGS > MAIN SCREEN."), ECVF_Default);
+		TEXT("The main screen (wave PJ1): 0 the desk console (default), 1 THE THROW (the open sheet far and large over the table's far rim), 2 THE LIGHT STAGE (wave PJ2: a curved sheet of light around the seat, bp.Stage.*). Saved; SETTINGS > MAIN SCREEN."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarDistance(TEXT("bp.Projector.DistanceCm"), 260.f,
 		TEXT("THE THROW: the sheet's distance from the seated eye, cm (150 to 500). 260 by default: at 300 the studio's shelf ladder stood in front of the sheet's left edge (cap/pj1-f3-y-kf011.png); 260 clears it at the same angular size."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarWidth(TEXT("bp.Projector.WidthCm"), 208.f,
 		TEXT("THE THROW: the sheet's width at DistanceCm, cm (100 to 400; its height is 9/16 of it; 208 at 260 cm is the README's 240 at 300: 43.5 x 25.3 degrees)."), ECVF_Default);
-	TAutoConsoleVariable<float> CVarLift(TEXT("bp.Projector.LiftCm"), 17.f,
-		TEXT("THE THROW: the sheet's centre above the seated eye at DistanceCm, cm (-40 to 80)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarLift(TEXT("bp.Projector.LiftCm"), 6.f,
+		TEXT("THE THROW: the sheet's centre above the seated eye at DistanceCm, cm (-40 to 80). 6 by default (was 17: on the device the sheet's top sat at the edge of the lenses' view, the resting gaze being 10 degrees down)."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarRoomDistance(TEXT("bp.Projector.RoomDistanceCm"), 200.f,
 		TEXT("THE THROW in your own room (bp.Room 1, passthrough): the sheet comes to this distance, cm (120 to 400), at the same angular size, since a real wall may be nearer than 3 m."), ECVF_Default);
+
+	// Wave PJ2, THE LIGHT STAGE (README concept 3): heights are above a floor 72 cm under the table top (the README's table), so
+	// the stage's foot is the far rim's height whatever bp.TableHeightCm is.
+	TAutoConsoleVariable<float> CVarStageRadius(TEXT("bp.Stage.RadiusCm"), 220.f,
+		TEXT("THE LIGHT STAGE (bp.Projector 2): the curved sheet's radius around the seated eye, cm (150 to 400)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageArc(TEXT("bp.Stage.ArcDeg"), 120.f,
+		TEXT("THE LIGHT STAGE: the arc it wraps around the seat, degrees (60 to 160); the outer 15 degrees each side fade out."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageBottom(TEXT("bp.Stage.BottomCm"), 60.f,
+		TEXT("THE LIGHT STAGE: its foot, cm above a floor 72 cm under the table top (72 = the far rim's height; 40 to 140). 60 by default: -14 degrees from the seated eye, still above the far rim's -20, so the content can sit low (the device: the resting gaze is 10 degrees down)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageContentTop(TEXT("bp.Stage.ContentTopDeg"), 10.f,
+		TEXT("THE LIGHT STAGE: the active sheet's top, degrees above the seated eye's horizon (-5 to 25; 10 is 20 above the resting gaze)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageTop(TEXT("bp.Stage.TopCm"), 202.f,
+		TEXT("THE LIGHT STAGE: its top, cm on the same scale (bottom + 60 to 300); its last 25 cm fade out."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageCentre(TEXT("bp.Stage.CentreDeg"), 55.f,
+		TEXT("THE LIGHT STAGE: the centre zone's widest (the active sheet, 16:9; its height from its foot to ContentTopDeg sets it first), degrees (30 to 70)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarStageRoomRadius(TEXT("bp.Stage.RoomRadiusCm"), 180.f,
+		TEXT("THE LIGHT STAGE in your own room (bp.Room 1): the radius comes in to this, cm (120 to 400), at the same angular size."), ECVF_Default);
+
+	BpStage::FShape GStage;
+	FBox2D GStageSheet(FVector2D(0.3, 0.2), FVector2D(0.7, 0.9));
 
 	bool GFar = false;
 	FVector GFarAim = FVector::ZeroVector;
@@ -62,6 +83,70 @@ namespace
 		}
 	};
 
+	/** THE LIGHT STAGE (wave PJ2): a curved sheet of light around the seat (BpStageMesh.h). Its pose is the seated eye's ground
+	 *  point facing the table's forward; the active sheet is its centre zone, and a sheet UV outside 0..1 is still on the stage
+	 *  (the flanks: the ray is taken, no control is there). */
+	class FStageSurface final : public IBpFarSurface
+	{
+	public:
+		virtual const TCHAR* Name() const override { return TEXT("stage"); }
+		virtual void Place(const FVector& EyeLocal, const FVector& Forward, bool bPassthrough, FVector& OutCentre, FRotator& OutFacing, FVector2D& OutSizeCm) const override
+		{
+			// The README's table is 72 cm high and the seated eye 43 cm over its top: 115 cm over the stage's floor.
+			const double EyeH = 72.0 + ABpGameMode::TargetEyeAboveTopCm;
+			const double R = FMath::Clamp(CVarStageRadius.GetValueOnGameThread(), 150.f, 400.f);
+			const double RoomR = FMath::Clamp(CVarStageRoomRadius.GetValueOnGameThread(), 120.f, 400.f);
+			// Your room: a real wall may be nearer than 2.2 m; the stage comes in and keeps its angular size (scaled about the eye).
+			const double K = bPassthrough ? FMath::Min(1.0, RoomR / R) : 1.0;
+			const double Bottom = FMath::Clamp(CVarStageBottom.GetValueOnGameThread(), 40.f, 140.f);
+			const double Top = FMath::Clamp(static_cast<double>(CVarStageTop.GetValueOnGameThread()), Bottom + 60.0, Bottom + 300.0);
+			BpStage::FShape Shape;
+			Shape.RadiusCm = R * K;
+			Shape.ArcDeg = FMath::Clamp(CVarStageArc.GetValueOnGameThread(), 60.f, 160.f);
+			Shape.BottomCm = EyeH + (Bottom - EyeH) * K;
+			Shape.TopCm = EyeH + (Top - EyeH) * K;
+			Shape.TopFadeCm = 25.0 * K;
+			Shape.EdgeFadeDeg = 15.0;
+			Shape.Columns = FMath::Clamp(FMath::RoundToInt(Shape.ArcDeg / 2.5), 24, 64);
+			GStage = Shape;
+			// The centre zone (the active sheet, 16:9). On the device the wall's top sat at the edge of the lenses' view (the seated
+			// gaze rests 10 degrees down): the content's top is ContentTopDeg above the horizon (10: 20 above the resting gaze) and
+			// its foot 4 cm over the stage's; the stage above it is glow and the top fade. Narrowed to CentreDeg at most.
+			const double ArcLen = Shape.RadiusCm * FMath::DegreesToRadians(Shape.ArcDeg);
+			const double Height = Shape.TopCm - Shape.BottomCm;
+			const double ContentTop = FMath::Min(Shape.TopCm - Shape.TopFadeCm, EyeH + Shape.RadiusCm * FMath::Tan(FMath::DegreesToRadians(FMath::Clamp(CVarStageContentTop.GetValueOnGameThread(), -5.f, 25.f))));
+			const double ContentBottom = Shape.BottomCm + 4.0 * K;
+			double H = FMath::Max(20.0, ContentTop - ContentBottom);
+			double W = H * 16.0 / 9.0;
+			const double MaxW = Shape.RadiusCm * FMath::DegreesToRadians(FMath::Clamp(CVarStageCentre.GetValueOnGameThread(), 30.f, FMath::Min(70.f, static_cast<float>(Shape.ArcDeg) - 30.f)));
+			if (W > MaxW) { W = MaxW; H = W * 9.0 / 16.0; }
+			const double V1 = (Shape.TopCm - ContentBottom) / Height;
+			GStageSheet = FBox2D(FVector2D(0.5 - 0.5 * W / ArcLen, V1 - H / Height), FVector2D(0.5 + 0.5 * W / ArcLen, V1));
+			FVector Fwd = Forward;
+			Fwd.Z = 0.0;
+			Fwd = Fwd.GetSafeNormal();
+			if (Fwd.IsNearlyZero()) Fwd = FVector::ForwardVector;
+			OutCentre = FVector(EyeLocal.X, EyeLocal.Y, EyeLocal.Z - EyeH);
+			OutFacing = FRotator(0.0, Fwd.Rotation().Yaw, 0.0);
+			OutSizeCm = FVector2D(W, H);
+		}
+		virtual bool RayToUv(const FTransform& Pose, const FVector2D& SizeCm, const FVector& Origin, const FVector& Dir, FVector2D& OutUv) const override
+		{
+			FVector2D StageUv;
+			double Distance = 0.0;
+			if (!BpStage::RayHit(GStage, Pose.InverseTransformPositionNoScale(Origin), Pose.InverseTransformVectorNoScale(Dir), StageUv, Distance)) return false;
+			OutUv = (StageUv - GStageSheet.Min) / GStageSheet.GetSize();
+			return true;
+		}
+		virtual FVector UvToWorld(const FTransform& Pose, const FVector2D& SizeCm, const FVector2D& Uv) const override
+		{
+			return Pose.TransformPositionNoScale(BpStage::UVToPoint(GStage, GStageSheet.Min + Uv * GStageSheet.GetSize()));
+		}
+	};
+
+	FAutoConsoleCommand GStageSelfCheck(TEXT("BpStage.SelfCheck"), TEXT("Wave PJ2: runs THE LIGHT STAGE's geometry self-check (BpStageMesh.cpp) and logs each result."),
+		FConsoleCommandDelegate::CreateStatic(&BpStage::SelfCheck));
+
 	/** A screen's grey thumbnail, kept while its texture lives. */
 	struct FThumb
 	{
@@ -80,7 +165,38 @@ namespace BpProjector
 	const IBpFarSurface& Surface()
 	{
 		static const FThrowSurface Throw;
+		static const FStageSurface Stage;
+		if (Mode() == 2) return Stage;
 		return Throw;
+	}
+
+	const BpStage::FShape& StageShape() { return GStage; }
+	FBox2D StageSheetUv() { return GStageSheet; }
+
+	FVector2D StageLayoutSize(float SheetLayoutW)
+	{
+		// The sheet's layout px per cm, over the whole arc and height: square in cm, as the mesh's UV is.
+		const double PerCm = SheetLayoutW / FMath::Max(1.0, GStageSheet.GetSize().X * GStage.RadiusCm * FMath::DegreesToRadians(GStage.ArcDeg));
+		return FVector2D(GStage.RadiusCm * FMath::DegreesToRadians(GStage.ArcDeg) * PerCm, (GStage.TopCm - GStage.BottomCm) * PerCm);
+	}
+
+	FIntPoint StageDrawSize(const FVector2D& StageLayout)
+	{
+		const double S = FMath::Min(4096.0 / FMath::Max(1.0, StageLayout.X), 1024.0 / FMath::Max(1.0, StageLayout.Y));
+		// The width on a 16 px step, the height at the same scale (so a texel is square and the layout maps exactly).
+		const int32 W = FMath::Clamp(FMath::FloorToInt(StageLayout.X * S / 16.0) * 16, 16, 4096);
+		return FIntPoint(W, FMath::Clamp(FMath::FloorToInt(StageLayout.Y * W / FMath::Max(1.0, StageLayout.X)), 16, 1024));
+	}
+
+	FString StageKey()
+	{
+		return FString::Printf(TEXT("%.1f %.1f %.1f %.1f %.1f %d"), GStage.RadiusCm, GStage.ArcDeg, GStage.BottomCm, GStage.TopCm, GStage.TopFadeCm, GStage.Columns);
+	}
+
+	FString StageCvars()
+	{
+		return FString::Printf(TEXT("%g|%g|%g|%g|%g|%g"), CVarStageRadius.GetValueOnGameThread(), CVarStageArc.GetValueOnGameThread(), CVarStageBottom.GetValueOnGameThread(),
+			CVarStageTop.GetValueOnGameThread(), CVarStageCentre.GetValueOnGameThread(), CVarStageRoomRadius.GetValueOnGameThread()) + FString::Printf(TEXT("|%g"), CVarStageContentTop.GetValueOnGameThread());
 	}
 
 	FIntPoint DrawSizeFor(const FVector2D& SizeCm, float DistanceCm)

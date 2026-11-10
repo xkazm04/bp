@@ -10,6 +10,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BpStageMesh.h"
 
 class UTexture2D;
 
@@ -30,11 +31,11 @@ public:
 
 namespace BpProjector
 {
-	/** bp.Projector as asked: 0 the desk console, 1 THE THROW, 2 THE LIGHT STAGE (behaves as 1 until it exists). */
+	/** bp.Projector as asked: 0 the desk console, 1 THE THROW, 2 THE LIGHT STAGE. */
 	int32 Mode();
 	/** A far surface is in use (Mode() > 0). */
 	inline bool IsOn() { return Mode() > 0; }
-	/** The surface the mode names (the throw's flat sheet for 1 and, for now, 2). */
+	/** The surface the mode names (the throw's flat sheet for 1, the stage's curve for 2). */
 	const IBpFarSurface& Surface();
 	/** The draw size for a surface of SizeCm at DistanceCm: about 36 px a degree (2x the Quest 3S's centre), at most 2048 wide. */
 	FIntPoint DrawSizeFor(const FVector2D& SizeCm, float DistanceCm);
@@ -47,6 +48,24 @@ namespace BpProjector
 	FVector FarCentreLocal();
 	/** The angular size that the far sheet's distance gives a cap height (cm) and a control (cm), for the legibility table. */
 	float ArcMinutes(float Cm, float DistanceCm);
+
+	// ---- THE LIGHT STAGE (wave PJ2, bp.Projector 2) ---------------------------------------------------------------------------
+	/** The stage is the surface in use (Mode() == 2). */
+	inline bool IsStage() { return Mode() == 2; }
+	/** The stage's shape as its surface last placed it, in the stage's own space: the pose Place returns is the seated eye's
+	 *  ground point (72 cm under the table top, as the README's table), facing the table's forward; the shape is centred on
+	 *  that pose's origin, facing +X (BpStageMesh.h). */
+	const BpStage::FShape& StageShape();
+	/** The active sheet's rectangle on the stage (its centre zone), in the stage's UV (0..1 over the whole arc and height). */
+	FBox2D StageSheetUv();
+	/** The stage's whole surface in the sheet's layout pixels, for a sheet SheetLayoutW layout px wide. */
+	FVector2D StageLayoutSize(float SheetLayoutW);
+	/** The stage's render target size for a layout of StageLayout px: the most that fits 4096 x 1024 at square texels. */
+	FIntPoint StageDrawSize(const FVector2D& StageLayout);
+	/** A key that changes when the stage's shape does (its mesh is rebuilt then, never per frame). */
+	FString StageKey();
+	/** The stage's cvars as one string (the console re-places the sheet when it changes). */
+	FString StageCvars();
 
 	// ---- The loupe ----------------------------------------------------------------------------------------------------------
 	/** Called on the decode's worker thread: a grey thumbnail (ThumbW wide) of a BGRA image W x H. */

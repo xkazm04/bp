@@ -10,6 +10,8 @@
 
 class UBpHands;
 class UWidgetComponent;
+class UProceduralMeshComponent;
+class UMaterialInstanceDynamic;
 struct FBpScanState;
 struct FBpOnboardingState;
 struct FBpFocusList;
@@ -402,6 +404,30 @@ private:
 	int32 ConsoleProjShown = -1;
 	/** The far sheet's point of interest this draw (layout px; negative: none): the loupe's region on its screen. */
 	FVector2f LoupeAimLayout = FVector2f(-1.f, -1.f);
+	/** Wave PJ2, THE LIGHT STAGE (bp.Projector 2): the curved sheet (section 0) and the far rim's line of light (section 1), on
+	 *  the table like the panel; the panel then draws the whole stage into its render target and is not drawn itself. */
+	UPROPERTY(Transient)
+	TObjectPtr<UProceduralMeshComponent> ConsoleStage;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ConsoleStageMat;
+	bool bConsoleStage = false;
+	/** The stage's whole surface in the sheet's layout px, and the shape its mesh was built for. */
+	FVector2f ConsoleStageLayout = FVector2f::ZeroVector;
+	FString ConsoleStageMeshKey;
+	/** Wave PJ2: the slim bar stays at the desk while the sheet is far (modes 1 and 2): a second, small widget. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> ConsoleNearBar;
+	TArray<FConsoleBox> NearBarBoxes;
+	void PlaceStage(const FTransform& Pose);
+	/** Wave PJ2: while the stage stands, the studio's primitives it fully covers (behind it) or that stand in front of its
+	 *  content above the table (a pendant shade over the right flank) are hidden; shown again when it goes. */
+	void StageCull(bool bOn);
+	TArray<TWeakObjectPtr<class UPrimitiveComponent>> StageHidden;
+	void PlaceNearBar(bool bShow);
+	bool NearBarHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	/** The stage's flank (BpStandup.cpp): left, what waits; right, the active sheet's context. Empty: the flank stays dark.
+	 *  A line led by "!" is the one in hand (amber), by "*" a bold one. */
+	void StageFlank(bool bLeft, FString& OutTitle, TArray<FString>& OutLines) const;
 	void MakeConsole();
 	void RefreshConsole();
 	void PlaceConsole();

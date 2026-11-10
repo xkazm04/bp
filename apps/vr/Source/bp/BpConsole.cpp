@@ -16,6 +16,7 @@
 #include "BpPawn.h"
 
 #include "BpAudio.h"
+#include "BpGameMode.h"
 #include "BpProjector.h"
 #include "BpLink.h"
 #include "BpSheet.h"
@@ -25,6 +26,10 @@
 #include "BpWords.h"
 #include "Components/WidgetComponent.h"
 #include "Containers/Ticker.h"
+#include "Engine/TextureRenderTarget2D.h"
+#include "EngineUtils.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "ProceduralMeshComponent.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/App.h"
 #include "Schema/BpSchemaVocab.h"
@@ -1260,13 +1265,13 @@ struct FBpConsolePages
 			Out.Add(Row);
 		}
 		{
-			// Wave PJ1, the main screen: the open sheet on the desk (as before), or thrown far and large on the wall. STAGE is the
-			// next wave's: until it exists it is drawn quiet and the throw stands in.
+			// Waves PJ1/PJ2, the main screen: the open sheet on the desk (as before), thrown far and large on the wall, or on the
+			// light stage (a curved sheet around the seat).
 			const int32 Mode = CvarInt(TEXT("bp.Projector"));
 			FBpConsoleRow Row;
 			Row.Label = TEXT("MAIN SCREEN");
-			Row.Detail = Mode == 0 ? TEXT("The sheet opens on the desk, close") : TEXT("The sheet is thrown on the wall, far and large");
-			Row.Buttons = { { TEXT("DESK"), TEXT("set:screen:0"), Mode == 0 }, { TEXT("WALL"), TEXT("set:screen:1"), Mode == 1 } };
+			Row.Detail = Mode == 0 ? TEXT("The sheet opens on the desk, close") : Mode == 1 ? TEXT("The sheet is thrown on the wall, far and large") : TEXT("The sheet stands on a curved stage of light around you");
+			Row.Buttons = { { TEXT("DESK"), TEXT("set:screen:0"), Mode == 0 }, { TEXT("WALL"), TEXT("set:screen:1"), Mode == 1 }, { TEXT("STAGE"), TEXT("set:screen:2"), Mode == 2 } };
 			Out.Add(Row);
 		}
 		{
@@ -1390,8 +1395,237 @@ void ABpPawn::MakeConsole()
 	ConsolePanel->RegisterComponent();
 	// No tick of its own while idle: a change asks for one render (RequestRenderUpdate), after which it stops again.
 	ConsolePanel->SetTickMode(ETickMode::Disabled);
+	// Wave PJ2: THE LIGHT STAGE's surface, on the table as the panel is (it follows a re-seat with it); hidden until a sheet is
+	// on it. Opaque-masked unlit (M_BpStage: the panel's render target, the edge fade in vertex alpha, alpha to coverage); the
+	// rim's line additive (M_BpStageRim). No collision, no shadow, no tick.
+	ConsoleStage = NewObject<UProceduralMeshComponent>(this, TEXT("ConsoleStage"));
+	ConsoleStage->SetupAttachment(Table->GetRootComponent());
+	ConsoleStage->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ConsoleStage->SetCastShadow(false);
+	ConsoleStage->SetVisibility(false);
+	ConsoleStage->RegisterComponent();
+	ConsoleStage->SetComponentTickEnabled(false);
+	// The slim bar at the desk while the sheet is far (modes 1 and 2): the bar's own small widget, drawn with the panel.
+	ConsoleNearBar = NewObject<UWidgetComponent>(this, TEXT("ConsoleNearBar"));
+	ConsoleNearBar->SetupAttachment(Table->GetRootComponent());
+	ConsoleNearBar->SetWidgetSpace(EWidgetSpace::World);
+	ConsoleNearBar->SetDrawAtDesiredSize(false);
+	ConsoleNearBar->SetPivot(FVector2D(0.5, 0.5));
+	ConsoleNearBar->SetBlendMode(EWidgetBlendMode::Opaque);
+	ConsoleNearBar->SetTwoSided(false);
+	ConsoleNearBar->SetBackgroundColor(FLinearColor::Transparent);
+	ConsoleNearBar->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	ConsoleNearBar->SetCastShadow(false);
+	ConsoleNearBar->SetWindowFocusable(false);
+	ConsoleNearBar->SetManuallyRedraw(true);
+	ConsoleNearBar->SetTintColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, 1.f));
+	ConsoleNearBar->SetVisibility(false);
+	ConsoleNearBar->RegisterComponent();
+	ConsoleNearBar->SetTickMode(ETickMode::Disabled);
 	ConsolePageKey = TEXT("home");
 	PlaceConsole();
+}
+
+void ABpPawn::PlaceStage(const FTransform& Pose)
+{
+	if (!ConsoleStage) return;
+	ABpTable* Table = WristTable.Get();
+	ConsoleStage->SetRelativeTransform(Pose);
+	// The shape, its place on the table and the table's place in the room (a re-seat moves the studio around it).
+	const FVector TableAt = Table ? Table->GetActorLocation() : FVector::ZeroVector;
+	const FString Key = BpProjector::StageKey() + FString::Printf(TEXT(" %.1f %.1f %.1f | %.0f %.0f %.0f %.1f"), Pose.GetLocation().X, Pose.GetLocation().Y, Pose.GetLocation().Z,
+		TableAt.X, TableAt.Y, TableAt.Z, Table ? Table->GetActorRotation().Yaw : 0.0);
+	const bool bRebuilt = Key != ConsoleStageMeshKey && Table;
+	if (bRebuilt)
+	{
+		ConsoleStageMeshKey = Key;
+		// Built once per shape, never per frame: 2 x Columns quads for the sheet, 32 for the rim.
+		BpStage::BuildSheet(ConsoleStage, 0, BpProjector::StageShape());
+		// The rim's line: the table's far edge, at its top, in the stage's own space (the frame's rim, 1 cm in from its edge).
+		const FVector Eye = Table->ConsoleEyeLocal();
+		const double TopZ = Eye.Z - ABpGameMode::TargetEyeAboveTopCm + 0.4;
+		const double FarX = ABpTable::TableDepthCm * 0.5 - 1.5;
+		BpStage::FRimLine Rim;
+		Rim.Start = Pose.InverseTransformPositionNoScale(FVector(FarX, -ABpTable::TableWidthCm * 0.5 + 4.0, TopZ));
+		Rim.End = Pose.InverseTransformPositionNoScale(FVector(FarX, ABpTable::TableWidthCm * 0.5 - 4.0, TopZ));
+		Rim.Seat = FVector::ZeroVector;
+		Rim.WidthCm = 1.2;
+		Rim.TiltDeg = 35.0;
+		Rim.EndFadeCm = 25.0;
+		BpStage::BuildRimLine(ConsoleStage, 1, Rim);
+		if (!ConsoleStageMat)
+		{
+			UMaterialInterface* Master = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_BpStage.M_BpStage"));
+			if (!Master)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpStage: M_BpStage is missing (apps/vr/tools/mcp-steps/py/pj2_stage.py makes it); the widget's opaque material stands in, no edge fade"));
+				Master = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/EngineMaterials/Widget3DPassThrough_Opaque.Widget3DPassThrough_Opaque"));
+			}
+			ConsoleStageMat = Master ? UMaterialInstanceDynamic::Create(Master, this) : nullptr;
+			if (UMaterialInterface* RimMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_BpStageRim.M_BpStageRim"))) ConsoleStage->SetMaterial(1, RimMat);
+		}
+		if (ConsoleStageMat) ConsoleStage->SetMaterial(0, ConsoleStageMat);
+		const BpStage::FShape& S = BpProjector::StageShape();
+		const FBox2D Sheet = BpProjector::StageSheetUv();
+		const double EyeH = 72.0 + ABpGameMode::TargetEyeAboveTopCm;
+		const FVector2D Whole = BpStage::AngularSizeDeg(S, FVector2D(0.0, 0.0), FVector2D(1.0, 1.0), EyeH);
+		const FVector2D Centre = BpStage::AngularSizeDeg(S, Sheet.Min, Sheet.Max, EyeH);
+		UE_LOG(LogBpTable, Log, TEXT("BpStage: built: radius %.0f cm, arc %.0f deg, %.0f to %.0f cm (top fade %.0f), %d columns: %.1f x %.1f deg from the eye; centre zone %.1f x %.1f deg (u %.3f to %.3f, v %.3f to %.3f); %d + %d triangles"),
+			S.RadiusCm, S.ArcDeg, S.BottomCm, S.TopCm, S.TopFadeCm, S.Columns, Whole.X, Whole.Y, Centre.X, Centre.Y, Sheet.Min.X, Sheet.Max.X, Sheet.Min.Y, Sheet.Max.Y,
+			ConsoleStage->GetProcMeshSection(0) ? ConsoleStage->GetProcMeshSection(0)->ProcIndexBuffer.Num() / 3 : 0, ConsoleStage->GetProcMeshSection(1) ? ConsoleStage->GetProcMeshSection(1)->ProcIndexBuffer.Num() / 3 : 0);
+	}
+	const bool bShowNow = !ConsoleStage->IsVisible();
+	if (bShowNow) ConsoleStage->SetVisibility(true);
+	// The studio around it is judged again when it appears or moves (a re-seat), never per frame.
+	if (bShowNow || bRebuilt) StageCull(true);
+}
+
+void ABpPawn::StageCull(bool bOn)
+{
+	for (const TWeakObjectPtr<UPrimitiveComponent>& Each : StageHidden)
+	{
+		if (UPrimitiveComponent* Prim = Each.Get()) Prim->SetHiddenInGame(false);
+	}
+	const int32 Shown = StageHidden.Num();
+	StageHidden.Reset();
+	ABpTable* Table = WristTable.Get();
+	UWorld* World = GetWorld();
+	if (!bOn || !Table || !World || !ConsoleStage)
+	{
+		if (Shown > 0) UE_LOG(LogBpTable, Log, TEXT("BpStage: %d studio primitives shown again"), Shown);
+		return;
+	}
+	// What stays whatever the stage does: the table and what it owns, the pawn, the lamp's group (Glim), the posed hands.
+	TSet<const AActor*> Keep;
+	{
+		TArray<AActor*> Lamp;
+		Table->LampActors(Lamp);
+		for (const AActor* Each : Lamp) Keep.Add(Each);
+	}
+	const auto Stays = [&Keep](const AActor* Actor)
+	{
+		for (int32 Depth = 0; Actor && Depth < 8; ++Depth)
+		{
+			for (const AActor* Each = Actor; Each; Each = Each->GetAttachParentActor())
+			{
+				if (Keep.Contains(Each) || Each->IsA<APawn>() || Each->IsA<ABpTable>() || Each->ActorHasTag(ABpPawn::CaptureHandsTag) || Each->ActorHasTag(ABpPawn::CaptureWristTag)) return true;
+			}
+			Actor = Actor->GetOwner();
+		}
+		return false;
+	};
+	const BpStage::FShape& S = BpProjector::StageShape();
+	const double EyeH = 72.0 + ABpGameMode::TargetEyeAboveTopCm;
+	const double Opaque = 0.5 * S.ArcDeg - S.EdgeFadeDeg;
+	const double FootDeg = FMath::RadiansToDegrees(FMath::Atan2(S.BottomCm - EyeH, S.RadiusCm));
+	const double TopDeg = FMath::RadiansToDegrees(FMath::Atan2(S.TopCm - S.TopFadeCm - EyeH, S.RadiusCm));
+	const FTransform& Pose = ConsoleStage->GetComponentTransform();
+	int32 Behind = 0, Front = 0;
+	FString Names;
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (Stays(*It)) continue;
+		TArray<UPrimitiveComponent*> Prims;
+		It->GetComponents(Prims);
+		for (UPrimitiveComponent* Prim : Prims)
+		{
+			if (!Prim || !Prim->IsVisible() || Prim->bHiddenInGame || !Prim->IsRegistered()) continue;
+			const FBox Box = Prim->Bounds.GetBox();
+			if (!Box.IsValid || Box.GetExtent().GetMax() > 400.0) continue; // floors, walls, sky: not a prop
+			FVector Corners[8];
+			Box.GetVertices(Corners);
+			bool bAllIn = true, bAllFar = true, bAllNear = true;
+			double NearFlat = TNumericLimits<double>::Max(), LowElev = 90.0, HighElev = -90.0;
+			for (const FVector& Corner : Corners)
+			{
+				const FVector L = Pose.InverseTransformPositionNoScale(Corner);
+				const double Flat = FVector2D(L.X, L.Y).Size();
+				const double Yaw = FMath::RadiansToDegrees(FMath::Atan2(L.Y, L.X));
+				const double Elev = FMath::RadiansToDegrees(FMath::Atan2(L.Z - EyeH, FMath::Max(1.0, Flat)));
+				bAllIn &= FMath::Abs(Yaw) <= Opaque && Elev >= FootDeg && Elev <= TopDeg;
+				bAllFar &= Flat > S.RadiusCm;
+				bAllNear &= Flat < S.RadiusCm;
+				NearFlat = FMath::Min(NearFlat, Flat);
+				LowElev = FMath::Min(LowElev, Elev);
+				HighElev = FMath::Max(HighElev, Elev);
+			}
+			// In front of the stage: between the table's far rim and the stage (wholly beyond the rim, wholly nearer than the
+			// stage: what stands on the table stays), its centre's bearing inside the arc and its height overlapping the stage's
+			// (a pendant shade and its cord, a pen pot on a studio desk after a re-seat).
+			const FVector C = Pose.InverseTransformPositionNoScale(Box.GetCenter());
+			const double CYaw = FMath::RadiansToDegrees(FMath::Atan2(C.Y, C.X));
+			const double RimFlat = ABpTable::TableDepthCm * 0.5 + ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm + 5.0;
+			// "Nearer" is any part of it (a pendant hanging across the stage's radius, StudioPendant2, still covered the right flank).
+			const bool bFront = NearFlat < S.RadiusCm && NearFlat > RimFlat && FMath::Abs(CYaw) <= 0.5 * S.ArcDeg && HighElev >= FootDeg && LowElev <= TopDeg;
+			const bool bBehind = bAllFar && bAllIn;
+			if (!bFront && !bBehind) continue;
+			Prim->SetHiddenInGame(true);
+			StageHidden.Add(Prim);
+			(bFront ? Front : Behind) += 1;
+			if (Names.Len() < 400) Names += FString::Printf(TEXT("%s%s.%s"), Names.IsEmpty() ? TEXT("") : TEXT(", "), *It->GetActorNameOrLabel(), *Prim->GetName());
+		}
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpStage: hid %d studio primitives it covers and %d standing in front of it: %s"), Behind, Front, *Names);
+}
+
+void ABpPawn::PlaceNearBar(bool bShow)
+{
+	ABpTable* Table = WristTable.Get();
+	if (!ConsoleNearBar || !Table) return;
+	if (!bShow)
+	{
+		if (ConsoleNearBar->IsVisible()) ConsoleNearBar->SetVisibility(false);
+		NearBarBoxes.Reset();
+		return;
+	}
+	// Where the bar stands when nothing is open (PlaceConsole's desk branch): the slot's top edge, or under the deck in room mode.
+	const float S = BpSheet::TextScale();
+	const bool bRoom = !Table->GetRoomModeId().IsEmpty();
+	const FVector2D Draw(FMath::RoundToInt(ConsoleWidthCm * ConsolePxPerCm), FMath::RoundToInt(ConsoleBarHeightCm * ConsolePxPerCm));
+	if (ConsoleNearBar->GetDrawSize() != Draw) ConsoleNearBar->SetDrawSize(Draw);
+	const FTransform Slot = Table->ConsoleSlotPose();
+	const FVector Up = Slot.GetRotation().GetUpVector();
+	FVector At = Slot.GetLocation() + (bRoom ? -Up * (ABpTable::DeckHeightCm * 0.5f + ConsoleBarGapCm + ConsoleBarHeightCm * S * 0.5f) : Up * (ABpTable::DeckHeightCm * 0.5f - ConsoleBarHeightCm * S * 0.5f));
+	const FVector Eye = Table->ConsoleEyeLocal();
+	// At the slot's top edge it stood in front of the far sheet from the seat (cap/pj2-s-su1-far.png): while a sheet is far it
+	// comes down to NearBarDropDeg below the eye's horizon at the same distance and bearing, under the far sheet's foot (the
+	// stage's -13 degrees, the wall's -11) and still over the table.
+	{
+		constexpr double NearBarDropDeg = 25.0;
+		const FVector To = At - Eye;
+		const double Dist = To.Size();
+		const FVector Flat = FVector(To.X, To.Y, 0.0).GetSafeNormal();
+		const double Drop = FMath::DegreesToRadians(NearBarDropDeg);
+		At = Eye + (Flat * FMath::Cos(Drop) - FVector::UpVector * FMath::Sin(Drop)) * Dist;
+	}
+	ConsoleNearBar->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S / ConsolePxPerCm)));
+	if (!ConsoleNearBar->IsVisible())
+	{
+		ConsoleNearBar->SetVisibility(true);
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: the near bar stays at the desk while the sheet is far (%.0f cm from the eye)"), FVector::Dist(Eye, At));
+	}
+}
+
+bool ABpPawn::NearBarHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const
+{
+	if (!ConsoleNearBar || !ConsoleNearBar->IsVisible() || NearBarBoxes.Num() == 0) return false;
+	const FTransform& T = ConsoleNearBar->GetComponentTransform();
+	const FVector Normal = T.GetUnitAxis(EAxis::X);
+	const double Denom = FVector::DotProduct(WorldDir, Normal);
+	if (Denom >= -KINDA_SMALL_NUMBER) return false;
+	const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
+	if (Along < 0.0) return false;
+	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
+	const FVector2D Draw = ConsoleNearBar->GetDrawSize();
+	const float ToLayout = ConsoleLayoutPxPerCm / ConsolePxPerCm;
+	const FVector2f Px(static_cast<float>((-Local.Y + Draw.X * 0.5) * ToLayout), static_cast<float>((-Local.Z + Draw.Y * 0.5) * ToLayout));
+	if (Px.X < 0.f || Px.Y < 0.f || Px.X > LW || Px.Y > BarLH) return false;
+	for (int32 Index = NearBarBoxes.Num() - 1; Index >= 0; --Index)
+	{
+		if (NearBarBoxes[Index].Box.IsInside(Px)) { OutId = NearBarBoxes[Index].Id; return true; }
+	}
+	OutId = TEXT("console:panel");
+	return true;
 }
 
 void ABpPawn::PlaceConsole()
@@ -1417,6 +1651,49 @@ void ABpPawn::PlaceConsole()
 		FRotator Facing;
 		FVector2D SizeCm;
 		Surface.Place(Eye, Table->ConsoleSlotPose().GetLocation() - Eye, bPassthrough, Centre, Facing, SizeCm);
+		if (BpProjector::IsStage())
+		{
+			// Wave PJ2, THE LIGHT STAGE: the panel draws the whole stage (the sheet in its centre zone, the flanks) into one render
+			// target of at most 4096 x 1024, and is not drawn itself: the stage's curved mesh shows that target. The panel's pose
+			// is the stage's (the eye's ground point, facing the table's forward), so the ray and Glim's aim go through it.
+			const FVector2D StageLayout = BpProjector::StageLayoutSize(LW);
+			const FIntPoint Px = BpProjector::StageDrawSize(StageLayout);
+			const FVector2D Draw(Px.X, Px.Y);
+			if (ConsolePanel->GetDrawSize() != Draw) ConsolePanel->SetDrawSize(Draw);
+			ConsoleLayout = FVector2f(LW, LH);
+			ConsoleStageLayout = FVector2f(static_cast<float>(StageLayout.X), static_cast<float>(StageLayout.Y));
+			ConsoleDrawPerLayout = static_cast<float>(Px.X / StageLayout.X);
+			ConsoleFarSizeCm = SizeCm;
+			bConsoleFar = true;
+			bConsoleStage = true;
+			const FTransform Pose(Facing, Centre);
+			ConsolePanel->SetRelativeTransform(Pose);
+			// Still "visible" (a hidden widget component never redraws), but in no pass: only its render target is used.
+			ConsolePanel->SetRenderInMainPass(false);
+			ConsolePanel->SetRenderInDepthPass(false);
+			ConsolePanel->SetTickWhenOffscreen(true);
+			PlaceStage(Pose);
+			Table->SetDeckHeld(false);
+			const FVector SheetMid = BpProjector::Surface().UvToWorld(Pose, SizeCm, FVector2D(0.5, 0.5));
+			BpProjector::SetFar(true, SheetMid);
+			BpProjector::SetFarCentre(SheetMid);
+			const float Dist = BpProjector::StageShape().RadiusCm;
+			const FString FarKey = FString::Printf(TEXT("stage %.0f %.0f %d %dx%d"), SizeCm.X, Dist, bPassthrough, Px.X, Px.Y);
+			if (FarKey != ConsolePlaceKey)
+			{
+				ConsolePlaceKey = FarKey;
+				const float PxPerDeg = Px.X / static_cast<float>(BpProjector::StageShape().ArcDeg);
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: the sheet on the stage (THE LIGHT STAGE): %.0f x %.0f cm on a %.0f cm radius (%.1f deg wide), stage drawn %dx%d (%.1f px a degree, %.1f MB), the stage %.0f x %.0f layout px%s"),
+					SizeCm.X, SizeCm.Y, Dist, FMath::RadiansToDegrees(SizeCm.X / Dist), Px.X, Px.Y, PxPerDeg, Px.X * Px.Y * 4.f / (1024.f * 1024.f), StageLayout.X, StageLayout.Y,
+					bPassthrough ? TEXT("; your room: brought in, no wall known") : TEXT(""));
+			}
+			PlaceNearBar(true);
+			return;
+		}
+		bConsoleStage = false;
+		if (ConsoleStage && ConsoleStage->IsVisible()) { ConsoleStage->SetVisibility(false); StageCull(false); }
+		ConsolePanel->SetRenderInMainPass(true);
+		ConsolePanel->SetRenderInDepthPass(true);
 		const float Dist = FVector::Dist(Eye, Centre);
 		const FIntPoint Px = BpProjector::DrawSizeFor(SizeCm, Dist);
 		const FVector2D Draw(Px.X, Px.Y);
@@ -1434,13 +1711,19 @@ void ABpPawn::PlaceConsole()
 		{
 			ConsolePlaceKey = FarKey;
 			UE_LOG(LogBpTable, Log, TEXT("BpProjector: the sheet on the %s (%s): %.0f x %.0f cm, %.0f cm from the eye (%.1f x %.1f deg), centre %.0f cm above the eye, drawn %dx%d (%.1f px a degree)%s"),
-				Surface.Name(), BpProjector::Mode() == 2 ? TEXT("THE LIGHT STAGE is not built yet: the throw stands in") : TEXT("THE THROW"), SizeCm.X, SizeCm.Y, Dist,
+				Surface.Name(), TEXT("THE THROW"), SizeCm.X, SizeCm.Y, Dist,
 				2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist)), 2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.Y * 0.5f, Dist)), Centre.Z - Eye.Z, Px.X, Px.Y,
 				Px.X / (2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist))), bPassthrough ? TEXT("; your room: brought nearer, no wall known") : TEXT(""));
 		}
+		PlaceNearBar(true);
 		return;
 	}
 	bConsoleFar = false;
+	bConsoleStage = false;
+	if (ConsoleStage && ConsoleStage->IsVisible()) { ConsoleStage->SetVisibility(false); StageCull(false); }
+	ConsolePanel->SetRenderInMainPass(true);
+	ConsolePanel->SetRenderInDepthPass(true);
+	PlaceNearBar(false);
 	BpProjector::SetFar(false, FVector::ZeroVector);
 	ConsoleDrawPerLayout = ConsolePxPerCm / ConsoleLayoutPxPerCm;
 	const FString Key = FString::Printf(TEXT("%d%d%d %.2f"), bConsoleOpen, bConsoleTalk, bRoom, S);
@@ -1515,7 +1798,21 @@ void ABpPawn::TickConsoleLive()
 	static FString FarShown;
 	const FString FarNow = FString::Printf(TEXT("%d|%d|%s|%s|%s|%s"), BpProjector::Mode(), CvarInt(TEXT("bp.Room")),
 		*IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.DistanceCm"))->GetString(), *IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.WidthCm"))->GetString(),
-		*IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.LiftCm"))->GetString(), *IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.RoomDistanceCm"))->GetString());
+		*IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.LiftCm"))->GetString(), *IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.RoomDistanceCm"))->GetString()) + BpProjector::StageCvars();
+	// Wave PJ2: the stage's mesh shows the panel's render target; the target is made (or remade at a new size) by the panel's
+	// draw, so its pointer is handed over when it changes (a compare, nothing drawn).
+	if (bConsoleStage && ConsoleStageMat)
+	{
+		UTexture* Rt = ConsolePanel->GetRenderTarget();
+		static TWeakObjectPtr<UTexture> RtShown;
+		if (Rt && Rt != RtShown.Get())
+		{
+			RtShown = Rt;
+			ConsoleStageMat->SetTextureParameterValue(TEXT("Sheet"), Rt);
+			ConsoleStageMat->SetTextureParameterValue(TEXT("SlateUI"), Rt);
+			UE_LOG(LogBpTable, Log, TEXT("BpStage: the stage shows the panel's render target %dx%d"), static_cast<int32>(Rt->GetSurfaceWidth()), static_cast<int32>(Rt->GetSurfaceHeight()));
+		}
+	}
 	if (FarNow != FarShown)
 	{
 		const bool bModeChanged = BpProjector::Mode() != ConsoleProjShown;
@@ -1523,7 +1820,7 @@ void ABpPawn::TickConsoleLive()
 		PlaceConsole();
 		if (bModeChanged)
 		{
-			UE_LOG(LogBpTable, Log, TEXT("BpProjector: main screen %s"), BpProjector::Mode() == 0 ? TEXT("DESK") : BpProjector::Mode() == 1 ? TEXT("WALL (the throw)") : TEXT("STAGE (not built yet: the throw stands in)"));
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: main screen %s"), BpProjector::Mode() == 0 ? TEXT("DESK") : BpProjector::Mode() == 1 ? TEXT("WALL (the throw)") : TEXT("STAGE (the light stage)"));
 			ConsoleKey.Reset();
 			RefreshConsole();
 		}
@@ -1703,9 +2000,12 @@ void ABpPawn::RefreshConsole()
 	LoupeAimLayout = FVector2f(-1.f, -1.f);
 
 	TSharedRef<SCanvas> Canvas = SNew(SCanvas);
-	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
+	// Wave PJ2: what Put and Button draw into (the panel's canvas and boxes; the near bar's while the sheet is far).
+	SCanvas* Into = &Canvas.Get();
+	TArray<FConsoleBox>* Boxes = &ConsoleBoxes;
+	const auto Put = [&Into](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
-		Canvas->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
+		Into->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
 	const FSlateFontInfo LabelFont = Font(TEXT("Bold"), CapLabel), SmallFont = Font(TEXT("Regular"), CapSmall), SmallBold = Font(TEXT("Bold"), CapSmall);
 	enum class EBtn : uint8 { Fill, Edge, Amber };
@@ -1729,14 +2029,12 @@ void ABpPawn::RefreshConsole()
 			[
 				SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Word, WordFont, Box.GetSize().X - 20.f))).Font(WordFont).ColorAndOpacity(FSlateColor(Ink))
 			]);
-		ConsoleBoxes.Add({ TEXT("console:") + Act, Box });
+		Boxes->Add({ TEXT("console:") + Act, Box });
 	};
 
-	if (bTalk)
-	{
-		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample);
-	}
-	else if (!bConsoleOpen)
+	// The bar: MENU, the product and the status, YOUR ROOM / STUDIO, BACK (on the panel's widget when nothing is open; on the
+	// near bar's while a sheet is on a far surface, wave PJ2).
+	const auto DrawBar = [&]()
 	{
 		// The bar: MENU, the product and the status, YOUR ROOM / STUDIO, BACK.
 		const float Y0 = 12.f, Y1 = BarLH - 12.f;
@@ -1790,6 +2088,15 @@ void ABpPawn::RefreshConsole()
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Name)).Font(NameFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18.f, 0.f)[SNew(SBox).WidthOverride(2.f).HeightOverride(BarLH * 0.5f)[SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f))]]
 			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(StatusFit)).Font(bTwo ? Status2Font : StatusFont).LineHeightPercentage(bTwo ? 0.86f : 1.f).ColorAndOpacity(FSlateColor(BpSheet::Ink))]);
+	};
+
+	if (bTalk)
+	{
+		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample);
+	}
+	else if (!bConsoleOpen)
+	{
+		DrawBar();
 	}
 	else
 	{
@@ -2053,7 +2360,7 @@ void ABpPawn::RefreshConsole()
 	TSharedRef<SOverlay> Sheet = SNew(SOverlay)
 		+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(bConsoleOpen || bTalk ? 5.f : 4.f)]
 		+ SOverlay::Slot()[Canvas];
-	if (bConsoleFar)
+	if (bConsoleFar && !bConsoleStage)
 	{
 		// Wave PJ1: thrown light has a soft edge. The quad stays opaque (no overdraw, nothing of the scene through it in your
 		// room); its outer 36 layout px (about 7 cm on the wall) fall off to the studio's dark in six steps, drawn once.
@@ -2062,16 +2369,114 @@ void ABpPawn::RefreshConsole()
 			Sheet->AddSlot().Padding(Ring * 6.f)[SNew(BpSheet::SPlate).Edge(FLinearColor(0.012f, 0.016f, 0.026f, 0.9f - Ring * 0.15f)).EdgePx(6.f)];
 		}
 	}
-	ConsolePanel->SetSlateWidget(
-		SNew(SDPIScaler).DPIScale(Scale)
-		[
-			SNew(SBox).WidthOverride(LW).HeightOverride(bConsoleOpen || bTalk ? LH : BarLH)
+	if (bConsoleFar && bConsoleStage)
+	{
+		// Wave PJ2, THE LIGHT STAGE: one render target over the whole arc. The ground is a sheet of blue light, brighter toward
+		// its foot (the rim it rises from); the active sheet sits in the centre zone at the shared layout's own size; the flanks
+		// carry what waits (left, Glim's side) and the active sheet's context (right), and stay dark when there is nothing.
+		const FVector2f SL = ConsoleStageLayout;
+		const FBox2D SheetUv = BpProjector::StageSheetUv();
+		const FVector2f SheetAt(static_cast<float>(SheetUv.Min.X) * SL.X, static_cast<float>(SheetUv.Min.Y) * SL.Y);
+		TSharedRef<SCanvas> Stage = SNew(SCanvas);
+		const auto StagePut = [&Stage](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
+		{
+			Stage->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
+		};
+		constexpr int32 Bands = 8;
+		for (int32 Band = 0; Band < Bands; ++Band)
+		{
+			// Top to bottom: the low paper's blue to the mid paper's, in eight steps (drawn once, in the target).
+			const float T = static_cast<float>(Band) / (Bands - 1);
+			StagePut(FBox2f(FVector2f(0.f, SL.Y * Band / Bands), FVector2f(SL.X, SL.Y * (Band + 1) / Bands + 1.f)),
+				SNew(BpSheet::SPlate).Fill(FMath::Lerp(BpSheet::PaperLo * 1.3f, BpSheet::PaperMid * 0.95f, T * T).CopyWithNewOpacity(1.f)));
+		}
+		// The flanks: between the centre zone and the faded ends (the outer 15 degrees each side are atmosphere only).
+		const float Gap = 56.f;
+		const float FadeX = SL.X * 15.f / static_cast<float>(BpProjector::StageShape().ArcDeg);
+		const float LeftX0 = FadeX + 24.f, LeftX1 = SheetAt.X - Gap;
+		const float RightX0 = SheetAt.X + LW + Gap, RightX1 = SL.X - FadeX - 24.f;
+		for (const bool bLeft : { true, false })
+		{
+			FString FlankTitle;
+			TArray<FString> FlankLines;
+			StageFlank(bLeft, FlankTitle, FlankLines);
+			const float X0 = bLeft ? LeftX0 : RightX0, X1 = bLeft ? LeftX1 : RightX1;
+			if ((FlankTitle.IsEmpty() && FlankLines.Num() == 0) || X1 - X0 < 160.f) continue;
+			const FSlateFontInfo FlankTitleFont = Font(TEXT("Bold"), CapLabel), FlankFont = Font(TEXT("Regular"), CapSmall), FlankBold = Font(TEXT("Bold"), CapSmall);
+			float Y = SheetAt.Y + 8.f;
+			StagePut(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(FlankTitle, FlankTitleFont, X1 - X0))).Font(FlankTitleFont).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
+			Y += 52.f;
+			StagePut(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+			Y += 16.f;
+			const float Bottom = SheetAt.Y + LH;
+			for (const FString& Line : FlankLines)
+			{
+				// "!" leads a line in amber (the one in hand), "*" a bold one; the rest regular. Each wraps to at most three lines.
+				const bool bHot = Line.StartsWith(TEXT("!")), bBold = Line.StartsWith(TEXT("*"));
+				const FString Words = bHot || bBold ? Line.Mid(1) : Line;
+				const FSlateFontInfo& F = bHot || bBold ? FlankBold : FlankFont;
+				const FString Wrapped = BpSheet::Wrap(Words, F, X1 - X0 - 28.f, 3);
+				const float H = LineCount(Wrapped) * Pitch(CapSmall) + 14.f;
+				if (Y + H > Bottom) break;
+				if (bHot) StagePut(FBox2f(FVector2f(X0, Y + 4.f), FVector2f(X0 + 6.f, Y + H - 14.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Amber));
+				StagePut(FBox2f(FVector2f(X0 + 20.f, Y), FVector2f(X1, Y + H)), SNew(STextBlock).Text(FText::FromString(Wrapped)).Font(F)
+					.ColorAndOpacity(FSlateColor(bHot ? BpSheet::Amber : bBold ? BpSheet::InkHi : BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+				Y += H;
+			}
+		}
+		StagePut(FBox2f(SheetAt, SheetAt + FVector2f(LW, LH)), Sheet);
+		ConsolePanel->SetSlateWidget(
+			SNew(SDPIScaler).DPIScale(Scale)
 			[
-				Sheet
-			]
-		]);
+				SNew(SBox).WidthOverride(SL.X).HeightOverride(SL.Y)
+				[
+					Stage
+				]
+			]);
+	}
+	else
+	{
+		ConsolePanel->SetSlateWidget(
+			SNew(SDPIScaler).DPIScale(Scale)
+			[
+				SNew(SBox).WidthOverride(LW).HeightOverride(bConsoleOpen || bTalk ? LH : BarLH)
+				[
+					Sheet
+				]
+			]);
+	}
 	ConsolePanel->RequestRenderUpdate();
 	++ConsoleDraws;
+	if (bConsoleFar && ConsoleNearBar)
+	{
+		// Wave PJ2: the slim bar stays at the desk while the sheet is far (MENU, BACK, the place, the room switch).
+		NearBarBoxes.Reset();
+		TSharedRef<SCanvas> BarCanvas = SNew(SCanvas);
+		Into = &BarCanvas.Get();
+		Boxes = &NearBarBoxes;
+		DrawBar();
+		for (const FString& Lit : { ConsoleHover, bConsolePadSel ? ConsoleSel : FString() })
+		{
+			if (Lit.IsEmpty()) continue;
+			if (const FConsoleBox* Box = NearBarBoxes.FindByPredicate([&Lit](const FConsoleBox& Each) { return Each.Id == Lit; }))
+			{
+				Put(Box->Box.ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
+			}
+		}
+		Into = &Canvas.Get();
+		Boxes = &ConsoleBoxes;
+		ConsoleNearBar->SetSlateWidget(
+			SNew(SDPIScaler).DPIScale(ConsolePxPerCm / ConsoleLayoutPxPerCm)
+			[
+				SNew(SBox).WidthOverride(LW).HeightOverride(BarLH)
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(4.f)]
+					+ SOverlay::Slot()[BarCanvas]
+				]
+			]);
+		ConsoleNearBar->RequestRenderUpdate();
+	}
 	if (bConsoleFar)
 	{
 		// Wave PJ1: what Glim turns to on the far sheet: the loupe's region on its screen, else the answer he waits for
@@ -2093,6 +2498,8 @@ bool ABpPawn::ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FS
 {
 	if (!ConsolePanel || !ConsolePanel->IsVisible() || ConsoleBoxes.Num() == 0) return false;
 	const FTransform& T = ConsolePanel->GetComponentTransform();
+	// Wave PJ2: the near bar at the desk is in front of any far surface.
+	if (bConsoleFar && NearBarHit(WorldOrigin, WorldDir, OutId)) return true;
 	if (bConsoleFar)
 	{
 		// Wave PJ1: the far surface answers the ray (IBpFarSurface: the throw's plane now, the stage's curve next).
@@ -2136,6 +2543,17 @@ bool ABpPawn::ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FS
 bool ABpPawn::ConsoleAim(const FString& Id, FVector& OutWorld) const
 {
 	const FConsoleBox* Box = ConsoleBoxes.FindByPredicate([&Id](const FConsoleBox& Each) { return Each.Id == Id; });
+	if (bConsoleFar && !Box && ConsoleNearBar && ConsoleNearBar->IsVisible())
+	{
+		// Wave PJ2: a control of the near bar at the desk.
+		if (const FConsoleBox* Near = NearBarBoxes.FindByPredicate([&Id](const FConsoleBox& Each) { return Each.Id == Id; }))
+		{
+			const FVector2f NC = Near->Box.GetCenter() * (ConsolePxPerCm / ConsoleLayoutPxPerCm);
+			const FVector2D NDraw = ConsoleNearBar->GetDrawSize();
+			OutWorld = ConsoleNearBar->GetComponentTransform().TransformPosition(FVector(0.0, -(NC.X - NDraw.X * 0.5), -(NC.Y - NDraw.Y * 0.5)));
+			return true;
+		}
+	}
 	if (!ConsolePanel || !Box) return false;
 	const FVector2f C = Box->Box.GetCenter();
 	if (bConsoleFar)

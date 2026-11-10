@@ -19,7 +19,7 @@ public class bp : ModuleRules
 
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "BpLink", "Json", "RenderCore", "RHI", "UMG", "Slate", "SlateCore", "HeadMountedDisplay", "OculusInteraction", "OculusInteractionPrebuilts", "ImageWrapper", "AudioCaptureCore", "AudioCapture", "OculusXRHMD", "OculusXRPassthrough" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "BpLink", "Json", "RenderCore", "RHI", "UMG", "Slate", "SlateCore", "HeadMountedDisplay", "OculusInteraction", "OculusInteractionPrebuilts", "ImageWrapper", "AudioCaptureCore", "AudioCapture", "OculusXRHMD", "OculusXRPassthrough", "ProceduralMeshComponent" });
 
 		// Talk to the lamp (BpTalk.cpp, night two W3): the microphone through UE's audio capture; on Android the runtime
 		// RECORD_AUDIO request (the permission itself is in DefaultEngine.ini's ExtraPermissions).
