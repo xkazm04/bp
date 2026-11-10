@@ -1671,6 +1671,8 @@ private:
 	FString TourFeature;
 	int32 TourAsks = 0;
 	int32 TourTaps = 0;
+	/** When the tour's stand-up step opened the stand-up (FPlatformTime seconds): an answer after it ends the step. */
+	double TourStandupFrom = 0.0;
 	void TickTour();
 	/** The voice's level is BpAudio's (bp.VoiceLevel, BpAudio.h): SpeakTour plays a clip at BpAudio::VoiceGain(), limited
 	 *  sample by sample above 0.8 full scale, so the top of the range never clips the speaker. */
@@ -1700,6 +1702,18 @@ public:
 	int32 OpenDecisionCount() const;
 	/** A scan is walking the table now (a real one or the sample), as ScanBand says it. */
 	bool IsScanRunning() const { return bHasScanOutcome && ScanOutcome.bRunning; }
+	/** The stand-up's place (BpStandup.cpp, night two W2b): the plan follows the deck. A card about a feature, a room or a wing
+	 *  raises its room (or wing) on the site plan (out of room mode and home first) and the lamp goes beside it; Line, when given,
+	 *  is said on its caption. Kind empty: the highlight clears and the lamp goes home. Returns the room raised (empty: none). */
+	FString StandupShow(const FString& Kind, const FString& Id, const FString& Line);
+	/** The lamp says Line (a notice: shown on the site plan too), for the stand-up and the tour's close. */
+	void StandupSay(const FString& Line) { SayLamp(Line, true); }
+	/** The room a feature, bay or room id stands in on this plan (empty: none). */
+	FString StandupRoomOf(const FString& Id) const;
+	/** A room's or wing's name on this plan (empty: none). */
+	FString StandupPlaceName(const FString& Id) const;
+	/** A room's id by its name on this plan (the deck's lines name rooms), empty when none has it. */
+	FString StandupRoomByName(const FString& Name) const;
 private:
 	bool bDeckHeld = false;
 	float TourVoiceGain = -1.f;

@@ -323,6 +323,46 @@ struct BPLINK_API FBpLinkStatus
 };
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpLinkStatus, const FBpLinkStatus&);
 
+/** The morning deck as last read (night two W2b): from the PC (GET /api/companion/morning) or the build's sample (morning.json). */
+struct BPLINK_API FBpMorningRead
+{
+	bool bOk = false;
+	/** Read from the bundle: a sample, and nothing the person decides on it is sent. */
+	bool bSample = false;
+	int32 Status = 0;
+	/** Why it failed, in words. */
+	FString Error;
+	FBpMorningDeck Deck;
+};
+
+/** One companion card (packages/core/src/companion/contract.ts Card): a GATED tool call waiting for a person. */
+struct BPLINK_API FBpCompanionCard
+{
+	FString Id;
+	FString Tool;
+	FString Summary;
+	FString Product;
+	/** pending, approved, declined, expired, done, failed. */
+	FString State;
+	FString CreatedAt;
+};
+
+/** One policy grant (contract.ts PolicyGrant & { grantedBy? }), as the server answered it. MinTier -1: none named. */
+struct BPLINK_API FBpPolicy
+{
+	FString Id;
+	FString Product;
+	TArray<FString> Tools;
+	int32 MinTier = -1;
+	FString ExpiresAt;
+	FString CreatedAt;
+	/** grantedBy.surface (vr, web) and grantedBy.device, when the server recorded them. */
+	FString GrantedSurface;
+	FString GrantedDevice;
+	/** Not expired now (expiresAt is later than the clock). */
+	bool IsLive() const;
+};
+
 /** Where the last fetch stands: Pending until the first one finishes, then Ready (a plan parsed) or Failed (none did). */
 enum class EBpPlanState : uint8
 {
@@ -572,6 +612,42 @@ public:
 	bool IsPublishing() const { return bPublishing; }
 	/** BpLink.Publish on|off: whether the table's own moves become the shared focus. */
 	void SetPublishing(bool bOn);
+
+	// ---- The stand-up (night two W2b, table-link-v2.md section 3; the web's Morning Watch) -----------------------------
+	/** GET /api/companion/morning[?since=<iso>] (scope standup), or, from the bundle, the build's sample deck (morning.json,
+	 *  apps/vr/tools/bundle-morning.ts): bSample says which. OnDone on the game thread. */
+	void GetMorning(const FString& Since, TFunction<void(const FBpMorningRead&)> OnDone);
+	/** POST /api/companion/morning { product, proposal, verdict, shown } (scope decide; contract 3.1): approve, defer, hold, or
+	 *  decline on a repeat. `shown` is what the card displayed (1..1000 characters). Refused here (status 0, nothing sent) from
+	 *  the bundle, with an empty `shown`, or for any other verdict. OnDone gets the status and the body (the SteerRow, or the
+	 *  server's { error }). */
+	void PostMorningVerdict(const FString& Product, const FString& Proposal, const FString& Verdict, const FString& Shown, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	/** GET /api/companion/cards (scope standup): the companion's cards, newest first. */
+	void GetCompanionCards(TFunction<void(bool bOk, const TArray<FBpCompanionCard>& Cards)> OnDone);
+	/** POST /api/companion/cards/<id> { decision, shown } (scope decide; contract 3.2). Refused here from the bundle or with no
+	 *  `shown`. */
+	void AnswerCompanionCard(const FString& Id, bool bApprove, const FString& Shown, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	/** GET /api/companion/policies (scope standup): every grant, newest first, expired ones too. */
+	void GetPolicies(TFunction<void(bool bOk, const TArray<FBpPolicy>& Policies)> OnDone);
+	/** POST /api/companion/policies (scope decide; contract 3.4), never wider than VR_POLICY_BOUND: one product (never "*"), a
+	 *  subset of PolicyTools, MinTier 1..3, 0 < Hours <= PolicyMaxHours. A wider request is refused here and nothing is sent
+	 *  (status 0); the server refuses it too (403). OnDone gets the status, the grant as the SERVER answered it (its product,
+	 *  tools, minTier and expiresAt are the truth the headset shows), and the raw body. */
+	void GrantPolicy(const FString& Product, const TArray<FString>& Tools, int32 MinTier, int32 Hours, const FString& Shown,
+		TFunction<void(int32 Status, const FBpPolicy& Grant, const FString& Body)> OnDone);
+	/** DELETE /api/companion/policies/<id> (scope decide; contract 3.5). */
+	void RevokePolicy(const FString& Id, TFunction<void(int32 Status, const FString& Body)> OnDone);
+	/** VR_POLICY_BOUND (packages/core/src/server/decider.server.ts): the tools a grant from the table may name, and its hours. */
+	static const TArray<FString>& PolicyTools();
+	static constexpr int32 PolicyMaxHours = 12;
+	/** A person's decision may go from here: a PC answers (not the bundle) and this headset's pairing holds `decide`. */
+	bool CanDecide() const;
+	/** A finding's "before" screen (FBpShot path) as PNG bytes: from the bundle's shots/ folder, or GET
+	 *  /api/products/<product>/shots/<path> (scope read) cached on disk under Saved/BpShots/<product>/. bSample: read from the
+	 *  bundle. OnDone(false) when there is none. */
+	void FetchShot(const FString& Product, const FString& Path, TFunction<void(bool bOk, const TArray<uint8>& Png, bool bSample)> OnDone);
+	/** A refusal's body in plain words: its { error }, else what the status means for a decision. */
+	static FString AnswerWords(int32 Status, const FString& Body);
 
 private:
 	// ---- The PC link (night two W2a) ----

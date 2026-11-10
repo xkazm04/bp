@@ -171,7 +171,8 @@ void ABpPawn::TickPad(float DeltaSeconds)
 		TArray<FString> Ids;
 		Table->FocusSiblings(Kind, Ids);
 		const bool bValid = Ids.Num() == 0 ? PadFocusId.IsEmpty() : Kind == PadFocusKind && Ids.Contains(PadFocusId);
-		if (!bValid) SeedFocus();
+		// The stand-up owns the highlight while it is open (the plan follows its cards).
+		if (!bValid && !IsStandupOpen()) SeedFocus();
 	}
 	// One queued press a frame, once the table has settled.
 	if (PadQueue.Num() == 0) return;
@@ -208,6 +209,8 @@ void ABpPawn::RunPad(const FString& Button)
 	}
 	if (bConsoleOpen)
 	{
+		// The stand-up's own: left and right walk its cards, A approves after a confirm press, B goes back (BpStandup.cpp).
+		if (StandupPad(Button)) return;
 		if (Button == TEXT("A"))
 		{
 			if (ConsoleSel.IsEmpty()) ConsoleMove(0, 1);
@@ -331,6 +334,8 @@ void ABpPawn::RestoreFocusHighlight()
 	FString Kind;
 	TArray<FString> Ids;
 	Table->FocusSiblings(Kind, Ids);
-	if (!PadFocusId.IsEmpty() && Kind == PadFocusKind && Ids.Contains(PadFocusId)) Table->SetHighlight(PadFocusKind, PadFocusId);
+	// The stand-up's card is about a room: it gets the highlight back once the hands stop pointing.
+	if (IsStandupOpen() && !GetStandupRoom().IsEmpty()) Table->SetHighlight(TEXT("room"), GetStandupRoom());
+	else if (!PadFocusId.IsEmpty() && Kind == PadFocusKind && Ids.Contains(PadFocusId)) Table->SetHighlight(PadFocusKind, PadFocusId);
 	else Table->SetHighlight(FString(), FString());
 }

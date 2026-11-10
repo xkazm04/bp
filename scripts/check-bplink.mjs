@@ -320,8 +320,24 @@ export function linkSource(cppText) {
   if (!cancel || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(cancel.lit)) problems.push('CancelScan does not send DELETE');
   const scopes = /PairScopes\s*=\s*TEXT\("([^"]*)"\)/.exec(lit)?.[1]?.split(',') ?? null;
   if (!scopes) problems.push('no FBpLinkModule::PairScopes literal');
+  // The stand-up (night two W2b, table-link-v2.md section 3): the morning, the cards and the policies are requested in code,
+  // every decision body carries `shown`, the revoke is a DELETE, and the grant is refused here past the bound it names.
+  for (const route of ['/api/companion/morning', '/api/companion/cards', '/api/companion/cards/', '/api/companion/policies', '/api/companion/policies/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  for (const fn of ['PostMorningVerdict', 'AnswerCompanionCard', 'GrantPolicy']) {
+    const b = body(fn);
+    if (!b || !/SetStringField\(\s*TEXT\("shown"\)/.test(b.lit)) problems.push(`${fn} does not send shown`);
+  }
+  const revoke = body('RevokePolicy');
+  if (!revoke || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(revoke.lit)) problems.push('RevokePolicy does not send DELETE');
+  const toolsSpan = /FBpLinkModule::PolicyTools\(\)\s*\{[^}]*\{([^}]*)\}/.exec(lit);
+  const policyTools = toolsSpan ? [...toolsSpan[1].matchAll(/TEXT\("([^"]+)"\)/g)].map((m) => m[1]) : null;
+  const maxHours = Number(/PolicyMaxHours\s*=\s*(\d+)/.exec(stripCxx(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../apps/vr/Source/BpLink/Public/BpLink.h'), 'utf8')))?.[1] ?? NaN);
+  const grant = body('GrantPolicy');
+  if (!grant || !/PolicyTools\(\)\.Contains/.test(grant.code) || !/Hours\s*>\s*PolicyMaxHours/.test(grant.code) || !/MinTier\s*<\s*1/.test(grant.code)) problems.push('GrantPolicy does not refuse a grant past the bound (tools, minTier 1..3, hours) before sending');
   return {
-    problems, scopes,
+    problems, scopes, policyTools, maxHours,
     reads: { health: reads('ProbeCandidate'), where: reads('ReceiveWhere'), pair: reads('PostPair'), claim: reads('SendClaim'), me: reads('AskPairMe'), cancel: reads('CancelScan') },
     pairSends: sets('PostPair'),
   };
@@ -605,6 +621,15 @@ async function main() {
       check('link source: the rule refuses a stray CreateRequest and a NewRequest without the Bearer header',
         linkSource(cppText.replace('Request->SetVerb(TEXT("DELETE"));', 'Request = FHttpModule::Get().CreateRequest(); Request->SetVerb(TEXT("DELETE"));')).problems.length > 0
         && linkSource(cppText.replace('TEXT("Bearer ") + GToken', 'GToken')).problems.length > 0);
+      // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/decider.server.ts), read as text.
+      {
+        const decider = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/decider.server.ts'), 'utf8');
+        const bound = /VR_POLICY_BOUND\s*=\s*\{[\s\S]*?tools:\s*\[([^\]]*)\][\s\S]*?maxHours:\s*(\d+)/.exec(decider);
+        const serverTools = bound ? [...bound[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : null;
+        check(`link source: BpLink's grant bound is the server's VR_POLICY_BOUND (tools ${ls.policyTools}, at most ${ls.maxHours} h)`,
+          !!serverTools && JSON.stringify(ls.policyTools) === JSON.stringify(serverTools) && ls.maxHours === Number(bound[2]), `server ${serverTools} ${bound?.[2]} h`);
+        check('link source: the rule refuses a GrantPolicy that skips the hours bound', linkSource(cppText.replace('Hours > PolicyMaxHours', 'Hours > 999')).problems.length > 0);
+      }
       const keysIn = (obj, keys, skip = []) => (keys ?? ['(function not found)']).filter((k) => !skip.includes(k) && !(obj && Object.prototype.hasOwnProperty.call(obj, k)));
 
       const h1 = await send('GET', '/api/health'), h2 = await send('GET', '/api/health');

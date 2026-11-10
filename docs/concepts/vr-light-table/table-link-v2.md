@@ -175,7 +175,7 @@ again after `npm run server -- pair open`. Requests outside a window are refused
 | any | GET | `/api/health` | liveness, section 6 |
 | any | GET | `/pair/me` | section 4 step 7 |
 | read | GET | `/api/products` | `ProductEntry`-based list (live products; Kettle is not listed) |
-| read | GET | `/api/products/<SLUG>/structure`, `/plan`, `/scan`, `/scans`, `/waves`, `/focuses` | as before |
+| read | GET | `/api/products/<SLUG>/structure`, `/plan`, `/scan`, `/scans`, `/waves`, `/focuses` | as before; `/plan` also takes exactly `layout=islands` (the table's layout, 2026-11-10) |
 | read | GET | `/api/products/<SLUG>/scans/<ID>` | kept, but the route has no GET (405); read `/scans` |
 | read | GET | `/api/products/<SLUG>/proposals/<ID>/brief` | as before |
 | read | GET | `/api/products/<SLUG>/shots/<ID>[/<ID>]{0,4}` | png/jpg/webp bytes; Kettle from the sample shots (section 7) |
@@ -337,10 +337,17 @@ What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pin
   and Android's `usesCleartextTraffic` / network security config is honoured only by the Java stack (`NetworkSecurityPolicy`), so
   it does not apply. UE's manifest already holds `INTERNET`, `ACCESS_NETWORK_STATE` and `ACCESS_WIFI_STATE`. Adding
   `usesCleartextTraffic` would widen the Java side for nothing. **The token travels in cleartext on the LAN** (section 11).
-- **Found, not fixed here (server side):** the LAN door's `GET .../plan` verb takes no query, so `?layout=islands` (the table's
-  layout) is refused over Wi-Fi with the bare 403. Over Wi-Fi BpLink asks `/plan` with no query and draws the default layout
-  (logged). One line in `lan-door.ts` (`query: 'layout=islands'` or an optional pattern) would close it. `/stream`,
-  `/api/onboarding` and `.../onboarding/feed` are not door verbs either: over Wi-Fi the table shows no onboarding.
+- **Fixed (night two W2b):** the LAN door's `GET .../plan` verb takes exactly `?layout=islands` (or no query), under `read`,
+  so over Wi-Fi BpLink asks `/plan?layout=islands` as on the cable and draws the same islands; `check:lan-door` holds the
+  query (exactly that, nothing wider) and the body through the door. `/stream`, `/api/onboarding` and `.../onboarding/feed`
+  are not door verbs: over Wi-Fi the table shows no onboarding.
+- **The stand-up (night two W2b)** reads `GET /api/companion/morning?since=<last stand-up>` (or the build's sample deck,
+  `Content/BpData/kettle/morning.json` from `apps/vr/tools/bundle-morning.ts`, saying it is a sample and sending nothing), sends
+  each verdict with `shown` = the card's title and its brief's one line, answers companion cards with `shown`, grants only the
+  fixed bound (the card's product, the four tools, `minTier` 1, 8 hours; BpLink refuses anything wider before sending) and
+  shows the grant from the server's 201 body, revokes with `DELETE`. A finding's `before` screen is read from the bundle's
+  `shots/` or `GET .../shots/<path>` (cached under `Saved/BpShots/`). The companion turn's request lasts 600 s with the same
+  activity limit (the engine's default 30 s activity timeout cut every silent model turn).
 - **SHOW ON PC** sends `POST /api/session/place` (scope `place`); with no baton claimed (409) the place goes out as the shared
   focus (`POST /api/session/focus` publish), which the web follows.
 

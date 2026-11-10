@@ -148,6 +148,24 @@ public:
 	void LogConsoleRows();
 	/** The console's text classes where it stands (BpView.TextCard). */
 	void ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const;
+	// ---- The stand-up (BpStandup.cpp; night two W2b, "Morning at the desk") -----------------------------------------------
+	/** The console's STAND-UP page is the morning ritual: the deck's cards one at a time (GET /api/companion/morning, or the
+	 *  build's sample with no PC), each decision answered with `shown`, the plan following each card, then the day's plan and
+	 *  the hand-over. Its acts are "standup:<act>" (PanelAct routes them): next, prev, approve, defer, hold, decline, plan,
+	 *  handover, grant, cancel, revoke, skip, retry, done. */
+	bool IsStandupOpen() const;
+	void StandupAct(const FString& Act);
+	/** For checks: "<sheet> <n>/<m> <kind> <card id>[ armed=<verdict>][ <answer>]", or "closed". */
+	FString GetStandupLine() const;
+	/** The room the stand-up's card raised on the plan (empty: none). */
+	FString GetStandupRoom() const;
+	/** The live grant this headset knows (handed over), or null. */
+	const struct FBpPolicy* LiveGrant() const;
+	/** The tour's last step (BpTour.cpp): the stand-up opens on its first decision card; the tour asks whether one was answered. */
+	bool OpenStandupForTour();
+	bool StandupAnsweredSince(double Since) const;
+	FString StandupLastVerdictWords() const;
+
 	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
 	 *  scan:start, scan:cancel, scan:dismiss, ask:next|here|scan|act, seat, tour, voice:minus|plus, music:minus|plus,
 	 *  approve, decline, toggle:face|hand|motion. */
@@ -338,6 +356,39 @@ private:
 	void ConsoleMove(int32 DX, int32 DY);
 	bool ConsoleBack();
 	FString ConsoleStatus() const;
+
+	// ---- The stand-up's state (BpStandup.cpp): made when the page opens, released when it closes ---------------------------
+	TSharedPtr<struct FBpStandupState> Standup;
+	/** The finding's screen on the decision card: one texture at a time, released when the card leaves or the page closes. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupShot;
+	/** The grant this headset made or read (GET policies), kept past the page: the bar and the wrist say "Handed over until". */
+	TSharedPtr<struct FBpPolicy> StandupGrant;
+	FTimerHandle StandupTimer;
+	FTimerHandle StandupGrantTimer;
+	void StandupOpened();
+	void StandupClosed();
+	void StandupLoad();
+	void StandupBuildSheets();
+	void StandupShowSheet();
+	void StandupLoadShot();
+	void StandupReleaseShot();
+	void StandupVerdict(const FString& Verdict, const TCHAR* Route);
+	void StandupPlanDay();
+	void StandupGrantNow();
+	void StandupRevoke();
+	void StandupReadPolicies();
+	void StandupTickSince();
+	void StandupSaveAnswers() const;
+	FString StandupShown() const;
+	FString StandupKey() const;
+	/** The page's body on the console (the card as a sheet), its controls added to ConsoleBoxes. */
+	void DrawStandup(const TSharedRef<class SCanvas>& Canvas);
+	/** The pad on the open stand-up: false when it is not the stand-up's to take. */
+	bool StandupPad(const FString& Button);
+	/** The wrist's card for the stand-up (the decision on screen, or the hand-over), false when none. */
+	bool StandupWristCard(FString& OutKicker, FString& OutTitle, FString& OutWords, TArray<TPair<FString, FString>>& OutButtons) const;
+	FString StandupBarStatus() const;
 
 	// ---- The pad's state (BpPad.cpp) --------------------------------------------------------------------------------------
 	FString PadFocusKind;

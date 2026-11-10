@@ -46,6 +46,11 @@ for (const [m, p] of [['GET', '/api/companion/cards/c1'], ['GET', '/api/companio
   ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
   check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
 check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
+// night two W2b: the table's layout over Wi-Fi. /plan takes exactly ?layout=islands (and no query), under read; nothing wider
+check('read: /plan takes ?layout=islands, the table\'s layout, exactly that query and nothing wider', verbOf(['read'], 'GET', '/api/products/kettle/plan?layout=islands') !== null
+  && verbOf(['read'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['place', 'focus', 'decide', 'scan'], 'GET', '/api/products/kettle/plan?layout=islands') === null
+  && ['layout=grid', 'layout=islands&x=1', 'x=1&layout=islands', 'layout=islands&layout=islands', 'layout=ISLANDS', 'layout=islands%20'].every((q) => verbOf(all, 'GET', `/api/products/kettle/plan?${q}`) === null)
+  && verbOf(all, 'GET', '/api/products/kettle/structure?layout=islands') === null && verbOf(all, 'GET', '/api/products/kettle/scan?layout=islands') === null);
 check('place is only the three baton verbs', verbOf(['place'], 'GET', '/api/session/place?claim=1') !== null && verbOf(['place'], 'GET', '/api/session/place') === null
   && verbOf(['place'], 'GET', '/api/products/kettle/structure') === null);
 // F7, F8 and D12 (docs/concepts/one-morning-brief/ROADMAP.md): the brief is a read; decide is two verbs, the repeat's
@@ -171,6 +176,14 @@ check('paired.json keeps the device, the scopes and the expiry (30 days by defau
 // the read scope, through the door into the loopback mount
 r = await lan(QUEST, 'GET', '/api/products/kettle/structure', { token: tokenA });
 check('read: the structure, through the door, as the loopback mount answers it', r.status === 200 && !!r.json.structure, `${r.status} ${r.body.slice(0, 120)}`);
+{
+  // night two W2b: ?layout=islands reaches the route through the door (the table draws the same islands on Wi-Fi as on the cable)
+  const islands = await lan(QUEST, 'GET', '/api/products/kettle/plan?layout=islands', { token: tokenA });
+  const plain = await lan(QUEST, 'GET', '/api/products/kettle/plan', { token: tokenA });
+  const direct = await admin('GET', '/api/products/kettle/plan?layout=islands');
+  check('read: /plan?layout=islands through the door is the loopback mount\'s islands body, not the default layout', islands.status === 200 && plain.status === 200
+    && islands.body === direct.body && islands.body !== plain.body, `${islands.status}/${plain.status}/${direct.status}`);
+}
 refused('no token', await lan(QUEST, 'GET', '/api/products/kettle/structure'));
 refused('an unknown token', await lan(QUEST, 'GET', '/api/products/kettle/structure', { token: randomBytes(32).toString('base64url') }));
 refused('a token not in Bearer form', await lan(QUEST, 'GET', '/api/products/kettle/structure', { headers: { authorization: tokenA } }));

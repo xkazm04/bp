@@ -6,6 +6,7 @@
 #include "BpLink.h"
 
 #include "Schema/BpSchemaFixups.h"
+#include "Schema/BpSchemaVocab.h"
 #include "HAL/IConsoleManager.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
 #include "HttpModule.h"
@@ -45,8 +46,6 @@ namespace
 	bool GUnauthorized = false;
 	/** A route is up (cable or Wi-Fi): the pollers run only then, or from the bundle. */
 	bool GRouteLive = false;
-	/** The LAN door forwards /plan with no query (lan-door.ts), so over Wi-Fi the plan is asked without ?layout=islands. */
-	bool GPlanIslands = true;
 	/** A read found no PC (a connection that did not connect): the link's tick asks /api/health at once. */
 	bool GProbeNow = false;
 	/** -BpLinkUrl= (or BP_LINK_URL) when it names a server: the chooser asks only it. */
@@ -323,9 +322,8 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 		// into FBpAppStructure. A failed or unparseable answer logs its own Error and the fetch goes on: structure, events
 		// and rev still stand, and bHasPlan stays false. Snapshot is MOVED into this continuation as into the /stream one.
 		// The islands view: the server spaces wings and rooms apart for the table (VR computes no layout of its own).
-		// Over Wi-Fi the LAN door forwards /plan only with no query (lan-door.ts VERBS): there the default layout is asked.
-		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = GPlanIslands ? MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"))
-			: MakeGet(Root + TEXT("/plan"), TEXT("application/json"));
+		// The LAN door takes exactly this query on /plan (lan-door.ts VERBS, night two W2b), so Wi-Fi draws the same islands.
+		TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Plan = MakeGet(Root + TEXT("/plan?layout=islands"), TEXT("application/json"));
 		TrackProductRequest(Plan);
 		Plan->OnProcessRequestComplete().BindLambda([Root, Slug, OnDone, Gen, Snapshot = MoveTemp(Snapshot)](FHttpRequestPtr, FHttpResponsePtr PlanResponse, bool bPlanConnected) mutable
 		{
@@ -2536,8 +2534,12 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 	Request->SetHeader(TEXT("Accept"), TEXT("text/event-stream"));
 	Request->SetContentAsString(Wire);
-	// A model turn with its tools can run minutes; the answer is read whole when it ends.
-	Request->SetTimeout(240.f);
+	// A model turn with its tools can run minutes; the answer is read whole when it ends. The stream can stay silent longer
+	// than the engine's 30 s activity timeout (HttpActivityTimeout) while the model thinks: night two W2b found every turn cut
+	// at 30 s with no answer (status 0), so the request's own activity limit is the turn's.
+	// A plan-my-day turn on Opus measured over 240 s on Lynx (night two W2b): ten minutes, then it is given up.
+	Request->SetTimeout(600.f);
+	Request->SetActivityTimeout(600.f);
 	bCompanionTurnOut = true;
 	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn posted (conversation %s): %s"), CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation, *Text);
 	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
@@ -2978,8 +2980,6 @@ void FBpLinkModule::LinkUp(const FString& Url, EBpLinkRoute Route, const FString
 	LinkStatus.bMessageBad = false;
 	GRouteLive = true;
 	GFromBundle = false;
-	// The LAN door forwards /plan with no query (lan-door.ts): the islands view is asked only on the cable.
-	GPlanIslands = Route == EBpLinkRoute::Cable || !GExplicitUrl.IsEmpty();
 	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>(Url);
 	GClient->SetBaseUrl(Url);
 	ProbeMisses = 0;
@@ -2988,7 +2988,6 @@ void FBpLinkModule::LinkUp(const FString& Url, EBpLinkRoute Route, const FString
 	NextPairMeS = 0.0;
 	UE_LOG(LogBpLink, Log, TEXT("BpLink: linked %s at %s (boot %s)%s%s"), Route == EBpLinkRoute::Cable ? TEXT("on the cable") : TEXT("on Wi-Fi"), *Url, Boot.IsEmpty() ? TEXT("?") : *Boot,
 		bWasDecided ? TEXT(": the table leaves the sample for the live link") : TEXT(""), GToken.IsEmpty() ? TEXT("; not paired") : *FString::Printf(TEXT("; paired as %s"), *LinkStatus.Device));
-	if (!GPlanIslands) UE_LOG(LogBpLink, Log, TEXT("BpLink: over Wi-Fi the plan is read without ?layout=islands (the LAN door forwards /plan with no query): the default layout"));
 	RefetchAll(bWasDecided ? TEXT("linked again") : TEXT("linked"));
 	ChangedLink();
 }
@@ -3462,6 +3461,370 @@ void FBpLinkModule::ShowOnPc(const FBpFollowPlace& InPlace, TFunction<void(bool,
 		}
 		else Module->SendPublish(Place);
 		if (OnDone) OnDone(true, FString::Printf(TEXT("Sent to your PC as the shared place: the web goes to %s."), *Where));
+	});
+	Request->ProcessRequest();
+}
+
+// ---- The stand-up (night two W2b; table-link-v2.md section 3, the web's Morning Watch) ---------------------------------------
+// The owner, 2026-11-09: "wire 'standups' as in web to establish daily plan with AI companion and let it handle the project - if
+// connected to PC". The deck is the server's (GET /api/companion/morning), or the build's sample (morning.json) with no PC. A
+// person's decision goes out only with a pairing that holds `decide` (the server checks it: the Bearer adds the decider seal),
+// always with `shown`, the words the card displayed. A grant from here is never wider than VR_POLICY_BOUND, refused before it
+// is sent. Every answer is handed back as the server gave it; the stand-up shows the server's body as the truth.
+
+namespace
+{
+	FString Condensed(const TSharedRef<FJsonObject>& Json)
+	{
+		FString Wire;
+		FJsonSerializer::Serialize(Json, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Wire));
+		return Wire;
+	}
+
+	/** `shown` as the contract takes it: 1..1000 characters, no control characters but newline. */
+	FString ShownText(const FString& In)
+	{
+		FString Out;
+		for (const TCHAR C : In) Out += (C == TEXT('\n') || C >= 32) ? C : TEXT(' ');
+		Out.TrimStartAndEndInline();
+		return Out.Left(1000);
+	}
+
+	bool ReadPolicy(const TSharedPtr<FJsonObject>& Json, FBpPolicy& Out)
+	{
+		if (!Json.IsValid() || !Json->TryGetStringField(TEXT("id"), Out.Id)) return false;
+		Json->TryGetStringField(TEXT("product"), Out.Product);
+		Json->TryGetStringArrayField(TEXT("tools"), Out.Tools);
+		int32 Tier = -1;
+		if (Json->TryGetNumberField(TEXT("minTier"), Tier)) Out.MinTier = Tier;
+		Json->TryGetStringField(TEXT("expiresAt"), Out.ExpiresAt);
+		Json->TryGetStringField(TEXT("createdAt"), Out.CreatedAt);
+		const TSharedPtr<FJsonObject>* By = nullptr;
+		if (Json->TryGetObjectField(TEXT("grantedBy"), By))
+		{
+			(*By)->TryGetStringField(TEXT("surface"), Out.GrantedSurface);
+			(*By)->TryGetStringField(TEXT("device"), Out.GrantedDevice);
+		}
+		return true;
+	}
+
+	/** A shot's path is the Shot row's (shots/<run>/<file>.png, or a bare file name for the sample's): letters, digits, . _ - and /,
+	 *  no dot segment. */
+	bool SafeShotPath(const FString& Path)
+	{
+		if (Path.IsEmpty() || Path.Len() > 200 || Path.StartsWith(TEXT("/")) || Path.Contains(TEXT(".."))) return false;
+		for (const TCHAR C : Path) if (!(FChar::IsAlnum(C) || C == TEXT('_') || C == TEXT('.') || C == TEXT('-') || C == TEXT('/'))) return false;
+		return Path.EndsWith(TEXT(".png"));
+	}
+}
+
+bool FBpPolicy::IsLive() const
+{
+	FDateTime Until;
+	return FDateTime::ParseIso8601(*ExpiresAt, Until) && Until > FDateTime::UtcNow();
+}
+
+const TArray<FString>& FBpLinkModule::PolicyTools()
+{
+	static const TArray<FString> Tools = { TEXT("decision.answer"), TEXT("finding.decline"), TEXT("scan.directed"), TEXT("wave.dispatch") };
+	return Tools;
+}
+
+bool FBpLinkModule::CanDecide() const
+{
+	return !GFromBundle && GRouteLive && LinkStatus.Pair == EBpPairState::Paired && LinkStatus.Scopes.Contains(TEXT("decide"));
+}
+
+FString FBpLinkModule::AnswerWords(int32 Status, const FString& Body)
+{
+	const FString Error = ErrorOf(Body);
+	if (Status == 0) return Body.IsEmpty() ? FString(TEXT("Your PC did not answer: nothing was sent.")) : Body;
+	if (!Error.IsEmpty()) return Error.Left(1).ToUpper() + Error.Mid(1) + (Error.EndsWith(TEXT(".")) ? TEXT("") : TEXT("."));
+	if (Status == 403) return TEXT("Your PC refused it: this headset's pairing may not decide (PC LINK pairs it with decide).");
+	if (Status == 401) return TEXT("Your PC no longer knows this headset: pair again (PC LINK).");
+	if (Status == 409) return TEXT("It was decided elsewhere first.");
+	return FString::Printf(TEXT("Your PC answered %d."), Status);
+}
+
+void FBpLinkModule::GetMorning(const FString& Since, TFunction<void(const FBpMorningRead&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive)
+	{
+		// The build's sample: read on a later tick, as a request would answer.
+		FBpMorningRead Read;
+		Read.bSample = true;
+		FString Text;
+		TSharedPtr<FJsonObject> Json;
+		if (!ReadBundleFile(GetProductSlug(), TEXT("morning.json"), Text)) Read.Error = TEXT("This build carries no sample morning.");
+		else if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Text), Json) || !Json.IsValid() || !BpSchema::FromJson(Json.ToSharedRef(), Read.Deck))
+		{
+			Read.Error = TEXT("The sample morning did not read.");
+		}
+		else Read.bOk = true;
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: morning from the bundle's sample: %s (%d cards)"), Read.bOk ? TEXT("read") : *Read.Error, Read.Deck.cards.Num());
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([OnDone, Read](float) { if (OnDone) OnDone(Read); return false; }));
+		return;
+	}
+	if (!GClient.IsValid()) GClient = MakeUnique<FBpLinkClient>();
+	// The LAN door takes since=<iso> with only [0-9TZ:.-] (lan-door.ts MORNING_QUERY): UTC with Z, no escaping needed.
+	FString Query;
+	FDateTime At;
+	if (!Since.IsEmpty() && FDateTime::ParseIso8601(*Since, At)) Query = TEXT("?since=") + At.ToIso8601();
+	const FString Url = GClient->GetBaseUrl() + TEXT("/api/companion/morning") + Query;
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(Url, TEXT("application/json"));
+	Request->SetTimeout(30.f);
+	const double Sent = FPlatformTime::Seconds();
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: GET /api/companion/morning%s"), *Query);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Sent](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		FBpMorningRead Read;
+		Read.Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		TSharedPtr<FJsonObject> Json;
+		if (Read.Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid() && BpSchema::FromJson(Json.ToSharedRef(), Read.Deck)) Read.bOk = true;
+		else Read.Error = Read.Status == 200 ? FString(TEXT("The morning did not read.")) : AnswerWords(Read.Status, Body);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: morning answered %d in %.0f ms: %d cards%s"), Read.Status, (FPlatformTime::Seconds() - Sent) * 1000.0, Read.Deck.cards.Num(), Read.bOk ? TEXT("") : *(TEXT(", ") + Read.Error));
+		if (OnDone) OnDone(Read);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::PostMorningVerdict(const FString& Product, const FString& Proposal, const FString& Verdict, const FString& Shown, TFunction<void(int32, const FString&)> OnDone)
+{
+	const FString Said = ShownText(Shown);
+	const bool bVerdict = Verdict == BpVocab::SteerPost::Verdict::Approve || Verdict == BpVocab::SteerPost::Verdict::Defer || Verdict == BpVocab::SteerPost::Verdict::Hold || Verdict == BpVocab::SteerPost::Verdict::Decline;
+	FString Refused;
+	if (GFromBundle || !GRouteLive) Refused = TEXT("Sample: nothing was sent.");
+	else if (!bVerdict || Product.IsEmpty() || Proposal.IsEmpty()) Refused = TEXT("Not a verdict the stand-up sends.");
+	else if (Said.IsEmpty()) Refused = TEXT("A decision from the table must say what it showed.");
+	if (!Refused.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: morning verdict %s %s/%s not sent: %s"), *Verdict, *Product, *Proposal, *Refused);
+		if (OnDone) OnDone(0, Refused);
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("product"), Product);
+	Json->SetStringField(TEXT("proposal"), Proposal);
+	Json->SetStringField(TEXT("verdict"), Verdict);
+	Json->SetStringField(TEXT("shown"), Said);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/morning"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Condensed(Json));
+	Request->SetTimeout(20.f);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST /api/companion/morning %s %s/%s, shown \"%s\""), *Verdict, *Product, *Proposal, *Said.Replace(TEXT("\n"), TEXT(" / ")));
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Verdict, Proposal](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: morning verdict %s %s answered %d %.300s"), *Verdict, *Proposal, Status, *Body);
+		if (Status == 200)
+		{
+			if (FBpLinkModule* Module = LinkModule()) Module->NextScanPollS = 0.0;
+		}
+		if (OnDone) OnDone(Status, Body);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::GetCompanionCards(TFunction<void(bool, const TArray<FBpCompanionCard>&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive)
+	{
+		if (OnDone) OnDone(false, TArray<FBpCompanionCard>());
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/companion/cards"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		TArray<FBpCompanionCard> Cards;
+		TArray<TSharedPtr<FJsonValue>> List;
+		const bool bOk = Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), List);
+		for (const TSharedPtr<FJsonValue>& Each : List)
+		{
+			const TSharedPtr<FJsonObject>* One = nullptr;
+			if (!Each.IsValid() || !Each->TryGetObject(One)) continue;
+			FBpCompanionCard Card;
+			(*One)->TryGetStringField(TEXT("id"), Card.Id);
+			(*One)->TryGetStringField(TEXT("tool"), Card.Tool);
+			(*One)->TryGetStringField(TEXT("summary"), Card.Summary);
+			(*One)->TryGetStringField(TEXT("product"), Card.Product);
+			(*One)->TryGetStringField(TEXT("state"), Card.State);
+			(*One)->TryGetStringField(TEXT("createdAt"), Card.CreatedAt);
+			if (!Card.Id.IsEmpty()) Cards.Add(MoveTemp(Card));
+		}
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion cards answered %d: %d cards"), Status, Cards.Num());
+		if (OnDone) OnDone(bOk, Cards);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::AnswerCompanionCard(const FString& Id, bool bApprove, const FString& Shown, TFunction<void(int32, const FString&)> OnDone)
+{
+	const FString Said = ShownText(Shown);
+	if (GFromBundle || !GRouteLive || Id.IsEmpty() || Said.IsEmpty())
+	{
+		if (OnDone) OnDone(0, GFromBundle || !GRouteLive ? FString(TEXT("Sample: nothing was sent.")) : FString(TEXT("A decision from the table must say what it showed.")));
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("decision"), bApprove ? TEXT("approve") : TEXT("decline"));
+	Json->SetStringField(TEXT("shown"), Said);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/cards/") + FGenericPlatformHttp::UrlEncode(Id));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Condensed(Json));
+	// An approved card runs its tool before it answers.
+	Request->SetTimeout(120.f);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST /api/companion/cards/%s %s, shown \"%s\""), *Id, bApprove ? TEXT("approve") : TEXT("decline"), *Said.Replace(TEXT("\n"), TEXT(" / ")));
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Id](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: card %s answered %d %.300s"), *Id, Status, *Body);
+		if (OnDone) OnDone(Status, Body);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::GetPolicies(TFunction<void(bool, const TArray<FBpPolicy>&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive)
+	{
+		if (OnDone) OnDone(false, TArray<FBpPolicy>());
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/companion/policies"), TEXT("application/json"));
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		TArray<FBpPolicy> Policies;
+		TArray<TSharedPtr<FJsonValue>> List;
+		const bool bOk = Status == 200 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()), List);
+		for (const TSharedPtr<FJsonValue>& Each : List)
+		{
+			const TSharedPtr<FJsonObject>* One = nullptr;
+			FBpPolicy Policy;
+			if (Each.IsValid() && Each->TryGetObject(One) && ReadPolicy(*One, Policy)) Policies.Add(MoveTemp(Policy));
+		}
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: policies answered %d: %d grants"), Status, Policies.Num());
+		if (OnDone) OnDone(bOk, Policies);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::GrantPolicy(const FString& Product, const TArray<FString>& Tools, int32 MinTier, int32 Hours, const FString& Shown,
+	TFunction<void(int32, const FBpPolicy&, const FString&)> OnDone)
+{
+	// The bound, before anything is sent: never wider than the server's VR_POLICY_BOUND (contract 3.4).
+	const FString Said = ShownText(Shown);
+	FString Refused;
+	if (GFromBundle || !GRouteLive) Refused = TEXT("Sample: nothing was granted.");
+	else if (Product.IsEmpty() || Product == TEXT("*")) Refused = TEXT("A grant from the table names one product.");
+	else if (Tools.Num() == 0 || Tools.ContainsByPredicate([](const FString& T) { return !PolicyTools().Contains(T); })) Refused = TEXT("A grant from the table names only the four bounded tools.");
+	else if (MinTier < 1 || MinTier > 3) Refused = TEXT("A grant from the table never covers a stop-ship finding (tier 1 to 3 only).");
+	else if (Hours <= 0 || Hours > PolicyMaxHours) Refused = FString::Printf(TEXT("A grant from the table lasts at most %d hours."), PolicyMaxHours);
+	else if (Said.IsEmpty()) Refused = TEXT("A grant from the table must say what it showed.");
+	if (!Refused.IsEmpty())
+	{
+		UE_LOG(LogBpLink, Warning, TEXT("BpLink: grant not sent: %s"), *Refused);
+		if (OnDone) OnDone(0, FBpPolicy(), Refused);
+		return;
+	}
+	const TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("product"), Product);
+	TArray<TSharedPtr<FJsonValue>> ToolValues;
+	for (const FString& Tool : Tools) ToolValues.Add(MakeShared<FJsonValueString>(Tool));
+	Json->SetArrayField(TEXT("tools"), ToolValues);
+	Json->SetNumberField(TEXT("minTier"), MinTier);
+	Json->SetNumberField(TEXT("hours"), Hours);
+	Json->SetStringField(TEXT("shown"), Said);
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("POST"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/policies"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	Request->SetContentAsString(Condensed(Json));
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: POST /api/companion/policies %s [%s] tier %d+ for %d h"), *Product, *FString::Join(Tools, TEXT(",")), MinTier, Hours);
+	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		FBpPolicy Grant;
+		TSharedPtr<FJsonObject> Json;
+		if (Status == 201 && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json)) ReadPolicy(Json, Grant);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: grant answered %d %.400s"), Status, *Body);
+		if (OnDone) OnDone(Status, Grant, Body);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::RevokePolicy(const FString& Id, TFunction<void(int32, const FString&)> OnDone)
+{
+	if (GFromBundle || !GRouteLive || Id.IsEmpty())
+	{
+		if (OnDone) OnDone(0, TEXT("Your PC is not linked: nothing was taken back."));
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
+	Request->SetVerb(TEXT("DELETE"));
+	Request->SetURL(GClient->GetBaseUrl() + TEXT("/api/companion/policies/") + FGenericPlatformHttp::UrlEncode(Id));
+	Request->SetHeader(TEXT("Accept"), TEXT("application/json"));
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: DELETE /api/companion/policies/%s"), *Id);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Id](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		const FString Body = Response.IsValid() ? Response->GetContentAsString() : FString();
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: revoke %s answered %d %.200s"), *Id, Status, *Body);
+		if (OnDone) OnDone(Status, Body);
+	});
+	Request->ProcessRequest();
+}
+
+void FBpLinkModule::FetchShot(const FString& Product, const FString& Path, TFunction<void(bool, const TArray<uint8>&, bool)> OnDone)
+{
+	const auto Later = [OnDone](bool bOk, TArray<uint8> Bytes, bool bSample)
+	{
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([OnDone, bOk, Bytes = MoveTemp(Bytes), bSample](float) { if (OnDone) OnDone(bOk, Bytes, bSample); return false; }));
+	};
+	if (!SafeShotPath(Path) || Product.IsEmpty())
+	{
+		Later(false, TArray<uint8>(), false);
+		return;
+	}
+	// The build's sample screens (bundle-data.mjs copies shots/finding-<id>.png beside scan.json).
+	if (GFromBundle || !GRouteLive)
+	{
+		TArray<uint8> Bytes;
+		const bool bOk = FFileHelper::LoadFileToArray(Bytes, *(FPaths::ProjectContentDir() / TEXT("BpData") / Product / TEXT("shots") / Path), FILEREAD_Silent);
+		Later(bOk, MoveTemp(Bytes), true);
+		return;
+	}
+	// The PC's, cached on disk: one read per screen, and a stand-up that reopens draws it with no request.
+	const FString Cache = FPaths::ProjectSavedDir() / TEXT("BpShots") / Product / Path.Replace(TEXT("/"), TEXT("_"));
+	TArray<uint8> Cached;
+	if (FFileHelper::LoadFileToArray(Cached, *Cache, FILEREAD_Silent) && Cached.Num() > 8)
+	{
+		Later(true, MoveTemp(Cached), false);
+		return;
+	}
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeGet(GClient->GetBaseUrl() + TEXT("/api/products/") + Product + TEXT("/shots/") + Path, TEXT("image/png"));
+	Request->SetTimeout(20.f);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Cache, Path](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	{
+		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
+		TArray<uint8> Bytes;
+		if (Status == 200) Bytes = Response->GetContent();
+		const bool bOk = Bytes.Num() > 8;
+		if (bOk) FFileHelper::SaveArrayToFile(Bytes, *Cache);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: shot %s answered %d (%d bytes)%s"), *Path, Status, Bytes.Num(), bOk ? TEXT(", cached") : TEXT(""));
+		if (OnDone) OnDone(bOk, Bytes, false);
 	});
 	Request->ProcessRequest();
 }

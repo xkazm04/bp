@@ -25,7 +25,8 @@ const src = fs.readFileSync(CPP, 'utf8');
 const table = /static const TCHAR\* Names\[\] = \{([^}]*)\}/.exec(src);
 check('BpTour.cpp has the StepName table', !!table);
 const steps = table ? [...table[1].matchAll(/TEXT\("([^"]+)"\)/g)].map((m) => m[1]) : [];
-check('the tour has its eight steps', steps.length === 8, `${steps.length}: ${steps.join(', ')}`);
+// nine since night two W2b: the first five minutes end on the stand-up's first decision (standup), then the hand-off
+check('the tour has its nine steps', steps.length === 9, `${steps.length}: ${steps.join(', ')}`);
 check('the lamp says "shown" when it does a step', /SpeakTour\(TEXT\("shown"\)\)/.test(src));
 const wanted = [...steps, 'shown'];
 for (const s of wanted) check(`a spoken line for ${s}`, typeof TOUR_LINES[s] === 'string' && TOUR_LINES[s].length > 0);

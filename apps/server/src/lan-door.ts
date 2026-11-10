@@ -118,6 +118,8 @@ const products = (rest: string) => new RegExp(`^/api/products/${SLUG}/${rest}$`)
 export const VERBS: readonly Verb[] = [
   { scope: 'read', method: 'GET', path: products('structure') },
   { scope: 'read', method: 'GET', path: products('plan') },
+  // the table's own layout (night two W2b): exactly this query, nothing wider, so Wi-Fi draws the islands the cable draws
+  { scope: 'read', method: 'GET', path: products('plan'), query: 'layout=islands' },
   { scope: 'read', method: 'GET', path: products('scans') },
   { scope: 'read', method: 'GET', path: products(`scans/${ID}`) },
   { scope: 'read', method: 'GET', path: products('scan') },

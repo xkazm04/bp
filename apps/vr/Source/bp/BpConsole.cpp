@@ -149,7 +149,7 @@ struct FBpConsolePages
 		static const TArray<FBpConsolePage> Pages = {
 			{ TEXT("rooms"), TEXT("ROOMS"), TEXT("A"), &RoomsRows, &RoomsSummary, nullptr, nullptr },
 			{ TEXT("scan"), TEXT("SCAN"), TEXT("B"), &ScanRows, &ScanSummary, &ScanOpen, nullptr },
-			{ TEXT("standup"), TEXT("STAND-UP"), TEXT("C"), &StandupRows, &StandupSummary, nullptr, nullptr },
+			{ TEXT("standup"), TEXT("STAND-UP"), TEXT("C"), &StandupRows, &StandupSummary, &StandupOpen, nullptr },
 			{ TEXT("ask"), TEXT("ASK"), TEXT("D"), &AskRows, &AskSummary, nullptr, nullptr },
 			{ TEXT("projects"), TEXT("PROJECTS"), TEXT("E"), &ProjectsRows, &ProjectsSummary, nullptr, nullptr },
 			{ TEXT("packages"), TEXT("PACKAGES"), TEXT("F"), &PackagesRows, &PackagesSummary, nullptr, nullptr },
@@ -490,20 +490,23 @@ struct FBpConsolePages
 		return FString::Printf(TEXT("%s · %s"), *FBpLinkModule::RouteWords(S), S.Pair == EBpPairState::Paired ? TEXT("paired") : TEXT("not paired"));
 	}
 
-	// STAND-UP: a stub tonight (a later wave runs it here); it says what waits and what it needs.
-	static void StandupRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
+	// STAND-UP (night two W2b, BpStandup.cpp): the morning ritual. Its body is a sheet, not rows (ABpPawn::DrawStandup); this
+	// gives the header's sub-line: where the morning comes from and what it covers.
+	static void StandupOpen(ABpPawn& Pawn) { Pawn.StandupOpened(); }
+	static void StandupRows(ABpPawn& Pawn, TArray<FBpConsoleRow>&, FString& Sub)
 	{
-		const int32 Waiting = Plan(Pawn) ? Table(Pawn)->OpenDecisionCount() : 0;
-		Sub = TEXT("The morning's decisions, one by one");
-		if (Plan(Pawn)) Out.Add(Note(Waiting > 0 ? FString::Printf(TEXT("%d %s waiting in the store."), Waiting, Waiting == 1 ? TEXT("decision is") : TEXT("decisions are")) : FString(TEXT("No decision is waiting.")), Waiting > 0 ? 2 : 4));
-		if (!FBpLinkModule::Get().HasPcLink()) Out.Add(Note(TEXT("Connect to your PC to run the stand-up.")));
-		else Out.Add(Note(TEXT("The stand-up runs here soon; until then the rooms' screens hold each decision.")));
+		const FBpLinkModule& Link = FBpLinkModule::Get();
+		if (!Link.HasPcLink()) Sub = TEXT("Sample morning · nothing you decide here is sent");
+		else if (!Link.CanDecide()) Sub = TEXT("From your PC · pair with decide to answer here (PC LINK)");
+		else Sub = FString::Printf(TEXT("From your PC · %s · every answer goes with the words it showed"), *FBpLinkModule::RouteWords(Link.GetLinkStatus()));
+		if (Pawn.LiveGrant()) Sub += TEXT(" · ") + Pawn.StandupBarStatus();
 	}
 	static FString StandupSummary(ABpPawn& Pawn)
 	{
+		if (Pawn.LiveGrant()) return Pawn.StandupBarStatus();
 		const int32 Waiting = Plan(Pawn) ? Table(Pawn)->OpenDecisionCount() : 0;
-		if (!FBpLinkModule::Get().HasPcLink()) return Waiting > 0 ? FString::Printf(TEXT("%d waiting · needs your PC"), Waiting) : FString(TEXT("Needs your PC"));
-		return FString::Printf(TEXT("%d decisions waiting"), Waiting);
+		if (!FBpLinkModule::Get().HasPcLink()) return TEXT("The sample morning · 3 decisions");
+		return Waiting > 0 ? FString::Printf(TEXT("The morning · %d %s waiting"), Waiting, Waiting == 1 ? TEXT("decision") : TEXT("decisions")) : FString(TEXT("The morning · nothing waiting"));
 	}
 
 	// ASK: the lamp's three asks (the wrist's ASK tab), its last answer, and what that answer offers.
@@ -769,6 +772,8 @@ void ABpPawn::OpenConsole(const FString& Page)
 	bConsoleOpen = true;
 	if (Key != ConsolePageKey || !bWas)
 	{
+		// Leaving the stand-up (another page): its screen is released and its timers stop.
+		if (bWas && ConsolePageKey == TEXT("standup") && Key != TEXT("standup")) StandupClosed();
 		ConsolePageKey = Key;
 		ConsolePageAt = 0;
 		ConsoleSel.Reset();
@@ -786,6 +791,7 @@ void ABpPawn::CloseConsole()
 	bConsoleOpen = false;
 	ConsoleSel.Reset();
 	ConsoleHover.Reset();
+	if (ConsolePageKey == TEXT("standup")) StandupClosed();
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: closed"));
 	PlaceConsole();
 	RefreshConsole();
@@ -867,8 +873,10 @@ void ABpPawn::RefreshConsole()
 	const FString Product = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
 	const bool bCanBack = Table->HasPlan() && (!Table->GetRoomModeId().IsEmpty() || Table->GetBpLevel() != EBpLevel::L0);
 	// SHOW ON PC (night two W2a): the table's place to the web, on the bar while a PC is linked; its answer stands a while.
-	const bool bShowPc = Table->HasPlan() && Link.HasPcLink();
-	const FString Status = !ConsoleBarWords.IsEmpty() && FPlatformTime::Seconds() < ConsoleBarWordsUntil ? ConsoleBarWords : ConsoleStatus();
+	// Handed over (night two W2b): while a grant from the table is live the bar says until when, with TAKE BACK in SHOW ON PC's place.
+	const FString Handed = StandupBarStatus();
+	const bool bShowPc = Table->HasPlan() && Link.HasPcLink() && Handed.IsEmpty();
+	const FString Status = !ConsoleBarWords.IsEmpty() && FPlatformTime::Seconds() < ConsoleBarWordsUntil ? ConsoleBarWords : !Handed.IsEmpty() ? Handed : ConsoleStatus();
 
 	// What it shows, as words: the redraw key.
 	const FBpConsolePage* Page = bConsoleOpen && ConsolePageKey != TEXT("home") ? FBpConsolePages::Find(ConsolePageKey) : nullptr;
@@ -887,6 +895,8 @@ void ABpPawn::RefreshConsole()
 	}
 	for (const FString& Each : Summaries) Key += TEXT("|") + Each;
 	if (bConsoleOpen && !Page) Key += FBpConsolePages::LinkLine();
+	const bool bStandupPage = bConsoleOpen && Page && ConsolePageKey == TEXT("standup");
+	if (bStandupPage) Key += StandupKey();
 	if (Key == ConsoleKey) return;
 	ConsoleKey = Key;
 	ConsoleBoxes.Reset();
@@ -919,11 +929,13 @@ void ABpPawn::RefreshConsole()
 		Button(FBox2f(FVector2f(14.f, Y0), FVector2f(214.f, Y1)), TEXT("MENU"), EBtn::Fill, TEXT("menu"), Font(TEXT("Bold"), CapBar));
 		const float BackW = bCanBack ? 200.f : 0.f;
 		if (bCanBack) Button(FBox2f(FVector2f(LW - 14.f - BackW, Y0), FVector2f(LW - 14.f, Y1)), TEXT("‹  BACK"), EBtn::Edge, TEXT("bar:back"), Font(TEXT("Bold"), CapBar));
-		const float PcW = bShowPc ? 250.f : 0.f;
+		const bool bTakeBack = !Handed.IsEmpty();
+		const float PcW = bShowPc || bTakeBack ? 250.f : 0.f;
 		const float PcX1 = LW - 14.f - (bCanBack ? BackW + 12.f : 0.f);
 		if (bShowPc) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("SHOW ON PC"), EBtn::Edge, TEXT("bar:pc"), Font(TEXT("Bold"), CapBar));
+		if (bTakeBack) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("TAKE BACK"), EBtn::Amber, TEXT("standup:revoke"), Font(TEXT("Bold"), CapBar));
 		const FSlateFontInfo NameFont = Font(TEXT("Bold"), CapBar), StatusFont = Font(TEXT("Regular"), CapBarStatus);
-		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc ? PcW + 12.f : 0.f);
+		const float TextX = 242.f, TextW = LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack ? PcW + 12.f : 0.f);
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextW * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		Put(FBox2f(FVector2f(TextX, 0.f), FVector2f(TextX + TextW, BarLH)),
@@ -988,6 +1000,11 @@ void ABpPawn::RefreshConsole()
 						SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(FBpConsolePages::LinkLine(), SmallFont, TileW - 30.f, 2))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.75f)))
 					]);
 			}
+		}
+		else if (bStandupPage)
+		{
+			// The stand-up's sheet (BpStandup.cpp), under the same header.
+			DrawStandup(Canvas);
 		}
 		else
 		{

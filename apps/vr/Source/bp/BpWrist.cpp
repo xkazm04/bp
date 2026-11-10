@@ -303,6 +303,18 @@ void ABpPawn::PanelAct(const FString& Act)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: act %s"), *Act);
 	ABpTable* Table = WristTable.Get();
+	// The stand-up's controls (BpStandup.cpp), from the console's sheet, the wrist and the bar's TAKE BACK.
+	if (Act.StartsWith(TEXT("standup:")))
+	{
+		StandupAct(Act.Mid(8));
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("open:")))
+	{
+		OpenConsole(Act.Mid(5));
+		return;
+	}
 	// The levels: heard at once, and an armed row stays armed.
 	if (Act == TEXT("voice:minus") || Act == TEXT("voice:plus"))
 	{
@@ -776,12 +788,17 @@ void ABpPawn::DrawWrist()
 	ABpTable* Table = WristTable.Get();
 	const bool bPlan = Table && Table->HasPlan();
 	// What the card shows, most pressing first: an armed scan, a scan's refusal, the decision waiting, the lamp's offer.
-	enum class ECard : uint8 { Armed, Refused, Decision, Offer, Calm };
+	enum class ECard : uint8 { Armed, Refused, Decision, Offer, Calm, Standup };
 	FString DecisionId, DecisionTitle, DecisionWhere;
 	const bool bDecision = bPlan && Table->WaitingDecision(DecisionId, DecisionTitle, DecisionWhere);
 	const FString Offer = bPlan ? Table->LampOfferLabel() : FString();
-	const ECard Card = !WristArmedFocus.IsEmpty() ? ECard::Armed : bWristScanRefused && !WristScanWords.IsEmpty() ? ECard::Refused
-		: bDecision ? ECard::Decision : !Offer.IsEmpty() ? ECard::Offer : ECard::Calm;
+	// The stand-up (night two W2b): the decision on its sheet with the same answers, else "handed over" with TAKE BACK.
+	FString SuKicker, SuTitle, SuWords;
+	TArray<TPair<FString, FString>> SuButtons;
+	const bool bStandupCard = StandupWristCard(SuKicker, SuTitle, SuWords, SuButtons);
+	const bool bStandupFirst = bStandupCard && IsStandupOpen();
+	const ECard Card = bStandupFirst ? ECard::Standup : !WristArmedFocus.IsEmpty() ? ECard::Armed : bWristScanRefused && !WristScanWords.IsEmpty() ? ECard::Refused
+		: bDecision ? ECard::Decision : !Offer.IsEmpty() ? ECard::Offer : bStandupCard ? ECard::Standup : ECard::Calm;
 	FString BandHead, BandBody;
 	if (bPlan) Table->ScanBand(BandHead, BandBody);
 	const bool bSample = !FBpLinkModule::Get().HasPcLink() && FBpLinkModule::Get().HasSampleFocuses();
@@ -791,6 +808,11 @@ void ABpPawn::DrawWrist()
 	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
 		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord);
 	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
+	if (Card == ECard::Standup)
+	{
+		Key += TEXT("|s") + SuKicker + SuTitle + SuWords;
+		for (const TPair<FString, FString>& B : SuButtons) Key += TEXT("/") + B.Key;
+	}
 	Key += TEXT("|h") + WristHover;
 	if (Key == WristKey) return;
 	WristKey = Key;
@@ -877,6 +899,18 @@ void ABpPawn::DrawWrist()
 		Title = DecisionTitle;
 		Buttons = { { TEXT("APPROVE"), EBtn::Amber, TEXT("approve") }, { TEXT("DECLINE"), EBtn::Edge, TEXT("decline") } };
 		break;
+	case ECard::Standup:
+		Kicker = SuKicker;
+		KickerInk = BpSheet::Amber;
+		CardEdge = BpSheet::Amber;
+		Title = SuTitle;
+		Words = SuWords;
+		for (int32 Index = 0; Index < SuButtons.Num(); ++Index)
+		{
+			const bool bTake = SuButtons[Index].Value == TEXT("standup:revoke");
+			Buttons.Add({ SuButtons[Index].Key, Index == 0 && !bTake ? EBtn::Amber : bTake ? EBtn::Amber : EBtn::Edge, SuButtons[Index].Value });
+		}
+		break;
 	case ECard::Offer:
 		Kicker = TEXT("THE LAMP SUGGESTS");
 		Words = Table->GetLampAnswer();
@@ -923,12 +957,19 @@ void ABpPawn::DrawWrist()
 		}
 		Put(CardBox, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.35f)).Edge(CardEdge).EdgePx(2.f));
 		Put(FBox2f(CardBox.Min + FVector2f(22.f, 16.f), FVector2f(CardBox.Max.X - 22.f, CardBox.Min.Y + 16.f + LinesH)), SNew(SBox).Clipping(EWidgetClipping::ClipToBounds)[Lines]);
+		// Each button as wide as its word needs, the row's spare width shared out evenly (three answers fit: APPROVE is wider).
 		const int32 N = Buttons.Num();
-		const float BW = N > 0 ? (CardBox.GetSize().X - 2.f * 18.f - (N - 1) * WGap) / N : 0.f;
+		const float RowW = CardBox.GetSize().X - 2.f * 18.f - FMath::Max(0, N - 1) * WGap;
+		TArray<float> Widths;
+		float Need = 0.f;
+		for (const FCardButton& Each : Buttons) { Widths.Add(BpSheet::TextWidth(Each.Word, ButtonFont) + 30.f); Need += Widths.Last(); }
+		const float Spare = N > 0 ? (RowW - Need) / N : 0.f;
+		float X0 = CardBox.Min.X + 18.f;
 		for (int32 Index = 0; Index < N; ++Index)
 		{
-			const float X0 = CardBox.Min.X + 18.f + Index * (BW + WGap);
+			const float BW = Spare >= 0.f ? Widths[Index] + Spare : RowW / N;
 			Button(FBox2f(FVector2f(X0, BtnY0), FVector2f(X0 + BW, BtnY0 + WBtnH)), Buttons[Index].Word, Buttons[Index].Look, Buttons[Index].Id);
+			X0 += BW + WGap;
 		}
 	}
 	if (bBand)
@@ -950,6 +991,6 @@ void ABpPawn::DrawWrist()
 		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()[Over]);
 	WristPanel->RequestRenderUpdate();
-	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : TEXT("calm"),
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist link=%s card=%s%s%s"), *LinkWord, Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
 		Card == ECard::Decision ? *FString::Printf(TEXT(" %s on the %s"), *DecisionId, *DecisionWhere) : TEXT(""), bBand ? *FString::Printf(TEXT(" band \"%s\""), *BandHead) : TEXT(""));
 }

@@ -5,7 +5,8 @@
 // shown. A step left alone for TourIdleS is shown once by the lamp doing it (never a write), and the hands always act.
 //
 // Steps: 0 the site (counts), 1 lift a wing, 2 lift its most urgent room, 3 step inside, 4 ask about a feature,
-// 5 take a decision, 6 step back out, 7 the hand-off.
+// 5 take a decision, 6 step back out, 7 the stand-up (night two W2b: the first five minutes end in one real decision on the
+// morning's first card, approved or left for later by the person), 8 the hand-off, which closes that loop in one line.
 #include "BpTable.h"
 
 #include "BpAudio.h"
@@ -51,6 +52,7 @@ namespace
 		Ask,
 		Decide,
 		StepOut,
+		Standup,
 		HandOff,
 		Count
 	};
@@ -58,7 +60,7 @@ namespace
 	const TCHAR* StepName(int32 Step)
 	{
 		static const TCHAR* Names[] = { TEXT("welcome"), TEXT("lift-wing"), TEXT("lift-room"), TEXT("step-in"), TEXT("ask"),
-			TEXT("decide"), TEXT("step-out"), TEXT("hand-off") };
+			TEXT("decide"), TEXT("step-out"), TEXT("standup"), TEXT("hand-off") };
 		return Step >= 0 && Step < ETourStep::Count ? Names[Step] : TEXT("none");
 	}
 
@@ -235,9 +237,29 @@ void ABpTable::EnterTourStep(int32 Step)
 	case ETourStep::StepOut:
 		Line = TEXT("Push away to step back out.\nIn a room, hold me for the next one.");
 		break;
-	case ETourStep::HandOff:
-		Line = TEXT("That is the morning round.\nThe table is yours.");
+	case ETourStep::Standup:
+	{
+		// The morning's first decision on the console, its room raised on the plan: the person answers it (APPROVE or LATER, a
+		// pinch or A twice); nothing is answered for them.
+		Line = TEXT("Every morning starts here.\nApprove this one, or leave it for later.");
+		TourStandupFrom = FPlatformTime::Seconds();
+		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
+		const bool bOpen = Pawn && Pawn->OpenStandupForTour();
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: the stand-up %s on its first decision"), bOpen ? TEXT("opens") : TEXT("could not open"));
 		break;
+	}
+	case ETourStep::HandOff:
+	{
+		// The loop closed in one line: what the person just decided, then the table is theirs.
+		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		const ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
+		const FString Verdict = Pawn && Pawn->StandupAnsweredSince(TourStandupFrom) ? Pawn->StandupLastVerdictWords() : FString();
+		Line = Verdict == TEXT("approve") ? TEXT("Approved: that is how every morning starts.\nThe table is yours.")
+			: !Verdict.IsEmpty() ? TEXT("Left for later: that is how every morning starts.\nThe table is yours.")
+			: TEXT("That is how every morning starts.\nThe table is yours.");
+		break;
+	}
 	default:
 		break;
 	}
@@ -264,6 +286,9 @@ void ABpTable::EnterTourStep(int32 Step)
 	case ETourStep::StepOut:
 	case ETourStep::HandOff:
 		LampGoHome(TEXT("tour"));
+		break;
+	case ETourStep::Standup:
+		// The stand-up's card moves the lamp beside the decision's room itself (ABpTable::StandupShow).
 		break;
 	default:
 		break;
@@ -449,7 +474,7 @@ void ABpTable::TickTour()
 		}
 		break;
 	case ETourStep::Decide:
-		if (!bInRoom) { EnterTourStep(ETourStep::HandOff); return; }
+		if (!bInRoom) { EnterTourStep(ETourStep::Standup); return; }
 		// A decision is never taken for the person: a tap moves on, and so does a long wait. Offline the tap writes nothing
 		// (BpLink refuses every write on the bundle), so the lamp says so rather than leave the deck's move unexplained.
 		if (TourTaps > 0 && !bTourShown)
@@ -463,9 +488,30 @@ void ABpTable::TickTour()
 		if (InStep >= TourIdleS * 2.0 && bIdle) { EnterTourStep(ETourStep::StepOut); return; }
 		break;
 	case ETourStep::StepOut:
-		if (!bInRoom) { EnterTourStep(ETourStep::HandOff); return; }
-		if (InStep >= TourIdleS * 1.5) { EnterTourStep(ETourStep::HandOff); return; }
+		if (!bInRoom) { EnterTourStep(ETourStep::Standup); return; }
+		if (InStep >= TourIdleS * 1.5) { EnterTourStep(ETourStep::Standup); return; }
 		break;
+	case ETourStep::Standup:
+	{
+		// The person answers the card (a pinch on APPROVE or LATER, or A twice); the next step closes the loop. Never answered
+		// for them: a long wait says how once, and a much longer one (or the console closed) moves on without an answer.
+		APlayerController* PC = World->GetFirstPlayerController();
+		ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
+		if (Pawn && Pawn->StandupAnsweredSince(TourStandupFrom))
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: the person decided on the stand-up: %s"), *Pawn->StandupLastVerdictWords());
+			EnterTourStep(ETourStep::HandOff);
+			return;
+		}
+		if (!Pawn || (!Pawn->IsStandupOpen() && InStep >= 2.0) || InStep >= TourIdleS * 5.0) { EnterTourStep(ETourStep::HandOff); return; }
+		if (bIdle && !bTourShown && InStep >= TourIdleS * 1.5)
+		{
+			bTourShown = true;
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: shown: how to answer the stand-up's card"));
+			SayTour(TEXT("Pinch APPROVE or LATER on the card,\nor press A twice."));
+		}
+		break;
+	}
 	case ETourStep::HandOff:
 		if (InStep >= LampCaptionS) { StopTour(TEXT("done")); return; }
 		break;

@@ -31,7 +31,8 @@ export const TOUR_LINES: Record<string, string> = {
   ask: 'Hold a feature, to ask me about it.',
   decide: 'Each screen on the deck is one decision. Tap approve, or decline.',
   'step-out': 'Push away, to step back out.',
-  'hand-off': "That's the morning round. The table is yours.",
+  standup: 'Every morning starts here. Approve this one, or leave it for later.',
+  'hand-off': "That's how every morning starts. The table is yours.",
   shown: 'Like this.',
 };
 

@@ -12,6 +12,8 @@
 // focuses are real, and a real focus must not be offered as a sample. --only <file> writes that one part and leaves the rest
 // of the bundle, bundle.json included, as it is. Kettle also gets shots/finding-<id>.png, the generated "before" screens
 // scan.json's Shot rows name (path = the bare file name), copied from apps/web/public/sample-shots/.
+// Kettle also gets morning.json (night two W2b): the sample stand-up's deck, built by bundle-morning.ts from this bundle's own
+// scan with a labelled synthetic night (three decisions with before screens); --only morning.json rebuilds just that.
 // --briefs (ROADMAP F2) adds briefs.json: { <proposal id>: <the brief route's body> } for every open proposal in scan.json,
 // so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
 // bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
@@ -43,7 +45,9 @@ const PARTS = [
   ...(slug === 'kettle' ? [['sample-focuses.json', '/focuses']] : []),
 ];
 const only = opt('--only');
-if (only && !PARTS.some(([file]) => file === only)) { console.log(`REFUSED: ${only} is not a part of ${slug}'s bundle (${PARTS.map(([f]) => f).join(', ')})`); process.exit(2); }
+// morning.json (night two W2b) is not a route's answer: bundle-morning.ts builds it from the parts above (Kettle only).
+const MORNING = slug === 'kettle' ? 'morning.json' : null;
+if (only && !PARTS.some(([file]) => file === only) && only !== MORNING) { console.log(`REFUSED: ${only} is not a part of ${slug}'s bundle (${PARTS.map(([f]) => f).join(', ')})`); process.exit(2); }
 
 let server = null, url = opt('--url');
 if (!url) {
@@ -93,6 +97,14 @@ if (slug === 'kettle' && !failed && (!only || only === 'scan.json')) {
     bytes += fs.statSync(src).size;
   }
   console.log(`ok    ${want.size} finding shots -> ${path.relative(REPO, shotsDir).replace(/\\/g, '/')}/ (${(bytes / 1024).toFixed(1)} KB)`);
+}
+// The sample stand-up (night two W2b): morning.json, the deck GET /api/companion/morning would answer, built by core's buildDeck
+// over a scratch copy of this bundle's scan with a labelled synthetic night (apps/vr/tools/bundle-morning.ts): three decisions
+// that have a before screen, what agents built. The headset runs its stand-up on it with no PC, saying it is a sample.
+if (MORNING && !failed && (!only || only === MORNING || only === 'scan.json')) {
+  const res = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(REPO, 'packages/core/register.mjs')).href, path.join(HERE, 'bundle-morning.ts'), '--dir', dir], { encoding: 'utf8' });
+  process.stdout.write(res.stdout ?? '');
+  if (res.status !== 0) { failed++; console.log(`FAIL  morning.json: ${(res.stderr || res.stdout || '').trim().slice(-400)}`); }
 }
 if (args.includes('--briefs') && !failed && !only) {
   const open = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).proposals ?? []).filter((p) => p.status === 'proposed').map((p) => p.id);
