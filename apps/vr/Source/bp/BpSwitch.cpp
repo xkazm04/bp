@@ -383,11 +383,40 @@ void ABpTable::PlaceLamp()
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
 	// Wave PJ1: to the far sheet's point of interest while a sheet is thrown (TickLampManner eases LampProj).
-	if (LampProj > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, BpProjector::FarAimLocal())) * SwitchEase(LampProj);
+	// Wave N3-W2: the eased point (LampProjAim), so the move from the loupe to APPROVE is a sweep.
+	const FVector ProjAim = bLampProjAim ? LampProjAim : BpProjector::FarAimLocal();
+	if (LampProj > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, ProjAim)) * SwitchEase(LampProj);
 	// V3: to the person while it listens or speaks (TickLampManner), and a nod toward them.
 	if (LampFace > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, Eye)) * SwitchEase(LampFace);
 	FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
 	if (LeanDeg != 0.f && !LeanAxis.IsNearlyZero()) Turn = FQuat(LeanAxis.GetSafeNormal(), FMath::DegreesToRadians(LeanDeg)) * Turn;
+	// Wave N3-W2: a decision open on the wall, Glim raises his arm toward what he points at (the loupe's region, the title, then
+	// APPROVE): he tilts back from his base by the point's elevation over his head, at most bp.Glim.PointDeg, eased with his
+	// turn. Facing the person (he listens or speaks) lowers it again; reduced motion: he only faces it.
+	if (LampProj > 0.f && !bRide && !bLampAtStation && BpProjector::IsPointing() && !SwitchReduced())
+	{
+		FVector Head = At + FVector(0.0, 0.0, 30.0);
+		if (Lamp.IsValid()) Head = Table.InverseTransformPosition(Lamp->GetActorTransform().TransformPosition(LampHeadLocal)) - Table.InverseTransformPosition(Lamp->GetActorLocation()) + At;
+		const FVector To = ProjAim - Head;
+		const double Elev = FMath::RadiansToDegrees(FMath::Atan2(To.Z, FVector2D(To.X, To.Y).Size()));
+		// The point's elevation plus a gesture's 10 degrees (the wall stands near his head's height, so its elevation alone was
+		// 1 to 5 degrees: no visible raise, PIE 2026-11-10).
+		const double Raise = FMath::Clamp(Elev + 10.0, 0.0, static_cast<double>(BpProjector::PointMaxDeg())) * SwitchEase(LampProj) * (1.0 - SwitchEase(LampFace));
+		if (Raise > 0.01)
+		{
+			const double Y = FMath::DegreesToRadians(Yaw);
+			const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+			const FVector Across = FVector::CrossProduct(FVector::UpVector, Facing);
+			// The nod's axis: a positive angle bows toward Facing, so a raise is the negative one.
+			Turn = FQuat(Across, FMath::DegreesToRadians(-Raise)) * Turn;
+		}
+		static double RaiseShown = -1.0;
+		if (FMath::Abs(Raise - RaiseShown) > 2.0 && SwitchEase(LampProj) >= 0.999f)
+		{
+			RaiseShown = Raise;
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim raises his arm %.1f deg toward %s (its elevation %.1f deg over his head)"), Raise, BpProjector::IsAsking() ? TEXT("APPROVE") : TEXT("what he presents"), Elev);
+		}
+	}
 	if (LampNodT >= 0.f && !bRide)
 	{
 		// The hood faces (-sin y, cos y) (LampYawToward); it bows about the level axis across that, from its base.

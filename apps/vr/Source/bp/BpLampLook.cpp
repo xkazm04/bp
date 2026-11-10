@@ -36,6 +36,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "ProceduralMeshComponent.h"
 #include "UObject/StrongObjectPtr.h"
 
 namespace
@@ -905,6 +906,96 @@ namespace
 	constexpr float NodS = 0.7f;
 }
 
+void ABpTable::TickGlimBeam()
+{
+	// Wave N3-W2: while Glim presents a sheet on the wall, a thin strip of his light runs from his lens to the wall's nearest edge:
+	// two crossed quads (one faces the seat), M_BpStageRim (unlit, additive, two-sided; brightness = colour x Glow x vertex
+	// alpha), 1.2 cm wide at the lens and 7 cm at the wall, fading from 0.9 to 0.2 along it. Built only when its ends move (his
+	// turn, a re-seat); at rest it is one compare a tick. Off in room mode, in your room, with reduced motion and at Beam 0.
+	FTransform WallPose;
+	FVector2D Size = FVector2D::ZeroVector;
+	UWorld* World = GetWorld();
+	const float Amount = BpProjector::BeamAmount();
+	const bool bRoom = !RoomModeId.IsEmpty() || (World && BpSurround::RoomAmount(World) > 0.f);
+	FVector LensWorld;
+	const bool bWant = World && Lamp.IsValid() && LampProj > 0.f && Amount > 0.f && !LookReduced() && !bRoom && BpProjector::Mode() == 1 && BpProjector::FarSheet(WallPose, Size) && LampHead(LensWorld);
+	if (!bWant)
+	{
+		if (GlimBeam && GlimBeam->IsVisible())
+		{
+			GlimBeam->SetVisibility(false);
+			GlimBeamKey.Reset();
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's beam off"));
+		}
+		return;
+	}
+	const FVector S = GetActorTransform().InverseTransformPosition(LensWorld);
+	// The wall's nearest edge as the seat sees it: the lens carried along the eye's line onto the wall's plane, clamped to the
+	// rectangle and set just outside it, so from the seat the strip runs from Glim to the edge and never over the words (the
+	// lens itself stands inside the wall's width in plan: the nearest point in space lay on the sheet's face).
+	const FVector Eye = EyeLocal();
+	const FVector N = WallPose.GetUnitAxis(EAxis::X);
+	const double Denom = FVector::DotProduct(S - Eye, N);
+	const FVector OnPlane = FMath::Abs(Denom) > KINDA_SMALL_NUMBER ? Eye + (S - Eye) * (FVector::DotProduct(WallPose.GetLocation() - Eye, N) / Denom) : S;
+	const FVector L = WallPose.InverseTransformPositionNoScale(OnPlane);
+	const FVector2D In(L.Y, L.Z);
+	const FVector2D Clamped(FMath::Clamp(In.X, -Size.X * 0.5, Size.X * 0.5), FMath::Clamp(In.Y, -Size.Y * 0.5, Size.Y * 0.5));
+	const FVector2D Out = (In - Clamped).GetSafeNormal();
+	const FVector2D EndAt = Clamped + Out * 3.0;
+	const FVector E = WallPose.TransformPositionNoScale(FVector(0.0, EndAt.X, EndAt.Y));
+	const float Ease = FMath::Clamp(LampProj, 0.f, 1.f) * FMath::Clamp(LampProj, 0.f, 1.f) * (3.f - 2.f * FMath::Clamp(LampProj, 0.f, 1.f));
+	const FString Key = FString::Printf(TEXT("%.1f %.1f %.1f | %.1f %.1f %.1f | %.2f %.2f"), S.X, S.Y, S.Z, E.X, E.Y, E.Z, Amount, Ease);
+	if (Key == GlimBeamKey && GlimBeam && GlimBeam->IsVisible()) return;
+	const bool bFirst = GlimBeamKey.IsEmpty();
+	GlimBeamKey = Key;
+	if (!GlimBeam)
+	{
+		GlimBeam = NewObject<UProceduralMeshComponent>(this, TEXT("GlimBeam"));
+		GlimBeam->SetupAttachment(GetRootComponent());
+		GlimBeam->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		GlimBeam->SetCastShadow(false);
+		GlimBeam->bReceivesDecals = false;
+		GlimBeam->RegisterComponent();
+		GlimBeam->SetComponentTickEnabled(false);
+		if (UMaterialInterface* Rim = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_BpStageRim.M_BpStageRim")))
+		{
+			GlimBeamMat = UMaterialInstanceDynamic::Create(Rim, this);
+			// Glim's lens, warm (his idle glow), not the system's cyan.
+			GlimBeamMat->SetVectorParameterValue(TEXT("RimColor"), FLinearColor(1.f, 0.62f, 0.3f, 1.f));
+			GlimBeam->SetMaterial(0, GlimBeamMat);
+		}
+		else UE_LOG(LogBpTable, Warning, TEXT("BpProjector: M_BpStageRim is missing (pj2_stage.py makes it); no beam"));
+	}
+	if (!GlimBeamMat) return;
+	GlimBeamMat->SetScalarParameterValue(TEXT("Glow"), 0.9f * Amount * Ease);
+	const FVector Axis = (E - S).GetSafeNormal();
+	const FVector ToEye = (EyeLocal() - (S + E) * 0.5).GetSafeNormal();
+	FVector Side = FVector::CrossProduct(Axis, ToEye).GetSafeNormal();
+	if (Side.IsNearlyZero()) Side = FVector::CrossProduct(Axis, FVector::UpVector).GetSafeNormal();
+	const FVector Side2 = FVector::CrossProduct(Axis, Side).GetSafeNormal();
+	constexpr double W0 = 0.8, W1 = 4.0;
+	constexpr float A0 = 0.7f, A1 = 0.15f;
+	TArray<FVector> Verts;
+	TArray<int32> Tris;
+	TArray<FVector> Normals;
+	TArray<FVector2D> Uv;
+	TArray<FLinearColor> Colors;
+	for (const FVector& Across : { Side, Side2 })
+	{
+		const int32 B = Verts.Num();
+		Verts.Append({ S - Across * W0 * 0.5, S + Across * W0 * 0.5, E + Across * W1 * 0.5, E - Across * W1 * 0.5 });
+		const FVector QuadN = FVector::CrossProduct(Across, Axis).GetSafeNormal();
+		Normals.Append({ QuadN, QuadN, QuadN, QuadN });
+		Uv.Append({ FVector2D(0, 0), FVector2D(1, 0), FVector2D(1, 1), FVector2D(0, 1) });
+		Colors.Append({ FLinearColor(1, 1, 1, A0), FLinearColor(1, 1, 1, A0), FLinearColor(1, 1, 1, A1), FLinearColor(1, 1, 1, A1) });
+		Tris.Append({ B, B + 1, B + 2, B, B + 2, B + 3 });
+	}
+	GlimBeam->CreateMeshSection_LinearColor(0, Verts, Tris, Normals, Uv, Colors, TArray<FProcMeshTangent>(), false);
+	GlimBeam->SetVisibility(true);
+	if (bFirst) UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's beam on: lens (%.0f, %.0f, %.0f) to the wall's edge (%.0f, %.0f, %.0f), %.0f cm, 2 quads, Glow %.2f"),
+		S.X, S.Y, S.Z, E.X, E.Y, E.Z, FVector::Dist(S, E), 0.9f * Amount * Ease);
+}
+
 float ABpTable::LampNodDeg() const
 {
 	if (LampNodT < 0.f) return 0.f;
@@ -954,9 +1045,23 @@ bool ABpTable::TickLampManner(float DeltaSeconds)
 	const float WantProj = BpProjector::IsFar() && RoomModeId.IsEmpty() ? 1.f : 0.f;
 	if (LampProj != WantProj) LampProj = bReduced ? WantProj : FMath::FInterpConstantTo(LampProj, WantProj, DeltaSeconds, 1.f / 0.6f);
 	if ((WasProj <= 0.f) != (LampProj <= 0.f)) UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim turns %s"), LampProj > 0.f ? TEXT("to the far sheet") : TEXT("back to the table"));
-	static FVector AimShown = FVector::ZeroVector;
-	const bool bAimMoved = LampProj > 0.f && !BpProjector::FarAimLocal().Equals(AimShown, 0.5);
-	if (bAimMoved) AimShown = BpProjector::FarAimLocal();
+	// Wave N3-W2: the point he turns and raises his arm to sweeps to a new one at about 60 cm a second on the wall (from the loupe
+	// to APPROVE about 0.8 s), at once on a new sheet or with reduced motion.
+	const FVector AimWant = BpProjector::FarAimLocal();
+	bool bAimMoved = false;
+	if (LampProj > 0.f && !AimWant.Equals(LampProjAim, 0.5))
+	{
+		bAimMoved = true;
+		LampProjAim = bReduced || !bLampProjAim || WasProj <= 0.f ? AimWant : FMath::VInterpConstantTo(LampProjAim, AimWant, DeltaSeconds, 60.f);
+		bLampProjAim = true;
+	}
+	if (LampProj <= 0.f) bLampProjAim = false;
+	static bool bAskShown = false;
+	if (BpProjector::IsAsking() != bAskShown)
+	{
+		bAskShown = BpProjector::IsAsking();
+		if (bAskShown) UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim asks for the answer: he points at APPROVE"));
+	}
 	const bool bNodding = LampNodT >= 0.f;
 	if (bNodding)
 	{
@@ -969,5 +1074,6 @@ bool ABpTable::TickLampManner(float DeltaSeconds)
 		PlaceLamp();
 		ApplyLampWidgets();
 	}
-	return LampFace != Want || LampNodT >= 0.f || LampProj != WantProj;
+	TickGlimBeam();
+	return LampFace != Want || LampNodT >= 0.f || LampProj != WantProj || (LampProj > 0.f && !AimWant.Equals(LampProjAim, 0.5));
 }

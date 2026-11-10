@@ -40,9 +40,22 @@ namespace
 	BpStage::FShape GStage;
 	FBox2D GStageSheet(FVector2D(0.3, 0.2), FVector2D(0.7, 0.9));
 
+	// Wave N3-W2, Glim on the wall.
+	TAutoConsoleVariable<float> CVarAskAfter(TEXT("bp.Projector.AskAfterS"), 4.f,
+		TEXT("THE THROW: a decision open on the wall, Glim points at its loupe (or title) and after this many seconds at APPROVE, asking for the answer (1 to 30)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarBeam(TEXT("bp.Projector.Beam"), 0.5f,
+		TEXT("THE THROW: a thin additive beam from Glim's lens to the wall's nearest edge while he presents (0 none to 1; default 0.5). Off in room mode, in your room and with bp.ReducedMotion."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarPointDeg(TEXT("bp.Glim.PointDeg"), 18.f,
+		TEXT("THE THROW: the most Glim raises his arm (tilts back from his base) toward the wall while a decision is open, degrees (0 none to 30). bp.ReducedMotion: he only faces it."), ECVF_Default);
+
 	bool GFar = false;
 	FVector GFarAim = FVector::ZeroVector;
 	FVector GFarCentre = FVector::ZeroVector;
+	FVector GPresent = FVector::ZeroVector, GAsk = FVector::ZeroVector;
+	bool GAims = false, GPoint = false;
+	double GAimsAt = 0.0;
+	FTransform GSheetPose = FTransform::Identity;
+	FVector2D GSheetSize = FVector2D::ZeroVector;
 
 	/** THE THROW: one flat sheet facing the eye. */
 	class FThrowSurface final : public IBpFarSurface
@@ -210,9 +223,43 @@ namespace BpProjector
 	{
 		GFar = bFar;
 		GFarAim = AimLocal;
+		if (!bFar) { GAims = false; GPoint = false; GSheetSize = FVector2D::ZeroVector; }
 	}
 	bool IsFar() { return GFar; }
-	FVector FarAimLocal() { return GFarAim; }
+	FVector FarAimLocal()
+	{
+		if (!GFar || !GAims) return GFarAim;
+		return IsAsking() ? GAsk : GPresent;
+	}
+
+	void SetFarAims(const FVector& PresentLocal, const FVector& AskLocal, bool bPoint)
+	{
+		// A new point of interest (another sheet, the loupe found): he presents it again before he asks.
+		if (!GAims || !PresentLocal.Equals(GPresent, 0.5) || bPoint != GPoint) GAimsAt = FPlatformTime::Seconds();
+		GAims = true;
+		GPresent = PresentLocal;
+		GAsk = AskLocal;
+		GPoint = bPoint;
+		GFarAim = PresentLocal;
+	}
+	bool IsPointing() { return GFar && GAims && GPoint; }
+	bool IsAsking()
+	{
+		return GFar && GAims && GPoint && !GAsk.Equals(GPresent, 0.5) && FPlatformTime::Seconds() - GAimsAt >= FMath::Clamp(CVarAskAfter.GetValueOnGameThread(), 1.f, 30.f);
+	}
+	void SetFarSheet(const FTransform& PoseLocal, const FVector2D& SizeCm)
+	{
+		GSheetPose = PoseLocal;
+		GSheetSize = SizeCm;
+	}
+	bool FarSheet(FTransform& OutPoseLocal, FVector2D& OutSizeCm)
+	{
+		OutPoseLocal = GSheetPose;
+		OutSizeCm = GSheetSize;
+		return GFar && GSheetSize.X > 0.0;
+	}
+	float BeamAmount() { return FMath::Clamp(CVarBeam.GetValueOnGameThread(), 0.f, 1.f); }
+	float PointMaxDeg() { return FMath::Clamp(CVarPointDeg.GetValueOnGameThread(), 0.f, 30.f); }
 	void SetFarCentre(const FVector& CentreLocal) { GFarCentre = CentreLocal; }
 	FVector FarCentreLocal() { return GFarCentre; }
 

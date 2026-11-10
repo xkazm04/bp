@@ -1995,9 +1995,9 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	const bool bYesterdaySheet = !S.bLoading && S.Error.IsEmpty() && ShownOutcome(S) != nullptr;
 	const FBox2f Frame(FVector2f(Pad, FrameY0), FVector2f(LW - Pad, bYesterdaySheet ? YesterdayFrameY1 : FrameY1));
 	Put(Frame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
-	const auto TitleBlock = [&](const FString& SheetNo, const FString& Project)
+	const auto TitleBlock = [&](const FString& SheetNo, const FString& Project, float W = 440.f)
 	{
-		const float W = 440.f, H = 46.f;
+		const float H = 46.f;
 		const FBox2f Block(FVector2f(Frame.Max.X - W, Frame.Max.Y - H), Frame.Max);
 		Put(Block, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.5f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
 		Put(FBox2f(FVector2f(Block.Min.X + 104.f, Block.Min.Y + 8.f), FVector2f(Block.Min.X + 106.f, Block.Max.Y - 8.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f)));
@@ -2259,7 +2259,15 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		// the sheet, APPROVE the primary; the answer taken lands as a stamp. A companion's card is the same family told apart: a
 		// cyan rule down its left (the system's colour), "THE COMPANION ASKS", a human sentence first and its raw ids set small.
 		const bool bScreen = !bCompanion && (S.ShotBrush.IsValid() || S.bShotLoading);
-		const float ColX1 = bScreen ? Pad + 556.f : bCompanion ? TextX1 - 330.f : TextX1;
+		// Wave N3-W2, the decision on the wall: three columns. The left the kicker, the title and what each answer does; the
+		// middle the screen and its loupe; the right what it touches (its place, what depends on it, who raised it and when, the
+		// lens's reading, its size and cost) over the title block.
+		const bool bWall = bConsoleFar && !bCompanion;
+		const float RightX0 = TextX1 - 340.f;
+		const float ColX1 = bWall ? Pad + 506.f : bScreen ? Pad + 556.f : bCompanion ? TextX1 - 330.f : TextX1;
+		// The wall's title a step smaller (32 px, 69 arc minutes) so two lines hold it in the narrower column.
+		const FSlateFontInfo TitleFont = bWall ? Font(TEXT("Bold"), 32.f) : HeadFont;
+		const float TitleCap = bWall ? 32.f : CapHead;
 		const FBpCardDecision* D = Card ? &Card->decision : nullptr;
 		const bool bStop = D && Card->tone == BpVocab::MorningCard::Tone::Bad;
 		// The generated tier reads an absent one as 0: the deck's own second line says "Untiered" when it has none.
@@ -2299,10 +2307,13 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			Raw = Sheet.Companion.Tool + (Raw.IsEmpty() ? FString() : TEXT(" · ") + Raw);
 			if (!Headline.EndsWith(TEXT("."))) Headline += TEXT(".");
 		}
-		const FString HeadFit = BpSheet::Wrap(Headline, HeadFont, ColX1 - InX, 3);
+		const FString HeadFit = BpSheet::Wrap(Headline, TitleFont, ColX1 - InX, 3);
 		const int32 HeadLines = LineCount(HeadFit);
-		Put(FBox2f(FVector2f(InX, FrameY0 + 52.f), FVector2f(ColX1, FrameY0 + 52.f + HeadLines * Pitch(CapHead) + 6.f)), SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(HeadFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
-		float Y = FrameY0 + 58.f + HeadLines * Pitch(CapHead) + 6.f;
+		const FBox2f HeadBox(FVector2f(InX, FrameY0 + 52.f), FVector2f(ColX1, FrameY0 + 52.f + HeadLines * Pitch(TitleCap) + 6.f));
+		Put(HeadBox, SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		// Glim's point on the wall when the screen has no loupe: the title's first line, a third along it.
+		if (bConsoleFar) TitleAimLayout = FVector2f(InX + FMath::Min(BpSheet::TextWidth(HeadFit.Left(HeadFit.Find(TEXT("\n")) == INDEX_NONE ? HeadFit.Len() : HeadFit.Find(TEXT("\n"))), TitleFont), ColX1 - InX) * 0.35f, HeadBox.Min.Y + Pitch(TitleCap) * 0.5f);
+		float Y = FrameY0 + 58.f + HeadLines * Pitch(TitleCap) + 6.f;
 		const FSlateFontInfo LeadFont = Font(TEXT("Regular"), CapLabel);
 		/** The one line of consequence: 28 px, bright, under the title. */
 		const auto Lead = [&](const FString& Words, const FLinearColor& Ink, int32 MaxLines, float Cap = CapLabel)
@@ -2328,7 +2339,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			// The lamp, drawn: who is asking.
 			Put(FBox2f(FVector2f(ColX1 + 40.f, FrameY0 + 30.f), FVector2f(TextX1, FrameY0 + 280.f)), SNew(BpSheet::SMotif).Kind(2));
 		}
-		else
+		else if (!bWall)
 		{
 			// The consequence: the brief's one line, large; then the tier chip with its class and age; then the evidence, quiet.
 			const FBpCardBrief& Brief = D->brief;
@@ -2374,21 +2385,97 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			// Full width (no screen), the lines stop above the title block.
 			Lines(InX, ColX1, Y + 2.f, Frame.Max.Y - (bScreen ? 12.f : 56.f), Items, 1);
 		}
+		else
+		{
+			// Wave N3-W2, the wall's left column: the consequence when it says more than the right column's place (a repeat, a
+			// likeness), a refusal's reason, then what each answer does, in the words the answers themselves report.
+			const FBpCardBrief& Brief = D->brief;
+			const FBpBriefFact* Blast = Brief.facts.FindByPredicate([](const FBpBriefFact& F) { return F.key == BpVocab::BriefFact::Key::Blast; });
+			if (!Brief.Short_.IsEmpty() && !(Blast && Blast->text == Brief.Short_)) Lead(Brief.Short_, BpSheet::InkHi, 2, CapSmall);
+			if (Answer && Answer->State == FBpStandupAnswer::EState::Refused && !Answer->Words.IsEmpty()) Lead(Answer->Words, BpSheet::Red, 2, CapSmall);
+			Y += 4.f;
+			Text(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + 34.f)), TEXT("WHAT EACH ANSWER DOES"), SmallBold, BpSheet::Accent);
+			Y += 40.f;
+			// One line each, the answer's word then what it does, in the words the sent answer reports ("Approved: moved to
+			// approved in Kettle's store", "Later: back tomorrow morning", "Held: it stays on the deck, marked").
+			struct FDoes { const TCHAR* Word; FString Does; FLinearColor Ink; };
+			TArray<FDoes> Does;
+			Does.Add({ TEXT("APPROVE"), TEXT("moved to approved"), BpSheet::Amber });
+			Does.Add({ TEXT("LATER"), TEXT("back tomorrow morning"), BpSheet::InkHi });
+			Does.Add({ TEXT("HOLD"), TEXT("stays on the deck, marked"), BpSheet::InkHi });
+			if (Brief.recommend == BpVocab::SteerPost::Verdict::Decline) Does.Add({ TEXT("DECLINE"), TEXT("declined as a repeat"), BpSheet::InkHi });
+			const float WordW = BpSheet::TextWidth(TEXT("APPROVE"), SmallBold) + 16.f;
+			for (const FDoes& Each : Does)
+			{
+				const FString Fit = BpSheet::Wrap(Each.Does, SmallFont, ColX1 - InX - WordW, 2);
+				const float H = LineCount(Fit) * Pitch(CapSmall);
+				if (Y + H > Frame.Max.Y - 6.f) break;
+				Put(FBox2f(FVector2f(InX, Y), FVector2f(InX + WordW, Y + Pitch(CapSmall) + 2.f)), SNew(STextBlock).Text(FText::FromString(Each.Word)).Font(SmallBold).ColorAndOpacity(FSlateColor(Each.Ink)));
+				Put(FBox2f(FVector2f(InX + WordW, Y), FVector2f(ColX1, Y + H + 2.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f))));
+				Y += H + 2.f;
+			}
+			// The right column: what it touches. The tier chip, then its place (the feature bold, its room under it), what depends
+			// on it, who raised it and when, the lens's reading; each whole (two lines at most), down to the title block.
+			const float RX0 = RightX0, RX1 = TextX1;
+			float RY = FrameY0 + 16.f;
+			Text(FBox2f(FVector2f(RX0, RY), FVector2f(RX1, RY + 34.f)), TEXT("WHAT IT TOUCHES"), SmallBold, BpSheet::Accent);
+			if (Card->lines.Num() > 1)
+			{
+				const FString Chip = Tier.IsEmpty() ? FString(TEXT("UNTIERED")) : Tier.ToUpper();
+				const float ChipW = BpSheet::TextWidth(Chip, SmallBold) + 28.f;
+				Put(FBox2f(FVector2f(RX0, RY + 40.f), FVector2f(RX0 + ChipW, RY + 78.f)), BpSheet::Pin(Chip, SmallBold, 38.f, bStop ? BpSheet::Red : BpSheet::Amber, ChipW));
+				RY += 40.f;
+			}
+			RY += 44.f;
+			struct FTouch { FString Words; const FSlateFontInfo* Face; FLinearColor Ink; };
+			TArray<FTouch> Touches;
+			const FString TargetId = Card->place.target.id;
+			const FString TargetName = WristTable.IsValid() ? WristTable->StandupPlaceName(TargetId) : TargetId;
+			const FString RoomId = WristTable.IsValid() && Card->place.target.kind == BpVocab::FocusTarget::Kind::Feature ? WristTable->StandupRoomOf(TargetId) : FString();
+			const FString RoomName = !RoomId.IsEmpty() && WristTable.IsValid() ? WristTable->StandupPlaceName(RoomId) : FString();
+			Touches.Add({ TargetName.IsEmpty() ? TargetId : TargetName, &SmallBold, BpSheet::InkHi });
+			if (!RoomName.IsEmpty() && RoomName != TargetName) Touches.Add({ FString::Printf(TEXT("in %s"), *RoomName), &SmallFont, BpSheet::Ink });
+			if (Blast)
+			{
+				TArray<FString> Names;
+				for (const FString& Id : Blast->ids) Names.Add(WristTable.IsValid() ? WristTable->StandupPlaceName(Id) : Id);
+				Touches.Add({ Names.Num() == 0 ? FString(TEXT("Nothing depends on it")) : FString::Printf(TEXT("%s on it: %s"), Names.Num() == 1 ? TEXT("Depends") : TEXT("Depend"), *FString::Join(Names, TEXT(", "))), &SmallFont, BpSheet::Ink });
+			}
+			if (Card->lines.Num() > 1)
+			{
+				FString Raised = Card->lines[1].text;
+				Raised.Split(TEXT(" · "), nullptr, &Raised);
+				if (!Raised.IsEmpty()) Touches.Add({ FString::Printf(TEXT("Raised by the %s"), *Raised.Replace(TEXT(" · raised "), TEXT(" lens, "))), &SmallFont, BpSheet::Ink });
+			}
+			for (const FBpBriefFact& Fact : Brief.facts) if (Fact.key == BpVocab::BriefFact::Key::Precedent || Fact.key == BpVocab::BriefFact::Key::Declined) Touches.Add({ Fact.text, &SmallFont, BpSheet::Ink.CopyWithNewOpacity(0.75f) });
+			const float RYMax = Frame.Max.Y - 52.f;
+			for (const FTouch& Each : Touches)
+			{
+				const FString Fit = BpSheet::Wrap(Each.Words, *Each.Face, RX1 - RX0, 2);
+				const float H = LineCount(Fit) * Pitch(CapSmall) * 0.92f;
+				if (RY + H > RYMax) break;
+				Put(FBox2f(FVector2f(RX0, RY), FVector2f(RX1, RY + H + 2.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(*Each.Face).LineHeightPercentage(0.92f).ColorAndOpacity(FSlateColor(Each.Ink)));
+				RY += H + 6.f;
+			}
+		}
 		// The screen: the finding's "before", unlit on the sheet in a fine frame, large, with what it is under it.
 		// The screen fills the right half down to the title block; its caption is a strip across its foot.
-		const float ImgX0 = ColX1 + 30.f, ImgX1 = TextX1, ImgW = ImgX1 - ImgX0, ImgH = FMath::Min(ImgW * 9.f / 16.f, Frame.Max.Y - 62.f - FrameY0 - 16.f);
+		const float ImgX0 = ColX1 + (bWall ? 24.f : 30.f), ImgX1 = bWall ? RightX0 - 24.f : TextX1, ImgW = ImgX1 - ImgX0, ImgH = FMath::Min(ImgW * 9.f / 16.f, Frame.Max.Y - 62.f - FrameY0 - 16.f);
 		FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
+			: bWall ? FBox2f(FVector2f(ImgX0, FrameY0 + 120.f), FVector2f(ImgX1, FrameY0 + 300.f))
 			: FBox2f(FVector2f(TextX1 - 470.f, Frame.Max.Y - 200.f), FVector2f(TextX1, Frame.Max.Y - 60.f));
 		if (bScreen && bConsoleFar)
 		{
 			// Wave PJ1, the far sheet: the screen stands smaller at the top right, and under it the loupe: its densest words
 			// (there is only a BEFORE for a decision, so no change to find), several times larger, read from the seat.
-			const float SmallH = 200.f;
+			// Wave N3-W2: on the wall's three columns the screen takes the middle column's width at the top and the loupe the
+			// rest of it, down to the frame's foot (the title block moved to the right column).
+			const float SmallH = bWall ? ImgW * 9.f / 16.f : 200.f;
 			Img = FBox2f(FVector2f(ImgX1 - SmallH * 16.f / 9.f, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + SmallH));
-			const FBox2f Lb(FVector2f(ImgX0, Img.Max.Y + 16.f), FVector2f(ImgX1, Frame.Max.Y - 58.f));
+			const FBox2f Lb(FVector2f(ImgX0, Img.Max.Y + 16.f), FVector2f(ImgX1, Frame.Max.Y - (bWall ? 12.f : 58.f)));
 			const UTexture2D* T = S.ShotBrush.IsValid() ? StandupShot.Get() : nullptr;
 			FBox2f Uv;
-			if (T && Lb.GetSize().Y > 60.f && BpProjector::LoupeRegion(T, nullptr, Lb.GetSize().X / Lb.GetSize().Y, 0.3f, Uv))
+			if (T && Lb.GetSize().Y > 60.f && BpProjector::LoupeRegion(T, nullptr, Lb.GetSize().X / Lb.GetSize().Y, bWall ? 0.2f : 0.3f, Uv))
 			{
 				const int32 Times = FMath::RoundToInt(Lb.GetSize().X / (Uv.GetSize().X * Img.GetSize().X));
 				Loupe(Lb, S.ShotBrush, Uv, FString::Printf(TEXT("BEFORE · %d×"), Times), BpSheet::Ink);
@@ -2416,7 +2503,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			// Night two V4: the caption wraps (it was cut: "BEFORE · PAYOUT…"), its strip as tall as its lines.
 			const bool bSampleShot = S.ShotBrush.IsValid() && S.bShotSample;
 			const float TagW = bSampleShot ? BpSheet::TextWidth(TEXT("SAMPLE"), SmallBold) + 28.f : 0.f;
-			const FString Caption = FString::Printf(TEXT("BEFORE · %s"), *(Feature.IsEmpty() ? Card->place.target.id : Feature)).ToUpper();
+			// Wave N3-W2: on the wall the right column names the place; the caption says only which screen.
+			const FString Caption = bWall ? FString(TEXT("BEFORE")) : FString::Printf(TEXT("BEFORE · %s"), *(Feature.IsEmpty() ? Card->place.target.id : Feature)).ToUpper();
 			const FString CaptionFit = BpSheet::Wrap(Caption, SmallBold, ImgX1 - TagW - 24.f - ImgX0, 0);
 			const float CapH = FMath::Max(40.f, LineCount(CaptionFit) * Pitch(CapSmall) + 8.f);
 			const float CapY = Img.Max.Y - CapH;
@@ -2424,7 +2512,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			Put(FBox2f(FVector2f(ImgX0 + 12.f, CapY), FVector2f(ImgX1 - TagW - 12.f, Img.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(CaptionFit)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
 			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, Img.Max.Y - 40.f), FVector2f(ImgX1, Img.Max.Y)), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, TagW));
 		}
-		TitleBlock(SheetNo, Project);
+		// Wave N3-W2: on the wall the title block closes the right column (the loupe has the middle column's foot).
+		TitleBlock(SheetNo, Project, bWall ? Frame.Max.X - (RightX0 - 12.f) : 440.f);
 		// The answers. Approve is the primary (amber); LATER is the web's Defer (back tomorrow); DECLINE only on a repeat.
 		const bool bRefused = Answer && Answer->State == FBpStandupAnswer::EState::Refused;
 		const bool bOpen = !Answer || bRefused || Answer->State == FBpStandupAnswer::EState::Unsent;
@@ -2610,7 +2699,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		}
 		const bool bTable = bOpen && S.Deck.products.Num() > 1;
 		const bool bFigures = bOpen && !bTable;
-		const float LinesX1 = bTable ? Pad + 600.f : bFigures ? Pad + 550.f : TextX1 - 120.f;
+		const float LinesX1 = bTable ? Pad + 600.f : bFigures ? (bConsoleFar ? Pad + 536.f : Pad + 550.f) : TextX1 - 120.f;
 		// A list of what was built or released reads one line an item (cut, never smaller), so all of it fits; prose wraps.
 		const bool bList = Card->kind == BpVocab::MorningCard::Kind::Built || Card->kind == BpVocab::MorningCard::Kind::Release || Card->kind == BpVocab::MorningCard::Kind::Agents;
 		Y = Lines(InX, LinesX1, Y, Frame.Max.Y - 60.f, Items, bList ? 1 : 2);
@@ -2628,8 +2717,12 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 				{ FString::FromInt(Waiting), TEXT("FINDINGS\nOPEN IN ALL"), BpSheet::Ink.CopyWithNewOpacity(0.8f) },
 			};
 			// A cell: the numeral left, its two-line label right of it, on a plate with the figure's colour down its edge.
-			const float GX0 = Pad + 580.f, GX1 = TextX1, GY0 = FrameY0 + 134.f, Gap = 12.f, CellW = (GX1 - GX0 - Gap) * 0.5f, CellH = 100.f;
-			const FSlateFontInfo FigureFont = Font(TEXT("Bold"), 56.f);
+			// Wave N3-W2: on the wall the night's numbers are the sheet's largest words (68 px numerals, 2.4 degrees at 2.6 m), in
+			// taller cells from the headline's foot down to the title block.
+			const float GX0 = bConsoleFar ? Pad + 560.f : Pad + 580.f, GX1 = TextX1, GY0 = bConsoleFar ? FrameY0 + 124.f : FrameY0 + 134.f, Gap = bConsoleFar ? 10.f : 12.f, CellW = (GX1 - GX0 - Gap) * 0.5f;
+			const float CellH = bConsoleFar ? FMath::Min(114.f, (Frame.Max.Y - 50.f - GY0 - Gap) * 0.5f) : 100.f;
+			const FSlateFontInfo FigureFont = Font(TEXT("Bold"), bConsoleFar ? 64.f : 56.f);
+			const float LabelIn = bConsoleFar ? 36.f : 44.f;
 			for (int32 Index = 0; Index < 4; ++Index)
 			{
 				const float X0 = GX0 + (Index % 2) * (CellW + Gap), Y0 = GY0 + (Index / 2) * (CellH + Gap);
@@ -2637,7 +2730,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 				Put(Cell, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.45f)).Edge(Figures[Index].Ink.CopyWithNewOpacity(0.55f)).EdgePx(2.f).Bar(Figures[Index].Ink).BarPx(6.f));
 				const float NumW = BpSheet::TextWidth(Figures[Index].Value, FigureFont);
 				Put(FBox2f(Cell.Min + FVector2f(24.f, 0.f), FVector2f(Cell.Min.X + 30.f + NumW, Cell.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Figures[Index].Value)).Font(FigureFont).ColorAndOpacity(FSlateColor(Figures[Index].Ink))]);
-				Put(FBox2f(FVector2f(Cell.Min.X + 44.f + NumW, Cell.Min.Y), FVector2f(Cell.Max.X - 6.f, Cell.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Figures[Index].Label)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+				Put(FBox2f(FVector2f(Cell.Min.X + LabelIn + NumW, Cell.Min.Y), FVector2f(Cell.Max.X - 6.f, Cell.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Figures[Index].Label)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
 			}
 			if (Confirmed || Short) Lines(InX, LinesX1, Y + 4.f, Frame.Max.Y - 60.f, TArray<FItem>{ FItem{ FString::Printf(TEXT("Releases: %d confirmed, %d short of what was expected."), Confirmed, Short), Short ? BpSheet::Red : BpSheet::Accent } }, 1);
 		}

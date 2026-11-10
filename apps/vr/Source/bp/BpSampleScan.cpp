@@ -39,7 +39,10 @@ bool ABpTable::StartSampleScan(const FString& FocusId, const FString& InTarget, 
 	if (!Link.IsFromBundle()) return Finish(false, TEXT("A sample scan runs only from the bundled snapshot; this table has a server, and a real scan goes through it."));
 	if (!Link.HasSampleFocuses()) return Finish(false, TEXT("This bundle lists no sample focus (yet: they are read with its first scan answers)."));
 	if (!SheetPlan.IsValid()) return Finish(false, TEXT("The table has no plan yet."));
+	// Wave N3-W2: a lens's name stands for the bundle's first focus on that lens (BpScan.Sample security site), so a capture or a
+	// bench line need not know the bundle's ids (focus-1); the id still wins.
 	const FBpSavedFocus* Focus = Link.GetFocusList().Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+	if (!Focus) Focus = Link.GetFocusList().Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Lens == FocusId; });
 	if (!Focus) return Finish(false, TEXT("That sample focus is not in the bundle."));
 	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
 	FString Kind, ScopeId, Label;

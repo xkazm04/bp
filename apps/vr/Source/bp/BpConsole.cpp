@@ -1678,6 +1678,8 @@ void ABpPawn::PlaceConsole()
 			const FVector SheetMid = BpProjector::Surface().UvToWorld(Pose, SizeCm, FVector2D(0.5, 0.5));
 			BpProjector::SetFar(true, SheetMid);
 			BpProjector::SetFarCentre(SheetMid);
+			// Wave N3-W2: the beam is the wall's only (the stage is parked).
+			BpProjector::SetFarSheet(FTransform::Identity, FVector2D::ZeroVector);
 			const float Dist = BpProjector::StageShape().RadiusCm;
 			const FString FarKey = FString::Printf(TEXT("stage %.0f %.0f %d %dx%d"), SizeCm.X, Dist, bPassthrough, Px.X, Px.Y);
 			if (FarKey != ConsolePlaceKey)
@@ -1707,6 +1709,8 @@ void ABpPawn::PlaceConsole()
 		Table->SetDeckHeld(false);
 		BpProjector::SetFar(true, Centre);
 		BpProjector::SetFarCentre(Centre);
+		// Wave N3-W2: the wall's rectangle for Glim's beam (table space, unscaled).
+		BpProjector::SetFarSheet(FTransform(Facing, Centre), SizeCm);
 		const FString FarKey = FString::Printf(TEXT("far %s %.0f %.0f %d"), Surface.Name(), SizeCm.X, Dist, bPassthrough);
 		if (FarKey != ConsolePlaceKey)
 		{
@@ -1976,7 +1980,9 @@ void ABpPawn::RefreshConsole()
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
 	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
-	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d|res%s|far%d"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun, *ResultChip, BpProjector::Mode());
+	// Wave N3-W2: and whether the sheet is far now (a page opened by a scan's end was drawn before PlaceConsole threw it, and
+	// the same key kept the desk's drawing on the wall).
+	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d|res%s|far%d%d"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun, *ResultChip, BpProjector::Mode(), bConsoleFar);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -1986,6 +1992,8 @@ void ABpPawn::RefreshConsole()
 	if (bConsoleOpen && !Page) Key += FBpConsolePages::LinkLine();
 	const bool bStandupPage = bConsoleOpen && Page && ConsolePageKey == TEXT("standup");
 	if (bStandupPage) Key += StandupKey();
+	// Wave N3-W2: the scan's result the wall lays out (the page's rows, in the key, are the desk's words of the same result).
+	ABpTable::FScanResult WallResult;
 	// The conversation with the lamp (night two V2): while a talk's words are on show the panel is the conversation.
 	ABpTable::FTalkView Talk;
 	const bool bTalk = ConsoleShowsTalk() && Table->TalkView(Talk);
@@ -1999,6 +2007,7 @@ void ABpPawn::RefreshConsole()
 	ConsoleKey = Key;
 	ConsoleBoxes.Reset();
 	LoupeAimLayout = FVector2f(-1.f, -1.f);
+	TitleAimLayout = FVector2f(-1.f, -1.f);
 
 	TSharedRef<SCanvas> Canvas = SNew(SCanvas);
 	// Wave PJ2: what Put and Button draw into (the panel's canvas and boxes; the near bar's while the sheet is far).
@@ -2173,10 +2182,14 @@ void ABpPawn::RefreshConsole()
 				{
 					const FString Fig = FString::FromInt(Waiting);
 					const float StackW = FMath::Max(BpSheet::TextWidth(Fig, FigFont), BpSheet::TextWidth(TEXT("WAITING"), SmallBold)) + 4.f;
-					// Under the title row (the title keeps the tile's width), beside the two lines of what it holds.
-					Put(FBox2f(FVector2f(Box.Max.X - 18.f - StackW, Box.Min.Y + 56.f), FVector2f(Box.Max.X - 18.f, Box.Max.Y - 6.f)),
+					// Wave N3-W2 (the device, 3-dev-menu_L.png: WAITING cut by the tile's foot): the figure and its word stand as one
+					// block centred in the tile's height at its right (it was hung under the title row, 56 px down, and ran out of
+					// the 166 px tile); the title row stops short of it.
+					const float StackH = Pitch(44.f) * 0.86f + Pitch(CapSmall);
+					const float StackY0 = Box.Max.Y - 10.f - StackH;
+					Put(FBox2f(FVector2f(Box.Max.X - 18.f - StackW, StackY0), FVector2f(Box.Max.X - 18.f, FMath::Min(Box.Max.Y - 6.f, StackY0 + StackH + 6.f))),
 						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(Fig)).Font(FigFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(Fig)).Font(FigFont).LineHeightPercentage(0.86f).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
 						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(TEXT("WAITING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
 					WX1 = Box.Max.X - 30.f - StackW;
 				}
@@ -2263,6 +2276,91 @@ void ABpPawn::RefreshConsole()
 				Button(FBox2f(FVector2f(Right - W, 602.f), FVector2f(Right, 692.f)), Each.Word, Each.bPrimary ? EBtn::Amber : EBtn::Edge, Each.Act, Font(TEXT("Bold"), 34.f));
 				Right -= W + 20.f;
 			}
+		}
+		else if (Page && ConsolePageKey == TEXT("scanresult") && bConsoleFar && Table->GetScanResult(WallResult))
+		{
+			// Wave N3-W2, a scan's result on the wall: what it read and found as a strip of large figures (the severities are the
+			// controls that raise the first of their kind), the findings as rows with their rooms (a row raises its room), then
+			// DECIDE THEM and CLOSE as the sheet's largest controls. The same acts as the desk's rows (ResultTap).
+			const ABpTable::FScanResult& R = WallResult;
+			const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+			struct FFig { FString Value; FString Label; FLinearColor Ink; FString Act; };
+			TArray<FFig> Figs;
+			const bool bStopped = R.bFailed || R.bCancelled;
+			Figs.Add({ bStopped ? FString::Printf(TEXT("%d/%d"), R.RoomsRead, R.RoomsTotal) : FString::FromInt(R.RoomsRead), R.RoomsRead == 1 && !bStopped ? TEXT("ROOM\nREAD") : TEXT("ROOMS\nREAD"), bStopped ? BpSheet::Red : BpSheet::Accent, FString() });
+			Figs.Add({ FString::FromInt(R.New), R.New == 1 ? TEXT("NEW\nFINDING") : TEXT("NEW\nFINDINGS"), R.New ? BpSheet::InkHi : BpSheet::Ink.CopyWithNewOpacity(0.5f), FString() });
+			static const TCHAR* const SevWords[3] = { TEXT("STOP-\nSHIP"), TEXT("BEFORE\nRELEASE"), TEXT("LATER\n") };
+			for (int32 S = 0; S < 3; ++S)
+			{
+				const FLinearColor SevInk = S == 0 ? BpSheet::Red : S == 1 ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.8f);
+				Figs.Add({ FString::FromInt(R.Severity[S]), FString(SevWords[S]).TrimEnd(), R.Severity[S] ? SevInk : BpSheet::Ink.CopyWithNewOpacity(0.4f), R.Severity[S] ? FString::Printf(TEXT("result:sev:%d"), S) : FString() });
+			}
+			const float FigY0 = 164.f, FigH = 104.f, FigGap = 12.f;
+			const float FigW = (LW - 2.f * Pad - (Figs.Num() - 1) * FigGap) / Figs.Num();
+			const FSlateFontInfo FigFont = Font(TEXT("Bold"), 48.f);
+			for (int32 Index = 0; Index < Figs.Num(); ++Index)
+			{
+				const FFig& F = Figs[Index];
+				const FBox2f Cell(FVector2f(Pad + Index * (FigW + FigGap), FigY0), FVector2f(Pad + Index * (FigW + FigGap) + FigW, FigY0 + FigH));
+				const FString CellId = F.Act.IsEmpty() ? FString() : TEXT("console:") + F.Act;
+				Put(Cell, SNew(BpSheet::SPlate).Fill(IsDown(CellId) ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : F.Act.IsEmpty() ? BpSheet::PaperLo.CopyWithNewOpacity(0.45f) : BpSheet::RowFill(IsLit(CellId)))
+					.Edge(F.Ink.CopyWithNewOpacity(0.55f)).EdgePx(2.f).Bar(F.Ink).BarPx(6.f));
+				const float NumW = BpSheet::TextWidth(F.Value, FigFont);
+				Put(FBox2f(Cell.Min + FVector2f(22.f, 0.f), FVector2f(Cell.Min.X + 26.f + NumW, Cell.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(F.Value)).Font(FigFont).ColorAndOpacity(FSlateColor(F.Ink))]);
+				Put(FBox2f(FVector2f(Cell.Min.X + 38.f + NumW, Cell.Min.Y), FVector2f(Cell.Max.X - 6.f, Cell.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(F.Label)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+				if (!F.Act.IsEmpty()) ConsoleBoxes.Add({ CellId, Cell });
+			}
+			// The findings, most severe first: a bar in the severity's colour, the title, its room and lens in a column, the
+			// severity chip at the right. As many as fit above the foot; "and N more" says the rest (DECIDE THEM walks them all).
+			const float RowsTop = FigY0 + FigH + 18.f, RowsFoot = 594.f, FRowH = 70.f, FRowGap = 8.f;
+			const float RoomX0 = LW - Pad - 230.f - 420.f, ChipX1 = LW - Pad - 14.f;
+			const FString FoundHead = FString::Printf(TEXT("WHAT IT FOUND · %d %s MEASURED"), R.Features, R.Features == 1 ? TEXT("FEATURE") : TEXT("FEATURES"));
+			Put(FBox2f(FVector2f(Pad + 24.f, RowsTop - 2.f), FVector2f(RoomX0 - 20.f, RowsTop + 30.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(FoundHead, SmallBold, RoomX0 - 44.f - Pad))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
+			Put(FBox2f(FVector2f(RoomX0, RowsTop - 2.f), FVector2f(ChipX1, RowsTop + 30.f)), SNew(STextBlock).Text(FText::FromString(TEXT("ROOM · LENS"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
+			float RY = RowsTop + 36.f;
+			int32 Shown = 0;
+			for (const FString& Id : R.Found)
+			{
+				if (RY + FRowH > RowsFoot - (Shown < R.Found.Num() - 1 ? 34.f : 0.f)) break;
+				const FBpProposal* P = State.Scan.proposals.FindByPredicate([&Id](const FBpProposal& Each) { return Each.id == Id; });
+				if (!P) continue;
+				const int32 Sev = ABpTable::ScanSeverity(*P, State.Tiers.Find(Id));
+				const FLinearColor SevInk = Sev == 0 ? BpSheet::Red : Sev == 1 ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.8f);
+				const FBox2f RowBox(FVector2f(Pad, RY), FVector2f(LW - Pad, RY + FRowH));
+				const FString RowId = TEXT("console:result:raise:") + Id;
+				Put(RowBox, SNew(BpSheet::SPlate).Fill(IsDown(RowId) ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : BpSheet::RowFill(IsLit(RowId))).Edge(SevInk.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(SevInk).BarPx(8.f));
+				const FString Chip = Sev == 0 ? TEXT("STOP-SHIP") : Sev == 1 ? TEXT("BEFORE RELEASE") : TEXT("LATER");
+				const float ChipW = BpSheet::ChipWidth(Chip, SmallBold);
+				Put(FBox2f(FVector2f(ChipX1 - ChipW, RY + 14.f), FVector2f(ChipX1, RY + FRowH - 14.f)), BpSheet::Chip(Chip, SmallBold, 42.f, SevInk, Sev == 0));
+				const FString RowTitle = P->title.IsEmpty() ? P->id : P->title;
+				const float TitleW = RoomX0 - 24.f - (Pad + 32.f);
+				const bool bTitleFits = BpSheet::TextWidth(RowTitle, LabelFont) <= TitleW;
+				Put(FBox2f(FVector2f(Pad + 32.f, RY), FVector2f(RoomX0 - 24.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(FText::FromString(bTitleFits ? RowTitle : BpSheet::Wrap(RowTitle, SmallBold, TitleW, 2))).Font(bTitleFits ? LabelFont : SmallBold).LineHeightPercentage(bTitleFits ? 1.f : 0.86f).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+				const FString Room = Table->StandupRoomOf(P->feature);
+				const FString Where = FString::Printf(TEXT("%s · %s"), Room.IsEmpty() ? *P->feature : *Table->StandupPlaceName(Room), *BpWords::Lens(P->lens));
+				Put(FBox2f(FVector2f(RoomX0, RY), FVector2f(ChipX1 - ChipW - 16.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(Where, SmallFont, ChipX1 - ChipW - 16.f - RoomX0, 2))).Font(SmallFont).LineHeightPercentage(0.86f).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f)))]);
+				ConsoleBoxes.Add({ RowId, RowBox });
+				RY += FRowH + FRowGap;
+				++Shown;
+			}
+			if (Shown < R.Found.Num()) Put(FBox2f(FVector2f(Pad + 32.f, RY - 4.f), FVector2f(RoomX0, RY + 30.f)), SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("and %d more · DECIDE THEM walks them all"), R.Found.Num() - Shown))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.65f))));
+			if (R.Found.Num() == 0)
+			{
+				Put(FBox2f(FVector2f(Pad + 32.f, RY), FVector2f(LW - Pad, RY + 120.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(bStopped ? TEXT("It found nothing before it stopped: the rooms keep what they had.") : TEXT("Nothing new: the rooms keep what they had."), Font(TEXT("Bold"), 32.f), LW - 2.f * Pad - 64.f, 2)))
+					.Font(Font(TEXT("Bold"), 32.f)).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+			}
+			// The foot: what DECIDE THEM does, then the two answers, 90 px tall (3.2 degrees on the wall).
+			const float FootY0 = 606.f, FootY1 = 700.f;
+			Put(FBox2f(FVector2f(Pad + 24.f, FootY0), FVector2f(LW - Pad - 600.f, FootY1)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock)
+				.Text(FText::FromString(BpSheet::Wrap(R.New > 0 ? TEXT("The stand-up, one decision at a time, starting with the most severe.") : TEXT("CLOSE puts the menu back to its bar."), SmallFont, LW - 2.f * Pad - 624.f, 2)))
+				.Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+			float Right = LW - Pad;
+			Button(FBox2f(FVector2f(Right - 220.f, FootY0), FVector2f(Right, FootY1)), TEXT("CLOSE"), EBtn::Edge, TEXT("result:close"), Font(TEXT("Bold"), 34.f));
+			Right -= 240.f;
+			if (R.New > 0) Button(FBox2f(FVector2f(Right - 330.f, FootY0), FVector2f(Right, FootY1)), TEXT("DECIDE THEM"), EBtn::Amber, TEXT("result:decide"), Font(TEXT("Bold"), 34.f));
+			UE_LOG(LogBpTable, Log, TEXT("BpConsole: the scan's result on the wall: %d figures, %d of %d findings as rows"), Figs.Num(), Shown, R.Found.Num());
 		}
 		else if (bStandupPage)
 		{
@@ -2534,13 +2632,17 @@ void ABpPawn::RefreshConsole()
 	{
 		// Wave PJ1: what Glim turns to on the far sheet: the loupe's region on its screen, else the answer he waits for
 		// (APPROVE), else the sheet's centre (table space, BpProjector::FarAimLocal).
+		// Wave N3-W2: on a decision he presents (the loupe, else the title) and then asks (APPROVE), BpProjector::SetFarAims.
 		const FConsoleBox* Primary = ConsoleBoxes.FindByPredicate([](const FConsoleBox& Each) { return Each.Id == TEXT("console:standup:approve"); });
-		const FVector2f AimPx = LoupeAimLayout.X >= 0.f ? LoupeAimLayout : Primary ? Primary->Box.GetCenter() : ConsoleLayout * 0.5f;
+		const bool bPoint = Primary && (LoupeAimLayout.X >= 0.f || TitleAimLayout.X >= 0.f);
+		const FVector2f AimPx = LoupeAimLayout.X >= 0.f ? LoupeAimLayout : TitleAimLayout.X >= 0.f ? TitleAimLayout : Primary ? Primary->Box.GetCenter() : ConsoleLayout * 0.5f;
+		const FVector2f AskPx = Primary ? Primary->Box.GetCenter() : AimPx;
 		FTransform Pose = ConsolePanel->GetComponentTransform();
 		Pose.SetScale3D(FVector::OneVector);
-		const FVector World = BpProjector::Surface().UvToWorld(Pose, ConsoleFarSizeCm, FVector2D(AimPx.X / ConsoleLayout.X, AimPx.Y / ConsoleLayout.Y));
-		BpProjector::SetFar(true, Table->GetActorTransform().InverseTransformPosition(World));
-		UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's aim on the sheet: %s at layout (%.0f, %.0f)"), LoupeAimLayout.X >= 0.f ? TEXT("the loupe's region") : Primary ? TEXT("APPROVE") : TEXT("its centre"), AimPx.X, AimPx.Y);
+		const auto ToLocal = [&](const FVector2f& Px) { return Table->GetActorTransform().InverseTransformPosition(BpProjector::Surface().UvToWorld(Pose, ConsoleFarSizeCm, FVector2D(Px.X / ConsoleLayout.X, Px.Y / ConsoleLayout.Y))); };
+		BpProjector::SetFarAims(ToLocal(AimPx), ToLocal(AskPx), bPoint);
+		UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's aim on the sheet: %s at layout (%.0f, %.0f)%s"), LoupeAimLayout.X >= 0.f ? TEXT("the loupe's region") : TitleAimLayout.X >= 0.f ? TEXT("the decision's title") : Primary ? TEXT("APPROVE") : TEXT("its centre"), AimPx.X, AimPx.Y,
+			bPoint ? *FString::Printf(TEXT("; he points, then asks at APPROVE (%.0f, %.0f)"), AskPx.X, AskPx.Y) : TEXT(""));
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: drawn #%d %s%s \"%s\" (%d controls)"), ConsoleDraws, bTalk ? TEXT("conversation ") : bConsoleOpen ? TEXT("panel ") : TEXT("bar"), bConsoleOpen ? *GetConsoleLine() : TEXT(""), *Status, ConsoleBoxes.Num());
 }

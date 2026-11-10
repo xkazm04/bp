@@ -409,6 +409,8 @@ private:
 	int32 ConsoleProjShown = -1;
 	/** The far sheet's point of interest this draw (layout px; negative: none): the loupe's region on its screen. */
 	FVector2f LoupeAimLayout = FVector2f(-1.f, -1.f);
+	/** Wave N3-W2: a decision's title on the far sheet this draw (layout px; negative: none), Glim's point when it has no loupe. */
+	FVector2f TitleAimLayout = FVector2f(-1.f, -1.f);
 	/** Wave PJ2, THE LIGHT STAGE (bp.Projector 2): the curved sheet (section 0) and the far rim's line of light (section 1), on
 	 *  the table like the panel; the panel then draws the whole stage into its render target and is not drawn itself. */
 	UPROPERTY(Transient)

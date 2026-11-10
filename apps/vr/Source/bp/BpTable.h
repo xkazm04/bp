@@ -43,6 +43,7 @@ class UCanvasRenderTarget2D;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UProceduralMeshComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTexture2D;
@@ -2065,6 +2066,18 @@ private:
 	float LampFace = 0.f;
 	/** Wave PJ1: Glim turned to the far sheet (0 to 1, eased; BpProjector::FarAimLocal is where), while it shows a sheet. */
 	float LampProj = 0.f;
+	/** Wave N3-W2: the point on the far sheet Glim's turn and arm follow (table space), eased toward BpProjector::FarAimLocal so
+	 *  his move from the loupe to APPROVE is a sweep (at once with reduced motion). */
+	FVector LampProjAim = FVector::ZeroVector;
+	bool bLampProjAim = false;
+	/** Wave N3-W2: the beam from his lens to the wall (bp.Projector.Beam), built only when its ends move; and its last key. */
+	UPROPERTY(Transient)
+	TObjectPtr<UProceduralMeshComponent> GlimBeam;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GlimBeamMat;
+	FString GlimBeamKey;
+	/** Wave N3-W2: the beam placed or hidden (TickLampManner, after the lamp moved or the sheet did). */
+	void TickGlimBeam();
 	float LampNodT = -1.f;
 	double LampNodSince = 0.0;
 	void TalkBegin();

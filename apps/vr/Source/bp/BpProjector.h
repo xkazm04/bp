@@ -49,6 +49,23 @@ namespace BpProjector
 	/** The angular size that the far sheet's distance gives a cap height (cm) and a control (cm), for the legibility table. */
 	float ArcMinutes(float Cm, float DistanceCm);
 
+	// ---- Glim on the wall (wave N3-W2) ------------------------------------------------------------------------------------
+	/** What Glim points at on the far sheet (table space): Present as a decision opens (the loupe's region, else its title), then
+	 *  Ask (APPROVE) once he asks for the answer, bp.Projector.AskAfterS later. bPoint: a decision is open, so he raises his
+	 *  arm toward it; otherwise he only turns (Ask = Present). FarAimLocal answers whichever holds now. */
+	void SetFarAims(const FVector& PresentLocal, const FVector& AskLocal, bool bPoint);
+	/** A decision is open on the far sheet (Glim raises his arm toward FarAimLocal). */
+	bool IsPointing();
+	/** FarAimLocal is the Ask aim now (he asks for the answer). */
+	bool IsAsking();
+	/** The far sheet's pose (table space, unscaled; a widget's facing: +X toward the eye) and size in cm, for the beam. */
+	void SetFarSheet(const FTransform& PoseLocal, const FVector2D& SizeCm);
+	bool FarSheet(FTransform& OutPoseLocal, FVector2D& OutSizeCm);
+	/** bp.Projector.Beam (0 to 1): the beam from Glim's lens to the sheet while he presents; 0 none. */
+	float BeamAmount();
+	/** bp.Glim.PointDeg: the most Glim raises his arm (tilts back from his base) toward the sheet, degrees (0 none). */
+	float PointMaxDeg();
+
 	// ---- THE LIGHT STAGE (wave PJ2, bp.Projector 2) ---------------------------------------------------------------------------
 	/** The stage is the surface in use (Mode() == 2). */
 	inline bool IsStage() { return Mode() == 2; }
