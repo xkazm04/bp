@@ -7,8 +7,8 @@
       "stability": 1,
       "similarity_boost": 0.8
     },
-    "fx": "highpass=f=110,equalizer=f=2400:t=q:w=1.2:g=3,aecho=0.85:0.8:7|13:0.35|0.25,tremolo=f=55:d=0.22,silenceremove=start_periods=1:start_silence=0.05:start_threshold=-55dB,areverse,silenceremove=start_periods=1:start_silence=0.15:start_threshold=-55dB,areverse",
-    "rate": 16000,
+    "fx": "highpass=f=110,equalizer=f=2400:t=q:w=1.2:g=3,aecho=0.85:0.8:7|13:0.35|0.25,tremolo=f=55:d=0.22",
+    "rate": 24000,
     "loudness": {
       "targetLufs": -14,
       "ceilingDb": -1

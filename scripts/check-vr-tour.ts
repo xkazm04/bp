@@ -6,14 +6,18 @@
 //     owner's five (talk, morning, room, pc, text) are there;
 //   - the cold start reads FBpStore (the first tour starts by itself only when Core was never written, or to resume At): a
 //     control that fails if the rule goes back to "every launch";
-//   - each clip is a 16-bit mono PCM WAV that BpTour.cpp's ReadWav accepts, 0.5 s to 8 s, and lines.json records today's text;
+//   - each clip is a 16-bit mono PCM WAV at 24 kHz (the live `say` route's rate: one voice, check:voice-link) that BpTour.cpp's
+//     ReadWav accepts, 0.5 s to 8 s, and lines.json records today's text and the say route's effect chain (no extra stage);
+//   - wave C1, the scan theatre's lines (BpTourBook.cpp's ScanLines -> voice/scan/): the same pins, every clip id
+//     BpScanTheatre.cpp names is a line, the sample's result lines read their counts in words;
 //   - the music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav) is a 16-bit stereo PCM WAV, 120-150 s,
 //     and bed.json agrees with it, records a quiet bed near its loudness target and a seam with no click.
 // Run: node --import @bp/core/register scripts/check-vr-tour.ts. Exit 1 on any failure. Reads files only; no network.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOUR_LINES } from '../apps/vr/tools/tour-voice.ts';
+import { TOUR_LINES, SCAN_LINES, SCAN_CLIPS } from '../apps/vr/tools/tour-voice.ts';
+import { TOUR_LINK } from '../packages/core/src/server/companion/voice-link.server.ts';
 import { MUSIC_CHANNELS, MUSIC_INDEX, MUSIC_LOUDNESS, MUSIC_RATE, MUSIC_WAV } from '../apps/vr/tools/music-bed.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -103,6 +107,7 @@ for (const s of lineIds) {
   if (!w) continue;
   check(`clip ${s}.wav is 16-bit mono`, w.bits === 16 && w.channels === 1, `${w.bits}-bit, ${w.channels} ch`);
   check(`clip ${s}.wav is 0.5-8 s`, w.seconds >= 0.5 && w.seconds <= 8, `${w.seconds.toFixed(2)} s`);
+  check(`clip ${s}.wav is at the say route's rate`, w.rate === TOUR_LINK.rate, `${w.rate} Hz`);
 }
 for (const f of fs.readdirSync(CLIPS).filter((f) => f.endsWith('.wav'))) check(`clip ${f} has a line (no orphan)`, f.slice(0, -4) in TOUR_LINES);
 const index = path.join(CLIPS, 'lines.json');
@@ -110,6 +115,43 @@ const recordedIndex = fs.existsSync(index) ? JSON.parse(fs.readFileSync(index, '
 const recorded = recordedIndex.lines ?? {};
 for (const [s, text] of Object.entries(TOUR_LINES)) check(`${s}.wav was read from today's line`, recorded[s] === text, 're-run node apps/vr/tools/tour-voice.ts');
 check('the clips were levelled to the loudness target', recordedIndex.voice?.loudness?.targetLufs === -14 && recordedIndex.voice?.loudness?.ceilingDb === -1);
+check('the clips were rendered through the say route\'s chain, nothing more', recordedIndex.voice?.fx === TOUR_LINK.fx && recordedIndex.voice?.rate === TOUR_LINK.rate, `${recordedIndex.voice?.fx} @ ${recordedIndex.voice?.rate}`);
+
+// ---- The scan theatre's lines (wave C1) ----
+const theatre = fs.readFileSync(path.join(SRC, 'BpScanTheatre.cpp'), 'utf8');
+const scanIds = Object.keys(SCAN_LINES);
+check('the scan book has its lines', scanIds.length >= 6, `${scanIds.length}`);
+for (const id of ['scan-start-everything', 'scan-start-wing', 'scan-start-room', 'scan-start-place', 'scan-done', 'scan-stopped']) {
+  check(`the scan book has ${id}`, id in SCAN_LINES);
+  check(`BpScanTheatre.cpp names ${id}`, theatre.includes(`"${id}"`));
+}
+check('BpScanTheatre.cpp builds the result clip id from the counts', /scan-done-%s-%s/.test(theatre));
+check('scan ids are not also tour ids', scanIds.every((id) => !(id in TOUR_LINES)));
+const words = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
+for (const [id, text] of Object.entries(SCAN_LINES)) {
+  check(`scan line ${id} is a minted name`, /^[a-z][a-z-]*[a-z]$/.test(id));
+  const m = /^scan-done-([a-z]+)-([a-z]+)$/.exec(id);
+  if (!m) continue;
+  const rooms = words.indexOf(m[1]), found = words.indexOf(m[2]);
+  const say = (n: number) => words[n][0].toUpperCase() + words[n].slice(1);
+  const want = `Done. ${say(rooms)} ${rooms === 1 ? 'room' : 'rooms'} read, ${found === 0 ? 'nothing new' : `${words[found]} new ${found === 1 ? 'finding' : 'findings'}`}.`;
+  check(`scan line ${id} says its counts`, rooms > 0 && found >= 0 && text === want, `${text} (want ${want})`);
+}
+if (!fs.existsSync(SCAN_CLIPS)) check('voice/scan exists', false, 'run node apps/vr/tools/tour-voice.ts --scan');
+else {
+  for (const id of scanIds) {
+    const file = path.join(SCAN_CLIPS, `${id}.wav`);
+    if (!fs.existsSync(file)) { check(`scan clip ${id}.wav exists`, false, 'run node apps/vr/tools/tour-voice.ts --scan'); continue; }
+    const w = wav(file);
+    check(`scan clip ${id}.wav is 16-bit mono at the say route's rate, 0.5-8 s`, !!w && w.bits === 16 && w.channels === 1 && w.rate === TOUR_LINK.rate && w.seconds >= 0.5 && w.seconds <= 8,
+      w ? `${w.bits}-bit ${w.channels} ch ${w.rate} Hz ${w.seconds.toFixed(2)} s` : 'not PCM');
+  }
+  for (const f of fs.readdirSync(SCAN_CLIPS).filter((f) => f.endsWith('.wav'))) check(`scan clip ${f} has a line (no orphan)`, f.slice(0, -4) in SCAN_LINES);
+  const scanIndexFile = path.join(SCAN_CLIPS, 'lines.json');
+  const scanIndex = fs.existsSync(scanIndexFile) ? JSON.parse(fs.readFileSync(scanIndexFile, 'utf8')) : {};
+  for (const [id, text] of Object.entries(SCAN_LINES)) check(`${id}.wav was read from today's line`, scanIndex.lines?.[id] === text, 're-run node apps/vr/tools/tour-voice.ts --scan');
+  check('the scan clips share the tour clips\' voice record', JSON.stringify(scanIndex.voice) === JSON.stringify(recordedIndex.voice));
+}
 
 // The background music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav): the same WAV route, stereo at
 // MUSIC_RATE, 120-150 s, and bed.json agrees with the file and records a quiet bed and a measured seam.

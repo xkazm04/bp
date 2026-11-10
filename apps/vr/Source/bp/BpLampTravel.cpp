@@ -271,7 +271,7 @@ void ABpTable::ArriveLamp()
 		LampLook = 1.f;
 		LampLookTarget = 1.f;
 		// A presented thing with no caption (a scan) has no caption clock to send the lamp back; the timer does it.
-		if (LampCaptionClock <= 0.f) GetWorldTimerManager().SetTimer(LampHomeTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { if (LampCaptionClock <= 0.f) LampGoHome(TEXT("idle")); }), LampStationIdleS, false);
+		if (LampCaptionClock <= 0.f) GetWorldTimerManager().SetTimer(LampHomeTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { if (LampCaptionClock <= 0.f && !bTheatreLamp) LampGoHome(TEXT("idle")); }), LampStationIdleS, false);
 		UE_LOG(LogBpTable, Log, TEXT("BpLamp: at station %d"), LampStation);
 	}
 }

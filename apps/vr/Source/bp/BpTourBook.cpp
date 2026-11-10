@@ -52,6 +52,28 @@ namespace BpTourBook
 		return All;
 	}
 
+	const TArray<FLine>& ScanLines()
+	{
+		static const TArray<FLine> All = {
+			{ TEXT("scan-start-everything"), TEXT("Scanning everything.") },
+			{ TEXT("scan-start-wing"), TEXT("Scanning this wing.") },
+			{ TEXT("scan-start-room"), TEXT("Scanning this room.") },
+			{ TEXT("scan-start-place"), TEXT("Scanning this place.") },
+			{ TEXT("scan-done"), TEXT("Done. Here is what it found.") },
+			{ TEXT("scan-stopped"), TEXT("Stopped. Here is what it read.") },
+			// The sample's results, at the counts it lands (BpScan.TheatreLines on Kettle: the site, each wing, each room).
+			{ TEXT("scan-done-thirteen-six"), TEXT("Done. Thirteen rooms read, six new findings.") },
+			{ TEXT("scan-done-four-five"), TEXT("Done. Four rooms read, five new findings.") },
+			{ TEXT("scan-done-three-three"), TEXT("Done. Three rooms read, three new findings.") },
+			{ TEXT("scan-done-three-one"), TEXT("Done. Three rooms read, one new finding.") },
+			{ TEXT("scan-done-two-three"), TEXT("Done. Two rooms read, three new findings.") },
+			{ TEXT("scan-done-one-two"), TEXT("Done. One room read, two new findings.") },
+			{ TEXT("scan-done-one-one"), TEXT("Done. One room read, one new finding.") },
+			{ TEXT("scan-done-one-none"), TEXT("Done. One room read, nothing new.") },
+		};
+		return All;
+	}
+
 	const TArray<const TCHAR*>& Core()
 	{
 		static const TArray<const TCHAR*> Steps = { TEXT("welcome"), TEXT("open-wing"), TEXT("open-room"), TEXT("step-in"), TEXT("decide"),

@@ -318,6 +318,12 @@ void ABpPawn::PanelAct(const FString& Act)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: act %s"), *Act);
 	ABpTable* Table = WristTable.Get();
+	// Wave C1: the scan's result (the wrist's band, the bar's chip): the SCAN RESULT sheet.
+	if (Act == TEXT("scan:result"))
+	{
+		OpenConsole(TEXT("scanresult"));
+		return;
+	}
 	// The stand-up's controls (BpStandup.cpp), from the console's sheet, the wrist and the bar's TAKE BACK.
 	if (Act.StartsWith(TEXT("standup:")))
 	{
@@ -878,6 +884,9 @@ void ABpPawn::DrawWrist()
 		: bDecision ? ECard::Decision : !Offer.IsEmpty() ? ECard::Offer : bStandupCard ? ECard::Standup : ECard::Calm;
 	FString BandHead, BandBody;
 	if (bPlan) Table->ScanBand(BandHead, BandBody);
+	// Wave C1: a scan's result carries one button on the band (the SCAN RESULT sheet), until the next scan.
+	ABpTable::FScanResult BandResult;
+	const bool bBandResult = bPlan && !Table->IsScanRunning() && Table->GetScanResult(BandResult) && !(bConsoleOpen && ConsolePageKey == TEXT("scanresult"));
 	const bool bSample = !FBpLinkModule::Get().HasPcLink() && FBpLinkModule::Get().HasSampleFocuses();
 	const bool bTour = bPlan && Table->IsTourRunning();
 	// The link in one word (night two W2a): CABLE, WI-FI, OFFLINE or PAIRING, at the card's top right.
@@ -886,6 +895,7 @@ void ABpPawn::DrawWrist()
 	const int32 Waiting = Card == ECard::Calm && bPlan ? Table->OpenDecisionCount() : 0;
 	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|w%d"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
 		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord, Waiting);
+	if (bBandResult) Key += TEXT("|r");
 	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
 	if (Card == ECard::Talk) Key += TEXT("|t") + TalkWord + Table->TalkStateLine();
 	if (Card == ECard::Standup)
@@ -1049,7 +1059,8 @@ void ABpPawn::DrawWrist()
 	const bool bBand = !BandHead.IsEmpty();
 	bool bBandMore = false;
 	const FString BandFit = bBand && !BandBody.IsEmpty() ? BpSheet::Sentences(BandBody, SmallFont, WX1 - WX0 - 40.f, 3, bBandMore) : FString();
-	const float BandH = bBand ? 14.f + WPitch(WSmallCap) + (BandFit.IsEmpty() ? 0.f : 4.f + BpSheet::Lines(BandFit) * WPitch(WSmallCap)) + 14.f : 0.f;
+	const float BandBtnH = bBand && bBandResult ? 12.f + WBtnH : 0.f;
+	const float BandH = bBand ? 14.f + WPitch(WSmallCap) + (BandFit.IsEmpty() ? 0.f : 4.f + BpSheet::Lines(BandFit) * WPitch(WSmallCap)) + 14.f + BandBtnH : 0.f;
 	const auto Total = [&]() { return RuleY + 14.f + FrameH + (N > 0 ? 14.f + WBtnH : 0.f) + (bBand ? 14.f + BandH : 0.f) + 30.f; };
 	if (Total() < WristMinH) FrameH += WristMinH - Total();
 	const float H = FMath::CeilToFloat(Total());
@@ -1136,7 +1147,13 @@ void ABpPawn::DrawWrist()
 		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(BandHead.ToUpper(), StripFont, WX1 - WX0 - 40.f, 0))).Font(StripFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))];
 		if (!BandFit.IsEmpty()) Lines->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BandFit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))];
-		Put(FBox2f(Band.Min + FVector2f(26.f, 14.f), Band.Max - FVector2f(14.f, 10.f)), Lines);
+		Put(FBox2f(Band.Min + FVector2f(26.f, 14.f), Band.Max - FVector2f(14.f, 10.f + BandBtnH)), Lines);
+		if (BandBtnH > 0.f)
+		{
+			const FString Word = BandResult.New > 0 && !BandResult.bCancelled && !BandResult.bFailed ? FString::Printf(TEXT("SEE %d NEW"), BandResult.New) : FString(TEXT("SEE RESULT"));
+			const float BW = BpSheet::TextWidth(Word, AnswerFont) + 64.f;
+			Button(FBox2f(FVector2f(Band.Min.X + 26.f, Band.Max.Y - 14.f - WBtnH), FVector2f(Band.Min.X + 26.f + BW, Band.Max.Y - 14.f)), Word, ELook::Amber, TEXT("scan:result"), AnswerFont);
+		}
 	}
 	// The control a hand's ray is on: an amber edge, what a pinch would act on (the aim cursor stops short of the panel).
 	if (const FWristBox* Hovered = WristBoxes.FindByPredicate([this](const FWristBox& Each) { return Each.Id == WristHover; }))

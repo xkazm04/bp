@@ -41,10 +41,24 @@ export function readTourBook(file = TOUR_BOOK_CPP): Record<string, string> {
 /** The ids are the book's line ids (a step's id, or a variant a step says: decide-noted, menu-open, standup-how, ...). */
 export const TOUR_LINES: Record<string, string> = readTourBook();
 
-const OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
-/** 16 kHz (wave T1): the tour grew from 10 lines to 33, and at 24 kHz the clips added 5 MB to the bundle; speech keeps its
- *  band to 8 kHz here, and the set stays under the 3 MB the wave allowed. */
-const RATE = 16000;
+/** Wave C1, the scan theatre's spoken lines (BpTourBook.cpp's ScanLines(), same one-line form): the start per scope kind, the
+ *  sample's results at their true counts, and the generic ones. `--scan` renders them into voice/scan/. */
+export function readScanBook(file = TOUR_BOOK_CPP): Record<string, string> {
+  const src = fs.readFileSync(file, 'utf8');
+  const start = src.indexOf('const TArray<FLine>& ScanLines()');
+  const end = start >= 0 ? src.indexOf('return All;', start) : -1;
+  const block = start >= 0 && end > start ? src.slice(start, end) : '';
+  const out: Record<string, string> = {};
+  for (const m of block.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("((?:[^"\\]|\\.)*)"\)\s*\}/g)) out[m[1]] = m[2].replace(/\\(.)/g, '$1');
+  return out;
+}
+export const SCAN_LINES: Record<string, string> = readScanBook();
+export const SCAN_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'scan');
+
+const TOUR_OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
+/** 24 kHz, the live `say` route's own rate (voice-link.server.ts TOUR_LINK): the bundled voice and the live voice are one
+ *  voice, byte for byte for the same line (check:voice-link). Wave C1 put it back from wave T1's 16 kHz. */
+const RATE = 24000;
 /** Glim's level at the source: integrated loudness in LUFS, and the sample peak's ceiling in dBFS. */
 const LOUDNESS = { targetLufs: -14, ceilingDb: -1 };
 
@@ -80,13 +94,16 @@ function fxChain(): string {
     `equalizer=f=${f.presence.hz}:t=q:w=${f.presence.q}:g=${f.presence.gainDb}`,
     `aecho=${f.echo.inGain}:${f.echo.outGain}:${taps.map((t) => t.ms).join('|')}:${taps.map((t) => t.gain).join('|')}`,
     `tremolo=f=${f.tremolo.hz}:d=${f.tremolo.depth}`,
-    // The synthesizer's lead-in and tail of silence go (a line starts when the step does; 0.15 s of tail is kept).
-    'silenceremove=start_periods=1:start_silence=0.05:start_threshold=-55dB,areverse,silenceremove=start_periods=1:start_silence=0.15:start_threshold=-55dB,areverse',
+    // Nothing more: the live `say` route renders through exactly this chain (TOUR_LINK.fx), so no trim here either.
   ].join(',');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const onlyLevel = process.argv.includes('--loudness');
+  // --scan: the scan theatre's lines (voice/scan/), else the tour's (voice/tour/).
+  const scan = process.argv.includes('--scan');
+  const LINES = scan ? SCAN_LINES : TOUR_LINES;
+  const OUT = scan ? SCAN_CLIPS : TOUR_OUT;
   if (!onlyLevel && !voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
   if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) { console.log('REFUSED: ffmpeg is not on PATH'); process.exit(2); }
   const force = process.argv.includes('--force');
@@ -96,22 +113,22 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const voice = { voiceId: VOICE.voiceId, modelId: VOICE.modelId, seed: VOICE.seed, settings: VOICE.settings, fx: fxChain(), rate: RATE, loudness: LOUDNESS };
   if (onlyLevel) {
     let bad = 0;
-    for (const step of Object.keys(TOUR_LINES)) {
+    for (const step of Object.keys(LINES)) {
       const wav = path.join(OUT, `${step}.wav`);
       const leveled = fs.existsSync(wav) ? level(wav) : null;
       if (!leveled) { bad++; console.log(`FAIL  ${step}: no clip or ffmpeg failed`); continue; }
       console.log(`level ${step}: ${leveled.before.toFixed(1)} -> ${leveled.after.toFixed(1)} LUFS`);
     }
-    fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: TOUR_LINES }, null, 2) + '\n');
+    fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: LINES }, null, 2) + '\n');
     process.exit(bad ? 1 : 0);
   }
   const sameVoice = JSON.stringify(before.voice) === JSON.stringify(voice);
   let failed = 0, chars = 0;
-  // A clip no line uses any more goes (the bundle carries only what the tour says).
+  // A clip no line uses any more goes (the bundle carries only what its book says).
   for (const f of fs.readdirSync(OUT)) {
-    if (f.endsWith('.wav') && !(f.slice(0, -4) in TOUR_LINES)) { fs.rmSync(path.join(OUT, f)); console.log(`gone  ${f} (no line uses it)`); }
+    if (f.endsWith('.wav') && !(f.slice(0, -4) in LINES)) { fs.rmSync(path.join(OUT, f)); console.log(`gone  ${f} (no line uses it)`); }
   }
-  for (const [step, text] of Object.entries(TOUR_LINES)) {
+  for (const [step, text] of Object.entries(LINES)) {
     const wav = path.join(OUT, `${step}.wav`);
     if (!force && sameVoice && before.lines?.[step] === text && fs.existsSync(wav)) { console.log(`kept  ${step}`); continue; }
     const res = await synthesize(text);
@@ -125,7 +142,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     if (!level(wav)) { failed++; console.log(`FAIL  ${step}: could not level the clip`); continue; }
     console.log(`ok    ${step} (${res.cached ? 'cached' : 'synthesized'}) -> ${(fs.statSync(wav).size / 1024).toFixed(0)} KB`);
   }
-  fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: TOUR_LINES }, null, 2) + '\n');
+  fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: LINES }, null, 2) + '\n');
   console.log(`characters synthesized (not from the cache): ${chars}`);
   process.exit(failed ? 1 : 0);
 }

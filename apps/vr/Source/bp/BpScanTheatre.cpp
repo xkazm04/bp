@@ -1,0 +1,572 @@
+// The scan theatre (wave C1, the owner's pick of 2026-11-10: "watch a scan work on the table as it happens"), presentation over
+// what the table already reads: the poll's jobs and activity rows (BpLink, 0.5 s while a job runs) for a real scan, the local
+// timer walk for the bundle's sample (BpSampleScan.cpp). No transport, no stream, no request of its own beyond the PC's `say`
+// for the two spoken lines of a linked scan.
+//   - The lamp follows: while a scan runs it leaves home for the room being read (one flight per room change, through the
+//     lamp's own stations: never behind the console's slot, never over a tag), turns its light down into the room and takes
+//     the lens's accent as its light's colour (BpLampLook.cpp's "scanning" state). The scan line (the lens's colour, through
+//     MPC_BpScan's ScanTint) is the light's sweep. When the person has the lamp (a talk, an ask, the stand-up) the person wins:
+//     the lamp stays and catches up after. When the scan ends it goes home.
+//   - It narrates: a caption "Reading <room>, n of m" on each room change, quiet in between; a voice at two moments only, the
+//     start and the result. On the bundle these are rendered clips (Content/BpData/voice/scan/, apps/vr/tools/tour-voice.ts
+//     --scan, the lines in BpTourBook.cpp's ScanLines); linked, the PC's `say` speaks them (within its budget; the caption
+//     alone carries a line it refuses). A line waits for the lamp's voice to be free and is dropped more than 10 s stale.
+//   - Findings land: a finding the pins did not show before arrives with a drop onto its tile (BuildPins/PlacePins animate
+//     the pins that exist; no component per landing), staggered so six read as six. The sample holds back up to six of the
+//     bundle's open findings in its scope at its start and lands each room's as the walk leaves that room; nothing is written.
+//   - A result: the SCAN RESULT sheet on the console (BpConsole.cpp), the bar's chip when another sheet is open, the wrist's band.
+// Nothing here ticks at rest: a 0.5 s timer runs only while a scan runs or a line waits, and the landing ticks only while a pin
+// is in the air.
+#include "BpTable.h"
+
+#include "BpLink.h"
+#include "BpPawn.h"
+#include "BpWords.h"
+#include "Schema/BpSchemaVocab.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "TimerManager.h"
+
+namespace
+{
+	TAutoConsoleVariable<int32> CVarTheatre(TEXT("bp.ScanTheatre"), 1,
+		TEXT("The scan theatre (wave C1): 1 (default) the lamp follows a scan room to room with captions, says its start and result, findings land and a result sheet opens; 0 the scan draws only its marks, as before."));
+	TAutoConsoleVariable<int32> CVarScanVoice(TEXT("bp.ScanVoice"), 1, TEXT("The scan's two spoken lines (its start and its result): 1 (default) spoken, 0 captions only."));
+
+	/** A landing: the pin drops from PinDropCm over its tile and settles in PinLandS, the next one PinStaggerS later. */
+	constexpr float PinDropCm = 12.f;
+	constexpr float PinLandS = 0.38f;
+	constexpr float PinStaggerS = 0.15f;
+	/** A line older than this when the voice frees up is dropped. */
+	constexpr double VoiceStaleS = 10.0;
+	/** New findings land while a scan runs and this long after it ends (a directed run writes its findings near its end). */
+	constexpr double LandAfterEndS = 30.0;
+	/** A real scan's result is read this long after its job leaves running: /scan answers apart from /scans. */
+	constexpr float LiveResultDelayS = 2.f;
+	/** The sample's scripted findings: at most this many, and at most this many in one room. */
+	constexpr int32 SampleHeldMax = 6;
+	constexpr int32 SampleHeldPerRoom = 2;
+	/** The voice clips of the scan's lines (the bundle). */
+	const TCHAR* const ScanClipDir = TEXT("BpData/voice/scan");
+
+	bool TheatreReduced()
+	{
+		const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
+		return Reduced && Reduced->GetInt() != 0;
+	}
+
+	ABpPawn* TheatrePawn(const UWorld* World)
+	{
+		const APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
+		return PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
+	}
+
+	/** A count as a spoken word (the clips' ids and words): none, one ... twenty, then digits. */
+	FString CountWord(int32 N)
+	{
+		static const TCHAR* const Words[] = { TEXT("none"), TEXT("one"), TEXT("two"), TEXT("three"), TEXT("four"), TEXT("five"), TEXT("six"), TEXT("seven"), TEXT("eight"),
+			TEXT("nine"), TEXT("ten"), TEXT("eleven"), TEXT("twelve"), TEXT("thirteen"), TEXT("fourteen"), TEXT("fifteen"), TEXT("sixteen"), TEXT("seventeen"), TEXT("eighteen"),
+			TEXT("nineteen"), TEXT("twenty") };
+		return N >= 0 && N < static_cast<int32>(UE_ARRAY_COUNT(Words)) ? FString(Words[N]) : FString::FromInt(N);
+	}
+
+	/** The start clip for a scope's words (DirectedScope: everything, this wing, this room, this place). */
+	FString StartClip(const FString& ScopeWords)
+	{
+		if (ScopeWords == TEXT("everything")) return TEXT("scan-start-everything");
+		if (ScopeWords == TEXT("this wing")) return TEXT("scan-start-wing");
+		if (ScopeWords == TEXT("this room")) return TEXT("scan-start-room");
+		return TEXT("scan-start-place");
+	}
+
+	FLinearColor AccentOf(const FString& Lens)
+	{
+		const FString* Hex = FBpLinkModule::Get().FindLensAccent(Lens);
+		FLinearColor Ink = Hex && Hex->StartsWith(TEXT("#")) && Hex->Len() >= 7 ? FLinearColor::FromSRGBColor(FColor::FromHex(*Hex)) : FLinearColor(0.04f, 0.58f, 1.f);
+		// As bright as the scan line's own cyan (its strongest channel 1), so a dark accent still reads as light.
+		const float Max = FMath::Max3(Ink.R, Ink.G, Ink.B);
+		if (Max > 0.01f) Ink /= Max;
+		Ink.A = 1.f;
+		return Ink;
+	}
+
+	FAutoConsoleCommandWithWorld CmdTheatreLines(TEXT("BpScan.TheatreLines"),
+		TEXT("BpScan.TheatreLines: logs, for the sample on this plan, every scope (the site, each wing, each room) with its rooms and the findings it would land: the result lines tour-voice.ts --scan renders."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (!World) return;
+			for (TActorIterator<ABpTable> It(World); It; ++It) It->LogTheatreLines();
+		}));
+}
+
+int32 ABpTable::ScanSeverity(const FBpProposal& Proposal, const int32* Tier)
+{
+	// The ledger's tiers when triaged (T0 stop-ship, T1 before release, later); an untriaged one by its risk, as the pins' rule
+	// reads urgency (risk 9 or more stop-ship, PinTagRiskMin or more before release).
+	if (Tier) return *Tier <= 0 ? 0 : *Tier == 1 ? 1 : 2;
+	return Proposal.risk >= 9.f ? 0 : Proposal.risk >= PinTagRiskMin ? 1 : 2;
+}
+
+bool ABpTable::TheatrePersonHasLamp() const
+{
+	// The person wins: a talk in flight, an answer the lamp is giving, or the stand-up open.
+	if (TalkLampState() != 0) return true;
+	if (LampOffer != ELampOffer::None && LampCaptionClock > 0.f) return true;
+	const ABpPawn* Pawn = TheatrePawn(GetWorld());
+	return Pawn && Pawn->IsStandupOpen();
+}
+
+void ABpTable::TheatreBegin(bool bSample, const FString& Key, const FString& Lens, const FString& PlaceWords, const FString& ScopeWords, int32 RoomsOf, bool bSpeak)
+{
+	if (CVarTheatre.GetValueOnGameThread() == 0 || !GetWorld()) return;
+	bTheatre = true;
+	bTheatreSample = bSample;
+	TheatreKey = Key;
+	TheatreLens = Lens;
+	TheatrePlace = PlaceWords;
+	TheatreStartedAt = GetWorld()->GetTimeSeconds();
+	TheatreRoom = INDEX_NONE;
+	TheatreRoomAt = 0;
+	TheatreRoomsOf = RoomsOf;
+	TheatreLampOwed = INDEX_NONE;
+	TheatreLanded.Reset();
+	TheatreEndedAt = -1.0;
+	bTheatreLamp = true;
+	TheatreTint = AccentOf(Lens);
+	// A new scan's result replaces the last one's.
+	const bool bHadResult = bTheatreResult;
+	bTheatreResult = false;
+	bTheatreResultSeen = true;
+	if (bHadResult) ScanBandChanged.Broadcast();
+	// The last result's sheet gives way to the SCAN page (the new scan's running state).
+	if (ABpPawn* Pawn = TheatrePawn(GetWorld()); Pawn && Pawn->IsConsoleOpen() && Pawn->GetConsolePage() == TEXT("scanresult")) Pawn->OpenConsole(TEXT("scan"));
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: begin %s (%s) lens=%s over %s, %d rooms; the lamp follows, its light %s"), *Key, bSample ? TEXT("the sample") : TEXT("a real scan"), *Lens, *PlaceWords, RoomsOf,
+		*TheatreTint.ToFColor(true).ToHex());
+	if (bSpeak)
+	{
+		const FString Line = FString::Printf(TEXT("Scanning %s."), *ScopeWords);
+		TheatreVoice(bSample ? StartClip(ScopeWords) : FString(), bSample ? FString() : Line);
+	}
+	GetWorldTimerManager().SetTimer(TheatreTimer, this, &ABpTable::TheatrePump, 0.5f, true);
+	SetActorTickInterval(0.f);
+}
+
+void ABpTable::TheatreReading(int32 Room, int32 At, int32 Of)
+{
+	if (!bTheatre || !SheetPlan.IsValid() || !SheetPlan->rooms.IsValidIndex(Room) || Room == TheatreRoom) return;
+	TheatreRoom = Room;
+	TheatreRoomAt = At;
+	TheatreRoomsOf = FMath::Max(Of, At);
+	const FString& Name = SheetPlan->rooms[Room].name;
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: reading %s, %d of %d"), *Name, At, TheatreRoomsOf);
+	ScanBandChanged.Broadcast();
+	if (TheatrePersonHasLamp())
+	{
+		// The person has the lamp: no caption over theirs, and the flight waits (TheatrePump catches up).
+		TheatreLampOwed = Room;
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the person has the lamp; it follows %s after"), *Name);
+		return;
+	}
+	TheatreFly(Room);
+}
+
+void ABpTable::TheatreFly(int32 Room)
+{
+	if (!SheetPlan.IsValid() || !SheetPlan->rooms.IsValidIndex(Room)) return;
+	TheatreLampOwed = INDEX_NONE;
+	const FString& Name = SheetPlan->rooms[Room].name;
+	// The caption, a notice on the site plan. The stand-up's quiet rule: the console's SCAN page already says the room large,
+	// so while it shows the lamp's box stays quiet (its words are the same).
+	SayLamp(FString::Printf(TEXT("Reading %s, %d of %d"), *Name, TheatreRoomAt, TheatreRoomsOf), true);
+	const ABpPawn* Pawn = TheatrePawn(GetWorld());
+	// Any open sheet: the SCAN page says the room large, and over another sheet the box would stand behind its edge.
+	if (Pawn && Pawn->IsConsoleOpen())
+	{
+		bSheetCaption = true;
+		ApplyLampWidgets();
+	}
+	// One flight per room change (a cut under bp.ReducedMotion, StartLampRide); already at the station it only turns.
+	PresentLamp(LampTargetForRoom(SheetPlan->rooms[Room].id), TEXT("scan"));
+}
+
+void ABpTable::TheatreVoice(const FString& Clip, const FString& Say)
+{
+	if (CVarScanVoice.GetValueOnGameThread() == 0 || (Clip.IsEmpty() && Say.IsEmpty())) return;
+	TheatreVoiceClip = Clip;
+	TheatreVoiceSay = Say;
+	TheatreVoiceAt = FPlatformTime::Seconds();
+	TheatrePump();
+	if (!TheatreVoiceClip.IsEmpty() || !TheatreVoiceSay.IsEmpty()) GetWorldTimerManager().SetTimer(TheatreTimer, this, &ABpTable::TheatrePump, 0.5f, true);
+}
+
+void ABpTable::TheatrePump()
+{
+	// The lamp catches up with the reading once the person lets it go.
+	if (bTheatre && TheatreLampOwed != INDEX_NONE && !TheatrePersonHasLamp()) TheatreFly(TheatreLampOwed);
+	// A line waits for the voice to be free (the tour's, a talk's), and goes stale.
+	if (!TheatreVoiceClip.IsEmpty() || !TheatreVoiceSay.IsEmpty())
+	{
+		const double Age = FPlatformTime::Seconds() - TheatreVoiceAt;
+		if (Age > VoiceStaleS)
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: line dropped, %.0f s stale: %s%s"), Age, *TheatreVoiceClip, *TheatreVoiceSay);
+			TheatreVoiceClip.Reset();
+			TheatreVoiceSay.Reset();
+		}
+		else if (!IsVoicePlaying() && TalkLampState() == 0)
+		{
+			const FString Clip = MoveTemp(TheatreVoiceClip), Say = MoveTemp(TheatreVoiceSay);
+			TheatreVoiceClip.Reset();
+			TheatreVoiceSay.Reset();
+			if (!Clip.IsEmpty())
+			{
+				TArray<uint8>* File = ScanClips.Find(Clip);
+				if (!File)
+				{
+					File = &ScanClips.Add(Clip);
+					FFileHelper::LoadFileToArray(*File, *(FPaths::ProjectContentDir() / ScanClipDir / (Clip + TEXT(".wav"))), FILEREAD_Silent);
+				}
+				const bool bPlayed = PlayVoiceWav(*File, *Clip);
+				UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: voice clip %s %s"), *Clip, bPlayed ? *FString::Printf(TEXT("(%d bytes) spoken"), File->Num()) : TEXT("missing: the caption carries it"));
+			}
+			else if (FBpLinkModule::Get().HasPcLink())
+			{
+				// Linked: one line through the PC's say, within its budget; a refusal leaves the caption to carry it.
+				const FString Line = Say.Left(160);
+				UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: say \"%s\" (%d characters)"), *Line, Line.Len());
+				TWeakObjectPtr<ABpTable> Self(this);
+				FBpLinkModule::Get().PostSay(Line, [Self](int32 Status, const TArray<uint8>& Wav, const FString& Body)
+				{
+					ABpTable* T = Self.Get();
+					if (!T) return;
+					if (Status != 200 || Wav.Num() == 0)
+					{
+						UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: say answered %d: the caption carries the line"), Status);
+						return;
+					}
+					if (T->IsVoicePlaying() || T->TalkLampState() != 0)
+					{
+						UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: say's voice dropped: the lamp's voice is busy"));
+						return;
+					}
+					const bool bPlayed = T->PlayVoiceWav(Wav, TEXT("scan"));
+					UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: say answered 200 (%d bytes) %s"), Wav.Num(), bPlayed ? TEXT("spoken") : TEXT("unreadable"));
+				});
+			}
+		}
+	}
+	if (!bTheatre && TheatreVoiceClip.IsEmpty() && TheatreVoiceSay.IsEmpty()) GetWorldTimerManager().ClearTimer(TheatreTimer);
+}
+
+void ABpTable::HoldSampleFindings()
+{
+	ScanHeld.Reset();
+	TheatreLanded.Reset();
+	if (CVarTheatre.GetValueOnGameThread() == 0 || !SheetPlan.IsValid()) return;
+	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+	if (!State.bHasScan) return;
+	TMap<FString, int32> TileOf;
+	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
+	TSet<int32> InScope;
+	for (int32 Tile : SampleTiles) InScope.Add(TileRoom[Tile]);
+	struct FCandidate { FString Id; int32 Room; int32 Severity; double Risk; };
+	TArray<FCandidate> Candidates;
+	for (const FBpProposal& P : State.Scan.proposals)
+	{
+		if (P.status != BpVocab::Proposal::Status::Proposed) continue;
+		const int32* Tile = TileOf.Find(P.feature);
+		if (!Tile || !TileRoom.IsValidIndex(*Tile) || !InScope.Contains(TileRoom[*Tile])) continue;
+		Candidates.Add({ P.id, TileRoom[*Tile], ScanSeverity(P, State.Tiers.Find(P.id)), P.risk });
+	}
+	// Taken a severity at a time (stop-ship, before release, later, then round again; within one the highest risk), so the
+	// result shows each kind it has, at most two in a room so the landings spread.
+	Candidates.StableSort([](const FCandidate& A, const FCandidate& B) { return A.Severity != B.Severity ? A.Severity < B.Severity : A.Risk > B.Risk; });
+	{
+		TArray<FCandidate> Bins[3];
+		for (const FCandidate& C : Candidates) Bins[FMath::Clamp(C.Severity, 0, 2)].Add(C);
+		TArray<FCandidate> Turns;
+		for (int32 Round = 0; Turns.Num() < Candidates.Num(); ++Round) for (int32 S = 0; S < 3; ++S) if (Bins[S].IsValidIndex(Round)) Turns.Add(Bins[S][Round]);
+		Candidates = MoveTemp(Turns);
+	}
+	TMap<int32, int32> PerRoom;
+	for (const FCandidate& C : Candidates)
+	{
+		if (ScanHeld.Num() >= SampleHeldMax) break;
+		int32& N = PerRoom.FindOrAdd(C.Room);
+		if (N >= SampleHeldPerRoom) continue;
+		++N;
+		ScanHeld.Add(C.Id, C.Room);
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the sample holds %d of the bundle's open findings in scope back from the pins (%d candidates); they land as the walk leaves their rooms"), ScanHeld.Num(), Candidates.Num());
+	if (ScanHeld.Num() == 0) return;
+	bPinsNoLand = true;
+	BuildPins(State);
+	bPinsNoLand = false;
+}
+
+void ABpTable::LandHeld(int32 Room)
+{
+	if (ScanHeld.Num() == 0) return;
+	TArray<FString> Ids;
+	for (const TPair<FString, int32>& Pair : ScanHeld) if (Room == INDEX_NONE || Pair.Value == Room) Ids.Add(Pair.Key);
+	if (Ids.Num() == 0) return;
+	for (const FString& Id : Ids)
+	{
+		ScanHeld.Remove(Id);
+		TheatreLanded.Add(Id);
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s's findings land: %s"), SheetPlan.IsValid() && SheetPlan->rooms.IsValidIndex(Room) ? *SheetPlan->rooms[Room].name : TEXT("every room"), *FString::Join(Ids, TEXT(", ")));
+	BuildPins(FBpLinkModule::Get().GetScanState());
+}
+
+void ABpTable::FinishTheatreResult(bool bCancelled, bool bFailed)
+{
+	FScanResult R;
+	R.bSample = bTheatreSample;
+	R.bCancelled = bCancelled;
+	R.bFailed = bFailed;
+	R.Lens = TheatreLens;
+	R.Place = TheatrePlace;
+	R.RoomsRead = bHasScanOutcome ? ScanOutcome.RoomsRead : 0;
+	R.RoomsTotal = bHasScanOutcome ? FMath::Max(ScanOutcome.RoomsTotal, TheatreRoomsOf) : TheatreRoomsOf;
+	R.Seconds = GetWorld() ? (TheatreEndedAt > 0.0 ? TheatreEndedAt : GetWorld()->GetTimeSeconds()) - TheatreStartedAt : 0.0;
+	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+	if (bTheatreSample)
+	{
+		R.Features = bCancelled ? FMath::Clamp(SampleAt, 0, SampleTiles.Num()) : SampleTiles.Num();
+	}
+	else
+	{
+		TSet<FString> Read;
+		for (const FBpActivity& A : State.Scan.activity) if (A.run_id == ScanRun && A.kind == BpVocab::Activity::Kind::Measured && !A.feature.IsEmpty()) Read.Add(A.feature);
+		R.Features = Read.Num();
+	}
+	// What it found: the sample's landed findings; a real run's proposals by its run id, else the ones that landed while it ran.
+	TArray<const FBpProposal*> Found;
+	for (const FBpProposal& P : State.Scan.proposals)
+	{
+		const bool bOurs = bTheatreSample ? TheatreLanded.Contains(P.id) : (!ScanRun.IsEmpty() && P.run_id == ScanRun) || TheatreLanded.Contains(P.id);
+		if (bOurs) Found.Add(&P);
+	}
+	Found.Sort([&State](const FBpProposal& A, const FBpProposal& B)
+	{
+		const int32 SA = ScanSeverity(A, State.Tiers.Find(A.id)), SB = ScanSeverity(B, State.Tiers.Find(B.id));
+		return SA != SB ? SA < SB : A.risk > B.risk;
+	});
+	for (const FBpProposal* P : Found)
+	{
+		++R.Severity[ScanSeverity(*P, State.Tiers.Find(P->id))];
+		if (R.Top.Num() < 3) R.Top.Add(P->id);
+	}
+	R.New = Found.Num();
+	TheatreResult = R;
+}
+
+void ABpTable::TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet)
+{
+	if (!bTheatre) return;
+	bTheatre = false;
+	bTheatreLamp = false;
+	TheatreLampOwed = INDEX_NONE;
+	TheatreEndedAt = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	TheatreTint = FLinearColor::White;
+	if (bQuiet)
+	{
+		// The tour's chapter put the table back (its own scan, cancelled): no result to read, nothing said.
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s ended quietly (the tour put the table back)"), *TheatreKey);
+		TheatreVoiceClip.Reset();
+		TheatreVoiceSay.Reset();
+		LampGoHome(TEXT("scan ended"));
+		return;
+	}
+	FinishTheatreResult(bCancelled, bFailed);
+	const FScanResult& R = TheatreResult;
+	const TCHAR* RoomWord = R.RoomsRead == 1 ? TEXT("room") : TEXT("rooms");
+	FString Line, Clip;
+	if (bCancelled || bFailed)
+	{
+		Line = FString::Printf(TEXT("%s %d of %d %s read."), bFailed ? TEXT("The scan failed.") : TEXT("Stopped."), R.RoomsRead, R.RoomsTotal, R.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"));
+		Clip = TEXT("scan-stopped");
+	}
+	else
+	{
+		Line = R.New > 0 ? FString::Printf(TEXT("Done. %d %s read, %d new %s."), R.RoomsRead, RoomWord, R.New, R.New == 1 ? TEXT("finding") : TEXT("findings"))
+			: FString::Printf(TEXT("Done. %d %s read, nothing new."), R.RoomsRead, RoomWord);
+		Clip = FString::Printf(TEXT("scan-done-%s-%s"), *CountWord(R.RoomsRead), *CountWord(R.New));
+		// A count no clip was rendered for: the generic line (its words are the caption's).
+		if (bTheatreSample && !FPaths::FileExists(FPaths::ProjectContentDir() / ScanClipDir / (Clip + TEXT(".wav")))) Clip = TEXT("scan-done");
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: result %s: %s (%d features, %.1f s; stop-ship %d, before release %d, later %d)"), *TheatreKey, *Line, R.Features, R.Seconds, R.Severity[0], R.Severity[1], R.Severity[2]);
+	if (!TheatrePersonHasLamp()) SayLamp(Line, true);
+	TheatreVoice(bTheatreSample ? Clip : FString(), bTheatreSample ? FString() : Line);
+	LampGoHome(TEXT("scan done"));
+	OfferScanResult();
+}
+
+void ABpTable::OfferScanResult()
+{
+	bTheatreResult = true;
+	bTheatreResultSeen = false;
+	ScanBandChanged.Broadcast();
+	ABpPawn* Pawn = TheatrePawn(GetWorld());
+	if (!Pawn) return;
+	// The console opens the sheet unless another sheet holds it (a decision in progress, a talk, settings): then it waits as
+	// the bar's chip and on the wrist.
+	const FString Page = Pawn->IsConsoleOpen() ? Pawn->GetConsolePage() : FString();
+	if (!Pawn->IsConsoleOpen() || Page == TEXT("scan") || Page == TEXT("home") || Page == TEXT("scanresult"))
+	{
+		Pawn->OpenConsole(TEXT("scanresult"));
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the result sheet opens"));
+	}
+	else UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the result waits on the bar (%s is open): %s"), *Page, *ScanResultChip());
+}
+
+void ABpTable::ScanResultSeen()
+{
+	if (!bTheatreResult || bTheatreResultSeen) return;
+	bTheatreResultSeen = true;
+	ScanBandChanged.Broadcast();
+}
+
+FString ABpTable::ScanResultChip() const
+{
+	if (!IsScanResultWaiting()) return FString();
+	if (TheatreResult.bCancelled || TheatreResult.bFailed) return TheatreResult.bFailed ? TEXT("SCAN FAILED") : TEXT("SCAN STOPPED");
+	return TheatreResult.New > 0 ? FString::Printf(TEXT("SCAN DONE · %d NEW"), TheatreResult.New) : FString(TEXT("SCAN DONE · NOTHING NEW"));
+}
+
+void ABpTable::ScanResultRaise(const FString& ProposalId)
+{
+	const FBpProposal* P = FBpLinkModule::Get().GetScanState().Scan.proposals.FindByPredicate([&ProposalId](const FBpProposal& Each) { return Each.id == ProposalId; });
+	if (!P) return;
+	const FString Room = StandupShow(TEXT("feature"), P->feature, FString());
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: result row %s raises %s"), *ProposalId, Room.IsEmpty() ? TEXT("nothing") : *Room);
+}
+
+bool ABpTable::GetScanReading(FScanReading& Out) const
+{
+	if (!bTheatre || !SheetPlan.IsValid()) return false;
+	Out.Room = SheetPlan->rooms.IsValidIndex(TheatreRoom) ? SheetPlan->rooms[TheatreRoom].name : FString();
+	Out.At = TheatreRoomAt;
+	Out.Of = TheatreRoomsOf;
+	Out.Lens = TheatreLens;
+	Out.StartedAt = TheatreStartedAt;
+	Out.bSample = bTheatreSample;
+	return true;
+}
+
+bool ABpTable::TickScanTheatre(float DeltaSeconds)
+{
+	if (PinLandClock < 0.f) return false;
+	PinLandClock += DeltaSeconds;
+	float Last = 0.f;
+	for (const FPin& Pin : PinList) Last = FMath::Max(Last, Pin.LandDelay);
+	if (PinLandClock >= Last + PinLandS)
+	{
+		for (FPin& Pin : PinList) Pin.LandDelay = -1.f;
+		PinLandClock = -1.f;
+		PlacePins();
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: landed (the pins rest)"));
+		return false;
+	}
+	PlacePins();
+	return true;
+}
+
+float ABpTable::PinLandOffset(const FPin& Pin, float& OutShow) const
+{
+	OutShow = 1.f;
+	if (Pin.LandDelay < 0.f || PinLandClock < 0.f) return 0.f;
+	const float T = (PinLandClock - Pin.LandDelay) / PinLandS;
+	if (T <= 0.f) { OutShow = 0.f; return PinDropCm; }
+	if (T >= 1.f) return 0.f;
+	// Ease out with a small settle: it falls, touches, lifts a hair and rests.
+	const float Fall = 1.f - FMath::Pow(1.f - FMath::Min(T / 0.8f, 1.f), 3.f);
+	const float Settle = T > 0.8f ? FMath::Sin((T - 0.8f) / 0.2f * UE_PI) * 0.06f : 0.f;
+	return PinDropCm * (1.f - Fall + Settle);
+}
+
+void ABpTable::NoteArrivals(const TArray<int32>& ArrivedTiles)
+{
+	if (ArrivedTiles.Num() == 0) return;
+	int32 Order = 0;
+	TArray<FString> Words;
+	for (const int32 Tile : ArrivedTiles)
+	{
+		FPin* Pin = PinList.FindByPredicate([Tile](const FPin& P) { return P.Tile == Tile; });
+		if (!Pin || Pin->LandDelay >= 0.f) continue;
+		Pin->LandDelay = Order * PinStaggerS;
+		Words.Add(FString::Printf(TEXT("%s@%.2fs"), SheetPlan.IsValid() && SheetPlan->tiles.IsValidIndex(Tile) ? *SheetPlan->tiles[Tile].id : TEXT("?"), Pin->LandDelay));
+		++Order;
+	}
+	if (Order == 0) return;
+	PinLandClock = 0.f;
+	SetActorTickInterval(0.f);
+	PlacePins();
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %d %s landing: %s"), Order, Order == 1 ? TEXT("pin") : TEXT("pins"), *FString::Join(Words, TEXT(", ")));
+}
+
+bool ABpTable::LandingsWanted() const
+{
+	if (bPinsNoLand || !bPinsPrimed || CVarTheatre.GetValueOnGameThread() == 0 || TheatreReduced()) return false;
+	if (bTheatre) return true;
+	return TheatreEndedAt > 0.0 && GetWorld() && GetWorld()->GetTimeSeconds() - TheatreEndedAt < LandAfterEndS;
+}
+
+void ABpTable::LogTheatreLines() const
+{
+	if (!SheetPlan.IsValid()) return;
+	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+	TMap<FString, int32> TileOf;
+	for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index) TileOf.Add(SheetPlan->tiles[Index].id, Index);
+	// The same pick HoldSampleFindings makes, for a set of rooms.
+	const auto Held = [&](const TSet<int32>& Scope)
+	{
+		TMap<int32, int32> PerRoom;
+		TArray<TPair<int32, double>> Sev;
+		TArray<int32> RoomOf;
+		for (const FBpProposal& P : State.Scan.proposals)
+		{
+			if (P.status != BpVocab::Proposal::Status::Proposed) continue;
+			const int32* Tile = TileOf.Find(P.feature);
+			if (!Tile || !TileRoom.IsValidIndex(*Tile) || !Scope.Contains(TileRoom[*Tile])) continue;
+			Sev.Add({ ScanSeverity(P, State.Tiers.Find(P.id)), P.risk });
+			RoomOf.Add(TileRoom[*Tile]);
+		}
+		TArray<int32> Order;
+		for (int32 I = 0; I < Sev.Num(); ++I) Order.Add(I);
+		Order.StableSort([&Sev](int32 A, int32 B) { return Sev[A].Key != Sev[B].Key ? Sev[A].Key < Sev[B].Key : Sev[A].Value > Sev[B].Value; });
+		int32 N = 0;
+		for (const int32 I : Order)
+		{
+			if (N >= SampleHeldMax) break;
+			int32& In = PerRoom.FindOrAdd(RoomOf[I]);
+			if (In >= SampleHeldPerRoom) continue;
+			++In;
+			++N;
+		}
+		return N;
+	};
+	const auto RoomsWhere = [&](TFunctionRef<bool(int32 Room)> Keep)
+	{
+		TSet<int32> Out;
+		for (int32 Tile = 0; Tile < SheetPlan->tiles.Num(); ++Tile) if (TileRoom.IsValidIndex(Tile) && SheetPlan->rooms.IsValidIndex(TileRoom[Tile]) && Keep(TileRoom[Tile])) Out.Add(TileRoom[Tile]);
+		return Out;
+	};
+	TSet<FString> Lines;
+	const auto Log = [&](const FString& Scope, const TSet<int32>& In)
+	{
+		const int32 N = Held(In);
+		const FString Id = FString::Printf(TEXT("scan-done-%s-%s"), *CountWord(In.Num()), *CountWord(N));
+		Lines.Add(Id);
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: lines %s: %d rooms, %d land -> %s"), *Scope, In.Num(), N, *Id);
+	};
+	Log(TEXT("site"), RoomsWhere([](int32) { return true; }));
+	for (const FBpPlanWing& Wing : SheetPlan->wings) Log(Wing.id, RoomsWhere([this, &Wing](int32 Room) { return RoomWing.IsValidIndex(Room) && RoomWing[Room] == Wing.id; }));
+	for (int32 Room = 0; Room < SheetPlan->rooms.Num(); ++Room) Log(SheetPlan->rooms[Room].id, RoomsWhere([Room](int32 R) { return R == Room; }));
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: lines needed: %s"), *FString::Join(Lines.Array(), TEXT(" ")));
+}

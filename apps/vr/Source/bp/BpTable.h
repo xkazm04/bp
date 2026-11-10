@@ -1320,6 +1320,9 @@ private:
 		bool bTagged = true;
 		int32 Cell = INDEX_NONE;
 		float RaiseCm = 0.f;
+		/** Wave C1, a finding landing (BpScanTheatre.cpp): seconds into PinLandClock when this pin starts to drop onto its
+		 *  tile (-1: it stands where it is). */
+		float LandDelay = -1.f;
 	};
 	TArray<FPin> PinList;
 	/** The far edge (paper v, cm) of the wing labels the sheet last drew: the risen tags clear it (FE). */
@@ -1865,6 +1868,45 @@ public:
 	int32 OpenDecisionCount() const;
 	/** A scan is walking the table now (a real one or the sample), as ScanBand says it. */
 	bool IsScanRunning() const { return bHasScanOutcome && ScanOutcome.bRunning; }
+	// ---- The scan theatre (BpScanTheatre.cpp, wave C1) ------------------------------------------------------------------
+	/** What a scan the table followed read and found, for the SCAN RESULT sheet and the wrist's band: its rooms and features
+	 *  read, how long, the new findings by severity (0 stop-ship, 1 before release, 2 later), the three most severe (ids,
+	 *  most severe first), and whether it was cancelled or failed. */
+	struct FScanResult
+	{
+		bool bSample = false, bCancelled = false, bFailed = false;
+		FString Lens;
+		FString Place;
+		int32 RoomsRead = 0, RoomsTotal = 0, Features = 0;
+		double Seconds = 0.0;
+		int32 Severity[3] = { 0, 0, 0 };
+		TArray<FString> Top;
+		int32 New = 0;
+	};
+	bool GetScanResult(FScanResult& Out) const { Out = TheatreResult; return bTheatreResult; }
+	/** A result the person has not seen yet (the bar's chip "SCAN DONE · 6 NEW"). */
+	bool IsScanResultWaiting() const { return bTheatreResult && !bTheatreResultSeen; }
+	void ScanResultSeen();
+	/** The bar's chip for a waiting result (empty: none). */
+	FString ScanResultChip() const;
+	/** A finding of the result raised on the site plan (its room up, the lamp beside it). */
+	void ScanResultRaise(const FString& ProposalId);
+	/** The scan being read now, for the SCAN page: the room's name, its n of m, the lens and when it began (world seconds). */
+	struct FScanReading
+	{
+		FString Room;
+		int32 At = 0, Of = 0;
+		FString Lens;
+		double StartedAt = 0.0;
+		bool bSample = false;
+	};
+	bool GetScanReading(FScanReading& Out) const;
+	/** A finding's severity as the result counts it: 0 stop-ship, 1 before release, 2 later. */
+	static int32 ScanSeverity(const struct FBpProposal& Proposal, const int32* Tier);
+	/** A result in one line (the wrist's band, the bar): what it read, then what it found by severity. */
+	static FString ScanResultWords(const FScanResult& Result);
+	/** BpScan.TheatreLines: every sample scope's rooms and landings, logged (the clips tour-voice.ts --scan renders). */
+	void LogTheatreLines() const;
 	/** The stand-up's place (BpStandup.cpp, night two W2b): the plan follows the deck. A card about a feature, a room or a wing
 	 *  raises its room (or wing) on the site plan (out of room mode and home first) and the lamp goes beside it; Line, when given,
 	 *  is said on its caption. Kind empty: the highlight clears and the lamp goes home. Returns the room raised (empty: none). */
@@ -1878,6 +1920,73 @@ public:
 	/** A room's id by its name on this plan (the deck's lines name rooms), empty when none has it. */
 	FString StandupRoomByName(const FString& Name) const;
 private:
+	/** The room the sample walk read last (a room change starts the lamp's flight and caption). */
+	int32 SampleRoomAt = INDEX_NONE;
+	int32 SampleRoomsEntered = 0;
+	bool bSampleRestart = false;
+
+	// ---- The scan theatre's state (BpScanTheatre.cpp, wave C1): nothing here ticks at rest ---------------------------
+	/** A scan the theatre follows is running (the sample's walk, or the first running measure job), its key (the job id or
+	 *  "sample"), its lens and place words, when it began (world seconds), the room being read and how many rooms it has
+	 *  entered of how many in scope. */
+	bool bTheatre = false;
+	bool bTheatreSample = false;
+	FString TheatreKey;
+	FString TheatreLens;
+	FString TheatrePlace;
+	double TheatreStartedAt = 0.0;
+	int32 TheatreRoom = INDEX_NONE;
+	int32 TheatreRoomAt = 0;
+	int32 TheatreRoomsOf = 0;
+	/** The lamp works for the scan (it does not go home idle); a room change it has not flown to yet because the person
+	 *  has the lamp (a talk, an ask, the stand-up): it catches up after. */
+	bool bTheatreLamp = false;
+	int32 TheatreLampOwed = INDEX_NONE;
+	/** The lamp's light in the lens's colour while it reads (BpLampLook.cpp's sixth state). */
+	FLinearColor TheatreTint = FLinearColor::White;
+	/** The ScanTint last written to MPC_BpScan. */
+	FLinearColor ScanTintShown = FLinearColor(-1.f, -1.f, -1.f, -1.f);
+	/** A line waiting for the lamp's voice to be free: its clip id (the bundle), or its words for the PC's say (linked),
+	 *  and when it was asked for (FPlatformTime seconds; dropped when more than 10 s stale). */
+	FString TheatreVoiceClip;
+	FString TheatreVoiceSay;
+	double TheatreVoiceAt = -1.0;
+	FTimerHandle TheatreTimer;
+	TMap<FString, TArray<uint8>> ScanClips;
+	FScanResult TheatreResult;
+	bool bTheatreResult = false;
+	bool bTheatreResultSeen = true;
+	double TheatreEndedAt = -1.0;
+	/** The sample's scripted findings: open findings held back from the pins at the walk's start (their room), landed as
+	 *  the walk leaves their room; nothing is written. */
+	TMap<FString, int32> ScanHeld;
+	TArray<FString> TheatreLanded;
+	/** The open findings the pins showed last (a new one lands, while a scan runs or just ended); none before the first. */
+	TSet<FString> PinsKnownOpen;
+	bool bPinsPrimed = false;
+	bool bPinsNoLand = false;
+	/** Seconds since the landing began (-1: none in motion). */
+	float PinLandClock = -1.f;
+	void TheatreBegin(bool bSample, const FString& Key, const FString& Lens, const FString& PlaceWords, const FString& ScopeWords, int32 RoomsOf, bool bSpeak = true);
+	/** A pin's landing now: how far over its tile it still is (cm) and whether it shows yet (0 before its turn). */
+	float PinLandOffset(const FPin& Pin, float& OutShow) const;
+	/** BuildPins's new findings on these tiles (in arrival order) start to land. */
+	void NoteArrivals(const TArray<int32>& ArrivedTiles);
+	/** New findings land now (a scan runs or just ended, not reduced motion, not the first read). */
+	bool LandingsWanted() const;
+	/** The live result is read a moment after the job ends (the store's last rows). */
+	FTimerHandle TheatreEndTimer;
+	void TheatreReading(int32 Room, int32 At, int32 Of);
+	void TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet);
+	void TheatreFly(int32 Room);
+	void TheatreVoice(const FString& Clip, const FString& Say);
+	void TheatrePump();
+	bool TheatrePersonHasLamp() const;
+	bool TickScanTheatre(float DeltaSeconds);
+	void HoldSampleFindings();
+	void LandHeld(int32 Room);
+	void FinishTheatreResult(bool bCancelled, bool bFailed);
+	void OfferScanResult();
 	/** The talk's state (BpTalk.cpp): made at the first hold, never ticked while idle. */
 	TSharedPtr<struct FBpTalkState> Talk;
 	bool TickTalk(float DeltaSeconds);

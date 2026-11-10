@@ -34,6 +34,10 @@ namespace BpTourBook
 	};
 
 	const TArray<FLine>& Lines();
+	/** Wave C1, the scan theatre's spoken lines (BpScanTheatre.cpp; tour-voice.ts --scan renders them into voice/scan/): the
+	 *  start per scope kind, the sample's results at the counts it lands (BpScan.TheatreLines lists them), and the generic
+	 *  ones for any other count. */
+	const TArray<FLine>& ScanLines();
 	/** The core tour's steps in order (each id is also its line's id). */
 	const TArray<const TCHAR*>& Core();
 	const TArray<FChapter>& Chapters();

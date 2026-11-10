@@ -10,6 +10,7 @@
 #include "BpLink.h"
 #include "BpType.h"
 #include "BpWords.h"
+#include "Schema/BpSchemaVocab.h"
 #include "CanvasItem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -31,6 +32,7 @@
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
+#include "TimerManager.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -386,7 +388,22 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 			bScanReplay = false;
 			SetScanPlace(Job->scope.features, Job->scope.kind == TEXT("all"));
 			UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s lens=%s scope=%s:%s features=%d"), *Job->id, *Job->lens, *Job->scope.kind, *Job->scope.id, Job->scope.features.Num());
-			PresentScanPlace(TEXT("scan"));
+			// Wave C1: the theatre follows it (the lamp to each room, captions, the start said when it has just begun: a scan
+			// that began before this table looked is followed but not announced, and lands nothing retroactively).
+			GetWorldTimerManager().ClearTimer(TheatreEndTimer);
+			if (bTheatre && !bTheatreSample) TheatreEnd(true, false, true);
+			TSet<int32> ScopeRooms;
+			const TSet<FString> Want(Job->scope.features);
+			const bool bAllScope = Job->scope.kind == BpVocab::ScanScope::Kind::All;
+			for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
+			{
+				if ((bAllScope || Want.Contains(SheetPlan->tiles[Index].id)) && TileRoom.IsValidIndex(Index) && SheetPlan->rooms.IsValidIndex(TileRoom[Index])) ScopeRooms.Add(TileRoom[Index]);
+			}
+			FDateTime Began;
+			const bool bFresh = FDateTime::ParseIso8601(*(Job->started_at.IsEmpty() ? Job->queued_at : Job->started_at), Began) && (FDateTime::UtcNow() - Began).GetTotalSeconds() < 20.0;
+			const FString ScopeWords = bAllScope ? FString(TEXT("everything")) : Job->scope.kind == BpVocab::ScanScope::Kind::Wing ? FString(TEXT("this wing")) : Job->scope.kind == BpVocab::ScanScope::Kind::Room ? FString(TEXT("this room")) : FString(TEXT("this place"));
+			TheatreBegin(false, Job->id, Job->lens, Job->scope.label.IsEmpty() ? FString(TEXT("Everything")) : Job->scope.label, ScopeWords, ScopeRooms.Num(), bFresh);
+			if (!bTheatre) PresentScanPlace(TEXT("scan"));
 		}
 		ScanRun = Job->run_id;
 		// The feature being read: the run's latest reading or measured row (blueprint-ui.md, Views: "current").
@@ -405,6 +422,21 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 				const double Target = Box.y + Box.h * (Current->kind == TEXT("measured") ? 1.0 : 0.5);
 				if (Target != ScanTargetY) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan current=%s (%s)"), *Current->feature, *Current->kind);
 				ScanTargetY = Target;
+				// The theatre: the room being read, and how many rooms the run has entered (its rows in order).
+				if (bTheatre && TileRoom.IsValidIndex(Tile))
+				{
+					TArray<int32> Entered;
+					TArray<const FBpActivity*> Rows;
+					for (const FBpActivity& Row : State.Scan.activity) if (Row.run_id == ScanRun && !Row.feature.IsEmpty() && (Row.kind == BpVocab::Activity::Kind::Reading || Row.kind == BpVocab::Activity::Kind::Measured)) Rows.Add(&Row);
+					Rows.Sort([](const FBpActivity& A, const FBpActivity& B) { return A.id < B.id; });
+					for (const FBpActivity* Row : Rows)
+					{
+						const int32 At = SheetPlan->tiles.IndexOfByPredicate([Row](const FBpPlanTile& T) { return T.id == Row->feature; });
+						if (At != INDEX_NONE && TileRoom.IsValidIndex(At)) Entered.AddUnique(TileRoom[At]);
+					}
+					const int32 Room = TileRoom[Tile];
+					TheatreReading(Room, Entered.Find(Room) + 1, TheatreRoomsOf);
+				}
 			}
 		}
 		bScanLive = ScanPlanBox.bIsValid;
@@ -412,8 +444,24 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 	else if (!bScanReplay && !bScanSample)
 	{
 		if (bScanLive) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s ended"), *ScanJob);
+		// The theatre's result, a moment later (the store's last rows: a directed run writes its findings near its end).
+		if (bTheatre && !bTheatreSample && !ScanJob.IsEmpty() && !GetWorldTimerManager().IsTimerActive(TheatreEndTimer))
+		{
+			const FBpScanJob* Ended = State.Jobs.FindByPredicate([this](const FBpScanJob& J) { return J.id == ScanJob; });
+			const bool bFailed = Ended && Ended->status == BpVocab::ScanJob::Status::Failed;
+			const bool bCancelled = !Ended || Ended->status == BpVocab::ScanJob::Status::Cancelled;
+			UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s left running (%s); the result in %.0f s"), *ScanJob, Ended ? *Ended->status : TEXT("gone"), 2.0);
+			GetWorldTimerManager().SetTimer(TheatreEndTimer, FTimerDelegate::CreateWeakLambda(this, [this, bFailed, bCancelled]() { TheatreEnd(bCancelled, bFailed, false); }), 2.f, false);
+		}
 		bScanLive = false;
 		ScanJob.Reset();
+	}
+	// A real scan's result stays true to the store for a minute after it ends: findings written late are counted.
+	if (bTheatreResult && !TheatreResult.bSample && TheatreEndedAt > 0.0 && GetWorld()->GetTimeSeconds() - TheatreEndedAt < 60.0)
+	{
+		const int32 Was = TheatreResult.New;
+		FinishTheatreResult(TheatreResult.bCancelled, TheatreResult.bFailed);
+		if (TheatreResult.New != Was) { UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the result now counts %d new"), TheatreResult.New); ScanBandChanged.Broadcast(); }
 	}
 	if (bScanLive || ScanStrength > 0.f) SetActorTickInterval(0.f);
 	if (bCardShown) RefreshCard();
@@ -436,15 +484,21 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	TMap<int32, int32> PinOfTile;
 	FString Key;
 	int32 Open = 0, Triaged = 0;
+	// Wave C1: a finding the pins did not show last time lands (while a scan runs or just ended); the sample's held ones wait.
+	const bool bLand = LandingsWanted();
+	TArray<int32> Arrived;
+	TSet<FString> ShownOpen;
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
-		if (!IsOpen(Proposal)) continue;
+		if (!IsOpen(Proposal) || ScanHeld.Contains(Proposal.id)) continue;
 		++Open;
+		ShownOpen.Add(Proposal.id);
 		const int32* HasTier = State.Tiers.Find(Proposal.id);
 		Triaged += HasTier ? 1 : 0;
 		Key += Proposal.id + (HasTier ? FString::Printf(TEXT(":%d,"), *HasTier) : FString(TEXT(",")));
 		const int32* Tile = TileOf.Find(Proposal.feature);
 		if (!Tile) continue;
+		if (bLand && !PinsKnownOpen.Contains(Proposal.id)) Arrived.AddUnique(*Tile);
 		FPin Pin;
 		Pin.Line1 = Proposal.id.ToUpper();
 		Pin.Tier = HasTier ? *HasTier : -1;
@@ -553,6 +607,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			Pin.Line2 = { Risk + More, Risk };
 		}
 	}
+	PinsKnownOpen = MoveTemp(ShownOpen);
+	bPinsPrimed = true;
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule tier<=T%d (untriaged: risk>=%d), %d per %.0f cm of wing inside the table: tags=%d of %d pins, merged=%d (tags that would overlap from the target eye), capped=%d, outside=%d; open=%d triaged=%d"),
 		PinTagTierMax, PinTagRiskMin, PinTagsPerWing, PinTagWingCm, Cells, Next.Num(), Merged, Capped, Outside, Open, Triaged);
@@ -586,6 +642,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
 	PlacePins();
+	NoteArrivals(Arrived);
 	// The wing labels slide off the new stems (SlideOffStems).
 	RedrawSheet();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
@@ -700,7 +757,7 @@ void ABpTable::PlacePins()
 	if (!SheetPlan.IsValid() || PinList.Num() == 0) return;
 	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces, HaloPlaces;
 	// Room mode: the site's pins and tags shrink away as the room's map comes in (a hidden batch would lose its custom data).
-	const double Site = SiteShow();
+	const double SiteAll = SiteShow();
 	for (const FPin& Pin : PinList)
 	{
 		const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
@@ -708,7 +765,10 @@ void ABpTable::PlacePins()
 		// On its tile: the paper at rest, the lifted room's tile top when its room is up.
 		const float Rise = RoomRiseEase(Pin.Room);
 		const FString* Reading = Tile.health.Find(ActiveLens);
-		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
+		// Wave C1: a landing pin is still over its tile, or not yet shown (BpScanTheatre.cpp).
+		float LandShow = 1.f;
+		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString()) + PinLandOffset(Pin, LandShow);
+		const double Site = SiteAll * LandShow;
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
 		// The plan's marker: a flat square on the paper (the cube's scale is cm / 100), a hair above it so it never fights the paper.
@@ -995,6 +1055,17 @@ void ABpTable::WriteScanParams(float Strength)
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanAxis"), FLinearColor(Axis.X, Axis.Y, Axis.Z, Strength));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanSide"), FLinearColor(Side.X, Side.Y, Side.Z, HalfLength));
+	// Wave C1: the line is the lamp's light, in the lens's colour while the theatre follows a scan (the collection's ScanTint,
+	// c1_scan_tint.py; its default is the line's own cyan). A collection without it is left alone.
+	if (ScanParams->GetVectorParameterByName(TEXT("ScanTint")))
+	{
+		const FLinearColor Tint = bTheatre ? TheatreTint : FLinearColor(0.0395f, 0.5776f, 1.f, 1.f);
+		if (!Tint.Equals(ScanTintShown))
+		{
+			ScanTintShown = Tint;
+			UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanTint"), Tint);
+		}
+	}
 	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it. The Quest
 	// tier (BpTier.h) draws the line alone: no second translucent sheet over the paper.
 	if (ScanVeil && ScanVeilMid)

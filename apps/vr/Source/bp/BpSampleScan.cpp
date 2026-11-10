@@ -60,7 +60,10 @@ bool ABpTable::StartSampleScan(const FString& FocusId, const FString& InTarget, 
 		if (TileRoom[A] != TileRoom[B]) return TileRoom[A] < TileRoom[B];
 		return SheetPlan->tiles[A].box.y < SheetPlan->tiles[B].box.y;
 	});
+	// A walk replaced by a new one ends quietly (no "stopped" result for it).
+	bSampleRestart = true;
 	EndSampleScan();
+	bSampleRestart = false;
 	SampleTiles = MoveTemp(Walk);
 	SampleAt = 0;
 	SampleLens = Focus->Lens;
@@ -79,8 +82,16 @@ bool ABpTable::StartSampleScan(const FString& FocusId, const FString& InTarget, 
 	const float Step = FMath::Min(FMath::Clamp(CVarSampleStep.GetValueOnGameThread(), 0.05f, 3.f), FMath::Clamp(CVarSampleMax.GetValueOnGameThread(), 5.f, 300.f) / SampleTiles.Num());
 	GetWorldTimerManager().SetTimer(SampleTimer, this, &ABpTable::StepSampleScan, Step, true, Step);
 	UE_LOG(LogBpTable, Log, TEXT("BpSample: walking %s for %s (%d features, one per %.2f s); no request is made"), bSite ? TEXT("the site") : *Label, *SampleLens, SampleTiles.Num(), Step);
-	// The lamp goes to the place being walked.
-	PresentScanPlace(TEXT("sample scan"));
+	// Wave C1, the theatre: up to six of the bundle's open findings in scope are held back from the pins and land as the walk
+	// leaves their rooms (nothing is written); the lamp follows the walk room to room and says its start and its result.
+	SampleRoomAt = INDEX_NONE;
+	SampleRoomsEntered = 0;
+	HoldSampleFindings();
+	TSet<int32> InScope;
+	for (int32 Tile : SampleTiles) InScope.Add(TileRoom[Tile]);
+	TheatreBegin(true, TEXT("sample"), SampleLens, bSite ? FString(TEXT("Everything")) : Label, DirectedScope(Target), InScope.Num());
+	// Without the theatre (bp.ScanTheatre 0) the lamp goes to the place being walked, as before.
+	if (!bTheatre) PresentScanPlace(TEXT("sample scan"));
 	// The first step's row and marks now, not one step later.
 	SampleAt = -1;
 	StepSampleScan();
@@ -97,6 +108,14 @@ void ABpTable::StepSampleScan()
 	}
 	++SampleAt;
 	const bool bEnd = SampleAt >= SampleTiles.Num();
+	// The theatre: a room left lands its held findings; a room entered moves the lamp and its caption.
+	const int32 RoomNow = bEnd ? INDEX_NONE : TileRoom[SampleTiles[SampleAt]];
+	if (RoomNow != SampleRoomAt)
+	{
+		if (SampleRoomAt != INDEX_NONE) LandHeld(SampleRoomAt);
+		SampleRoomAt = RoomNow;
+		if (RoomNow != INDEX_NONE) ++SampleRoomsEntered;
+	}
 	if (bEnd)
 	{
 		// Every feature read: the ticks, the title block's "m rooms read" for the linger, then nothing.
@@ -125,18 +144,53 @@ void ABpTable::StepSampleScan()
 		bEnd ? FString::Printf(TEXT("%d %s read"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms"))
 			: FString::Printf(TEXT("%d of %d %s  ·  %s"), Outcome.RoomsRead, Outcome.RoomsTotal, Outcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"), *SampleFocus.Replace(TEXT("\n"), TEXT(" "))));
 	RefreshScanMarks();
-	if (bEnd) UE_LOG(LogBpTable, Log, TEXT("BpSample: finished: %d %s read (a sample: nothing was read or written)"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms"));
+	if (RoomNow != INDEX_NONE) TheatreReading(RoomNow, SampleRoomsEntered, Outcome.RoomsTotal);
+	if (bEnd)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpSample: finished: %d %s read (a sample: nothing was read or written)"), Outcome.RoomsRead, Outcome.RoomsRead == 1 ? TEXT("room") : TEXT("rooms"));
+		LandHeld(INDEX_NONE);
+		TheatreEnd(false, false, false);
+	}
 }
 
 void ABpTable::EndSampleScan()
 {
 	if (GetWorld()) GetWorldTimerManager().ClearTimer(SampleTimer);
 	if (!bScanSample) return;
+	// Stopped part way (CANCEL, the tour putting the table back, a server found): the theatre says so, unless the tour did it.
+	const bool bCancelled = !bSampleDone;
+	const bool bQuiet = bCancelled && (bSampleRestart || TourStep >= 0 || !TourChapter.IsEmpty());
+	if (bCancelled && bTheatre && bTheatreSample) TheatreEnd(true, false, bQuiet);
 	bScanSample = bSampleDone = false;
 	bScanLive = false;
 	SampleTiles.Reset();
+	SampleRoomAt = INDEX_NONE;
+	// The held findings come back as they were (no landing): the sample wrote nothing.
+	if (ScanHeld.Num() > 0)
+	{
+		ScanHeld.Reset();
+		bPinsNoLand = true;
+		BuildPins(FBpLinkModule::Get().GetScanState());
+		bPinsNoLand = false;
+	}
 	SetScanStatus(FString(), FString());
 	RefreshScanMarks();
+	// The running state leaves every surface at once (the bar's and the wrist's "Sample scan 1 of 13" stayed after a cancel):
+	// the band says what it read, or nothing after the tour's own walk.
+	if (bHasScanOutcome && ScanOutcome.bSample)
+	{
+		if (bQuiet)
+		{
+			bHasScanOutcome = false;
+			ScanBandChanged.Broadcast();
+		}
+		else if (ScanOutcome.bRunning)
+		{
+			FScanOutcome Stopped = ScanOutcome;
+			Stopped.bRunning = false;
+			SetScanOutcome(Stopped);
+		}
+	}
 }
 
 void ABpTable::SampleMarks(TMap<int32, FScanRoomMark>& OutMarks) const
@@ -194,8 +248,15 @@ void ABpTable::ScanBand(FString& Head, FString& Body) const
 	if (ScanOutcome.bSample)
 	{
 		Head = FString::Printf(TEXT("SAMPLE SCAN · %s"), *Lens.ToUpper());
+		FScanReading Reading;
+		if (ScanOutcome.bRunning && GetScanReading(Reading) && !Reading.Room.IsEmpty())
+		{
+			Body = FString::Printf(TEXT("Reading %s · room %d of %d · nothing is read or written"), *Reading.Room, Reading.At, Reading.Of);
+			return;
+		}
 		Body = ScanOutcome.bRunning ? FString::Printf(TEXT("%d of %d %s · nothing is read or written"), ScanOutcome.RoomsRead, ScanOutcome.RoomsTotal, ScanOutcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"))
-			: FString::Printf(TEXT("%s. A sample finds nothing: a room's deck holds the findings it already has."), *RoomsRead);
+			: bTheatreResult ? ScanResultWords(TheatreResult) : FString::Printf(TEXT("%s. A sample writes nothing."), *RoomsRead);
+		if (!ScanOutcome.bRunning && bTheatreResult) Head = FString::Printf(TEXT("%s · %s"), TheatreResult.bCancelled ? TEXT("SAMPLE SCAN STOPPED") : TEXT("SAMPLE SCAN DONE"), *Lens.ToUpper());
 		return;
 	}
 	if (ScanOutcome.bRunning && ScanOutcome.Readers > 1)
@@ -209,9 +270,17 @@ void ABpTable::ScanBand(FString& Head, FString& Body) const
 	if (ScanOutcome.bRunning)
 	{
 		Body = FString::Printf(TEXT("%d of %d %s"), ScanOutcome.RoomsRead, ScanOutcome.RoomsTotal, ScanOutcome.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"));
+		FScanReading Reading;
+		if (GetScanReading(Reading) && !Reading.Room.IsEmpty()) Body = FString::Printf(TEXT("Reading %s · %s read"), *Reading.Room, *Body);
 		return;
 	}
 	Body = RoomsRead;
+	if (bTheatreResult && !TheatreResult.bSample)
+	{
+		Head = FString::Printf(TEXT("%s · %s"), TheatreResult.bFailed ? TEXT("SCAN FAILED") : TheatreResult.bCancelled ? TEXT("SCAN STOPPED") : TEXT("SCAN DONE"), *Lens.ToUpper());
+		Body = ScanResultWords(TheatreResult);
+		return;
+	}
 	// What it produced, when the store has the run's rows: a real count, never invented; zero is "yet", the store may still be filling.
 	if (!ScanOutcome.RunId.IsEmpty())
 	{
@@ -219,4 +288,17 @@ void ABpTable::ScanBand(FString& Head, FString& Body) const
 		for (const FBpProposal& P : FBpLinkModule::Get().GetScanState().Scan.proposals) Findings += P.run_id == ScanOutcome.RunId ? 1 : 0;
 		Body += Findings > 0 ? FString::Printf(TEXT(" · %d %s"), Findings, Findings == 1 ? TEXT("finding") : TEXT("findings")) : FString(TEXT(" · 0 findings yet"));
 	}
+}
+
+FString ABpTable::ScanResultWords(const FScanResult& R)
+{
+	TArray<FString> Kinds;
+	static const TCHAR* const Words[3] = { TEXT("stop-ship"), TEXT("before release"), TEXT("later") };
+	for (int32 S = 0; S < 3; ++S) if (R.Severity[S] > 0) Kinds.Add(FString::Printf(TEXT("%d %s"), R.Severity[S], Words[S]));
+	const FString Found = R.New == 0 ? FString(TEXT("nothing new")) : FString::Printf(TEXT("%d new: %s"), R.New, *FString::Join(Kinds, TEXT(", ")));
+	if (R.bCancelled || R.bFailed)
+	{
+		return FString::Printf(TEXT("%s after %d of %d %s read · %s"), R.bFailed ? TEXT("Failed") : TEXT("Stopped"), R.RoomsRead, R.RoomsTotal, R.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"), *Found);
+	}
+	return FString::Printf(TEXT("%d %s read · %s"), R.RoomsRead, R.RoomsRead == 1 ? TEXT("room") : TEXT("rooms"), *Found);
 }

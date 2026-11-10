@@ -52,6 +52,8 @@ struct FBpConsoleRow
 	};
 	/** Buttons at the right instead of a press of the whole row: a value's minus and plus, a toggle's state. */
 	TArray<FButton> Buttons;
+	/** Wave C1: tone 6, the room a scan reads now: its name large, its Detail small and its Tag (the lens) a chip in Ink. */
+	FLinearColor Ink = FLinearColor::Transparent;
 };
 
 /** One page: what HOME's tile and the title call it, how it fills its rows, what it does when it opens, and how it takes a
@@ -185,6 +187,9 @@ struct FBpConsolePages
 		// ACCESSIBILITY (night two V4): SETTINGS' first row opens it, never a HOME tile.
 		static const FBpConsolePage Access = { TEXT("access"), TEXT("ACCESSIBILITY"), TEXT("G"), &AccessRows, &AccessSummary, nullptr, nullptr };
 		if (Key == Access.Key) return &Access;
+		// SCAN RESULT (wave C1): opened by a scan's end (BpScanTheatre.cpp), the bar's chip or the wrist's band; never a HOME tile.
+		static const FBpConsolePage Result = { TEXT("scanresult"), TEXT("SCAN RESULT"), TEXT("B"), &ResultRows, &ResultSummary, &ResultOpen, &ResultTap };
+		if (Key == Result.Key) return &Result;
 		return Registry().FindByPredicate([&Key](const FBpConsolePage& Page) { return Key == Page.Key; });
 	}
 
@@ -422,6 +427,7 @@ struct FBpConsolePages
 			if (T) T->ScanBand(Head, Body);
 			if (!Head.IsEmpty() && T && T->IsScanRunning())
 			{
+				ReadingRow(*T, Out);
 				FBpConsoleRow Row;
 				Row.Label = Head;
 				Row.Detail = Body;
@@ -434,6 +440,7 @@ struct FBpConsolePages
 		else
 		{
 			const int32 Tiles = T && T->HasPlan() ? T->PlanTileCount() : 0;
+			if (T && Running > 0) ReadingRow(*T, Out);
 			for (const FBpScanJob* Job : Jobs)
 			{
 				const bool bRunning = Job->status == BpVocab::ScanJob::Status::Running, bQueued = Job->status == BpVocab::ScanJob::Status::Queued;
@@ -496,6 +503,105 @@ struct FBpConsolePages
 		}
 	}
 	static constexpr int32 ScanFeedRows = 6;
+	/** Wave C1: the running scan's life on the SCAN page: the room being read named large with its n of m, the clock, and the
+	 *  lens as a chip in its colour. */
+	static void ReadingRow(ABpTable& T, TArray<FBpConsoleRow>& Out)
+	{
+		ABpTable::FScanReading Reading;
+		if (!T.GetScanReading(Reading) || Reading.Room.IsEmpty()) return;
+		FBpConsoleRow Row;
+		Row.Tone = 6;
+		Row.Label = Reading.Room;
+		const double Since = T.GetWorld() ? T.GetWorld()->GetTimeSeconds() - Reading.StartedAt : 0.0;
+		Row.Detail = FString::Printf(TEXT("READING · ROOM %d OF %d · %s"), Reading.At, Reading.Of, *Clock(Since));
+		Row.Tag = BpWords::Lens(Reading.Lens).ToUpper();
+		const FString* Hex = FBpLinkModule::Get().FindLensAccent(Reading.Lens);
+		Row.Ink = Hex && Hex->StartsWith(TEXT("#")) && Hex->Len() >= 7 ? FLinearColor::FromSRGBColor(FColor::FromHex(*Hex)) : BpSheet::Accent;
+		Out.Add(Row);
+	}
+
+	// SCAN RESULT (wave C1): what the scan read and found, the three most severe as rows that raise their room, DECIDE THEM
+	// (the stand-up) and CLOSE. A cancelled or failed scan says so with what it read before it stopped.
+	static void ResultOpen(ABpPawn& Pawn) { if (ABpTable* T = Table(Pawn)) T->ScanResultSeen(); }
+	static FString ResultSummary(ABpPawn& Pawn)
+	{
+		ABpTable::FScanResult R;
+		ABpTable* T = Table(Pawn);
+		return T && T->GetScanResult(R) ? ABpTable::ScanResultWords(R) : FString(TEXT("No scan has ended here yet"));
+	}
+	static void ResultRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
+	{
+		ABpTable* T = Table(Pawn);
+		ABpTable::FScanResult R;
+		if (!T || !T->GetScanResult(R))
+		{
+			Sub = TEXT("No scan has ended here yet");
+			Out.Add(Note(TEXT("Start one on the SCAN page: the lamp follows it room by room, and its result opens here.")));
+			return;
+		}
+		const FString Lens = BpWords::Lens(R.Lens);
+		Sub = FString::Printf(TEXT("%s · %s · %s%s"), *R.Place, *Lens, *Clock(R.Seconds), R.bSample ? TEXT(" · a sample: nothing was read or written") : TEXT(""));
+		{
+			// What it read and what it found, one row: the rooms and features (or where it stopped), then the new findings by
+			// severity as chips (a chip raises the first of its kind).
+			FBpConsoleRow Row;
+			const FString Found = R.New == 0 ? FString(TEXT("nothing new")) : FString::Printf(TEXT("%d new %s"), R.New, R.New == 1 ? TEXT("finding") : TEXT("findings"));
+			Row.Label = R.bFailed || R.bCancelled ? FString::Printf(TEXT("%s after %d of %d %s · %s"), R.bFailed ? TEXT("Failed") : TEXT("Stopped"), R.RoomsRead, R.RoomsTotal, R.RoomsTotal == 1 ? TEXT("room") : TEXT("rooms"), *Found)
+				: FString::Printf(TEXT("%d %s read · %s"), R.RoomsRead, R.RoomsRead == 1 ? TEXT("room") : TEXT("rooms"), *Found);
+			Row.Detail = FString::Printf(TEXT("%d %s in %s%s"), R.Features, R.Features == 1 ? TEXT("feature") : TEXT("features"), *Clock(R.Seconds), R.New == 0 ? TEXT(" · the rooms keep what they had") : TEXT(""));
+			Row.Tone = R.bFailed || R.bCancelled ? 3 : 1;
+			static const TCHAR* const Words[3] = { TEXT("STOP-SHIP"), TEXT("BEFORE RELEASE"), TEXT("LATER") };
+			for (int32 S = 0; S < 3; ++S) if (R.Severity[S] > 0) Row.Buttons.Add({ FString::Printf(TEXT("%s %d"), Words[S], R.Severity[S]), FString::Printf(TEXT("result:sev:%d"), S), S == 0 });
+			if (Row.Buttons.Num() == 0) Row.Tag = R.bFailed ? TEXT("FAILED") : R.bCancelled ? TEXT("STOPPED") : TEXT("DONE");
+			Out.Add(Row);
+		}
+		// The three most severe: a press raises the finding's room on the plan and the lamp goes beside it.
+		const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+		for (const FString& Id : R.Top)
+		{
+			const FBpProposal* P = State.Scan.proposals.FindByPredicate([&Id](const FBpProposal& Each) { return Each.id == Id; });
+			if (!P) continue;
+			const int32 Sev = ABpTable::ScanSeverity(*P, State.Tiers.Find(Id));
+			FBpConsoleRow Row;
+			Row.Act = TEXT("result:raise:") + Id;
+			Row.Label = P->title.IsEmpty() ? P->id : P->title;
+			const FString Room = T->StandupRoomOf(P->feature);
+			Row.Detail = FString::Printf(TEXT("%s · %s"), Room.IsEmpty() ? *P->feature : *T->StandupPlaceName(Room), *BpWords::Lens(P->lens));
+			Row.Tag = Sev == 0 ? TEXT("STOP-SHIP") : Sev == 1 ? TEXT("BEFORE RELEASE") : TEXT("LATER");
+			Row.Tone = Sev == 0 ? 3 : Sev == 1 ? 2 : 0;
+			Out.Add(Row);
+		}
+		FBpConsoleRow Act;
+		Act.Label = R.New > 0 ? FString(TEXT("Decide them")) : FString(TEXT("Nothing to decide"));
+		Act.Detail = R.New > 0 ? FString(TEXT("The stand-up, one decision at a time")) : FString(TEXT("CLOSE puts the menu back to its bar"));
+		if (R.New > 0) Act.Buttons.Add({ TEXT("DECIDE THEM"), TEXT("result:decide"), true });
+		Act.Buttons.Add({ TEXT("CLOSE"), TEXT("result:close") });
+		Out.Add(Act);
+	}
+	static bool ResultTap(ABpPawn& Pawn, const FString& Act)
+	{
+		ABpTable* T = Table(Pawn);
+		if (!T || !Act.StartsWith(TEXT("result:"))) return false;
+		ABpTable::FScanResult R;
+		T->GetScanResult(R);
+		T->ScanResultSeen();
+		if (Act == TEXT("result:close")) { Pawn.CloseConsole(); return true; }
+		if (Act == TEXT("result:decide")) { Pawn.OpenConsole(TEXT("standup")); return true; }
+		if (Act.StartsWith(TEXT("result:raise:"))) { T->ScanResultRaise(Act.Mid(13)); return true; }
+		if (Act.StartsWith(TEXT("result:sev:")))
+		{
+			// The first finding of that severity among the result's rows.
+			const int32 Want = FCString::Atoi(*Act.Mid(11));
+			const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+			for (const FString& Id : R.Top)
+			{
+				const FBpProposal* P = State.Scan.proposals.FindByPredicate([&Id](const FBpProposal& Each) { return Each.id == Id; });
+				if (P && ABpTable::ScanSeverity(*P, State.Tiers.Find(Id)) == Want) { T->ScanResultRaise(Id); break; }
+			}
+			return true;
+		}
+		return false;
+	}
 	static FString ScanSummary(ABpPawn&)
 	{
 		const FBpLinkModule& Link = FBpLinkModule::Get();
@@ -1130,7 +1236,9 @@ void ABpPawn::RefreshConsole()
 	const FString Handed = StandupBarStatus();
 	// Wave T1: while a tour runs, STOP TOUR takes SHOW ON PC's place on the bar (B or STOP TOUR ends it, dismissed).
 	const bool bTourRun = Table->HasPlan() && Table->IsTourRunning();
-	const bool bShowPc = Table->HasPlan() && Link.HasPcLink() && Handed.IsEmpty() && !bTourRun;
+	// Wave C1: a scan's result not yet seen waits as a chip on the bar ("SCAN DONE · 6 NEW"); a tap opens it.
+	const FString ResultChip = Table->ScanResultChip();
+	const bool bShowPc = Table->HasPlan() && Link.HasPcLink() && Handed.IsEmpty() && !bTourRun && ResultChip.IsEmpty();
 	const FString Status = !ConsoleBarWords.IsEmpty() && FPlatformTime::Seconds() < ConsoleBarWordsUntil ? ConsoleBarWords : !Handed.IsEmpty() ? Handed : ConsoleStatus();
 
 	// What it shows, as words: the redraw key.
@@ -1144,7 +1252,7 @@ void ABpPawn::RefreshConsole()
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
 	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
-	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun);
+	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d|res%s"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun, *ResultChip);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -1208,20 +1316,22 @@ void ABpPawn::RefreshConsole()
 		Button(FBox2f(FVector2f(14.f, Y0), FVector2f(214.f, Y1)), TEXT("MENU"), EBtn::Fill, TEXT("menu"), Font(TEXT("Bold"), CapBar));
 		const float BackW = bCanBack ? 200.f : 0.f;
 		if (bCanBack) Button(FBox2f(FVector2f(LW - 14.f - BackW, Y0), FVector2f(LW - 14.f, Y1)), TEXT("‹  BACK"), EBtn::Edge, TEXT("bar:back"), Font(TEXT("Bold"), CapBar));
-		const bool bTakeBack = !Handed.IsEmpty() && !bTourRun;
-		const float PcW = bTourRun ? 210.f : bShowPc || bTakeBack ? 250.f : 0.f;
+		const bool bTakeBack = !Handed.IsEmpty() && !bTourRun && ResultChip.IsEmpty();
+		const bool bResult = !ResultChip.IsEmpty() && !bTourRun;
+		const float PcW = bTourRun ? 210.f : bResult ? FMath::Max(250.f, BpSheet::TextWidth(ResultChip, Font(TEXT("Bold"), CapBar)) + 44.f) : bShowPc || bTakeBack ? 250.f : 0.f;
 		const float PcX1 = LW - 14.f - (bCanBack ? BackW + 12.f : 0.f);
 		if (bShowPc) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("SHOW ON PC"), EBtn::Edge, TEXT("bar:pc"), Font(TEXT("Bold"), CapBar));
 		if (bTakeBack) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("TAKE BACK"), EBtn::Amber, TEXT("standup:revoke"), Font(TEXT("Bold"), CapBar));
 		if (bTourRun) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("STOP TOUR"), EBtn::Edge, TEXT("tour:stop"), Font(TEXT("Bold"), CapBar));
+		if (bResult) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), ResultChip, EBtn::Amber, TEXT("open:scanresult"), Font(TEXT("Bold"), CapBar));
 		// Your room (BpSurround.cpp, night two W4): YOUR ROOM / STUDIO, what surrounds the table now; a tap switches it. Night two
 		// V4: the status is never cut. It takes one line, else two in the 24 px face; when even two will not hold it the ROOM
 		// switch leaves the bar (it stays on SETTINGS › ROOM) and the status has its width.
 		const FSlateFontInfo NameFont = Font(TEXT("Bold"), CapBar), StatusFont = Font(TEXT("Regular"), CapBarStatus), Status2Font = Font(TEXT("Regular"), CapSmall);
 		const float RoomW = 230.f;
-		const float RoomX1 = PcX1 - (bShowPc || bTakeBack || bTourRun ? PcW + 12.f : 0.f);
+		const float RoomX1 = PcX1 - (bShowPc || bTakeBack || bTourRun || bResult ? PcW + 12.f : 0.f);
 		const float TextX = 242.f;
-		const auto TextWFor = [&](bool bRoomBtn) { return LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack || bTourRun ? PcW + 12.f : 0.f) - (bRoomBtn ? RoomW + 12.f : 0.f); };
+		const auto TextWFor = [&](bool bRoomBtn) { return LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack || bTourRun || bResult ? PcW + 12.f : 0.f) - (bRoomBtn ? RoomW + 12.f : 0.f); };
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextWFor(true) * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		const FString Short = Status.Replace(TEXT(" decisions waiting"), TEXT(" waiting")).Replace(TEXT(" decision waiting"), TEXT(" waiting"));
@@ -1426,6 +1536,19 @@ void ABpPawn::RefreshConsole()
 						SNew(SHorizontalBox)
 						+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Spaced)).Font(CodeFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Row.Tag)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
+					continue;
+				}
+				if (Row.Tone == 6)
+				{
+					// Wave C1, the room a scan reads now: its name large, the n of m and the clock small under it, the lens a chip in
+					// its own colour; the row's bar in that colour too.
+					const FSlateFontInfo RoomFont = Font(TEXT("Bold"), CapTitle);
+					const float ChipW = BpSheet::ChipWidth(Row.Tag, SmallBold);
+					Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(false)).Edge(Row.Ink.CopyWithNewOpacity(0.6f)).EdgePx(2.f).Bar(Row.Ink).BarPx(8.f));
+					Put(FBox2f(FVector2f(Box.Max.X - ChipW - 18.f, Box.Min.Y + 25.f), FVector2f(Box.Max.X - 18.f, Box.Max.Y - 25.f)), BpSheet::Chip(Row.Tag, SmallBold, 42.f, Row.Ink, true));
+					const float TX0 = Box.Min.X + 32.f, TW = Box.Max.X - ChipW - 40.f - TX0;
+					Put(FBox2f(FVector2f(TX0, Box.Min.Y + 4.f), FVector2f(TX0 + TW, Box.Min.Y + 52.f)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Row.Label, RoomFont, TW))).Font(RoomFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+					Put(FBox2f(FVector2f(TX0, Box.Min.Y + 52.f), FVector2f(TX0 + TW, Box.Max.Y - 4.f)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Row.Detail, SmallBold, TW))).Font(SmallBold).ColorAndOpacity(FSlateColor(Row.Ink))]);
 					continue;
 				}
 				if (Row.Tone == 4 || (Row.Act.IsEmpty() && Row.Buttons.Num() == 0 && Row.Tone == 2 && Row.Detail.IsEmpty()))

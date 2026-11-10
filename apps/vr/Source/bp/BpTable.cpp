@@ -828,7 +828,9 @@ void ABpTable::Tick(float DeltaSeconds)
 	const bool bTalkMoving = TickTalk(DeltaSeconds);
 	// The lamp steps aside at home (V5, BpLampLook.cpp): at the frame rate while it glides.
 	const bool bLampStepping = TickLampStep(FMath::Min(DeltaSeconds, 0.05f));
-	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving || bBuildMoving || bTalkMoving || bLampStepping) SetActorTickInterval(0.f);
+	// Findings landing (BpScanTheatre.cpp, wave C1): at the frame rate only while a pin is in the air.
+	const bool bLanding = TickScanTheatre(FMath::Min(DeltaSeconds, 0.05f));
+	if (TickSwitch(FMath::Min(DeltaSeconds, 0.05f)) || bFollowMoving || bBuildMoving || bTalkMoving || bLampStepping || bLanding) SetActorTickInterval(0.f);
 	else if (GetActorTickInterval() == 0.f && !IsLevelMoving() && !IsRoomModeMoving() && !IsDeckMoving() && !bScanLive && !bScanReplay && ScanStrength <= 0.f) SetActorTickInterval(0.25f);
 }
 

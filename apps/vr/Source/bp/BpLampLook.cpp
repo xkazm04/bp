@@ -47,7 +47,7 @@ namespace
 	TAutoConsoleVariable<float> CVarLampPulse(TEXT("bp.Lamp.Pulse"), 1.f,
 		TEXT("The light states' pulse depth, 0 (steady) to 2; bp.ReducedMotion 1 stills it. Read live."));
 	TAutoConsoleVariable<int32> CVarLampState(TEXT("bp.Lamp.State"), -1,
-		TEXT("Forces the lamp's light state for a capture: -1 follows the talk (default), 0 idle, 1 waiting on you, 2 listening, 3 thinking, 4 answering."));
+		TEXT("Forces the lamp's light state for a capture: -1 follows the talk (default), 0 idle, 1 waiting on you, 2 listening, 3 thinking, 4 answering, 5 scanning (the lens colour of a scan the lamp follows)."));
 	TAutoConsoleVariable<float> CVarLampHomeX(TEXT("bp.Lamp.HomeX"), 26.f,
 		TEXT("The lamp's site home along the table (cm from its centre, + far), 10 to 45. Read live while it is home."));
 	TAutoConsoleVariable<float> CVarLampHomeY(TEXT("bp.Lamp.HomeY"), -56.f,
@@ -111,6 +111,8 @@ namespace
 		{ TEXT("listening"), FLinearColor(0.52f, 0.80f, 1.00f), FLinearColor(0.85f, 0.95f, 1.00f), 0.00f, 0.00f, 1.00f },
 		{ TEXT("thinking"),  FLinearColor(1.00f, 0.72f, 0.38f), FLinearColor(1.00f, 0.95f, 0.85f), 1.30f, 0.35f, 0.95f },
 		{ TEXT("answering"), FLinearColor(1.00f, 0.55f, 0.22f), FLinearColor(1.00f, 0.96f, 0.86f), 3.20f, 0.14f, 1.30f },
+		// Wave C1: reading a room for a scan, its glow the lens's accent (TheatreTint replaces this colour), a slow sweep pulse.
+		{ TEXT("scanning"),  FLinearColor(0.04f, 0.58f, 1.00f), FLinearColor(0.90f, 0.97f, 1.00f), 0.80f, 0.18f, 1.15f },
 	};
 
 	bool LookReduced()
@@ -154,6 +156,7 @@ struct FBpLampLook
 	float SelfLight = -1.f, Glow = -1.f, Pulse = -1.f;
 	bool bReduced = false;
 	int32 State = -1;
+	FLinearColor Tint = FLinearColor::Transparent;
 	TWeakObjectPtr<UPointLightComponent> Light;
 	FLinearColor LightColour = FLinearColor::White;
 	TWeakObjectPtr<UMaterialInstanceDynamic> Halo;
@@ -836,17 +839,22 @@ void ABpTable::TickLampLook()
 
 	// ---- the light state
 	int32 State = CVarLampState.GetValueOnGameThread();
-	if (State < 0 || State > 4)
+	if (State < 0 || State > 5)
 	{
 		const int32 Talking = TalkLampState();
 		State = Talking == 1 ? 2 : Talking == 2 ? 3 : Talking == 3 || IsVoicePlaying() ? 4 : LampOffer != ELampOffer::None && LampCaptionClock > 0.f ? 1 : 0;
+		// Wave C1: resting, the lamp at work on a scan reads in the lens's colour.
+		if (State == 0 && bTheatre && bTheatreLamp) State = 5;
 	}
 	const float SelfLight = FMath::Clamp(CVarLampSelfLight.GetValueOnGameThread(), 0.f, 3.f);
 	const float Glow = FMath::Clamp(CVarLampGlow.GetValueOnGameThread(), 0.f, 3.f);
 	const bool bReduced = LookReduced();
 	const float Pulse = bReduced ? 0.f : FMath::Clamp(CVarLampPulse.GetValueOnGameThread(), 0.f, 2.f);
-	if (State == L.State && SelfLight == L.SelfLight && Glow == L.Glow && Pulse == L.Pulse) return;
-	const FLampLookState& Look = States[State];
+	const FLinearColor Tint = State == 5 ? TheatreTint : FLinearColor::Transparent;
+	if (State == L.State && SelfLight == L.SelfLight && Glow == L.Glow && Pulse == L.Pulse && Tint.Equals(L.Tint)) return;
+	FLampLookState Look = States[State];
+	if (State == 5) Look.Glow = Tint;
+	L.Tint = Tint;
 	if (State != L.State) UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp light %s"), Look.Name);
 	L.State = State;
 	L.SelfLight = SelfLight;

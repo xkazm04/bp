@@ -21,6 +21,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { harness } from './lib/expect.ts';
 import { VOICE } from '../packages/core/src/companion/voice.ts';
+import { TOUR_LINES } from '../apps/vr/tools/tour-voice.ts';
 import { voiceKey } from '../packages/core/src/server/companion/voice.server.ts';
 import {
   DAILY_BUDGET, LISTEN_MAX_BYTES, RATE_PER_MINUTE, SAY_CACHE_MAX_BYTES, TOUR_LINK, parseWav, peakDbfs, resetRate, spendBudget, takeSlot, trimSayCache, wavOf,
@@ -180,7 +181,8 @@ if (!key) skip('live: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env (s
 else if (!online) skip('live: api.elevenlabs.io does not resolve (no network; say/listen against ElevenLabs not run)');
 else if (!ffmpeg) skip('live: ffmpeg is not on PATH (say cannot render)');
 else {
-  const LINE = 'Welcome to the light table. Every block on this paper is a part of the code.';
+  // The tour's welcome line as its book has it today (BpTourBook.cpp; wave T1 changed the words), so the clip compared is its own.
+  const LINE = TOUR_LINES.welcome;
   const loose = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
   let t0 = Date.now();
   const r = await say(sayReq(JSON.stringify({ text: LINE })));

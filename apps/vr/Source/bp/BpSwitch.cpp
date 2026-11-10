@@ -786,7 +786,8 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 			if (bTalkCaption) { bTalkCaption = false; TalkCaptionEnded(); }
 			// The answer has had its time: its offer lapses, and the lamp goes back to rest.
 			if (LampOffer != ELampOffer::None) { ClearLampOffer(); LampNotifyAsk(); }
-			if (TourStep < 0 && (bLampAtStation || LampTravelT >= 0.f)) LampGoHome(TEXT("caption ended"));
+			// A scan the theatre follows keeps the lamp at its room (BpScanTheatre.cpp); it goes home when the scan ends.
+			if (TourStep < 0 && !bTheatreLamp && (bLampAtStation || LampTravelT >= 0.f)) LampGoHome(TEXT("caption ended"));
 		}
 		ApplyLampWidgets();
 		bBusy = true;
