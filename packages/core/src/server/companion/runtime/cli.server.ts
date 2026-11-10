@@ -134,7 +134,9 @@ export const transport = (): Transport => g.__bpCompanionTransport ?? spawnTrans
 
 // ---------------------------------------------------------------------------------------- decode
 export interface ResultRecord { isError: boolean; costUsd: number | null; subtype: string; said: string }
-export type Decoded = { kind: 'session'; id: string } | { kind: 'event'; event: TurnEvent } | { kind: 'result'; result: ResultRecord };
+/** `door`: the init line's word on the bp MCP server. Not `connected` (failed, needs-auth) means the turn has no bp tools, and
+ *  claude 2.1 then stalls after its first thinking block on an ask that needs one (measured 2026-11-10: no line for 10 min). */
+export type Decoded = { kind: 'session'; id: string } | { kind: 'door'; status: string } | { kind: 'event'; event: TurnEvent } | { kind: 'result'; result: ResultRecord };
 
 type Block = { type?: unknown; text?: unknown; id?: unknown; name?: unknown; input?: unknown; tool_use_id?: unknown; content?: unknown; is_error?: unknown };
 const blocks = (rec: Record<string, unknown>): Block[] => {
@@ -156,7 +158,12 @@ export function summarize(content: unknown): string {
 export function decodeLine(line: string, calls: Set<string>): Decoded[] {
   let rec: Record<string, unknown>;
   try { const j = JSON.parse(line); if (!j || typeof j !== 'object' || Array.isArray(j)) return []; rec = j; } catch { return []; }
-  if (rec.type === 'system') return typeof rec.session_id === 'string' && rec.session_id ? [{ kind: 'session', id: rec.session_id }] : [];
+  if (rec.type === 'system') {
+    const out: Decoded[] = typeof rec.session_id === 'string' && rec.session_id ? [{ kind: 'session', id: rec.session_id }] : [];
+    const bp = Array.isArray(rec.mcp_servers) ? (rec.mcp_servers as { name?: unknown; status?: unknown }[]).find((s) => s && s.name === MCP_SERVER_NAME) : undefined;
+    if (bp) out.push({ kind: 'door', status: typeof bp.status === 'string' ? bp.status : '' });
+    return out;
+  }
   if (rec.type === 'assistant') {
     const out: Decoded[] = [];
     for (const b of blocks(rec)) {

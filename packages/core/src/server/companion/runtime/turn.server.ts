@@ -7,6 +7,9 @@
 //   stop     cancelTurn(turnId) kills the CLI and ends `interrupted`; a consumer that leaves (the route's client went away)
 //            is a cancel too, and its end still reaches the bus and the ledger. The wall is 10 minutes (BP_COMPANION_WALL_MS),
 //            past it the turn ends failed/unknown.
+//   door     the bp MCP server's script is found from the working directory or beside this module; when it is missing, or
+//            the CLI's init line says the server did not connect, the turn ends failed/unknown at once (a turn without its
+//            tools stalls in claude 2.1 instead of answering: 2026-11-10, a server started outside the repo root).
 //   reseed   a resumed session that fails gone or poisoned is dropped and the turn asked once more, unresumed (static half
 //            as the system prompt, the frame with its recall as the reseed); the second answer is final.
 //   after    an episode for the brain (done turns), a title from a utility leg after the first turn, and sleepIfDue (also on
@@ -17,6 +20,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { LEG_MODELS, MCP_SERVER_NAME, MCP_SERVER_PATH, type FailureClass, type TurnEvent, type TurnRequest, type LegKind } from '../../../companion/contract.ts';
 import { publish } from '../bus.server.ts';
 import { companionHome, repoRoot } from '../home.server.ts';
@@ -48,12 +52,28 @@ const warnOnce = (key: string, e: unknown) => { if (!warned.has(key)) { warned.a
 
 function home(): string { const h = companionHome(); fs.mkdirSync(h, { recursive: true }); return h; }
 
+/** The bp MCP server's script: under the working directory when the server runs from the repo root (as it should), else
+ *  beside this module (<repo>/packages/core/src/server/companion/runtime), so a server started from another directory still
+ *  hands the CLI a script that exists. null when neither does. */
+export function mcpServerScript(): string | null {
+  const here = (() => { try { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../../..'); } catch { return null; } })();
+  for (const root of [repoRoot(), here]) {
+    if (!root) continue;
+    const f = path.join(root, MCP_SERVER_PATH);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
 /** The --mcp-config of one conversation: only the bp door, told where bp answers and whose conversation calls it. One file
- *  per conversation, so two conversations' turns never race on one file. */
+ *  per conversation, so two conversations' turns never race on one file. Throws when the bp MCP server's script is missing:
+ *  a turn without its tools stalls (cli.server.ts, Decoded `door`). */
 export function writeMcpConfig(conversationId: string, origin = DEFAULT_ORIGIN): string {
+  const script = mcpServerScript();
+  if (!script) throw new Error(`the bp MCP server (${MCP_SERVER_PATH}) is not under ${repoRoot()}: start the server from the bp repo root`);
   const f = path.join(home(), 'mcp', `${conversationId}.json`);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  const cfg = { mcpServers: { [MCP_SERVER_NAME]: { command: process.execPath, args: [path.join(repoRoot(), MCP_SERVER_PATH)], env: { BP_URL: origin, BP_CONVERSATION: conversationId } } } };
+  const cfg = { mcpServers: { [MCP_SERVER_NAME]: { command: process.execPath, args: [script], env: { BP_URL: origin, BP_CONVERSATION: conversationId } } } };
   fs.writeFileSync(f, JSON.stringify(cfg, null, 2) + '\n', 'utf8');
   return f;
 }
@@ -105,13 +125,16 @@ export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncG
       const promptFile = resume ? undefined : writeStaticHalf(id, staticText);
       if (!resume) conv.promptHash = hash;
       const calls = new Set<string>();
-      let result: ResultRecord | null = null;
+      let result: ResultRecord | null = null, doorDown = '';
       run = transport()({ args: turnArgs({ model: LEG_MODELS.turn, mcpConfig, resume, promptFile }), stdin: frame, cwd: home(), env: childEnv() });
       if (stop) run.kill();
       for await (const line of run.lines) {
         for (const d of decodeLine(line, calls)) {
           if (d.kind === 'session') conv.sessionId = d.id;
-          else if (d.kind === 'result') { if (!result?.isError) result = d.result; }
+          else if (d.kind === 'door') {
+            // the CLI could not start the bp MCP server: without its tools the turn stalls, so end it now, not at the wall
+            if (d.status !== 'connected' && d.status !== 'pending' && !doorDown) { doorDown = d.status || 'missing'; warnOnce(`turn ${id}: the bp MCP server is ${doorDown}`, mcpConfig); run.kill(); }
+          } else if (d.kind === 'result') { if (!result?.isError) result = d.result; }
           else if (!stop) {
             if (d.event.type === 'text') reply += d.event.delta;
             if (d.event.type === 'tool') tools.push(d.event.name);
@@ -120,7 +143,7 @@ export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncG
         }
       }
       const exit = await run.exit;
-      failure = stop ? null : classify(exit, result);
+      failure = stop ? null : doorDown ? 'unknown' : classify(exit, result);
       const reseed = !!failure && !!resume && (failure === 'gone' || failure === 'poisoned') && attempt === 0;
       cost = addCost(cost, result?.costUsd ?? null, !reseed);
       if (reseed) { delete conv.sessionId; continue; }
