@@ -980,6 +980,16 @@ private:
 	TArray<TObjectPtr<UWidgetComponent>> RoomLabels;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidgetComponent>> BayLabels;
+	/** Night two V5 ("the lifted thing is the loudest thing on the paper"): one nameplate for what is lifted, the lifted
+	 *  room's name at L2, the lifted wing's letter and name at L1, in full, white on a deep blue plate, hung square to the
+	 *  seated eye under the near edge of what it names, where it has the width and covers nothing lifted. It rides the
+	 *  lift and fades with it (ApplyLiftPlate, from ApplyLevelVisuals); its content is rebuilt only when what it names changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> LiftPlate;
+	FString LiftPlateKey;
+	void ApplyLiftPlate(const FTransform& WingT, const FTransform& RoomT, float WingEase, float RoomEase);
+	/** The site plan's room names' glow last written (they step back while a wing is lifted: ApplyRoomNames). */
+	float AppliedRoomNameGlow = -1.f;
 
 	/** Draws the sheet; bound to the render target's update, which runs once per plan rev. */
 	UFUNCTION()
@@ -1636,6 +1646,25 @@ private:
 	float LampLeanNow = 0.f;
 	/** The caption's table-space Y: left by default, the mirror side when the lamp stands on the right of the site plan. */
 	double LampCaptionY = CaptionYCm;
+	/** Night two V5, the lamp steps aside (bp.Lamp.HomeClear 1, BpLampLook.cpp): at home, when from the seated eye its body
+	 *  would cover a pin tag, a wing name, the lifted wing or room or the lift's plate, it moves along the table's left and
+	 *  far edges to the nearest place where it covers none of them and its head stays in the comfortable view (BpView.Fov's
+	 *  30 degrees, or no further out than home). LampStepCm is where it stands now (table cm from home), LampStepWant where it
+	 *  heads; it glides (a cut under bp.ReducedMotion). The caption follows it, and rises clear of the tags (CaptionLiftCm). */
+	FVector2D LampStepCm = FVector2D::ZeroVector;
+	FVector2D LampStepWant = FVector2D::ZeroVector;
+	double LampStepCheckAt = -1.0;
+	float CaptionLiftCm = 0.f;
+	static constexpr float CaptionMaxLiftCm = 14.f;
+	bool TickLampStep(float DeltaSeconds);
+	/** The lamp caption's centre (table space) as ApplyLampWidgets places it, and its lift judged against SeatKeepouts. */
+	FVector CaptionAt() const;
+	void UpdateCaptionLift();
+	/** What must be read, as boxes of azimuth (X, right +) and elevation (Y, up +) in degrees from the target eye: each tagged
+	 *  pin's tag, each wing name shown, the lifted wing's rooms or the lifted room, and the lift's plate (BpMarks.cpp). */
+	void SeatKeepouts(TArray<FBox2D>& Out) const;
+	/** A box of table-space points seen from the target eye as azimuth and elevation (degrees). */
+	FBox2D SeatAngles(const FBox& LocalBox) const;
 	FTimerHandle LampHomeTimer;
 	FVector LampHomeAt(double& OutYaw) const;
 	FVector LampStationAt(int32 Station, const FVector& HomeAt) const;

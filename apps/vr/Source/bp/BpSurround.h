@@ -13,6 +13,10 @@ namespace BpSurround
 	/** bp.Room as asked: 0 the studio, 1 your room. */
 	bool WantsRoom();
 
+	/** How far the studio-to-room fade stands in World: 0 the studio, 1 your room (night two V5: the contact shadow fades
+	 *  in with it). */
+	float RoomAmount(const UWorld* World);
+
 	/** Steps the studio-to-room fade toward bp.Room and keeps the passthrough layer with it. ABpTable's tick calls it;
 	 *  nothing happens while the mode rests. */
 	void Tick(UWorld* World, float DeltaSeconds);

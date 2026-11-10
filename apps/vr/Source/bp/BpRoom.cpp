@@ -110,8 +110,40 @@ namespace
 	{
 		TArray<FString> Lines;
 		if (MaxLines <= 0) return Lines;
-		TArray<FString> Words;
-		Text.ParseIntoArray(Words, TEXT(" "));
+		TArray<FString> Spaced, Words;
+		Text.ParseIntoArray(Spaced, TEXT(" "));
+		// Night two V5 (names on the paper wrap, never cut): a word wider than the line breaks after its hyphens, and a
+		// piece still too wide breaks between letters ("Failed-payme…" was cut).
+		for (const FString& Word : Spaced)
+		{
+			TArray<FString> Pieces;
+			FString Piece;
+			for (const TCHAR Ch : Word)
+			{
+				Piece.AppendChar(Ch);
+				if (Ch == TEXT('-')) { Pieces.Add(Piece); Piece.Reset(); }
+			}
+			if (!Piece.IsEmpty()) Pieces.Add(Piece);
+			FString Joined;
+			for (const FString& Each : Pieces)
+			{
+				if (!Joined.IsEmpty() && RoomTextWidthCm(Joined + Each, Recipe, CapCm) > MaxCm) { Words.Add(Joined); Joined.Reset(); }
+				if (RoomTextWidthCm(Joined + Each, Recipe, CapCm) <= MaxCm) { Joined += Each; continue; }
+				// A piece too wide for a line even alone: hyphenated, the longest head that fits with its hyphen, leaving at
+				// least a few letters to the tail ("reconcili-" / "ation", not "reconciliatio" / "n").
+				FString Rest = Each;
+				while (RoomTextWidthCm(Rest, Recipe, CapCm) > MaxCm && Rest.Len() > 2)
+				{
+					const int32 Tail = FMath::Min(5, Rest.Len() / 2);
+					int32 Head = Rest.Len() - Tail;
+					while (Head > 1 && RoomTextWidthCm(Rest.Left(Head) + TEXT("-"), Recipe, CapCm) > MaxCm) --Head;
+					Words.Add(Rest.Left(Head) + TEXT("-"));
+					Rest = Rest.Mid(Head);
+				}
+				Joined = Rest;
+			}
+			if (!Joined.IsEmpty()) Words.Add(Joined);
+		}
 		FString Line;
 		for (int32 Index = 0; Index < Words.Num(); ++Index)
 		{
@@ -810,7 +842,9 @@ void ABpTable::BuildRoomMap()
 			}
 			const double Pitch = Cap / BpType::CapPerEm * RoomLinePitchEm;
 			Slot.Cap = Cap;
-			Slot.Lines = RoomWrap(Tile.name, BpType::FeatureName, Cap, TU1 - TU0, LinesAt(Cap));
+			// V5: whole, never cut: a name that needs more lines than the slot holds at the floor takes them (it runs toward
+			// the slot's foot; the findings' line follows it).
+			Slot.Lines = RoomWrap(Tile.name, BpType::FeatureName, Cap, TU1 - TU0, 64);
 			Slot.TextAt = FVector2D(TU0, TV0);
 			if (Slot.Lines.Num() == 0) Dropped.Add(Tile.id);
 			if (Slot.Findings > 0)

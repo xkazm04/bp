@@ -408,6 +408,11 @@ bool BpSurround::WantsRoom()
 	return CVarRoom.GetValueOnGameThread() != 0;
 }
 
+float BpSurround::RoomAmount(const UWorld* World)
+{
+	return World && S.World.Get() == World ? S.Amount : 0.f;
+}
+
 void BpSurround::Tick(UWorld* World, float DeltaSeconds)
 {
 	if (!World) return;

@@ -18,6 +18,8 @@
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
@@ -1616,4 +1618,83 @@ void ABpTable::ApplyCardVisibility()
 {
 	// Shown when asked for and it has a finding, on the site plan only: in room mode the screen deck asks (BpDeck.cpp).
 	if (Card) Card->SetVisibility(bCardShown && !CardProposal.IsEmpty() && RoomModeId.IsEmpty());
+}
+
+FBox2D ABpTable::SeatAngles(const FBox& LocalBox) const
+{
+	// Night two V5: azimuth right + and elevation up +, from the target eye, over the box's eight corners.
+	const FVector Eye = EyeLocal();
+	FVector Corners[8];
+	LocalBox.GetVertices(Corners);
+	FBox2D Out(ForceInit);
+	for (const FVector& P : Corners)
+	{
+		const FVector D = P - Eye;
+		Out += FVector2D(FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), FMath::RadiansToDegrees(FMath::Atan2(D.Z, FVector2D(D.X, D.Y).Size())));
+	}
+	return Out;
+}
+
+void ABpTable::SeatKeepouts(TArray<FBox2D>& Out) const
+{
+	Out.Reset();
+	if (!SheetPlan.IsValid()) return;
+	const FTransform& Table = GetActorTransform();
+	// Each tagged pin's tag: a card PinScale x 2.2 cm wide facing the seat, from its foot to the pin's top (PlacePins's place).
+	const double Site = SiteShow();
+	if (Site > 0.0)
+	{
+		for (const FPin& Pin : PinList)
+		{
+			if (!Pin.bTagged || !SheetPlan->tiles.IsValidIndex(Pin.Tile)) continue;
+			const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
+			const FTransform Group = GroupTransformForRoom(Pin.Room);
+			const FString* Reading = Tile.health.Find(ActiveLens);
+			const float StandCm = RoomRiseEase(Pin.Room) * TileHeightCm(Reading ? *Reading : FString());
+			const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
+			const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
+			const FVector Top = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + PinModelCm * PinScale));
+			const double Half = 0.5 * 2.2 * PinScale;
+			Out.Add(SeatAngles(FBox(FVector(Foot.X - 0.2, Foot.Y - Half, Foot.Z), FVector(Top.X + 0.2, Top.Y + Half, Top.Z))));
+		}
+	}
+	// The wing names shown, the lift's plate: their bounds (world) in the table's space.
+	const auto Bounds = [&](const UPrimitiveComponent* Prim)
+	{
+		if (!Prim || !Prim->IsVisible()) return;
+		const FBox World = Prim->Bounds.GetBox();
+		FBox Local(ForceInit);
+		FVector Corners[8];
+		World.GetVertices(Corners);
+		for (const FVector& C : Corners) Local += Table.InverseTransformPosition(C);
+		Out.Add(SeatAngles(Local));
+	};
+	for (const UWidgetComponent* Label : WingLabels) Bounds(Label);
+	Bounds(LiftPlate);
+	// The console's bar (the pawn's ConsolePanel, BpConsole.cpp): nothing stands in front of it or behind it.
+	if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+	{
+		if (const APawn* Pawn = PC->GetPawn())
+		{
+			TArray<UWidgetComponent*> Widgets;
+			Pawn->GetComponents(Widgets);
+			for (const UWidgetComponent* Widget : Widgets)
+			{
+				if (Widget && Widget->GetName() == TEXT("ConsolePanel")) Bounds(Widget);
+			}
+		}
+	}
+	// The lifted wing's rooms (their shells where they stand now), or with a room up, that room.
+	if (!AnimWing.IsEmpty() && WingAlpha > 0.f)
+	{
+		for (int32 Index = 0; Index < SheetPlan->rooms.Num(); ++Index)
+		{
+			const FBpPlanRoom& Room = SheetPlan->rooms[Index];
+			if (Room.parentId != AnimWing || (!AnimRoom.IsEmpty() && RoomAlpha > 0.f && Room.id != AnimRoom)) continue;
+			const FTransform Group = GroupTransformForRoom(Index);
+			const FVector A = Group.TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Room.box.x, Room.box.y)), 0.f));
+			const FVector B = Group.TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Room.box.x + Room.box.w, Room.box.y + Room.box.h)), RoomShellCm));
+			Out.Add(SeatAngles(FBox(A.ComponentMin(B), A.ComponentMax(B))));
+		}
+	}
 }

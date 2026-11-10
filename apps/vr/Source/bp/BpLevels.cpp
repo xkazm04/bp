@@ -281,6 +281,7 @@ void ABpTable::ResetLevels()
 	LiftedRoom = INDEX_NONE;
 	LiftedRoomSlideCm = 0.f;
 	LiftedShell->ClearInstances();
+	LiftPlateKey.Reset();
 	HighlightKind.Reset();
 	HighlightId.Reset();
 	// Unknown, so the first ApplyLevelVisuals writes every instance's Show and redraws the sheet.
@@ -512,7 +513,8 @@ void ABpTable::ApplyLevelVisuals()
 		Write(Rooms, ShownRooms, Index, Show, bRoomsDirty);
 		if (RoomLabels.IsValidIndex(Index))
 		{
-			const float Alpha = bInWing ? Ew * (Index == Lifted ? 1.f : FMath::Lerp(1.f, LevelDim, Er)) : 0.f;
+			// V5: the lifted room's own header name gives way to the lift's nameplate (ApplyLiftPlate) as it rises.
+			const float Alpha = bInWing ? Ew * (Index == Lifted ? 1.f - Er : FMath::Lerp(1.f, LevelDim, Er)) : 0.f;
 			SetLabelAlpha(RoomLabels[Index], Alpha);
 		}
 	}
@@ -537,6 +539,8 @@ void ABpTable::ApplyLevelVisuals()
 	// The rooms at rest stay on the paper; the lifted wing's leave with it. The pins and tags follow the lifts.
 	ApplyRestVolumes(Ew);
 	PlacePins();
+	// What is lifted wears its name in full (V5).
+	ApplyLiftPlate(WingT, RoomT, Ew, Er);
 
 	// The sheet is redrawn only when what it dims around or highlights changes: as a wing starts to rise and once it
 	// has settled back, never per frame.

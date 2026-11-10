@@ -297,7 +297,7 @@ void ABpTable::FindLamp()
 FVector ABpTable::GetCaptionWorld() const
 {
 	// Where ApplyLampWidgets puts it (the component stays at the table's origin until it first shows).
-	return GetActorTransform().TransformPosition(FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm));
+	return GetActorTransform().TransformPosition(CaptionAt());
 }
 
 bool ABpTable::LampHead(FVector& OutWorld) const
@@ -577,6 +577,48 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 	ApplyLampWidgets();
 }
 
+FVector ABpTable::CaptionAt() const
+{
+	// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
+	// names and the pin tags under it. V5: at home it follows the lamp's step aside, and rises by CaptionLiftCm until it
+	// covers no pin tag, wing name or lifted thing from the seat (UpdateCaptionLift).
+	const float GrowCm = LampCaption ? FMath::Max(0.f, static_cast<float>(LampCaption->GetDrawSize().Y) / CaptionPxPerCm - CaptionHeightCm) : 0.f;
+	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty();
+	const FVector2D Step = bHome ? LampStepCm : FVector2D::ZeroVector;
+	return FVector(CaptionXCm + Step.X, LampCaptionY + Step.Y, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
+}
+
+void ABpTable::UpdateCaptionLift()
+{
+	if (!LampCaption) return;
+	TArray<FBox2D> Keep;
+	SeatKeepouts(Keep);
+	const FVector Eye = EyeLocal();
+	const double W = CaptionWidthCm * BpSheet::TextScale();
+	const double H = LampCaption->GetDrawSize().Y / CaptionPxPerCm * BpSheet::TextScale();
+	const float Was = CaptionLiftCm;
+	// The plate's four corners as it stands square to the eye, at a lift; the least lift (0.5 cm steps) that covers nothing.
+	float Best = CaptionMaxLiftCm;
+	for (float Lift = 0.f; Lift <= CaptionMaxLiftCm + 1e-3f; Lift += 0.5f)
+	{
+		CaptionLiftCm = Lift;
+		const FVector At = CaptionAt();
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, (At - Eye).GetSafeNormal()).GetSafeNormal() * (W * 0.5);
+		const FVector Up = FVector(0.0, 0.0, H * 0.5);
+		FBox Plate(ForceInit);
+		for (const FVector& C : { At - Right - Up, At + Right - Up, At - Right + Up, At + Right + Up }) Plate += C;
+		const FBox2D Seen = SeatAngles(Plate);
+		const bool bCovers = Keep.ContainsByPredicate([&Seen](const FBox2D& K) { return Seen.Intersect(K); });
+		if (!bCovers) { Best = Lift; break; }
+	}
+	CaptionLiftCm = Best;
+	if (CaptionLiftCm != Was)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp caption rises %.1f cm clear of the tags and names"), CaptionLiftCm);
+		ApplyLampWidgets();
+	}
+}
+
 void ABpTable::ApplyLampWidgets()
 {
 	const FVector Eye = EyeLocal();
@@ -589,8 +631,7 @@ void ABpTable::ApplyLampWidgets()
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
 		// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
 		// names and the pin tags under it.
-		const float GrowCm = FMath::Max(0.f, static_cast<float>(LampCaption->GetDrawSize().Y) / CaptionPxPerCm - CaptionHeightCm);
-		const FVector At(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale());
+		const FVector At = CaptionAt();
 		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(BpSheet::TextScale() / CaptionPxPerCm)));
 		const float Fade = FMath::Clamp(LampCaptionClock / 0.4f, 0.f, 1.f);
 		LampCaption->SetTintColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, Fade));
