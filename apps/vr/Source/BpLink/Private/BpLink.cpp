@@ -134,6 +134,10 @@ namespace
 	 */
 	uint32 GProductGen = 0;
 	TArray<TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>> GProductRequests;
+	/** The companion turn out (PostCompanionTurn): its serial, the serial last cancelled, and its request (for CancelRequest). */
+	uint32 GTurnSerial = 0;
+	uint32 GTurnCancelled = 0;
+	TWeakPtr<IHttpRequest, ESPMode::ThreadSafe> GTurnRequest;
 	void TrackProductRequest(const TSharedRef<IHttpRequest, ESPMode::ThreadSafe>& Request)
 	{
 		GProductRequests.RemoveAll([](const TWeakPtr<IHttpRequest, ESPMode::ThreadSafe>& Each) { return !Each.IsValid(); });
@@ -2555,12 +2559,27 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 	Request->SetTimeout(600.f);
 	Request->SetActivityTimeout(600.f);
 	bCompanionTurnOut = true;
-	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn posted (conversation %s): %s"), CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation, *Text);
-	Request->OnProcessRequestComplete().BindLambda([OnDone](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	const uint32 Serial = ++GTurnSerial;
+	GTurnRequest = Request;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u posted (conversation %s): %s"), Serial, CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation, *Text);
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Serial](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
-		if (Module) Module->bCompanionTurnOut = false;
 		FBpCompanionTurn Turn;
+		// Only the turn still current frees the companion and keeps its conversation: a cancelled one (CancelCompanionTurn), or
+		// one a newer turn followed after a re-link, writes nothing into the module, so it cannot land on the newer turn.
+		const bool bCancelled = Serial == GTurnCancelled;
+		const bool bCurrent = Serial == GTurnSerial && !bCancelled;
+		if (bCurrent && Module) Module->bCompanionTurnOut = false;
+		if (bCancelled)
+		{
+			// Its asker's own serial drops it; the outcome says why, so an asker without one is never left waiting.
+			Turn.Outcome = FBpCompanionTurn::EOutcome::Failed;
+			Turn.Failure = TEXT("cancelled");
+			UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u ended after it was cancelled: its answer is dropped"), Serial);
+			if (OnDone) OnDone(Turn);
+			return;
+		}
 		const int32 Status = (bConnected && Response.IsValid()) ? Response->GetResponseCode() : 0;
 		if (Status == 409)
 		{
@@ -2571,17 +2590,32 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 		{
 			FString Conversation;
 			ReadTurnEvents(Response->GetContentAsString(), Turn, Conversation);
-			if (Module && !Conversation.IsEmpty()) Module->CompanionConversation = Conversation;
+			if (bCurrent && Module && !Conversation.IsEmpty()) Module->CompanionConversation = Conversation;
 		}
 		else if (Status != 0)
 		{
 			Turn.Outcome = FBpCompanionTurn::EOutcome::Failed;
 			Turn.Failure = FString::Printf(TEXT("the server answered %d"), Status);
+			// A refusal's sentence (the turn's 429 budget: { error: "<a sentence>", limit, retryAfterS }) is shown as it is.
+			Turn.Words = RefusalWords(Response->GetContentAsString());
 		}
 		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"));
 		if (OnDone) OnDone(Turn);
 	});
 	Request->ProcessRequest();
+}
+
+bool FBpLinkModule::CancelCompanionTurn(const TCHAR* Why)
+{
+	if (!bCompanionTurnOut) return false;
+	GTurnCancelled = GTurnSerial;
+	bCompanionTurnOut = false;
+	const TSharedPtr<IHttpRequest, ESPMode::ThreadSafe> Request = GTurnRequest.Pin();
+	GTurnRequest.Reset();
+	const bool bLive = Request.IsValid() && !EHttpRequestStatus::IsFinished(Request->GetStatus());
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u cancelled by %s%s: the companion is free for the next turn"), GTurnCancelled, Why, bLive ? TEXT(" (its request called off)") : TEXT(""));
+	if (bLive) Request->CancelRequest();
+	return true;
 }
 
 // ---- The PC link (table link v2, night two W2a: docs/concepts/vr-light-table/table-link-v2.md) -----------------------------
@@ -3549,10 +3583,26 @@ bool FBpLinkModule::CanDecide() const
 	return !GFromBundle && GRouteLive && LinkStatus.Pair == EBpPairState::Paired && LinkStatus.Scopes.Contains(TEXT("decide"));
 }
 
+FString FBpLinkModule::RefusalWords(const FString& Body)
+{
+	TSharedPtr<FJsonObject> Json;
+	if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) || !Json.IsValid()) return FString();
+	FString Words, Error;
+	// `words` is what to show when the server sends it (`error` is then a code, e.g. "budget"); a turn's 429 puts its sentence in `error`.
+	if (Json->TryGetStringField(TEXT("words"), Words) && !Words.TrimStartAndEnd().IsEmpty()) return Words.TrimStartAndEnd();
+	if (Json->TryGetStringField(TEXT("error"), Error) && Error.TrimStartAndEnd().Contains(TEXT(" "))) return Error.TrimStartAndEnd();
+	return FString();
+}
+
 FString FBpLinkModule::AnswerWords(int32 Status, const FString& Body)
 {
-	const FString Error = ErrorOf(Body);
+	FString Error = ErrorOf(Body);
 	if (Status == 0) return Body.IsEmpty() ? FString(TEXT("Your PC did not answer: nothing was sent.")) : Body;
+	{
+		FString Words;
+		TSharedPtr<FJsonObject> Json;
+		if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid() && Json->TryGetStringField(TEXT("words"), Words) && !Words.TrimStartAndEnd().IsEmpty()) Error = Words.TrimStartAndEnd();
+	}
 	if (!Error.IsEmpty()) return Error.Left(1).ToUpper() + Error.Mid(1) + (Error.EndsWith(TEXT(".")) ? TEXT("") : TEXT("."));
 	if (Status == 403) return TEXT("Your PC refused it: this headset's pairing may not decide (PC LINK pairs it with decide).");
 	if (Status == 401) return TEXT("Your PC no longer knows this headset: pair again (PC LINK).");

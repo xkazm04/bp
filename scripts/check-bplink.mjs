@@ -329,6 +329,15 @@ export function linkSource(cppText) {
     const b = body(fn);
     if (!b || !/SetStringField\(\s*TEXT\("shown"\)/.test(b.lit)) problems.push(`${fn} does not send shown`);
   }
+  // A refusal's `words` (the voice routes' 429 budget: { error: "budget", words: "<a sentence>" }) is what the person reads:
+  // AnswerWords and RefusalWords read it before `error`.
+  for (const fn of ['AnswerWords', 'RefusalWords']) {
+    const b = body(fn);
+    const w = b ? b.lit.search(/TryGetStringField\(\s*TEXT\("words"\)/) : -1;
+    const e = b ? b.lit.search(/TryGetStringField\(\s*TEXT\("error"\)|ErrorOf\(/) : -1;
+    if (w < 0) problems.push(`${fn} does not read a refusal's words`);
+    else if (fn === 'RefusalWords' && e >= 0 && e < w) problems.push('RefusalWords reads error before words');
+  }
   const revoke = body('RevokePolicy');
   if (!revoke || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(revoke.lit)) problems.push('RevokePolicy does not send DELETE');
   const toolsSpan = /FBpLinkModule::PolicyTools\(\)\s*\{[^}]*\{([^}]*)\}/.exec(lit);

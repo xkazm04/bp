@@ -395,7 +395,7 @@ void ABpTable::LampAskTurn(FString&& Text)
 			T->LampSayAnswer(TEXT("I am still answering"), TEXT("Ask me again in a moment."), LocalHint);
 			break;
 		case FBpCompanionTurn::EOutcome::Failed:
-			T->LampSayAnswer(TEXT("The companion could not answer"), TurnFailureWords(Turn.Failure), LocalHint);
+			T->LampSayAnswer(TEXT("The companion could not answer"), Turn.Words.IsEmpty() ? TurnFailureWords(Turn.Failure) : Turn.Words, LocalHint);
 			break;
 		case FBpCompanionTurn::EOutcome::Unreached:
 			T->LampSayAnswer(TEXT("The PC did not answer"), TEXT("The table's own answer stands."), LocalHint);

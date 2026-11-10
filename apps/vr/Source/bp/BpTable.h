@@ -1753,6 +1753,9 @@ private:
 	void TalkSample();
 	void TalkSays(const FString& Line, float Seconds = 0.f);
 	void TalkIdle();
+	/** The app went away (background, deactivated, the headset off, or the XR focus lost) during a hold or a recording: the
+	 *  microphone closes and what it heard is dropped, never sent. True when there was a hold or a recording to drop. */
+	bool TalkAbandon(const TCHAR* Why);
 	bool bDeckHeld = false;
 	float TourVoiceGain = -1.f;
 	void EnterTourStep(int32 Step);

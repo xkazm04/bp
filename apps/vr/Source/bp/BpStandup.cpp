@@ -610,11 +610,18 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Shown = StandupShown();
 	S.Armed.Reset();
-	const auto Advance = [this]()
+	// The sheet the answer was given on: the stand-up moves on from it only if the wearer is still on it when the PC answers
+	// (an answer can take minutes; a wearer who walked on is never moved past the sheet they are reading).
+	const int32 From = S.At;
+	const auto Advance = [this, From]()
 	{
 		const float After = CVarStandupAdvanceS.GetValueOnGameThread();
 		if (After <= 0.f || !Standup.IsValid() || Standup->bTour) return;
-		const int32 From = Standup->At;
+		if (Standup->At != From)
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: answered on sheet %d; the wearer is on sheet %d now: no advance"), From + 1, Standup->At + 1);
+			return;
+		}
 		GetWorldTimerManager().SetTimer(StandupTimer, FTimerDelegate::CreateWeakLambda(this, [this, From]()
 		{
 			if (Standup.IsValid() && Standup->At == From && IsStandupOpen()) { ++Standup->At; StandupShowSheet(); }
@@ -789,6 +796,7 @@ void ABpPawn::StandupPlanDay()
 			S.Plan = FBpStandupState::EPlan::Failed;
 			S.PlanWords = Turn.Outcome == FBpCompanionTurn::EOutcome::Busy ? FString(TEXT("The companion is busy with another turn: try again in a minute."))
 				: Turn.Outcome == FBpCompanionTurn::EOutcome::Unreached ? FString(TEXT("Your PC did not answer: nothing was asked."))
+				: !Turn.Words.IsEmpty() ? Turn.Words
 				: FString::Printf(TEXT("The companion's turn failed: %s."), *Turn.Failure);
 		}
 		Pawn->RefreshConsole();
@@ -1149,11 +1157,12 @@ void ABpPawn::StandupLoadShot()
 		if (!Pawn || !Pawn->Standup.IsValid() || Pawn->Standup->ShotGen != Gen) return;
 		if (!bOk) { Pawn->Standup->bShotLoading = false; Pawn->Standup->bShotMissing = true; Pawn->RefreshConsole(); return; }
 		Pawn->Standup->bShotSample = bSample;
-		// Decoded off the game thread, halved until it is at most 800 px wide (the sheet draws it about 340 px wide).
-		Async(EAsyncExecution::ThreadPool, [Self, Gen, Asked, Png]()
+		// Decoded off the game thread, halved until it is at most 800 px wide (the sheet draws it about 340 px wide). The module
+		// is loaded here, on the game thread (the module manager's rule); the worker only uses it.
+		IImageWrapperModule* Wrappers = &FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
+		Async(EAsyncExecution::ThreadPool, [Self, Gen, Asked, Png, Wrappers]()
 		{
-			IImageWrapperModule& Wrappers = FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-			TSharedPtr<IImageWrapper> Image = Wrappers.CreateImageWrapper(EImageFormat::PNG);
+			TSharedPtr<IImageWrapper> Image = Wrappers->CreateImageWrapper(EImageFormat::PNG);
 			TArray64<uint8> Raw;
 			int32 W = 0, H = 0;
 			if (Image.IsValid() && Image->SetCompressed(Png.GetData(), Png.Num()) && Image->GetRaw(ERGBFormat::BGRA, 8, Raw))

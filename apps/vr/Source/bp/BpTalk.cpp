@@ -15,6 +15,8 @@
 //             in words on the caption: no PC, no `standup` scope, no microphone permission, no device, silence, no words,
 //             busy (429: "one moment", never retried in a loop), the service refused.
 //   barge-in  A new hold stops the lamp's voice at once.
+//   pause     The app going away during a hold or a recording (background, deactivated, the headset off, the XR focus lost:
+//             bp.TourFocus's rule) closes the microphone and drops what it heard: nothing recorded across a pause is sent.
 //   bundle    No PC and no microphone: a hold plays the scripted sample exchange (Content/BpData/voice/talk/), picked by the
 //             place in view, labelled SAMPLE, and the lamp then does what the sample says, locally.
 //   idle      The capture device is open only while held; with no talk in flight TickTalk returns at its first line.
@@ -32,6 +34,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "Misc/ConfigCacheIni.h"
+#include "Misc/CoreDelegates.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Serialization/JsonReader.h"
@@ -219,10 +222,22 @@ struct FBpTalkState
 	TWeakObjectPtr<UPointLightComponent> Light;
 	float LightBase = -1.f;
 	bool bPermissionAsked = false;
+	/** While the microphone is open: the app going away (background, deactivated, the headset off) drops the recording. */
+	FDelegateHandle BackgroundHandle, DeactivateHandle, HeadOffHandle;
 
 	~FBpTalkState() { CloseCapture(); }
+	void Unwatch()
+	{
+		if (BackgroundHandle.IsValid()) FCoreDelegates::ApplicationWillEnterBackgroundDelegate.Remove(BackgroundHandle);
+		if (DeactivateHandle.IsValid()) FCoreDelegates::ApplicationWillDeactivateDelegate.Remove(DeactivateHandle);
+		if (HeadOffHandle.IsValid()) FCoreDelegates::VRHeadsetRemovedFromHead.Remove(HeadOffHandle);
+		BackgroundHandle.Reset();
+		DeactivateHandle.Reset();
+		HeadOffHandle.Reset();
+	}
 	void CloseCapture()
 	{
+		Unwatch();
 		if (!Capture.IsValid()) return;
 		Capture->StopStream();
 		Capture->CloseStream();
@@ -413,6 +428,8 @@ void ABpTable::TalkBegin()
 	}
 #endif
 	S.Serial++;
+	// A capture still open (a hold the link's fall to the sample ended) is stopped and closed before a new one is made.
+	S.CloseCapture();
 	S.Capture = MakeUnique<Audio::FAudioCapture>();
 	Audio::FCaptureDeviceInfo Info;
 	if (!S.Capture->GetCaptureDeviceInfo(Info))
@@ -464,6 +481,14 @@ void ABpTable::TalkBegin()
 	}
 	S.Step = FBpTalkState::EStep::Arming;
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: capture device opened: %s (%d Hz, %d ch)"), *Info.DeviceName, Info.PreferredSampleRate, Info.InputChannels);
+	// Nothing recorded across a pause is sent: the app going away while the microphone is open drops the recording.
+	{
+		TWeakObjectPtr<ABpTable> Self(this);
+		const auto Away = [Self](const TCHAR* Why) { if (ABpTable* T = Self.Get()) T->TalkAbandon(Why); };
+		S.BackgroundHandle = FCoreDelegates::ApplicationWillEnterBackgroundDelegate.AddLambda([Away]() { Away(TEXT("the app went to the background")); });
+		S.DeactivateHandle = FCoreDelegates::ApplicationWillDeactivateDelegate.AddLambda([Away]() { Away(TEXT("the app was deactivated")); });
+		S.HeadOffHandle = FCoreDelegates::VRHeadsetRemovedFromHead.AddLambda([Away]() { Away(TEXT("the headset was taken off")); });
+	}
 	// The lamp's own light, when it can change at run time (a static light cannot: the caption's meter is then the level).
 	if (!S.Light.IsValid())
 	{
@@ -483,6 +508,9 @@ bool ABpTable::TickTalk(float DeltaSeconds)
 	if (!Talk.IsValid()) return false;
 	FBpTalkState& S = *Talk;
 	const double Now = FPlatformTime::Seconds();
+	// The app lost its focus (the Quest menu, the headset off; bp.TourFocus's rule, as the tour and the music pause): a hold
+	// or a recording is dropped, so nothing heard across it is sent.
+	if ((S.bHeld || S.Capture.IsValid()) && !BpAudio::HasFocus() && TalkAbandon(TEXT("the app lost its focus"))) return false;
 	// The hold counts: what was waiting for it (the consent sheet, the words for no PC or no permission).
 	if (S.bHeld && (S.Step == FBpTalkState::EStep::Idle || S.Step == FBpTalkState::EStep::Thinking) && !S.bAskedConsent && Now - S.DownAt >= TalkMinHoldS)
 	{
@@ -622,7 +650,7 @@ void ABpTable::TalkFromWav(const TArray<uint8>& Wav, const TCHAR* Route)
 		FString Words;
 		if (Status == 200 && Heard == TEXT("speech") && !Text.TrimStartAndEnd().IsEmpty()) { T->TalkTurn(Text.TrimStartAndEnd()); return; }
 		if (Status == 200) Words = Heard == TEXT("silence") ? TEXT("I did not hear anything.\nHold, speak, then let go.") : TEXT("I heard sound but no words.\nHold and try again, a little closer.");
-		else if (Status == 429) Words = TEXT("One moment: your PC is busy.\nHold again in a moment.");
+		else if (Status == 429) { Words = FBpLinkModule::RefusalWords(Body); if (Words.IsEmpty()) Words = TEXT("One moment: your PC is busy.\nHold again in a moment."); }
 		else if (Status == 403 && Error == TEXT("speech-off")) Words = TEXT("Your PC has speech turned off.\nMENU › ASK still works.");
 		else if (Status == 403) Words = TEXT("Your PC refused to listen.\nPair again with the stand-up (MENU › PC LINK).");
 		else if (Status == 503 && Error == TEXT("no-speech-key")) Words = TEXT("Your PC has no speech service set up.\nMENU › ASK still works.");
@@ -685,7 +713,8 @@ void ABpTable::TalkTurn(const FString& Heard)
 			return;
 		case FBpCompanionTurn::EOutcome::Failed:
 			T->TalkIdle();
-			T->TalkSays(You + TEXT("\nI could not answer that. Ask again, or look on your PC."), 10.f);
+			// A refusal with its own sentence (the turn's 429 budget) says it; never retried.
+			T->TalkSays(You + TEXT("\n") + (Turn.Words.IsEmpty() ? FString(TEXT("I could not answer that. Ask again, or look on your PC.")) : Turn.Words), 10.f);
 			return;
 		case FBpCompanionTurn::EOutcome::Unreached:
 			T->TalkIdle();
@@ -729,6 +758,14 @@ void ABpTable::TalkSpeak(const FString& Reply)
 		if (Status != 200 || Wav.Num() == 0)
 		{
 			UE_LOG(LogBpTable, Log, TEXT("BpTalk: no voice for the reply (status %d %s): the caption carries it"), Status, *ErrorOf(Body));
+			// A 429 with its own sentence (the voice budget): the talk ends with those words on the caption (the reply stays on
+			// the wrist), and nothing is asked again.
+			const FString Refusal = Status == 429 ? FBpLinkModule::RefusalWords(Body) : FString();
+			if (!Refusal.IsEmpty())
+			{
+				T->TalkIdle();
+				T->TalkSays(Refusal, 10.f);
+			}
 			return;
 		}
 		int32 Rate = 0, Channels = 0, Offset = 0, Bytes = 0;
@@ -756,6 +793,9 @@ bool ABpTable::TalkCancel(const TCHAR* Why)
 	S.Queued.Reset();
 	S.SampleAct.Reset();
 	if (Was == FBpTalkState::EStep::Speaking || Was == FBpTalkState::EStep::Sample) StopVoice();
+	// The turn being thought about is called off on the wire too, so the companion is free for the next question at once
+	// (otherwise every talk, PLAN MY DAY and the lamp's ask answer "busy" until the old turn's ten minutes run out).
+	if (Was == FBpTalkState::EStep::Thinking) FBpLinkModule::Get().CancelCompanionTurn(Why);
 	{
 		FScopeLock Guard(&S.Lock);
 		S.Samples.Reset();
@@ -767,9 +807,48 @@ bool ABpTable::TalkCancel(const TCHAR* Why)
 	return true;
 }
 
+bool ABpTable::TalkAbandon(const TCHAR* Why)
+{
+	if (!Talk.IsValid()) return false;
+	FBpTalkState& S = *Talk;
+	const bool bRecording = S.Capture.IsValid() || S.Step == FBpTalkState::EStep::Arming || S.Step == FBpTalkState::EStep::Listening;
+	if (!bRecording && !S.bHeld) return false;
+	// The hold is over: its release (X up, the pinch let go) finds nothing held and sends nothing.
+	S.bHeld = false;
+	if (!bRecording)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: %s during a hold: the hold dropped (nothing was recorded)"), Why);
+		return true;
+	}
+	++S.Serial;
+	{
+		FScopeLock Guard(&S.Lock);
+		S.Samples.Reset();
+		S.bCapped = false;
+	}
+	TalkIdle();
+	LampLookTarget = 0.f;
+	UE_LOG(LogBpTable, Log, TEXT("BpTalk: %s while recording: the microphone closed, what it heard dropped, nothing sent"), Why);
+	TalkSays(TEXT("Paused: I did not keep or send what I heard.\nHold again to talk to me."), 8.f);
+	return true;
+}
+
 void ABpTable::TalkSample()
 {
 	FBpTalkState& S = *Talk;
+	// A hold that began linked and ended on the sample (the PC went meanwhile) still has the microphone open: it is closed
+	// here, and the lamp's light put back, before the sample plays. Nothing it heard is sent.
+	if (S.Capture.IsValid())
+	{
+		{
+			FScopeLock Guard(&S.Lock);
+			S.Samples.Reset();
+		}
+		S.CloseCapture();
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the link fell to the sample during the hold: the microphone closed, nothing sent"));
+	}
+	if (UPointLightComponent* Light = S.Light.Get(); Light && S.LightBase >= 0.f) Light->SetIntensity(S.LightBase);
+	LampLookTarget = 0.f;
 	// The place in view picks the ask: inside a room, scan it; on a lifted wing or room, plan the day; the site, what next.
 	const FString Id = !RoomModeId.IsEmpty() ? TEXT("scan") : GetBpLevel() != EBpLevel::L0 ? TEXT("plan") : TEXT("next");
 	FTalkSampleLine Line;

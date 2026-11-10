@@ -545,6 +545,13 @@ void UBpHands::PinchEnded(FSlot& S)
 	if (!S.bFired && T && S.HoverKind == TEXT("lamp"))
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on lamp"));
+		// The pinch also opened a talk hold (UpdateHold). A tap lets go of it first, so the short hold returns the talk to idle
+		// and the lamp acts, instead of LampPinched cancelling the microphone it just opened ("Stopped.").
+		if (bTalkHeld)
+		{
+			bTalkHeld = false;
+			T->TalkHold(*TalkSource, false);
+		}
 		T->LampPinched();
 		return;
 	}

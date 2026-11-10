@@ -102,6 +102,8 @@ struct BPLINK_API FBpCompanionTurn
 	FString Text;
 	/** The `failure` class of a failed turn, or the error text of a refused one. */
 	FString Failure;
+	/** A refused turn's sentence for the person (a 429's `words`, else its `error` when that is a sentence); empty otherwise. */
+	FString Words;
 	/** A pending card's summary (a GATED tool: answered in the web app only, contract section 4); empty when none. */
 	FString CardSummary;
 	/** The last `focus` command's target, in plan ids; empty when the turn pointed at nothing. */
@@ -530,6 +532,11 @@ public:
 	 *  a later change). Refused without a PC link: nothing is sent, OnDone gets Unreached. One conversation per session, kept
 	 *  here. A 409 reads Busy (wait and retry, never queue). OnDone runs on the game thread. Never approves a card. */
 	void PostCompanionTurn(const FString& Text, TFunction<void(const FBpCompanionTurn&)> OnDone);
+	/** The turn still out is called off (the talk's B or pinch, the stand-up's cancel): its request is cancelled, the companion
+	 *  is free for the next turn at once, and the old turn's end writes nothing into the module (its OnDone gets Failed,
+	 *  "cancelled", which its asker's own serial drops). True when a turn was out. */
+	bool CancelCompanionTurn(const TCHAR* Why);
+	bool IsCompanionTurnOut() const { return bCompanionTurnOut; }
 
 	/** Adds an open finding to the product's draft wave the way the web's ledger does (spark vr-room-layers WP2, the screen
 	 *  deck's Approve): with no draft wave, POST .../waves a new one (the composer's defaults: "Wave <n>", one package
@@ -657,8 +664,11 @@ public:
 	 *  /api/products/<product>/shots/<path> (scope read) cached on disk under Saved/BpShots/<product>/. bSample: read from the
 	 *  bundle. OnDone(false) when there is none. */
 	void FetchShot(const FString& Product, const FString& Path, TFunction<void(bool bOk, const TArray<uint8>& Png, bool bSample)> OnDone);
-	/** A refusal's body in plain words: its { error }, else what the status means for a decision. */
+	/** A refusal's body in plain words: its { words } when present, else its { error }, else what the status means for a decision. */
 	static FString AnswerWords(int32 Status, const FString& Body);
+	/** A refusal's sentence for the person, or empty: its non-empty `words` (the voice routes' 429 budget), else its `error`
+	 *  when that is a sentence (the turn's 429) rather than a code. */
+	static FString RefusalWords(const FString& Body);
 
 private:
 	// ---- The PC link (night two W2a) ----
