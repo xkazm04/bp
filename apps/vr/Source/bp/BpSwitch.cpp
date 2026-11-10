@@ -540,6 +540,7 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 	bLampNotice = bNotice;
 	// A line that is not the talk's (BpTalk.cpp sets it again after this for its own): the lamp's box shows it.
 	bTalkCaption = false;
+	bSheetCaption = false;
 	LampCaptionClock = FMath::Max(LampCaptionS, PendingSwitch.IsEmpty() ? 0.f : CVarLampSwitchDelayS.GetValueOnGameThread() + 1.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
 	if (LampCaption)
@@ -645,7 +646,7 @@ void ABpTable::ApplyLampWidgets()
 		// The talk's lines read on the console's conversation sheet (night two V2), not in this box, while it shows them.
 		// bp.Captions 1 (SETTINGS › ACCESSIBILITY › CAPTIONS ALWAYS): every line the lamp says, on the site plan too.
 		const IConsoleVariable* Always = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Captions"));
-		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || (Always && Always->GetInt() != 0)) && !(bTalkCaption && TalkOnConsole());
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || (Always && Always->GetInt() != 0)) && !(bTalkCaption && TalkOnConsole()) && !bSheetCaption;
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
 		// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
 		// names and the pin tags under it.

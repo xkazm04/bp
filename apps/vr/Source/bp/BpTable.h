@@ -1937,6 +1937,9 @@ private:
 	bool bLampNotice = false;
 	/** The caption's line is the talk's (BpTalk.cpp): the console's conversation sheet shows it, the lamp's box stays quiet. */
 	bool bTalkCaption = false;
+	/** Night two V8: the caption's line is a stand-up sheet's own title (StandupShow): the sheet shows those words, so the
+	 *  lamp's box stays quiet for it as for a talk line (the voice still plays); the next line the lamp says clears it. */
+	bool bSheetCaption = false;
 	/** The talk's words left the caption (their time ran out): the console and the wrist redraw. */
 	void TalkCaptionEnded();
 	/** The console shows the conversation now (bp.TalkSheet and no sheet holding the panel). */

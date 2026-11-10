@@ -354,7 +354,13 @@ FString ABpTable::StandupShow(const FString& Kind, const FString& Id, const FStr
 		SetHighlight(FString(), FString());
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s:%s is on no level of this plan; the table stays"), *Kind, *Id);
 	}
-	if (!Line.IsEmpty()) SayLamp(Line, true);
+	if (!Line.IsEmpty())
+	{
+		// V8: the line is the sheet's own title: the voice says it, the box stays quiet (it hid behind the sheet's edge).
+		SayLamp(Line, true);
+		bSheetCaption = true;
+		ApplyLampWidgets();
+	}
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: the plan shows %s:%s%s"), *Kind, *Id, Room.IsEmpty() ? (Wing ? TEXT(" (its wing)") : TEXT("")) : *FString::Printf(TEXT(" (room %s raised, the lamp beside it)"), *Room));
 	return Room;
 }
