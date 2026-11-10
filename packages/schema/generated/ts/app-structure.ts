@@ -1017,7 +1017,8 @@ export interface ProductSummary {
 export interface MorningCard {
   /** Stable across reads of the same morning ('decision:<product>:<proposal>'), so a reader keeps its card. */
   id: string;
-  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+  /** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. */
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close' | 'outcomes';
   product?: string;
   productName?: string;
   headline: string;
@@ -1028,6 +1029,8 @@ export interface MorningCard {
   decision?: CardDecision;
   /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
   news?: true;
+  /** kind outcomes only: what earlier approvals became, newest decision first (added 2026-11-10, optional). */
+  outcomes?: Outcome[];
 }
 
 export interface CardLine {
@@ -1088,6 +1091,32 @@ export interface CardDecline {
   match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
 }
 
+/** One approval and what it became (companion/outcomes.ts joinOutcomes; added 2026-11-10). Absent values are omitted, never null or empty. */
+export interface Outcome {
+  /** The proposal id the person approved. */
+  proposal: string;
+  /** Its title as the store has it now. */
+  title: string;
+  /** The room id on the plan, when the proposal's feature maps to one (as decision cards resolve it). */
+  room?: string;
+  /** ISO: the decision log's `at` (an event time). */
+  decided_at: string;
+  /** The decision log's surface. */
+  decided_by: 'web' | 'vr';
+  /** built: the store says done, accepted, rework or released; failed: failed; building: executing, or a queued or running execute job names it; waiting: approved, no job yet. */
+  outcome: 'built' | 'failed' | 'building' | 'waiting';
+  /** failed only: the failure record's stage and reason in one sentence. */
+  reason?: string;
+  /** built only: the short commit sha, when the store has one. */
+  commit?: string;
+  /** The wave id, when a wave holds it. */
+  wave?: string;
+  /** The proposal's before screen: a Shot.path (png, jpg or webp only). */
+  before?: string;
+  /** The proposal's after screen: a Shot.path (png, jpg or webp only). */
+  after?: string;
+}
+
 /** What agents did with the owner's decisions in the window (companion/trail.ts). */
 export interface TrailTally {
   reads: number;
@@ -1121,7 +1150,8 @@ export interface AgentDeck {
 
 export interface AgentCard {
   id: string;
-  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+  /** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. */
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close' | 'outcomes';
   product?: string;
   headline: string;
   lines: string[];

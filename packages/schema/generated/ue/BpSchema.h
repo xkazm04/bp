@@ -2740,6 +2740,57 @@ struct BPLINK_API FBpCardDecision
 	FBpCardBrief brief;
 };
 
+/** One approval and what it became (companion/outcomes.ts joinOutcomes; added 2026-11-10). Absent values are omitted, never null or empty. */
+USTRUCT(BlueprintType)
+struct BPLINK_API FBpOutcome
+{
+	GENERATED_BODY()
+
+	/** The proposal id the person approved. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString proposal;
+
+	/** Its title as the store has it now. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString title;
+
+	/** The room id on the plan, when the proposal's feature maps to one (as decision cards resolve it) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString room;
+
+	/** ISO: the decision log's `at` (an event time). required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decided_at;
+
+	/** The decision log's surface. one of: web, vr. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString decided_by;
+
+	/** built: the store says done, accepted, rework or released; failed: failed; building: executing, or a queued or running execute job names it; waiting: approved, no job yet. one of: built, failed, building, waiting. required */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString outcome;
+
+	/** failed only: the failure record's stage and reason in one sentence */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString reason;
+
+	/** built only: the short commit sha, when the store has one */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString commit;
+
+	/** The wave id, when a wave holds it */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString wave;
+
+	/** The proposal's before screen: a Shot.path (png, jpg or webp only) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString before;
+
+	/** The proposal's after screen: a Shot.path (png, jpg or webp only) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	FString after;
+};
+
 USTRUCT(BlueprintType)
 struct BPLINK_API FBpMorningCard
 {
@@ -2749,7 +2800,7 @@ struct BPLINK_API FBpMorningCard
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** one of: open, agents, built, release, quiet, decision, close. required */
+	/** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. one of: open, agents, built, release, quiet, decision, close, outcomes. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString kind;
 
@@ -2781,6 +2832,10 @@ struct BPLINK_API FBpMorningCard
 	/** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional) */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	bool news = false;
+
+	/** kind outcomes only: what earlier approvals became, newest decision first (added 2026-11-10, optional) */
+	UPROPERTY(BlueprintReadOnly, Category = "Bp")
+	TArray<FBpOutcome> outcomes;
 };
 
 /** What agents did with the owner's decisions in the window (companion/trail.ts). */
@@ -2948,7 +3003,7 @@ struct BPLINK_API FBpAgentCard
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString id;
 
-	/** one of: open, agents, built, release, quiet, decision, close. required */
+	/** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. one of: open, agents, built, release, quiet, decision, close, outcomes. required */
 	UPROPERTY(BlueprintReadOnly, Category = "Bp")
 	FString kind;
 

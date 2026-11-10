@@ -13,7 +13,8 @@
 // before the close card, marked new, and the top bar says "1 new". The cards already read never move.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
-import type { CardBrief, MorningCard, MorningDeck, Verdict } from '@bp/core/companion/morning';
+import type { CardBrief, MorningCard, MorningDeck, Outcome, Verdict } from '@bp/core/companion/morning';
+import { shotSrc } from '@bp/core/train/shots';
 import { sharedFocus } from '@/lib/focus/shared';
 import { useEngine, useLive } from '../hooks';
 import { postHuman } from '../crossing/follow';
@@ -202,7 +203,8 @@ export function MorningWatch({ phone = false }: { phone?: boolean }) {
         <motion.div key={card.id} className="card" aria-live="polite" initial={calm ? false : { opacity: 0, x: 18 }} animate={{ opacity: 1, x: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 34 }}>
           <span className={'tag ' + card.tone}>{card.news ? 'New · ' : ''}{TAG[card.kind]}{card.productName ? ' · ' + card.productName : ''}</span>
           <h2>{card.headline}</h2>
-          {card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
+          {card.kind === 'outcomes' && card.outcomes?.length ? <Outcomes product={card.product} xs={card.outcomes} />
+            : card.lines.length > 0 && <ul>{card.lines.map((l, j) => <li key={j} className={l.tone ?? ''}>{l.text}</li>)}</ul>}
           {card.decision?.brief && <DeckBrief b={card.decision.brief} />}
           {card.place && <div className="where">{phone ? (others.length ? 'On ' + others.map((x) => x.label).join(', ') + ' now' : 'No screen follows yet: open bp with ?follow=1') : card.place.product === here ? 'On the plan behind this card' : 'Opening ' + (card.productName ?? card.place.product) + '…'}</div>}
           {where && <div className="steered err">{where.text}</div>}
@@ -272,4 +274,36 @@ function DeckBrief({ b }: { b: CardBrief }) {
   );
 }
 
-const TAG: Record<MorningCard['kind'], string> = { open: 'This morning', agents: 'Agents overnight', built: 'Built overnight', release: 'Release', quiet: 'Quiet night', decision: 'Decision', close: 'Done' };
+const TAG: Record<MorningCard['kind'], string> = { open: 'This morning', agents: 'Agents overnight', outcomes: 'Your approvals', built: 'Built overnight', release: 'Release', quiet: 'Quiet night', decision: 'Decision', close: 'Done' };
+
+/** What yesterday's approvals became (the `outcomes` card, companion/outcomes.ts): per approval its title, a chip with the
+ *  outcome, the failure's reason, and the before and after screens side by side when the store has them. */
+const OUTCOME_CHIP: Record<Outcome['outcome'], { tone: string; text: string }> = {
+  built: { tone: 'good', text: 'Built' }, failed: { tone: 'bad', text: 'Failed' }, building: { tone: '', text: 'Building' }, waiting: { tone: 'warn', text: 'Not built yet' },
+};
+function Outcomes({ product, xs }: { product?: string; xs: Outcome[] }) {
+  const src = (p: string) => shotSrc(product ?? null, { path: p });
+  return (
+    <ul aria-label="What your approvals became">
+      {xs.map((x) => (
+        <li key={x.proposal} className={OUTCOME_CHIP[x.outcome].tone}>
+          <span className={'tag ' + OUTCOME_CHIP[x.outcome].tone} style={{ marginRight: 8 }}>{OUTCOME_CHIP[x.outcome].text}{x.commit ? ' · ' + x.commit : ''}</span>
+          {x.title}
+          <div className="where" style={{ marginTop: 4 }}>Approved {x.decided_at.slice(0, 10)} {x.decided_at.slice(11, 16)} UTC {x.decided_by === 'vr' ? 'at the table' : 'on the page'}{x.wave ? ' · in wave ' + x.wave : ''}</div>
+          {x.reason && <div style={{ marginTop: 4 }}>{x.reason}</div>}
+          {(x.before || x.after) && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              {[['Before', x.before], ['After', x.after]].map(([label, p]) => p ? (
+                <figure key={label} style={{ flex: '0 1 50%', margin: 0, minWidth: 0 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- a store screenshot, served by the shots route */}
+                  <img src={src(p)} alt={`${label}: ${x.title}`} loading="lazy" style={{ width: '100%', display: 'block', border: '1px solid var(--ink-4)' }} />
+                  <figcaption className="where" style={{ marginTop: 2 }}>{label}</figcaption>
+                </figure>
+              ) : null)}
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}

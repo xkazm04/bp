@@ -9,7 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DeciderMarks } from '../../decider.server.ts';
-import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
+import { buildDeck, cardBrief, closeLines, decidedElsewhere, type MorningDeck, type Outcome, type ProductFacts, type SteerRow, type Verdict, type Where } from '../../../companion/morning.ts';
+import { outcomesFor } from '../../outcomes.server.ts';
 import { briefMapOf, briefMapOfStructure, type BriefMap } from '../../../scan/brief.ts';
 import { evidenceOpts } from '../../../scan/track.ts';
 import type { ProductEntry, Proposal } from '../../../scan/types.ts';
@@ -94,8 +95,11 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
   for (const [i, { p, scan }] of read.entries()) {
     const l = landed[i];
     const { lenses, ...mf } = whereOf(p), { contains, bounds } = evidenceOpts(l, lenses);
-    facts.push({ slug: p.slug, name: p.name, scan, ...mf, orders: ordersOf(p, scan.proposals, now), evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}) });
     const rows = readSteer(p);
+    // what the person's approvals before this window became (outcomes.server.ts: read only)
+    let outcomes: Outcome[] = [];
+    try { outcomes = outcomesFor(p, scan, rows, from, now, mf.where); } catch (e) { warnOnce('morning outcomes ' + p.slug, e); }
+    facts.push({ slug: p.slug, name: p.name, scan, ...mf, orders: ordersOf(p, scan.proposals, now), evidence: { ...(contains ? { contains } : {}), ...(bounds ? { bounds } : {}) }, ...(l?.state === 'known' ? { landed: { ref: l.ref, items: l.items } } : {}), ...(outcomes.length ? { outcomes } : {}) });
     // the deck carries the SteerRow shape (morning-deck schema); who decided and where stays in the log's own row
     steer.push(...rows.map(({ surface: _s, device: _d, shown: _w, ...r }: SteerRow & Partial<DeciderMarks>) => r));
     renderOnRead(p, rows, now);

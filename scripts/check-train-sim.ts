@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { ScanSim } from '../packages/core/src/model/scan-sim.ts';
-import { FINDING_SHOTS, FINDING_SHOT_HARNESS, SAMPLE_ITEMS, findingShotFile } from '../packages/core/src/model/train-sim.ts';
+import { AFTER_SHOTS, FINDING_SHOTS, FINDING_SHOT_HARNESS, SAMPLE_ITEMS, afterShotFile, findingShotFile } from '../packages/core/src/model/train-sim.ts';
 import { compareOf, type LensFields } from '../packages/core/src/scan/compare.ts';
 import { isJobNote, type ScanJob } from '../packages/core/src/scan/jobs.ts';
 import { shotSrc } from '../packages/core/src/train/shots.ts';
@@ -254,8 +254,13 @@ try {
   try {
     ks.bind({ order, manifest: (l) => manifests.get(l), value: mapValue });
     const fs8 = ks.snapshot().shots.filter((s) => s.harness_module === FINDING_SHOT_HARNESS), fp = new Map(findings.map((p) => [p.id, p]));
-    check('finding shots: one before row per FINDING_SHOTS finding, on its run and feature, a bare file that exists', fs8.length === FINDING_SHOTS.length && FINDING_SHOTS.every((id) => fs8.filter((s) => s.proposal_id === id).length === 1)
-      && fs8.every((s) => s.phase === 'before' && s.path === findingShotFile(s.proposal_id!) && s.run_id === fp.get(s.proposal_id!)?.run_id && s.feature === fp.get(s.proposal_id!)?.feature && fs.existsSync(path.join(ROOT, 'apps/web/public', shotSrc(null, s)))),
+    // one before row per FINDING_SHOTS finding and one after row per AFTER_SHOTS finding (ES1, 2026-11-10: the sample morning's
+    // before/after pairs), each on its finding's run and feature, a bare file that exists
+    const want = (s: (typeof fs8)[number]) => (s.phase === 'after' ? afterShotFile(s.proposal_id!) : findingShotFile(s.proposal_id!));
+    check('finding shots: one before row per FINDING_SHOTS finding and one after row per AFTER_SHOTS finding, on its run and feature, a bare file that exists',
+      fs8.length === FINDING_SHOTS.length + AFTER_SHOTS.length && FINDING_SHOTS.every((id) => fs8.filter((s) => s.proposal_id === id && s.phase === 'before').length === 1)
+      && AFTER_SHOTS.every((id) => fs8.filter((s) => s.proposal_id === id && s.phase === 'after').length === 1)
+      && fs8.every((s) => (s.phase === 'before' || (s.phase === 'after' && AFTER_SHOTS.includes(s.proposal_id!))) && s.path === want(s) && s.run_id === fp.get(s.proposal_id!)?.run_id && s.feature === fp.get(s.proposal_id!)?.feature && fs.existsSync(path.join(ROOT, 'apps/web/public', shotSrc(null, s)))),
       `${fs8.length} rows: ${fs8.map((s) => s.path).join(', ')}`);
     check('finding shots: none without the findings (the sim seeds only findings it holds)', !snap().shots.some((s) => s.harness_module === FINDING_SHOT_HARNESS));
   } finally { ks.dispose(); }

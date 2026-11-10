@@ -12,7 +12,7 @@
     "post": { "$ref": "#/$defs/steerPost" }
   },
   "$defs": {
-    "cardKind": { "type": "string", "enum": ["open", "agents", "built", "release", "quiet", "decision", "close"] },
+    "cardKind": { "type": "string", "enum": ["open", "agents", "built", "release", "quiet", "decision", "close", "outcomes"], "description": "outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built." },
     "cardTone": { "type": "string", "enum": ["good", "warn", "bad", "calm"] },
     "steerVerdict": { "type": "string", "enum": ["approve", "defer", "hold", "decline"], "description": "decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409)." },
     "cardLine": {
@@ -92,6 +92,25 @@
         "brief": { "$ref": "#/$defs/cardBrief" }
       }
     },
+    "outcome": {
+      "description": "One approval and what it became (companion/outcomes.ts joinOutcomes; added 2026-11-10). Absent values are omitted, never null or empty.",
+      "type": "object",
+      "required": ["proposal", "title", "decided_at", "decided_by", "outcome"],
+      "additionalProperties": false,
+      "properties": {
+        "proposal": { "type": "string", "minLength": 1, "description": "The proposal id the person approved." },
+        "title": { "type": "string", "minLength": 1, "description": "Its title as the store has it now." },
+        "room": { "type": "string", "minLength": 1, "description": "The room id on the plan, when the proposal's feature maps to one (as decision cards resolve it)." },
+        "decided_at": { "type": "string", "minLength": 1, "description": "ISO: the decision log's `at` (an event time)." },
+        "decided_by": { "type": "string", "enum": ["web", "vr"], "description": "The decision log's surface." },
+        "outcome": { "type": "string", "enum": ["built", "failed", "building", "waiting"], "description": "built: the store says done, accepted, rework or released; failed: failed; building: executing, or a queued or running execute job names it; waiting: approved, no job yet." },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 160, "description": "failed only: the failure record's stage and reason in one sentence." },
+        "commit": { "type": "string", "minLength": 1, "description": "built only: the short commit sha, when the store has one." },
+        "wave": { "type": "string", "minLength": 1, "description": "The wave id, when a wave holds it." },
+        "before": { "type": "string", "pattern": "\\.(png|jpe?g|webp)$", "description": "The proposal's before screen: a Shot.path (png, jpg or webp only)." },
+        "after": { "type": "string", "pattern": "\\.(png|jpe?g|webp)$", "description": "The proposal's after screen: a Shot.path (png, jpg or webp only)." }
+      }
+    },
     "morningCard": {
       "type": "object",
       "required": ["id", "kind", "headline", "lines", "tone"],
@@ -106,7 +125,8 @@
         "tone": { "$ref": "#/$defs/cardTone" },
         "place": { "$ref": "shared-focus-1.schema.json#/$defs/focusPlace", "description": "Where the card takes every follower as it is read." },
         "decision": { "$ref": "#/$defs/cardDecision" },
-        "news": { "const": true, "description": "Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional)." }
+        "news": { "const": true, "description": "Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional)." },
+        "outcomes": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/outcome" }, "description": "kind outcomes only: what earlier approvals became, newest decision first (added 2026-11-10, optional)." }
       }
     },
     "productSummary": {

@@ -177,6 +177,12 @@ export const FINDING_SHOTS: readonly string[] = ['kf-011', 'kf-053', 'kf-020', '
 /** A finding shot's Shot.path: a bare file name, the same `<file>` the Kettle shots route (`/api/products/kettle/shots/<file>`)
  *  and the VR bundle's `kettle/shots/` folder answer; the web serves it from public/sample-shots/ (packages/core/src/train/shots.ts shotSrc). */
 export const findingShotFile = (id: string): string => `finding-${id}.png`;
+/** The FINDING_SHOTS findings that also carry a generated "after" screen: the same screen with the finding fixed, made by the
+ *  same script with the same look (its manifest holds each prompt). The sample morning's "what yesterday's approvals became"
+ *  card (companion/outcomes.ts; apps/vr/tools/bundle-morning.ts, scripts/morning-demo.mjs) shows each before beside its after. */
+export const AFTER_SHOTS: readonly string[] = ['kf-011', 'kf-041'];
+/** A finding's after screen's Shot.path: a bare file name beside its before screen. */
+export const afterShotFile = (id: string): string => `finding-${id}-after.png`;
 /** The harness label on a finding shot: a generated sample screen, never a capture. */
 export const FINDING_SHOT_HARNESS = 'generated-sample';
 /** Size of a finding shot, as Shot.size. */
@@ -301,6 +307,8 @@ export class TrainSim {
       if (!p) continue;
       this.shots.push({ id: ++this.shotId, run_id: p.run_id, feature: p.feature, path: findingShotFile(id), size: FINDING_SHOT_SIZE, theme: 'light', harness_module: FINDING_SHOT_HARNESS,
         captured_at: p.created_at, report: { generated: true, note: 'generated sample screen, not a capture (scripts/fixtures/kettle-finding-shots.manifest.json)', consoleErrors: [] }, proposal_id: id, phase: 'before' });
+      if (AFTER_SHOTS.includes(id)) this.shots.push({ id: ++this.shotId, run_id: p.run_id, feature: p.feature, path: afterShotFile(id), size: FINDING_SHOT_SIZE, theme: 'light', harness_module: FINDING_SHOT_HARNESS,
+        captured_at: p.created_at, report: { generated: true, note: 'generated sample screen of the finding fixed, not a capture (scripts/fixtures/kettle-finding-shots.manifest.json)', consoleErrors: [] }, proposal_id: id, phase: 'after' });
     }
     this.settle(this.packs.map((k) => k.id), this.iso());
   }

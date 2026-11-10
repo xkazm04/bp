@@ -30,7 +30,7 @@ const NOTE = 'morning-demo: synthetic overnight activity';
 
 // Three products, three different nights. `pick` offsets choose different features from the same map, so the rooms differ.
 const PRODUCTS = [
-  { slug: 'kettle-web', name: 'Kettle Web', pick: 0, built: 4, failed: 1, release: { version: '1.4.0', confirm: true }, findings: [{ tier: 0, risk_class: 'secret' }, { tier: 2, risk_class: 'ux' }] },
+  { slug: 'kettle-web', name: 'Kettle Web', pick: 0, built: 4, failed: 1, release: { version: '1.4.0', confirm: true }, findings: [{ tier: 0, risk_class: 'secret' }, { tier: 2, risk_class: 'ux' }], approvals: true },
   { slug: 'kettle-phone', name: 'Kettle Phone', pick: 7, built: 2, failed: 0, release: { version: '2.1.0', confirm: false }, findings: [{ tier: 1, risk_class: 'perf' }] },
   { slug: 'kettle-desk', name: 'Kettle Front Desk', pick: 13, built: 0, failed: 0, release: null, findings: [{ tier: 2, risk_class: 'debt' }] },
 ];
@@ -154,6 +154,45 @@ function night(db, spec) {
   db.exec('COMMIT');
 }
 
+// What yesterday's approvals became (roadmap E; companion/outcomes.ts): three Kettle findings that carry generated screens
+// (scripts/fixtures/kettle-finding-shots.mjs) were approved from the table yesterday morning, before this window: two were
+// built (each with its before and its after screen), one failed with a reason a person reads. The approvals are rows of the
+// product's own steering log (surface vr), the screens are copied into the store's shots/ with their Shot rows, the build
+// ran in a wave, and the failure is lens-scan's `failure <id>: {stage, reason, evidence}` error activity. Labelled like the night.
+const YESTERDAY = [
+  { id: 'kf-011', outcome: 'done', approvedH: 26, builtH: 21, commit: 'de3011a7c4', after: true },
+  { id: 'kf-041', outcome: 'done', approvedH: 25.5, builtH: 20, commit: 'de3041b29e', after: true },
+  { id: 'kf-045', outcome: 'failed', approvedH: 25, builtH: 19.5, failure: { stage: 'gate', reason: 'the new end-to-end test still fails because the total stays at 120.00 with the promo code applied', evidence: 'npm run test:e2e -- promo-codes -> expected Total 96.00, got 120.00' } },
+];
+function yesterday(db, dir, slug) {
+  const findings = new Map(JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.findings.json'), 'utf8')).map((p) => [p.id, p]));
+  const shotsIn = path.join(dir, '.ai', 'lens-scan', 'shots', 'demo-yesterday'), run = 'run-yesterday-build', wave = 'w-demo-yesterday';
+  fs.mkdirSync(shotsIn, { recursive: true });
+  db.exec('BEGIN');
+  insert(db, 'runs', { id: run, started_at: iso(NOW - 22 * H), updated_at: iso(NOW - 19.5 * H), ended_at: iso(NOW - 19.5 * H), phase: 'execute', status: 'done', lenses: JSON.stringify(['design', 'business', 'quality']), scope: { yesterday: true }, skill_version: '0.1.0', model: 'demo', note: NOTE });
+  const steer = [];
+  for (const y of YESTERDAY) {
+    const f = findings.get(y.id), approved = iso(NOW - y.approvedH * H), done = iso(NOW - y.builtH * H);
+    insert(db, 'proposals', { id: y.id, run_id: run, feature: f.feature, lens: f.lens, metric: f.metric, title: f.title, body: `## Summary\n${NOTE}: approved from the table yesterday morning.`, expected_delta: f.expected_delta, size: f.size ?? 'S', risk: f.risk ?? 3, kind: f.kind ?? 'fix',
+      status: y.outcome, decided_by: 'user:morning-demo', decided_at: approved, decision_note: 'Morning Watch, from the table (quest-demo)', commit_sha: y.commit, created_at: iso(NOW - 40 * H), updated_at: done });
+    insert(db, 'activity', { run_id: run, at: done, feature: f.feature, lens: f.lens, kind: y.outcome === 'done' ? 'committed' : 'error',
+      text: y.outcome === 'done' ? `built: ${f.title}` : `failure ${y.id}: ${JSON.stringify(y.failure)}` });
+    for (const phase of y.after ? ['before', 'after'] : ['before']) {
+      const file = phase === 'before' ? `finding-${y.id}.png` : `finding-${y.id}-after.png`;
+      fs.copyFileSync(path.join(ROOT, 'apps/web/public/sample-shots', file), path.join(shotsIn, file));
+      insert(db, 'shots', { run_id: run, feature: f.feature, path: `shots/demo-yesterday/${file}`, size: '1280x720', theme: 'light', harness_module: 'generated-sample', captured_at: phase === 'before' ? approved : done,
+        report: { generated: true, note: `${NOTE}: a generated sample screen, not a capture`, consoleErrors: [] }, proposal_id: y.id, phase });
+    }
+    steer.push({ at: approved, product: slug, proposal: y.id, verdict: 'approve', title: f.title, by: 'user:morning-demo', surface: 'vr', device: 'quest-demo:pr-demo', shown: f.title });
+  }
+  db.exec('COMMIT');
+  const work = path.join(dir, '.ai', 'lens-scan', 'work');
+  fs.mkdirSync(work, { recursive: true });
+  fs.writeFileSync(path.join(work, 'steering-log.jsonl'), steer.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  fs.writeFileSync(path.join(work, 'bp-waves.json'), JSON.stringify({ version: 1, waves: [{ id: wave, name: "Yesterday's approvals", status: 'dispatched', created_at: iso(NOW - 24 * H), dispatched_at: iso(NOW - 22 * H),
+    packages: [{ id: 'pk-1', name: 'From the table', model: 'sonnet', effort: 'medium', ids: YESTERDAY.map((y) => y.id) }], jobs: [{ package: 'pk-1', job: 'j-demo-yesterday' }] }] }, null, 2) + '\n');
+}
+
 fs.mkdirSync(BASE, { recursive: true });
 const registry = { products: [] };
 for (const spec of PRODUCTS) {
@@ -162,7 +201,8 @@ for (const spec of PRODUCTS) {
   if (r.status !== 0) { console.error(`scan-demo failed for ${spec.slug}`); process.exit(1); }
   const db = new DatabaseSync(path.join(dir, '.ai', 'lens-scan', 'scan.db'));
   try { night(db, spec); } finally { db.close(); }
-  for (const f of ['steering-log.jsonl', 'steering-log.md']) fs.rmSync(path.join(dir, '.ai', 'lens-scan', 'work', f), { force: true });
+  for (const f of ['steering-log.jsonl', 'steering-log.md', 'bp-waves.json']) fs.rmSync(path.join(dir, '.ai', 'lens-scan', 'work', f), { force: true });
+  if (spec.approvals) { const y = new DatabaseSync(path.join(dir, '.ai', 'lens-scan', 'scan.db')); try { yesterday(y, dir, spec.slug); } finally { y.close(); } }
   registry.products.push({ slug: spec.slug, name: spec.name, root: dir });
   console.log(`seeded ${spec.slug}: ${spec.built} built, ${spec.failed} failed, ${spec.release ? 'release ' + spec.release.version + (spec.release.confirm ? ' (confirms)' : ' (falls short)') : 'no release'}, ${spec.findings.length} new finding(s)`);
 }

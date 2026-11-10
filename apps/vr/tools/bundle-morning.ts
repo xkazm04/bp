@@ -5,7 +5,9 @@
 // copy of the bundled Kettle scan with a labelled synthetic night on top, the way scripts/morning-demo.mjs seeds its stores:
 //   - three open findings that have a bundled "before" screen (scan.json's Shot rows, shots/finding-<id>.png) are raised
 //     overnight with tiers (stop-ship, then two before production), so they are the morning's three decisions;
-//   - three findings that were being built finish overnight and one fails, so the deck opens with what agents built.
+//   - three findings that were being built finish overnight and one fails, so the deck opens with what agents built;
+//   - three findings with screens were approved from the table yesterday morning: two were built (before and after screens),
+//     one failed with its reason, so the deck says what yesterday's approvals became (the `outcomes` card, companion/outcomes.ts).
 // Nothing reads or writes a real store: the copy lives in memory, and the night's rows are only in morning.json. The deck's
 // briefs are cardBrief's over the bundled structure (the same lines the web's Morning Watch shows). Brand words are reworded
 // like every bundled file (bundle-words.mjs).
@@ -16,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDeck, type ProductFacts, type Where } from '../../../packages/core/src/companion/morning.ts';
+import { joinOutcomes, type Approval, type BuildTrail } from '../../../packages/core/src/companion/outcomes.ts';
 import { briefMapOfStructure } from '../../../packages/core/src/scan/brief.ts';
 import { loadMap } from '../../../packages/core/src/data/index.ts';
 import type { Proposal, ScanSnapshot } from '../../../packages/core/src/scan/types.ts';
@@ -31,7 +34,17 @@ export const SAMPLE_NIGHT = {
   ],
   built: [{ id: 'kf-005', hoursAgo: 7 }, { id: 'kf-013', hoursAgo: 5 }, { id: 'kf-036', hoursAgo: 2 }],
   failed: [{ id: 'kf-057', hoursAgo: 3 }],
+  /** What yesterday's approvals became (the `outcomes` card, companion/outcomes.ts): three findings with a bundled before
+   *  screen, approved from the table yesterday morning (before the window); two built, each with its after screen
+   *  (AFTER_SHOTS, train-sim.ts), one failed with its reason. Not kf-053, kf-024 or kf-020: those are this morning's decisions. */
+  approved: [
+    { id: 'kf-011', approvedH: 26, builtH: 21, status: 'done' as const, commit: 'de3011a7c4' },
+    { id: 'kf-041', approvedH: 25.5, builtH: 20, status: 'done' as const, commit: 'de3041b29e' },
+    { id: 'kf-045', approvedH: 25, builtH: 19.5, status: 'failed' as const, failure: { stage: 'gate', reason: 'the new end-to-end test still fails because the total stays at 120.00 with the promo code applied' } },
+  ],
 };
+/** The sample's wave for yesterday's approvals (the outcome names it). */
+const SAMPLE_WAVE = 'w-sample-yesterday';
 const NOTE = 'sample: a synthetic night on the bundled Kettle sample (bundle-morning.ts)';
 /** The window the sample covers: the server's own default (morning.server.ts WINDOW_MS), the last 16 hours. */
 const WINDOW_MS = 16 * 3600e3;
@@ -55,6 +68,20 @@ export function sampleMorning(dir: string, now: number): { deck: unknown; proble
       Object.assign(p, { status, updated_at: iso(now - b.hoursAgo * H) });
     }
   }
+  // yesterday's approvals: the store as it reads the morning after (built with a commit, or failed), the approvals as the
+  // decision log would hold them (from the table), the failure record as lens-scan writes it, one wave holding all three
+  const approvals: Approval[] = [], failures = new Map<string, { stage?: string; reason: string }>();
+  const hasShot = (id: string, phase: string) => (scan.shots ?? []).some((s) => s.proposal_id === id && s.phase === phase && /^[\w.-]+\.png$/.test(s.path ?? '') && fs.existsSync(path.join(dir, 'shots', s.path!)));
+  for (const a of SAMPLE_NIGHT.approved) {
+    const p = byId.get(a.id);
+    if (!p || (p.status !== 'proposed' && p.status !== 'approved')) { problems.push(`${a.id} is not an open finding in scan.json`); continue; }
+    if (!hasShot(a.id, 'before')) problems.push(`${a.id} has no bundled before screen`);
+    if (a.status === 'done' && !hasShot(a.id, 'after')) problems.push(`${a.id} has no bundled after screen (AFTER_SHOTS; rerun bundle-data.mjs)`);
+    Object.assign(p, { status: a.status, decided_by: 'user:sample', decided_at: iso(now - a.approvedH * H), updated_at: iso(now - a.builtH * H), ...('commit' in a ? { commit_sha: a.commit } : {}) });
+    approvals.push({ at: iso(now - a.approvedH * H), product: 'kettle', proposal: a.id, verdict: 'approve', surface: 'vr' });
+    if ('failure' in a && a.failure) failures.set(a.id, a.failure);
+  }
+  const trail: BuildTrail = { waves: [{ id: SAMPLE_WAVE, status: 'dispatched', created_at: iso(now - 24 * H), packages: [{ ids: SAMPLE_NIGHT.approved.map((a) => a.id) }] }], jobs: [], failures };
   // Every other open finding keeps its age (raised weeks ago) and no tier, so it ranks after the night's three.
   const where = new Map<string, Where>();
   const wings = new Map(plan.wings.map((w: { id: string }) => [w.id, w])), rooms = new Map(plan.rooms.map((r: { id: string }) => [r.id, r])), bays = new Map(plan.bays.map((b: { id: string }) => [b.id, b]));
@@ -65,8 +92,11 @@ export function sampleMorning(dir: string, now: number): { deck: unknown; proble
   }
   const labels = new Map<string, string>();
   for (const l of env.structure.lenses ?? []) for (const f of l.manifest?.fields ?? []) if (l.id && f.key && f.label) labels.set(`${l.id}|${f.key}`, f.label);
-  const facts: ProductFacts = { slug: 'kettle', name: env.structure.project?.name ?? 'Kettle', scan, where, labels, map: briefMapOfStructure(loadMap(env.structure, env.events ?? null)) };
-  const deck = buildDeck([facts], [], iso(now - WINDOW_MS), now);
+  const since = iso(now - WINDOW_MS);
+  const outcomes = joinOutcomes('kettle', scan.proposals, (scan.shots ?? []) as ScanSnapshot['shots'], approvals, trail, since, now, where);
+  if (outcomes.length !== SAMPLE_NIGHT.approved.length) problems.push(`the outcomes card holds ${outcomes.length} approvals, not ${SAMPLE_NIGHT.approved.length}`);
+  const facts: ProductFacts = { slug: 'kettle', name: env.structure.project?.name ?? 'Kettle', scan, where, labels, map: briefMapOfStructure(loadMap(env.structure, env.events ?? null)), outcomes };
+  const deck = buildDeck([facts], [], since, now);
   const decisions = deck.cards.filter((c) => c.kind === 'decision').map((c) => c.decision?.proposal);
   const want = SAMPLE_NIGHT.decisions.map((d) => d.id);
   if (decisions.join() !== want.join()) problems.push(`the deck's decisions are ${decisions.join(', ')}, not ${want.join(', ')}`);

@@ -3,6 +3,9 @@
 // morning says and where each card takes the owner. Every card that is about a place carries it (a FocusPlace), so as a
 // card is read the deck publishes it to the shared focus and every following surface flies there.
 //   open      the portfolio in one line: built, failed, releases that moved their lens or fell short, decisions waiting
+//   outcomes  per product, before its other cards: what the owner's approvals of the last days (before this window) became -
+//             built (with its commit), failed (with the reason), building, or "approved, not built yet" - each with its
+//             before and after screens when the store has them (companion/outcomes.ts; ProductFacts.outcomes)
 //   built     per product: what agents built overnight (and what failed), at the room where most of it landed
 //   release   per product: a release merged in the window, and whether readings taken after it confirm its items; and
 //             the accepted items git says landed on the base branch in the window (ProductFacts.landed), judged by the
@@ -30,10 +33,12 @@ import { cardBrief, clip, type CardBrief } from './card-brief.ts';
 export { cardBrief, type CardBrief };
 import { trailSessions, trailTally, type TrailRow, type TrailTally } from './trail.ts';
 import { STEER_VERDICTS } from '../standard/schema-vocab.ts';
+import { outcomeLine, outcomesHeadline, outcomesTone, type Outcome } from './outcomes.ts';
+export type { Outcome };
 // The wire is packages/schema/schema/morning-deck-1.schema.json (MorningDeck, AgentDeck, SteerRow, SteerPost);
 // check:schema holds these hand-written types to it field by field.
 
-export type CardKind = 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+export type CardKind = 'open' | 'agents' | 'outcomes' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
 export type Tone = 'good' | 'warn' | 'bad' | 'calm';
 /** `decline` is offered on a repeat only (the card's brief recommends it); the server refuses it on any other card. */
 export type Verdict = (typeof STEER_VERDICTS)[number];
@@ -56,6 +61,9 @@ export interface ProductFacts {
   evidence?: Pick<TrackOpts, 'contains' | 'bounds'>;
   /** Open finding id -> the live standing order no agent door will build it past (morning.server.ts). Not the owner's Hold verdict. */
   orders?: ReadonlyMap<string, string>;
+  /** What the person's earlier approvals became (companion/outcomes.ts joinOutcomes; the server's join is
+   *  server/outcomes.server.ts): one `outcomes` card when there is any. Absent or empty -> no card. */
+  outcomes?: readonly Outcome[];
 }
 /** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
 export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
@@ -75,6 +83,8 @@ export interface MorningCard {
   decision?: { proposal: string; tier?: number; steered?: SteerRow; brief?: CardBrief };
   /** Landed after the reader opened the deck: appended at the end, never into the read part. */
   news?: true;
+  /** kind `outcomes` only: what yesterday's approvals became, newest decision first (1..OUTCOMES_MAX). */
+  outcomes?: Outcome[];
 }
 export interface ProductSummary { slug: string; name: string; built: number; failed: number; releases: number; confirmed: number; short: number; waiting: number }
 /** `skipped`: products the server could not read (morning.server.ts), named, never dropped silently. */
@@ -135,11 +145,12 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   const cut = opened && opened > since && opened < until ? opened : until;
   const decisions: (Choice & { p: ProductFacts })[] = [], fresh: (Choice & { p: ProductFacts })[] = [], newsCards: MorningCard[] = [];
   let newsCount = 0;
-  const perProduct: MorningCard[][] = [];
+  const perProduct: MorningCard[][] = [], outcomeCards: MorningCard[] = [];
   // products where something landed on the base branch in the window (a landed card)
   const landedIn = new Set<string>();
   for (const p of products) {
     const mine: MorningCard[] = [];
+    if (p.outcomes?.length) outcomeCards.push(outcomesCard(p, p.outcomes, now));
     const built = p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && inWindow(x.updated_at, since, cut));
     const builtLate = cut === until ? [] : p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && !!x.updated_at && x.updated_at > cut && x.updated_at <= until);
     if (builtLate.length) { newsCards.push(lateBuilt(p, builtLate)); newsCount += builtLate.length; }
@@ -251,6 +262,8 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
       ...(met && at ? { product: at.slug, productName: at.name, place: featurePlace(at.slug, met.feature, headline) } : {}),
     });
   }
+  // what earlier approvals became: after the opening (and the agents card), before what was built overnight
+  cards.push(...outcomeCards);
   for (const m of perProduct) cards.push(...m);
   // a decision card; `head` is its first line ("2 of 3" for a ranked one), `news` marks one filed after the deck was opened
   const card = ({ p, x, s, held }: Choice & { p: ProductFacts }, head: string, news: boolean): MorningCard => {
@@ -275,6 +288,17 @@ export function buildDeck(products: readonly ProductFacts[], steer: readonly Ste
   cards.push(...newsCards);
   cards.push({ id: 'close', kind: 'close', headline: 'That is the morning.', tone: 'calm', lines: [] });
   return { since, until, products: sums, cards, ...(agents ? { agents } : {}), ...(cut !== until ? { news: { since: cut, count: newsCount } } : {}) };
+}
+
+/** The `outcomes` card of one product: what its earlier approvals became, at the room most of them sit in. */
+function outcomesCard(p: ProductFacts, xs: readonly Outcome[], now: number): MorningCard {
+  const headline = outcomesHeadline(xs, now, p.name), feat = new Map(p.scan.proposals.map((x) => [x.id, x.feature]));
+  const place = roomPlace(p.slug, busiestRoom(xs.map((x) => feat.get(x.proposal) ?? ''), p.where), headline);
+  const tone = (x: Outcome): Tone => (x.outcome === 'built' ? 'good' : x.outcome === 'failed' ? 'bad' : x.outcome === 'waiting' ? 'warn' : 'calm');
+  return {
+    id: `outcomes:${p.slug}`, kind: 'outcomes', product: p.slug, productName: p.name, headline, tone: outcomesTone(xs),
+    lines: xs.map((x) => ({ text: outcomeLine(x), tone: tone(x) })), ...(place ? { place } : {}), outcomes: [...xs],
+  };
 }
 
 /** Items built after the deck was opened, in one card at the end (the built card above stays as it was read). */

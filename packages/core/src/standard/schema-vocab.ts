@@ -25,8 +25,8 @@ export const PLACE_KINDS = ['feature', 'room', 'wing', 'site'] as const;
 export const FOCUS_OPS = ['hello', 'publish', 'follow', 'unfollow', 'forget', 'back', 'forward'] as const;
 /** shared-focus-1 $defs.placeLevel.enum */
 export const PLACE_LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4'] as const;
-/** morning-deck-1 $defs.cardKind.enum */
-export const CARD_KINDS = ['open', 'agents', 'built', 'release', 'quiet', 'decision', 'close'] as const;
+/** morning-deck-1 $defs.cardKind.enum: outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. */
+export const CARD_KINDS = ['open', 'agents', 'built', 'release', 'quiet', 'decision', 'close', 'outcomes'] as const;
 /** morning-deck-1 $defs.cardTone.enum */
 export const CARD_TONES = ['good', 'warn', 'bad', 'calm'] as const;
 /** morning-deck-1 $defs.steerVerdict.enum: decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */

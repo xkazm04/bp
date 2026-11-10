@@ -50,6 +50,29 @@ check('every place card names a product and a target', d.cards.filter((c) => c.p
 check('every headline is one line', d.cards.every((c) => !c.headline.includes('\n') && c.headline.length <= 140));
 check('the open card counts the night', /2 products of 3 moved: 6 items built, 1 failed/.test(d.cards[0].lines[0]?.text ?? ''), d.cards[0].lines[0]?.text);
 
+// ------------------------------------------------------------------------- what yesterday's approvals became (ES1, roadmap E)
+// morning-demo.mjs: three Kettle findings approved from the table yesterday morning on kettle-web, two built (with before and
+// after screens), one failed with lens-scan's failure record; the server's join (outcomes.server.ts) makes one card of it.
+{
+  const oc = d.cards.find((c) => c.kind === 'outcomes'), xs = oc?.outcomes ?? [], by = (id: string) => xs.find((x) => x.proposal === id);
+  const at = (id: string) => d.cards.findIndex((c) => c.id === id);
+  check('outcomes: one card for kettle-web, after the open card and before what was built overnight', !!oc && oc.id === 'outcomes:kettle-web' && d.cards.filter((c) => c.kind === 'outcomes').length === 1 && at('outcomes:kettle-web') > at('open') && at('outcomes:kettle-web') < at('built:kettle-web'), kinds.join(','));
+  check('outcomes: the headline counts them in words, the tone follows the failure', oc?.headline === '3 approved yesterday on Kettle Web: 2 built, 1 failed' && oc.tone === 'bad', oc?.headline);
+  const k11 = by('kf-011');
+  check('outcomes: a decided-then-built proposal is built, with its short commit and both screens', k11?.outcome === 'built' && k11.commit === 'de3011a' && k11.before === 'shots/demo-yesterday/finding-kf-011.png' && k11.after === 'shots/demo-yesterday/finding-kf-011-after.png' && k11.decided_by === 'vr' && k11.wave === 'w-demo-yesterday', JSON.stringify(k11));
+  const k45 = by('kf-045');
+  check("outcomes: a failed one says the failure record's stage and reason in one sentence, and has no commit or after screen", k45?.outcome === 'failed' && k45.reason === 'A check failed after the change: the new end-to-end test still fails because the total stays at 120.00 with the promo code applied.' && !('commit' in k45) && !('after' in k45), JSON.stringify(k45));
+  check('outcomes: newest decision first', xs.map((x) => x.proposal).join() === 'kf-045,kf-041,kf-011', xs.map((x) => x.proposal).join());
+  check('outcomes: no key carries null or an empty string', xs.every((x) => Object.values(x).every((v) => v !== null && v !== '')), JSON.stringify(xs));
+  const { wire } = await import('./lib/wire-schema.ts');
+  const deckOk = await wire('morning-deck-1', 'morningDeck');
+  check('outcomes: the deck with the card is morning-deck-1', !deckOk(d), String(deckOk(d)));
+  const withCard = (c: object) => ({ ...d, cards: d.cards.map((x) => (x.kind === 'outcomes' ? c : x)) });
+  check('outcomes: a card with an unknown field is not', !!deckOk(withCard({ ...oc, extra: 1 })) && !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[0], extra: 1 }] })));
+  check('outcomes: an outcome with null for an absent key is not, nor an svg screen', !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[1], reason: null }] })) && !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[1], after: 'shots/x/after.svg' }] })));
+
+}
+
 const [d0, d1, d2] = dec;
 let res = await POST(req('POST', { product: d0.product, proposal: d0.decision!.proposal, verdict: 'approve' }));
 check('steering without the human token: 403', res.status === 403);
@@ -164,6 +187,42 @@ check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(pat
   check('the late card is kind built, marked news, when items land after the deck was opened', late?.kind === 'built' && late.news === true, JSON.stringify(late)?.slice(0, 200));
   const fails = [(await wire('morning-deck-1', 'morningDeck'))(buildDeck(facts(night(3, 8, NIGHT)), [], SINCE, NOW))].filter(Boolean);
   check('a card naming eight failures is still morning-deck-1', !fails.length, fails.join(' | '));
+}
+
+// ------------------------------------------------------------------------- the outcomes join's rules (ES1), after the steering checks:
+// it approves and declines findings on kettle-phone, which the close card above would otherwise count as decided elsewhere
+{
+  const { outcomesFor } = await import('../packages/core/src/server/outcomes.server.ts');
+  const { decisionsFile } = await import('../packages/core/src/server/decider.server.ts');
+  const { findProduct } = await import('../packages/core/src/server/products.server.ts');
+  const { snapshots } = await import('../packages/core/src/server/api/companion/views.server.ts');
+  const P = findProduct('kettle-phone')!, file = path.join(root('kettle-phone'), 'scan.db'), now = Date.now(), H = 3600e3, iso = (ms: number) => new Date(ms).toISOString();
+  // five findings the person approved over the last days (one declined since), written into the scratch store as a decision leaves them
+  const [jb, wt, hd, old, gone] = ['oc-job', 'oc-wait', 'oc-held', 'oc-old', 'oc-gone'];
+  {
+    const w = new DatabaseSync(file), f = (w.prepare("SELECT feature, run_id FROM proposals WHERE id LIKE 'find-%' LIMIT 1").get() as { feature: string; run_id: string });
+    const put = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, decided_by, decided_at, created_at, updated_at) VALUES (?, ?, ?, 'design', ?, 'fix', ?, 'user:check', ?, ?, ?)");
+    for (const id of [jb, wt, hd, old, gone]) put.run(id, f.run_id, f.feature, 'Check item ' + id, id === gone ? 'declined' : 'approved', iso(now - 30 * H), iso(now - 40 * H), iso(now - 30 * H));
+    w.close();
+  }
+  const row = (id: string, verdict: string, ms: number, surface = 'web') => JSON.stringify({ at: iso(ms), kind: 'morning', surface, product: 'kettle-phone', target: id, verdict });
+  fs.mkdirSync(path.dirname(decisionsFile()), { recursive: true });
+  fs.appendFileSync(decisionsFile(), [row(jb, 'approve', now - 30 * H, 'vr'), row(wt, 'approve', now - 29 * H), row(hd, 'approve', now - 28 * H), row(hd, 'hold', now - 27 * H), row(old, 'approve', now - 8 * 24 * H), row(gone, 'approve', now - 26 * H), row(wt, 'approve', now - 1 * H)].join('\n') + '\n');
+  const journal = path.join(TMP, 'kettle-phone', '.ai', 'lens-scan', 'work', 'bp-jobs', 'journal.jsonl');
+  fs.mkdirSync(path.dirname(journal), { recursive: true });
+  const job = (id: string, status: string, ids: string[], ms: number) => JSON.stringify({ at: iso(ms), slug: 'kettle-phone', phase: status, job: { id, kind: 'execute', status, proposals: ids, queued_at: iso(ms) } });
+  fs.writeFileSync(journal, [job('j-check-1', 'queued', [jb], now - 2 * H), job('j-check-1', 'running', [jb], now - 1 * H), job('j-check-stale', 'running', [wt], now - 13 * H)].join('\n') + '\n');
+  const scan = snapshots('kettle-phone').read[0].scan, got = outcomesFor(P, scan, [], iso(now - 16 * H), now), o = (id: string) => got.find((x) => x.proposal === id);
+  check('outcomes: building while an execute job naming it is queued or running', o(jb)?.outcome === 'building' && o(jb)?.decided_by === 'vr', JSON.stringify(o(jb)));
+  check('outcomes: waiting when nothing builds it (a 13 h old running line is a lost process, not a build)', o(wt)?.outcome === 'waiting', JSON.stringify(o(wt)));
+  check("outcomes: an approval made inside this morning's window is this morning's, not yesterday's (the earlier approve is kept)", o(wt)?.decided_at === iso(now - 29 * H), JSON.stringify(o(wt)));
+  check('outcomes: a proposal held after its approval is dropped', !o(hd), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes: a decision older than 7 days is dropped', !o(old), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes: a proposal the store declined since is dropped', !o(gone), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes: a waiting one has no commit, reason, wave or screens: absent keys, never null', !!o(wt) && ['commit', 'reason', 'wave', 'before', 'after'].every((k) => !(k in o(wt)!)) && Object.values(o(wt)!).every((v) => v !== null && v !== ''), JSON.stringify(o(wt)));
+  const later2 = await deck(), oc2 = later2.cards.find((c) => c.id === 'outcomes:kettle-phone');
+  check("outcomes: the route's deck carries kettle-phone's card too: 2 approved yesterday, 1 building, 1 not built yet", oc2?.headline === '2 approved yesterday on Kettle Phone: 1 building, 1 not built yet' && oc2.tone === 'warn', oc2?.headline);
+  fs.rmSync(journal, { force: true });
 }
 
 // ------------------------------------------------------------------------- the shared focus through a real apps/server

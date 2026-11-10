@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // Usage: node scripts/fixtures/kettle-finding-shots.mjs --check          (npm run check:finding-shots; calls no generator)
 //        node scripts/fixtures/kettle-finding-shots.mjs --generate [id..] (all eight, or the named ones; calls Codex)
+//        node scripts/fixtures/kettle-finding-shots.mjs --generate --after [id..] (the AFTER_SHOTS screens, finding-<id>-after.png:
+//          the same screen with the finding fixed, same style and size; the sample morning shows each beside its before)
 // The Kettle sample's generated "before" screens: one PNG per finding in FINDING_SHOTS (packages/core/src/model/train-sim.ts),
 // apps/web/public/sample-shots/finding-<id>.png, made through the Codex CLI's built-in image generation (owner, 2026-11-09:
 // "For Kettle example create screenshots through Codex CLI image generation"). Each image is a believable screen of the
@@ -31,7 +33,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { FINDING_SHOTS, findingShotFile } from '../../packages/core/src/model/train-sim.ts';
+import { AFTER_SHOTS, FINDING_SHOTS, afterShotFile, findingShotFile } from '../../packages/core/src/model/train-sim.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const DIR = path.join(ROOT, 'apps/web/public/sample-shots');
@@ -83,7 +85,25 @@ const SCENES = {
     + 'A blue "Next" button and a grey "Save draft" link at the bottom. A small grey hint at the top right: "About 25 minutes to finish".',
 };
 
+/** The same screen with the finding fixed (AFTER_SHOTS, train-sim.ts): what an approved and built item looks like the next
+ *  morning (the sample's "what yesterday's approvals became" card shows each before beside its after). Same style, same size. */
+const AFTER_SCENES = {
+  'kf-011': 'Screen: Payments > "Paper invoices", the upload-to-payment flow, now working. A scanned invoice preview card on the left; on the right the '
+    + 'extracted fields are all filled in and readable: Supplier "Mat supply co", Amount "412.00", Due date "28 Nov 2026", each with a small green check. '
+    + 'The field labels are dark slate, at a comfortable reading size. The "Match to payment" button is the blue primary button, enabled. '
+    + 'No error bar anywhere on the page; a small green note under the fields reads "All fields read from the scan".',
+  'kf-041': 'Screen: "Instructor mode" setup wizard, now short. A top stepper reads "Step 1 of 3" with three small numbered circles, the first filled. '
+    + 'The page asks only for what is needed to start teaching: Display name and Availability, two fields with generous spacing. '
+    + 'A grey line under them says "Bio, certifications and payout details can wait: add them later from your profile." '
+    + 'A blue "Next" button and a grey "Save draft" link at the bottom. A small grey hint at the top right: "About 3 minutes to finish".',
+};
+
 const promptOf = (id) => STYLE + '\n\n' + SCENES[id];
+const afterPromptOf = (id) => STYLE + '\n\n' + AFTER_SCENES[id];
+/** Every image the sample carries: each finding's before screen, then the after screens. */
+const WANT = [...FINDING_SHOTS.map((id) => ({ id, phase: 'before', file: findingShotFile(id), prompt: () => promptOf(id) })),
+  ...AFTER_SHOTS.map((id) => ({ id, phase: 'after', file: afterShotFile(id), prompt: () => afterPromptOf(id) }))];
+const phaseOf = (e) => e.phase ?? 'before';
 const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
 const rel = (f) => path.relative(ROOT, f).replace(/\\/g, '/');
 const readManifest = () => (fs.existsSync(MANIFEST) ? JSON.parse(fs.readFileSync(MANIFEST, 'utf8')) : null);
@@ -102,14 +122,15 @@ function check() {
   const findings = JSON.parse(fs.readFileSync(FINDINGS, 'utf8')), byId = new Map(findings.map((p) => [p.id, p]));
   ok(new Set(FINDING_SHOTS).size === FINDING_SHOTS.length && FINDING_SHOTS.length === 8, `FINDING_SHOTS holds ${FINDING_SHOTS.length} distinct ids, the sample carries 8`);
   ok(Object.keys(SCENES).sort().join() === [...FINDING_SHOTS].sort().join(), 'SCENES and FINDING_SHOTS name the same ids');
-  ok(m.images.length === FINDING_SHOTS.length, `the manifest has ${m.images.length} images for ${FINDING_SHOTS.length} ids`);
+  ok(Object.keys(AFTER_SCENES).sort().join() === [...AFTER_SHOTS].sort().join() && AFTER_SHOTS.every((id) => FINDING_SHOTS.includes(id)), 'AFTER_SCENES and AFTER_SHOTS name the same ids, each a FINDING_SHOTS finding (a pair is a real pair)');
+  ok(m.images.length === WANT.length, `the manifest has ${m.images.length} images for ${WANT.length} screens (${FINDING_SHOTS.length} before, ${AFTER_SHOTS.length} after)`);
   let held = 0;
-  for (const id of FINDING_SHOTS) {
-    const e = m.images.find((x) => x.proposal_id === id), p = byId.get(id), file = path.join(DIR, findingShotFile(id));
+  for (const w of WANT) {
+    const { id, phase } = w, e = m.images.find((x) => x.proposal_id === id && phaseOf(x) === phase), p = byId.get(id), file = path.join(DIR, w.file), gen = phase === 'after' ? `--generate --after ${id}` : `--generate ${id}`;
     ok(p && (p.status === 'proposed' || p.status === 'approved'), `${id} is not an open finding of ${rel(FINDINGS)} (${p?.status ?? 'absent'})`);
-    if (!ok(e, `${id}: no manifest entry`)) continue;
-    ok(e.file === findingShotFile(id), `${id}: manifest file ${e.file} is not ${findingShotFile(id)}`);
-    ok(e.prompt === promptOf(id), `${id}: the manifest's prompt is not the one this script sends now; regenerate it (--generate ${id})`);
+    if (!ok(e, `${id} ${phase}: no manifest entry`)) continue;
+    ok(e.file === w.file, `${id} ${phase}: manifest file ${e.file} is not ${w.file}`);
+    ok(e.prompt === w.prompt(), `${id} ${phase}: the manifest's prompt is not the one this script sends now; regenerate it (${gen})`);
     ok(typeof e.tool === 'string' && e.tool.length > 0 && typeof e.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(e.date), `${id}: tool or date missing`);
     if (!ok(fs.existsSync(file), `${id}: ${rel(file)} is missing`)) continue;
     const b = fs.readFileSync(file), s = pngSize(b);
@@ -119,36 +140,36 @@ function check() {
     ok(b.length < MAX_BYTES, `${id}: ${b.length} bytes, over the ${MAX_BYTES} limit`);
     held++;
   }
-  const stray = fs.readdirSync(DIR).filter((f) => /^finding-.*\.png$/.test(f) && !FINDING_SHOTS.some((id) => findingShotFile(id) === f));
+  const stray = fs.readdirSync(DIR).filter((f) => /^finding-.*\.png$/.test(f) && !WANT.some((w) => w.file === f));
   ok(!stray.length, `stray files in ${rel(DIR)}: ${stray.join(', ')}`);
-  // the VR bundle (apps/vr/tools/bundle-data.mjs): the same eight files under kettle/shots/ and the same rows in scan.json
+  // the VR bundle (apps/vr/tools/bundle-data.mjs copies every bare-file Shot row of scan.json): the same files under
+  // kettle/shots/ and the same rows in scan.json, before and after
   const scanRows = fs.existsSync(path.join(VR_BUNDLE, 'scan.json')) ? (JSON.parse(fs.readFileSync(path.join(VR_BUNDLE, 'scan.json'), 'utf8')).shots ?? []).filter((s) => s.harness_module === 'generated-sample') : [];
-  ok(scanRows.length === FINDING_SHOTS.length && FINDING_SHOTS.every((id) => scanRows.some((s) => s.proposal_id === id && s.phase === 'before' && s.path === findingShotFile(id))),
-    `${rel(VR_BUNDLE)}/scan.json carries ${scanRows.length} generated before rows, not one per finding shot; rerun node apps/vr/tools/bundle-data.mjs`);
+  ok(scanRows.length === WANT.length && WANT.every((w) => scanRows.some((s) => s.proposal_id === w.id && s.phase === w.phase && s.path === w.file)),
+    `${rel(VR_BUNDLE)}/scan.json carries ${scanRows.length} generated rows, not one per screen (${WANT.length}: before and after); rerun node apps/vr/tools/bundle-data.mjs`);
   const vrShots = path.join(VR_BUNDLE, 'shots'), vrFiles = fs.existsSync(vrShots) ? fs.readdirSync(vrShots) : [];
-  ok(vrFiles.length === FINDING_SHOTS.length && FINDING_SHOTS.every((id) => {
-    const a = path.join(vrShots, findingShotFile(id)), b = path.join(DIR, findingShotFile(id));
+  ok(vrFiles.length === WANT.length && WANT.every((w) => {
+    const a = path.join(vrShots, w.file), b = path.join(DIR, w.file);
     return fs.existsSync(a) && fs.existsSync(b) && sha(fs.readFileSync(a)) === sha(fs.readFileSync(b));
-  }), `${rel(vrShots)} does not hold exactly the eight web files (${vrFiles.length} files); rerun node apps/vr/tools/bundle-data.mjs`);
+  }), `${rel(vrShots)} does not hold exactly the ${WANT.length} web files (${vrFiles.length} files); rerun node apps/vr/tools/bundle-data.mjs`);
   return report(fails, held);
 }
 
 function report(fails, held) {
   for (const f of fails) console.log('FAIL  ' + f);
-  console.log(`RESULT ${fails.length ? 'FAIL' : 'PASS'}: ${held} of ${FINDING_SHOTS.length} finding shots match the manifest${fails.length ? `, ${fails.length} problem(s)` : ''}`);
+  console.log(`RESULT ${fails.length ? 'FAIL' : 'PASS'}: ${held} of ${WANT.length} finding shots (${FINDING_SHOTS.length} before, ${AFTER_SHOTS.length} after) match the manifest${fails.length ? `, ${fails.length} problem(s)` : ''}`);
   process.exit(fails.length ? 1 : 0);
 }
 
-async function generate(ids) {
+async function generate(wants) {
   const { default: sharp } = await import('sharp');
   // one command string through the shell: codex is an npm shim (codex.cmd) on Windows, and its arguments are fixed words
   const version = spawnSync('codex --version', { encoding: 'utf8', shell: true }).stdout.trim();
   const m = readManifest() ?? { images: [] };
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-finding-shots-'));
-  for (const id of ids) {
-    if (!SCENES[id]) throw new Error(`no scene for ${id}`);
-    const prompt = promptOf(id);
-    console.log(`${id}: asking Codex...`);
+  for (const w of wants) {
+    const { id, phase } = w, prompt = w.prompt(), tag = `${id} ${phase}`;
+    console.log(`${tag}: asking Codex...`);
     // the prompt goes through stdin ('-'): it holds quotes and angle brackets a Windows shell would mangle
     const r = spawnSync(`codex exec --skip-git-repo-check -s read-only --json -C "${work}" -`,
       { input: prompt, encoding: 'utf8', shell: true, timeout: 600000, maxBuffer: 64 * 1024 * 1024 });
@@ -158,26 +179,28 @@ async function generate(ids) {
     const dir = thread && path.join(os.homedir(), '.codex', 'generated_images', thread);
     const pngs = dir && fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.png')).map((f) => path.join(dir, f)).sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs) : [];
     if (!pngs.length) {
-      console.log(`FAIL  ${id}: Codex saved no image (exit ${r.status}${r.error ? ', ' + r.error.message : ''})`);
+      console.log(`FAIL  ${tag}: Codex saved no image (exit ${r.status}${r.error ? ', ' + r.error.message : ''})`);
       console.log((r.stderr ?? '').split(/\r?\n/).slice(-8).join('\n'));
       process.exitCode = 1;
       continue;
     }
     const src = fs.readFileSync(pngs[0]), meta = await sharp(src).metadata();
     const out = await sharp(src).resize(W, H, { fit: 'cover', position: 'centre' }).png({ palette: true, colours: 192, quality: 90, effort: 10, compressionLevel: 9 }).toBuffer();
-    if (out.length >= MAX_BYTES) { console.log(`FAIL  ${id}: ${out.length} bytes after compression`); process.exitCode = 1; continue; }
-    const file = path.join(DIR, findingShotFile(id));
+    if (out.length >= MAX_BYTES) { console.log(`FAIL  ${tag}: ${out.length} bytes after compression`); process.exitCode = 1; continue; }
+    const file = path.join(DIR, w.file);
     fs.writeFileSync(file, out);
-    const entry = { proposal_id: id, file: findingShotFile(id), prompt, tool: `${version} exec, built-in image_generation`, model: model ?? 'not reported by codex exec',
+    // a before entry keeps the shape it always had (no phase key); an after entry says so
+    const entry = { proposal_id: id, ...(phase === 'after' ? { phase } : {}), file: w.file, prompt, tool: `${version} exec, built-in image_generation`, model: model ?? 'not reported by codex exec',
       thread_id: thread, date: new Date().toISOString().slice(0, 10), source_size: `${meta.width}x${meta.height}`, size: `${W}x${H}`, bytes: out.length, sha256: sha(out) };
-    const at = m.images.findIndex((x) => x.proposal_id === id);
+    const at = m.images.findIndex((x) => x.proposal_id === id && phaseOf(x) === phase);
     if (at < 0) m.images.push(entry); else m.images[at] = entry;
-    console.log(`${id}: ${rel(file)} ${out.length} bytes (from ${meta.width}x${meta.height}, ${rel(pngs[0])})`);
+    console.log(`${tag}: ${rel(file)} ${out.length} bytes (from ${meta.width}x${meta.height}, ${rel(pngs[0])})`);
   }
-  m.images.sort((a, b) => FINDING_SHOTS.indexOf(a.proposal_id) - FINDING_SHOTS.indexOf(b.proposal_id));
+  const order = (x) => WANT.findIndex((w) => w.id === x.proposal_id && w.phase === phaseOf(x));
+  m.images.sort((a, b) => order(a) - order(b));
   const out = {
-    about: 'Generated "before" screens of eight Kettle findings (fictional product, sample data). Written by scripts/fixtures/kettle-finding-shots.mjs --generate; verified by --check (npm run check:finding-shots). Never hand-edit.',
-    selection: 'Open findings (proposed or approved) of packages/core/data/kettle.findings.json in the ledger order (score.ts: tier first, none in Kettle; then byWorth over estValue; ties by created_at, id); per lens the first whose problem shows on a screen, plus a second design finding. See the script header for ranks.',
+    about: 'Generated screens of Kettle findings (fictional product, sample data): a "before" screen for eight findings, and an "after" screen (the same screen with the finding fixed, phase "after") for the ones the sample morning shows as built. Written by scripts/fixtures/kettle-finding-shots.mjs --generate [--after]; verified by --check (npm run check:finding-shots). Never hand-edit.',
+    selection: 'Open findings (proposed or approved) of packages/core/data/kettle.findings.json in the ledger order (score.ts: tier first, none in Kettle; then byWorth over estValue; ties by created_at, id); per lens the first whose problem shows on a screen, plus a second design finding. See the script header for ranks. After screens: AFTER_SHOTS (train-sim.ts), the two findings the sample morning approves and builds.',
     rules: 'No real brand names, logos or trademarks; no faces or identifiable people (initials badges only); no real personal data. Each image was looked at before it was kept.',
     images: m.images,
   };
@@ -186,6 +209,13 @@ async function generate(ids) {
 }
 
 const argv = process.argv.slice(2);
-if (argv.includes('--generate')) await generate(argv.filter((a) => !a.startsWith('--')).length ? argv.filter((a) => !a.startsWith('--')) : [...FINDING_SHOTS]);
+if (argv.includes('--generate')) {
+  // --generate [id..]: before screens (all eight, or the named); --generate --after [id..]: after screens (all of AFTER_SHOTS, or the named)
+  const phase = argv.includes('--after') ? 'after' : 'before', named = argv.filter((a) => !a.startsWith('--'));
+  const wants = WANT.filter((w) => w.phase === phase && (!named.length || named.includes(w.id)));
+  const unknown = named.filter((id) => !wants.some((w) => w.id === id));
+  if (unknown.length) { console.log(`no ${phase} scene for ${unknown.join(', ')}`); process.exit(2); }
+  await generate(wants);
+}
 else if (argv.includes('--check')) check();
-else { console.log('usage: kettle-finding-shots.mjs --check | --generate [id..]'); process.exit(2); }
+else { console.log('usage: kettle-finding-shots.mjs --check | --generate [--after] [id..]'); process.exit(2); }

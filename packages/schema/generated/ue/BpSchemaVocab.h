@@ -968,7 +968,7 @@ namespace BpVocab
 	/** FBpMorningCard */
 	namespace MorningCard
 	{
-		/** FBpMorningCard::kind: one of open, agents, built, release, quiet, decision, close */
+		/** FBpMorningCard::kind: one of open, agents, built, release, quiet, decision, close, outcomes */
 		namespace Kind
 		{
 			inline constexpr const TCHAR* Open = TEXT("open");
@@ -978,8 +978,9 @@ namespace BpVocab
 			inline constexpr const TCHAR* Quiet = TEXT("quiet");
 			inline constexpr const TCHAR* Decision = TEXT("decision");
 			inline constexpr const TCHAR* Close = TEXT("close");
-			inline constexpr const TCHAR* AllValues[] = { Open, Agents, Built, Release, Quiet, Decision, Close };
-			inline constexpr int32 NumValues = 7;
+			inline constexpr const TCHAR* Outcomes = TEXT("outcomes");
+			inline constexpr const TCHAR* AllValues[] = { Open, Agents, Built, Release, Quiet, Decision, Close, Outcomes };
+			inline constexpr int32 NumValues = 8;
 		}
 
 		/** FBpMorningCard::tone: one of good, warn, bad, calm */
@@ -1039,10 +1040,34 @@ namespace BpVocab
 		}
 	}
 
+	/** FBpOutcome */
+	namespace Outcome
+	{
+		/** FBpOutcome::decided_by: one of web, vr */
+		namespace DecidedBy
+		{
+			inline constexpr const TCHAR* Web = TEXT("web");
+			inline constexpr const TCHAR* Vr = TEXT("vr");
+			inline constexpr const TCHAR* AllValues[] = { Web, Vr };
+			inline constexpr int32 NumValues = 2;
+		}
+
+		/** FBpOutcome::outcome: one of built, failed, building, waiting */
+		namespace Outcome
+		{
+			inline constexpr const TCHAR* Built = TEXT("built");
+			inline constexpr const TCHAR* Failed = TEXT("failed");
+			inline constexpr const TCHAR* Building = TEXT("building");
+			inline constexpr const TCHAR* Waiting = TEXT("waiting");
+			inline constexpr const TCHAR* AllValues[] = { Built, Failed, Building, Waiting };
+			inline constexpr int32 NumValues = 4;
+		}
+	}
+
 	/** FBpAgentCard */
 	namespace AgentCard
 	{
-		/** FBpAgentCard::kind: one of open, agents, built, release, quiet, decision, close */
+		/** FBpAgentCard::kind: one of open, agents, built, release, quiet, decision, close, outcomes */
 		namespace Kind
 		{
 			inline constexpr const TCHAR* Open = TEXT("open");
@@ -1052,8 +1077,9 @@ namespace BpVocab
 			inline constexpr const TCHAR* Quiet = TEXT("quiet");
 			inline constexpr const TCHAR* Decision = TEXT("decision");
 			inline constexpr const TCHAR* Close = TEXT("close");
-			inline constexpr const TCHAR* AllValues[] = { Open, Agents, Built, Release, Quiet, Decision, Close };
-			inline constexpr int32 NumValues = 7;
+			inline constexpr const TCHAR* Outcomes = TEXT("outcomes");
+			inline constexpr const TCHAR* AllValues[] = { Open, Agents, Built, Release, Quiet, Decision, Close, Outcomes };
+			inline constexpr int32 NumValues = 8;
 		}
 	}
 
