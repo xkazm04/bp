@@ -21,7 +21,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { LEG_MODELS, MCP_SERVER_NAME, MCP_SERVER_PATH, type FailureClass, type TurnEvent, type TurnRequest, type LegKind } from '../../../companion/contract.ts';
+// G1 (2026-11-11):
+//   surface  a request's `surface`, or the headset's legacy "(Spoken aloud at the VR table; ...)" prefix lifted out of its
+//            text (companion/surface.ts), goes to the frame's "Where we are" block; recall, the episode and the title see
+//            the person's words only.
+//   replies  `[[reply: label | say]]` lines are lifted out of the text events and handed, validated, on the done `end`.
+//   card     a GATED tool's result (the MCP door's `{ card, state }`) becomes a `card` event with the stored card, and a
+//   focus    focus.show's result (the FocusCommand) a `focus` event: the turn's stream carries what companion-link.md
+//            section 2 always promised (start, text, tool, tool_result, card, focus, end).
+import { LEG_MODELS, MCP_SERVER_NAME, MCP_SERVER_PATH, type FailureClass, type FocusCommand, type QuickReply, type TurnEvent, type TurnRequest, type LegKind } from '../../../companion/contract.ts';
+import { liftLegacySurface } from '../../../companion/surface.ts';
+import { liftReplies, validReplies } from '../../../companion/replies.ts';
+import { classOf, toolByWire } from '../../../companion/catalog.ts';
+import { getCard } from '../../api/companion/door.server.ts';
 import { publish } from '../bus.server.ts';
 import { companionHome, repoRoot } from '../home.server.ts';
 import { appendEpisode, recallBlock, sleepIfDue } from '../brain/brain.server.ts';
@@ -84,13 +96,32 @@ function ensureSleepTimer(): void {
   g.__bpCompanionSleep.unref?.();
 }
 
+/** What a kept tool result means beyond its summary: a focus.show answer is the FocusCommand (a `focus` event), a GATED
+ *  tool's answer names the card it filed (a `card` event with the stored card). Anything unreadable adds nothing. */
+export function afterResult(tool: string | undefined, raw: string): TurnEvent[] {
+  if (!tool) return [];
+  let j: Record<string, unknown>;
+  try { const v = JSON.parse(raw); if (!v || typeof v !== 'object' || Array.isArray(v)) return []; j = v; } catch { return []; }
+  if (tool === 'focus.show') {
+    const t = j.target as { kind?: unknown; id?: unknown } | undefined;
+    return typeof j.id === 'string' && typeof j.product === 'string' && t && typeof t.kind === 'string' && typeof t.id === 'string' ? [{ type: 'focus', focus: j as unknown as FocusCommand }] : [];
+  }
+  const spec = toolByWire(tool.replace(/\./g, '_'));
+  if (!spec || classOf(spec) !== 'GATED' || typeof j.card !== 'string') return [];
+  try { const c = getCard(j.card); return c ? [{ type: 'card', card: c }] : []; } catch { return []; }
+}
+
 const publishStatus = () => publish({ type: 'status', busy: heldKeys(), sleeping: false });
 const addCost = (sum: number | null, c: number | null, last: boolean): number | null => (c === null ? (last ? null : sum) : (sum ?? 0) + c);
 
 /** Runs one turn. Throws ThreadBusy synchronously-before-first-event when the conversation already has a turn. */
 export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncGenerator<TurnEvent> {
-  const text = typeof req?.text === 'string' ? req.text.trim() : '';
+  const sent = typeof req?.text === 'string' ? req.text.trim() : '';
+  const lifted = req?.surface ? null : liftLegacySurface(sent);
+  const text = lifted ? lifted.text : sent;
+  const surface = req?.surface ?? lifted?.surface;
   if (!text) throw new Error('text is required');
+  if (!req.product && surface?.product) req = { ...req, product: surface.product };
   if (req.conversationId !== undefined && !CONVERSATION_ID.test(req.conversationId)) throw new Error('conversationId is not a conversation id');
   const id = req.conversationId ?? newConversationId();
   const release = tryAcquire(id);
@@ -107,8 +138,11 @@ export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncG
   const emit = (e: TurnEvent): TurnEvent => { publish({ type: 'turn', conversationId: id, event: e }); return e; };
   let ended: Extract<TurnEvent, { type: 'end' }> | null = null, cost: number | null = null, reply = '';
   const tools: string[] = [];
-  const end = (outcome: 'done' | 'interrupted' | 'failed', failure?: FailureClass) =>
-    (ended = { type: 'end', outcome, ...(failure ? { failure } : {}), costUsd: cost });
+  const found: QuickReply[] = [];
+  const end = (outcome: 'done' | 'interrupted' | 'failed', failure?: FailureClass) => {
+    const replies = outcome === 'done' ? validReplies(found) : [];
+    return (ended = { type: 'end', outcome, ...(failure ? { failure } : {}), costUsd: cost, ...(replies.length ? { replies } : {}) });
+  };
 
   try {
     publishStatus();
@@ -118,14 +152,15 @@ export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncG
     const mcpConfig = writeMcpConfig(id, opts.origin);
     let recall = '';
     try { recall = recallBlock(space, text); } catch (e) { warnOnce('recall', e); }
-    const frame = dynamicFrame(recall, text);
+    const frame = dynamicFrame(recall, text, surface);
     let failure: FailureClass | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       const resume = conv.sessionId;
       const promptFile = resume ? undefined : writeStaticHalf(id, staticText);
       if (!resume) conv.promptHash = hash;
-      const calls = new Set<string>();
+      const calls = new Set<string>(), named = new Map<string, string>();
       let result: ResultRecord | null = null, doorDown = '';
+      found.length = 0; // a reseeded attempt's replies are its own
       run = transport()({ args: turnArgs({ model: LEG_MODELS.turn, mcpConfig, resume, promptFile }), stdin: frame, cwd: home(), env: childEnv() });
       if (stop) run.kill();
       for await (const line of run.lines) {
@@ -136,9 +171,17 @@ export async function* runTurn(req: TurnRequest, opts: TurnOptions = {}): AsyncG
             if (d.status !== 'connected' && d.status !== 'pending' && !doorDown) { doorDown = d.status || 'missing'; warnOnce(`turn ${id}: the bp MCP server is ${doorDown}`, mcpConfig); run.kill(); }
           } else if (d.kind === 'result') { if (!result?.isError) result = d.result; }
           else if (!stop) {
-            if (d.event.type === 'text') reply += d.event.delta;
-            if (d.event.type === 'tool') tools.push(d.event.name);
-            yield emit(d.event);
+            let ev = d.event;
+            if (ev.type === 'text') {
+              const r = liftReplies(ev.delta);
+              found.push(...r.found);
+              if (!r.text.trim()) continue;
+              ev = { type: 'text', delta: r.text };
+              reply += ev.delta;
+            }
+            if (ev.type === 'tool') { tools.push(ev.name); named.set(ev.callId, ev.name); }
+            yield emit(ev);
+            if (ev.type === 'tool_result' && ev.ok && d.raw) for (const x of afterResult(named.get(ev.callId), d.raw)) yield emit(x);
           }
         }
       }

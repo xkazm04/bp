@@ -266,7 +266,7 @@ cancel every open request and shut the window (`MAX_WRONG_CODES`).
 | read | GET | `/api/products/<SLUG>/scans/<ID>` | kept, but the route has no GET (405); read `/scans` |
 | read | GET | `/api/products/<SLUG>/proposals/<ID>/brief` | as before |
 | read | GET | `/api/products/<SLUG>/shots/<ID>[/<ID>]{0,4}` | png/jpg/webp bytes; Kettle from the sample shots (section 7) |
-| standup | POST | `/api/companion/turn` | as before; per paired device at most one turn in flight and 6 a minute (section 12) |
+| standup | POST | `/api/companion/turn` | as before; per paired device at most one turn in flight and 6 a minute (section 12). G1 (2026-11-11): the body also takes `surface: { kind: "vr", place?, target?, product?, spoken? }` (where the person is, beside their words; `target` is what "this one" means), the stream carries `card` and `focus` events, and a `done` end may carry `replies: [{ label, say }]` (at most 3; a press sends `say` as the next turn). Contract: companion-link.md section 2 |
 | standup | GET | `/api/companion/focus`, `/api/companion/cards` | as before |
 | standup | GET | `/api/companion/morning` | query: none, or `since=<iso>` and/or `opened=<iso>` (chars `0-9TZ:.-`) |
 | standup | GET | `/api/companion/inbox` | query: none or `limit=<1..500>` |

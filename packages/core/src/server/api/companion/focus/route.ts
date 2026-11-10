@@ -7,11 +7,12 @@
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { KETTLE_SLUG, findProduct } from '../../../products.server.ts';
 import { focusSince, publish } from '../../../companion/bus.server.ts';
-import type { FocusCommand, FocusKind } from '../../../../companion/contract.ts';
+import { FOCUS_TARGET_KINDS, PAGE_TARGETS, type FocusCommand, type FocusTargetKind } from '../../../../companion/contract.ts';
 import { sortableId } from '../door.server.ts';
 import { moveFocus } from '../../session/focus.server.ts';
 
-const KINDS: FocusKind[] = ['feature', 'room', 'wing', 'decision', 'wave', 'release', 'ledger-row', 'lens'];
+// `page` (G1, 2026-11-11): a console page the table opens, its id one of PAGE_TARGETS; the web page skips the kind.
+const KINDS = FOCUS_TARGET_KINDS;
 
 export function GET(req: Request): Response {
   const denied = localHost(req);
@@ -26,12 +27,13 @@ export async function POST(req: Request): Promise<Response> {
   if (notJson) return Response.json({ error: notJson }, { status: 415 });
   let b: Record<string, unknown>;
   try { b = (await req.json()) as Record<string, unknown>; } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  if (!b || typeof b !== 'object' || typeof b.product !== 'string' || !KINDS.includes(b.kind as FocusKind) || typeof b.id !== 'string' || !b.id || b.id.length > 200
+  if (!b || typeof b !== 'object' || typeof b.product !== 'string' || !KINDS.includes(b.kind as FocusTargetKind) || typeof b.id !== 'string' || !b.id || b.id.length > 200
     || (b.say !== undefined && (typeof b.say !== 'string' || b.say.length > 280))) {
     return Response.json({ error: `body must be { product, kind: ${KINDS.join(' | ')}, id (1..200), say? (<= 280) }` }, { status: 400 });
   }
+  if (b.kind === 'page' && !(PAGE_TARGETS as readonly string[]).includes(b.id)) return Response.json({ error: `a page is one of ${PAGE_TARGETS.join(' | ')}` }, { status: 400 });
   if (b.product !== KETTLE_SLUG && !findProduct(b.product)) return Response.json({ error: `unknown product ${b.product}` }, { status: 404 });
-  const focus: FocusCommand = { id: sortableId('f_'), product: b.product, target: { kind: b.kind as FocusKind, id: b.id }, ...(typeof b.say === 'string' && b.say ? { say: b.say } : {}) };
+  const focus: FocusCommand = { id: sortableId('f_'), product: b.product, target: { kind: b.kind as FocusTargetKind, id: b.id }, ...(typeof b.say === 'string' && b.say ? { say: b.say } : {}) };
   publish({ type: 'focus', focus });
   // the lamp and the owner share one place: a place-kind command also moves the shared focus, as the companion's reader
   if (focus.target.kind === 'feature' || focus.target.kind === 'room' || focus.target.kind === 'wing') {

@@ -1,4 +1,7 @@
-// POST /api/companion/turn, body `TurnRequest` `{ conversationId?, product?, text }` (packages/core/src/companion/contract.ts):
+// POST /api/companion/turn, body `TurnRequest` `{ conversationId?, product?, text, surface? }` (packages/core/src/companion/contract.ts;
+// `surface` `{ kind: vr | web, place?, target?, product?, spoken? }` is where the person is, G1 2026-11-11: it goes to the
+// prompt's "Where we are" block, never into the person's words; a text still starting with the headset's legacy
+// "(Spoken aloud at the VR table; ...)" prefix has it lifted into a surface by the engine, companion/surface.ts):
 // one companion turn as Server-Sent Events, `event: <TurnEvent type>` and `data: <TurnEvent json>`: start, text / tool /
 // tool_result, then exactly one end (`done` | `interrupted` | `failed` with its failure class, and costUsd or null). The turn
 // engine is packages/core/src/server/companion/runtime/turn.server.ts; this adapter only validates, maps ThreadBusy to **409**
@@ -11,13 +14,14 @@
 import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
 import { CONVERSATION_ID } from '@bp/core/server/companion/runtime/store.server';
 import { ThreadBusy, cancelTurn, runTurn } from '@bp/core/server/companion/runtime/turn.server';
-import type { TurnEvent, TurnRequest } from '@bp/core/companion/contract';
+import type { TurnEvent, TurnRequest, TurnSurface } from '@bp/core/companion/contract';
+import { readSurface } from '@bp/core/companion/surface';
 import { deviceOf } from '@bp/core/server/api/session/baton.server';
 import { TURN_RATE_PER_MINUTE, admitDeviceTurn, markDeviceConversation } from '@bp/core/server/table-bound.server';
 
 const MAX_TEXT = 8000;
 const SLUG = /^[a-z0-9][a-z0-9-]{0,62}$/;
-const KEYS = ['conversationId', 'product', 'text'];
+const KEYS = ['conversationId', 'product', 'text', 'surface'];
 
 export async function POST(req: Request): Promise<Response> {
   const denied = localOnly(req);
@@ -33,7 +37,9 @@ export async function POST(req: Request): Promise<Response> {
   if (typeof b.text !== 'string' || !b.text.trim() || b.text.length > MAX_TEXT) return Response.json({ error: `text must be 1..${MAX_TEXT} characters` }, { status: 400 });
   if (b.conversationId !== undefined && (typeof b.conversationId !== 'string' || !CONVERSATION_ID.test(b.conversationId))) return Response.json({ error: 'conversationId must be a conversation id' }, { status: 400 });
   if (b.product !== undefined && (typeof b.product !== 'string' || !SLUG.test(b.product))) return Response.json({ error: 'product must be a product slug' }, { status: 400 });
-  const turnReq: TurnRequest = { text: b.text, ...(typeof b.conversationId === 'string' ? { conversationId: b.conversationId } : {}), ...(typeof b.product === 'string' ? { product: b.product } : {}) };
+  let surface: TurnSurface | undefined;
+  if (b.surface !== undefined) { const s = readSurface(b.surface); if ('error' in s) return Response.json({ error: s.error }, { status: 400 }); surface = s.surface; }
+  const turnReq: TurnRequest = { text: b.text, ...(typeof b.conversationId === 'string' ? { conversationId: b.conversationId } : {}), ...(typeof b.product === 'string' ? { product: b.product } : {}), ...(surface ? { surface } : {}) };
 
   // a paired device (x-bp-device, set by apps/server from its token) drives at most one turn at a time and TURN_RATE_PER_MINUTE
   // a minute (S3 finding 3a); its conversation is marked while the turn runs, so a card the agent files from it runs at

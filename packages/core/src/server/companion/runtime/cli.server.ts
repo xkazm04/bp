@@ -136,7 +136,8 @@ export const transport = (): Transport => g.__bpCompanionTransport ?? spawnTrans
 export interface ResultRecord { isError: boolean; costUsd: number | null; subtype: string; said: string }
 /** `door`: the init line's word on the bp MCP server. Not `connected` (failed, needs-auth) means the turn has no bp tools, and
  *  claude 2.1 then stalls after its first thinking block on an ask that needs one (measured 2026-11-10: no line for 10 min). */
-export type Decoded = { kind: 'session'; id: string } | { kind: 'door'; status: string } | { kind: 'event'; event: TurnEvent } | { kind: 'result'; result: ResultRecord };
+/** `raw` (a kept tool_result only): its whole text, so the turn can tell a filed card or a focus command from it (G1). */
+export type Decoded = { kind: 'session'; id: string } | { kind: 'door'; status: string } | { kind: 'event'; event: TurnEvent; raw?: string } | { kind: 'result'; result: ResultRecord };
 
 type Block = { type?: unknown; text?: unknown; id?: unknown; name?: unknown; input?: unknown; tool_use_id?: unknown; content?: unknown; is_error?: unknown };
 const blocks = (rec: Record<string, unknown>): Block[] => {
@@ -145,11 +146,14 @@ const blocks = (rec: Record<string, unknown>): Block[] => {
 };
 const BP_PREFIX = `mcp__${MCP_SERVER_NAME}__`;
 
+/** A tool result's whole text. */
+export const resultText = (content: unknown): string => typeof content === 'string' ? content
+  : Array.isArray(content) ? content.map((c) => (c && typeof c === 'object' && typeof (c as Block).text === 'string' ? (c as Block).text as string : '')).join(' ')
+  : '';
+
 /** The first line of a tool result, at most 160 characters. */
 export function summarize(content: unknown): string {
-  const text = typeof content === 'string' ? content
-    : Array.isArray(content) ? content.map((c) => (c && typeof c === 'object' && typeof (c as Block).text === 'string' ? (c as Block).text as string : '')).join(' ')
-    : '';
+  const text = resultText(content);
   const line = text.trim().split(/\r?\n/).find((l) => l.trim()) ?? '';
   return line.length > 160 ? line.slice(0, 159) + '…' : line;
 }
@@ -178,7 +182,7 @@ export function decodeLine(line: string, calls: Set<string>): Decoded[] {
   }
   if (rec.type === 'user') {
     return blocks(rec).filter((b) => b.type === 'tool_result' && typeof b.tool_use_id === 'string' && calls.has(b.tool_use_id))
-      .map((b) => ({ kind: 'event', event: { type: 'tool_result', callId: b.tool_use_id as string, ok: b.is_error !== true, summary: summarize(b.content) } }));
+      .map((b) => ({ kind: 'event', event: { type: 'tool_result', callId: b.tool_use_id as string, ok: b.is_error !== true, summary: summarize(b.content) }, raw: resultText(b.content) }));
   }
   if (rec.type === 'result') {
     const isError = rec.is_error === true || (typeof rec.subtype === 'string' && rec.subtype !== 'success');

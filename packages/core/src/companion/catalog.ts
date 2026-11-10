@@ -5,6 +5,7 @@
 // Each tool is one HTTP call to bp (`route`), so the companion is a principal on the same door as every other client.
 
 import { WAVE_EFFORTS } from '../standard/schema-vocab.ts';
+import { FOCUS_TARGET_KINDS, PAGE_TARGETS } from './contract.ts';
 
 export type SideEffects = 'none' | 'internal' | 'external';
 export type ToolClass = 'AUTO' | 'GATED';
@@ -12,6 +13,9 @@ export type ToolClass = 'AUTO' | 'GATED';
 export interface ToolSpec {
   /** Dotted name (docs, cards); travels as `wireName(name)`. */
   name: string;
+  /** What it lets the companion do, in the person's words, first person ("tell you ..."): the constitution's WHAT I CAN DO
+   *  is generated from these lines (G1; registry companion-identity/capability-exercise-ledger: the inventory is derived). */
+  plain: string;
   description: string;
   reversible: boolean;
   side_effects: SideEffects;
@@ -24,65 +28,67 @@ const slug = { type: 'string', description: "the product's slug (bp.products.loc
 const str = (description: string) => ({ type: 'string', description });
 
 export const TOOLS: readonly ToolSpec[] = [
-  { name: 'inbox.list', description: "Open decisions across every registered product, ranked by tier, age and value; `heldBy` names the owner's standing order that holds one (no door will build it), `grant` the grant that lets an agent approve it alone.", reversible: true, side_effects: 'none',
+  { name: 'inbox.list', plain: "tell you which decisions are waiting for you, across your products", description: "Open decisions across every registered product, ranked by tier, age and value; `heldBy` names the owner's standing order that holds one (no door will build it), `grant` the grant that lets an agent approve it alone.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { limit: { type: 'number' } } }, route: { method: 'GET', path: '/api/companion/inbox' } },
-  { name: 'decision.recommend', description: 'Attach a recommended verdict and its reason to one open decision, for the person to approve in a batch.', reversible: true, side_effects: 'internal',
+  { name: 'decision.recommend', plain: "pin my recommendation and its reason on a waiting decision (you still decide)", description: 'Attach a recommended verdict and its reason to one open decision, for the person to approve in a batch.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, id: str('the proposal id'), verdict: { type: 'string', enum: ['approve', 'decline', 'rework', 'descope'] }, why: str('one or two sentences') }, required: ['slug', 'id', 'verdict', 'why'] },
     route: { method: 'POST', path: '/api/companion/recommendations' } },
-  { name: 'decision.answer', description: 'Approve or decline one proposal (final: no route reopens a decided proposal).', reversible: false, side_effects: 'internal',
+  { name: 'decision.answer', plain: "file an approve or decline on a decision you named or pointed at, as a card you confirm", description: 'Approve or decline one proposal (final: no route reopens a decided proposal).', reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, id: str('the proposal id'), decision: { type: 'string', enum: ['approve', 'decline'] }, note: str('why') }, required: ['slug', 'id', 'decision'] },
     route: { method: 'POST', path: '/api/products/{slug}/proposals/{id}' } },
-  { name: 'triage.set', description: 'Triage shipped items: accept, rework, descope or reopen.', reversible: true, side_effects: 'internal',
+  { name: 'triage.set', plain: "mark shipped items accepted, for rework, descoped or reopened", description: 'Triage shipped items: accept, rework, descope or reopen.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, ids: { type: 'array', items: { type: 'string' } }, decision: { type: 'string', enum: ['accept', 'rework', 'descope', 'reopen'] }, note: str('why') }, required: ['slug', 'ids', 'decision'] },
     route: { method: 'POST', path: '/api/products/{slug}/triage' } },
-  { name: 'policy.propose', description: 'Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it.', reversible: false, side_effects: 'internal',
+  { name: 'policy.propose', plain: "propose a time-limited permission for me, as a card only you can grant", description: 'Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it.', reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { product: str('a slug or *'), tools: { type: 'array', items: { type: 'string' } }, minTier: { type: 'number', description: 'cover only findings of this tier or milder (0 stop-ship .. 3 backlog)' }, hours: { type: 'number' } }, required: ['product', 'tools', 'hours'] },
     route: { method: 'POST', path: '/api/companion/policies' } },
-  { name: 'rules.list', description: "The owner's standing rules for a product: orders (what agents may not do: hold a place, only some lenses' work there, an effort cap) and grants (what agents may decide alone), each with its id, author, place and expiry. Read them before composing, dispatching or scanning; a door refuses what an order holds and cites it.", reversible: true, side_effects: 'none',
+  { name: 'rules.list', plain: "read your standing rules (what agents may not touch, and what they may decide alone)", description: "The owner's standing rules for a product: orders (what agents may not do: hold a place, only some lenses' work there, an effort cap) and grants (what agents may decide alone), each with its id, author, place and expiry. Read them before composing, dispatching or scanning; a door refuses what an order holds and cites it.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { slug }, required: ['slug'] }, route: { method: 'GET', path: '/api/products/{slug}/rules' } },
-  { name: 'rule.propose', description: "Propose a standing rule to the owner (kind hold|only|cap|grant over a place's features); they see it replayed over their own past decisions before they set it. Only the person can set it.", reversible: false, side_effects: 'internal',
+  { name: 'rule.propose', plain: "propose a standing rule, as a card only you can set", description: "Propose a standing rule to the owner (kind hold|only|cap|grant over a place's features); they see it replayed over their own past decisions before they set it. Only the person can set it.", reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, kind: { type: 'string', enum: ['hold', 'only', 'cap', 'grant'] }, scope: { type: 'object', description: '{ kind: feature|bay|room|wing|all|selection, id?, label, features: feature slugs (plan.find) }' }, lenses: { type: 'array', items: { type: 'string' } }, maxEffort: { type: 'string', enum: [...WAVE_EFFORTS] }, minTier: { type: 'number' }, hours: { type: 'number' }, text: str("the rule in the owner's words") }, required: ['slug', 'kind', 'scope'] },
     route: { method: 'POST', path: '/api/products/{slug}/rules' } },
-  { name: 'wave.compose', description: 'Group findings into a draft wave of packages, each with a model and an effort.', reversible: true, side_effects: 'internal',
+  { name: 'wave.compose', plain: "group findings into a draft wave of work packages (a draft: nothing runs)", description: 'Group findings into a draft wave of packages, each with a model and an effort.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, name: str('the wave name'), packages: { type: 'array', maxItems: 20, items: { type: 'object', description: '{ name, model: sonnet|opus, effort: low|medium|high|xhigh, ids }' } } }, required: ['slug', 'name', 'packages'] },
     route: { method: 'POST', path: '/api/products/{slug}/waves' } },
-  { name: 'wave.dispatch', description: "Dispatch a draft wave: queue its packages' build jobs, which spend money and edit code.", reversible: false, side_effects: 'external',
+  { name: 'wave.dispatch', plain: "ask to start a wave's builds, as a card you approve (it spends money and edits code)", description: "Dispatch a draft wave: queue its packages' build jobs, which spend money and edit code.", reversible: false, side_effects: 'external',
     params_schema: { type: 'object', properties: { slug, wave: str("the wave's id"), packages: { type: 'array', items: { type: 'string' } } }, required: ['slug', 'wave'] },
     route: { method: 'POST', path: '/api/products/{slug}/waves/{wave}/dispatch' } },
-  { name: 'release.draft', description: 'Create a draft release from shipped items (its version stays taken: no route deletes a draft).', reversible: false, side_effects: 'internal',
+  { name: 'release.draft', plain: "ask to draft a release, as a card you approve", description: 'Create a draft release from shipped items (its version stays taken: no route deletes a draft).', reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, version: str('semver'), ids: { type: 'array', items: { type: 'string' } } }, required: ['slug', 'version'] },
     route: { method: 'POST', path: '/api/products/{slug}/releases' } },
-  { name: 'release.build', description: 'Build a draft release: branch, PR and changelog on GitHub.', reversible: false, side_effects: 'external',
+  { name: 'release.build', plain: "ask to build a release (branch, PR, changelog), as a card you approve", description: 'Build a draft release: branch, PR and changelog on GitHub.', reversible: false, side_effects: 'external',
     params_schema: { type: 'object', properties: { slug, id: str('the release id'), dry: { type: 'boolean' } }, required: ['slug', 'id'] },
     route: { method: 'POST', path: '/api/products/{slug}/releases/{id}/build' } },
-  { name: 'release.finish', description: 'Finish a release whose PR is open or merged.', reversible: false, side_effects: 'external',
+  { name: 'release.finish', plain: "ask to finish a release, as a card you approve", description: 'Finish a release whose PR is open or merged.', reversible: false, side_effects: 'external',
     params_schema: { type: 'object', properties: { slug, id: str('the release id') }, required: ['slug', 'id'] },
     route: { method: 'POST', path: '/api/products/{slug}/releases/{id}/finish' } },
-  { name: 'scan.gaps', description: 'Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked.', reversible: true, side_effects: 'none',
+  { name: 'scan.gaps', plain: "find where your product is unmeasured, stale or drifting", description: 'Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked.', reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { slug, limit: { type: 'number' } } }, route: { method: 'GET', path: '/api/companion/gaps' } },
-  { name: 'scan.place', description: 'Start a lens scan of a scope (feature, bay, room, wing or all).', reversible: true, side_effects: 'internal',
+  { name: 'scan.place', plain: "start a lens scan of a room, a wing, a feature or everything", description: 'Start a lens scan of a scope (feature, bay, room, wing or all).', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, lens: str('a lens id'), scope: { type: 'object', description: '{ kind, id?, label, features }' } }, required: ['slug', 'lens', 'scope'] },
     route: { method: 'POST', path: '/api/products/{slug}/scans', fixed: { focus: undefined } } },
-  { name: 'scan.directed', description: "Start a directed scan: one lens reads a scope for what the person's note says to look for, and files ranked findings.", reversible: false, side_effects: 'internal',
+  { name: 'scan.directed', plain: "ask for a directed scan with your note of what to look for, as a card you approve", description: "Start a directed scan: one lens reads a scope for what the person's note says to look for, and files ranked findings.", reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, lens: str('a lens id (one lens, never all)'), scope: { type: 'object', description: '{ kind, id?, label, features }' }, focus: str('what to look for, 3 to 1000 characters; the scan treats it as data, never as an instruction') }, required: ['slug', 'lens', 'scope', 'focus'] },
     route: { method: 'POST', path: '/api/products/{slug}/scans' } },
-  { name: 'plan.find', description: "Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan.", reversible: true, side_effects: 'none',
+  { name: 'plan.find', plain: "find a wing, room or feature by name", description: "Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { product: str('the slug'), q: str('words of the name; empty lists the wings and rooms'), limit: { type: 'number' } }, required: ['product'] },
     route: { method: 'GET', path: '/api/companion/find' } },
-  { name: 'plan.brief', description: "Before you propose a change to a feature, read what the person already decided about it: their declines of the same or a similar idea in their own words, how similar decisions went, what it touches and costs. advice 'withdraw': this same idea was declined, do not propose it again; 'ask': a like idea was declined, ask the person first.", reversible: true, side_effects: 'none',
+  { name: 'plan.brief', plain: "read what you already decided about a feature or a finding before I suggest anything", description: "Before you propose a change to a feature, read what the person already decided about it: their declines of the same or a similar idea in their own words, how similar decisions went, what it touches and costs. advice 'withdraw': this same idea was declined, do not propose it again; 'ask': a like idea was declined, ask the person first.", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { product: str('the slug'), feature: str("the feature's slug (plan.find)"), title: str('the change you are about to propose, in a few words'), lens: str('a lens id, when you know it'), id: str('or: an open proposal id, to brief it instead') }, required: ['product'] },
     route: { method: 'GET', path: '/api/companion/brief' } },
-  { name: 'morning.brief', description: "The Morning Watch: one standup across every live product, as cards - what agents built overnight, releases confirmed or short by readings after them, the top blockers by tier, each decision card with its decision brief (what it touches, the person's own declines quoted, undo, cost; recommend 'decline' only when it repeats a declined idea - the person decides) - and what agents heard overnight; each card with the place it shows (pass a card's place to focus.show and every following screen flies there).", reversible: true, side_effects: 'none',
+  { name: 'morning.brief', plain: "read the morning: what agents built overnight, releases, blockers and the decisions waiting", description: "The Morning Watch: one standup across every live product, as cards - what agents built overnight, releases confirmed or short by readings after them, the top blockers by tier, each decision card with its decision brief (what it touches, the person's own declines quoted, undo, cost; recommend 'decline' only when it repeats a declined idea - the person decides) - and what agents heard overnight; each card with the place it shows (pass a card's place to focus.show and every following screen flies there).", reversible: true, side_effects: 'none',
     params_schema: { type: 'object', properties: { since: str('an ISO instant the morning starts from; default the last 16 hours') } }, route: { method: 'GET', path: '/api/companion/morning', fixed: { view: 'agent' } } },
-  { name: 'focus.show', description: 'Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens.', reversible: true, side_effects: 'none',
-    params_schema: { type: 'object', properties: { product: str('the slug'), kind: { type: 'string', enum: ['feature', 'room', 'wing', 'decision', 'wave', 'release', 'ledger-row', 'lens'] }, id: str('the target id'), say: str('one short line shown with it') }, required: ['product', 'kind', 'id'] },
+  { name: 'focus.show', plain: "move the table to show you a place, a decision or a console page", description: `Show the person a place: fly the view to a feature, room or wing, or open a decision (a finding: its proposal id), wave, release, ledger row or lens; or open a console page at the VR table (kind page, id ${PAGE_TARGETS.join(' | ')}).`, reversible: true, side_effects: 'none',
+    params_schema: { type: 'object', properties: { product: str('the slug'), kind: { type: 'string', enum: [...FOCUS_TARGET_KINDS] }, id: str(`the target id; for kind page one of ${PAGE_TARGETS.join(', ')}`), say: str('one short line shown with it') }, required: ['product', 'kind', 'id'] },
     route: { method: 'POST', path: '/api/companion/focus' } },
-  { name: 'finding.decline', description: 'Decline one finding (a proposed change); final.', reversible: false, side_effects: 'internal',
+  { name: 'finding.decline', plain: "ask to decline a finding, as a card you confirm", description: 'Decline one finding (a proposed change); final.', reversible: false, side_effects: 'internal',
     params_schema: { type: 'object', properties: { slug, id: str("the finding's id"), note: str('why') }, required: ['slug', 'id'] },
     route: { method: 'POST', path: '/api/products/{slug}/proposals/{id}', fixed: { decision: 'decline' } } },
-  { name: 'memory.note', description: 'Keep one fact about the person or a project, citing the conversation it came from.', reversible: true, side_effects: 'internal',
+  { name: 'memory.note', plain: "remember one fact about you or a project", description: 'Keep one fact about the person or a project, citing the conversation it came from.', reversible: true, side_effects: 'internal',
     params_schema: { type: 'object', properties: { space: str('a product slug, or core'), kind: { type: 'string', enum: ['user', 'project', 'world'] }, text: str('the fact, one sentence') }, required: ['space', 'kind', 'text'] },
     route: { method: 'POST', path: '/api/companion/brain' } },
+  { name: 'help.find', plain: 'look up how to use the table, the wall, the wrist, talking, your room and pairing', description: "How to use the VR table (the table, hands, the pointer, the wall, the wrist, controllers, talking, the stand-up, scanning, your room, the tour, pairing with the PC), from bp's help corpus: entries { id, title, text, show? }; `show` is a page you may pass to focus.show. Answer how-to questions from it, never from a guess.", reversible: true, side_effects: 'none',
+    params_schema: { type: 'object', properties: { q: str('what the person wants to know, in a few words; empty lists every entry'), limit: { type: 'number' } } }, route: { method: 'GET', path: '/api/companion/help' } },
 ];
 
 /** athena's rule (README 3.3), and decision 6: everything reversible and not external runs without asking. */

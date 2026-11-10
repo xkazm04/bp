@@ -150,6 +150,7 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `focus.show` (Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens) | yes | none | AUTO |
 | `finding.decline` (Decline one finding (a proposed change); final) | no | internal | GATED |
 | `memory.note` (Keep one fact about the person or a project, citing the conversation it came from) | yes | internal | AUTO |
+| `help.find` (How to use the VR table, from bp's help corpus; G1, 2026-11-11) | yes | none | AUTO |
 
 Open seam, settled in P5: athena's gate treats every new origin as GATED on first sight, and its
 host model assumes a web page. `apps/server` registers with a `page_origin` such as

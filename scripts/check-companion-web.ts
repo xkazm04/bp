@@ -117,7 +117,8 @@ check('derive: precedence asking > pointing > thinking', deriveLamp(run([{ type:
 }
 
 // ------------------------------------------------------------------------- 3. focus mapping
-const steps = (kind: FocusCommand['target']['kind']) => FOCUS_TABLE[kind]('x1');
+const steps = (kind: Exclude<FocusCommand['target']['kind'], 'page'>) => FOCUS_TABLE[kind]('x1');
+check('focus: a console page (the table\'s, G1) is skipped by the page', planFocus({ id: 'fp', product: 'kettle', target: { kind: 'page', id: 'standup' } }, 'kettle', new Set()).kind === 'skip');
 check('focus: feature -> plan page, flyToFeature, rect from the camera', eq(steps('feature'), { steps: [{ op: 'page', page: 'plan' }, { op: 'flyToFeature', id: 'x1' }], rect: { from: 'feature', id: 'x1' } }));
 check('focus: room -> the hash route, rect from the room box', eq(steps('room'), { steps: [{ op: 'place', kind: 'room', id: 'x1' }], rect: { from: 'place', kind: 'room', id: 'x1' } }));
 check('focus: wing -> the hash route, rect from the wing box', eq(steps('wing'), { steps: [{ op: 'place', kind: 'wing', id: 'x1' }], rect: { from: 'place', kind: 'wing', id: 'x1' } }));
