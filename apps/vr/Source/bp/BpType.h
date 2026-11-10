@@ -48,8 +48,10 @@ namespace BpType
 	/** Above each wing, lookdev 00's small "WING 03": the wing's tag, then its name. */
 	constexpr FRecipe WingTag{ TEXT("Regular"), 1.15, 0.18, true };
 	constexpr FRecipe WingName{ TEXT("Bold"), 1.9, 0.03, true };
-	/** A room's name in its header strip (capitals: no descenders to clear the first bay). */
-	constexpr FRecipe RoomName{ TEXT("Regular"), 0.9, 0.06, true };
+	/** A room's name in its header strip (capitals: no descenders to clear the first bay). Night two V3: the family's
+	 *  heavier face (the Medium's strokes broke into amber smears at the seat's distance on the Quest 3S), and its cap is
+	 *  raised from the seat (ABpTable::BuildRoomNames, bp.Table.RoomNameArcmin). */
+	constexpr FRecipe RoomName{ TEXT("Bold"), 0.9, 0.06, true };
 	/** The breadcrumb (WP3's way back; the hands pinch it, so it stays large). */
 	constexpr FRecipe Crumb{ TEXT("Regular"), 1.6, 0.0, false };
 	/** Room mode's map (spark vr-room-layers WP1): a bay's kind label in its cell's header, a feature's name beside its

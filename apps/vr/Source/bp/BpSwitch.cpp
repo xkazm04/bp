@@ -322,7 +322,7 @@ void ABpTable::PlaceLamp()
 	double RideYaw = 0.0;
 	float LeanDeg = 0.f;
 	const bool bRide = LampRidePose(RideAt, RideYaw, LeanAxis, LeanDeg);
-	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation;
+	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampNodT < 0.f;
 	const auto SetMovable = [](AActor* Actor, uint8 Mobility)
 	{
 		const EComponentMobility::Type Want = static_cast<EComponentMobility::Type>(Mobility);
@@ -372,8 +372,18 @@ void ABpTable::PlaceLamp()
 		Yaw = LampStationYaw;
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
+	// V3: to the person while it listens or speaks (TickLampManner), and a nod toward them.
+	if (LampFace > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, Eye)) * SwitchEase(LampFace);
 	FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
 	if (LeanDeg != 0.f && !LeanAxis.IsNearlyZero()) Turn = FQuat(LeanAxis.GetSafeNormal(), FMath::DegreesToRadians(LeanDeg)) * Turn;
+	if (LampNodT >= 0.f && !bRide)
+	{
+		// The hood faces (-sin y, cos y) (LampYawToward); it bows about the level axis across that, from its base.
+		const double Y = FMath::DegreesToRadians(Yaw);
+		const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+		const FVector Across = FVector::CrossProduct(FVector::UpVector, Facing);
+		Turn = FQuat(Across, FMath::DegreesToRadians(LampNodDeg())) * Turn;
+	}
 	const FTransform World(Table.GetRotation() * Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), Table.TransformPosition(At), LampRest.GetScale3D());
 	Lamp->SetActorTransform(World);
 	for (int32 Index = 0; Index < LampGroup.Num(); ++Index)
@@ -680,6 +690,8 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 	const bool bReduced = SwitchReduced();
 	// A ride along the edges (BpLampTravel.cpp), or its settle.
 	bBusy |= TickLampTravel(DeltaSeconds);
+	// Its manner: to the person while it listens or speaks, a nod on a decision answered (BpLampLook.cpp, V3).
+	bBusy |= TickLampManner(DeltaSeconds);
 	// The lamp to its place and turn.
 	const float WasAway = LampAway, WasLook = LampLook;
 	if (LampAway != LampAwayTarget) LampAway = bReduced ? LampAwayTarget : FMath::FInterpConstantTo(LampAway, LampAwayTarget, DeltaSeconds, 1.f / LampMoveS);

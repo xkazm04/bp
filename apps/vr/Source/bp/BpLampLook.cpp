@@ -21,6 +21,10 @@
 
 #include "BpTier.h"
 #include "Components/PointLightComponent.h"
+#include "Components/RectLightComponent.h"
+#include "BpPawn.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
@@ -42,10 +46,22 @@ namespace
 		TEXT("The light states' pulse depth, 0 (steady) to 2; bp.ReducedMotion 1 stills it. Read live."));
 	TAutoConsoleVariable<int32> CVarLampState(TEXT("bp.Lamp.State"), -1,
 		TEXT("Forces the lamp's light state for a capture: -1 follows the talk (default), 0 idle, 1 waiting on you, 2 listening, 3 thinking, 4 answering."));
-	TAutoConsoleVariable<float> CVarLampHomeX(TEXT("bp.Lamp.HomeX"), 30.f,
+	TAutoConsoleVariable<float> CVarLampHomeX(TEXT("bp.Lamp.HomeX"), 26.f,
 		TEXT("The lamp's site home along the table (cm from its centre, + far), 10 to 45. Read live while it is home."));
-	TAutoConsoleVariable<float> CVarLampHomeY(TEXT("bp.Lamp.HomeY"), -46.f,
-		TEXT("The lamp's site home across the table (cm from its centre, - left), -95 to 95; the level placed it at -9, under the console's bar. Read live while it is home."));
+	TAutoConsoleVariable<float> CVarLampHomeY(TEXT("bp.Lamp.HomeY"), -56.f,
+		TEXT("The lamp's site home across the table (cm from its centre, - left), -115 to 115; V1 had -46 (over wing A's name), the level -9 (under the console's bar). Read live while it is home."));
+	TAutoConsoleVariable<float> CVarLampHomeZ(TEXT("bp.Lamp.HomeZ"), 8.f,
+		TEXT("The lamp's site home hovers this far over the level's height (cm), 0 to 40. Read live while it is home."));
+	TAutoConsoleVariable<int32> CVarLampHomeClear(TEXT("bp.Lamp.HomeClear"), 0,
+		TEXT("0 (default, V3 by capture: at HomeX/Y/Z the hovering lamp clears every wing name and pin tag from the seat, its body above the tag row); 1: at home the lamp steps outward until, from the seated eye, all of it stands left of the paper's far-left corner, where no wing name, raised wing or pin tag can be behind it (the tags stay inside the paper's corners), which with the lamp's pointing arm puts it at the edge of the view."));
+	TAutoConsoleVariable<int32> CVarLampFace(TEXT("bp.Lamp.Face"), -1,
+		TEXT("The lamp turns to the person: -1 while it listens or speaks (default; a glance only while it shows something), 0 never, 1 always (captures). bp.ReducedMotion 1 stills it."));
+	TAutoConsoleVariable<float> CVarLampNodDeg(TEXT("bp.Lamp.NodDeg"), 7.f,
+		TEXT("The lamp's nod on a stand-up decision answered: its bow in degrees, 0 (none) to 15. bp.ReducedMotion 1 stills it."));
+	TAutoConsoleVariable<int32> CVarFrameStrips(TEXT("bp.Frame.StripLights"), 0,
+		TEXT("The four rect lights along the paper's edges (StripNear/Far/Left/Right) while the Quest tier is on: 0 off (default; on the Quest's mobile path StripNear lit a blown spot on the frame's near rim), 1 as authored. Off the tier they always stay."));
+	TAutoConsoleVariable<float> CVarFrameTone(TEXT("bp.Frame.Tone"), 0.7f,
+		TEXT("The frame's body and trim base colour on the Quest tier, as a share of BpTable's (0.2 to 1.5, default 0.7: a calm dark finish). Read live."));
 	TAutoConsoleVariable<int32> CVarFloor(TEXT("bp.Floor"), 1, TEXT("The studio floor under the table (one unlit quad): 1 shown, 0 hidden. Your room hides it with the studio."));
 	TAutoConsoleVariable<float> CVarFloorGain(TEXT("bp.Floor.Gain"), 0.15f, TEXT("The studio floor's brightness, 0 to 1.5. Read live."));
 	TAutoConsoleVariable<int32> CVarEngineWarnings(TEXT("bp.EngineWarnings"), 0,
@@ -125,7 +141,17 @@ struct FBpLampLook
 	FLinearColor LightColour = FLinearColor::White;
 	TWeakObjectPtr<UMaterialInstanceDynamic> Halo;
 	FLinearColor HaloColour = FLinearColor::White;
-	float HomeX = TNumericLimits<float>::Max(), HomeY = TNumericLimits<float>::Max();
+	float HomeX = TNumericLimits<float>::Max(), HomeY = TNumericLimits<float>::Max(), HomeZ = TNumericLimits<float>::Max();
+	int32 HomeClear = -1;
+	/** The level's lamp height (table cm), read once: HomeZ hovers over it. */
+	double BaseZ = TNumericLimits<double>::Max();
+	/** The strip rect lights (found once, by place: at the top's height inside the frame), and whether they show. */
+	TArray<TWeakObjectPtr<USceneComponent>> Strips;
+	int32 StripsShown = -1;
+	bool bStripsFound = false;
+	/** The frame's body and trim slots' material as last toned, and the tone. */
+	TWeakObjectPtr<UMaterialInterface> FrameToned[2];
+	float FrameTone = -1.f;
 	TWeakObjectPtr<AActor> Floor;
 	TWeakObjectPtr<UMaterialInstanceDynamic> FloorMid;
 	FTransform FloorAt;
@@ -140,32 +166,81 @@ void ABpTable::ApplyLampHome()
 	if (!LampLookState.IsValid()) LampLookState = MakeShared<FBpLampLook>();
 	FBpLampLook& L = *LampLookState;
 	const float WantX = FMath::Clamp(CVarLampHomeX.GetValueOnGameThread(), 10.f, 45.f);
-	const float WantY = FMath::Clamp(CVarLampHomeY.GetValueOnGameThread(), -95.f, 95.f);
-	if (WantX == L.HomeX && WantY == L.HomeY) return;
+	const float WantY = FMath::Clamp(CVarLampHomeY.GetValueOnGameThread(), -115.f, 115.f);
+	const float WantZ = FMath::Clamp(CVarLampHomeZ.GetValueOnGameThread(), 0.f, 40.f);
+	const int32 Clear = CVarLampHomeClear.GetValueOnGameThread() != 0 ? 1 : 0;
+	if (WantX == L.HomeX && WantY == L.HomeY && WantZ == L.HomeZ && Clear == L.HomeClear) return;
 	L.HomeX = WantX;
 	L.HomeY = WantY;
+	L.HomeZ = WantZ;
+	L.HomeClear = Clear;
 	const FTransform& Table = GetActorTransform();
 	FVector At = Table.InverseTransformPosition(LampRest.GetLocation());
+	if (L.BaseZ == TNumericLimits<double>::Max()) L.BaseZ = At.Z;
 	At.X = WantX;
 	At.Y = WantY;
+	At.Z = L.BaseZ + WantZ;
+	const FVector Eye = EyeLocal();
 	// Turned toward a point a third of the way from the seat's eye to the paper's centre: it faces the person, not the bar.
-	const double Yaw = LampYawToward(At, FMath::Lerp(EyeLocal(), FVector(0.0, 0.0, GetPaperZ()), 1.0 / 3.0));
-	LampRest = FTransform(Table.GetRotation() * FQuat(FVector::UpVector, FMath::DegreesToRadians(Yaw)), Table.TransformPosition(At), LampRest.GetScale3D());
-	for (int32 Index = 0; Index < LampGroup.Num(); ++Index)
+	const FVector Face = FMath::Lerp(Eye, FVector(0.0, 0.0, GetPaperZ()), 1.0 / 3.0);
+	double Yaw = 0.0;
+	const auto Put = [&]()
 	{
-		LampGroupRest[Index] = LampGroupRel[Index] * LampRest;
-		LampGroupMobility[Index] = static_cast<uint8>(EComponentMobility::Movable);
-	}
-	// Movable for good: its baked place is no longer its home (on the tier it is self-lit and needs no lightmap).
-	LampMobility = static_cast<uint8>(EComponentMobility::Movable);
-	if (Lamp->GetRootComponent()) Lamp->GetRootComponent()->SetMobility(EComponentMobility::Movable);
-	for (const TWeakObjectPtr<AActor>& Each : LampGroup)
+		Yaw = LampYawToward(At, Face);
+		LampRest = FTransform(Table.GetRotation() * FQuat(FVector::UpVector, FMath::DegreesToRadians(Yaw)), Table.TransformPosition(At), LampRest.GetScale3D());
+		for (int32 Index = 0; Index < LampGroup.Num(); ++Index)
+		{
+			LampGroupRest[Index] = LampGroupRel[Index] * LampRest;
+			LampGroupMobility[Index] = static_cast<uint8>(EComponentMobility::Movable);
+		}
+		// Movable for good: its baked place is no longer its home (on the tier it is self-lit and needs no lightmap).
+		LampMobility = static_cast<uint8>(EComponentMobility::Movable);
+		if (Lamp->GetRootComponent()) Lamp->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+		for (const TWeakObjectPtr<AActor>& Each : LampGroup)
+		{
+			if (Each.IsValid() && Each->GetRootComponent()) Each->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+		}
+		bLampMovable = true;
+		PlaceLamp();
+	};
+	Put();
+	// V3: from the seated eye the whole lamp (its bounds, the pointing arm and the halo with it) stands left of the paper's
+	// far-left corner, by ClearDeg. The pin tags stand between the paper's far corners from that eye (TagInsidePaper) and the
+	// wing names and raised wings over the paper, so nothing that has to be read is ever behind it, wherever it stands.
+	double Stepped = 0.0;
+	if (Clear)
 	{
-		if (Each.IsValid() && Each->GetRootComponent()) Each->GetRootComponent()->SetMobility(EComponentMobility::Movable);
+		constexpr double ClearDeg = 2.0;
+		const FVector Corner = PaperCmToLocal(FVector2D::ZeroVector, GetPaperZ());
+		const double Limit = FMath::Atan2(Corner.Y - Eye.Y, Corner.X - Eye.X) - FMath::DegreesToRadians(ClearDeg);
+		FBox Box = Lamp->GetComponentsBoundingBox(true);
+		for (const TWeakObjectPtr<AActor>& Each : LampGroup)
+		{
+			if (Each.IsValid() && Each->ActorHasTag(LampHaloTag)) Box += Each->GetComponentsBoundingBox(true);
+		}
+		if (Box.IsValid)
+		{
+			// The bounds' corners in the table's space; the one furthest right as the eye sees it decides the step.
+			FVector Vertices[8];
+			Box.GetVertices(Vertices);
+			double Need = 0.0;
+			for (const FVector& V : Vertices)
+			{
+				const FVector P = Table.InverseTransformPosition(V);
+				if (P.X <= Eye.X) continue;
+				const double Allowed = Eye.Y + (P.X - Eye.X) * FMath::Tan(Limit);
+				Need = FMath::Min(Need, Allowed - P.Y);
+			}
+			if (Need < 0.0)
+			{
+				Stepped = FMath::Max(Need, -40.0);
+				At.Y += Stepped;
+				Put();
+			}
+		}
 	}
-	bLampMovable = true;
-	PlaceLamp();
-	UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp home at table (%.0f, %.0f) yaw %.0f"), WantX, WantY, Yaw);
+	UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp home at table (%.0f, %.0f, +%.0f) yaw %.0f%s"), At.X, At.Y, static_cast<double>(WantZ), Yaw,
+		Stepped < 0.0 ? *FString::Printf(TEXT(", stepped %.0f cm out to clear the paper from the seat"), -Stepped) : TEXT(""));
 }
 
 void ABpTable::TickLampLook()
@@ -244,6 +319,54 @@ void ABpTable::TickLampLook()
 			L.FloorGain = Gain;
 			L.FloorMid->SetScalarParameterValue(TEXT("Gain"), Gain);
 		}
+	}
+
+	// ---- the frame (V3): the strip rect lights off on the tier, and the frame's calm dark finish there
+	const bool bTier = BpTier::IsOn(World);
+	const int32 StripsWant = !bTier || CVarFrameStrips.GetValueOnGameThread() != 0 ? 1 : 0;
+	if (StripsWant != L.StripsShown)
+	{
+		if (!L.bStripsFound)
+		{
+			// By place, not by name (a cooked level has no labels): a rect light at the top's height inside the frame.
+			L.bStripsFound = true;
+			const FTransform Table = GetActorTransform();
+			for (TActorIterator<AActor> It(World); It; ++It)
+			{
+				TArray<URectLightComponent*> Rects;
+				It->GetComponents(Rects);
+				for (URectLightComponent* Rect : Rects)
+				{
+					const FVector P = Table.InverseTransformPosition(Rect->GetComponentLocation());
+					if (FMath::Abs(P.X) <= TableDepthCm * 0.5 + 2.0 && FMath::Abs(P.Y) <= TableWidthCm * 0.5 + 2.0 && FMath::Abs(P.Z - PlacedHeightCm) <= 3.0 && Rect->IsVisible())
+					{
+						L.Strips.Add(Rect);
+					}
+				}
+			}
+		}
+		L.StripsShown = StripsWant;
+		for (const TWeakObjectPtr<USceneComponent>& Strip : L.Strips)
+		{
+			if (Strip.IsValid()) Strip->SetVisibility(StripsWant != 0);
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpLampLook: frame strip lights %s (%d)"), StripsWant ? TEXT("as authored") : TEXT("off on the Quest tier"), L.Strips.Num());
+	}
+	if (Frame && bRealFrame)
+	{
+		const float Tone = bTier ? FMath::Clamp(CVarFrameTone.GetValueOnGameThread(), 0.2f, 1.5f) : 1.f;
+		const TCHAR* const Slots[2] = { TEXT("frame_atlas"), TEXT("frame_aluminium") };
+		const FLinearColor Colours[2] = { FrameBodyColor(), FrameTrimColorValue() };
+		for (int32 Each = 0; Each < 2; ++Each)
+		{
+			const int32 Index = Frame->GetMaterialIndex(Slots[Each]);
+			UMaterialInstanceDynamic* Mid = Index == INDEX_NONE ? nullptr : Cast<UMaterialInstanceDynamic>(Frame->GetMaterial(Index));
+			if (!Mid || (Mid == L.FrameToned[Each].Get() && Tone == L.FrameTone)) continue;
+			Mid->SetVectorParameterValue(TEXT("BaseColorFactor"), FLinearColor(Colours[Each].R * Tone, Colours[Each].G * Tone, Colours[Each].B * Tone, 1.f));
+			L.FrameToned[Each] = Mid;
+		}
+		if (Tone != L.FrameTone) UE_LOG(LogBpTable, Log, TEXT("BpLampLook: frame tone %.2f"), Tone);
+		L.FrameTone = Tone;
 	}
 
 	if (!Lamp.IsValid()) return;
@@ -355,4 +478,74 @@ void ABpTable::TickLampLook()
 		Light->SetLightColor(Want);
 	}
 	if (L.Halo.IsValid()) L.Halo->SetVectorParameterValue(TEXT("Color"), State == 0 ? L.HaloColour : Look.Glow * L.HaloColour.GetMax());
+}
+
+// ---- The lamp's manner (V3) ------------------------------------------------------------------------------------------------
+// While it listens (spoken to) or speaks to the person, the lamp turns to them; while it is showing something (at a station,
+// riding, or looking at a presented place) a speaking lamp only glances (FaceGlance) and keeps pointing. A stand-up decision
+// answered gets one nod. On the existing hooks: the talk's lamp state, the voice line, and the pawn's stand-up answers. At
+// rest this is two comparisons and one poll of the answers' map a tick, and no draw.
+namespace
+{
+	constexpr float FaceS = 0.45f;
+	constexpr float FaceGlance = 0.35f;
+	constexpr float NodS = 0.7f;
+}
+
+float ABpTable::LampNodDeg() const
+{
+	if (LampNodT < 0.f) return 0.f;
+	// One dip and back, eased at both ends.
+	const float A = FMath::Clamp(LampNodT / NodS, 0.f, 1.f);
+	return FMath::Clamp(CVarLampNodDeg.GetValueOnGameThread(), 0.f, 15.f) * FMath::Sin(UE_PI * A) * FMath::Sin(UE_PI * A);
+}
+
+bool ABpTable::TickLampManner(float DeltaSeconds)
+{
+	if (!Lamp.IsValid()) return false;
+	const bool bReduced = LookReduced();
+	const double Now = FPlatformTime::Seconds();
+	if (LampNodSince <= 0.0) LampNodSince = Now;
+	// A decision answered since the last look: a nod (to the person).
+	if (LampNodT < 0.f && !bReduced && RoomModeId.IsEmpty())
+	{
+		const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		const ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
+		if (Pawn && Pawn->StandupAnsweredSince(LampNodSince))
+		{
+			LampNodSince = Now;
+			if (CVarLampNodDeg.GetValueOnGameThread() > 0.f)
+			{
+				LampNodT = 0.f;
+				UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp nods (a decision answered)"));
+			}
+		}
+	}
+	else if (bReduced)
+	{
+		LampNodSince = Now;
+	}
+	const int32 Mode = CVarLampFace.GetValueOnGameThread();
+	const int32 Talking = TalkLampState();
+	const bool bListening = Talking == 1;
+	const bool bSpeaking = Talking == 3 || IsVoicePlaying();
+	const bool bShowing = bLampAtStation || LampTravelT >= 0.f || LampLookTarget > 0.f;
+	float Want = Mode == 0 ? 0.f : Mode >= 1 ? 1.f : bListening || LampNodT >= 0.f ? 1.f : bSpeaking ? (bShowing ? FaceGlance : 1.f) : 0.f;
+	// Room mode keeps its own pose (between the deck and the eye) and reduced motion stills the turn.
+	if (bReduced || !RoomModeId.IsEmpty()) Want = 0.f;
+	const float WasFace = LampFace;
+	if (LampFace != Want) LampFace = bReduced ? Want : FMath::FInterpConstantTo(LampFace, Want, DeltaSeconds, 1.f / FaceS);
+	const bool bNodding = LampNodT >= 0.f;
+	if (bNodding)
+	{
+		LampNodT += DeltaSeconds;
+		if (LampNodT >= NodS) LampNodT = -1.f;
+	}
+	if (LampFace != WasFace || bNodding)
+	{
+		// Home with nothing else moving: PlaceLamp puts it back exactly at its home once both are done.
+		PlaceLamp();
+		ApplyLampWidgets();
+	}
+	return LampFace != Want || LampNodT >= 0.f;
 }

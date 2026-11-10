@@ -1032,6 +1032,17 @@ private:
 	double TextFloorCm(const FVector2D& PaperCm) const;
 	/** The same floor for a text on a card tilted TiltDeg up from the paper about its baseline (FAB's room names). */
 	double TiltedTextFloorCm(const FVector2D& PaperCm, double TiltDeg) const;
+	/** Night two V3: the angle (arcminutes) a cap of CapCm standing at PaperCm on a card tilted TiltDeg subtends from the
+	 *  seated eye (the target pose), and the smallest cap that subtends Arcmin there. */
+	double SeatArcmin(const FVector2D& PaperCm, double TiltDeg, double CapCm) const;
+	double SeatCapCm(const FVector2D& PaperCm, double TiltDeg, double Arcmin) const;
+	/** The room names' arcminutes (wanted, least) BuildRoomNames last used, and the glyphs' rest brightness ApplyGlyphs last
+	 *  wrote: the tick rebuilds or rewrites when the cvars move. */
+	FVector2f AppliedRoomNameArcmin = FVector2f(-1.f, -1.f);
+	/** The frame's body (frame_atlas) and trim (frame_aluminium) base colours LoadArt sets; BpLampLook tones them on the tier. */
+	static FLinearColor FrameBodyColor();
+	static FLinearColor FrameTrimColorValue();
+	float AppliedGlyphRest = -1.f;
 	/** How deep a wall of HeightCm standing at paper v hides the paper behind it, seen from the target eye (cm, along v). */
 	double CoverCm(double V, double HeightCm) const;
 	void PlaceForHeight(float HeightCm);
@@ -1775,6 +1786,15 @@ private:
 	/** The lamp's site home from bp.Lamp.HomeX/HomeY (table cm), turned toward the seat; FindLamp calls it once. */
 	void ApplyLampHome();
 	TSharedPtr<struct FBpLampLook> LampLookState;
+	/** Night two V3, the lamp's manner (BpLampLook.cpp): it turns to the person while it listens or speaks (LampFace, 0 to 1,
+	 *  eased; a glance only while it shows something) and nods once when a stand-up decision is answered (LampNodT, seconds
+	 *  into the nod, or -1). Ticked from TickSwitch; true while either moves. bp.ReducedMotion stills both. */
+	bool TickLampManner(float DeltaSeconds);
+	/** The nod's bow now, degrees (0 outside a nod). */
+	float LampNodDeg() const;
+	float LampFace = 0.f;
+	float LampNodT = -1.f;
+	double LampNodSince = 0.0;
 	void TalkBegin();
 	void TalkSend();
 	void TalkTurn(const FString& Heard);
