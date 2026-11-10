@@ -476,6 +476,7 @@ bool ABpTable::TalkHold(const TCHAR* Source, bool bDown)
 		return true;
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: released by %s after %.2f s"), Source, Held);
+	++TalkHoldsCounted;
 	if (FBpLinkModule::Get().IsFromBundle()) { TalkSample(); return false; }
 	if (S.Step == FBpTalkState::EStep::Arming || S.Step == FBpTalkState::EStep::Listening) TalkSend();
 	return false;
@@ -958,6 +959,13 @@ bool ABpTable::TalkAbandon(const TCHAR* Why)
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: %s while recording: the microphone closed, what it heard dropped, nothing sent"), Why);
 	TalkSays(TEXT("Paused: I did not keep or send what I heard.\nHold again to talk to me."), 8.f);
 	return true;
+}
+
+void ABpTable::TalkShowSample()
+{
+	if (!Talk.IsValid()) Talk = MakeShared<FBpTalkState>();
+	if (Talk->bHeld || Talk->Step != FBpTalkState::EStep::Idle) return;
+	TalkSample();
 }
 
 void ABpTable::TalkSample()

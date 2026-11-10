@@ -585,9 +585,10 @@ void ABpPawn::PanelAct(const FString& Act)
 	}
 	if (Act == TEXT("tour") && Table)
 	{
-		// Start, or stop while it runs (BpTour.Stop's door, by hand).
+		// Stop while it runs (BpTour.Stop's door, by hand: dismissed); else the console's TOUR page, where the first tour and
+		// its chapters are (wave T1: the wrist's TOUR and SETTINGS › TABLE › TOUR both open it).
 		if (Table->IsTourRunning()) Table->StopTour(TEXT("the menu"));
-		else Table->StartTour();
+		else OpenConsole(TEXT("tour"));
 		RefreshWrist();
 		return;
 	}

@@ -143,6 +143,11 @@ public:
 	void OpenConsole(const FString& Page);
 	void CloseConsole();
 	bool IsConsoleOpen() const { return bConsoleOpen; }
+	/** The open page's key ("home" on the MENU's tiles; meaningful while IsConsoleOpen). */
+	const FString& GetConsolePage() const { return ConsolePageKey; }
+	/** The tour's mark (BpTour.cpp, wave T1): the control a step asks for ("console:menu", "console:bar:back") wears the amber
+	 *  edge the pad's selection wears, until the step ends (empty clears it). One redraw when it changes. */
+	void SetConsoleMark(const FString& Id);
 	/** For checks: "bar" or "<page> p<n>/<pages> sel=<id>". */
 	FString GetConsoleLine() const;
 	/** BpConsole.Stat: the console's line, its draws, and whether its widget (and the wrist's) ticks now. */
@@ -356,6 +361,7 @@ private:
 	FString ConsoleSel;
 	bool bConsolePadSel = false;
 	FString ConsoleHover;
+	FString ConsoleMark;
 	/** Night two V6: the hovered console control held by a pinch (bConsoleHoverDown), or the pad's selection held by A
 	 *  (bPadADown): it draws pressed until the release. */
 	bool bConsoleHoverDown = false;

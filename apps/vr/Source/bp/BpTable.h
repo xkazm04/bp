@@ -746,6 +746,19 @@ public:
 	void StartTour();
 	void StopTour(const TCHAR* Why);
 	bool IsTourRunning() const { return TourStep >= 0; }
+	/** Wave T1 (the tour's second edition): the core tour runs once at a first launch (FBpStore [/Script/bp.BpTour]: Version,
+	 *  Core done|dismissed@<version>, At <step>@<version> while it runs, Seen <chapter ids>), resumes where a quit left it,
+	 *  and the chapters (BpTourBook.h) run from the console's TOUR page. Resume: the core tour from its step id. */
+	void StartTour(const FString& FromStep);
+	void StartChapter(const FString& ChapterId);
+	/** For the bar and the TOUR page: the running tour's name ("THE FIRST TOUR" or the chapter's title), "n of m", and the chapter
+	 *  id ("" for the core tour). */
+	FString TourTitle() const;
+	FString TourProgress() const;
+	const FString& TourChapterId() const { return TourChapter; }
+	/** The chapter ids seen (finished, or stopped past half way), from the store. */
+	static TSet<FString> TourSeen();
+	static FString TourSection();
 	/** For checks: "<step> <waiting|shown>" while it runs, "" otherwise. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Tour")
 	FString GetTourLine() const;
@@ -1740,6 +1753,39 @@ private:
 	FString TourFeature;
 	int32 TourAsks = 0;
 	int32 TourTaps = 0;
+	/** Wave T1: the running list (the core's steps or a chapter's), the chapter's id ("" the core), the step's id, the talk
+	 *  holds counted at the step's start, the beat after MENU opened, a step that yields to something more urgent, and where
+	 *  the table and console were when a chapter began (put back when it ends) and what the lamp itself changed. */
+	TArray<FString> TourSteps;
+	FString TourChapter;
+	FString TourStepId;
+	FString TourLineId;
+	bool bTourBackFromRoom = false;
+	EBpLevel TourBackFromLevel = EBpLevel::L0;
+	int32 TourHoldsAt = 0;
+	double TourBeatAt = -1.0;
+	double TourTickAt = 0.0;
+	FString TourYieldWhy;
+	FString TourResumeFrom;
+	bool bTourStoreRead = false;
+	struct FTourPlace
+	{
+		EBpLevel Level = EBpLevel::L0;
+		FString Wing, Room, RoomMode, Page;
+		bool bConsoleOpen = false;
+		int32 BpRoom = 0;
+		float TextSize = 1.f;
+		bool bLampRoom = false, bLampText = false, bLampScan = false;
+	} TourFrom;
+	void EnterTourId(const FString& Id);
+	void TourNext(const TCHAR* How);
+	void TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed);
+	void TourPutBack();
+	FString TourColdStart();
+	FString TourYields() const;
+	void TourMark(const FString& ConsoleId);
+	FString TourCaption(const FString& LineId) const;
+	void TourLookAtConsole(const FString& ConsoleId);
 	/** When the tour's stand-up step opened the stand-up (FPlatformTime seconds): an answer after it ends the step. */
 	double TourStandupFrom = 0.0;
 	void TickTour();
@@ -1759,6 +1805,10 @@ public:
 	 *  old tap). Nothing is recorded on the bundle: there a hold plays the scripted sample exchange. */
 	bool TalkHold(const TCHAR* Source, bool bDown);
 	static constexpr float TalkMinHoldS = 0.4f;
+	/** Holds that counted (TalkMinHoldS or longer), since the app started: the tour's talk steps complete on one. */
+	int32 TalkHoldsCounted = 0;
+	/** The tour shows talking for an idle wearer: the labelled sample exchange (no microphone, nothing sent). */
+	void TalkShowSample();
 	/** B, or a pinch on the lamp: cancels a turn being thought about, the listening, or the lamp's spoken reply. True when
 	 *  something was cancelled. */
 	bool TalkCancel(const TCHAR* Why);

@@ -19,6 +19,7 @@
 #include "BpLink.h"
 #include "BpSheet.h"
 #include "BpTable.h"
+#include "BpTourBook.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Components/WidgetComponent.h"
@@ -145,7 +146,7 @@ namespace
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdConsoleOpen(
 		TEXT("BpConsole.Open"),
-		TEXT("BpConsole.Open [page]: opens the console on a page (home, rooms, scan, standup, ask, projects, packages, settings); BpConsole.Open close puts it back to its bar."),
+		TEXT("BpConsole.Open [page]: opens the console on a page (home, rooms, scan, standup, ask, projects, packages, settings, link, tour, talk, access); BpConsole.Open close puts it back to its bar."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = ConsolePawn(World);
@@ -170,6 +171,8 @@ struct FBpConsolePages
 			{ TEXT("packages"), TEXT("PACKAGES"), TEXT("F"), &PackagesRows, &PackagesSummary, nullptr, nullptr },
 			{ TEXT("settings"), TEXT("SETTINGS"), TEXT("G"), &SettingsRows, &SettingsSummary, nullptr, nullptr },
 			{ TEXT("link"), TEXT("PC LINK"), TEXT("H"), &LinkRows, &LinkSummary, &LinkOpen, nullptr },
+			// Wave T1: the tour and its chapters (BpTour.cpp, BpTourBook.h), a tile so a judge on a shared headset finds it in one tap.
+			{ TEXT("tour"), TEXT("TOUR"), TEXT("I"), &TourRows, &TourSummary, nullptr, &TourTap },
 		};
 		return Pages;
 	}
@@ -825,6 +828,79 @@ struct FBpConsolePages
 	{
 		return FString::Printf(TEXT("Voice %s · music %s"), *Percent(BpAudio::VoiceLevel()), *Percent(BpAudio::MusicLevel()));
 	}
+
+	// TOUR (wave T1): the first tour (REPLAY), then a chapter per page that has something to teach, in the MENU's order (this
+	// registry's; TALK and ACCESSIBILITY are SETTINGS' rows, so they sort with it), each with its page's letter, about how long,
+	// and NEW until seen (finished, or stopped past half way).
+	static int32 MenuOrder(const FString& PageKey)
+	{
+		const TArray<FBpConsolePage>& Pages = Registry();
+		int32 At = Pages.IndexOfByPredicate([&PageKey](const FBpConsolePage& P) { return PageKey == P.Key; });
+		if (At == INDEX_NONE) At = Pages.IndexOfByPredicate([](const FBpConsolePage& P) { return FCString::Strcmp(P.Key, TEXT("settings")) == 0; });
+		return At == INDEX_NONE ? Pages.Num() : At;
+	}
+	static TArray<const BpTourBook::FChapter*> ChaptersInMenuOrder()
+	{
+		TArray<const BpTourBook::FChapter*> Out;
+		for (const BpTourBook::FChapter& C : BpTourBook::Chapters()) if (Find(C.Page)) Out.Add(&C);
+		Out.StableSort([](const BpTourBook::FChapter& A, const BpTourBook::FChapter& B) { return MenuOrder(A.Page) < MenuOrder(B.Page); });
+		return Out;
+	}
+	static void TourRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
+	{
+		ABpTable* T = Table(Pawn);
+		const bool bRunning = T && T->IsTourRunning();
+		const FString Running = !bRunning ? FString() : T->TourChapterId().IsEmpty() ? FString(TEXT("core")) : T->TourChapterId();
+		const TSet<FString> Seen = ABpTable::TourSeen();
+		Sub = bRunning ? FString::Printf(TEXT("Running: %s · %s · STOP TOUR ends it"), *T->TourTitle(), *T->TourProgress())
+			: FString(TEXT("The first tour, and a short chapter for each part of the menu"));
+		{
+			FBpConsoleRow Row;
+			Row.Label = FString::Printf(TEXT("THE FIRST TOUR · about %d s"), BpTourBook::CoreSeconds);
+			Row.Detail = TEXT("Open a room, decide, BACK, MENU, the morning, talk");
+			Row.Tone = Running == TEXT("core") ? 1 : 0;
+			Row.Buttons = { { Running == TEXT("core") ? TEXT("STOP") : TEXT("REPLAY"), Running == TEXT("core") ? TEXT("tour:stop") : TEXT("tour:core"), true } };
+			Out.Add(Row);
+		}
+		for (const BpTourBook::FChapter* C : ChaptersInMenuOrder())
+		{
+			const FBpConsolePage* Page = Find(C->Page);
+			const bool bHere = Running == C->Id, bSeen = Seen.Contains(C->Id);
+			FBpConsoleRow Row;
+			Row.Act = bHere ? FString(TEXT("tour:stop")) : FString(TEXT("tour:chapter:")) + C->Id;
+			Row.Label = FString::Printf(TEXT("%s  ·  %s"), Page ? Page->Letter : TEXT("?"), C->Title);
+			Row.Detail = FString::Printf(TEXT("%s · about %d s"), C->What, C->Seconds);
+			Row.Tag = bHere ? FString(TEXT("RUNNING")) : bSeen ? FString() : FString(TEXT("NEW"));
+			Row.Tone = bHere ? 1 : bSeen ? 0 : 2;
+			Out.Add(Row);
+		}
+	}
+	static FString TourSummary(ABpPawn& Pawn)
+	{
+		if (Plan(Pawn) && Table(Pawn)->IsTourRunning()) return FString::Printf(TEXT("Running · %s"), *Table(Pawn)->TourTitle());
+		const TSet<FString> Seen = ABpTable::TourSeen();
+		int32 New = 0;
+		for (const BpTourBook::FChapter* C : ChaptersInMenuOrder()) New += Seen.Contains(C->Id) ? 0 : 1;
+		return New > 0 ? FString::Printf(TEXT("The first tour · %d new %s"), New, New == 1 ? TEXT("chapter") : TEXT("chapters")) : FString(TEXT("The first tour · every chapter"));
+	}
+	static bool TourTap(ABpPawn& Pawn, const FString& Act)
+	{
+		ABpTable* T = Table(Pawn);
+		if (!T || !T->HasPlan()) return false;
+		if (Act == TEXT("tour:core"))
+		{
+			// The first tour starts on the table: the MENU goes back to its bar for it.
+			Pawn.CloseConsole();
+			T->StartTour(FString());
+			return true;
+		}
+		if (Act.StartsWith(TEXT("tour:chapter:")))
+		{
+			T->StartChapter(Act.Mid(13));
+			return true;
+		}
+		return false;
+	}
 };
 
 // ---- The widget ----------------------------------------------------------------------------------------------------------
@@ -927,6 +1003,10 @@ void ABpPawn::TickConsoleLive()
 		if (bRoomChanged) PlaceConsole();
 		RefreshConsole();
 	}
+	// Wave T1: the tour's step moved (the bar says how far it is); one redraw when it does.
+	static FString TourShown;
+	const FString TourNow = bTour ? Table->TourTitle() + Table->TourProgress() : FString();
+	if (TourNow != TourShown) { TourShown = TourNow; RefreshConsole(); }
 	// The text size changed (SETTINGS › ACCESSIBILITY, or adb): the console's scale and place again; nothing is redrawn.
 	if (BpSheet::TextScale() != ConsoleScaleShown) PlaceConsole();
 }
@@ -1022,7 +1102,9 @@ FString ABpPawn::ConsoleStatus() const
 	Table->ScanBand(Head, Body);
 	if (!WristArmedFocus.IsEmpty()) return FString::Printf(TEXT("A scan of %s is ready on your wrist"), WristArmedLabel.IsEmpty() ? TEXT("this place") : *WristArmedLabel);
 	if (Table->IsScanRunning() && !Body.IsEmpty()) return FString::Printf(TEXT("%s: %s"), Head.StartsWith(TEXT("SAMPLE")) ? TEXT("Sample scan") : TEXT("Scanning"), *Body);
-	if (Table->IsTourRunning()) return TEXT("The lamp's tour is running");
+	// Wave T1: which tour runs, and how far it is (STOP TOUR stands beside it).
+	if (Table->IsTourRunning()) return Table->TourChapterId().IsEmpty() ? FString::Printf(TEXT("First tour %s"), *Table->TourProgress().Replace(TEXT(" of "), TEXT("/")))
+		: FString::Printf(TEXT("%s %s"), *Table->TourTitle(), *Table->TourProgress().Replace(TEXT(" of "), TEXT("/")));
 	if (!Table->GetRoomModeId().IsEmpty())
 	{
 		const int32 N = Table->DeckOpenIds().Num();
@@ -1046,7 +1128,9 @@ void ABpPawn::RefreshConsole()
 	// SHOW ON PC (night two W2a): the table's place to the web, on the bar while a PC is linked; its answer stands a while.
 	// Handed over (night two W2b): while a grant from the table is live the bar says until when, with TAKE BACK in SHOW ON PC's place.
 	const FString Handed = StandupBarStatus();
-	const bool bShowPc = Table->HasPlan() && Link.HasPcLink() && Handed.IsEmpty();
+	// Wave T1: while a tour runs, STOP TOUR takes SHOW ON PC's place on the bar (B or STOP TOUR ends it, dismissed).
+	const bool bTourRun = Table->HasPlan() && Table->IsTourRunning();
+	const bool bShowPc = Table->HasPlan() && Link.HasPcLink() && Handed.IsEmpty() && !bTourRun;
 	const FString Status = !ConsoleBarWords.IsEmpty() && FPlatformTime::Seconds() < ConsoleBarWordsUntil ? ConsoleBarWords : !Handed.IsEmpty() ? Handed : ConsoleStatus();
 
 	// What it shows, as words: the redraw key.
@@ -1060,7 +1144,7 @@ void ABpPawn::RefreshConsole()
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
 	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
-	Key += FString::Printf(TEXT("|down%d%d"), bConsoleHoverDown, bPadADown && bConsolePadSel);
+	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -1124,19 +1208,20 @@ void ABpPawn::RefreshConsole()
 		Button(FBox2f(FVector2f(14.f, Y0), FVector2f(214.f, Y1)), TEXT("MENU"), EBtn::Fill, TEXT("menu"), Font(TEXT("Bold"), CapBar));
 		const float BackW = bCanBack ? 200.f : 0.f;
 		if (bCanBack) Button(FBox2f(FVector2f(LW - 14.f - BackW, Y0), FVector2f(LW - 14.f, Y1)), TEXT("‹  BACK"), EBtn::Edge, TEXT("bar:back"), Font(TEXT("Bold"), CapBar));
-		const bool bTakeBack = !Handed.IsEmpty();
-		const float PcW = bShowPc || bTakeBack ? 250.f : 0.f;
+		const bool bTakeBack = !Handed.IsEmpty() && !bTourRun;
+		const float PcW = bTourRun ? 210.f : bShowPc || bTakeBack ? 250.f : 0.f;
 		const float PcX1 = LW - 14.f - (bCanBack ? BackW + 12.f : 0.f);
 		if (bShowPc) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("SHOW ON PC"), EBtn::Edge, TEXT("bar:pc"), Font(TEXT("Bold"), CapBar));
 		if (bTakeBack) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("TAKE BACK"), EBtn::Amber, TEXT("standup:revoke"), Font(TEXT("Bold"), CapBar));
+		if (bTourRun) Button(FBox2f(FVector2f(PcX1 - PcW, Y0), FVector2f(PcX1, Y1)), TEXT("STOP TOUR"), EBtn::Edge, TEXT("tour:stop"), Font(TEXT("Bold"), CapBar));
 		// Your room (BpSurround.cpp, night two W4): YOUR ROOM / STUDIO, what surrounds the table now; a tap switches it. Night two
 		// V4: the status is never cut. It takes one line, else two in the 24 px face; when even two will not hold it the ROOM
 		// switch leaves the bar (it stays on SETTINGS › ROOM) and the status has its width.
 		const FSlateFontInfo NameFont = Font(TEXT("Bold"), CapBar), StatusFont = Font(TEXT("Regular"), CapBarStatus), Status2Font = Font(TEXT("Regular"), CapSmall);
 		const float RoomW = 230.f;
-		const float RoomX1 = PcX1 - (bShowPc || bTakeBack ? PcW + 12.f : 0.f);
+		const float RoomX1 = PcX1 - (bShowPc || bTakeBack || bTourRun ? PcW + 12.f : 0.f);
 		const float TextX = 242.f;
-		const auto TextWFor = [&](bool bRoomBtn) { return LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack ? PcW + 12.f : 0.f) - (bRoomBtn ? RoomW + 12.f : 0.f); };
+		const auto TextWFor = [&](bool bRoomBtn) { return LW - TextX - (bCanBack ? BackW + 40.f : 28.f) - (bShowPc || bTakeBack || bTourRun ? PcW + 12.f : 0.f) - (bRoomBtn ? RoomW + 12.f : 0.f); };
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextWFor(true) * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		const FString Short = Status.Replace(TEXT(" decisions waiting"), TEXT(" waiting")).Replace(TEXT(" decision waiting"), TEXT(" waiting"));
@@ -1184,7 +1269,15 @@ void ABpPawn::RefreshConsole()
 		// The title block on every sheet (night two V2), the stand-up's own aside: the sheet's number, the product, SAMPLE or the
 		// date, between the title and CLOSE, so the set reads as one.
 		float TitleX1 = LW - Pad - 210.f;
-		if (!bStandupPage && ConsolePageKey != TEXT("talk"))
+		if (bTourRun && !bStandupPage)
+		{
+			// Wave T1: while a tour runs, the panel offers STOP TOUR where the title block stands (the bar is hidden under it). The
+			// stand-up keeps its own aside there (its STOP TOUR is the wrist's).
+			const FBox2f Stop(FVector2f(LW - Pad - 210.f - 250.f, HeadY0), FVector2f(LW - Pad - 210.f, HeadY1));
+			Button(Stop, TEXT("STOP TOUR"), EBtn::Edge, TEXT("tour:stop"), LabelFont);
+			TitleX1 = Stop.Min.X - 16.f;
+		}
+		else if (!bStandupPage && ConsolePageKey != TEXT("talk"))
 		{
 			const FString No = FString::Printf(TEXT("%s-%02d"), Page ? Page->Letter : TEXT("M"), Page ? ConsolePageAt + 1 : 0);
 			const FString Proj = Product.ToUpper() + TEXT(" · ") + (Link.HasPcLink() ? DayWord() : FString(TEXT("SAMPLE")));
@@ -1398,7 +1491,7 @@ void ABpPawn::RefreshConsole()
 	}
 	// A row's own box sits under its buttons: the hit test reads the buttons first (the last added wins below).
 	// The control a hand's ray is on, and the pad's selection: an amber edge.
-	for (const FString& Lit : { ConsoleHover, bConsolePadSel ? ConsoleSel : FString() })
+	for (const FString& Lit : { ConsoleHover, bConsolePadSel ? ConsoleSel : FString(), ConsoleMark })
 	{
 		if (Lit.IsEmpty()) continue;
 		if (const FConsoleBox* Box = ConsoleBoxes.FindByPredicate([&Lit](const FConsoleBox& Each) { return Each.Id == Lit; }))
@@ -1478,6 +1571,13 @@ void ABpPawn::SetConsoleHover(const FString& Id, bool bDown)
 	RefreshConsole();
 }
 
+void ABpPawn::SetConsoleMark(const FString& Id)
+{
+	if (Id == ConsoleMark) return;
+	ConsoleMark = Id;
+	RefreshConsole();
+}
+
 void ABpPawn::ConsoleTap(const FString& Id)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: tap %s"), *Id);
@@ -1485,6 +1585,9 @@ void ABpPawn::ConsoleTap(const FString& Id)
 	const FString Act = Id.Mid(8);
 	ABpTable* Table = WristTable.Get();
 	if (Act == TEXT("panel")) return;
+	// The tour counts a console press as the person acting (wave T1: a step that only shows waits for one, or the idle wait).
+	if (Table) Table->NoteHand(TEXT("console"));
+	if (Act == TEXT("tour:stop")) { if (Table) Table->StopTour(TEXT("STOP TOUR")); return; }
 	if (Act == TEXT("menu")) { if (bConsoleOpen) CloseConsole(); else OpenConsole(FString()); return; }
 	if (Act == TEXT("close")) { CloseConsole(); return; }
 	if (Act == TEXT("home")) { OpenConsole(TEXT("home")); return; }

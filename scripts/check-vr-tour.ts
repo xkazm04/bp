@@ -1,9 +1,12 @@
-// Checks the lamp's tour (apps/vr/Source/bp/BpTour.cpp, standalone-plan.md S6) against its bundled voice
-// (apps/vr/tools/tour-voice.ts -> apps/vr/Content/BpData/voice/tour/). Pins:
-//   - every step BpTour.cpp names (StepName) and the "shown" line has a spoken line in TOUR_LINES, and no line is orphaned;
-//   - each line has its clip, and the clip is a 16-bit PCM WAV that BpTour.cpp's ReadWav accepts (fmt before data, mono),
-//     between 0.5 s and 8 s long;
-//   - lines.json records the same text as TOUR_LINES, so a changed line cannot ride an old clip (re-run tour-voice.ts);
+// Checks the lamp's tour (apps/vr/Source/bp/BpTour.cpp, its book BpTourBook.cpp; standalone-plan.md S6, wave T1) against
+// its bundled voice (apps/vr/tools/tour-voice.ts -> apps/vr/Content/BpData/voice/tour/). Pins:
+//   - the book: every core step and chapter step has a line, every line a clip, and no clip is an orphan; ids are unique and
+//     none is an index; no line runs over BpTourBook::MaxWords words; the lines BpTour.cpp says by id exist;
+//   - the chapters name console pages that exist (BpConsole.cpp's page registry, or the two pages SETTINGS opens), and the
+//     owner's five (talk, morning, room, pc, text) are there;
+//   - the cold start reads FBpStore (the first tour starts by itself only when Core was never written, or to resume At): a
+//     control that fails if the rule goes back to "every launch";
+//   - each clip is a 16-bit mono PCM WAV that BpTour.cpp's ReadWav accepts, 0.5 s to 8 s, and lines.json records today's text;
 //   - the music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav) is a 16-bit stereo PCM WAV, 120-150 s,
 //     and bed.json agrees with it, records a quiet bed near its loudness target and a seam with no click.
 // Run: node --import @bp/core/register scripts/check-vr-tour.ts. Exit 1 on any failure. Reads files only; no network.
@@ -14,24 +17,72 @@ import { TOUR_LINES } from '../apps/vr/tools/tour-voice.ts';
 import { MUSIC_CHANNELS, MUSIC_INDEX, MUSIC_LOUDNESS, MUSIC_RATE, MUSIC_WAV } from '../apps/vr/tools/music-bed.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CPP = path.join(ROOT, 'apps/vr/Source/bp/BpTour.cpp');
+const SRC = path.join(ROOT, 'apps/vr/Source/bp');
 const CLIPS = path.join(ROOT, 'apps/vr/Content/BpData/voice/tour');
 
 let failed = 0, passed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
 
-// The step names, from StepName's table in the C++ (the one place the ids are written).
-const src = fs.readFileSync(CPP, 'utf8');
-const table = /static const TCHAR\* Names\[\] = \{([^}]*)\}/.exec(src);
-check('BpTour.cpp has the StepName table', !!table);
-const steps = table ? [...table[1].matchAll(/TEXT\("([^"]+)"\)/g)].map((m) => m[1]) : [];
-// nine since night two W2b: the first five minutes end on the stand-up's first decision (standup), then the hand-off
-check('the tour has its nine steps', steps.length === 9, `${steps.length}: ${steps.join(', ')}`);
-check('the lamp says "shown" when it does a step', /SpeakTour\(TEXT\("shown"\)\)/.test(src));
-const wanted = [...steps, 'shown'];
-for (const s of wanted) check(`a spoken line for ${s}`, typeof TOUR_LINES[s] === 'string' && TOUR_LINES[s].length > 0);
-for (const s of Object.keys(TOUR_LINES)) check(`${s} is a step BpTour.cpp plays`, wanted.includes(s));
+const tour = fs.readFileSync(path.join(SRC, 'BpTour.cpp'), 'utf8');
+const book = fs.readFileSync(path.join(SRC, 'BpTourBook.cpp'), 'utf8');
+const bookH = fs.readFileSync(path.join(SRC, 'BpTourBook.h'), 'utf8');
+const consoleSrc = fs.readFileSync(path.join(SRC, 'BpConsole.cpp'), 'utf8');
 
+// ---- The book ----
+const lineIds = Object.keys(TOUR_LINES);
+check('the book has its lines', lineIds.length >= 12, `${lineIds.length}`);
+const coreBlock = /const TArray<const TCHAR\*>& Core\(\)[\s\S]*?=\s*\{([\s\S]*?)\};/.exec(book);
+const core = coreBlock ? [...coreBlock[1].matchAll(/TEXT\("([^"]+)"\)/g)].map((m) => m[1]) : [];
+check('the core tour has its steps (ten or fewer, welcome first, hand-off last)', core.length >= 6 && core.length <= 10 && core[0] === 'welcome' && core[core.length - 1] === 'hand-off', core.join(', '));
+const chapterBlock = /const TArray<FChapter>& Chapters\(\)[\s\S]*?return All;/.exec(book)?.[0] ?? '';
+const chapters = [...chapterBlock.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("([^"]+)"\),\s*TEXT\("([^"]+)"\),\s*TEXT\("[^"]*"\),\s*(\d+),\s*\{([^}]*)\}\s*\}/g)]
+  .map((m) => ({ id: m[1], title: m[2], page: m[3], seconds: Number(m[4]), steps: [...m[5].matchAll(/TEXT\("([^"]+)"\)/g)].map((x) => x[1]) }));
+check('the book has its chapters', chapters.length >= 5, `${chapters.length}`);
+for (const c of chapters) {
+  check(`chapter ${c.id} has two to four steps`, c.steps.length >= 2 && c.steps.length <= 4, `${c.steps.length}`);
+  check(`chapter ${c.id} runs 20 to 30 s`, c.seconds >= 20 && c.seconds <= 30, `${c.seconds}`);
+}
+const stepIds = [...core, ...chapters.flatMap((c) => c.steps)];
+const isIndex = (id: string) => /^\d+$/.test(id) || /^(step|chapter|line|s|c)[-_]?\d+$/i.test(id);
+const unique = (ids: string[]) => ids.filter((id, i) => ids.indexOf(id) !== i);
+check('step ids are unique', unique(stepIds).length === 0, unique(stepIds).join(', '));
+check('chapter ids are unique', unique(chapters.map((c) => c.id)).length === 0);
+check('line ids are unique', unique([...book.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("[^"]*"\)\s*\}/g)].map((m) => m[1])).length === 0);
+for (const id of [...stepIds, ...chapters.map((c) => c.id), ...lineIds]) check(`${id} is a minted name, not an index`, !isIndex(id) && /^[a-z][a-z-]*[a-z]$/.test(id));
+for (const s of stepIds) check(`step ${s} has a line`, typeof TOUR_LINES[s] === 'string' && TOUR_LINES[s].length > 0);
+// The variants BpTour.cpp says by id (a degraded step, the beat after MENU) are lines too, and every line is said.
+const said = new Set([...tour.matchAll(/(?:LineId|TourLineId) = TEXT\("([^"]+)"\)/g)].map((m) => m[1]));
+for (const s of said) check(`BpTour.cpp says ${s}, a line of the book`, s in TOUR_LINES);
+check('the lamp says "shown" when it does a step', /SpeakTour\(TEXT\("shown"\)\)/.test(tour));
+for (const s of lineIds) check(`line ${s} is said by a step or BpTour.cpp`, stepIds.includes(s) || said.has(s) || s === 'shown');
+const maxWords = Number(/constexpr int32 MaxWords = (\d+);/.exec(bookH)?.[1] ?? 0);
+check('the book sets a word limit', maxWords > 0 && maxWords <= 14, `${maxWords}`);
+for (const [s, text] of Object.entries(TOUR_LINES)) check(`line ${s} is ${maxWords} words or fewer`, text.split(/\s+/).filter(Boolean).length <= maxWords, `${text.split(/\s+/).length}: ${text}`);
+check('the book has a content version', /constexpr int32 Version = \d+;/.test(bookH));
+
+// ---- The chapters and the console's pages ----
+const registry = /static const TArray<FBpConsolePage>& Registry\(\)[\s\S]*?return Pages;/.exec(consoleSrc)?.[0] ?? '';
+const registryKeys = [...registry.matchAll(/\{\s*TEXT\("([a-z]+)"\),\s*TEXT\("/g)].map((m) => m[1]);
+const findBlock = /static const FBpConsolePage\* Find\(const FString& Key\)[\s\S]*?return Registry\(\)/.exec(consoleSrc)?.[0] ?? '';
+const specialKeys = [...findBlock.matchAll(/static const FBpConsolePage \w+ = \{\s*TEXT\("([a-z]+)"\)/g)].map((m) => m[1]);
+check('BpConsole.cpp has its page registry', registryKeys.length >= 8, registryKeys.join(', '));
+check('the TOUR page is in the registry (a MENU tile)', registryKeys.includes('tour'));
+for (const c of chapters) check(`chapter ${c.id} names a console page that exists (${c.page})`, registryKeys.includes(c.page) || specialKeys.includes(c.page));
+for (const owner of ['talk', 'morning', 'room', 'pc', 'text']) check(`the owner's chapter ${owner} exists`, chapters.some((c) => c.id === owner));
+check('the TOUR page orders the chapters by the registry', /MenuOrder\(A\.Page\) < MenuOrder\(B\.Page\)/.test(consoleSrc));
+
+// ---- The cold start reads the store ----
+const cold = /FString ABpTable::TourColdStart\(\)[\s\S]*?\r?\n\}/.exec(tour)?.[0] ?? '';
+check('the cold start reads Core from FBpStore', /FBpStore::GetString\(GTourSection, TEXT\("Core"\)/.test(cold));
+check('a written Core stops the cold start', /if \(!Core\.IsEmpty\(\)\)[\s\S]{0,240}return FString\(\);/.test(cold));
+check('the cold start resumes At of this version', /TEXT\("At"\)/.test(cold) && /BpTourBook::Version/.test(cold));
+check('the tick starts the first tour only through the cold-start rule', /const FString From = TourColdStart\(\);\s*if \(!From\.IsEmpty\(\)\) StartTour\(From\);/.test(tour)
+  && !/bCold\s*=\s*!bTourPlayed/.test(tour));
+check('progress is written as each core step begins', /SetString\(GTourSection, TEXT\("At"\)/.test(tour));
+check('done and dismissed are both recorded', /TEXT\("done"\) : TEXT\("dismissed"\)/.test(tour));
+check('the store section is the brief\'s', /\/Script\/bp\.BpTour/.test(tour));
+
+// ---- The clips ----
 function wav(file: string): { rate: number; channels: number; bits: number; seconds: number } | null {
   const b = fs.readFileSync(file);
   if (b.length < 44 || b.toString('ascii', 0, 4) !== 'RIFF' || b.toString('ascii', 8, 12) !== 'WAVE') return null;
@@ -44,7 +95,7 @@ function wav(file: string): { rate: number; channels: number; bits: number; seco
   }
   return null;
 }
-for (const s of wanted) {
+for (const s of lineIds) {
   const file = path.join(CLIPS, `${s}.wav`);
   if (!fs.existsSync(file)) { check(`clip ${s}.wav exists`, false, 'run node apps/vr/tools/tour-voice.ts'); continue; }
   const w = wav(file);
@@ -53,9 +104,12 @@ for (const s of wanted) {
   check(`clip ${s}.wav is 16-bit mono`, w.bits === 16 && w.channels === 1, `${w.bits}-bit, ${w.channels} ch`);
   check(`clip ${s}.wav is 0.5-8 s`, w.seconds >= 0.5 && w.seconds <= 8, `${w.seconds.toFixed(2)} s`);
 }
+for (const f of fs.readdirSync(CLIPS).filter((f) => f.endsWith('.wav'))) check(`clip ${f} has a line (no orphan)`, f.slice(0, -4) in TOUR_LINES);
 const index = path.join(CLIPS, 'lines.json');
-const recorded = fs.existsSync(index) ? JSON.parse(fs.readFileSync(index, 'utf8')).lines ?? {} : {};
+const recordedIndex = fs.existsSync(index) ? JSON.parse(fs.readFileSync(index, 'utf8')) : {};
+const recorded = recordedIndex.lines ?? {};
 for (const [s, text] of Object.entries(TOUR_LINES)) check(`${s}.wav was read from today's line`, recorded[s] === text, 're-run node apps/vr/tools/tour-voice.ts');
+check('the clips were levelled to the loudness target', recordedIndex.voice?.loudness?.targetLufs === -14 && recordedIndex.voice?.loudness?.ceilingDb === -1);
 
 // The background music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav): the same WAV route, stereo at
 // MUSIC_RATE, 120-150 s, and bed.json agrees with the file and records a quiet bed and a measured seam.

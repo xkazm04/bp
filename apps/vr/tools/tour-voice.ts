@@ -10,7 +10,7 @@
 // static gain plus a limiter, so the set is even and the headset's small speakers carry it (2026-11-08: the clips measured
 // -20.6 to -22.5 LUFS, peak -6 dBFS, and the owner, wearing the headset, called the voice barely heard).
 //
-// Writes apps/vr/Content/BpData/voice/tour/<step>.wav plus lines.json (the text of each clip, and the voice it was read
+// Writes apps/vr/Content/BpData/voice/tour/<line id>.wav plus lines.json (the text of each clip, and the voice it was read
 // with). The spoken lines carry no product names or counts, so one set serves every bundled product; the caption carries
 // those. A clip whose line and voice are unchanged is kept unless --force. The key is read like the server reads it and is
 // never printed; a synthesized line is cached under $BP_HOME/companion/voice/, so a re-run costs no credits.
@@ -22,23 +22,29 @@ import { fileURLToPath } from 'node:url';
 import { VOICE, VOICE_FX } from '../../../packages/core/src/companion/voice.ts';
 import { synthesize, voiceKey } from '../../../packages/core/src/server/companion/voice.server.ts';
 
-/** The step ids are BpTour.cpp's StepName()s, plus "shown" (said when the lamp does a step for the person). */
-export const TOUR_LINES: Record<string, string> = {
-  welcome: 'Welcome to the light table. Every block on this paper is a part of the code.',
-  'lift-wing': 'Pinch a wing, and pull it toward you.',
-  'lift-room': 'Now pinch the glowing room, and pull it up.',
-  'step-in': 'Pull it once more, to step inside.',
-  ask: 'Hold a feature, to ask me about it.',
-  decide: 'Each screen on the deck is one decision. Tap approve, or decline.',
-  'step-out': 'Push away, to step back out.',
-  standup: 'Every morning starts here. Approve this one, or leave it for later.',
-  'hand-off': "That's how every morning starts. The table is yours.",
-  shown: 'Like this.',
-};
-
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** The tour's book (apps/vr/Source/bp/BpTourBook.cpp, wave T1): every line the lamp says on the tour and its chapters, written
+ *  once there. The captions are those words in the build; the clips are rendered here from the same text, so they cannot drift. */
+export const TOUR_BOOK_CPP = path.resolve(HERE, '..', 'Source', 'bp', 'BpTourBook.cpp');
+
+/** The lines of BpTourBook.cpp's Lines() table: id -> words (each entry on one line as { TEXT("id"), TEXT("words") }). */
+export function readTourBook(file = TOUR_BOOK_CPP): Record<string, string> {
+  const src = fs.readFileSync(file, 'utf8');
+  const start = src.indexOf('const TArray<FLine>& Lines()');
+  const end = start >= 0 ? src.indexOf('return All;', start) : -1;
+  const block = start >= 0 && end > start ? src.slice(start, end) : '';
+  const out: Record<string, string> = {};
+  for (const m of block.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("((?:[^"\\]|\\.)*)"\)\s*\}/g)) out[m[1]] = m[2].replace(/\\(.)/g, '$1');
+  return out;
+}
+
+/** The ids are the book's line ids (a step's id, or a variant a step says: decide-noted, menu-open, standup-how, ...). */
+export const TOUR_LINES: Record<string, string> = readTourBook();
+
 const OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
-const RATE = 24000;
+/** 16 kHz (wave T1): the tour grew from 10 lines to 33, and at 24 kHz the clips added 5 MB to the bundle; speech keeps its
+ *  band to 8 kHz here, and the set stays under the 3 MB the wave allowed. */
+const RATE = 16000;
 /** Glim's level at the source: integrated loudness in LUFS, and the sample peak's ceiling in dBFS. */
 const LOUDNESS = { targetLufs: -14, ceilingDb: -1 };
 
@@ -74,6 +80,8 @@ function fxChain(): string {
     `equalizer=f=${f.presence.hz}:t=q:w=${f.presence.q}:g=${f.presence.gainDb}`,
     `aecho=${f.echo.inGain}:${f.echo.outGain}:${taps.map((t) => t.ms).join('|')}:${taps.map((t) => t.gain).join('|')}`,
     `tremolo=f=${f.tremolo.hz}:d=${f.tremolo.depth}`,
+    // The synthesizer's lead-in and tail of silence go (a line starts when the step does; 0.15 s of tail is kept).
+    'silenceremove=start_periods=1:start_silence=0.05:start_threshold=-55dB,areverse,silenceremove=start_periods=1:start_silence=0.15:start_threshold=-55dB,areverse',
   ].join(',');
 }
 
@@ -98,12 +106,17 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(bad ? 1 : 0);
   }
   const sameVoice = JSON.stringify(before.voice) === JSON.stringify(voice);
-  let failed = 0;
+  let failed = 0, chars = 0;
+  // A clip no line uses any more goes (the bundle carries only what the tour says).
+  for (const f of fs.readdirSync(OUT)) {
+    if (f.endsWith('.wav') && !(f.slice(0, -4) in TOUR_LINES)) { fs.rmSync(path.join(OUT, f)); console.log(`gone  ${f} (no line uses it)`); }
+  }
   for (const [step, text] of Object.entries(TOUR_LINES)) {
     const wav = path.join(OUT, `${step}.wav`);
     if (!force && sameVoice && before.lines?.[step] === text && fs.existsSync(wav)) { console.log(`kept  ${step}`); continue; }
     const res = await synthesize(text);
     if (!res.ok) { failed++; console.log(`FAIL  ${step}: ${res.error}`); continue; }
+    if (!res.cached) chars += text.length;
     const mp3 = path.join(OUT, `${step}.tmp.mp3`);
     fs.writeFileSync(mp3, res.audio);
     const ff = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', mp3, '-af', fxChain(), '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', wav], { encoding: 'utf8' });
@@ -113,5 +126,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.log(`ok    ${step} (${res.cached ? 'cached' : 'synthesized'}) -> ${(fs.statSync(wav).size / 1024).toFixed(0)} KB`);
   }
   fs.writeFileSync(indexFile, JSON.stringify({ voice, lines: TOUR_LINES }, null, 2) + '\n');
+  console.log(`characters synthesized (not from the cache): ${chars}`);
   process.exit(failed ? 1 : 0);
 }

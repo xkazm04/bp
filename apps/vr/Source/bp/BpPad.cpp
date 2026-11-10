@@ -206,8 +206,16 @@ void ABpPawn::RunPad(const FString& Button)
 	bPadActive = true;
 	UE_LOG(LogBpTable, Log, TEXT("BpPad: press %s (console %s, level L%d%s, focus %s)"), *Button, *GetConsoleLine(), Table ? static_cast<int32>(Table->GetBpLevel()) : -1,
 		Table && !Table->GetRoomModeId().IsEmpty() ? *FString::Printf(TEXT(" room mode %s"), *Table->GetRoomModeId()) : TEXT(""), PadFocusId.IsEmpty() ? TEXT("none") : *GetFocusLine());
+	if (Table) Table->NoteHand(TEXT("pad"));
 	// B first cancels a talk in flight (BpTalk.cpp: a turn being thought about, the listening, the lamp's spoken reply).
 	if (Button == TEXT("B") && Table && Table->TalkCancel(TEXT("B"))) return;
+	// Wave T1: B ends a running tour (dismissed) when it has nothing else to go back from: the site plan, nothing open. Elsewhere
+	// B keeps its meaning (one level up), which the tour's BACK step teaches.
+	if (Button == TEXT("B") && Table && Table->IsTourRunning() && !bConsoleOpen && Table->GetBpLevel() == EBpLevel::L0 && Table->GetRoomModeId().IsEmpty())
+	{
+		Table->StopTour(TEXT("B"));
+		return;
+	}
 	if (Button == TEXT("Y") || Button == TEXT("Menu"))
 	{
 		if (bConsoleOpen) CloseConsole();
