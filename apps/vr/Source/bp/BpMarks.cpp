@@ -1102,6 +1102,14 @@ FString ABpTable::DirectedLabel(const FString& Target) const
 	return BuildScanScope(Target, Kind, ScopeId, Label, Features) ? Label : FString();
 }
 
+FString ABpTable::DirectedScope(const FString& Target) const
+{
+	if (Target == TEXT("site") || Target.IsEmpty()) return TEXT("everything");
+	if (FindRoom(Target)) return TEXT("this room");
+	if (FindWing(Target)) return TEXT("this wing");
+	return TEXT("this place");
+}
+
 void ABpTable::StartDirected(const FString& FocusId, const FString& InTarget, TFunction<void(bool bOk, const FString& Words)> OnDone)
 {
 	FBpLinkModule& Link = FBpLinkModule::Get();

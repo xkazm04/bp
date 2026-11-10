@@ -27,6 +27,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Texture.h"
@@ -279,12 +280,33 @@ bool ABpTable::TickLampStep(float DeltaSeconds)
 	if (!bHome)
 	{
 		// Away from home (a station, a ride) the step is held; the caption still keeps clear on the site plan.
-		if (RoomModeId.IsEmpty() && Now - LampStepCheckAt >= LampStepCheckS)
+		const bool bStanding = bLampAtStation && LampTravelT < 0.f;
+		if (Now - LampStepCheckAt >= LampStepCheckS)
 		{
 			LampStepCheckAt = Now;
-			UpdateCaptionLift();
+			if (RoomModeId.IsEmpty()) UpdateCaptionLift();
+			// V7: at a station, beside the console's slot rather than behind it (judged again as a sheet opens or closes).
+			if (bStanding)
+			{
+				const double Want = StationAside(LampStationAtLocal, LampFaceTarget.Y);
+				if (FMath::Abs(Want - LampAsideWant) > 0.5)
+				{
+					UE_LOG(LogBpTable, Log, TEXT("BpLampLook: at station %d the lamp stands %s (%.0f cm along the table's width)"), LampStation,
+						FMath::IsNearlyZero(Want) ? TEXT("back on its station") : Want < 0.0 ? TEXT("left of the console's slot") : TEXT("right of the console's slot"), Want);
+					LampAsideWant = Want;
+				}
+			}
 		}
-		return false;
+		if (!bStanding || LampAsideCm == LampAsideWant) return false;
+		if (LookReduced()) LampAsideCm = LampAsideWant;
+		else
+		{
+			LampAsideCm = FMath::FInterpTo(LampAsideCm, LampAsideWant, static_cast<double>(DeltaSeconds), static_cast<double>(LampStepRate));
+			if (FMath::Abs(LampAsideCm - LampAsideWant) < 0.1) LampAsideCm = LampAsideWant;
+		}
+		PlaceLamp();
+		ApplyLampWidgets();
+		return LampAsideCm != LampAsideWant;
 	}
 	if (Now - LampStepCheckAt >= LampStepCheckS)
 	{
@@ -382,6 +404,109 @@ bool ABpTable::TickLampStep(float DeltaSeconds)
 	}
 	ApplyLampHome();
 	return LampStepCm != LampStepWant;
+}
+
+bool ABpTable::ConsoleSeatBox(FBox2D& Out) const
+{
+	const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+	const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn) return false;
+	TArray<UWidgetComponent*> Widgets;
+	Pawn->GetComponents(Widgets);
+	for (const UWidgetComponent* Widget : Widgets)
+	{
+		if (!Widget || Widget->GetName() != TEXT("ConsolePanel") || !Widget->IsVisible()) continue;
+		// The quad's own four corners (its draw size about its pivot, in the component's space), not its world box.
+		const FVector2D Size = Widget->GetDrawSize();
+		const FVector2D Pivot = Widget->GetPivot();
+		const FTransform& T = Widget->GetComponentTransform();
+		const FTransform& Table = GetActorTransform();
+		FBox Local(ForceInit);
+		for (const FVector2D& C : { FVector2D(0.0, 0.0), FVector2D(1.0, 0.0), FVector2D(0.0, 1.0), FVector2D(1.0, 1.0) })
+		{
+			Local += Table.InverseTransformPosition(T.TransformPosition(FVector(0.0, (Pivot.X - C.X) * Size.X, (Pivot.Y - C.Y) * Size.Y)));
+		}
+		Out = SeatAngles(Local);
+		return true;
+	}
+	return false;
+}
+
+namespace
+{
+	/** The clear margin between the lamp's body and the console's slot, degrees from the seat. */
+	constexpr double LampSlotMarginDeg = 1.0;
+	constexpr double LampAsideMaxCm = 110.0;
+}
+
+double ABpTable::StationAside(const FVector& StationLocal, double TargetY) const
+{
+	// Nothing to judge by (no lamp mesh, no head, no console shown): the step it has stays.
+	if (!Lamp.IsValid() || !LampLookState.IsValid()) return LampAsideWant;
+	const UStaticMeshComponent* BodyMesh = LampLookState->Mesh.Get();
+	FVector HeadWorld;
+	FBox2D Slot;
+	if (!BodyMesh || !BodyMesh->GetStaticMesh() || !LampHead(HeadWorld)) return LampAsideWant;
+	if (!ConsoleSeatBox(Slot)) return 0.0;
+	const FTransform& Table = GetActorTransform();
+	// The body and head in the lamp's own space, then stood at each candidate place turned to the thing it shows, as PlaceLamp
+	// stands it at a station (its turn changes with the place: judged with the lamp's turn there, the step does not flip).
+	const FTransform LampT = Lamp->GetActorTransform();
+	const FBox Own = BodyMesh->GetStaticMesh()->GetBoundingBox();
+	const FTransform MeshT = BodyMesh->GetComponentTransform();
+	FVector Body[8];
+	Own.GetVertices(Body);
+	for (FVector& C : Body) C = LampT.InverseTransformPosition(MeshT.TransformPosition(C));
+	const FVector HeadRel = LampT.InverseTransformPosition(HeadWorld);
+	const double RestYaw = (Table.GetRotation().Inverse() * LampRest.GetRotation()).Rotator().Yaw;
+	const FVector Aim = LampFaceTarget.IsZero() ? FVector(0.0, TargetY, GetPaperZ()) : LampFaceTarget;
+	const auto StandAtPlace = [&](const FVector& At)
+	{
+		const FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(LampYawToward(At, Aim) - RestYaw));
+		return FTransform(Table.GetRotation() * Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), Table.TransformPosition(At), LampT.GetScale3D());
+	};
+	const auto StandAt = [&](double Dy) { return StandAtPlace(StationLocal + FVector(0.0, Dy, 0.0)); };
+	const FVector Eye = EyeLocal();
+	const FVector Fwd = (FVector(0.0, 0.0, GetPaperZ()) - Eye).GetSafeNormal();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Fwd).GetSafeNormal();
+	const auto HeadOff = [&](const FTransform& T)
+	{
+		const FVector D = (Table.InverseTransformPosition(T.TransformPosition(HeadRel)) - Eye).GetSafeNormal();
+		return FMath::Abs(FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(D, Right), FVector::DotProduct(D, Fwd))));
+	};
+	// The comfortable view as at home (V5's rule): BpView.Fov's 30 degrees, or no further out than the lamp's own home.
+	const double ViewLimit = FMath::Max(LampViewDeg, HeadOff(StandAtPlace(Table.InverseTransformPosition(LampRest.GetLocation()))) + 0.5);
+	const auto InView = [&](double Dy) { return HeadOff(StandAt(Dy)) <= ViewLimit; };
+	// How much of the slot (square degrees, with the margin) the body covers standing there; 0 is clear.
+	const auto Cover = [&](double Dy)
+	{
+		const FTransform T = StandAt(Dy);
+		FBox2D Seen(ForceInit);
+		for (const FVector& C : Body)
+		{
+			const FVector D = Table.InverseTransformPosition(T.TransformPosition(C)) - Eye;
+			Seen += FVector2D(FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), FMath::RadiansToDegrees(FMath::Atan2(D.Z, FVector2D(D.X, D.Y).Size())));
+		}
+		const double W = FMath::Min(Seen.Max.X, Slot.Max.X + LampSlotMarginDeg) - FMath::Max(Seen.Min.X, Slot.Min.X - LampSlotMarginDeg);
+		const double H = FMath::Min(Seen.Max.Y, Slot.Max.Y) - FMath::Max(Seen.Min.Y, Slot.Min.Y);
+		return W > 0.0 && H > 0.0 ? W * H : 0.0;
+	};
+	double Best = 0.0, BestCover = Cover(0.0);
+	if (BestCover <= 0.0) return 0.0;
+	// Its own side first (the arm keeps pointing inward at the thing), then the other; the nearest clear place in view, else
+	// the place in view that covers least (a whole open sheet can be wider than the view leaves room for on one side).
+	const double Own1 = TargetY < 0.0 ? -1.0 : 1.0;
+	for (const double Sign : { Own1, -Own1 })
+	{
+		for (double Cm = LampStepEveryCm; Cm <= LampAsideMaxCm + 1e-6; Cm += LampStepEveryCm)
+		{
+			if (!InView(Sign * Cm)) break;
+			const double C = Cover(Sign * Cm);
+			if (C <= 0.0) return Sign * Cm;
+			if (C < BestCover - 0.5) { Best = Sign * Cm; BestCover = C; }
+		}
+	}
+	return Best;
 }
 
 void ABpTable::TickLampLook()

@@ -1194,6 +1194,7 @@ void ABpPawn::StandupReleaseShot()
 	if (StandupShot)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the screen released (%dx%d)"), StandupShot->GetSizeX(), StandupShot->GetSizeY());
+		StandupShotKept = StandupShot;
 		StandupShot = nullptr;
 	}
 }
@@ -1213,9 +1214,7 @@ void ABpPawn::StandupLoadShot()
 	// about the product on the table).
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	const FString Product = S.bSample ? Link.GetProductSlug() : Card->product;
-	const FBpShot* Shot = Product == Link.GetProductSlug()
-		? Link.GetScanState().Scan.shots.FindByPredicate([&Proposal](const FBpShot& Each) { return Each.proposal_id == Proposal && Each.phase == BpVocab::Shot::Phase::Before && Each.path.EndsWith(TEXT(".png")); })
-		: nullptr;
+	const FBpShot* Shot = Product == Link.GetProductSlug() ? FindBeforeShot(Proposal) : nullptr;
 	S.ShotFor = Proposal;
 	if (!Shot)
 	{
@@ -1228,16 +1227,42 @@ void ABpPawn::StandupLoadShot()
 	const uint32 Gen = ++S.ShotGen;
 	TWeakObjectPtr<ABpPawn> Self(this);
 	const double Asked = FPlatformTime::Seconds();
-	Link.FetchShot(Product, Shot->path, [Self, Gen, Asked](bool bOk, const TArray<uint8>& Png, bool bSample)
+	FetchBeforeShot(Product, Shot->path, [Self, Gen, Asked](UTexture2D* Texture, bool bSample)
 	{
 		ABpPawn* Pawn = Self.Get();
 		if (!Pawn || !Pawn->Standup.IsValid() || Pawn->Standup->ShotGen != Gen) return;
-		if (!bOk) { Pawn->Standup->bShotLoading = false; Pawn->Standup->bShotMissing = true; Pawn->RefreshConsole(); return; }
-		Pawn->Standup->bShotSample = bSample;
+		FBpStandupState& S = *Pawn->Standup;
+		S.bShotLoading = false;
+		if (!Texture) { S.bShotMissing = true; Pawn->RefreshConsole(); return; }
+		S.bShotSample = bSample;
+		Pawn->StandupShot = Texture;
+		S.ShotBrush = MakeShared<FSlateBrush>();
+		S.ShotBrush->SetResourceObject(Texture);
+		S.ShotBrush->ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+		S.ShotBrush->DrawAs = ESlateBrushDrawType::Image;
+		S.ShotSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the screen of %s drawn at %dx%d (%.0f KB in memory, %.0f ms to read and decode)%s"), *S.ShotFor, Texture->GetSizeX(), Texture->GetSizeY(),
+			Texture->GetSizeX() * Texture->GetSizeY() * 4 / 1024.0, (FPlatformTime::Seconds() - Asked) * 1000.0, S.bShotSample ? TEXT(", a sample screen") : TEXT(""));
+		Pawn->RefreshConsole();
+	});
+}
+
+const FBpShot* ABpPawn::FindBeforeShot(const FString& Proposal)
+{
+	if (Proposal.IsEmpty()) return nullptr;
+	return FBpLinkModule::Get().GetScanState().Scan.shots.FindByPredicate([&Proposal](const FBpShot& Each) { return Each.proposal_id == Proposal && Each.phase == BpVocab::Shot::Phase::Before && Each.path.EndsWith(TEXT(".png")); });
+}
+
+void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunction<void(UTexture2D* Texture, bool bSample)> Done)
+{
+	TSharedRef<TFunction<void(UTexture2D*, bool)>> Then = MakeShared<TFunction<void(UTexture2D*, bool)>>(MoveTemp(Done));
+	FBpLinkModule::Get().FetchShot(Product, Path, [Then](bool bOk, const TArray<uint8>& Png, bool bSample)
+	{
+		if (!bOk) { (*Then)(nullptr, false); return; }
 		// Decoded off the game thread, halved until it is at most 800 px wide (the sheet draws it about 340 px wide). The module
 		// is loaded here, on the game thread (the module manager's rule); the worker only uses it.
 		IImageWrapperModule* Wrappers = &FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
-		Async(EAsyncExecution::ThreadPool, [Self, Gen, Asked, Png, Wrappers]()
+		Async(EAsyncExecution::ThreadPool, [Then, bSample, Png, Wrappers]()
 		{
 			TSharedPtr<IImageWrapper> Image = Wrappers->CreateImageWrapper(EImageFormat::PNG);
 			TArray64<uint8> Raw;
@@ -1267,15 +1292,11 @@ void ABpPawn::StandupLoadShot()
 					H = H2;
 				}
 			}
-			AsyncTask(ENamedThreads::GameThread, [Self, Gen, Asked, Raw = MoveTemp(Raw), W, H]()
+			AsyncTask(ENamedThreads::GameThread, [Then, bSample, Raw = MoveTemp(Raw), W, H]()
 			{
-				ABpPawn* Pawn = Self.Get();
-				if (!Pawn || !Pawn->Standup.IsValid() || Pawn->Standup->ShotGen != Gen) return;
-				FBpStandupState& S = *Pawn->Standup;
-				S.bShotLoading = false;
-				if (W <= 0 || H <= 0 || Raw.Num() != static_cast<int64>(W) * H * 4) { S.bShotMissing = true; Pawn->RefreshConsole(); return; }
+				if (W <= 0 || H <= 0 || Raw.Num() != static_cast<int64>(W) * H * 4) { (*Then)(nullptr, false); return; }
 				UTexture2D* Texture = UTexture2D::CreateTransient(W, H, PF_B8G8R8A8);
-				if (!Texture) { S.bShotMissing = true; Pawn->RefreshConsole(); return; }
+				if (!Texture) { (*Then)(nullptr, false); return; }
 				Texture->SRGB = true;
 				Texture->Filter = TF_Bilinear;
 				Texture->LODGroup = TEXTUREGROUP_UI;
@@ -1285,14 +1306,7 @@ void ABpPawn::StandupLoadShot()
 				FMemory::Memcpy(Data, Raw.GetData(), Raw.Num());
 				Mip.BulkData.Unlock();
 				Texture->UpdateResource();
-				Pawn->StandupShot = Texture;
-				S.ShotBrush = MakeShared<FSlateBrush>();
-				S.ShotBrush->SetResourceObject(Texture);
-				S.ShotBrush->ImageSize = FVector2D(W, H);
-				S.ShotBrush->DrawAs = ESlateBrushDrawType::Image;
-				S.ShotSize = FVector2D(W, H);
-				UE_LOG(LogBpTable, Log, TEXT("BpStandup: the screen of %s drawn at %dx%d (%.0f KB in memory, %.0f ms to read and decode)%s"), *S.ShotFor, W, H, W * H * 4 / 1024.0, (FPlatformTime::Seconds() - Asked) * 1000.0, S.bShotSample ? TEXT(", a sample screen") : TEXT(""));
-				Pawn->RefreshConsole();
+				(*Then)(Texture, bSample);
 			});
 		});
 	});

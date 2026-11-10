@@ -14,6 +14,7 @@
 #include "Components/SceneCaptureComponent2D.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Engine/Canvas.h"
 #include "Engine/Font.h"
 #include "Engine/FontFace.h"
@@ -1356,8 +1357,58 @@ void ABpTable::ApplyLiftPlate(const FTransform& WingT, const FTransform& RoomT, 
 	// near edge toward the paper's middle; a room in the middle third has it centred.
 	const double Side = (Box.GetCenter().X - PaperWidthCm * 0.5) / PaperWidthCm;
 	const double PivotX = Side < -1.0 / 6.0 ? 1.0 : Side > 1.0 / 6.0 ? 0.0 : 0.5;
-	const double AnchorU = PivotX == 1.0 ? Box.Max.X : PivotX == 0.0 ? Box.Min.X : Box.GetCenter().X;
+	double AnchorU = PivotX == 1.0 ? Box.Max.X : PivotX == 0.0 ? Box.Min.X : Box.GetCenter().X;
 	LiftPlate->SetPivot(FVector2D(PivotX, 0.0));
+	// Night two V7: the plate is clamped inside the comfortable view (BpView.Fov's 30 degrees either side of the rest gaze) and
+	// never sits where the resting wrist is drawn: it slides along the near edge toward the middle of the view until it is.
+	{
+		const FVector2D Drawn = LiftPlate->GetDrawSize();
+		const double WideCm = (Drawn.X > 1.0 ? Drawn.X : 300.0) * CmPerSlate, TallCm = (Drawn.Y > 1.0 ? Drawn.Y : 60.0) * CmPerSlate;
+		FBox2D Wrist(ForceInit);
+		if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+		{
+			if (const APawn* Pawn = PC->GetPawn())
+			{
+				TArray<UWidgetComponent*> Widgets;
+				Pawn->GetComponents(Widgets);
+				for (const UWidgetComponent* Widget : Widgets)
+				{
+					if (!Widget || Widget->GetName() != TEXT("WristPanel") || !Widget->IsVisible()) continue;
+					FBox Local(ForceInit);
+					FVector Corners[8];
+					Widget->Bounds.GetBox().GetVertices(Corners);
+					for (const FVector& C : Corners) Local += GetActorTransform().InverseTransformPosition(C);
+					Wrist = SeatAngles(Local);
+				}
+			}
+		}
+		const auto Seen = [&](double U)
+		{
+			const FVector A = Group.TransformPosition(PaperCmToLocal(FVector2D(U, Box.Max.Y), 0.f));
+			// The plate's width runs along the table's Y (its face turned to the seat), hung below its top edge.
+			return SeatAngles(FBox(FVector(A.X - 1.0, A.Y - PivotX * WideCm, A.Z - TallCm), FVector(A.X + 1.0, A.Y + (1.0 - PivotX) * WideCm, A.Z)));
+		};
+		const auto Fits = [&](const FBox2D& S) { return S.Min.X >= -30.0 && S.Max.X <= 30.0 && !(Wrist.bIsValid && S.Intersect(Wrist)); };
+		if (!Fits(Seen(AnchorU)))
+		{
+			// Toward the middle of the view: the direction along the edge that brings the plate's centre nearer azimuth 0.
+			const double Step = FMath::Abs(Seen(AnchorU + 1.0).GetCenter().X) < FMath::Abs(Seen(AnchorU - 1.0).GetCenter().X) ? 1.0 : -1.0;
+			const double Was = AnchorU;
+			// Along the near edge, and on past its inner end when the edge itself lies outside the view (the first and last
+			// wings' rooms stand mostly beyond 30 degrees): up to the paper's width, until the plate is whole inside the view.
+			const double Over = PaperWidthCm;
+			for (double U = AnchorU + Step; U >= Box.Min.X - Over - 1e-3 && U <= Box.Max.X + Over + 1e-3; U += Step)
+			{
+				AnchorU = U;
+				if (Fits(Seen(U))) break;
+			}
+			if (Key != LiftPlateClampKey)
+			{
+				LiftPlateClampKey = Key;
+				UE_LOG(LogBpTable, Log, TEXT("BpLevel: lift plate \"%s\" slides %.0f cm along its near edge into the comfortable view%s"), *Text, AnchorU - Was, Wrist.bIsValid ? TEXT(", clear of the wrist") : TEXT(""));
+			}
+		}
+	}
 	const FVector Anchor = Group.TransformPosition(PaperCmToLocal(FVector2D(AnchorU, Box.Max.Y), 0.f));
 	LiftPlate->SetRelativeLocation(Anchor);
 	LiftPlate->SetRelativeRotation(FRotator(LiftPlatePitchDeg, 180.f, 0.f));

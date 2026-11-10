@@ -22,7 +22,9 @@
 #include "Components/WidgetComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/Texture2D.h"
 #include "EngineUtils.h"
+#include "Widgets/Images/SImage.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "HAL/IConsoleManager.h"
@@ -450,6 +452,7 @@ void ABpTable::OnDeckRoomChanged(const FString& InRoomId)
 	if (DeckRoom.IsEmpty())
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpDeck: cleared (site plan)"));
+		DeckReleaseShot();
 		DeckAimedTile.Reset();
 		ApplyDeckPoses();
 		ApplyDeckLight();
@@ -994,6 +997,62 @@ void ABpTable::RefreshDeck()
 	}
 }
 
+// ---- The front decision's screen (night two V7) ---------------------------------------------------------------------------
+
+void ABpTable::DeckReleaseShot()
+{
+	++DeckShotGen;
+	DeckShotFor.Reset();
+	DeckShotBrush.Reset();
+	bDeckShotLoading = bDeckShotSample = false;
+	if (DeckShot)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: the screen released (%dx%d)"), DeckShot->GetSizeX(), DeckShot->GetSizeY());
+		// Kept while a card that drew it can still be on its way out (the leaving card and one behind), then let go.
+		DeckShotKept.Insert(DeckShot, 0);
+		if (DeckShotKept.Num() > 2) DeckShotKept.SetNum(2);
+		DeckShot = nullptr;
+	}
+}
+
+void ABpTable::DeckLoadShot()
+{
+	const FString Proposal = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KDecision ? DeckScreens[DeckAt].Proposal : FString();
+	if (Proposal.IsEmpty() || Proposal == DeckShotFor) return;
+	const FBpShot* Shot = ABpPawn::FindBeforeShot(Proposal);
+	// Without a screen the card stays as it was: the one it held goes (one texture at a time).
+	if (!Shot) { if (!DeckShotFor.IsEmpty()) DeckReleaseShot(); return; }
+	DeckReleaseShot();
+	DeckShotFor = Proposal;
+	bDeckShotLoading = true;
+	const uint32 Gen = DeckShotGen;
+	TWeakObjectPtr<ABpTable> Self(this);
+	ABpPawn::FetchBeforeShot(FBpLinkModule::Get().GetProductSlug(), Shot->path, [Self, Gen](UTexture2D* Texture, bool bSample)
+	{
+		ABpTable* T = Self.Get();
+		if (!T || T->DeckShotGen != Gen) return;
+		T->bDeckShotLoading = false;
+		if (Texture)
+		{
+			T->DeckShot = Texture;
+			T->bDeckShotSample = bSample;
+			T->DeckShotBrush = MakeShared<FSlateBrush>();
+			T->DeckShotBrush->SetResourceObject(Texture);
+			T->DeckShotBrush->ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+			T->DeckShotBrush->DrawAs = ESlateBrushDrawType::Image;
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: the screen of %s %s"), *T->DeckShotFor, Texture ? *FString::Printf(TEXT("drawn at %dx%d%s"), Texture->GetSizeX(), Texture->GetSizeY(), bSample ? TEXT(", a sample screen") : TEXT("")) : TEXT("could not be read"));
+		// The front card, drawn again where it still shows that decision.
+		for (int32 Index = 0; Index < 3 && Index < T->DeckCards.Num(); ++Index)
+		{
+			const FDeckCard& Each = T->DeckCardState[Index];
+			if (!T->DeckScreens.IsValidIndex(Each.Screen) || T->DeckScreens[Each.Screen].Proposal != T->DeckShotFor) continue;
+			T->DeckCards[Index]->SetSlateWidget(T->DeckWidget(Each.Screen, Each.Page));
+			T->DeckCards[Index]->RequestRedraw();
+		}
+	});
+}
+
 // ---- Swapping -----------------------------------------------------------------------------------------------------------
 
 void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
@@ -1008,6 +1067,8 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 	const TSharedPtr<SWidget> Leaving = DeckCards[0]->GetSlateWidget();
 	DeckAt = Screen;
 	DeckPage = FMath::Clamp(Page, 0, DeckScreens[Screen].Pages.Num() - 1);
+	// V7: the front decision's "before" screen, asked for before its card is drawn (it draws "READING THE SCREEN" until then).
+	DeckLoadShot();
 	const auto KeyOf = [this](int32 S, int32 P) { return DeckScreens[S].Key + FString::Printf(TEXT("#%d"), P); };
 	FDeckCard New[4];
 	// The front and the two behind it (each at its first page); a card already showing that content moves from where it
@@ -1608,12 +1669,17 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 		const FBox2f DFrame(FVector2f(PadX, 108.f), FVector2f(LW - PadX, 546.f));
 		const FLinearColor Tone = bRepeat ? BpSheet::Red : BpSheet::Amber;
 		Put(DFrame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(Tone).BarPx(8.f));
-		const float InX = DFrame.Min.X + 34.f, InX1 = DFrame.Max.X - 26.f, InW = InX1 - InX;
+		// V7: the finding's "before" screen takes the frame's right half, as on the stand-up's decision sheet (BpStandup.cpp);
+		// without one the card keeps the whole width.
+		const bool bScreen = P && ABpPawn::FindBeforeShot(P->id) != nullptr;
+		const float InX = DFrame.Min.X + 34.f, InX1 = bScreen ? DFrame.Min.X + 600.f : DFrame.Max.X - 26.f, InW = InX1 - InX;
 		float Y = DFrame.Min.Y + 18.f;
-		// The kicker: which of the room's decisions this is (the lead under the title says where it lands).
+		// The kicker names the room (V7: one count only, the room's decisions between PREV and NEXT).
 		int32 Nth = 0, Of = 0;
 		for (int32 Index = 0; Index < DeckScreens.Num(); ++Index) if (DeckScreens[Index].Kind == KDecision) { ++Of; if (Index == ScreenIndex) Nth = Of; }
-		FString Kicker = FString::Printf(TEXT("DECISION %d OF %d IN THIS ROOM"), Nth, Of);
+		const FBpPlanRoom* KickerRoom = FindRoom(DeckRoom);
+		FString Kicker = KickerRoom && !KickerRoom->name.IsEmpty() ? TEXT("DECISION · ") + KickerRoom->name.ToUpper() : FString(TEXT("DECISION · IN THIS ROOM"));
+		if (BpSheet::TextWidth(Kicker, SmallBold) > InW) Kicker = TEXT("DECISION · IN THIS ROOM");
 		if (bRepeat) Kicker += TEXT(" · REPEATS A DECLINE");
 		const FString KickerFit = BpSheet::Wrap(Kicker, SmallBold, InW, 0);
 		Words(FBox2f(FVector2f(InX, Y), FVector2f(InX1, Y + BpSheet::Lines(KickerFit) * SPitch(24.f) + 4.f)), KickerFit, SmallBold, Tone);
@@ -1661,6 +1727,36 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 			Words(FBox2f(FVector2f(InX + 28.f, Y), FVector2f(InX1, Y + ItemH + 4.f)), Fit, Small, LineInk);
 			Y += ItemH + 8.f;
 		}
+		// The screen: the finding's "before", in a fine frame, its caption a strip across its foot (the stand-up's sheet's look).
+		if (bScreen)
+		{
+			const float ImgX0 = InX1 + 30.f, ImgX1 = DFrame.Max.X - 26.f, ImgW = ImgX1 - ImgX0;
+			const float ImgH = FMath::Min(ImgW * 9.f / 16.f, DFrame.Max.Y - 60.f - (DFrame.Min.Y + 18.f));
+			const FBox2f Img(FVector2f(ImgX0, DFrame.Min.Y + 18.f), FVector2f(ImgX1, DFrame.Min.Y + 18.f + ImgH));
+			const bool bHave = DeckShotFor == P->id && DeckShotBrush.IsValid();
+			if (bHave)
+			{
+				Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.8f)).EdgePx(2.f));
+				// The widget holds its brush (a card sliding away outlives the next decision's), and DeckShotKept its texture.
+				Put(Img, SNew(SImage).Image_Lambda([Brush = DeckShotBrush]() { return Brush.Get(); }));
+			}
+			else
+			{
+				Put(Img, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
+				const bool bReading = DeckShotFor != P->id || bDeckShotLoading;
+				Put(Img, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
+					.Text(FText::FromString(bReading ? TEXT("READING THE SCREEN") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+			}
+			const bool bSampleShot = bHave && bDeckShotSample;
+			const float TagW = bSampleShot ? BpSheet::ChipWidth(TEXT("SAMPLE"), SmallBold) + 8.f : 0.f;
+			const FString Caption = FString::Printf(TEXT("BEFORE · %s"), *(Tile ? Tile->name : P->feature)).ToUpper();
+			const FString CaptionFit = BpSheet::Wrap(Caption, SmallBold, ImgW - TagW - 24.f, 0);
+			const float CapH = FMath::Max(40.f, BpSheet::Lines(CaptionFit) * SPitch(24.f) + 8.f);
+			const float CapY = Img.Max.Y - CapH;
+			Put(FBox2f(FVector2f(Img.Min.X, CapY), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)));
+			Put(FBox2f(FVector2f(ImgX0 + 12.f, CapY), FVector2f(ImgX1 - TagW - 12.f, Img.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(CaptionFit)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, Img.Max.Y - 40.f), FVector2f(ImgX1, Img.Max.Y)), BpSheet::Chip(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, true));
+		}
 		// The title block: the finding's id, the product and whose morning (SAMPLE, or today's date).
 		{
 			const FString No = P ? P->id.ToUpper() : Screen.Proposal.ToUpper();
@@ -1691,7 +1787,9 @@ TSharedRef<SWidget> ABpTable::DeckWidget(int32 ScreenIndex, int32 PageIndex) con
 		const bool bPrevOk = DeckAt > 0, bNextOk = DeckAt + 1 < DeckScreens.Num();
 		Put(FBox2f(PrevBox.Min + FVector2f(0.f, 12.f), PrevBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("‹  PREV"), LabelFont, bPrevOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
 		Put(FBox2f(NextBox.Min + FVector2f(0.f, 12.f), NextBox.Max - FVector2f(0.f, 12.f)), BpSheet::Control(TEXT("NEXT  ›"), LabelFont, bNextOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
-		Put(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d OF %d"), DeckAt + 1, DeckScreens.Num()))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+		// V7: one count, the room's decisions ("1 OF 19"); the whole queue (its decisions, then each feature's sheet, then the
+		// room's summary) is not a number a person needs here.
+		Put(CountBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d OF %d"), Nth, Of))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
 		// The answer taken lands as the stand-up's stamp, on the screen as it slides away (GDeckStamp, DeckApprove/DeckDecline).
 		if (const FString* Stamp = P ? GDeckStamp.Find(P->id) : nullptr)
 		{

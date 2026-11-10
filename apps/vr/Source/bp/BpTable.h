@@ -567,6 +567,8 @@ public:
 	FString DirectedTarget() const;
 	/** That place in words ("Everything" for the site, else the plan's name); empty when the plan does not have it. */
 	FString DirectedLabel(const FString& Target) const;
+	/** Night two V7: what a scan of that target covers, as a person says it: "everything", "this room", "this wing". */
+	FString DirectedScope(const FString& Target) const;
 	/** POST a directed scan of a saved focus (its lens and note) over Target ("site", a wing, room, bay or feature id; empty:
 	 *  DirectedTarget()), through the same scope-building StartScan has. A focus the table has not read is fetched first. OnDone
 	 *  says whether the job is queued and, either way, words for the wrist (the refusal or failure, never a silent nothing). */
@@ -987,6 +989,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> LiftPlate;
 	FString LiftPlateKey;
+	/** Night two V7: the plate last logged as slid into the comfortable view. */
+	FString LiftPlateClampKey;
 	void ApplyLiftPlate(const FTransform& WingT, const FTransform& RoomT, float WingEase, float RoomEase);
 	/** The site plan's room names' glow last written (they step back while a wing is lifted: ApplyRoomNames). */
 	float AppliedRoomNameGlow = -1.f;
@@ -1530,6 +1534,19 @@ private:
 	/** Declined this session (memory only: no repeat), and approved ones whose draft write the waves have not read back yet. */
 	TSet<FString> DeckDeclined;
 	TSet<FString> DeckInDraft;
+	/** Night two V7: the front decision's "before" screen on its card's right half, as the stand-up's decision sheet draws it,
+	 *  fetched by the stand-up's own path (ABpPawn::FetchBeforeShot). One texture at a time, released when the room closes. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> DeckShot;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> DeckShotKept;
+	FString DeckShotFor;
+	TSharedPtr<struct FSlateBrush> DeckShotBrush;
+	bool bDeckShotLoading = false;
+	bool bDeckShotSample = false;
+	uint32 DeckShotGen = 0;
+	void DeckLoadShot();
+	void DeckReleaseShot();
 	/** The four screens: the front, the two behind it, and the one leaving in a swap. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidgetComponent>> DeckCards;
@@ -1654,8 +1671,18 @@ private:
 	FVector2D LampStepCm = FVector2D::ZeroVector;
 	FVector2D LampStepWant = FVector2D::ZeroVector;
 	double LampStepCheckAt = -1.0;
+	/** Night two V7, one rule for every place the lamp stands: at a station too its body never sits behind the console's slot
+	 *  from the seated eye (the bar at rest, the whole sheet while a page is open). When it would, it stands beside the slot
+	 *  along the table's width (left for a thing on the left half, right for the right half), its head inside BpView.Fov's 30
+	 *  degrees, its arm still on the thing; it glides there (a cut under bp.ReducedMotion) and its caption goes with it.
+	 *  LampAsideCm is the table-Y offset from the station now, LampAsideWant where it heads (BpLampLook.cpp). */
+	double LampAsideCm = 0.0, LampAsideWant = 0.0;
+	double StationAside(const FVector& StationLocal, double TargetY) const;
+	/** The console's slot as the seat sees it (the pawn's ConsolePanel: the bar, or the open sheet), in SeatAngles' terms. */
+	bool ConsoleSeatBox(FBox2D& Out) const;
 	float CaptionLiftCm = 0.f;
 	static constexpr float CaptionMaxLiftCm = 14.f;
+	static constexpr float CaptionMaxStationLiftCm = 28.f;
 	bool TickLampStep(float DeltaSeconds);
 	/** The lamp caption's centre (table space) as ApplyLampWidgets places it, and its lift judged against SeatKeepouts. */
 	FVector CaptionAt() const;

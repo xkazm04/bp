@@ -399,12 +399,16 @@ struct FBpConsolePages
 		// The start actions: SCAN THIS (the place shown, the lens shown) and EVERY LENS; the armed one says PRESS AGAIN.
 		{
 			const bool bThis = Pawn.WristArmedFocus == TEXT("@this"), bEvery = Pawn.WristArmedFocus == TEXT("@every");
+			// V7: the row and its button name the same scope, by where the person is ("SCAN THIS ROOM", "Scan this room: Billing").
+			const FString Scope = T ? T->DirectedScope(T->DirectedTarget()) : FString(TEXT("everything"));
+			const bool bSite = Scope == TEXT("everything");
+			const FString Named = bSite || Place.IsEmpty() ? FString(TEXT("Scan ")) + Scope : FString::Printf(TEXT("Scan %s: %s"), *Scope, *Place);
 			FBpConsoleRow Row;
-			Row.Label = bThis ? FString::Printf(TEXT("Scan %s?"), *PlaceWords) : bEvery ? FString(TEXT("Every lens, everything?")) : FString::Printf(TEXT("Scan %s"), *PlaceWords);
+			Row.Label = bThis ? Named + TEXT("?") : bEvery ? FString(TEXT("Every lens, everything?")) : Named;
 			Row.Detail = bThis || bEvery ? FString(TEXT("Press again to start · anything else cancels"))
 				: bSample ? FString::Printf(TEXT("%s · a sample walk"), *LensWords) : FString::Printf(TEXT("%s · or every lens at once"), *LensWords);
 			Row.Tone = bThis || bEvery ? 2 : 0;
-			Row.Buttons = { { bThis ? TEXT("START") : TEXT("SCAN THIS"), TEXT("scan:this"), bThis } };
+			Row.Buttons = { { bThis ? FString(TEXT("START")) : (TEXT("SCAN ") + Scope.ToUpper()), TEXT("scan:this"), bThis } };
 			if (!bSample) Row.Buttons.Add({ bEvery ? TEXT("START") : TEXT("EVERY LENS"), TEXT("scan:every"), bEvery });
 			Out.Add(Row);
 		}
@@ -504,17 +508,25 @@ struct FBpConsolePages
 	static void LinkOpen(ABpPawn&) {}
 	static void LinkRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
 	{
+		// Night two V7: the page speaks to the wearer. What is connected now, the next step in one sentence, the code large while
+		// pairing, PAIR and UNPAIR; a command the PC needs is only a small secondary line labelled FOR THE PC. The PC has no
+		// pairing screen: the owner approves the code in the terminal where the PC's server runs (run-locally.md, table-link-v2.md).
 		const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
-		Sub = TEXT("How this headset reaches your PC, and what it may do there");
+		const bool bLinked = S.Route != EBpLinkRoute::None;
+		const auto ForPc = [](const FString& Command) { return Note(TEXT("FOR THE PC  ·  ") + Command); };
+		Sub = TEXT("What this headset reads, and what it may do on your PC");
 		{
 			FBpConsoleRow Row;
-			Row.Label = FBpLinkModule::RouteWords(S);
-			Row.Detail = S.Route != EBpLinkRoute::None ? FString::Printf(TEXT("Your PC at %s"), *S.BaseUrl.Replace(TEXT("http://"), TEXT("")))
-				: S.bBundleOnly ? FString(TEXT("This build was started to read its sample only"))
-				: FString(TEXT("Looking for your PC every 5 s: the cable first, then Wi-Fi"));
+			Row.Label = S.Route == EBpLinkRoute::Cable ? FString(TEXT("YOUR PC · CABLE")) : S.Route == EBpLinkRoute::Wifi ? FString(TEXT("YOUR PC · WI-FI"))
+				: S.bDecided || S.bBundleOnly ? FString(TEXT("THE SAMPLE")) : FString(TEXT("LOOKING FOR YOUR PC"));
+			Row.Detail = S.bBundleOnly ? FString(TEXT("This build reads its sample only."))
+				: !bLinked ? FString(TEXT("Start the server on your PC, then plug in the headset's cable."))
+				: S.Pair == EBpPairState::Paired ? FString(TEXT("Your own projects come from your PC."))
+				: FString(TEXT("Your projects come from your PC. Pair to decide and scan here."));
 			Row.Tag = FBpLinkModule::RouteWord(S);
-			Row.Tone = S.Route != EBpLinkRoute::None ? 1 : 2;
+			Row.Tone = bLinked ? 1 : 2;
 			Out.Add(Row);
+			if (!bLinked && !S.bBundleOnly) Out.Add(ForPc(TEXT("npm run server")));
 		}
 		if (S.Pair == EBpPairState::Waiting)
 		{
@@ -525,46 +537,49 @@ struct FBpConsolePages
 			Code.Tag = Left >= 0.0 ? FString::Printf(TEXT("%s LEFT"), *Clock(Left)) : FString(TEXT("WAITING"));
 			Code.Tone = 5;
 			Out.Add(Code);
-			Out.Add(Note(FString::Printf(TEXT("On the PC type:  npm run server -- pair approve %s --scope %s"), *S.Code, FBpLinkModule::PairScopes), 2));
 			FBpConsoleRow Cancel;
-			Cancel.Label = TEXT("Waiting for your PC to approve");
-			Cancel.Detail = TEXT("The code lasts two minutes");
+			Cancel.Label = TEXT("Approve this code on your PC");
+			Cancel.Detail = TEXT("Type it where your PC's server runs. It lasts two minutes.");
 			Cancel.Buttons = { { TEXT("CANCEL"), TEXT("link:cancel") } };
 			Out.Add(Cancel);
+			Out.Add(ForPc(FString::Printf(TEXT("npm run server -- pair approve %s --scope %s"), *S.Code, FBpLinkModule::PairScopes)));
 		}
 		else if (S.Pair == EBpPairState::Asking)
 		{
-			Out.Add(Note(TEXT("Asking the PC for a code"), 2));
+			Out.Add(Note(TEXT("Asking your PC for a code"), 2));
 		}
 		else if (S.Pair == EBpPairState::Paired)
 		{
 			FBpConsoleRow Row;
-			Row.Label = FString::Printf(TEXT("Paired as %s"), S.Device.IsEmpty() ? TEXT("this headset") : *S.Device);
-			FDateTime Until;
-			Row.Detail = FString::Printf(TEXT("Token …%s%s"), *S.TokenTail, FDateTime::ParseIso8601(*S.ExpiresAt, Until) ? *FString::Printf(TEXT(" · until %s"), *Until.ToString(TEXT("%Y-%m-%d"))) : TEXT(""));
-			Row.Buttons = { { TEXT("UNPAIR"), TEXT("link:unpair") }, { TEXT("PAIR AGAIN"), TEXT("link:pair") } };
-			Out.Add(Row);
+			Row.Label = TEXT("Paired");
 			TArray<FString> Can;
 			for (const FString& Scope : S.Scopes) Can.Add(FBpLinkModule::ScopeWords(Scope));
-			Out.Add(Note(Can.Num() > 0 ? TEXT("It may ") + FString::Join(Can, TEXT(", ")) + TEXT(".") : FString(TEXT("The PC has not said what it may do yet."))));
+			FDateTime Until;
+			const FString Till = FDateTime::ParseIso8601(*S.ExpiresAt, Until) ? FString::Printf(TEXT(" Until %s."), *Until.ToString(TEXT("%d.%m.%Y"))) : FString();
+			Row.Detail = Till.IsEmpty() ? FString(TEXT("UNPAIR ends it.")) : Till.TrimStart() + TEXT(" UNPAIR ends it.");
+			Row.Buttons = { { TEXT("UNPAIR"), TEXT("link:unpair") } };
+			Out.Add(Row);
+			Out.Add(Note(Can.Num() > 0 ? TEXT("It may ") + FString::Join(Can, TEXT(", ")) + TEXT(".") : FString(TEXT("Your PC has not said what it may do yet."))));
 		}
 		else
 		{
 			FBpConsoleRow Row;
 			Row.Label = TEXT("Not paired");
-			Row.Detail = S.Route != EBpLinkRoute::None ? FString(TEXT("PAIR shows a code; you approve it on the PC")) : FString(TEXT("Connect first: the cable, or the PC's server"));
-			Row.Buttons = { { TEXT("PAIR"), TEXT("link:pair"), S.Route != EBpLinkRoute::None } };
+			Row.Detail = bLinked ? FString(TEXT("PAIR shows a code; you approve it on your PC.")) : FString(TEXT("Connect your PC first, then PAIR."));
+			Row.Buttons = { { TEXT("PAIR"), TEXT("link:pair"), bLinked } };
 			Out.Add(Row);
-			Out.Add(Note(TEXT("Paired, it may run the stand-up, make your decisions, start and cancel scans, and reach your PC over Wi-Fi.")));
 		}
 		{
 			FBpConsoleRow Row;
-			Row.Label = S.WifiUrl.IsEmpty() ? FString(TEXT("No Wi-Fi door known")) : FString::Printf(TEXT("Wi-Fi door %s"), *S.WifiUrl.Replace(TEXT("http://"), TEXT("")));
-			Row.Detail = S.WifiUrl.IsEmpty() ? FString(TEXT("Learned from the PC over the cable (its server runs with --lan)")) : FString(TEXT("Used when the cable is out, once paired"));
+			Row.Label = S.WifiUrl.IsEmpty() ? FString(TEXT("Without the cable: not yet")) : FString(TEXT("Without the cable: ready"));
+			Row.Detail = S.WifiUrl.IsEmpty() ? FString(TEXT("Your PC offers Wi-Fi when its server runs with Wi-Fi on."))
+				: FString(TEXT("Once paired, it reaches your PC over Wi-Fi, no cable."));
 			if (S.Route == EBpLinkRoute::Cable) Row.Buttons = { { TEXT("ASK PC"), TEXT("link:where") } };
 			Out.Add(Row);
+			if (S.WifiUrl.IsEmpty() && S.Pair != EBpPairState::Waiting && bLinked) Out.Add(ForPc(TEXT("npm run server -- --lan")));
 		}
-		if (!S.Message.IsEmpty() && S.Pair != EBpPairState::Waiting) Out.Add(Note(S.Message, S.bMessageBad ? 3 : 4));
+		// The link's own notes are written for whoever runs the PC; with nothing connected the first row already says what to do.
+		if (!S.Message.IsEmpty() && S.Pair != EBpPairState::Waiting && bLinked) Out.Add(Note(S.Message, S.bMessageBad ? 3 : 4));
 	}
 	static FString LinkSummary(ABpPawn&)
 	{
@@ -1356,9 +1371,14 @@ void ABpPawn::RefreshConsole()
 					Right -= TagW + 24.f;
 				}
 				const float TextX = Box.Min.X + (Row.Tone == 0 ? 24.f : 32.f), TextW = Right - TextX;
+				// V7: a row's title is never cut. Too long for its face, it sets a step smaller; still too long, it wraps to two
+				// lines in that face and gives the row's second line to them.
+				const bool bFits = BpSheet::TextWidth(Row.Label, LabelFont) <= TextW;
+				const bool bSmallFits = bFits || BpSheet::TextWidth(Row.Label, SmallBold) <= TextW;
+				const FString RowTitle = bFits || bSmallFits ? Row.Label : BpSheet::Wrap(Row.Label, SmallBold, TextW, 2);
 				TSharedRef<SVerticalBox> Words = SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Label, LabelFont, TextW))).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
-				if (!Row.Detail.IsEmpty())
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(RowTitle)).Font(bFits ? LabelFont : SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
+				if (!Row.Detail.IsEmpty() && bSmallFits)
 				{
 					Words->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Detail, SmallFont, TextW))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))];
 				}

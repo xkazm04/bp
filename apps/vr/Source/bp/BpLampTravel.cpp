@@ -149,8 +149,11 @@ void ABpTable::LampToStation(int32 Station, const FVector& TargetLocal, const TC
 	Station = FMath::Clamp(Station, 0, StationCount - 1);
 	double HomeYaw = 0.0;
 	const FVector Home = LampHomeAt(HomeYaw);
-	const FVector To = LampStationAt(Station, Home);
+	const FVector Base = LampStationAt(Station, Home);
 	LampFaceTarget = TargetLocal;
+	// V7: beside the console's slot rather than behind it, from the start of the ride (TickLampStep judges it again there).
+	const double Aside = LampStation == Station && bLampAtStation ? LampAsideWant : StationAside(Base, TargetLocal.Y);
+	const FVector To = Base + FVector(0.0, Aside, 0.0);
 	const double ToYaw = LampYawToward(To, TargetLocal);
 	// Already there: the lamp only turns (LampYawToward's own ride is the look).
 	if (LampStation == Station && LampTravelT < 0.f && bLampAtStation)
@@ -161,6 +164,7 @@ void ABpTable::LampToStation(int32 Station, const FVector& TargetLocal, const TC
 		return;
 	}
 	LampStation = Station;
+	LampAsideCm = LampAsideWant = Aside;
 	bLampToHome = false;
 	// The caption on the lamp's side of the site plan (in a room the deck stands right of centre: it keeps its left place).
 	LampCaptionY = RoomModeId.IsEmpty() && Station >= 3 ? -CaptionYCm : CaptionYCm;
@@ -178,6 +182,7 @@ void ABpTable::LampGoHome(const TCHAR* Why)
 	double HomeYaw = 0.0;
 	const FVector Home = LampHomeAt(HomeYaw);
 	LampStation = INDEX_NONE;
+	LampAsideCm = LampAsideWant = 0.0;
 	LampCaptionY = CaptionYCm;
 	LampFaceTarget = FVector::ZeroVector;
 	bLampToHome = true;
@@ -258,7 +263,8 @@ void ABpTable::ArriveLamp()
 	else
 	{
 		bLampAtStation = true;
-		LampStationAtLocal = LampRideTo;
+		// The station itself; PlaceLamp adds the step beside the console's slot (LampAsideCm).
+		LampStationAtLocal = LampRideTo - FVector(0.0, LampAsideCm, 0.0);
 		LampStationYaw = LampRideToYaw;
 		// Already facing it: the look is complete, and it says what it is pointing at.
 		LampLookAt = LampFaceTarget;

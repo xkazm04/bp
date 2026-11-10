@@ -388,6 +388,10 @@ private:
 	/** The finding's screen on the decision card: one texture at a time, released when the card leaves or the page closes. */
 	UPROPERTY(Transient)
 	TObjectPtr<class UTexture2D> StandupShot;
+	/** The screen released last, kept one release longer: a widget that still paints it this frame never holds a freed texture
+	 *  (the deck's card crashed on exactly that, 2026-11-10). */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupShotKept;
 	/** The grant this headset made or read (GET policies), kept past the page: the bar and the wrist say "Handed over until". */
 	TSharedPtr<struct FBpPolicy> StandupGrant;
 	FTimerHandle StandupTimer;
@@ -398,6 +402,14 @@ private:
 	void StandupBuildSheets();
 	void StandupShowSheet();
 	void StandupLoadShot();
+public:
+	/** Night two V7: the finding's "before" screen, one path for the stand-up's decision sheet and a room's decision card
+	 *  (BpDeck.cpp): the Shot row of the scan the table holds for the proposal (the product on the table only), and its PNG
+	 *  fetched, decoded off the game thread, halved to at most 800 px wide and made a transient texture. Done runs on the game
+	 *  thread with the texture (null when it could not be read) and whether it is a sample screen. BpStandup.cpp. */
+	static const struct FBpShot* FindBeforeShot(const FString& Proposal);
+	static void FetchBeforeShot(const FString& Product, const FString& Path, TFunction<void(class UTexture2D* Texture, bool bSample)> Done);
+private:
 	void StandupReleaseShot();
 	void StandupVerdict(const FString& Verdict, const TCHAR* Route);
 	void StandupPlanDay();

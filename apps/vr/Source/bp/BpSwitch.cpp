@@ -368,7 +368,7 @@ void ABpTable::PlaceLamp()
 	}
 	else if (bLampAtStation)
 	{
-		At = LampStationAtLocal;
+		At = LampStationAtLocal + FVector(0.0, LampAsideCm, 0.0);
 		Yaw = LampStationYaw;
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
@@ -548,7 +548,10 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 		// wrapped whole (never cut), the plate as tall as its lines; it still leaves by itself (LampCaptionClock).
 		const float Cap = CaptionCapCm * CaptionPxPerCm;
 		const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), Cap), ChipFont = CaptionFont(TEXT("Bold"), Cap * 0.85f);
-		const float W = CaptionWidthCm * CaptionPxPerCm, Pad = 20.f;
+		// V7: TEXT SIZE scales the plate as a whole (ApplyLampWidgets), so it is laid out narrower: on the table it grows by the
+		// square root of the size (26 cm at 1.0, 29.6 at 1.3, not 33.8), the larger words taking more lines upward; CaptionAt
+		// keeps it whole inside the view.
+		const float W = FMath::RoundToFloat(CaptionWidthCm * CaptionPxPerCm / FMath::Sqrt(BpSheet::TextScale())), Pad = 20.f;
 		const float Pitch = Cap / static_cast<float>(BpType::CapPerEm) * 1.2f, ChipH = Cap * 0.85f / static_cast<float>(BpType::CapPerEm) * 1.2f + 6.f;
 		TArray<FString> Parts, Wrapped;
 		Line.ParseIntoArrayLines(Parts);
@@ -584,8 +587,17 @@ FVector ABpTable::CaptionAt() const
 	// covers no pin tag, wing name or lifted thing from the seat (UpdateCaptionLift).
 	const float GrowCm = LampCaption ? FMath::Max(0.f, static_cast<float>(LampCaption->GetDrawSize().Y) / CaptionPxPerCm - CaptionHeightCm) : 0.f;
 	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty();
-	const FVector2D Step = bHome ? LampStepCm : FVector2D::ZeroVector;
-	return FVector(CaptionXCm + Step.X, LampCaptionY + Step.Y, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
+	// V7: at a station the caption goes with the lamp's step beside the console's slot.
+	const FVector2D Step = bHome ? LampStepCm : bLampAtStation ? FVector2D(0.0, LampAsideCm) : FVector2D::ZeroVector;
+	FVector At(CaptionXCm + Step.X, LampCaptionY + Step.Y, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
+	// V7: whole inside the comfortable view (BpView.Fov's 30 degrees either side, a degree to spare) at every text size and
+	// wherever the lamp stands: it slides inward along the table's width before an edge would leave the view.
+	const FVector Eye = EyeLocal();
+	const double Ahead = FMath::Max(At.X - Eye.X, 1.0);
+	const double HalfW = (LampCaption ? LampCaption->GetDrawSize().X / CaptionPxPerCm : CaptionWidthCm) * BpSheet::TextScale() * 0.5;
+	const double Reach = FMath::Tan(FMath::DegreesToRadians(29.0)) * Ahead;
+	if (Reach > HalfW) At.Y = FMath::Clamp(At.Y, Eye.Y - Reach + HalfW, Eye.Y + Reach - HalfW);
+	return At;
 }
 
 void ABpTable::UpdateCaptionLift()
@@ -594,12 +606,16 @@ void ABpTable::UpdateCaptionLift()
 	TArray<FBox2D> Keep;
 	SeatKeepouts(Keep);
 	const FVector Eye = EyeLocal();
-	const double W = CaptionWidthCm * BpSheet::TextScale();
+	const double W = LampCaption->GetDrawSize().X / CaptionPxPerCm * BpSheet::TextScale();
 	const double H = LampCaption->GetDrawSize().Y / CaptionPxPerCm * BpSheet::TextScale();
 	const float Was = CaptionLiftCm;
 	// The plate's four corners as it stands square to the eye, at a lift; the least lift (0.5 cm steps) that covers nothing.
+	// V7: at a station beside an open sheet the plate may rise over the sheet's top edge (above the lamp, not beside it).
+	const float MaxLift = bLampAtStation ? CaptionMaxStationLiftCm : CaptionMaxLiftCm;
+	FBox2D Slot;
+	const bool bSlot = ConsoleSeatBox(Slot);
 	float Best = CaptionMaxLiftCm;
-	for (float Lift = 0.f; Lift <= CaptionMaxLiftCm + 1e-3f; Lift += 0.5f)
+	for (float Lift = 0.f; Lift <= MaxLift + 1e-3f; Lift += 0.5f)
 	{
 		CaptionLiftCm = Lift;
 		const FVector At = CaptionAt();
@@ -609,6 +625,8 @@ void ABpTable::UpdateCaptionLift()
 		for (const FVector& C : { At - Right - Up, At + Right - Up, At - Right + Up, At + Right + Up }) Plate += C;
 		const FBox2D Seen = SeatAngles(Plate);
 		const bool bCovers = Keep.ContainsByPredicate([&Seen](const FBox2D& K) { return Seen.Intersect(K); });
+		// V7: never over the top of the comfortable view (a lift past the console's top edge by more than a few degrees is out).
+		if (Lift > CaptionMaxLiftCm && bSlot && Seen.Max.Y > Slot.Max.Y + 4.0) break;
 		if (!bCovers) { Best = Lift; break; }
 	}
 	CaptionLiftCm = Best;
