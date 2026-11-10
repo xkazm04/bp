@@ -47,7 +47,7 @@ namespace BpTourBook
 			// ---- YOUR PC ----
 			{ TEXT("pc-what"), TEXT("Linked to your PC, the table shows your own projects and live scans.") },
 			{ TEXT("pc-sample"), TEXT("This headset shows a sample. Linked to your PC, it shows your projects.") },
-			{ TEXT("pc-pair"), TEXT("PAIR shows a code. Approve it on your PC, and your answers go there.") },
+			{ TEXT("pc-pair"), TEXT("Type PAIR's code on your PC's Headsets page. Your answers go there.") },
 		};
 		return All;
 	}

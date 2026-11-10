@@ -12,7 +12,8 @@
 // stand-up the person opened, and goes on after. The chapters run from the console's TOUR page and put the table back.
 //
 // State (FBpStore [/Script/bp.BpTour], written as it happens): Version; Core done@<v> | dismissed@<v>; At <step>@<v> while the
-// core tour runs (a quit resumes there); Seen <chapter ids>. The core starts by itself only at a first launch (Core never
+// core tour runs (a quit resumes there); Seen <chapter ids>; PutBack <chapter> with PutRoom / PutText while a chapter owes the
+// saved settings it changed (a quit mid-chapter: the next cold start puts them back). The core starts by itself only at a first launch (Core never
 // written) or to resume; bp.Tour 1 forces it at every cold start, 0 never.
 #include "BpTable.h"
 
@@ -146,8 +147,13 @@ namespace
 			FBpStore::GetString(GTourSection, TEXT("Core"), Core);
 			FBpStore::GetString(GTourSection, TEXT("At"), At);
 			FBpStore::GetString(GTourSection, TEXT("Seen"), Seen);
-			UE_LOG(LogBpTable, Log, TEXT("BpTour: stat build_version=%d Version=%s Core=%s At=%s Seen=%s"), BpTourBook::Version,
-				Version.IsEmpty() ? TEXT("-") : *Version, Core.IsEmpty() ? TEXT("-") : *Core, At.IsEmpty() ? TEXT("-") : *At, Seen.IsEmpty() ? TEXT("-") : *Seen);
+			FString PutBack, PutRoom, PutText;
+			FBpStore::GetString(GTourSection, TEXT("PutBack"), PutBack);
+			FBpStore::GetString(GTourSection, TEXT("PutRoom"), PutRoom);
+			FBpStore::GetString(GTourSection, TEXT("PutText"), PutText);
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: stat build_version=%d Version=%s Core=%s At=%s Seen=%s PutBack=%s PutRoom=%s PutText=%s"), BpTourBook::Version,
+				Version.IsEmpty() ? TEXT("-") : *Version, Core.IsEmpty() ? TEXT("-") : *Core, At.IsEmpty() ? TEXT("-") : *At, Seen.IsEmpty() ? TEXT("-") : *Seen,
+				PutBack.IsEmpty() ? TEXT("-") : *PutBack, PutRoom.IsEmpty() ? TEXT("-") : *PutRoom, PutText.IsEmpty() ? TEXT("-") : *PutText);
 		}));
 }
 
@@ -214,6 +220,9 @@ void ABpTable::StartTour(const FString& FromStep)
 	if (TourStep >= 0) StopTour(TEXT("another tour"));
 	GTourAsked = false;
 	bTourPlayed = true;
+	// The first tour starts here: a resume a chapter owed it is spent.
+	TourResumeFrom.Reset();
+	TourResumeAt = -1.0;
 	TourChapter.Reset();
 	TourSteps.Reset();
 	for (const TCHAR* Step : BpTourBook::Core()) TourSteps.Add(Step);
@@ -238,7 +247,15 @@ void ABpTable::StartChapter(const FString& ChapterId)
 	const BpTourBook::FChapter* Chapter = BpTourBook::FindChapter(ChapterId);
 	if (!Chapter) { UE_LOG(LogBpTable, Warning, TEXT("BpTour: no chapter %s"), *ChapterId); return; }
 	if (!SheetPlan.IsValid()) { GTourAsked = true; GTourAskedChapter = ChapterId; return; }
+	// The first tour, running: interrupted, not dismissed (its At stays); it goes on after this chapter finishes.
+	const FString CoreAt = TourStep >= 0 && TourChapter.IsEmpty() ? TourStepId : FString();
 	if (TourStep >= 0) StopTour(TEXT("another tour"));
+	if (!CoreAt.IsEmpty())
+	{
+		TourResumeFrom = CoreAt;
+		TourResumeAt = -1.0;
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: the first tour waits at %s while chapter %s runs"), *CoreAt, *ChapterId);
+	}
 	GTourAsked = false;
 	bTourPlayed = true;
 	ABpPawn* Pawn = PawnOf(GetWorld());
@@ -257,6 +274,13 @@ void ABpTable::StartChapter(const FString& ChapterId)
 	TourHandAt = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	TourTickAt = TourHandAt;
 	FBpStore::SetString(GTourSection, TEXT("Version"), FString::FromInt(BpTourBook::Version));
+	// A quit mid-chapter must not keep what the chapter changed (saved settings survive a relaunch): the mark now, each value
+	// as it becomes owed (YOUR ROOM restores its switch whoever made it; the lamp's own acts otherwise). Cleared by the put-back.
+	FBpStore::SetString(GTourSection, TEXT("PutBack"), TourChapter);
+	FBpStore::RemoveKey(GTourSection, TEXT("PutRoom"));
+	FBpStore::RemoveKey(GTourSection, TEXT("PutText"));
+	if (TourChapter == TEXT("room")) FBpStore::SetString(GTourSection, TEXT("PutRoom"), FString::FromInt(TourFrom.BpRoom));
+	FBpStore::Flush();
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: chapter %s starts (%d steps; from level %d, room mode %s, console %s)"), *TourChapter, TourSteps.Num(), static_cast<int32>(Level),
 		RoomModeId.IsEmpty() ? TEXT("off") : *RoomModeId, TourFrom.bConsoleOpen ? *TourFrom.Page : TEXT("bar"));
 	EnterTourStep(0);
@@ -268,7 +292,8 @@ void ABpTable::StopTour(const TCHAR* Why)
 	// Done is finished; a product switch or the end of play interrupts (the step in progress stays for the next cold start);
 	// anything else is the person's STOP (STOP TOUR, B, the wrist, BpTour.Stop): dismissed.
 	const bool bDone = FCString::Strcmp(Why, TEXT("done")) == 0;
-	const bool bInterrupted = FCString::Strcmp(Why, TEXT("another product")) == 0;
+	// A chapter or a replay started over the first tour interrupts it too: its At stays, never recorded as dismissed.
+	const bool bInterrupted = FCString::Strcmp(Why, TEXT("another product")) == 0 || (TourChapter.IsEmpty() && FCString::Strcmp(Why, TEXT("another tour")) == 0);
 	TourEnd(Why, bDone, !bDone && !bInterrupted);
 }
 
@@ -319,6 +344,18 @@ void ABpTable::TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed)
 			UE_LOG(LogBpTable, Log, TEXT("BpTour: chapter %s seen"), *Chapter);
 		}
 		TourPutBack();
+		// The first tour this chapter interrupted: on again after a finished chapter; a stopped one leaves it to the next cold
+		// start (its At); another product drops it here (the store's At still resumes it); another chapter keeps it waiting.
+		if (!TourResumeFrom.IsEmpty() && FCString::Strcmp(Why, TEXT("another tour")) != 0)
+		{
+			if (bFinished) TourResumeAt = (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0) + 1.5;
+			else if (bDismissed || FCString::Strcmp(Why, TEXT("another product")) == 0)
+			{
+				UE_LOG(LogBpTable, Log, TEXT("BpTour: the first tour stays at %s for the next cold start"), *TourResumeFrom);
+				TourResumeFrom.Reset();
+				TourResumeAt = -1.0;
+			}
+		}
 	}
 	TourChapter.Reset();
 	TourSteps.Reset();
@@ -330,7 +367,20 @@ void ABpTable::TourPutBack()
 	ABpPawn* Pawn = PawnOf(GetWorld());
 	TArray<FString> Did;
 	// What the lamp itself changed goes back; a choice the person made stays theirs.
-	if (TourFrom.bLampScan && IsScanRunning() && FBpLinkModule::Get().IsFromBundle() && Pawn) { Pawn->PanelAct(TEXT("job:cancel:sample")); Did.Add(TEXT("the sample scan cancelled")); }
+	if (TourFrom.bLampScan && IsScanRunning() && FBpLinkModule::Get().IsFromBundle() && Pawn)
+	{
+		// The tour's own walk ends quietly (no STOPPED result for a scan the person never started).
+		bSampleTourQuiet = true;
+		Pawn->PanelAct(TEXT("job:cancel:sample"));
+		bSampleTourQuiet = false;
+		Did.Add(TEXT("the sample scan cancelled"));
+	}
+	else if (TourFrom.bLampScan && !IsScanRunning() && Pawn)
+	{
+		// Stopped between the lamp's arm and its start: the wrist's armed scan goes too (any other act disarms it).
+		Pawn->PanelAct(TEXT("scan:cancel"));
+		Did.Add(TEXT("the wrist disarmed"));
+	}
 	if (CvarInt(TEXT("bp.Room")) != TourFrom.BpRoom && (TourFrom.bLampRoom || TourChapter == TEXT("room"))) { SetCvar(TEXT("bp.Room"), FString::FromInt(TourFrom.BpRoom)); Did.Add(TEXT("the room switch")); }
 	if (TourFrom.bLampText && !FMath::IsNearlyEqual(CvarFloat(TEXT("bp.TextSize")), TourFrom.TextSize)) { SetCvar(TEXT("bp.TextSize"), FString::SanitizeFloat(TourFrom.TextSize)); Did.Add(TEXT("the text size")); }
 	if (RoomModeId != TourFrom.RoomMode || Level != TourFrom.Level || (Level != EBpLevel::L0 && WingId != TourFrom.Wing) || (Level == EBpLevel::L2 && RoomId != TourFrom.Room))
@@ -349,7 +399,44 @@ void ABpTable::TourPutBack()
 		if (TourFrom.bConsoleOpen) { Pawn->OpenConsole(TourFrom.Page); Did.Add(TEXT("the console on ") + TourFrom.Page); }
 		else if (Pawn->IsConsoleOpen()) { Pawn->CloseConsole(); Did.Add(TEXT("the console to its bar")); }
 	}
+	// Put back: nothing is owed any more (TourEnd flushes).
+	FBpStore::RemoveKey(GTourSection, TEXT("PutBack"));
+	FBpStore::RemoveKey(GTourSection, TEXT("PutRoom"));
+	FBpStore::RemoveKey(GTourSection, TEXT("PutText"));
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: put back: %s"), Did.Num() ? *FString::Join(Did, TEXT(", ")) : TEXT("nothing had moved"));
+}
+
+void ABpTable::TourOwe(const TCHAR* Key, const FString& Value)
+{
+	FString Mark, Was;
+	if (!FBpStore::GetString(GTourSection, TEXT("PutBack"), Mark) || Mark.IsEmpty() || FBpStore::GetString(GTourSection, Key, Was)) return;
+	FBpStore::SetString(GTourSection, Key, Value);
+	FBpStore::Flush();
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: owed if the run ends mid-chapter: %s=%s"), Key, *Value);
+}
+
+bool ABpTable::TourSettleOwed(const TCHAR* Why)
+{
+	FString Mark;
+	if (!FBpStore::GetString(GTourSection, TEXT("PutBack"), Mark) || Mark.IsEmpty()) return false;
+	TArray<FString> Did;
+	FString Room, Text;
+	if (FBpStore::GetString(GTourSection, TEXT("PutRoom"), Room) && !Room.IsEmpty() && CvarInt(TEXT("bp.Room")) != FCString::Atoi(*Room))
+	{
+		SetCvar(TEXT("bp.Room"), FString::FromInt(FCString::Atoi(*Room)));
+		Did.Add(TEXT("bp.Room ") + Room);
+	}
+	if (FBpStore::GetString(GTourSection, TEXT("PutText"), Text) && !Text.IsEmpty() && !FMath::IsNearlyEqual(CvarFloat(TEXT("bp.TextSize")), FCString::Atof(*Text)))
+	{
+		SetCvar(TEXT("bp.TextSize"), Text);
+		Did.Add(TEXT("bp.TextSize ") + Text);
+	}
+	FBpStore::RemoveKey(GTourSection, TEXT("PutBack"));
+	FBpStore::RemoveKey(GTourSection, TEXT("PutRoom"));
+	FBpStore::RemoveKey(GTourSection, TEXT("PutText"));
+	FBpStore::Flush();
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: put back owed by chapter %s (%s): %s"), *Mark, Why, Did.Num() ? *FString::Join(Did, TEXT(", ")) : TEXT("nothing had moved"));
+	return true;
 }
 
 FString ABpTable::GetTourLine() const
@@ -521,6 +608,14 @@ void ABpTable::PreviewVoice()
 	// The line that is playing, from the start at the new level; else the lamp's "Like this."
 	if (IsVoicePlaying() && !TourVoiceClip.IsEmpty())
 	{
+		// Only a tour line can be replayed from its clip: a talk reply, a scan line or the stand-up's opening plays on at the
+		// level it began with (the next line takes the new one), never cut for a clip that is not in the tour's folder.
+		if (BpTourBook::Words(TourVoiceClip).IsEmpty())
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: voice level changed during %s: it plays on; the next line takes the new level"), *TourVoiceClip);
+			TourVoiceGain = BpAudio::VoiceGain();
+			return;
+		}
 		const FString Clip = TourVoiceClip;
 		SpeakTour(*Clip);
 		return;
@@ -678,7 +773,8 @@ void ABpTable::EnterTourId(const FString& Id)
 	else if (Id == TEXT("text-size"))
 	{
 		if (Pawn) Pawn->OpenConsole(TEXT("access"));
-		TourMark(TEXT("console:set:text:1.3"));
+		// Already at 130 % (a choice kept from before): the step asks for, and the lamp shows, 100 %, so it can complete.
+		TourMark(TourFrom.TextSize >= 1.22f ? TEXT("console:set:text:1.0") : TEXT("console:set:text:1.3"));
 	}
 	else if (Id == TEXT("pc-what"))
 	{
@@ -702,7 +798,15 @@ void ABpTable::EnterTourId(const FString& Id)
 void ABpTable::TickTour()
 {
 	const UWorld* World = GetWorld();
-	if (!World || !SheetPlan.IsValid()) return;
+	if (!World) return;
+	// Once a launch, first: what a chapter cut off by a quit still owes goes back (the saved settings load at the pawn's
+	// BeginPlay, before any tick), before anything else reads them.
+	if (!bTourStoreRead && TourStep < 0)
+	{
+		bTourStoreRead = true;
+		TourSettleOwed(TEXT("a cold start after a run ended mid-chapter"));
+	}
+	if (!SheetPlan.IsValid()) return;
 	const double Now = World->GetTimeSeconds();
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	// A line's samples are done: its component stops (a procedural wave would play silence on), tour or not (a preview of
@@ -750,6 +854,15 @@ void ABpTable::TickTour()
 		{
 			if (!GTourAskedChapter.IsEmpty()) StartChapter(FString(GTourAskedChapter));
 			else StartTour(FString(GTourAskedFrom));
+			return;
+		}
+		// A chapter finished over the first tour: it goes on where it was, the MENU back to its bar as REPLAY does.
+		if (!TourResumeFrom.IsEmpty() && TourResumeAt >= 0.0 && Now >= TourResumeAt)
+		{
+			const FString From = TourResumeFrom;
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: the first tour goes on at %s (the chapter that interrupted it is done)"), *From);
+			if (ABpPawn* Pawn = PawnOf(World); Pawn && Pawn->IsConsoleOpen()) Pawn->CloseConsole();
+			StartTour(From);
 			return;
 		}
 		if (bTourPlayed) return;
@@ -871,6 +984,18 @@ void ABpTable::TickTour()
 			TourNext(TEXT("the person's answer"));
 			return;
 		}
+		// Today's decisions all answered already (the sample keeps its answers for the day; a relaunch, a replay): nothing to
+		// ask for, so the short "nothing waits" beat instead of an instruction nobody can follow.
+		if (!bTourShown && Pawn && Pawn->StandupDecisionsLeft() == 0)
+		{
+			bTourShown = true;
+			TourBeatAt = Now;
+			TourLineId = TEXT("standup-none");
+			UE_LOG(LogBpTable, Log, TEXT("BpTour: skip %s: no decision left to answer today (said instead)"), *Id);
+			SayTour(TourCaption(TourLineId));
+			SpeakTour(*TourLineId);
+			return;
+		}
 		if (!Pawn || (!Pawn->IsStandupOpen() && InStep >= 2.0)) { TourNext(TEXT("the stand-up closed")); return; }
 		if (InStep >= IdleS * 3.0) { TourNext(TEXT("the long wait (never answered for the person)")); return; }
 		if (bIdle && !bTourShown && InStep >= IdleS * 1.5)
@@ -934,12 +1059,20 @@ void ABpTable::TickTour()
 	{
 		const bool bDone = Id == TEXT("room-switch") ? CvarInt(TEXT("bp.Room")) != TourFrom.BpRoom : CvarInt(TEXT("bp.Room")) == TourFrom.BpRoom;
 		if (bDone) { TourNext(bTourShown ? TEXT("the lamp (shown)") : TEXT("the person's switch")); return; }
-		if (bIdle && !bTourShown && Pawn) { Show(TEXT("the room switch")); TourFrom.bLampRoom = true; Pawn->PanelAct(TEXT("toggle:room")); }
+		if (bIdle && !bTourShown && Pawn) { Show(TEXT("the room switch")); TourFrom.bLampRoom = true; TourOwe(TEXT("PutRoom"), FString::FromInt(TourFrom.BpRoom)); Pawn->PanelAct(TEXT("toggle:room")); }
 	}
 	else if (Id == TEXT("text-size"))
 	{
 		if (!FMath::IsNearlyEqual(CvarFloat(TEXT("bp.TextSize")), TourFrom.TextSize)) { TourNext(bTourShown ? TEXT("the lamp (shown)") : TEXT("the person's choice")); return; }
-		if (bIdle && !bTourShown && Pawn) { Show(TEXT("130%")); TourFrom.bLampText = true; Pawn->PanelAct(TEXT("set:text:1.3")); }
+		if (bIdle && !bTourShown && Pawn)
+		{
+			// Already at 130 %: the lamp shows 100 % (a change the step can see); TourPutBack sets the size back either way.
+			const bool bDown = TourFrom.TextSize >= 1.22f;
+			Show(bDown ? TEXT("100% (already at 130%)") : TEXT("130%"));
+			TourFrom.bLampText = true;
+			TourOwe(TEXT("PutText"), FString::SanitizeFloat(TourFrom.TextSize));
+			Pawn->PanelAct(bDown ? TEXT("set:text:1.0") : TEXT("set:text:1.3"));
+		}
 	}
 	else
 	{

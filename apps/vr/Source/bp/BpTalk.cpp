@@ -997,7 +997,10 @@ void ABpTable::TalkSample()
 	S.Step = FBpTalkState::EStep::Sample;
 	S.Heard = Line.Ask;
 	S.Reply = Line.Reply;
-	S.SampleAct = Id;
+	// While a tour runs the exchange is only shown: its follow-up (the stand-up opened, a scan armed, the lamp sent to a
+	// finding) would take the table from the step and hold the tour behind a sheet nobody asked for.
+	S.SampleAct = IsTourRunning() ? FString() : Id;
+	if (IsTourRunning()) UE_LOG(LogBpTable, Log, TEXT("BpTalk: sample %s during the tour: no follow-up act"), *Id);
 	TArray<uint8> Wav;
 	const FString Path = FPaths::ProjectContentDir() / TEXT("BpData/voice/talk") / (Id + TEXT(".wav"));
 	FFileHelper::LoadFileToArray(Wav, *Path, FILEREAD_Silent);

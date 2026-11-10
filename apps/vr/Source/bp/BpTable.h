@@ -1769,8 +1769,18 @@ private:
 	double TourBeatAt = -1.0;
 	double TourTickAt = 0.0;
 	FString TourYieldWhy;
+	/** The first tour's step a chapter interrupted (fix 5): it goes on there TourResumeBeatS after that chapter finishes
+	 *  (TourResumeAt, world seconds; -1 not yet). A chapter stopped by the person leaves it to the next cold start (At). */
 	FString TourResumeFrom;
+	double TourResumeAt = -1.0;
+	/** The owed put-back (PutBack, PutRoom, PutText in the tour's store section) was read this launch. */
 	bool bTourStoreRead = false;
+	/** A chapter's put-back owed through a quit (fix 2): Key's value before the chapter, written when it becomes owed. */
+	void TourOwe(const TCHAR* Key, const FString& Value);
+	/** The owed put-back, applied (the cold start after a quit mid-chapter, the end of play) and cleared; false when none. */
+	bool TourSettleOwed(const TCHAR* Why);
+	/** The sample scan is being cancelled by the tour's own put-back: it ends quietly (EndSampleScan). */
+	bool bSampleTourQuiet = false;
 	struct FTourPlace
 	{
 		EBpLevel Level = EBpLevel::L0;

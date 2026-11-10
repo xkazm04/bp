@@ -172,6 +172,9 @@ public:
 	/** The tour's last step (BpTour.cpp): the stand-up opens on its first decision card; the tour asks whether one was answered. */
 	bool OpenStandupForTour();
 	bool StandupAnsweredSince(double Since) const;
+	/** The open stand-up's decisions still unanswered (-1 while its morning loads or when it is closed): the tour's stand-up
+	 *  step says "nothing waits" at 0 rather than ask for an answer nobody can give. */
+	int32 StandupDecisionsLeft() const;
 	FString StandupLastVerdictWords() const;
 	/** A spoken request raised a pending companion card (BpTalk.cpp): the STAND-UP page opens on it, as the stand-up's plan
 	 *  shows one (GET /api/companion/cards; answered with `shown`). */

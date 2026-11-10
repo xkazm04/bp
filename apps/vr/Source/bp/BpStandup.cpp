@@ -1708,6 +1708,17 @@ bool ABpPawn::StandupAnsweredSince(double Since) const
 	return false;
 }
 
+int32 ABpPawn::StandupDecisionsLeft() const
+{
+	if (!IsStandupOpen() || Standup->bLoading) return -1;
+	const FBpStandupState& S = *Standup;
+	if (!S.Error.IsEmpty()) return 0;
+	return Algo::CountIf(S.Sheets, [&S](const FBpStandupSheet& Sh)
+	{
+		return S.Deck.cards.IsValidIndex(Sh.Card) && S.Deck.cards[Sh.Card].kind == BpVocab::MorningCard::Kind::Decision && !S.Answers.Contains(S.Deck.cards[Sh.Card].id);
+	});
+}
+
 FString ABpPawn::StandupLastVerdictWords() const
 {
 	if (!Standup.IsValid()) return FString();

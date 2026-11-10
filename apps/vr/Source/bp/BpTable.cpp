@@ -751,6 +751,9 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnBuildup().Remove(BuildupHandle);
 	}
 	LampLookState.Reset();
+	// A chapter running as the run ends: what it changed in the saved settings goes back now (a kill without EndPlay is the
+	// next cold start's, TickTour).
+	if (IsTourRunning() && !TourChapter.IsEmpty()) TourSettleOwed(TEXT("the end of play"));
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -2647,6 +2650,19 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	CardDecided.Reset();
 	DeckBriefAsked.Reset();
 	BriefFor.Reset();
+	// The scan theatre (BpScanTheatre.cpp) follows nothing on the new product: ended quietly (no result for the old one), its
+	// timers cleared, the lamp home and out of the scanning light, and the pins' memory of the old findings dropped (else
+	// every finding of the new product would land, and a real scan's end, keyed on the job just reset, would never come).
+	GetWorldTimerManager().ClearTimer(TheatreEndTimer);
+	if (bTheatre) TheatreEnd(true, false, true);
+	GetWorldTimerManager().ClearTimer(TheatreTimer);
+	TheatreVoiceClip.Reset();
+	TheatreVoiceSay.Reset();
+	TheatreEndedAt = -1.0;
+	if (bTheatreResult) { bTheatreResult = false; bTheatreResultSeen = true; ScanBandChanged.Broadcast(); }
+	PinsKnownOpen.Reset();
+	bPinsPrimed = false;
+	PinLandClock = -1.f;
 	// The sample scan (only ever from a bundle) and what the wrist kept of the last scan.
 	EndSampleScan();
 	bHasScanOutcome = false;

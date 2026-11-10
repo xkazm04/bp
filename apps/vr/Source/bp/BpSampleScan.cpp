@@ -159,7 +159,9 @@ void ABpTable::EndSampleScan()
 	if (!bScanSample) return;
 	// Stopped part way (CANCEL, the tour putting the table back, a server found): the theatre says so, unless the tour did it.
 	const bool bCancelled = !bSampleDone;
-	const bool bQuiet = bCancelled && (bSampleRestart || TourStep >= 0 || !TourChapter.IsEmpty());
+	// Quiet only for a walk nobody asked to see stopped: one replaced by a new walk, or the tour's own walk put back. The
+	// wearer's CANCEL, tour or not, is a STOPPED result on every surface (the band, the bar's chip, the wrist, the sheet).
+	const bool bQuiet = bCancelled && (bSampleRestart || bSampleTourQuiet);
 	if (bCancelled && bTheatre && bTheatreSample) TheatreEnd(true, false, bQuiet);
 	bScanSample = bSampleDone = false;
 	bScanLive = false;
