@@ -1931,6 +1931,12 @@ public:
 	/** The console open over the deck (room mode): the deck's screens and spines stay hidden until it is released. */
 	void SetDeckHeld(bool bHeld);
 	bool IsDeckHeld() const { return bDeckHeld; }
+	/** Wave N3-W4: with the wall as the main screen (bp.Projector 1) a room's deck shows its front screen on the wall, where the
+	 *  console's sheet stands, scaled to the wall's size (its controls work through the ray, DeckHit, as at the desk); the spines
+	 *  and the desk's place stay empty. OutFront: the front screen's pose there (table space, the widget's scale). False at the
+	 *  desk (bp.Projector 0 or 2) and outside room mode. */
+	bool DeckOnWall(FTransform& OutFront) const;
+	bool IsDeckOnWall() const { FTransform Unused; return DeckOnWall(Unused); }
 	/** The decision waiting for a yes or no: the deck's front screen when it is a decision (room mode), else the decision
 	 *  card's finding. Its finding id, its title, and where it waits ("deck" or "card"); false when none waits. */
 	bool WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const;

@@ -1715,7 +1715,8 @@ void ABpPawn::PlaceConsole()
 		ConsoleFarSizeCm = SizeCm;
 		bConsoleFar = true;
 		ConsolePanel->SetRelativeTransform(FTransform(Facing, Centre, FVector(SizeCm.X / Px.X)));
-		Table->SetDeckHeld(false);
+		// Wave N3-W4: a room's deck on the wall gives the console its place there while the console is open.
+		Table->SetDeckHeld(Table->IsDeckOnWall());
 		BpProjector::SetFar(true, Centre);
 		BpProjector::SetFarCentre(Centre);
 		// Wave N3-W2: the wall's rectangle for Glim's beam (table space, unscaled).

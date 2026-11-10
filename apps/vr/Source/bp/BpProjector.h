@@ -56,6 +56,9 @@ namespace BpProjector
 	void SetFarAims(const FVector& PresentLocal, const FVector& AskLocal, bool bPoint);
 	/** A decision is open on the far sheet (Glim raises his arm toward FarAimLocal). */
 	bool IsPointing();
+	/** Wave N3-W4: both points he will point at for the sheet now (Present, then Ask; equal when he only turns), so his stand
+	 *  is chosen once for the two. False when no sheet has set them. */
+	bool FarAims(FVector& OutPresent, FVector& OutAsk);
 	/** FarAimLocal is the Ask aim now (he asks for the answer). */
 	bool IsAsking();
 	/** The far sheet's pose (table space, unscaled; a widget's facing: +X toward the eye) and size in cm, for the beam. */

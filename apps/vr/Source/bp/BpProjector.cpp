@@ -243,6 +243,12 @@ namespace BpProjector
 		GFarAim = PresentLocal;
 	}
 	bool IsPointing() { return GFar && GAims && GPoint; }
+	bool FarAims(FVector& OutPresent, FVector& OutAsk)
+	{
+		OutPresent = GAims ? GPresent : GFarAim;
+		OutAsk = GAims && GPoint ? GAsk : OutPresent;
+		return GFar;
+	}
 	bool IsAsking()
 	{
 		return GFar && GAims && GPoint && !GAsk.Equals(GPresent, 0.5) && FPlatformTime::Seconds() - GAimsAt >= FMath::Clamp(CVarAskAfter.GetValueOnGameThread(), 1.f, 30.f);

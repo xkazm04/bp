@@ -37,6 +37,10 @@
 
 namespace
 {
+	/** Wave N3-W4: his arm stays low while he presents (he points with his beam only): no stand with the arm raised cleared the
+	 *  sheet. Set with the stand (ABpTable::LampFootClearOfSheet), read by PlaceLamp. */
+	bool GLampArmLow = false;
+
 	TAutoConsoleVariable<float> CVarLampSwitchDelayS(
 		TEXT("bp.LampSwitchDelayS"),
 		ABpTable::LampSwitchDelayS,
@@ -393,7 +397,8 @@ void ABpTable::PlaceLamp()
 	// Wave N3-W2: a decision open on the wall, Glim raises his arm toward what he points at (the loupe's region, the title, then
 	// APPROVE): he tilts back from his base by the point's elevation over his head, at most bp.Glim.PointDeg, eased with his
 	// turn. Facing the person (he listens or speaks) lowers it again; reduced motion: he only faces it.
-	if (LampProj > 0.f && !bRide && !bLampAtStation && BpProjector::IsPointing() && !SwitchReduced())
+	// Wave N3-W4: not where his raised arm would cross the sheet from the seat (LampFootClearOfSheet): he points with his beam.
+	if (LampProj > 0.f && !bRide && !bLampAtStation && BpProjector::IsPointing() && !SwitchReduced() && !GLampArmLow)
 	{
 		FVector Head = At + FVector(0.0, 0.0, 30.0);
 		if (Lamp.IsValid()) Head = Table.InverseTransformPosition(Lamp->GetActorTransform().TransformPosition(LampHeadLocal)) - Table.InverseTransformPosition(Lamp->GetActorLocation()) + At;
@@ -437,71 +442,172 @@ namespace
 {
 	TAutoConsoleVariable<float> CVarFootClearDeg(TEXT("bp.Glim.SheetClearDeg"), 3.f,
 		TEXT("Wave N3-W3: while a sheet is far, the least angle (degrees, from the seated eye) between Glim's whole silhouette (his arm and hand included) and the sheet's edge; 0 turns the rule off (he stands at the far rim's left end, as before)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarFootEyeSlackCm(TEXT("bp.Glim.EyeSlackCm"), 15.f,
+		TEXT("Wave N3-W4: Glim's stand by the far sheet must clear it from the seated eye and from eyes this far behind, in front of, left and right of it (cm, 0 to 40): a person who sits back or leans still sees him off the sheet."), ECVF_Default);
+
+	/** Wave N3-W4: SM_LampAgent's parts in its own space (cm, before the actor's 1.05 scale), measured from its LOD0 vertices
+	 *  (2026-11-10): the body (hood, torso, the stem to its back), the arm (out from the body at 0 to 45 degrees about +Z, 8 to
+	 *  18 cm from the axis, 11 to 14 cm up) and the hand (18 to 27 cm out). Each is tested by its eight corners in his pose. */
+	struct FLampPart { const TCHAR* Name; FBox Box; };
+	const FLampPart LampParts[] = {
+		{ TEXT("body"), FBox(FVector(-18.4, -5.9, -3.1), FVector(8.0, 8.0, 23.4)) },
+		{ TEXT("arm"), FBox(FVector(5.0, -1.0, 11.0), FVector(18.0, 13.0, 14.0)) },
+		{ TEXT("hand"), FBox(FVector(14.0, 4.0, 11.0), FVector(21.6, 14.5, 14.0)) },
+	};
 }
 
 FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 {
+	// Wave N3-W4 (the owner's device capture n3-dev-dec2: his raised arm and hand crossed the wall's left column while the PC
+	// capture, framed narrower, showed him clear). The rule before tested a cylinder of his rest pose's reach about his axis;
+	// now it projects his POSED parts (body, arm, hand: their corners in the very pose PlaceLamp gives him while he points)
+	// from the eye onto the sheet's plane, for every point he points at on it, from the seated eye and from eyes around it.
+	// Where the raised pose would cross the sheet, the arm stays low and he points with his beam only (GLampArmLow); where
+	// even that crosses, he steps down the table's left side toward the seat.
 	FTransform FarPose;
 	FVector2D Size;
 	const float MarginDeg = FMath::Clamp(CVarFootClearDeg.GetValueOnGameThread(), 0.f, 15.f);
-	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size)) return Want;
+	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size))
+	{
+		GLampArmLow = false;
+		return Want;
+	}
+	const float SlackCm = FMath::Clamp(CVarFootEyeSlackCm.GetValueOnGameThread(), 0.f, 40.f);
+	const bool bMayRaise = BpProjector::PointMaxDeg() > 0.f && !SwitchReduced();
 	static FString KeptKey;
 	static FVector Kept = FVector::ZeroVector;
-	const FString Key = FString::Printf(TEXT("%s|%s|%s|%.1f"), *FarPose.GetLocation().ToString(), *FarPose.Rotator().ToString(), *Size.ToString(), MarginDeg) + Want.ToString();
-	if (Key == KeptKey) return Kept;
-	// His body: the corners of his mesh's own box about his pivot (the arm and the hand are part of the mesh), so its reach
-	// from his vertical axis holds whichever way he turns; and its top over the pivot. In table cm (the table is unscaled).
-	double Reach = 30.0, Top = 50.0;
-	TArray<UStaticMeshComponent*> Meshes;
-	Lamp->GetComponents(Meshes);
-	for (const UStaticMeshComponent* Mesh : Meshes)
+	static bool bKeptLow = false;
+	const FString Key = FString::Printf(TEXT("%s|%s|%s|%.1f|%.0f|%d|%.1f"), *FarPose.GetLocation().ToString(), *FarPose.Rotator().ToString(), *Size.ToString(), MarginDeg, SlackCm, bMayRaise,
+		BpProjector::PointMaxDeg()) + Want.ToString();
+	if (Key == KeptKey)
 	{
-		if (!Mesh->GetStaticMesh() || Mesh->GetStaticMesh()->GetName() != LampMeshName) continue;
-		const FBox Box = Mesh->GetStaticMesh()->GetBoundingBox();
-		const FTransform& T = Mesh->GetComponentTransform();
-		const FVector Pivot = Lamp->GetActorLocation();
-		Reach = 0.0;
-		Top = -TNumericLimits<double>::Max();
+		GLampArmLow = bKeptLow;
+		return Kept;
+	}
+	const FTransform& Table = GetActorTransform();
+	const double RestYaw = (Table.GetRotation().Inverse() * LampRest.GetRotation()).Rotator().Yaw;
+	// The mesh component's pose relative to the actor (the parts are in the mesh's space).
+	FTransform MeshRel = FTransform::Identity;
+	{
+		TArray<UStaticMeshComponent*> Meshes;
+		Lamp->GetComponents(Meshes);
+		for (const UStaticMeshComponent* Mesh : Meshes)
+		{
+			if (Mesh->GetStaticMesh() && Mesh->GetStaticMesh()->GetName() == LampMeshName) MeshRel = Mesh->GetComponentTransform().GetRelativeTransform(Lamp->GetActorTransform());
+		}
+	}
+	// What he points at: the sheet's points of interest, fixed in the sheet's own space so his stand does not move from one
+	// sheet to the next (the title's top left, the loupe's middle column, what it touches, APPROVE under them, the centre).
+	TArray<FVector> Aims;
+	for (const FVector2D& Uv : { FVector2D(0.18, 0.2), FVector2D(0.5, 0.25), FVector2D(0.82, 0.25), FVector2D(0.4, 0.88), FVector2D(0.5, 0.5), FVector2D(0.15, 0.6) })
+	{
+		// A widget's x is the component's -Y, its y the component's -Z (UWidgetComponent's mapping).
+		Aims.Add(FarPose.TransformPositionNoScale(FVector(0.0, -(Uv.X - 0.5) * Size.X, -(Uv.Y - 0.5) * Size.Y)));
+	}
+	// His pose at a stand P pointing at Aim, as PlaceLamp gives it with every ease at its end (turned to it; raised by the
+	// point's elevation over his head plus the gesture's 10 degrees, at most bp.Glim.PointDeg).
+	const FVector HeadOff = Table.InverseTransformVector(LampRest.TransformVector(LampHeadLocal));
+	const auto PoseAt = [&](const FVector& P, const FVector& Aim, bool bRaise)
+	{
+		const double Yaw = LampYawToward(P, Aim);
+		FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+		if (bRaise)
+		{
+			const FVector To = Aim - (P + HeadOff);
+			const double Elev = FMath::RadiansToDegrees(FMath::Atan2(To.Z, FVector2D(To.X, To.Y).Size()));
+			const double Raise = FMath::Clamp(Elev + 10.0, 0.0, static_cast<double>(BpProjector::PointMaxDeg()));
+			const double Y = FMath::DegreesToRadians(Yaw);
+			const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+			Turn = FQuat(FVector::CrossProduct(FVector::UpVector, Facing), FMath::DegreesToRadians(-Raise)) * Turn;
+		}
+		// In the table's space (the table's own rotation cancels: Table^-1 * (Table * Turn * Table^-1 * Rest)).
+		return FTransform(Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), P, LampRest.GetScale3D());
+	};
+	// The eyes: the seated one, and SlackCm behind, in front, left and right of it.
+	const FVector Seat = EyeLocal();
+	TArray<FVector> Eyes = { Seat };
+	if (SlackCm > 0.f) for (const FVector& D : { FVector(-1.0, 0.0, 0.0), FVector(1.0, 0.0, 0.0), FVector(0.0, -1.0, 0.0), FVector(0.0, 1.0, 0.0) }) Eyes.Add(Seat + D * SlackCm);
+	// One part's clearance (degrees; negative overlaps) from one eye: its corners cast from the eye onto the sheet's plane, their
+	// box against the sheet's rectangle (the box of the cast corners holds the part's whole outline).
+	const auto PartClear = [&](const FTransform& Pose, const FBox& Box, const FVector& Eye)
+	{
+		const FVector E = FarPose.InverseTransformPositionNoScale(Eye);
+		FBox2D Cast(ForceInit);
 		for (int32 C = 0; C < 8; ++C)
 		{
 			const FVector Corner((C & 1) ? Box.Max.X : Box.Min.X, (C & 2) ? Box.Max.Y : Box.Min.Y, (C & 4) ? Box.Max.Z : Box.Min.Z);
-			const FVector Off = T.TransformPosition(Corner) - Pivot;
-			Reach = FMath::Max(Reach, Off.Size2D());
-			Top = FMath::Max(Top, Off.Z);
+			const FVector S = FarPose.InverseTransformPositionNoScale(Pose.TransformPosition(MeshRel.TransformPosition(Corner)));
+			// A corner at or beyond the sheet's plane (or behind the eye) cannot be cast: it counts as on the sheet.
+			if (S.X <= 0.5 || S.X >= E.X - 0.5) return -90.0;
+			const double T = E.X / (E.X - S.X);
+			Cast += FVector2D(E.Y + (S.Y - E.Y) * T, E.Z + (S.Z - E.Z) * T);
 		}
-	}
-	const FVector Eye = EyeLocal();
-	const auto Yaw = [&Eye](const FVector& P) { return FMath::RadiansToDegrees(FMath::Atan2(P.Y - Eye.Y, P.X - Eye.X)); };
-	const auto Elev = [&Eye](const FVector& P, double Along) { return FMath::RadiansToDegrees(FMath::Atan2(P.Z - Eye.Z, FMath::Max(1.0, Along))); };
-	double YawMin = TNumericLimits<double>::Max(), YawMax = -TNumericLimits<double>::Max(), Bottom = TNumericLimits<double>::Max();
-	for (int32 C = 0; C < 4; ++C)
+		const double Cm = FMath::Max(FMath::Max(-Size.X * 0.5 - Cast.Max.X, Cast.Min.X - Size.X * 0.5), FMath::Max(-Size.Y * 0.5 - Cast.Max.Y, Cast.Min.Y - Size.Y * 0.5));
+		return FMath::RadiansToDegrees(FMath::Atan2(Cm, FMath::Max(1.0, E.X)));
+	};
+	// The least clearance of each part over every aim and eye, for a stand and an arm. And over every way he turns unraised:
+	// while he speaks or listens he faces the person (LampFace), and his arm, which stands out of his side at 30 degrees from
+	// his facing, then reaches across toward the sheet (the device capture's pose); the turn between sweeps it through the rest.
+	TArray<FVector> Turns;
+	for (int32 Step = 0; Step < 24; ++Step)
 	{
-		const FVector P = FarPose.TransformPositionNoScale(FVector(0.0, (C & 1) ? Size.X * 0.5 : -Size.X * 0.5, (C & 2) ? Size.Y * 0.5 : -Size.Y * 0.5));
-		YawMin = FMath::Min(YawMin, Yaw(P));
-		YawMax = FMath::Max(YawMax, Yaw(P));
-		Bottom = FMath::Min(Bottom, Elev(P, FVector::Dist2D(P, Eye)));
+		const double A = FMath::DegreesToRadians(Step * 15.0);
+		Turns.Add(FVector(FMath::Cos(A), FMath::Sin(A), 0.0) * 100.0);
 	}
-	// Along the table's left side from Want toward the seat: the first place where his silhouette's nearest edge stands
-	// MarginDeg outside the sheet's side (or his top under its bottom edge); none clear: the one that clears most.
+	const auto StandClear = [&](const FVector& P, bool bRaise, double (&OutParts)[3])
+	{
+		for (double& Each : OutParts) Each = TNumericLimits<double>::Max();
+		const auto Take = [&](const FTransform& Pose)
+		{
+			for (const FVector& Eye : Eyes)
+			{
+				for (int32 Part = 0; Part < 3; ++Part) OutParts[Part] = FMath::Min(OutParts[Part], PartClear(Pose, LampParts[Part].Box, Eye));
+			}
+		};
+		for (const FVector& Aim : Aims) Take(PoseAt(P, Aim, bRaise));
+		for (const FVector& Turn : Turns) Take(PoseAt(P, P + Turn, false));
+		return FMath::Min3(OutParts[0], OutParts[1], OutParts[2]);
+	};
+	// Along the table's left side from Want toward the seat: the first place that clears by MarginDeg, with the arm raised if
+	// that clears, else with it low; none clears: the place (arm low) that clears most.
 	FVector Best = Want;
 	double BestClear = -TNumericLimits<double>::Max();
-	bool bClear = false;
+	double BestParts[3] = { 0.0, 0.0, 0.0 };
+	bool bClear = false, bLow = true;
 	const double NearX = -(TableDepthCm * 0.5) + 8.0;
+	int32 Steps = 0;
 	for (double X = Want.X; X >= NearX; X -= 2.0)
 	{
 		const FVector P(X, Want.Y, Want.Z);
-		const double D = FVector::Dist2D(P, Eye);
-		const double Half = FMath::RadiansToDegrees(FMath::Asin(FMath::Min(1.0, Reach / FMath::Max(1.0, D))));
-		const double Side = FMath::Max(YawMin - (Yaw(P) + Half), (Yaw(P) - Half) - YawMax);
-		const double Under = Bottom - Elev(P + FVector(0.0, 0.0, Top), D - Reach);
-		const double Clear = FMath::Max(Side, Under);
-		if (Clear > BestClear) { BestClear = Clear; Best = P; }
-		if (Clear >= MarginDeg) { Best = P; BestClear = Clear; bClear = true; break; }
+		double Parts[3];
+		++Steps;
+		if (bMayRaise && StandClear(P, true, Parts) >= MarginDeg)
+		{
+			Best = P; bLow = false; bClear = true;
+			FMemory::Memcpy(BestParts, Parts, sizeof(Parts));
+			BestClear = FMath::Min3(Parts[0], Parts[1], Parts[2]);
+			break;
+		}
+		const double Low = StandClear(P, false, Parts);
+		if (Low > BestClear) { BestClear = Low; Best = P; bLow = true; FMemory::Memcpy(BestParts, Parts, sizeof(Parts)); }
+		if (Low >= MarginDeg) { bClear = true; break; }
+	}
+	// The same stand's clearance from the seated eye alone (what the captures show).
+	double SeatParts[3] = { TNumericLimits<double>::Max(), TNumericLimits<double>::Max(), TNumericLimits<double>::Max() };
+	TArray<FTransform> SeatPoses;
+	for (const FVector& Aim : Aims) SeatPoses.Add(PoseAt(Best, Aim, !bLow));
+	for (const FVector& Turn : Turns) SeatPoses.Add(PoseAt(Best, Best + Turn, false));
+	for (const FTransform& Pose : SeatPoses)
+	{
+		for (int32 Part = 0; Part < 3; ++Part) SeatParts[Part] = FMath::Min(SeatParts[Part], PartClear(Pose, LampParts[Part].Box, Seat));
 	}
 	KeptKey = Key;
 	Kept = Best;
-	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim stands at table (%.0f, %.0f) %s the far sheet: his silhouette (reach %.0f cm, top +%.0f cm) clears its edge by %.1f deg (the sheet spans yaw %.1f to %.1f, its foot at %.1f deg; at the far rim's end it cleared %s)"),
-		Best.X, Best.Y, bClear ? TEXT("clear of") : TEXT("as clear as he can be of"), Reach, Top, BestClear, YawMin, YawMax, Bottom, Best.Equals(Want) ? TEXT("already") : TEXT("too little"));
+	bKeptLow = bLow && bMayRaise;
+	GLampArmLow = bKeptLow;
+	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim stands at table (%.0f, %.0f) %s the far sheet (%.0f x %.0f cm) with his arm %s; projected clearance from the seated eye: body %.1f, arm %.1f, hand %.1f deg; least over %d eyes (slack %.0f cm), %d aims and %d turns: body %.1f, arm %.1f, hand %.1f deg (rule %.1f; %d places tried from the far rim's end)"),
+		Best.X, Best.Y, bClear ? TEXT("clear of") : TEXT("as clear as he can be of"), Size.X, Size.Y, bLow ? (bMayRaise ? TEXT("LOW (he points with his beam only)") : TEXT("low (no raise asked)")) : TEXT("RAISED"),
+		SeatParts[0], SeatParts[1], SeatParts[2], Eyes.Num(), SlackCm, Aims.Num(), Turns.Num(), BestParts[0], BestParts[1], BestParts[2], MarginDeg, Steps);
 	return Best;
 }
 

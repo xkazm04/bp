@@ -14,6 +14,7 @@
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpProjector.h"
 #include "BpSheet.h"
 #include "BpType.h"
 #include "BpWords.h"
@@ -1156,6 +1157,12 @@ void ABpTable::ApplyDeckPoses()
 	// The console open over the slot (night two W1) holds the deck hidden until it closes.
 	const float Room = DeckRoom.IsEmpty() || CVarDeck.GetValueOnGameThread() == 0 || bDeckHeld ? 0.f : DeckEase(RoomFade);
 	const float T = DeckEase(DeckSwapT);
+	// Wave N3-W4: on the wall (bp.Projector 1) the front screen stands where the console's sheet does, at the wall's size; a
+	// swap slides it aside on the wall and fades it there (no spines: the queue's place is the screen's own "3 OF 19").
+	FTransform Wall;
+	const bool bWall = DeckOnWall(Wall);
+	const double WallK = Wall.GetScale3D().X * DeckPxPerCm;
+	const FVector WallRight = -Wall.GetRotation().RotateVector(FVector::RightVector), WallBack = -Wall.GetRotation().GetForwardVector();
 	for (int32 Index = 0; Index < 4; ++Index)
 	{
 		UWidgetComponent* Screen = DeckCards[Index];
@@ -1169,7 +1176,11 @@ void ABpTable::ApplyDeckPoses()
 		const bool bShow = !Each.Key.IsEmpty() && !bOut && Alpha > 0.01f;
 		if (Screen->IsVisible() != bShow) Screen->SetVisibility(bShow);
 		// Back at its resting place once nothing shows it (level_check compares every widget's place with L0's).
-		Screen->SetRelativeTransform(bShow ? DeckPose(Slot, Side) : DeckPose(Index < 3 ? static_cast<float>(Index) : 0.f, 0.f));
+		if (bShow && bWall)
+		{
+			Screen->SetRelativeTransform(FTransform(Wall.GetRotation(), Wall.GetLocation() + WallRight * (Side * DeckWidthCm * WallK * 0.55) + WallBack * (FMath::Min(Slot, 1.f) * 10.0), Wall.GetScale3D()));
+		}
+		else Screen->SetRelativeTransform(bShow ? DeckPose(Slot, Side) : DeckPose(Index < 3 ? static_cast<float>(Index) : 0.f, 0.f));
 		if (!bShow) continue;
 		// The glass under 1 (the card's FO rule: the bloom threshold); the paper as the card's.
 		const bool bPaper = DeckScreens.IsValidIndex(Each.Screen) && PaperScreen(DeckScreens[Each.Screen].Kind);
@@ -1188,7 +1199,7 @@ void ABpTable::ApplySpines(float Room)
 		UWidgetComponent* Spine = DeckSpines[Place];
 		const int32 S = DeckAt + 1 + Place;
 		const float Alpha = (Place == 0 ? DeckBackAlpha1 : DeckBackAlpha2) * Room;
-		const bool bShow = CVarDeckSpines.GetValueOnGameThread() != 0 && !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(S) && !DeckSpineKey[Place].IsEmpty() && Alpha > 0.01f;
+		const bool bShow = CVarDeckSpines.GetValueOnGameThread() != 0 && !DeckRoom.IsEmpty() && DeckScreens.IsValidIndex(S) && !DeckSpineKey[Place].IsEmpty() && Alpha > 0.01f && !IsDeckOnWall();
 		if (Spine->IsVisible() != bShow) Spine->SetVisibility(bShow);
 		Spine->SetRelativeTransform(SpinePose(Place + 1));
 		if (!bShow) continue;
@@ -1449,10 +1460,33 @@ void ABpTable::DeckNextRoom()
 
 void ABpTable::SetDeckHeld(bool bHeld)
 {
-	if (bHeld == bDeckHeld) return;
+	// Wave N3-W4: PlaceConsole calls this on every place, the main screen's mode change included: the deck moves between the
+	// desk and the wall then too.
+	static bool bWallShown = false;
+	FTransform Wall;
+	const bool bWall = DeckOnWall(Wall);
+	if (bHeld == bDeckHeld && bWall == bWallShown) return;
+	if (bWall != bWallShown) UE_LOG(LogBpTable, Log, TEXT("BpDeck: the front screen %s"), bWall ? TEXT("on the wall (the main screen), the desk's place empty") : TEXT("back at the desk"));
+	bWallShown = bWall;
+	if (bHeld != bDeckHeld) UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s"), bHeld ? TEXT("held hidden (the console is open over it)") : TEXT("given back (the console closed)"));
 	bDeckHeld = bHeld;
-	UE_LOG(LogBpTable, Log, TEXT("BpDeck: %s"), bHeld ? TEXT("held hidden (the console is open over it)") : TEXT("given back (the console closed)"));
 	ApplyDeckPoses();
+}
+
+bool ABpTable::DeckOnWall(FTransform& OutFront) const
+{
+	if (DeckRoom.IsEmpty() || BpProjector::Mode() != 1) return false;
+	static const IConsoleVariable* RoomVar = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Room"));
+	const bool bPassthrough = RoomVar && RoomVar->GetInt() != 0;
+	// Where the console's sheet stands on the wall (BpConsole.cpp's PlaceConsole: the same eye and forward).
+	const FVector Eye = EyeLocal();
+	FVector Centre;
+	FRotator Facing;
+	FVector2D SizeCm;
+	BpProjector::Surface().Place(Eye, DeckPose(0.f, 0.f).GetLocation() - Eye, bPassthrough, Centre, Facing, SizeCm);
+	const double K = FMath::Min(SizeCm.X / DeckWidthCm, SizeCm.Y / DeckHeightCm);
+	OutFront = FTransform(Facing, Centre, FVector(K / DeckPxPerCm));
+	return true;
 }
 
 bool ABpTable::WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const
@@ -1609,8 +1643,10 @@ bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 	if (!Box) return false;
 	const FVector2f Centre = Box->GetCenter();
 	const float Scale = DeckPxPerCm / DeckLayoutPxPerCm;
-	// The front's resting place (DeckPose 0), so a hand aims where the screen settles.
-	const FTransform T = DeckPose(0.f, 0.f) * GetActorTransform();
+	// The front's resting place (DeckPose 0, or the wall's, wave N3-W4), so a hand aims where the screen settles.
+	FTransform Front;
+	if (!DeckOnWall(Front)) Front = DeckPose(0.f, 0.f);
+	const FTransform T = Front * GetActorTransform();
 	OutWorld = T.TransformPosition(FVector(0.0, -(Centre.X - LW * 0.5f) * Scale, -(Centre.Y - LH * 0.5f) * Scale));
 	return true;
 }
