@@ -3,13 +3,13 @@
 
 #include "Async/Async.h"
 #include "BpPawn.h"
+#include "BpStore.h"
 #include "BpTable.h"
 #include "Components/AudioComponent.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/App.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Sound/SoundWaveProcedural.h"
@@ -47,7 +47,7 @@ namespace
 	const TCHAR* const OldVoiceSection = TEXT("/Script/bp.BpVoice");
 	const TCHAR* const OldVoiceKey = TEXT("VoiceVolume");
 
-	/** The cvars saved across runs: the cvar, its section and key in GameUserSettings, and its clamp. */
+	/** The cvars saved across runs: the cvar, its section and key in the app's own file (FBpStore, Saved/BpTable.json), and its clamp. */
 	struct FSaved
 	{
 		const TCHAR* Cvar;
@@ -68,9 +68,9 @@ namespace
 
 	void SaveOne(const FSaved& Each, IConsoleVariable* Var)
 	{
-		if (bLoading || !GConfig || !Var) return;
-		GConfig->SetString(Each.Section, Each.Key, *FString::Printf(TEXT("%.2f"), FMath::Clamp(Var->GetFloat(), Each.Min, Each.Max)), GGameUserSettingsIni);
-		GConfig->Flush(false, GGameUserSettingsIni);
+		if (bLoading || !Var) return;
+		FBpStore::SetString(Each.Section, Each.Key, FString::Printf(TEXT("%.2f"), FMath::Clamp(Var->GetFloat(), Each.Min, Each.Max)));
+		FBpStore::Flush();
 		UE_LOG(LogBpTable, Log, TEXT("BpAudio: %s %.2f saved ([%s] %s)"), Each.Cvar, Var->GetFloat(), Each.Section, Each.Key);
 	}
 
@@ -107,18 +107,18 @@ namespace BpAudio
 	void LoadSettings()
 	{
 		static bool bDone = false;
-		if (bDone || !GConfig) return;
+		if (bDone) return;
 		bDone = true;
 		bLoading = true;
 		// The old voice key, once: its level halved (the old 2.0 is the new 1.0), written under the new key, then removed, so a
 		// second run reads only the new one and nothing doubles.
 		float Level = 0.f, Old = 0.f;
-		if (!GConfig->GetFloat(AudioSection, TEXT("VoiceLevel"), Level, GGameUserSettingsIni) && GConfig->GetFloat(OldVoiceSection, OldVoiceKey, Old, GGameUserSettingsIni))
+		if (!FBpStore::GetFloat(AudioSection, TEXT("VoiceLevel"), Level) && FBpStore::GetFloat(OldVoiceSection, OldVoiceKey, Old))
 		{
 			const float Migrated = FMath::Clamp(Old * 0.5f, 0.f, 1.5f);
-			GConfig->SetString(AudioSection, TEXT("VoiceLevel"), *FString::Printf(TEXT("%.2f"), Migrated), GGameUserSettingsIni);
-			GConfig->RemoveKey(OldVoiceSection, OldVoiceKey, GGameUserSettingsIni);
-			GConfig->Flush(false, GGameUserSettingsIni);
+			FBpStore::SetString(AudioSection, TEXT("VoiceLevel"), FString::Printf(TEXT("%.2f"), Migrated));
+			FBpStore::RemoveKey(OldVoiceSection, OldVoiceKey);
+			FBpStore::Flush();
 			UE_LOG(LogBpTable, Log, TEXT("BpAudio: migrated the old voice volume %.2f to voice level %.2f (the old key removed)"), Old, Migrated);
 		}
 		for (const FSaved& Each : Saved)
@@ -126,7 +126,7 @@ namespace BpAudio
 			IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(Each.Cvar);
 			if (!Var) continue;
 			float Value = 0.f;
-			if (GConfig->GetFloat(Each.Section, Each.Key, Value, GGameUserSettingsIni))
+			if (FBpStore::GetFloat(Each.Section, Each.Key, Value))
 			{
 				Var->Set(FMath::Clamp(Value, Each.Min, Each.Max), ECVF_SetByConsole);
 				UE_LOG(LogBpTable, Log, TEXT("BpAudio: %s %.2f (saved)"), Each.Cvar, Var->GetFloat());

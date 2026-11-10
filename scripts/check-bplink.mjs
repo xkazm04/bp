@@ -598,7 +598,10 @@ async function main() {
       check(`build: Public/Schema, where it exists, is a link to that target, not a copy (${linkState})`, linkOk, linkState);
       // `Schema/` is the junction Source/BpLink/Public/Schema -> that target, so `Schema/X` is read there as X.
       const schemaIncludes = (text) => [...stripCxx(text, true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1])
-        .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
+        .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h')
+          // the module's own headers (BpLink.h, BpStore.h) are not generated; a `Schema/` path is never one of them, even
+          // where the Public/Schema junction makes it exist under Public
+          && (h.startsWith('Schema/') || !fs.existsSync(path.join(MOD, 'Public', h))));
       const sources = ['Public/BpLink.h', 'Private/BpLink.cpp'].map((f) => fs.readFileSync(path.join(MOD, f), 'utf8'));
       const includes = sources.flatMap(schemaIncludes);
       const missing = includes.filter((h) => !fs.existsSync(path.join(inc, h.replace(/^Schema\//, ''))));
@@ -613,6 +616,32 @@ async function main() {
       // permanent control: the rule refuses a BpLink.h that goes back to the PublicIncludePaths spelling
       check('build: the one-spelling rule refuses a BpLink.h that includes "BpSchema.h"',
         otherSpelling(schemaIncludes(sources[0].replace('"Schema/BpSchema.h"', '"BpSchema.h"'))).length > 0);
+
+      // The app's own saved state (2026-11-10, Quest 3S): the engine deletes a saved GameUserSettings.ini at the next launch
+      // on the Quest, so the token, the consent and the settings live in Saved/BpTable.json through FBpStore, flushed at the
+      // change. Only BpStore.cpp's one-time migration may still name GGameUserSettingsIni.
+      {
+        const SRC = path.join(ROOT, 'apps/vr/Source');
+        const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.name === 'Schema' ? []
+          : e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(h|cpp)$/.test(e.name) ? [path.join(dir, e.name)] : []);
+        const iniUsers = walk(SRC).filter((f) => path.basename(f) !== 'BpStore.cpp' && /\bGGameUserSettingsIni\b/.test(stripCxx(fs.readFileSync(f, 'utf8'))));
+        check('saved state: nothing in apps/vr/Source but BpStore.cpp\'s migration reads or writes GGameUserSettingsIni', iniUsers.length === 0, iniUsers.map((f) => path.relative(ROOT, f)).join(', '));
+        const savedAt = (text, fnName, section, key) => {
+          const lit = stripCxx(text, true);
+          const at = lit.indexOf(`void ${fnName}(`); // the definition, not a call (BpTalk calls ABpTable::SetTalkConsent above it)
+          const span = at < 0 ? null : braceSpan(lit, at);
+          const body = span ? lit.slice(span[0], span[1]) : '';
+          const set = body.indexOf(`FBpStore::SetString(${section}, TEXT("${key}")`);
+          return set >= 0 && body.indexOf('FBpStore::Flush()', set) > set;
+        };
+        const talkText = fs.readFileSync(path.join(SRC, 'bp/BpTalk.cpp'), 'utf8');
+        check('saved state: SaveLink writes the token through FBpStore and flushes it there', savedAt(cppText, 'FBpLinkModule::SaveLink', 'LinkSection', 'Token'));
+        check('saved state: SetTalkConsent writes the consent through FBpStore and flushes it there', savedAt(talkText, 'ABpTable::SetTalkConsent', 'TalkSection', 'Consent'));
+        // permanent control: the rule refuses a SaveLink whose flush is gone, and a consent written through GConfig
+        check('saved state: the rule refuses a SaveLink without its flush and a consent written through GConfig',
+          !savedAt(cppText.replace(/FBpStore::Flush\(\);\s*\}\s*\nvoid FBpLinkModule::ChangedLink/, '}\nvoid FBpLinkModule::ChangedLink'), 'FBpLinkModule::SaveLink', 'LinkSection', 'Token')
+          && !savedAt(talkText.replace('FBpStore::SetString(TalkSection, TEXT("Consent")', 'GConfig->SetString(TalkSection, TEXT("Consent")'), 'ABpTable::SetTalkConsent', 'TalkSection', 'Consent'));
+      }
 
       // ---- Table link v2 (night two W2a): the requests the headset's link makes, against this server run with --pair ----
       const send = (method, p, body, headers = {}) => new Promise((resolve) => {

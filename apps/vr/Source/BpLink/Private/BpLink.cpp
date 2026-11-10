@@ -4,6 +4,7 @@
 // Correction later that night: the editor has run it there (-nullrhi), and reading 14 logged the Kettle wings line.
 // Readings: docs/concepts/vr-light-table/machine.md.
 #include "BpLink.h"
+#include "BpStore.h"
 
 #include "Schema/BpSchemaFixups.h"
 #include "Schema/BpSchemaVocab.h"
@@ -22,7 +23,6 @@
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "Engine/Engine.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Misc/DateTime.h"
 #include "Misc/Guid.h"
 #if PLATFORM_ANDROID
@@ -2626,7 +2626,7 @@ bool FBpLinkModule::CancelCompanionTurn(const TCHAR* Why)
 // asynchronous with a LinkProbeTimeoutS limit, and a dead Wi-Fi door backs off (5 s doubling to 60 s). When the PC appears the
 // table moves from the bundle to the live link with no restart; when it goes (two misses) the table falls back and says so
 // once; a new `boot` is a restarted PC, and everything is read again. The pairing is section 4's ceremony; the token is sent as
-// Authorization: Bearer on every request (NewRequest), saved in GameUserSettings beside the audio levels, never logged.
+// Authorization: Bearer on every request (NewRequest), saved in Saved/BpTable.json (FBpStore) beside the audio levels, never logged.
 
 namespace
 {
@@ -2797,15 +2797,12 @@ void FBpLinkModule::LoadLink()
 	LinkStatus.bExplicit = !Url.IsEmpty();
 	GExplicitUrl = LinkStatus.bBundleOnly ? FString() : Url;
 	FString Token, Scopes;
-	if (GConfig)
-	{
-		GConfig->GetString(LinkSection, TEXT("Token"), Token, GGameUserSettingsIni);
-		GConfig->GetString(LinkSection, TEXT("Device"), LinkStatus.Device, GGameUserSettingsIni);
-		GConfig->GetString(LinkSection, TEXT("Scopes"), Scopes, GGameUserSettingsIni);
-		GConfig->GetString(LinkSection, TEXT("ExpiresAt"), LinkStatus.ExpiresAt, GGameUserSettingsIni);
-		GConfig->GetString(LinkSection, TEXT("CableUrl"), LinkStatus.CableUrl, GGameUserSettingsIni);
-		GConfig->GetString(LinkSection, TEXT("WifiUrl"), LinkStatus.WifiUrl, GGameUserSettingsIni);
-	}
+	FBpStore::GetString(LinkSection, TEXT("Token"), Token);
+	FBpStore::GetString(LinkSection, TEXT("Device"), LinkStatus.Device);
+	FBpStore::GetString(LinkSection, TEXT("Scopes"), Scopes);
+	FBpStore::GetString(LinkSection, TEXT("ExpiresAt"), LinkStatus.ExpiresAt);
+	FBpStore::GetString(LinkSection, TEXT("CableUrl"), LinkStatus.CableUrl);
+	FBpStore::GetString(LinkSection, TEXT("WifiUrl"), LinkStatus.WifiUrl);
 	// -BpLinkCable= moves the cable for a PC check (a server on a free port), and is not saved.
 	FString Cable;
 	if (FParse::Value(FCommandLine::Get(), TEXT("BpLinkCable="), Cable) && !Cable.IsEmpty()) LinkStatus.CableUrl = Cable;
@@ -2827,18 +2824,17 @@ void FBpLinkModule::LoadLink()
 
 void FBpLinkModule::SaveLink() const
 {
-	if (!GConfig) return;
-	GConfig->SetString(LinkSection, TEXT("Token"), *GToken, GGameUserSettingsIni);
-	GConfig->SetString(LinkSection, TEXT("Device"), *LinkStatus.Device, GGameUserSettingsIni);
-	GConfig->SetString(LinkSection, TEXT("Scopes"), *FString::Join(LinkStatus.Scopes, TEXT(",")), GGameUserSettingsIni);
-	GConfig->SetString(LinkSection, TEXT("ExpiresAt"), *LinkStatus.ExpiresAt, GGameUserSettingsIni);
-	GConfig->SetString(LinkSection, TEXT("WifiUrl"), *LinkStatus.WifiUrl, GGameUserSettingsIni);
+	FBpStore::SetString(LinkSection, TEXT("Token"), GToken);
+	FBpStore::SetString(LinkSection, TEXT("Device"), LinkStatus.Device);
+	FBpStore::SetString(LinkSection, TEXT("Scopes"), FString::Join(LinkStatus.Scopes, TEXT(",")));
+	FBpStore::SetString(LinkSection, TEXT("ExpiresAt"), LinkStatus.ExpiresAt);
+	FBpStore::SetString(LinkSection, TEXT("WifiUrl"), LinkStatus.WifiUrl);
 	// The cable's URL is saved only when it is not the default (a -BpLinkCable run does not move the headset's cable).
 	if (!FCString::Strifind(FCommandLine::Get(), TEXT("BpLinkCable=")))
 	{
-		GConfig->SetString(LinkSection, TEXT("CableUrl"), *LinkStatus.CableUrl, GGameUserSettingsIni);
+		FBpStore::SetString(LinkSection, TEXT("CableUrl"), LinkStatus.CableUrl);
 	}
-	GConfig->Flush(false, GGameUserSettingsIni);
+	FBpStore::Flush();
 }
 
 void FBpLinkModule::ChangedLink()

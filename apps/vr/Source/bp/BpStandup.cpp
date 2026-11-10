@@ -20,6 +20,7 @@
 #include "Async/Async.h"
 #include "BpLink.h"
 #include "BpSheet.h"
+#include "BpStore.h"
 #include "BpTable.h"
 #include "BpType.h"
 #include "BpWords.h"
@@ -28,7 +29,6 @@
 #include "HAL/IConsoleManager.h"
 #include "IImageWrapper.h"
 #include "IImageWrapperModule.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Modules/ModuleManager.h"
 #include "Schema/BpSchemaVocab.h"
 #include "Styling/CoreStyle.h"
@@ -217,18 +217,17 @@ namespace
 	FAutoConsoleCommand CmdStandupForget(TEXT("BpStandup.Forget"), TEXT("BpStandup.Forget: forgets the last stand-up's time and the sample's answers kept for the day (a first morning again)."),
 		FConsoleCommandDelegate::CreateLambda([]()
 		{
-			if (!GConfig) return;
-			GConfig->EmptySection(Section, GGameUserSettingsIni);
-			GConfig->Flush(false, GGameUserSettingsIni);
+			FBpStore::EmptySection(Section);
+			FBpStore::Flush();
 			UE_LOG(LogBpTable, Log, TEXT("BpStandup: forgot the last stand-up and the sample's answers"));
 		}));
 	FAutoConsoleCommand CmdStandupLast(TEXT("BpStandup.Last"), TEXT("BpStandup.Last <hours>: sets the last stand-up that long ago (a returning morning: the replay shows)."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
-			if (!GConfig || Args.Num() == 0) return;
+			if (Args.Num() == 0) return;
 			const double Hours = FCString::Atod(*Args[0]);
-			GConfig->SetString(Section, TEXT("LastStandup"), *(FDateTime::UtcNow() - FTimespan::FromHours(Hours)).ToIso8601(), GGameUserSettingsIni);
-			GConfig->Flush(false, GGameUserSettingsIni);
+			FBpStore::SetString(Section, TEXT("LastStandup"), (FDateTime::UtcNow() - FTimespan::FromHours(Hours)).ToIso8601());
+			FBpStore::Flush();
 			UE_LOG(LogBpTable, Log, TEXT("BpStandup: the last stand-up is now %.1f h ago"), Hours);
 		}));
 }
@@ -321,7 +320,7 @@ void ABpPawn::StandupOpened()
 	if (!Standup.IsValid()) Standup = MakeShared<FBpStandupState>();
 	FBpStandupState& S = *Standup;
 	S.OpenedAt = FPlatformTime::Seconds();
-	if (GConfig) GConfig->GetString(Section, TEXT("LastStandup"), S.LastStandup, GGameUserSettingsIni);
+	FBpStore::GetString(Section, TEXT("LastStandup"), S.LastStandup);
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: open (last stand-up %s)"), S.LastStandup.IsEmpty() ? TEXT("never") : *S.LastStandup);
 	StandupLoad();
 	StandupReadPolicies();
@@ -368,11 +367,11 @@ void ABpPawn::StandupLoad()
 		}
 		S.Deck = Read.Deck;
 		// The sample's answers kept for the day (so "what you decided" stays honest after a restart).
-		if (S.bSample && GConfig)
+		if (S.bSample)
 		{
 			FString Day, Kept;
-			GConfig->GetString(Section, TEXT("SampleDay"), Day, GGameUserSettingsIni);
-			GConfig->GetString(Section, TEXT("SampleAnswers"), Kept, GGameUserSettingsIni);
+			FBpStore::GetString(Section, TEXT("SampleDay"), Day);
+			FBpStore::GetString(Section, TEXT("SampleAnswers"), Kept);
 			if (Day == Today())
 			{
 				TArray<FString> Rows;
@@ -539,11 +538,8 @@ void ABpPawn::StandupShowSheet()
 		if (Card.kind == BpVocab::MorningCard::Kind::Close)
 		{
 			// The stand-up happened: its time is the next morning's "since".
-			if (GConfig)
-			{
-				GConfig->SetString(Section, TEXT("LastStandup"), *NowIso(), GGameUserSettingsIni);
-				GConfig->Flush(false, GGameUserSettingsIni);
-			}
+			FBpStore::SetString(Section, TEXT("LastStandup"), NowIso());
+			FBpStore::Flush();
 			// The server's close lines count what was decided: read the deck again (the web's deck does the same).
 			if (!S.bSample) StandupLoad();
 		}
@@ -594,12 +590,12 @@ FString ABpPawn::StandupShown() const
 
 void ABpPawn::StandupSaveAnswers() const
 {
-	if (!Standup.IsValid() || !Standup->bSample || !GConfig) return;
+	if (!Standup.IsValid() || !Standup->bSample) return;
 	TArray<FString> Rows;
 	for (const TPair<FString, FBpStandupAnswer>& Each : Standup->Answers) Rows.Add(Each.Key + TEXT("=") + Each.Value.Verdict);
-	GConfig->SetString(Section, TEXT("SampleDay"), *Today(), GGameUserSettingsIni);
-	GConfig->SetString(Section, TEXT("SampleAnswers"), *FString::Join(Rows, TEXT(";")), GGameUserSettingsIni);
-	GConfig->Flush(false, GGameUserSettingsIni);
+	FBpStore::SetString(Section, TEXT("SampleDay"), Today());
+	FBpStore::SetString(Section, TEXT("SampleAnswers"), FString::Join(Rows, TEXT(";")));
+	FBpStore::Flush();
 }
 
 void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)

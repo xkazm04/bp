@@ -362,8 +362,9 @@ What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pin
   sample. Health is asked every 5 s while on the sample and every 15 s while linked (timeout 2 s); a door that does not answer
   backs off 5 s doubling to 60 s. Two misses in a row fall back to the sample (said once); the PC coming back is linked
   without a restart; a new `boot` reads everything again (product, scans, products, shared focus).
-- **The token** is kept in GameUserSettings (`[/Script/BpLink.BpLinkSettings]`: `Token`, `Device`, `Scopes`, `ExpiresAt`,
-  `CableUrl`, `WifiUrl`), shown as its last 4 characters, never logged. It goes out as `Authorization: Bearer` on every request
+- **The token** is kept in the app's own file `Saved/BpTable.json` (`FBpStore`, section `/Script/BpLink.BpLinkSettings`: `Token`,
+  `Device`, `Scopes`, `ExpiresAt`, `CableUrl`, `WifiUrl`), not GameUserSettings.ini, which the engine deletes at the next launch
+  on the Quest (2026-11-10); shown as its last 4 characters, never logged. It goes out as `Authorization: Bearer` on every request
   except `POST /pair` and `POST /pair/claim`. A 401 on the tether, or the door's bare 403 on `/api/health` or `/pair/me`, forgets
   it and the console says "pair again". `UNPAIR` forgets it here only; `pair revoke <id>` ends it on the PC. On the headset the
   token sits in the app's private storage in plain text (no Android keystore yet): a recorded deviation, like the cleartext wire.

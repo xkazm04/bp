@@ -3,7 +3,7 @@
 //
 // Voice: bp.VoiceLevel 0 to 1.5 (shown as 0 to 150 %), default 1.0; a tour clip plays at VoiceGain() = 2 x the level, so
 // 1.0 sounds as the old bp.VoiceVolume 2.0 did. bp.VoiceVolume is gone: its one reader (the tour) and its one stepper (the
-// wrist) read this. Saved to GameUserSettings [/Script/bp.BpAudio] VoiceLevel; a saved old [/Script/bp.BpVoice] VoiceVolume
+// wrist) read this. Saved to Saved/BpTable.json (FBpStore) [/Script/bp.BpAudio] VoiceLevel; a saved old [/Script/bp.BpVoice] VoiceVolume
 // is migrated once (old / 2, clamped) and then removed, so nobody's saved level doubles.
 // Music: bp.MusicLevel 0 to 1 (shown as %), default 0.35, saved beside it. The bed (Content/BpData/music/bed.wav, 16-bit
 // stereo PCM at 32 kHz, the whole file the loop) streams from one copy of its samples through a USoundWaveProcedural, 2D,

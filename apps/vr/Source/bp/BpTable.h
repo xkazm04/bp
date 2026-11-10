@@ -1702,7 +1702,7 @@ public:
 	/** Anything of a talk in flight (listening, hearing, thinking, speaking): its one word for the wrist and the bar. */
 	FString TalkStateWord() const;
 	FString TalkStateLine() const;
-	/** The consent (GameUserSettings [/Script/bp.BpTalk] Consent): 0 not asked, 1 ALLOW, 2 NOT NOW. */
+	/** The consent (Saved/BpTable.json, FBpStore [/Script/bp.BpTalk] Consent): 0 not asked, 1 ALLOW, 2 NOT NOW. */
 	static int32 TalkConsent();
 	static void SetTalkConsent(int32 Value);
 	/** A voice line from bytes (a WAV) at the lamp's head, at the tour's level; false when it is not a 16-bit PCM WAV. */

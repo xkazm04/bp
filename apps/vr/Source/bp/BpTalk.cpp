@@ -27,13 +27,13 @@
 #include "BpAudio.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpStore.h"
 #include "Components/PointLightComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
-#include "Misc/ConfigCacheIni.h"
 #include "Misc/CoreDelegates.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -249,16 +249,15 @@ struct FBpTalkState
 int32 ABpTable::TalkConsent()
 {
 	FString V;
-	if (GConfig) GConfig->GetString(TalkSection, TEXT("Consent"), V, GGameUserSettingsIni);
+	FBpStore::GetString(TalkSection, TEXT("Consent"), V);
 	return V == TEXT("allow") ? 1 : V == TEXT("notnow") ? 2 : 0;
 }
 
 void ABpTable::SetTalkConsent(int32 Value)
 {
-	if (!GConfig) return;
-	if (Value == 0) GConfig->RemoveKey(TalkSection, TEXT("Consent"), GGameUserSettingsIni);
-	else GConfig->SetString(TalkSection, TEXT("Consent"), Value == 1 ? TEXT("allow") : TEXT("notnow"), GGameUserSettingsIni);
-	GConfig->Flush(false, GGameUserSettingsIni);
+	if (Value == 0) FBpStore::RemoveKey(TalkSection, TEXT("Consent"));
+	else FBpStore::SetString(TalkSection, TEXT("Consent"), Value == 1 ? TEXT("allow") : TEXT("notnow"));
+	FBpStore::Flush();
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: consent %s (saved)"), Value == 1 ? TEXT("ALLOW") : Value == 2 ? TEXT("NOT NOW") : TEXT("unset"));
 }
 
@@ -414,7 +413,7 @@ void ABpTable::TalkBegin()
 	if (!UAndroidPermissionFunctionLibrary::CheckPermission(MicPermission))
 	{
 		bool bAskedBefore = false;
-		if (GConfig) GConfig->GetBool(TalkSection, TEXT("MicAsked"), bAskedBefore, GGameUserSettingsIni);
+		FBpStore::GetBool(TalkSection, TEXT("MicAsked"), bAskedBefore);
 		if (bAskedBefore || S.bPermissionAsked)
 		{
 			UE_LOG(LogBpTable, Log, TEXT("BpTalk: no microphone permission (asked before): nothing recorded"));
@@ -422,7 +421,8 @@ void ABpTable::TalkBegin()
 			return;
 		}
 		S.bPermissionAsked = true;
-		if (GConfig) { GConfig->SetBool(TalkSection, TEXT("MicAsked"), true, GGameUserSettingsIni); GConfig->Flush(false, GGameUserSettingsIni); }
+		FBpStore::SetBool(TalkSection, TEXT("MicAsked"), true);
+		FBpStore::Flush();
 		UE_LOG(LogBpTable, Log, TEXT("BpTalk: asking for the microphone permission (the first hold)"));
 		TalkSays(TEXT("May I use the microphone?\nAnswer the headset's question, then hold again."));
 		if (UAndroidPermissionCallbackProxy* Proxy = UAndroidPermissionFunctionLibrary::AcquirePermissions({ MicPermission }))
