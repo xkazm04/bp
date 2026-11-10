@@ -9,8 +9,10 @@
 
 namespace
 {
-	TAutoConsoleVariable<int32> CVarProjector(TEXT("bp.Projector"), 0,
-		TEXT("The main screen (wave PJ1): 0 the desk console (default), 1 THE THROW (the open sheet far and large over the table's far rim), 2 THE LIGHT STAGE (wave PJ2: a curved sheet of light around the seat, bp.Stage.*). Saved; SETTINGS > MAIN SCREEN."), ECVF_Default);
+	// Wave U1 (the owner chose the wall as the main screen, 2026-11-10): THE THROW is the first launch's main screen. A choice saved
+	// in the app's file (SETTINGS > MAIN SCREEN) still wins (BpAudio.cpp's LoadSettings).
+	TAutoConsoleVariable<int32> CVarProjector(TEXT("bp.Projector"), 1,
+		TEXT("The main screen (wave PJ1): 0 the desk console, 1 THE THROW (default since wave U1: the open sheet far and large over the table's far rim), 2 THE LIGHT STAGE (wave PJ2: a curved sheet of light around the seat, bp.Stage.*). Saved; SETTINGS > MAIN SCREEN."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarDistance(TEXT("bp.Projector.DistanceCm"), 260.f,
 		TEXT("THE THROW: the sheet's distance from the seated eye, cm (150 to 500). 260 by default: at 300 the studio's shelf ladder stood in front of the sheet's left edge (cap/pj1-f3-y-kf011.png); 260 clears it at the same angular size."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarWidth(TEXT("bp.Projector.WidthCm"), 208.f,
@@ -47,6 +49,9 @@ namespace
 		TEXT("THE THROW: a thin additive beam from Glim's lens to the wall's nearest edge while he presents (0 none to 1; default 0.5). Off in room mode, in your room and with bp.ReducedMotion."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarPointDeg(TEXT("bp.Glim.PointDeg"), 18.f,
 		TEXT("THE THROW: the most Glim raises his arm (tilts back from his base) toward the wall while a decision is open, degrees (0 none to 30). bp.ReducedMotion: he only faces it."), ECVF_Default);
+
+	/** Wave U1: how far the far sheet's arrival has come (BpConsole.cpp's TickWallReveal; 0 none), for the beam's flick. */
+	float GArriveFlash = 0.f;
 
 	bool GFar = false;
 	FVector GFarAim = FVector::ZeroVector;
@@ -265,6 +270,8 @@ namespace BpProjector
 		return GFar && GSheetSize.X > 0.0;
 	}
 	float BeamAmount() { return FMath::Clamp(CVarBeam.GetValueOnGameThread(), 0.f, 1.f); }
+	void SetArriveFlash(float Amount) { GArriveFlash = FMath::Clamp(Amount, 0.f, 1.f); }
+	float ArriveFlash() { return GArriveFlash; }
 	float PointMaxDeg() { return FMath::Clamp(CVarPointDeg.GetValueOnGameThread(), 0.f, 30.f); }
 	void SetFarCentre(const FVector& CentreLocal) { GFarCentre = CentreLocal; }
 	FVector FarCentreLocal() { return GFarCentre; }

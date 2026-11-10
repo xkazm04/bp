@@ -1007,6 +1007,8 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 			: Verdict == BpVocab::SteerPost::Verdict::Hold ? TEXT("su-answer-held") : TEXT("su-answer-declined"), TEXT("an answer"));
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s %s (%s) by %s; shown \"%s\""), *Verdict, *Card.decision.proposal, *Card.product, Route, *Shown.Replace(TEXT("\n"), TEXT(" / ")));
+	// Wave U1, "decisions land": the answer given on the wall lands on the plan (the feature's pin drops onto its tile again).
+	if (ABpTable* Table = WristTable.Get(); Table && Card.place.target.kind == BpVocab::FocusTarget::Kind::Feature) Table->LandDecision(Card.place.target.id, Verdict);
 	if (S.bSample)
 	{
 		// The sample: kept here and in the saved settings for the day, never sent.

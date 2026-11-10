@@ -62,6 +62,13 @@ namespace
 		TEXT("The lamp turns to the person: -1 while it listens or speaks (default; a glance only while it shows something), 0 never, 1 always (captures). bp.ReducedMotion 1 stills it."));
 	TAutoConsoleVariable<float> CVarLampNodDeg(TEXT("bp.Lamp.NodDeg"), 7.f,
 		TEXT("The lamp's nod on a stand-up decision answered: its bow in degrees, 0 (none) to 15. bp.ReducedMotion 1 stills it."));
+	// Wave U1, "Glim alive" (ABpTable::NoteRayPoint).
+	TAutoConsoleVariable<int32> CVarGlimGlance(TEXT("bp.Wow.GlimGlance"), 1,
+		TEXT("Wave U1: Glim at rest glances toward where a hand's ray meets the site plan (a slow partial turn of his head, at most one new point every bp.Wow.GlimGlanceEveryS; back after 1.5 s of no ray). 1 on (default), 0 off. bp.ReducedMotion stills it."));
+	TAutoConsoleVariable<float> CVarGlimGlanceEvery(TEXT("bp.Wow.GlimGlanceEveryS"), 1.2f,
+		TEXT("Wave U1: the least time between two of Glim's glances, seconds (0.3 to 10; default 1.2)."));
+	TAutoConsoleVariable<float> CVarGlimGlanceShare(TEXT("bp.Wow.GlimGlanceShare"), 0.8f,
+		TEXT("Wave U1: how much of the way Glim turns toward the ray's point (0 to 1; default 0.8: a glance, not a stare; 0.6 read as no turn from the seat, u1-after-glance-right.png)."));
 	TAutoConsoleVariable<int32> CVarFrameStrips(TEXT("bp.Frame.StripLights"), 0,
 		TEXT("The four rect lights along the paper's edges (StripNear/Far/Left/Right) while the Quest tier is on: 0 off (default; on the Quest's mobile path StripNear lit a blown spot on the frame's near rim), 1 as authored. Off the tier they always stay."));
 	TAutoConsoleVariable<float> CVarFrameTone(TEXT("bp.Frame.Tone"), 0.7f,
@@ -280,7 +287,7 @@ bool ABpTable::TickLampStep(float DeltaSeconds)
 	FBpLampLook& L = *LampLookState;
 	if (L.BaseZ == TNumericLimits<double>::Max()) return false;
 	// Only at home on the site plan with nothing else moving it (a ride, a station, room mode, a turn to the person).
-	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty() && LampAway <= 0.f && LampLook <= 0.f && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f;
+	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty() && LampAway <= 0.f && LampLook <= 0.f && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f && LampGlance <= 0.f;
 	const double Now = FPlatformTime::Seconds();
 	if (!bHome)
 	{
@@ -945,6 +952,10 @@ void ABpTable::TickGlimBeam()
 	const FVector E = WallPose.TransformPositionNoScale(FVector(0.0, EndAt.X, EndAt.Y));
 	const float Ease = FMath::Clamp(LampProj, 0.f, 1.f) * FMath::Clamp(LampProj, 0.f, 1.f) * (3.f - 2.f * FMath::Clamp(LampProj, 0.f, 1.f));
 	const FString Key = FString::Printf(TEXT("%.1f %.1f %.1f | %.1f %.1f %.1f | %.2f %.2f"), S.X, S.Y, S.Z, E.X, E.Y, E.Z, Amount, Ease);
+	// Wave U1, "the wall arrives": the beam flicks brighter while the sheet is projected in (BpProjector::ArriveFlash, a bump up
+	// and back over the wipe): only its material's Glow moves, the mesh is not rebuilt.
+	const float Glow = 0.9f * Amount * Ease * (1.f + 1.8f * BpProjector::ArriveFlash());
+	if (GlimBeamMat && Glow != GlimBeamGlow) { GlimBeamGlow = Glow; GlimBeamMat->SetScalarParameterValue(TEXT("Glow"), Glow); }
 	if (Key == GlimBeamKey && GlimBeam && GlimBeam->IsVisible()) return;
 	const bool bFirst = GlimBeamKey.IsEmpty();
 	GlimBeamKey = Key;
@@ -967,7 +978,8 @@ void ABpTable::TickGlimBeam()
 		else UE_LOG(LogBpTable, Warning, TEXT("BpProjector: M_BpStageRim is missing (pj2_stage.py makes it); no beam"));
 	}
 	if (!GlimBeamMat) return;
-	GlimBeamMat->SetScalarParameterValue(TEXT("Glow"), 0.9f * Amount * Ease);
+	GlimBeamGlow = Glow;
+	GlimBeamMat->SetScalarParameterValue(TEXT("Glow"), Glow);
 	const FVector Axis = (E - S).GetSafeNormal();
 	const FVector ToEye = (EyeLocal() - (S + E) * 0.5).GetSafeNormal();
 	FVector Side = FVector::CrossProduct(Axis, ToEye).GetSafeNormal();
@@ -1068,12 +1080,53 @@ bool ABpTable::TickLampManner(float DeltaSeconds)
 		LampNodT += DeltaSeconds;
 		if (LampNodT >= NodS) LampNodT = -1.f;
 	}
-	if (LampFace != WasFace || bNodding || LampProj != WasProj || bAimMoved)
+	// Wave U1: the glance toward the ray's point (NoteRayPoint sets it): 0.9 s in or out, its point swept at 45 cm a second.
+	const float WasGlance = LampGlance;
+	if (LampGlanceTarget > 0.f && (bReduced || Now - LampGlanceSeenAt > 1.5)) LampGlanceTarget = 0.f;
+	if (LampGlance != LampGlanceTarget) LampGlance = bReduced ? LampGlanceTarget : FMath::FInterpConstantTo(LampGlance, LampGlanceTarget, DeltaSeconds, 1.f / 0.9f);
+	bool bGlanceMoved = LampGlance != WasGlance;
+	if (LampGlance > 0.f && !LampGlanceAim.Equals(LampGlanceAt, 0.5))
+	{
+		LampGlanceAim = WasGlance <= 0.f ? LampGlanceAt : FMath::VInterpConstantTo(LampGlanceAim, LampGlanceAt, DeltaSeconds, 45.f);
+		bGlanceMoved = true;
+	}
+	if ((WasGlance <= 0.f) != (LampGlance <= 0.f)) UE_LOG(LogBpTable, Log, TEXT("BpWow: Glim %s"), LampGlance > 0.f ? TEXT("glances toward the ray's point") : TEXT("looks back from the ray's point"));
+	if (LampFace != WasFace || bNodding || LampProj != WasProj || bAimMoved || bGlanceMoved)
 	{
 		// Home with nothing else moving: PlaceLamp puts it back exactly at its home once both are done.
 		PlaceLamp();
 		ApplyLampWidgets();
 	}
 	TickGlimBeam();
-	return LampFace != Want || LampNodT >= 0.f || LampProj != WantProj || (LampProj > 0.f && !AimWant.Equals(LampProjAim, 0.5));
+	return LampFace != Want || LampNodT >= 0.f || LampProj != WantProj || (LampProj > 0.f && !AimWant.Equals(LampProjAim, 0.5)) || LampGlance != LampGlanceTarget || (LampGlance > 0.f && !LampGlanceAim.Equals(LampGlanceAt, 0.5));
+}
+
+void ABpTable::NoteRayPoint(bool bValid, const FVector& WorldPoint)
+{
+	// Only Glim at rest at home on the site plan: no ride or station, no room, no tour, no sheet on the wall, not turned to the
+	// person; and not with reduced motion or the cvar off.
+	const bool bFree = CVarGlimGlance.GetValueOnGameThread() != 0 && !LookReduced() && Lamp.IsValid() && RoomModeId.IsEmpty() && TourStep < 0 && !bLampAtStation
+		&& LampTravelT < 0.f && LampLook <= 0.f && LampProj <= 0.f && !BpProjector::IsFar() && LampNodT < 0.f;
+	if (!bFree)
+	{
+		if (LampGlanceTarget > 0.f) LampGlanceTarget = 0.f;
+		return;
+	}
+	const double Now = FPlatformTime::Seconds();
+	if (!bValid)
+	{
+		// Nothing pointed at for a while: he looks back.
+		if (LampGlanceTarget > 0.f && Now - LampGlanceSeenAt > 1.5) LampGlanceTarget = 0.f;
+		return;
+	}
+	LampGlanceSeenAt = Now;
+	const FVector Local = GetActorTransform().InverseTransformPosition(WorldPoint);
+	// At most one new point every GlimGlanceEveryS, and only a real move (15 cm): a still hand gets a still Glim.
+	if (Now - LampGlanceSetAt < FMath::Clamp(CVarGlimGlanceEvery.GetValueOnGameThread(), 0.3f, 10.f)) return;
+	if (LampGlanceTarget > 0.f && FVector::DistSquared(Local, LampGlanceAt) < 15.0 * 15.0) return;
+	LampGlanceAt = Local;
+	LampGlanceSetAt = Now;
+	LampGlanceTarget = 1.f;
+	// The table ticks at the frame rate while he turns (TickSwitch reports it busy until he is still).
+	SetActorTickInterval(0.f);
 }

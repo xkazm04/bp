@@ -114,6 +114,36 @@ namespace
 
 	TAutoConsoleVariable<int32> CVarConsole(TEXT("bp.Console"), 1, TEXT("The console (the main menu in the deck's slot): 1 shown (default), 0 hidden (a profiling baseline: its draw is the difference)."), ECVF_Default);
 
+	// Wave U1, "the wall arrives" (ABpPawn::StartWallReveal).
+	TAutoConsoleVariable<int32> CVarWallArrive(TEXT("bp.Wow.WallArrive"), 1,
+		TEXT("Wave U1: a sheet opening on the wall (bp.Projector 1) is projected in: wiped across from Glim's side behind a thin edge of his warm light while his beam flicks brighter (M_BpWallReveal), then the widget's own material again. 1 on (default), 0 the sheet appears at once."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWallArriveS(TEXT("bp.Wow.WallArriveS"), 0.4f,
+		TEXT("Wave U1: the wall's wipe, seconds (0.1 to 2; default 0.4). bp.ReducedMotion: a 0.15 s rise of light instead."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWallArriveHold(TEXT("bp.Wow.WallArriveHold"), -1.f,
+		TEXT("Wave U1, for captures: holds the next wipe at this share (0 to 1; -1 off, the default); set -1 again to let it finish."), ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarNearBarEdge(TEXT("bp.NearBar.Edge"), 1,
+		TEXT("Wave U1: with a far main screen (bp.Projector 1 or 2) the console's bar stands on the table's near edge, a small nameplate tilted to the eye, open sheet or not: 1 (default); 0 as before (at the slot's top edge, dropped 25 degrees while a sheet is far)."), ECVF_Default);
+	bool NearEdgeBar() { return CVarNearBarEdge.GetValueOnGameThread() != 0; }
+
+	/** Wave U1 (the device, n3-dev-menu_L.png: dropped 25 degrees at the slot's distance the bar floated over the paper's middle):
+	 *  the bar's home with a far main screen is the table's own near edge, a nameplate standing on the frame's rim in front of
+	 *  the paper, tilted square to the eye (its caller faces it there). It keeps the angular size it had at the slot (scaled by
+	 *  the distance ratio, OutK) a little smaller, so from the seat it is no larger than before; and the paper behind it stays
+	 *  clear: from the target eye its top edge meets the table on the frame, nearer than the paper's own near edge. */
+	FVector NearEdgeBarAt(const FVector& Eye, const FVector& SlotAt, float S, double& OutK)
+	{
+		constexpr double NearBarShare = 0.85;
+		constexpr double RimInsetCm = 1.8;
+		const double SlotDist = FMath::Max(1.0, (SlotAt - Eye).Size());
+		const double TopZ = Eye.Z - ABpGameMode::TargetEyeAboveTopCm;
+		const double HalfH = ABpPawn::ConsoleBarHeightCm * S * 0.5;
+		FVector Rim(-ABpTable::TableDepthCm * 0.5 + RimInsetCm, Eye.Y, TopZ + HalfH * 0.75 + 0.4);
+		OutK = FMath::Clamp((Rim - Eye).Size() / SlotDist, 0.3, 1.0) * NearBarShare;
+		Rim.Z = TopZ + HalfH * OutK * 0.75 + 0.4;
+		return Rim;
+	}
+
 	/** The text size the console was last placed at (PlaceConsole; TickConsoleLive places it again when bp.TextSize moves). */
 	float ConsoleScaleShown = 0.f;
 
@@ -1597,10 +1627,12 @@ void ABpPawn::PlaceNearBar(bool bShow)
 	const FVector Up = Slot.GetRotation().GetUpVector();
 	FVector At = Slot.GetLocation() + (bRoom ? -Up * (ABpTable::DeckHeightCm * 0.5f + ConsoleBarGapCm + ConsoleBarHeightCm * S * 0.5f) : Up * (ABpTable::DeckHeightCm * 0.5f - ConsoleBarHeightCm * S * 0.5f));
 	const FVector Eye = Table->ConsoleEyeLocal();
-	// At the slot's top edge it stood in front of the far sheet from the seat (cap/pj2-s-su1-far.png): while a sheet is far it
-	// comes down to NearBarDropDeg below the eye's horizon at the same distance and bearing, under the far sheet's foot (the
-	// stage's -13 degrees, the wall's -11) and still over the table.
+	double K = 1.0;
+	if (NearEdgeBar()) At = NearEdgeBarAt(Eye, At, S, K);
+	else
 	{
+		// Before wave U1: dropped NearBarDropDeg below the eye's horizon at the slot's distance and bearing (the device showed it
+		// floating over the paper's middle, n3-dev-menu_L.png).
 		constexpr double NearBarDropDeg = 25.0;
 		const FVector To = At - Eye;
 		const double Dist = To.Size();
@@ -1608,11 +1640,12 @@ void ABpPawn::PlaceNearBar(bool bShow)
 		const double Drop = FMath::DegreesToRadians(NearBarDropDeg);
 		At = Eye + (Flat * FMath::Cos(Drop) - FVector::UpVector * FMath::Sin(Drop)) * Dist;
 	}
-	ConsoleNearBar->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S / ConsolePxPerCm)));
+	ConsoleNearBar->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S * K / ConsolePxPerCm)));
 	if (!ConsoleNearBar->IsVisible())
 	{
 		ConsoleNearBar->SetVisibility(true);
-		UE_LOG(LogBpTable, Log, TEXT("BpConsole: the near bar stays at the desk while the sheet is far (%.0f cm from the eye)"), FVector::Dist(Eye, At));
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: the near bar %s while the sheet is far (%.0f cm from the eye, %.0f deg under its horizon, scale %.2f)"), NearEdgeBar() ? TEXT("stands on the table's near edge") : TEXT("stays at the desk"),
+			FVector::Dist(Eye, At), FMath::RadiansToDegrees(FMath::Atan2(Eye.Z - At.Z, FVector2D(At.X - Eye.X, At.Y - Eye.Y).Size())), K);
 	}
 }
 
@@ -1663,6 +1696,7 @@ void ABpPawn::PlaceConsole()
 		Surface.Place(Eye, Table->ConsoleSlotPose().GetLocation() - Eye, bPassthrough, Centre, Facing, SizeCm);
 		if (BpProjector::IsStage())
 		{
+			if (WallRevealAt >= 0.0) EndWallReveal(TEXT("the stage took the sheet"));
 			// Wave PJ2, THE LIGHT STAGE: the panel draws the whole stage (the sheet in its centre zone, the flanks) into one render
 			// target of at most 4096 x 1024, and is not drawn itself: the stage's curved mesh shows that target. The panel's pose
 			// is the stage's (the eye's ground point, facing the table's forward), so the ray and Glim's aim go through it.
@@ -1702,6 +1736,8 @@ void ABpPawn::PlaceConsole()
 			PlaceNearBar(true);
 			return;
 		}
+		// Wave U1: a sheet arriving on the wall (it was at the desk or closed) is projected in.
+		const bool bArrive = !bConsoleFar;
 		bConsoleStage = false;
 		if (ConsoleStage && ConsoleStage->IsVisible()) { ConsoleStage->SetVisibility(false); StageCull(false); }
 		ConsolePanel->SetRenderInMainPass(true);
@@ -1731,8 +1767,10 @@ void ABpPawn::PlaceConsole()
 				Px.X / (2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist))), bPassthrough ? TEXT("; your room: brought nearer, no wall known") : TEXT(""));
 		}
 		PlaceNearBar(true);
+		if (bArrive) StartWallReveal();
 		return;
 	}
+	if (WallRevealAt >= 0.0) EndWallReveal(TEXT("the sheet left the wall"));
 	bConsoleFar = false;
 	bConsoleStage = false;
 	if (ConsoleStage && ConsoleStage->IsVisible()) { ConsoleStage->SetVisibility(false); StageCull(false); }
@@ -1741,7 +1779,7 @@ void ABpPawn::PlaceConsole()
 	PlaceNearBar(false);
 	BpProjector::SetFar(false, FVector::ZeroVector);
 	ConsoleDrawPerLayout = ConsolePxPerCm / ConsoleLayoutPxPerCm;
-	const FString Key = FString::Printf(TEXT("%d%d%d %.2f"), bConsoleOpen, bConsoleTalk, bRoom, S);
+	const FString Key = FString::Printf(TEXT("%d%d%d %.2f %d%d"), bConsoleOpen, bConsoleTalk, bRoom, S, BpProjector::Mode(), NearEdgeBar() ? 1 : 0);
 	// The draw size follows what it shows (the bar's or the panel's), at ConsolePxPerCm.
 	const float HeightCm = bPanel ? ConsoleHeightCm : ConsoleBarHeightCm;
 	const FVector2D Draw(FMath::RoundToInt(ConsoleWidthCm * ConsolePxPerCm), FMath::RoundToInt(HeightCm * ConsolePxPerCm));
@@ -1760,14 +1798,18 @@ void ABpPawn::PlaceConsole()
 		At += Up * (ConsoleHeightCm * (S - 1.f) * 0.5f);
 	}
 	const FVector Eye = Table->ConsoleEyeLocal();
-	ConsolePanel->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S / ConsolePxPerCm)));
+	// Wave U1: with a far main screen the bar has one home, the table's near edge, open sheet or not (NearEdgeBarAt).
+	double K = 1.0;
+	const bool bEdge = !bPanel && BpProjector::IsOn() && NearEdgeBar();
+	if (bEdge) At = NearEdgeBarAt(Eye, At, S, K);
+	ConsolePanel->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S * K / ConsolePxPerCm)));
 	// The deck gives the slot to the open console in room mode, and has it back when it closes.
 	Table->SetDeckHeld(bPanel && bRoom);
 	if (Key != ConsolePlaceKey)
 	{
 		ConsolePlaceKey = Key;
 		UE_LOG(LogBpTable, Log, TEXT("BpConsole: %s %s (%.0f x %.1f cm, %.0f cm from the eye)"), bConsoleTalk && !bConsoleOpen ? TEXT("conversation") : bPanel ? TEXT("panel") : TEXT("bar"),
-			bPanel ? TEXT("in the deck's slot") : bRoom ? TEXT("under the deck") : TEXT("along the slot's top edge"), ConsoleWidthCm, HeightCm, FVector::Dist(Eye, At));
+			bPanel ? TEXT("in the deck's slot") : bEdge ? TEXT("on the table's near edge (the main screen is far)") : bRoom ? TEXT("under the deck") : TEXT("along the slot's top edge"), ConsoleWidthCm * K, HeightCm * K, FVector::Dist(Eye, At));
 	}
 }
 
@@ -1777,10 +1819,76 @@ bool ABpPawn::ConsoleShowsTalk() const
 	return CVarTalkSheet.GetValueOnGameThread() != 0 && !(bConsoleOpen && (ConsolePageKey == TEXT("standup") || ConsolePageKey == TEXT("talk")));
 }
 
+void ABpPawn::StartWallReveal()
+{
+	if (!ConsolePanel || CVarWallArrive.GetValueOnGameThread() == 0) return;
+	if (!WallRevealMat)
+	{
+		WallRevealMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_BpWallReveal.M_BpWallReveal"));
+		if (!WallRevealMat)
+		{
+			static bool bWarned = false;
+			if (!bWarned) { bWarned = true; UE_LOG(LogBpTable, Warning, TEXT("BpWow: M_BpWallReveal is missing (apps/vr/tools/mcp-steps/py/u1_wall_reveal.py makes it); the wall shows its sheet at once")); }
+			return;
+		}
+	}
+	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
+	bWallRevealReduced = Reduced && Reduced->GetInt() != 0;
+	ConsolePanel->SetMaterial(0, WallRevealMat);
+	WallRevealAt = FPlatformTime::Seconds();
+	WallRevealFrames = 0;
+	WallRevealMaxMs = 0.0;
+	TickWallReveal();
+	UE_LOG(LogBpTable, Log, TEXT("BpWow: the wall arrives: %s"), bWallRevealReduced ? TEXT("a 0.15 s rise of light (reduced motion)")
+		: *FString::Printf(TEXT("a %.2f s wipe from Glim's side behind his light's edge"), FMath::Clamp(CVarWallArriveS.GetValueOnGameThread(), 0.1f, 2.f)));
+}
+
+void ABpPawn::TickWallReveal()
+{
+	if (WallRevealAt < 0.0 || !ConsolePanel) return;
+	const uint32 Cycles0 = FPlatformTime::Cycles();
+	// A frame's lead with nothing drawn: the sheet's render target is made at the wall's size as it arrives.
+	constexpr double LeadS = 0.05;
+	const double Dur = bWallRevealReduced ? 0.15 : FMath::Clamp(CVarWallArriveS.GetValueOnGameThread(), 0.1f, 2.f);
+	const float Hold = CVarWallArriveHold.GetValueOnGameThread();
+	const double Elapsed = FPlatformTime::Seconds() - WallRevealAt;
+	const float A = Hold >= 0.f ? FMath::Clamp(Hold, 0.f, 1.f) : static_cast<float>(FMath::Clamp((Elapsed - LeadS) / Dur, 0.0, 1.0));
+	if (A >= 1.f && Hold < 0.f)
+	{
+		EndWallReveal(TEXT("whole"));
+		return;
+	}
+	// Ease out: fast from Glim's side, settling at the far edge.
+	const float E = 1.f - (1.f - A) * (1.f - A) * (1.f - A);
+	if (UMaterialInstanceDynamic* Mid = ConsolePanel->GetMaterialInstance())
+	{
+		Mid->SetScalarParameterValue(TEXT("Reveal"), bWallRevealReduced ? 1.f : E);
+		Mid->SetScalarParameterValue(TEXT("Bright"), bWallRevealReduced ? E : 1.f);
+		// Glim stands left of the wall (ABpTable::PlaceLamp, LampFootClearOfSheet): the wipe runs from the sheet's left.
+		Mid->SetScalarParameterValue(TEXT("Side"), 0.f);
+	}
+	// His beam flicks on with it: up and back over the wipe.
+	BpProjector::SetArriveFlash(bWallRevealReduced ? 0.f : FMath::Sin(UE_PI * A));
+	++WallRevealFrames;
+	WallRevealMaxMs = FMath::Max(WallRevealMaxMs, FPlatformTime::ToMilliseconds64(FPlatformTime::Cycles() - Cycles0));
+}
+
+void ABpPawn::EndWallReveal(const TCHAR* Why)
+{
+	if (WallRevealAt < 0.0) return;
+	const double Took = FPlatformTime::Seconds() - WallRevealAt;
+	WallRevealAt = -1.0;
+	BpProjector::SetArriveFlash(0.f);
+	// The widget's own opaque material again (an empty override falls back to it): at rest the wall is as before.
+	if (ConsolePanel) ConsolePanel->SetMaterial(0, nullptr);
+	UE_LOG(LogBpTable, Log, TEXT("BpWow: the wall arrived (%s) in %.2f s, %d frames, its tick %.3f ms at most a frame"), Why, Took, WallRevealFrames, WallRevealMaxMs);
+}
+
 void ABpPawn::TickConsoleLive()
 {
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
+	TickWallReveal();
 	const bool bShow = CVarConsole.GetValueOnGameThread() != 0;
 	if (ConsolePanel->IsVisible() != bShow)
 	{
@@ -2309,7 +2417,8 @@ void ABpPawn::RefreshConsole()
 				const FLinearColor SevInk = S == 0 ? BpSheet::Red : S == 1 ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.8f);
 				Figs.Add({ FString::FromInt(R.Severity[S]), FString(SevWords[S]).TrimEnd(), R.Severity[S] ? SevInk : BpSheet::Ink.CopyWithNewOpacity(0.4f), R.Severity[S] ? FString::Printf(TEXT("result:sev:%d"), S) : FString() });
 			}
-			const float FigY0 = 164.f, FigH = 104.f, FigGap = 12.f;
+			// Wave U1: the strip 96 px tall (was 104) so three two-line rows fit under it whole.
+			const float FigY0 = 164.f, FigH = 96.f, FigGap = 12.f;
 			const float FigW = (LW - 2.f * Pad - (Figs.Num() - 1) * FigGap) / Figs.Num();
 			const FSlateFontInfo FigFont = Font(TEXT("Bold"), 48.f);
 			for (int32 Index = 0; Index < Figs.Num(); ++Index)
@@ -2326,12 +2435,16 @@ void ABpPawn::RefreshConsole()
 			}
 			// The findings, most severe first: a bar in the severity's colour, the title, its room and lens in a column, the
 			// severity chip at the right. As many as fit above the foot; "and N more" says the rest (DECIDE THEM walks them all).
-			const float RowsTop = FigY0 + FigH + 18.f, RowsFoot = 594.f, FRowH = 70.f, FRowGap = 8.f;
+			// Wave U1 (cut and crowded on the wall: "133 FEATURES ME...", two-line titles touching their rows' edges): the head says
+			// it in fewer words and stands clear of the first row, and a row is 76 px with its two-line words at 22 px caps (two
+			// lines of 0.86 pitch are 64 px: 6 px clear above and below).
+			const float RowsTop = FigY0 + FigH + 14.f, RowsFoot = 594.f, FRowH = 76.f, FRowGap = 6.f;
 			const float RoomX0 = LW - Pad - 230.f - 420.f, ChipX1 = LW - Pad - 14.f;
-			const FString FoundHead = FString::Printf(TEXT("WHAT IT FOUND · %d %s MEASURED"), R.Features, R.Features == 1 ? TEXT("FEATURE") : TEXT("FEATURES"));
+			const FSlateFontInfo TwoLineBold = Font(TEXT("Bold"), 22.f), TwoLineFont = Font(TEXT("Regular"), 22.f);
+			const FString FoundHead = FString::Printf(TEXT("WHAT IT FOUND IN %d %s"), R.Features, R.Features == 1 ? TEXT("FEATURE") : TEXT("FEATURES"));
 			Put(FBox2f(FVector2f(Pad + 24.f, RowsTop - 2.f), FVector2f(RoomX0 - 20.f, RowsTop + 30.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(FoundHead, SmallBold, RoomX0 - 44.f - Pad))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
 			Put(FBox2f(FVector2f(RoomX0, RowsTop - 2.f), FVector2f(ChipX1, RowsTop + 30.f)), SNew(STextBlock).Text(FText::FromString(TEXT("ROOM · LENS"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
-			float RY = RowsTop + 36.f;
+			float RY = RowsTop + 42.f;
 			int32 Shown = 0;
 			for (const FString& Id : R.Found)
 			{
@@ -2349,12 +2462,16 @@ void ABpPawn::RefreshConsole()
 				const FString RowTitle = P->title.IsEmpty() ? P->id : P->title;
 				const float TitleW = RoomX0 - 24.f - (Pad + 32.f);
 				const bool bTitleFits = BpSheet::TextWidth(RowTitle, LabelFont) <= TitleW;
-				Put(FBox2f(FVector2f(Pad + 32.f, RY), FVector2f(RoomX0 - 24.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center)
-					[SNew(STextBlock).Text(FText::FromString(bTitleFits ? RowTitle : BpSheet::Wrap(RowTitle, SmallBold, TitleW, 2))).Font(bTitleFits ? LabelFont : SmallBold).LineHeightPercentage(bTitleFits ? 1.f : 0.86f).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+				// A pitch under 1 trims a line's box from its top while its glyphs keep their place, so two lines sit low: lifted
+				// by the trim (8 px) to stand centred in the row (by capture, u1-after-result.png).
+				Put(FBox2f(FVector2f(Pad + 32.f, RY), FVector2f(RoomX0 - 24.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 0.f, bTitleFits ? 0.f : 8.f))
+					[SNew(STextBlock).Text(FText::FromString(bTitleFits ? RowTitle : BpSheet::Wrap(RowTitle, TwoLineBold, TitleW, 2))).Font(bTitleFits ? LabelFont : TwoLineBold).LineHeightPercentage(bTitleFits ? 1.f : 0.86f).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
 				const FString Room = Table->StandupRoomOf(P->feature);
 				const FString Where = FString::Printf(TEXT("%s · %s"), Room.IsEmpty() ? *P->feature : *Table->StandupPlaceName(Room), *BpWords::Lens(P->lens));
-				Put(FBox2f(FVector2f(RoomX0, RY), FVector2f(ChipX1 - ChipW - 16.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center)
-					[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(Where, SmallFont, ChipX1 - ChipW - 16.f - RoomX0, 2))).Font(SmallFont).LineHeightPercentage(0.86f).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f)))]);
+				const float WhereW = ChipX1 - ChipW - 16.f - RoomX0;
+				const bool bWhereFits = BpSheet::TextWidth(Where, SmallFont) <= WhereW;
+				Put(FBox2f(FVector2f(RoomX0, RY), FVector2f(ChipX1 - ChipW - 16.f, RY + FRowH)), SNew(SBox).VAlign(VAlign_Center).Padding(FMargin(0.f, 0.f, 0.f, bWhereFits ? 0.f : 8.f))
+					[SNew(STextBlock).Text(FText::FromString(bWhereFits ? Where : BpSheet::Wrap(Where, TwoLineFont, WhereW, 2))).Font(bWhereFits ? SmallFont : TwoLineFont).LineHeightPercentage(0.86f).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f)))]);
 				ConsoleBoxes.Add({ RowId, RowBox });
 				RY += FRowH + FRowGap;
 				++Shown;
@@ -2491,11 +2608,14 @@ void ABpPawn::RefreshConsole()
 				const bool bFits = BpSheet::TextWidth(Row.Label, LabelFont) <= TextW;
 				const bool bSmallFits = bFits || BpSheet::TextWidth(Row.Label, SmallBold) <= TextW;
 				const FString RowTitle = bFits || bSmallFits ? Row.Label : BpSheet::Wrap(Row.Label, SmallBold, TextW, 2);
+				// Wave U1 (the wall's SETTINGS and TOUR: a detail's descenders on the row's bottom edge): a title over a detail is
+				// set at 0.9 of their line pitch, 2 px apart (83 of the row's 92 px: about 4 px clear above and below).
+				const bool bTwo = !Row.Detail.IsEmpty() && bSmallFits;
 				TSharedRef<SVerticalBox> Words = SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(RowTitle)).Font(bFits ? LabelFont : SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
-				if (!Row.Detail.IsEmpty() && bSmallFits)
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(RowTitle)).Font(bFits ? LabelFont : SmallBold).LineHeightPercentage(bTwo ? 0.9f : 1.f).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
+				if (bTwo)
 				{
-					Words->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Detail, SmallFont, TextW))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))];
+					Words->AddSlot().AutoHeight().Padding(0.f, 2.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Detail, SmallFont, TextW))).Font(SmallFont).LineHeightPercentage(0.9f).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))];
 				}
 				Put(FBox2f(FVector2f(TextX, Box.Min.Y), FVector2f(Right, Box.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[Words]);
 				if (!Row.Act.IsEmpty()) ConsoleBoxes.Insert({ TEXT("console:") + Row.Act, Box }, RowsAt + RowsAdded++);

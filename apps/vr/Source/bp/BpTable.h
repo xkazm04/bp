@@ -693,6 +693,10 @@ public:
 	bool LampAct(const TCHAR* Route);
 	/** A pinch on the lamp's head: the offer, else "What should I do next?". */
 	void LampPinched();
+	/** Wave U1, "Glim alive" (bp.Wow.GlimGlance): where a hand's ray meets the site plan now (world; bValid false: nowhere).
+	 *  Called by the hands each frame they aim; Glim at rest at home glances toward it (a slow, partial head turn), at most one
+	 *  new point every bp.Wow.GlimGlanceEveryS, and turns back once nothing has pointed for a while. One compare at rest. */
+	void NoteRayPoint(bool bValid, const FVector& WorldPoint);
 	/** What the last answer said (its title and why, or the companion's reply), and what its action would do; empty when none. */
 	FString GetLampAnswer() const { return LampAnswer; }
 	FString LampOfferLabel() const;
@@ -2060,6 +2064,17 @@ private:
 	float PinLandOffset(const FPin& Pin, float& OutShow) const;
 	/** BuildPins's new findings on these tiles (in arrival order) start to land. */
 	void NoteArrivals(const TArray<int32>& ArrivedTiles);
+public:
+	/** Wave U1, "decisions land" (bp.Wow.DecisionLands): a stand-up decision answered on a feature drops that feature's pin
+	 *  onto its tile again (the scan theatre's landing: a fall and a small settle in 0.38 s), so the answer given on the wall
+	 *  lands on the plan. False (nothing moves) with reduced motion, the cvar off, a landing in motion or no pin there. */
+	bool LandDecision(const FString& FeatureId, const FString& Verdict);
+private:
+	/** Wave U1: the decided room's highlight flashes once as the answer lands (0 at rest; seconds since, -1 none). */
+	float DecisionFlash = 0.f;
+	double DecisionFlashAt = -1.0;
+	/** The room LandDecision pointed (raised) for its flash when nothing else was pointed; cleared with the flash. */
+	FString DecisionFlashRoom;
 	/** New findings land now (a scan runs or just ended, not reduced motion, not the first read). */
 	bool LandingsWanted() const;
 	/** The live result is read a moment after the job ends (the store's last rows). */
@@ -2096,6 +2111,13 @@ private:
 	/** The nod's bow now, degrees (0 outside a nod). */
 	float LampNodDeg() const;
 	float LampFace = 0.f;
+	/** Wave U1: Glim's glance toward the ray's point (0 to 1, eased; LampGlanceAim eased toward LampGlanceAt, table space). */
+	float LampGlance = 0.f;
+	float LampGlanceTarget = 0.f;
+	FVector LampGlanceAt = FVector::ZeroVector;
+	FVector LampGlanceAim = FVector::ZeroVector;
+	double LampGlanceSetAt = 0.0;
+	double LampGlanceSeenAt = 0.0;
 	/** Wave PJ1: Glim turned to the far sheet (0 to 1, eased; BpProjector::FarAimLocal is where), while it shows a sheet. */
 	float LampProj = 0.f;
 	/** Wave N3-W2: the point on the far sheet Glim's turn and arm follow (table space), eased toward BpProjector::FarAimLocal so
@@ -2108,6 +2130,7 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> GlimBeamMat;
 	FString GlimBeamKey;
+	float GlimBeamGlow = -1.f;
 	/** Wave N3-W2: the beam placed or hidden (TickLampManner, after the lamp moved or the sheet did). */
 	void TickGlimBeam();
 	float LampNodT = -1.f;

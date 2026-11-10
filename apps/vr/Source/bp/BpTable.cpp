@@ -1078,8 +1078,9 @@ void ABpTable::ApplyColumnLook()
 	if (Look == AppliedColumnLook) return;
 	AppliedColumnLook = Look;
 	const float E = Lift * Lift * (3.f - 2.f * Lift);
-	VolumeMids[5]->SetScalarParameterValue(TEXT("FaceOpacity"), FMath::Lerp(HighlightFaceOpacity, RoomLiftFaceOpacity, E) * SiteShow());
-	VolumeMids[5]->SetScalarParameterValue(TEXT("Intensity"), HighlightEdgeIntensity * FMath::Lerp(1.f, RoomLiftEdgeBoost, E) * SiteShow());
+	// Wave U1, "decisions land": the decided room's edges and glass flash once (DecisionFlash, BpScanTheatre.cpp).
+	VolumeMids[5]->SetScalarParameterValue(TEXT("FaceOpacity"), FMath::Lerp(HighlightFaceOpacity, RoomLiftFaceOpacity, E) * SiteShow() * (1.f + 0.6f * DecisionFlash));
+	VolumeMids[5]->SetScalarParameterValue(TEXT("Intensity"), HighlightEdgeIntensity * FMath::Lerp(1.f, RoomLiftEdgeBoost, E) * SiteShow() * (1.f + DecisionFlash));
 }
 
 void ABpTable::BuildTypeFont()

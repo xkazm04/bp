@@ -66,6 +66,10 @@ namespace BpProjector
 	bool FarSheet(FTransform& OutPoseLocal, FVector2D& OutSizeCm);
 	/** bp.Projector.Beam (0 to 1): the beam from Glim's lens to the sheet while he presents; 0 none. */
 	float BeamAmount();
+	/** Wave U1, "the wall arrives": 0 to 1 while the far sheet is projected in (a bump: up and back), 0 at rest. The beam from
+	 *  Glim's lens flicks brighter by it (BpLampLook.cpp's TickGlimBeam). */
+	void SetArriveFlash(float Amount);
+	float ArriveFlash();
 	/** bp.Glim.PointDeg: the most Glim raises his arm (tilts back from his base) toward the sheet, degrees (0 none). */
 	float PointMaxDeg();
 

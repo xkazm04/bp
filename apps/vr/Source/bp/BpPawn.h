@@ -425,6 +425,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> ConsoleNearBar;
 	TArray<FConsoleBox> NearBarBoxes;
+	/** Wave U1, "the wall arrives" (bp.Wow.WallArrive): a sheet opening on the wall is projected in, wiped across from Glim's side
+	 *  in bp.Wow.WallArriveS behind a thin edge of his warm light (a 0.15 s rise of light with bp.ReducedMotion), on
+	 *  M_BpWallReveal (u1_wall_reveal.py); the widget's own opaque material is put back when it is whole. At rest: one compare. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> WallRevealMat;
+	double WallRevealAt = -1.0;
+	bool bWallRevealReduced = false;
+	int32 WallRevealFrames = 0;
+	double WallRevealMaxMs = 0.0;
+	void StartWallReveal();
+	void TickWallReveal();
+	void EndWallReveal(const TCHAR* Why);
 	void PlaceStage(const FTransform& Pose);
 	/** Wave PJ2: while the stage stands, the studio's primitives it fully covers (behind it) or that stand in front of its
 	 *  content above the table (a pendant shade over the right flank) are hidden; shown again when it goes. */

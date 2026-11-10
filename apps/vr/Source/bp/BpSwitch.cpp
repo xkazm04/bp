@@ -71,6 +71,13 @@ namespace
 		return Alpha * Alpha * (3.f - 2.f * Alpha);
 	}
 
+	/** Wave U1: bp.Wow.GlimGlanceShare (BpLampLook.cpp), how much of the way Glim's glance turns. */
+	float CVarGlimGlanceShareRead()
+	{
+		static const IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Wow.GlimGlanceShare"));
+		return Var ? Var->GetFloat() : 0.8f;
+	}
+
 	bool SwitchReduced()
 	{
 		const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
@@ -328,7 +335,7 @@ void ABpTable::PlaceLamp()
 	double RideYaw = 0.0;
 	float LeanDeg = 0.f;
 	const bool bRide = LampRidePose(RideAt, RideYaw, LeanAxis, LeanDeg);
-	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f;
+	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f && LampGlance <= 0.f;
 	const auto SetMovable = [](AActor* Actor, uint8 Mobility)
 	{
 		const EComponentMobility::Type Want = static_cast<EComponentMobility::Type>(Mobility);
@@ -386,6 +393,8 @@ void ABpTable::PlaceLamp()
 		At = FMath::Lerp(At, FootAt, static_cast<double>(SwitchEase(LampProj)));
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
+	// Wave U1, "Glim alive": a partial glance toward where the person's ray points on the plan.
+	if (LampGlance > 0.f && !bRide && !bLampAtStation) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampGlanceAim)) * SwitchEase(LampGlance) * FMath::Clamp(CVarGlimGlanceShareRead(), 0.f, 1.f);
 	// Wave PJ1: to the far sheet's point of interest while a sheet is thrown (TickLampManner eases LampProj).
 	// Wave N3-W2: the eased point (LampProjAim), so the move from the loupe to APPROVE is a sweep.
 	const FVector ProjAim = bLampProjAim ? LampProjAim : BpProjector::FarAimLocal();

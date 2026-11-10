@@ -1083,6 +1083,9 @@ void UBpHands::UpdateAim()
 		Bar(F + Step, F + 2.0 * Step, Width * 0.45f, 0.36f);
 		Bar(F + 2.0 * Step, 0.97, Width * 0.25f, 0.26f);
 	};
+	// Wave U1, "Glim alive": the first ray that meets the site plan this frame, for Glim's glance (ABpTable::NoteRayPoint).
+	bool bGlance = false;
+	FVector GlanceAt = FVector::ZeroVector;
 	for (int32 Slot = 0; T && Pawn && Slot < SlotCount; ++Slot)
 	{
 		const FSlot& S = Slots[Slot];
@@ -1152,6 +1155,7 @@ void UBpHands::UpdateAim()
 			UE_LOG(LogBpHands, Log, TEXT("BpHands: aim hand=%s meets %s at %.0f cm (%s)"), SlotName(Slot), bHover ? *FString::Printf(TEXT("%s %s"), *S.HoverKind, *S.HoverId) : bPoint ? TEXT("the paper") : TEXT("nothing"),
 				bPoint ? FVector::Dist(S.AimFrom, Point) : RayLen, bHover ? TEXT("amber") : TEXT("cyan"));
 		}
+		if (bPoint && !bGlance && S.HoverKind != TEXT("lamp")) { bGlance = true; GlanceAt = Point; }
 		if (bPoint)
 		{
 			// Never smaller than the dot's angular size (wave N3-W1).
@@ -1163,6 +1167,7 @@ void UBpHands::UpdateAim()
 			Marks.Add({ FTransform(Facing, At, FVector(Size, Size, 0.0006)), Color });
 		}
 	}
+	if (T) T->NoteRayPoint(bGlance, GlanceAt);
 	if (GAimStat)
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: aim marks %d (rays, steps and dots in one instanced draw)"), Marks.Num());

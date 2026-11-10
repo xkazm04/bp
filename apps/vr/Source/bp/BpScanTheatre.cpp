@@ -37,6 +37,10 @@ namespace
 {
 	TAutoConsoleVariable<int32> CVarTheatre(TEXT("bp.ScanTheatre"), 1,
 		TEXT("The scan theatre (wave C1): 1 (default) the lamp follows a scan room to room with captions, says its start and result, findings land and a result sheet opens; 0 the scan draws only its marks, as before."));
+	TAutoConsoleVariable<int32> CVarDecisionLands(TEXT("bp.Wow.DecisionLands"), 1,
+		TEXT("Wave U1: a stand-up decision answered drops its feature's pin onto the plan again (a fall and a settle, the scan theatre's landing), so the answer lands on the table. 1 on (default), 0 off. bp.ReducedMotion stills it."));
+	TAutoConsoleVariable<float> CVarLandSlow(TEXT("bp.Wow.LandSlow"), 1.f,
+		TEXT("Wave U1, for captures: a pin's landing (a finding's or a decision's) runs this many times slower (1 to 40; default 1)."));
 	TAutoConsoleVariable<int32> CVarScanVoice(TEXT("bp.ScanVoice"), 1, TEXT("The scan's two spoken lines (its start and its result): 1 (default) spoken, 0 captions only."));
 
 	/** A landing: the pin drops from PinDropCm over its tile and settles in PinLandS, the next one PinStaggerS later. */
@@ -523,8 +527,26 @@ void ABpTable::TickPinCounts()
 
 bool ABpTable::TickScanTheatre(float DeltaSeconds)
 {
-	if (PinLandClock < 0.f) return false;
-	PinLandClock += DeltaSeconds;
+	// Wave U1, "decisions land": the decided room's highlight flashes up and back over DecisionFlashS (LandDecision).
+	bool bFlashing = false;
+	if (DecisionFlashAt >= 0.0)
+	{
+		constexpr double DecisionFlashS = 1.0;
+		const double T = (FPlatformTime::Seconds() - DecisionFlashAt) / (DecisionFlashS * FMath::Clamp(CVarLandSlow.GetValueOnGameThread(), 1.f, 40.f));
+		DecisionFlash = T >= 1.0 ? 0.f : 2.2f * static_cast<float>(FMath::Sin(UE_PI * FMath::Sqrt(FMath::Clamp(T, 0.0, 1.0))));
+		if (T >= 1.0)
+		{
+			DecisionFlashAt = -1.0;
+			// The room it raised settles back, unless something else is pointed now.
+			if (!DecisionFlashRoom.IsEmpty() && HighlightKind == TEXT("room") && HighlightId == DecisionFlashRoom) SetHighlight(FString(), FString());
+			DecisionFlashRoom.Reset();
+		}
+		AppliedColumnLook = -1.f;
+		ApplyColumnLook();
+		bFlashing = DecisionFlashAt >= 0.0;
+	}
+	if (PinLandClock < 0.f) return bFlashing;
+	PinLandClock += DeltaSeconds / FMath::Clamp(CVarLandSlow.GetValueOnGameThread(), 1.f, 40.f);
 	float Last = 0.f;
 	for (const FPin& Pin : PinList) Last = FMath::Max(Last, Pin.LandDelay);
 	if (PinLandClock >= Last + PinLandS)
@@ -574,6 +596,37 @@ void ABpTable::NoteArrivals(const TArray<int32>& ArrivedTiles)
 	SetActorTickInterval(0.f);
 	PlacePins();
 	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %d %s landing: %s"), Order, Order == 1 ? TEXT("pin") : TEXT("pins"), *FString::Join(Words, TEXT(", ")));
+}
+
+bool ABpTable::LandDecision(const FString& FeatureId, const FString& Verdict)
+{
+	if (CVarDecisionLands.GetValueOnGameThread() == 0 || TheatreReduced() || !SheetPlan.IsValid() || FeatureId.IsEmpty()) return false;
+	// The decided room rises (the pointed room's raised copy, as a hand's point does) when nothing else is pointed, and its
+	// edges and glass flash once (TickScanTheatre), pin or not; it settles back as the flash ends.
+	const uint32 Cycles0 = FPlatformTime::Cycles();
+	const FString Room = StandupRoomOf(FeatureId);
+	if (HighlightId.IsEmpty() && !Room.IsEmpty())
+	{
+		DecisionFlashRoom = Room;
+		SetHighlight(TEXT("room"), Room);
+	}
+	DecisionFlashAt = FPlatformTime::Seconds();
+	SetActorTickInterval(0.f);
+	if (PinLandClock >= 0.f) return false;
+	const int32 Tile = SheetPlan->tiles.IndexOfByPredicate([&FeatureId](const auto& Each) { return Each.id == FeatureId; });
+	if (Tile == INDEX_NONE) return false;
+	// The feature's own pin, else the tagged pin its findings were merged into.
+	const FPin* Pin = PinList.FindByPredicate([Tile](const FPin& P) { return P.Tile == Tile; });
+	if (!Pin) Pin = PinList.FindByPredicate([Tile](const FPin& P) { return P.CountTiles.Contains(Tile); });
+	if (!Pin)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpWow: a decision on %s (%s): no pin stands there; nothing lands"), *FeatureId, *Verdict);
+		return false;
+	}
+	NoteArrivals({ Pin->Tile });
+	UE_LOG(LogBpTable, Log, TEXT("BpWow: the decision lands: %s on %s, its pin (%s) drops onto its tile in %.2f s (started in %.3f ms)"), *Verdict, *FeatureId,
+		Pin->Line1.IsEmpty() ? TEXT("untagged") : *Pin->Line1, PinLandS, FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - Cycles0));
+	return true;
 }
 
 bool ABpTable::LandingsWanted() const
