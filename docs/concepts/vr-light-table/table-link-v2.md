@@ -35,8 +35,18 @@ The owner also lifted the pairing gate tonight: the headset may reach the PC ove
     `Authorization: Bearer <token>` and must match a verb in section 5 under a scope the pairing holds. **Every refusal on
     the LAN door is the same bare 403** (empty body, `cache-control: no-store`, `connection: close`, after a 250 ms delay):
     the headset cannot tell "wrong scope" from "revoked" from "unknown path" there; use `GET /pair/me` to tell.
-    Only `Content-Type` and `Accept` are forwarded from the headset; any `x-bp-device`, `x-bp-human` or other header it
-    sends is dropped and the door sets `x-bp-device: <device>:<pairing id>` itself.
+    Only `Content-Type` and `Accept` are forwarded from the headset, and on `POST /api/companion/listen` alone also
+    `x-bp-speech-consent` and `Content-Length` (the route needs both; S3, 2026-11-10: before that, listen over Wi-Fi always
+    answered 403 `no-consent`). Any `x-bp-device`, `x-bp-human`, `Cookie`, `Origin` or other header it sends is dropped and
+    the door sets `Host`, `X-Forwarded-For` and `x-bp-device: <device>:<pairing id>` itself (`lan-door.ts` `FORWARDED`,
+    `LISTEN_FORWARDED`; `check:lan-door` asserts the whole allow-list).
+  - **The door's `Host` must be its own address and port exactly** (`<lan address>:3101`, which libcurl sets from the URL);
+    any other `Host` (a DNS-rebound page in the PC's browser, a loopback name) is the bare 403 before the ceremony or a token
+    is looked at. The door never answers CORS headers.
+  - **Caps on the door** (S3 finding 7): at most 32 sockets (`MAX_CONNECTIONS`); at most 8 requests in flight from one peer
+    address (`MAX_PEER_INFLIGHT`; past it the bare 403 at once, no delay held); the request head within 10 s and the whole
+    request within 60 s (`HEADERS_TIMEOUT_MS`, `REQUEST_TIMEOUT_MS`: they bound what the headset SENDS, never the answer, so a
+    600 s companion turn still streams whole). `paired.json` is stat'ed per request and parsed again only when it changed.
 - `x-bp-device` on the tether: a request **with** a valid Bearer gets `x-bp-device` set from the pairing (whatever the
   headset sent is replaced). A request without a Bearer may still name itself in `x-bp-device` as before (the baton routes
   use it), but that name proves nothing and never makes a person's decision.
@@ -55,14 +65,15 @@ Registry standards: `hitl-approval` (techniques **decision-records**, consent-ga
   request, constant-time over every row, expiry checked) on BOTH listeners, and when the pairing holds `decide` it adds an
   in-process header `x-bp-decider-seal` carrying a per-process secret (`decider.server.ts` `deciderSeal()`). The routes
   accept a device decision only with that seal plus `x-bp-device`. The seal never leaves the process: the loopback
-  listener strips any `x-bp-decider-seal` a client sends, and the LAN door forwards only `Content-Type` and `Accept`.
+  listener strips any `x-bp-decider-seal` a client sends, and the LAN door forwards only its allow-list (section 1).
 - On the tether a Bearer that matches no live pairing answers **401** `{ "error": "device token unknown, expired or revoked: pair again" }`
   before any route runs (the headset should drop its token and re-pair). A missing Bearer is not an error: the request
   runs as a plain loopback caller and a person's decision is refused with **403**
   `{ "error": "a person's answer: needs the x-bp-human token from bp's own page, or a paired headset's token with the decide scope" }`.
 - `apps/web` (:3010, Next) has no device path: it never sets the seal, so on :3010 only the web page decides. VR talks to :3100.
 - Every device decision must say **what the headset showed** (decision-records: "what was shown"): body field `shown`,
-  a string of 1..1000 characters (no control characters except newline), the text the person read before the pinch.
+  a string of 1..1000 characters (no control characters except newline, no C1 controls, no format characters such as
+  bidi overrides and zero-width joiners (`\p{Cf}`), no U+2028/U+2029: S3 finding 8), the text the person read before the pinch.
   Missing or malformed from a device: **400** `{ "error": "a decision from the table must say what it showed: shown, 1..1000 characters" }`.
   From the web page `shown` is optional and recorded when sent.
 - **Recorded**, every person's decision on these routes (web and vr), as one row of `$BP_HOME/companion/decisions.jsonl`
@@ -97,6 +108,15 @@ Types quoted by name: `Decider`, `DeciderMarks`, `DecisionRecord`, `VR_POLICY_BO
   `decidedBy: "human"`). 409 `{ error, card }` when it is no longer pending; 404 unknown card; 400 bad body.
 - From the table, a card whose tool sets the owner's standing permissions (`rule.propose`, `policy.propose`) is refused
   **403** `{ "error": "<tool> sets the owner's standing permissions: answer it on bp's page" }` and stays pending.
+- **An APPROVE from the table is bounded like a grant from the table** (S3 finding 1, 2026-11-10; `decider.server.ts`
+  `outsideTableBound`): the card's tool is one of `VR_POLICY_BOUND.tools` (`decision.answer`, `finding.decline`,
+  `scan.directed`, `wave.dispatch`), its args name exactly one product (never `*`, never a `slug` and a `product` that
+  disagree), and every finding or wave package it names is tier 1 or milder, a finding with no tier or missing from the store
+  counting as 0. Otherwise **403** `{ "error": "Answer this one at your PC: it is outside what the table may approve (<why>)" }`
+  and the card stays pending for bp's page; `<why>` is one of `<tool> is not one of ...`, `it does not name exactly one
+  product`, `its findings cannot be read`, `it touches a stop-ship or untiered finding`. Before this, any other pending card
+  (a stop-ship `wave.dispatch`, `release.build`, `release.finish`, `release.draft`) ran from the table.
+- A **decline** from the table is allowed for every card (declining runs nothing).
 - An approved card from the table runs its tool WITHOUT the web's human token (the tool's own route signs the decision as
   usual); the card row says it came from `vr`.
 - LAN scope: `decide`.
@@ -120,6 +140,12 @@ Types quoted by name: `Decider`, `DeciderMarks`, `DecisionRecord`, `VR_POLICY_BO
   `{ id, product, tools, minTier?, expiresAt, createdAt, grantedBy: { surface, device?, shown? }, hours }`. `tools` are
   dotted catalog names; `expiresAt` is exactly `createdAt + hours`. The headset shows `tools`, `product`, `minTier` and
   `expiresAt` from this answer, never from what it asked.
+- **One table grant per product** (S3 finding 6): a new grant from the table replaces, in the same write, any earlier grant
+  the table made on that product (`grantedBy.surface: "vr"`), so a renewal never stacks. The 201 then also carries
+  `replaced: string[]` (the ids it removed), and the decision record's verdict says `replacing <ids>`. Grants made on bp's
+  page are never replaced by the table. A headset can still hold one live grant on each product.
+- `minTier` everywhere (table and page): a finding with no tier, or one the store does not hold, counts as tier 0, so a floor
+  of 1..3 never covers it (it used to be left out of the test).
 - The web keeps its wider limits (`hours <= 720`, any GATED tool except `policy.propose`, `"*"` allowed).
 - 400 bad body (unknown or AUTO tool, bad hours); 404 unknown product. LAN scope: `decide`.
 
@@ -157,6 +183,15 @@ again after `npm run server -- pair open`. Requests outside a window are refused
   `device`: 1..40 of `[A-Za-z0-9_.-]` (e.g. `quest3s`). `scopes`: a subset of
   `["read","standup","place","focus","decide","scan"]`, default `["read"]`.
 - Step 2 and 5 must come from the same transport and peer: a request made over the tether is claimed over the tether.
+- **The code is shown on the requesting device only** (S3 finding 5, 2026-11-10). The server's log line says that a request
+  arrived, from which peer, under which claimed device name and for which scopes, and that its code is on that device's
+  screen; it never prints the code, and neither does `pair list` (it lists open requests by device and peer). The owner types
+  the code the headset shows; `pair approve` prints the device name and peer it approved.
+- **One open request per peer.** A new `POST /pair` (a new nonce) from a peer that already has an open request replaces that
+  request (the same device asking again, e.g. after an app restart); the old code then approves nothing (404). So one LAN host
+  holds at most one of the 4 pending slots and cannot lock the real headset out. Codes are unique among open requests by
+  construction, so a code names exactly one request (and through it, one peer). Over the tether every request is the peer
+  `loopback`, so the tether too holds one open request at a time.
 - A token is bound to the pairing (its fingerprint in `paired.json`), not to the transport: one token works on the tether
   and on the LAN door. The claimed `device` string (`<device>:<pairing id>`) is the id every decision records.
 - Refusals in the ceremony: on the LAN door, the bare 403; on the tether, 403 `{ error: "pairing refused: <cause>" }`
@@ -179,12 +214,12 @@ again after `npm run server -- pair open`. Requests outside a window are refused
 | read | GET | `/api/products/<SLUG>/scans/<ID>` | kept, but the route has no GET (405); read `/scans` |
 | read | GET | `/api/products/<SLUG>/proposals/<ID>/brief` | as before |
 | read | GET | `/api/products/<SLUG>/shots/<ID>[/<ID>]{0,4}` | png/jpg/webp bytes; Kettle from the sample shots (section 7) |
-| standup | POST | `/api/companion/turn` | as before |
+| standup | POST | `/api/companion/turn` | as before; per paired device at most one turn in flight and 6 a minute (section 12) |
 | standup | GET | `/api/companion/focus`, `/api/companion/cards` | as before |
 | standup | GET | `/api/companion/morning` | query: none, or `since=<iso>` and/or `opened=<iso>` (chars `0-9TZ:.-`) |
 | standup | GET | `/api/companion/inbox` | query: none or `limit=<1..500>` |
 | standup | GET | `/api/companion/policies` | section 3.3 |
-| standup | POST | `/api/companion/listen`, `/api/companion/say` | the voice routes; their handlers are another builder's (2026-11-09) and so are their bodies: at the smoke, `say` took `{ text }` and answered `audio/wav`, `listen` took an `audio/wav` body (415 otherwise). Absent handler: 404 `{ error: "no route ..." }` |
+| standup | POST | `/api/companion/listen`, `/api/companion/say` | the voice routes (voice-link.md): `say` takes `{ text }` and answers `audio/wav`; `listen` takes an `audio/wav` body with `Content-Length` and `x-bp-speech-consent: cloud`, which the door forwards on this verb only; a daily budget per device (voice-link.md) |
 | place | GET | `/api/session/place?claim=1`; POST `/api/session/place`, `/api/session/place/return` | as before |
 | focus | GET, POST | `/api/session/focus` | as before |
 | decide | POST | `/api/products/<SLUG>/proposals/<ID>/decline`, `.../proposals/<ID>/approve`, `.../proposals/approve` | as before |
@@ -230,7 +265,7 @@ and `GET /api/products/<slug>/scan` for the findings.
 
 `npm run server -- --port 3200 --lan --lan-port 3201` with `BP_HOME` and `BP_PRODUCTS_FILE` in a scratch dir (the
 `scripts/morning-demo.mjs` portfolio), the LAN door on `10.0.0.143:3201`; tokens shown as `<token>`, long bodies cut.
-Proof in code: `npm run check:table-link` (127 expectations) and `npm run check:lan-door`.
+Proof in code: `npm run check:table-link` (151 expectations since S3, 2026-11-10) and `npm run check:lan-door`.
 
 ```
 $ curl http://127.0.0.1:3200/api/health
@@ -359,7 +394,65 @@ What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pin
   against something already running as the owner on the PC. A loopback script with no token is refused exactly as before.
 - **The token travels in cleartext** over Wi-Fi (S8's recorded deviation; TLS is the follow-up). Anyone who sniffs the home
   network can replay it until it is revoked or expires. The binding is the token plus the private-range class.
-- **A stolen headset decides** until `pair revoke`. The VR grant bound (12 h, tier 1+, four tools, one product) caps what
-  one stolen session can hand the agent.
+- **A stolen headset decides** until `pair revoke`. The VR grant bound (12 h, tier 1+, four tools, one product, one live
+  table grant per product) caps what one stolen session can hand the agent, and since S3 (2026-11-10) the same bound caps
+  what it can approve through a card (3.2), what a card its turns file can run under (section 12), and what its turns and
+  voice calls can spend (section 12, voice-link.md).
 - **The decision record and the entity row are two writes** for the cross-cutting `decisions.jsonl`; the entity's own row
   (steering log, card, grant) carries the marks atomically. A failed `decisions.jsonl` append is logged, not fatal.
+
+## 12. The door after review (S3, 2026-11-10)
+
+Registry standards: `device-pairing` (admission-scoping, pairing-ceremony, verb-allowlists), `authorization`,
+`hitl-approval` (consent-gates) and `rate-limiting` (key-design, refusal-contract). A read-only review read every handler;
+what changed, with its numbers (each held by `check:table-link`, `check:lan-door`, `check:voice-link` or
+`check:companion-door`):
+
+- **Card answers** are bounded from the table (3.2), and `minTier` counts an untiered or unknown finding as 0 (3.4).
+- **One table grant per product**: a renewal replaces, never stacks (3.4).
+- **The companion turn from a device** (`packages/core/src/server/table-bound.server.ts`): a request carrying a paired
+  device's `x-bp-device` (apps/server sets it from the token on both listeners) may have **one turn in flight** and start
+  **6 turns a rolling minute** (`TURN_RATE_PER_MINUTE`; a spoken exchange at the table is hold, speak, wait, listen: one
+  every several seconds at the very most). Past either: **429**
+  `{ "error": "one question at a time from the table: wait for the answer to the last one" | "the table asked 6 questions in the last minute: wait <n> s", "limit": "6 a minute, one at a time, per paired device", "retryAfterS": number }`
+  with `Retry-After`. The page and plain loopback callers (no device) are not limited by it. A fresh `conversationId` no
+  longer dodges anything: the key is the device, not the conversation.
+- **Cards a device-driven turn files**: while a device's turn runs, its conversation is marked; a card the agent files from
+  that conversation (`x-bp-conversation`, set by the MCP process) runs at once only under a policy grant the table itself
+  could have made (`grantWithinTableBound`: one product, the bound's tools, `minTier` 1..3, at most 12 hours long). A wider
+  grant made at the PC, or a standing rule grant (`bp-rules.json`), does not reach it: the card waits for a person. A card
+  that ran under a grant is signed by that grant (the route re-checks that THIS grant still covers it).
+- **Pairing**: the code is never logged, one open request per peer, `Host` must be the door's own (section 4, section 1).
+- **Door caps**: 32 sockets, 8 in flight per peer, head 10 s, request 60 s, the registry parsed only when it changed (section 1).
+- **Voice**: a daily budget per device and a capped answer cache (voice-link.md).
+
+### What the headset may now meet that it did not before
+
+| Where | Status | Body |
+| --- | --- | --- |
+| `POST /api/companion/cards/<id>` approve | 403 | `{ error: "Answer this one at your PC: it is outside what the table may approve (<why>)" }` |
+| `POST /api/companion/policies` | 201 | may carry `replaced: string[]` |
+| `POST /api/companion/turn` | 429 | `{ error, limit, retryAfterS }` (words above) |
+| `POST /api/companion/say`, `/listen` | 429 | `{ error: "budget", words, limit, used, retryAfterS }` (voice-link.md) |
+| any decision | 400 | the existing `shown` error, now also for format characters and U+2028/U+2029 |
+| the LAN door | bare 403 | for a wrong `Host`, or a 9th request in flight from one address |
+| `POST /api/companion/listen` over Wi-Fi | 200 | (it was always 403 `no-consent` before) |
+
+### Deviations (numbered; the standard stands)
+
+1. **AUTO tools from a device-driven turn (rate-limiting, metered-step-selection; authorization).** A `standup`-only
+   headset's turn can still make the agent call AUTO tools, which go straight to their routes without a card; among them a
+   scan start, so a turn can start a scan the pairing's missing `scan` scope would refuse at the door. The turn cap (6 a
+   minute, one at a time) bounds how often; the call itself is not scoped by the pairing. Closing it: carry the driving
+   device's scopes into the MCP process (as the conversation mark is carried) and refuse AUTO tools outside them.
+2. **Turn text size from a device.** A device's turn still takes up to 8000 characters (`turn/route.ts` `MAX_TEXT`), sized
+   for the page; a spoken question is far shorter. Bounded by the rate above, not by its own cap.
+3. **The turn caps and the conversation mark live in the server's memory** (`table-bound.server.ts`, one process: apps/server
+   is the canonical host). A restart forgets them, which only ever lets a device start afresh at one turn; Next (`:3010`)
+   never sets a device, so it is not limited and needs no limit.
+4. **The conversation mark trusts the MCP process's `x-bp-conversation`.** A loopback program that names a device-driven
+   conversation makes its own cards stricter, never looser; a card filed with no conversation is treated as the PC's. The
+   agent itself never sets the header (the MCP process does, from its environment).
+5. **The registry cache** keys on the file's inode, size and mtime. Every write the server makes is a rename to a new file, so
+   a revoke reaches the next request; a hand edit that keeps the same size within one mtime tick could be missed until the
+   next change. Editing `paired.json` by hand is not a supported path (`pair revoke` is).

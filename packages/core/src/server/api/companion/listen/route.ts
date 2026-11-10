@@ -9,9 +9,10 @@
 // Localhost only (the LAN door forwards the headset's call as a loopback one).
 import { localOnly, wavOnly } from '../../../../scan/local-only.ts';
 import { voiceKey } from '../../../companion/voice.server.ts';
+import { deviceOf } from '../../session/baton.server.ts';
 import {
   CONSENT_HEADER, CONSENT_VALUE, LISTEN_MAX_BYTES, LISTEN_MAX_SECONDS, SILENCE_PEAK_DBFS,
-  cloudSpeechOff, fail, parseWav, peakDbfs, takeSlot, transcribe,
+  cloudSpeechOff, fail, parseWav, peakDbfs, spendBudget, takeSlot, transcribe,
 } from '../../../companion/voice-link.server.ts';
 
 export async function POST(req: Request): Promise<Response> {
@@ -36,6 +37,9 @@ export async function POST(req: Request): Promise<Response> {
   if (!key) return fail(503, 'no-speech-key');
   const slot = takeSlot('listen');
   if ('refuse' in slot) return slot.refuse;
+  // the caller's daily budget of seconds heard: the paired device apps/server named, else this machine (S3 finding 4)
+  const over = spendBudget(deviceOf(req) ?? 'local', 'listenSeconds', Math.ceil(wav.seconds));
+  if (over) { slot.release(); return over.refuse; }
   try {
     const r = await transcribe(buf, key, req.signal);
     if (!r.ok) return fail(502, 'upstream', { status: r.status });

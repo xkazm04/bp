@@ -20,7 +20,7 @@
 //    $BP_HOME/lan/paired.json keeps the SHA-256 fingerprint, the device, the scopes and the expiry (30 days by default,
 //    at most 30), never the token. `pair revoke <id>` removes a row.
 // 3. Authentication (timing-defenses, revocation-and-expiry). Every other request carries `Authorization: Bearer <token>`.
-//    The registry is re-read from disk on every request (a revoke reaches the next request; an unreadable file
+//    The registry is checked on every request (a stat; parsed again whenever the file changed: a revoke reaches the next request; an unreadable file
 //    authenticates nobody), every row's fingerprint is compared in constant time over its full length, and every
 //    refusal past admission waits REFUSAL_DELAY_MS before it answers.
 // 4. Scope (verb-allowlists). VERBS below is the whole remote vocabulary, a closed grammar: a method plus an anchored path
@@ -40,7 +40,8 @@
 //    them only with the decider seal, which this door adds for a pairing that holds `decide`, device-auth.ts), `standup`
 //    adds the morning deck, the inbox, the policy list and the voice routes, `scan` adds the cancel, `read` adds the product
 //    list and the shots, and `any` live pairing reaches the liveness probe (/api/health) and GET /pair/me.
-// 5. The rewrite. Only Content-Type and Accept are copied from the device; Host becomes this server's loopback address,
+// 5. The rewrite. Only Content-Type and Accept are copied from the device (FORWARDED), and on POST /api/companion/listen
+//    alone also x-bp-speech-consent and Content-Length (LISTEN_FORWARDED; S3 finding 2); Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
 //    `x-bp-device` or `x-bp-human` the device sent is dropped (W1's rule, baton.server.ts).
 //
@@ -71,6 +72,16 @@ export const MAX_DAYS = 30;
 export const REFUSAL_DELAY_MS = 250;
 export const MAX_PENDING = 4;
 export const MAX_PAIRED = 8;
+/** Event-loop pressure from peers that hold sockets (S3 finding 7): at most this many sockets on the door at once, and this
+ *  many requests in flight from one peer (past it: the bare 403 at once, no delay held). A headset polls health, reads a
+ *  plan, talks and keeps one 600 s companion turn open: 8 is above that, 32 above a household. */
+export const MAX_CONNECTIONS = 32;
+export const MAX_PEER_INFLIGHT = 8;
+/** The whole request head must arrive within HEADERS_TIMEOUT_MS and the whole request (head and body: a listen upload is at
+ *  most 3 MB) within REQUEST_TIMEOUT_MS. Neither bounds the ANSWER: a 600 s companion turn streams its response long after
+ *  its small request was read, so it is never cut by these. */
+export const HEADERS_TIMEOUT_MS = 10_000;
+export const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_PAIR_BODY = 2048;
 const DAY_MS = 86_400_000;
 const NONCE = /^[A-Za-z0-9_-]{22,128}$/;
@@ -106,8 +117,15 @@ export function lanAddress(): string | null {
 }
 
 // ------------------------------------------------------------------------------------------------ the verbs
-/** `scope: 'any'`: any live pairing. `query`: the exact query, or a pattern the whole query must match (absent: none). */
-interface Verb { scope: Scope | 'any'; method: 'GET' | 'POST' | 'DELETE'; path: RegExp; query?: string | RegExp }
+/** `scope: 'any'`: any live pairing. `query`: the exact query, or a pattern the whole query must match (absent: none).
+ *  `forward`: the headers this verb copies from the device beyond FORWARDED (S3 finding 2: listen needs its consent and its
+ *  length; no other verb copies anything more). */
+interface Verb { scope: Scope | 'any'; method: 'GET' | 'POST' | 'DELETE'; path: RegExp; query?: string | RegExp; forward?: readonly string[] }
+/** The headers every verb copies from the device. Everything else it sends is dropped (the door sets Host, X-Forwarded-For
+ *  and x-bp-device itself). */
+export const FORWARDED: readonly string[] = ['content-type', 'accept'];
+/** The listen verb's own two: the wearer's opt-in to cloud transcription and the declared length (voice-link.md). */
+export const LISTEN_FORWARDED: readonly string[] = ['x-bp-speech-consent', 'content-length'];
 const ISO = '[0-9TZ:.-]{10,40}';
 /** The morning deck's window: since and/or opened, each an ISO time (no `+`: send UTC with Z). */
 const MORNING_QUERY = new RegExp(`^(?:since|opened)=${ISO}(?:&(?:since|opened)=${ISO})?$`);
@@ -147,8 +165,8 @@ export const VERBS: readonly Verb[] = [
   { scope: 'standup', method: 'GET', path: /^\/api\/companion\/inbox$/ },
   { scope: 'standup', method: 'GET', path: /^\/api\/companion\/inbox$/, query: /^limit=\d{1,3}$/ },
   { scope: 'standup', method: 'GET', path: /^\/api\/companion\/policies$/ },
-  // the voice routes: their handlers land separately (another builder, 2026-11-09); until then the mount answers 404
-  { scope: 'standup', method: 'POST', path: /^\/api\/companion\/listen$/ },
+  // the voice routes (voice-link.md): listen reads the consent header and the declared length, so the door copies those two
+  { scope: 'standup', method: 'POST', path: /^\/api\/companion\/listen$/, forward: LISTEN_FORWARDED },
   { scope: 'standup', method: 'POST', path: /^\/api\/companion\/say$/ },
   { scope: 'decide', method: 'POST', path: /^\/api\/companion\/morning$/ },
   { scope: 'decide', method: 'POST', path: new RegExp(`^/api/companion/cards/${ID}$`) },
@@ -158,14 +176,14 @@ export const VERBS: readonly Verb[] = [
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */
-export function verbOf(scopes: readonly Scope[], method: string, target: string): { path: string; query: string } | null {
+export function verbOf(scopes: readonly Scope[], method: string, target: string): { path: string; query: string; forward: readonly string[] } | null {
   if (!/^\/[\x21-\x7e]*$/.test(target) || /%|\/\/|\/\.\.?(\/|\?|$)/.test(target)) return null;
   const q = target.indexOf('?');
   const p = q < 0 ? target : target.slice(0, q), query = q < 0 ? '' : target.slice(q + 1);
   const has = (s: Scope | 'any') => s === 'any' || scopes.includes(s) || (s === 'read' && scopes.includes('standup'));
   const queryOk = (x: Verb) => (x.query instanceof RegExp ? x.query.test(query) : (x.query ?? '') === query);
   const v = VERBS.find((x) => x.method === method && x.path.test(p) && queryOk(x) && has(x.scope));
-  return v ? { path: p, query } : null;
+  return v ? { path: p, query, forward: [...FORWARDED, ...(v.forward ?? [])] } : null;
 }
 
 // ------------------------------------------------------------------------------------------------ the registry
@@ -187,7 +205,20 @@ const isPairing = (r: unknown): r is Pairing => {
 };
 /** The pairings on file. Fail closed: a missing file is none, and so is an unreadable or malformed one (with a loud line),
  *  never "whatever was there before". */
+const registryCache = new Map<string, { key: string; rows: Pairing[] }>();
 export function readRegistry(home = lanHome(), warn: (s: string) => void = console.error): Pairing[] {
+  // parsed once per version of the file (S3 finding 7): a stat per request, a read and a parse only when the file changed
+  // (every write is a rename to a new file: writeRegistry), so a revoke still reaches the very next request
+  const file = registryFile(home);
+  let key = '';
+  try { const st = fs.statSync(file); key = `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { /* missing: read below says so */ }
+  const hit = registryCache.get(file);
+  if (key && hit && hit.key === key) return hit.rows;
+  const rows = readRegistryFile(home, warn);
+  if (key) registryCache.set(file, { key, rows }); else registryCache.delete(file);
+  return rows;
+}
+function readRegistryFile(home: string, warn: (s: string) => void): Pairing[] {
   let text: string;
   try { text = fs.readFileSync(registryFile(home), 'utf8'); } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== 'ENOENT') warn(`lan door: cannot read ${registryFile(home)} (${(e as Error).message}); no device is admitted`);
@@ -239,6 +270,8 @@ export interface DoorOptions {
   home?: string;
   /** The clock (tests move it). */
   now?: () => number;
+  /** The door's timeouts (a check shortens them; the server uses HEADERS_TIMEOUT_MS and REQUEST_TIMEOUT_MS). */
+  timeouts?: { headersMs: number; requestMs: number; checkMs?: number };
   /** Where the peer address is read: the socket. A check's harness substitutes it; nothing in this server does. */
   peerOf?: (req: IncomingMessage) => string | undefined;
   log?: (line: string) => void;
@@ -288,6 +321,8 @@ export class LanDoor {
   private pending: Pending[] = [];
   /** Responses in flight per pairing id, so a revoke reaches the work, not just the next request. */
   private readonly inflight = new Map<string, Set<ServerResponse>>();
+  /** Requests in flight per peer address (MAX_PEER_INFLIGHT). */
+  private readonly peerInflight = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
   private refusalsThisMinute = 0;
   private refusalMinute = 0;
@@ -342,7 +377,9 @@ export class LanDoor {
   }
   private listen(): Promise<void> {
     if (this.opening) return this.opening;
-    const s = http.createServer((req, res) => { void this.handle(req, res); });
+    const t = this.o.timeouts ?? { headersMs: HEADERS_TIMEOUT_MS, requestMs: REQUEST_TIMEOUT_MS };
+    const s = http.createServer({ headersTimeout: t.headersMs, requestTimeout: t.requestMs, ...(t.checkMs ? { connectionsCheckingInterval: t.checkMs } : {}) }, (req, res) => { void this.handle(req, res); });
+    s.maxConnections = MAX_CONNECTIONS;
     this.opening = new Promise<void>((resolve) => {
       s.once('error', (e: NodeJS.ErrnoException) => {
         this.log(`lan door: cannot listen on ${this.o.host}:${this.o.port}: ${e.code ?? ''} ${e.message}`);
@@ -399,7 +436,18 @@ export class LanDoor {
     const peer = this.peerOf(req);
     // 1. admission, before anything is read or computed: the cheap refusal, no delay
     if (!privatePeer(peer)) { this.refusalRow('peer', peer); return bare(res); }
+    // a peer holds at most MAX_PEER_INFLIGHT requests at once; past it, the bare 403 at once (no delay: no socket held)
+    const n = this.peerInflight.get(peer as string) ?? 0;
+    if (n >= MAX_PEER_INFLIGHT) { this.refusalRow('peer-inflight', peer); return bare(res); }
+    this.peerInflight.set(peer as string, n + 1);
+    let counted = true;
+    const uncount = () => { if (!counted) return; counted = false; const m = (this.peerInflight.get(peer as string) ?? 1) - 1; if (m > 0) this.peerInflight.set(peer as string, m); else this.peerInflight.delete(peer as string); };
+    res.on('close', uncount);
+    res.on('finish', uncount);
     const target = req.url ?? '';
+    // the Host must name this door, exactly (S3 finding 5): a DNS-rebound page in the PC's own browser, or anything that
+    // reaches the socket under another name, is refused before the ceremony or a token is looked at. No CORS headers, ever.
+    if (req.headers.host !== `${this.o.host}:${this.port}`) return await this.refuse(res, 'host', peer);
     try {
       if (req.method === 'POST' && (target === '/pair' || target === '/pair/claim')) {
         const b = await readSmallJson(req);
@@ -437,6 +485,13 @@ export class LanDoor {
       return { status: known.state === 'pending' ? 201 : 200, body: { state: known.state === 'pending' ? 'pending' : 'approved', code: known.code, expiresAt: new Date(known.until).toISOString() } };
     }
     if (this.windowUntil <= this.now()) return no('no-window');
+    // one open request per peer (S3 finding 5): a new nonce from the same address is the same device asking again (an app
+    // restarted mid-ceremony), so it replaces that peer's open request; one LAN host can never fill every pending slot
+    const mine = this.pending.filter((x) => x.peer === peer && x.state === 'pending');
+    if (mine.length) {
+      this.pending = this.pending.filter((x) => !mine.includes(x));
+      this.ledger({ event: 'pair-replaced', peer, devices: mine.map((x) => x.device) });
+    }
     if (this.pending.filter((x) => x.state === 'pending').length >= MAX_PENDING) return no('pending-cap');
     let code: string;
     do code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
@@ -447,7 +502,9 @@ export class LanDoor {
     };
     this.pending.push(p);
     this.ledger({ event: 'pair-request', device: p.device, peer, scopes: p.requested });
-    this.log(`lan door: pairing request from ${p.device} at ${peer} for ${p.requested.join(',')}: code ${code} (npm run server -- pair approve ${code})`);
+    // the code is shown on the requesting device only, never here (S3 finding 5): the owner types what the headset shows,
+    // so a request from another host has no code in a log to be pasted by mistake
+    this.log(`lan door: pairing request from ${peer}, claiming to be ${p.device}, for ${p.requested.join(',')}: its code is on that device's screen (npm run server -- pair approve <code>)`);
     return { status: 201, body: { state: 'pending', code, expiresAt: new Date(p.until).toISOString() } };
   }
 
@@ -516,7 +573,7 @@ export class LanDoor {
     if (!verb) return this.refuse(res, 'scope', peer);
     const origin = `http://127.0.0.1:${this.o.loopbackPort}`;
     const headers = new Headers();
-    for (const k of ['content-type', 'accept']) { const v = req.headers[k]; if (typeof v === 'string') headers.set(k, v); }
+    for (const k of verb.forward) { const v = req.headers[k]; if (typeof v === 'string') headers.set(k, v); }
     headers.set('host', `127.0.0.1:${this.o.loopbackPort}`);
     headers.set('x-forwarded-for', '127.0.0.1');
     // x-bp-device from the pairing, and the decider seal when it holds `decide` (device-auth.ts; table-link-v2.md section 2)
@@ -536,7 +593,8 @@ export class LanDoor {
     return {
       window: this.windowUntil > t ? new Date(this.windowUntil).toISOString() : null,
       listening: this.server ? `http://${this.o.host}:${this.port}` : null,
-      pending: this.pending.filter((p) => p.state === 'pending' || p.state === 'approved').map((p) => ({ code: p.code, device: p.device, peer: p.peer, state: p.state, scopes: p.granted ?? p.requested, until: new Date(p.until).toISOString() })),
+      // no code: it is on the requesting device's screen only (S3 finding 5)
+      pending: this.pending.filter((p) => p.state === 'pending' || p.state === 'approved').map((p) => ({ device: p.device, peer: p.peer, state: p.state, scopes: p.granted ?? p.requested, until: new Date(p.until).toISOString() })),
       paired: this.rows().map((r) => ({ id: r.id, device: deviceId(r), scopes: r.scopes, createdAt: r.createdAt, expiresAt: r.expiresAt, expired: Date.parse(r.expiresAt) <= t })),
     };
   }

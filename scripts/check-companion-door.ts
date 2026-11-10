@@ -265,10 +265,17 @@ try {
   const wd = toolOf('wave.dispatch')!;
   const tiered = door.addPolicy({ product: 'good', tools: ['wave.dispatch'], minTier: 1, hours: 1 });
   check('policy: minTier 1 does not cover a wave holding a tier 0 (stop-ship) finding', door.policyFor(wd, { slug: 'good', wave: 'w-t0' }) === null);
-  check('policy: minTier 1 covers a wave whose findings are tier 2', door.policyFor(wd, { slug: 'good', wave: 'w-t2' })?.id === tiered.id);
+  // S3 finding 6 (2026-11-10): w-t2 holds p3 (tier 2) and p2, which has no tier; an untiered finding counts as tier 0, so a
+  // tier floor no longer covers it (this line used to expect it covered: the gap the review found)
+  check('policy: minTier 1 does not cover a wave holding an untiered finding (it counts as tier 0)', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }) === null);
+  const da = toolOf('decision.answer')!, tieredD = door.addPolicy({ product: 'good', tools: ['decision.answer'], minTier: 1, hours: 1 });
+  check('policy: minTier 1 covers a finding of tier 2 (p3)', door.policyFor(da, { slug: 'good', id: 'p3', decision: 'approve' })?.id === tieredD.id);
+  check('policy: minTier 1 does not cover a finding the store does not hold', door.policyFor(da, { slug: 'good', id: 'p-none', decision: 'approve' }) === null);
   check('policy: minTier with a wave it cannot read covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-none' }) === null);
-  check('policy: another product is not covered', door.policyFor(wd, { slug: 'bad', wave: 'w-t2' }) === null);
-  check('policy: an expired grant covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }, NOW + 2 * H) === null);
+  check('policy: another product is not covered', door.policyFor(da, { slug: 'bad', id: 'p3', decision: 'approve' }) === null);
+  check('policy: an expired grant covers nothing', door.policyFor(da, { slug: 'good', id: 'p3', decision: 'approve' }, NOW + 2 * H) === null);
+  door.removePolicy(tieredD.id);
+  void tiered;
   const star = door.addPolicy({ product: '*', tools: ['policy.propose', 'release.build'], hours: 1 });
   check('policy: no grant ever covers policy.propose', door.policyFor(toolOf('policy.propose')!, { product: '*', tools: ['wave.dispatch'], hours: 1 }) === null);
   check('policy: a * grant covers any product', door.policyFor(toolOf('release.build')!, { slug: 'good', id: 'rel-1.0.0' })?.id === star.id);

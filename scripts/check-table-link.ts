@@ -45,6 +45,7 @@ const { loopbackDevice } = await import('../apps/server/src/device-auth.ts');
 const { hostKettleSims } = await import('../apps/server/src/kettle-sim.ts');
 const { humanToken } = await import('../packages/core/src/server/api/companion/door.server.ts');
 const { readDecisions, DECIDER_SEAL_HEADER, VR_POLICY_BOUND } = await import('../packages/core/src/server/decider.server.ts');
+const { admitDeviceTurn, markDeviceConversation, TURN_RATE_PER_MINUTE } = await import('../packages/core/src/server/table-bound.server.ts');
 
 // ------------------------------------------------------------------------------------------------ verbs (the grammar)
 type S = (typeof SCOPES)[number];
@@ -245,6 +246,72 @@ r = await lan('POST', `/api/companion/cards/${c3.id}`, D.token, { decision: 'app
 holds("a card that sets standing permissions (policy.propose): refused from the table, 403, stays pending", r.status === 403 && /answer it on bp's page/.test(r.body), r.body);
 r = await tether('GET', '/api/companion/cards', null);
 holds('...and it is still pending', (JSON.parse(r.body) as { id: string; state: string }[]).find((c) => c.id === c3.id)?.state === 'pending');
+// S3 finding 1 (2026-11-10): an APPROVE from the table meets the grant's bound (VR_POLICY_BOUND): one of its four tools, one
+// product, every finding it names tier 1+ (an untiered or unknown one counts as 0); else 403 and the card stays pending
+const stateOf = async (id: string) => (JSON.parse((await tether('GET', '/api/companion/cards', null)).body) as { id: string; state: string }[]).find((c) => c.id === id)?.state;
+const outside = /^Answer this one at your PC: it is outside what the table may approve/;
+const wide: [string, string, Record<string, unknown>][] = [
+  ['a wave the server cannot read (wave.dispatch)', 'wave.dispatch', { slug: 'kettle-web', wave: 'no-such-wave' }],
+  ['a release tool (release.build)', 'release.build', { slug: 'kettle-web', id: 'r1' }],
+  ['a stop-ship finding (decision.answer, tier 0)', 'decision.answer', { slug: 'kettle-web', id: 'find-kettle-web-1', decision: 'approve' }],
+  ['a finding the store does not hold (counts as tier 0)', 'finding.decline', { slug: 'kettle-desk', id: 'no-such-finding' }],
+  ['two products that disagree', 'finding.decline', { slug: 'kettle-desk', product: 'kettle-web', id: 'find-kettle-desk-1' }],
+];
+for (const [why, tool, args] of wide) {
+  const c = await fileCard(tool, args);
+  if (c.state !== 'pending') { holds(`card for the bound test filed pending: ${why}`, false, JSON.stringify(c)); continue; }
+  r = await lan('POST', `/api/companion/cards/${c.id}`, D.token, { decision: 'approve', shown: 'Approve this card?' });
+  holds(`a card approve from the table outside the bound is refused 403 with words, and stays pending: ${why}`, r.status === 403 && outside.test(String(r.json.error)) && (await stateOf(c.id)) === 'pending', `${r.status} ${r.body}`);
+  if (tool === 'release.build') {
+    r = await tether('POST', `/api/companion/cards/${c.id}`, T.token, { decision: 'decline', shown: 'Decline this card?' });
+    holds('...a decline of the same card from the table is allowed (declining runs nothing)', r.status === 200 && r.json.state === 'declined' && r.json.surface === 'vr', r.body);
+  }
+}
+const inBound = await fileCard('decision.answer', { slug: 'kettle-desk', id: 'find-kettle-desk-1', decision: 'approve', note: 'from the table' });
+r = await lan('POST', `/api/companion/cards/${inBound.id}`, D.token, { decision: 'approve', shown: 'Approve the tier 2 finding?' });
+holds('a card approve from the table inside the bound (decision.answer, one product, tier 2) runs: 200, the card done or failed by its route', r.status === 200 && ['done', 'failed'].includes(String(r.json.state)) && r.json.surface === 'vr', r.body.slice(0, 200));
+// S3 finding 6: a tier floor is never passed by a finding without a tier or missing from the store
+r = await tether('POST', '/api/companion/policies', null, { product: 'kettle-desk', tools: ['finding.decline'], minTier: 1, hours: 1 }, { 'x-bp-human': humanToken() });
+const floor = String(r.json.id);
+const unknown = await fileCard('finding.decline', { slug: 'kettle-desk', id: 'no-such-finding' });
+holds('a grant with minTier 1 does not cover a finding the store does not hold: the card waits (it used to run at once)', r.status === 201 && unknown.state === 'pending', JSON.stringify(unknown));
+r = await tether('DELETE', `/api/companion/policies/${floor}`, null, undefined, { 'x-bp-human': humanToken() });
+holds('...the floor grant revoked from the page', r.status === 200, r.body);
+// S3 finding 3b: a card filed by a turn a device drives runs at once only under a grant the table itself could have made
+r = await tether('POST', '/api/companion/policies', null, { product: 'kettle-desk', tools: ['finding.decline'], hours: 48 }, { 'x-bp-human': humanToken() });
+const wideGrant = String(r.json.id);
+const unmark = markDeviceConversation('conv-table-1');
+const fromTable = (await tether('POST', '/api/companion/cards', null, { tool: 'finding.decline', args: { slug: 'kettle-desk', id: 'no-such-finding' } }, { 'x-bp-conversation': 'conv-table-1' })).json as { id: string; state: string };
+const fromPc = (await tether('POST', '/api/companion/cards', null, { tool: 'finding.decline', args: { slug: 'kettle-desk', id: 'no-such-finding' } }, { 'x-bp-conversation': 'conv-pc-1' })).json as { id: string; state: string };
+holds('a wide grant made at the PC (no tier floor, 48 h) does not run a card a device-driven turn filed: it waits', fromTable.state === 'pending', JSON.stringify(fromTable));
+holds('...while the same card from a PC conversation runs under it at once (the route answers)', ['done', 'failed'].includes(fromPc.state), JSON.stringify(fromPc));
+r = await tether('POST', '/api/companion/policies', null, { product: 'kettle-desk', tools: ['finding.decline'], minTier: 1, hours: 4 }, { 'x-bp-human': humanToken() });
+const narrowGrant = String(r.json.id);
+const inBoundCard = (await tether('POST', '/api/companion/cards', null, { tool: 'finding.decline', args: { slug: 'kettle-desk', id: 'find-kettle-desk-1' } }, { 'x-bp-conversation': 'conv-table-1' })).json as { id: string; state: string; policy?: string };
+holds('a grant within the table bound runs the device-driven card at once, and it is that grant, not the wider one, that signs', ['done', 'failed'].includes(inBoundCard.state) && inBoundCard.policy === narrowGrant, JSON.stringify(inBoundCard));
+unmark();
+for (const id of [wideGrant, narrowGrant]) await tether('DELETE', `/api/companion/policies/${id}`, null, undefined, { 'x-bp-human': humanToken() });
+// S3 finding 3a: one turn in flight and TURN_RATE_PER_MINUTE a minute per paired device, 429 with words beyond
+{
+  const held = admitDeviceTurn(U.device);
+  r = await lan('POST', '/api/companion/turn', U.token, { text: 'hello' });
+  holds('a turn from a device with one in flight: 429 with words and retryAfterS', r.status === 429 && /one question at a time from the table/.test(String(r.json.error)) && typeof r.json.retryAfterS === 'number', `${r.status} ${r.body.slice(0, 160)}`);
+  if ('release' in held) held.release();
+  r = await lan('POST', '/api/companion/turn', U.token, { text: 'hello' });
+  holds('...once it ends, the next turn runs (SSE start .. end)', r.status === 200 && /event: start/.test(r.body) && /event: end/.test(r.body), `${r.status} ${r.body.slice(0, 200)}`);
+  for (let i = 1; i < TURN_RATE_PER_MINUTE; i++) { const a = admitDeviceTurn(U.device); if ('release' in a) a.release(); }
+  r = await lan('POST', '/api/companion/turn', U.token, { text: 'hello' });
+  holds(`a device's ${TURN_RATE_PER_MINUTE + 1}th turn in a minute: 429 with words, Retry-After`, r.status === 429 && /questions in the last minute/.test(String(r.json.error)), `${r.status} ${r.body.slice(0, 160)}`);
+  r = await lan('POST', '/api/companion/turn', D.token, { text: 'hello' });
+  holds('...another paired device is not limited by it', r.status === 200 && /event: start/.test(r.body), `${r.status} ${r.body.slice(0, 160)}`);
+  r = await tether('POST', '/api/companion/turn', null, { text: 'hello' });
+  holds('...nor is the page or a plain loopback caller (no device)', r.status === 200, `${r.status} ${r.body.slice(0, 160)}`);
+}
+// S3 finding 8: `shown` refuses format characters (bidi overrides, zero-width) and the line and paragraph separators
+for (const [why, s] of [['a bidi override', 'Approve \u202Eevil'], ['a zero-width joiner', 'Appro\u200Dve'], ['a line separator', 'Approve\u2028it'], ['a paragraph separator', 'Approve\u2029it'], ['a C1 control', 'Approve\u0085it']] as const) {
+  r = await lan('POST', `/api/companion/cards/${c3.id}`, D.token, { decision: 'decline', shown: s });
+  holds(`shown with ${why} is refused 400`, r.status === 400 && /must say what it showed/.test(r.body), `${r.status} ${r.body}`);
+}
 
 // policies
 const grant = { product: d0.product, tools: ['decision.answer', 'scan.directed'], minTier: 1, hours: 4, shown: 'Let the companion approve tier 1+ decisions and run directed scans on kettle-web for 4 hours?' };
@@ -261,28 +328,37 @@ r = await lan('POST', '/api/companion/policies', D.token, grant);
 const g = r.json as { id: string; tools: string[]; minTier: number; product: string; createdAt: string; expiresAt: string; hours: number; grantedBy: { surface: string; device: string; shown: string } };
 holds('policy grant, LAN with decide: 201, exactly what was granted and until when', r.status === 201 && JSON.stringify(g.tools) === '["decision.answer","scan.directed"]' && g.minTier === 1 && g.product === d0.product && g.hours === 4
   && Date.parse(g.expiresAt) - Date.parse(g.createdAt) === 4 * 3600e3 && g.grantedBy?.surface === 'vr' && g.grantedBy.device === D.device && g.grantedBy.shown === grant.shown, r.body);
-r = await tether('POST', '/api/companion/policies', T.token, { ...grant, hours: 12 });
+r = await tether('POST', '/api/companion/policies', T.token, { ...grant, product: d1.product, hours: 12 });
 const g2 = r.json as { id: string; grantedBy?: { surface: string; device: string } };
 holds('policy grant, tether with decide: 201 at the 12-hour edge, as vr', r.status === 201 && g2.grantedBy?.surface === 'vr' && g2.grantedBy.device === T.device, r.body);
 r = await tether('POST', '/api/companion/policies', null, { product: '*', tools: ['release.build'], hours: 48 }, { 'x-bp-human': humanToken() });
 holds("the web page keeps its wider grant (*, a release tool, 48 h)", r.status === 201 && (r.json.grantedBy as { surface?: string })?.surface === 'web', r.body);
-r = await lan('DELETE', `/api/companion/policies/${g.id}`, U.token);
+const webWide = String(r.json.id);
+// S3 finding 6: the table holds one grant per product; a renewal replaces the earlier one in the same write, never stacks
+r = await lan('POST', '/api/companion/policies', D.token, { ...grant, hours: 2, shown: 'Renew it for 2 hours?' });
+const g3 = r.json as { id: string; replaced?: string[] };
+const listed = (JSON.parse((await tether('GET', '/api/companion/policies', null)).body) as { id: string }[]).map((x) => x.id);
+holds("a second grant from the table on the same product replaces the first (replaced: [its id]); the other product's and the page's grants stay", r.status === 201 && JSON.stringify(g3.replaced) === JSON.stringify([g.id])
+  && !listed.includes(g.id) && listed.includes(g3.id) && listed.includes(g2.id) && listed.includes(webWide), `${r.body} ${JSON.stringify(listed)}`);
+r = await lan('DELETE', `/api/companion/policies/${g3.id}`, U.token);
 holds('policy revoke, LAN without decide: the bare 403', r.status === 403 && r.body === '');
-r = await tether('DELETE', `/api/companion/policies/${g.id}`, null);
+r = await tether('DELETE', `/api/companion/policies/${g3.id}`, null);
 holds('policy revoke without the marker: 403', r.status === 403, r.body);
 r = await lan('DELETE', `/api/companion/policies/${g.id}`, D.token);
-holds('policy revoke, LAN with decide: 200 { id }', r.status === 200 && r.json.id === g.id, r.body);
+holds('policy revoke of the replaced grant: 404, it is gone', r.status === 404, r.body);
+r = await lan('DELETE', `/api/companion/policies/${g3.id}`, D.token);
+holds('policy revoke, LAN with decide: 200 { id }', r.status === 200 && r.json.id === g3.id, r.body);
 r = await tether('DELETE', `/api/companion/policies/${g2.id}`, T.token);
 holds('policy revoke, tether with decide: 200', r.status === 200 && r.json.id === g2.id, r.body);
 
 // the record
 const rec = readDecisions();
 const vr = rec.filter((x) => x.surface === 'vr'), web = rec.filter((x) => x.surface === 'web');
-holds('decisions.jsonl: every table decision is recorded as vr with its device', vr.length === 8 && vr.every((x) => x.device === D.device || x.device === T.device), JSON.stringify(rec.map((x) => [x.kind, x.surface, x.device])));
+holds('decisions.jsonl: every table decision is recorded as vr with its device', vr.length === 11 && vr.every((x) => x.device === D.device || x.device === T.device), JSON.stringify(rec.map((x) => [x.kind, x.surface, x.device])));
 holds('decisions.jsonl: the kinds morning, card, policy-grant, policy-revoke from the table', ['morning', 'card', 'policy-grant', 'policy-revoke'].every((k) => vr.some((x) => x.kind === k)));
 holds('decisions.jsonl: what the headset showed is kept', vr.filter((x) => x.kind !== 'policy-revoke').every((x) => typeof x.shown === 'string' && x.shown.length > 0));
-holds('decisions.jsonl: the web decisions are told apart (surface web, no device)', web.length === 2 && web.every((x) => x.device === undefined));
-holds('no refused decision left a record', rec.length === 10, String(rec.length));
+holds('decisions.jsonl: the web decisions are told apart (surface web, no device)', web.length === 8 && web.every((x) => x.device === undefined));
+holds('no refused decision left a record', rec.length === 19, String(rec.length));
 
 // ------------------------------------------------------------------------------------------------ Kettle shots
 fs.mkdirSync(SHOTS, { recursive: true });

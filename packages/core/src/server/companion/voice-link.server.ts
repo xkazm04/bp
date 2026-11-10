@@ -63,7 +63,7 @@ const TIMEOUT_MS = 30000;
 /** The closed set of error strings both routes answer with (`{ error, status? }`). */
 export type LinkError =
   | 'no-speech-key' | 'speech-off' | 'no-consent' | 'no-ffmpeg' | 'upstream' | 'busy' | 'rate'
-  | 'too-large' | 'too-long' | 'no-length' | 'bad-wav' | 'bad-text' | 'render-failed';
+  | 'too-large' | 'too-long' | 'no-length' | 'bad-wav' | 'bad-text' | 'render-failed' | 'budget';
 export const fail = (status: number, error: LinkError, extra: Record<string, unknown> = {}): Response =>
   Response.json({ error, ...extra }, { status, headers: { 'cache-control': 'no-store' } });
 
@@ -84,6 +84,50 @@ export function takeSlot(route: 'listen' | 'say', now = Date.now()): { release: 
 }
 /** Tests only: forget every slot. */
 export const resetRate = (): void => { g.__bpVoiceLinkRate = {}; };
+
+// ------------------------------------------------------------------------------------------------ daily budget (S3 finding 4)
+/** What one caller (a paired device by its `<device>:<pairing id>`, else `local`) may spend upstream in one UTC day. Generous
+ *  for one person's day at the table: 30,000 characters is about 100 fresh answers at the 320-character cap (cached lines
+ *  are free and not counted; about 13,500 credits at the measured 0.45 a character), and 1,800 seconds is half an hour of
+ *  speech, 300 six-second questions (about 630 credits). A stolen token cannot spend past it. */
+export const DAILY_BUDGET = { sayChars: 30_000, listenSeconds: 1_800 } as const;
+interface Budget { day: string; used: Record<string, { sayChars?: number; listenSeconds?: number }> }
+const budgetFile = (): string => path.join(linkDir(), 'budget.json');
+const dayOf = (now: number): string => new Date(now).toISOString().slice(0, 10);
+/** Spend `amount` of `kind` for `caller` today, or the 429 `budget` refusal (nothing spent). Kept in
+ *  $BP_HOME/companion/voice-link/budget.json, so a server restart does not reset it; a fresh UTC day does. */
+export function spendBudget(caller: string, kind: 'sayChars' | 'listenSeconds', amount: number, now = Date.now(), caps: { sayChars: number; listenSeconds: number } = DAILY_BUDGET): { refuse: Response } | null {
+  let b: Budget = { day: dayOf(now), used: {} };
+  try { const r = JSON.parse(fs.readFileSync(budgetFile(), 'utf8')) as Budget; if (r && r.day === b.day && r.used && typeof r.used === 'object') b = r; } catch { /* a new day, or none yet */ }
+  const mine = (b.used[caller] ??= {}), used = mine[kind] ?? 0, limit = caps[kind];
+  if (used + amount > limit) {
+    const retryAfterS = Math.max(1, Math.ceil((Date.parse(`${b.day}T00:00:00Z`) + 86_400_000 - now) / 1000));
+    const unit = kind === 'sayChars' ? 'characters spoken' : 'seconds heard';
+    return { refuse: Response.json({ error: 'budget', words: `Today's voice budget for this headset is spent (${limit} ${unit} a day); it renews at midnight UTC.`, limit, used, retryAfterS },
+      { status: 429, headers: { 'cache-control': 'no-store', 'retry-after': String(retryAfterS) } }) };
+  }
+  mine[kind] = used + amount;
+  try { fs.mkdirSync(linkDir(), { recursive: true }); fs.writeFileSync(budgetFile(), JSON.stringify(b) + '\n'); } catch { /* counted in memory for this call only */ }
+  return null;
+}
+
+// ------------------------------------------------------------------------------------------------ the cache's size (S3 finding 4)
+/** The most the cache of spoken answers may hold on disk; past it the least recently spoken lines go first (a hit touches
+ *  its file). About 250 answers at 20 s each (24 kHz mono 16-bit is 48 KB a second). */
+export const SAY_CACHE_MAX_BYTES = 256 * 1024 * 1024;
+/** Delete the oldest cached WAVs (by mtime) until the folder is under `max`. Answers how many it deleted. */
+export function trimSayCache(max = SAY_CACHE_MAX_BYTES): number {
+  let files: { f: string; size: number; at: number }[] = [];
+  try {
+    files = fs.readdirSync(linkDir()).filter((n) => /^[0-9a-f]{32}\.wav$/.test(n)).map((n) => { const f = path.join(linkDir(), n), st = fs.statSync(f); return { f, size: st.size, at: st.mtimeMs }; });
+  } catch { return 0; }
+  let total = files.reduce((a, x) => a + x.size, 0), gone = 0;
+  for (const x of files.sort((a, b) => a.at - b.at)) {
+    if (total <= max) break;
+    try { fs.rmSync(x.f, { force: true }); total -= x.size; gone++; } catch { /* in use: the next trim gets it */ }
+  }
+  return gone;
+}
 
 // ------------------------------------------------------------------------------------------------ WAV in
 export interface Wav { rate: number; channels: number; bits: number; samples: Int16Array; seconds: number }
@@ -184,15 +228,22 @@ export type SayResult =
   | { ok: false; status: number; error: LinkError; upstream?: number };
 
 /** The line as the tour's WAV: from the cache, else synthesized (shared MP3 cache), effected, levelled and cached. */
-export async function sayWav(text: string, signal?: AbortSignal): Promise<SayResult> {
+/** `caller`: whose daily budget a fresh synthesis spends (a cached line spends nothing); `budget` carries its 429. */
+export async function sayWav(text: string, signal?: AbortSignal, caller = 'local'): Promise<SayResult | { ok: false; budget: Response }> {
   const spoken = speakable(text), cut = spoken !== text.replace(/\s+/g, ' ').trim();
   if (!spoken) return { ok: false, status: 400, error: 'bad-text' };
   const file = sayCacheFile(spoken);
-  try { return { ok: true, wav: fs.readFileSync(file), cached: true, spoken, cut, cost: {} }; } catch { /* not cached yet */ }
+  try {
+    const wav = fs.readFileSync(file);
+    try { const t = new Date(); fs.utimesSync(file, t, t); } catch { /* recency is a hint for the trim */ }
+    return { ok: true, wav, cached: true, spoken, cut, cost: {} };
+  } catch { /* not cached yet */ }
   if (!voiceKey()) return { ok: false, status: 503, error: 'no-speech-key' };
   if (!(await hasFfmpeg())) return { ok: false, status: 503, error: 'no-ffmpeg' };
   const slot = takeSlot('say');
   if ('refuse' in slot) { const b = (await slot.refuse.json()) as { error: LinkError }; return { ok: false, status: 429, error: b.error }; }
+  const over = spendBudget(caller, 'sayChars', spoken.length);
+  if (over) { slot.release(); return { ok: false, budget: over.refuse }; }
   try {
     const mp3 = await synthesize(spoken, signal);
     if (!mp3.ok) {
@@ -213,7 +264,7 @@ export async function sayWav(text: string, signal?: AbortSignal): Promise<SayRes
       if ((await run(['-loglevel', 'error', '-y', '-i', fx, '-af', `volume=${gain.toFixed(2)}dB,alimiter=limit=${limit}:attack=5:release=50:level=disabled`,
         '-ac', '1', '-ar', String(TOUR_LINK.rate), '-c:a', 'pcm_s16le', out], signal)).code !== 0) return { ok: false, status: 500, error: 'render-failed' };
       const wav = fs.readFileSync(out);
-      try { fs.renameSync(out, file); } catch { /* speaking matters more than caching */ }
+      try { fs.renameSync(out, file); trimSayCache(); } catch { /* speaking matters more than caching */ }
       return { ok: true, wav, cached: false, spoken, cut, cost: mp3.cost ?? {} };
     } finally {
       for (const f of [src, fx, out]) fs.rmSync(f, { force: true });

@@ -51,9 +51,9 @@ switch (cmd) {
       for (const r of readRegistry()) console.log(`paired  ${r.id}  ${deviceId(r)}  ${r.scopes.join(',')}  until ${r.expiresAt}`);
       break;
     }
-    const s = a.body as { window: string | null; listening: string | null; pending: { code: string; device: string; peer: string; state: string; scopes: string[]; until: string }[]; paired: { id: string; device: string; scopes: string[]; expiresAt: string; expired: boolean }[] };
+    const s = a.body as { window: string | null; listening: string | null; pending: { device: string; peer: string; state: string; scopes: string[]; until: string }[]; paired: { id: string; device: string; scopes: string[]; expiresAt: string; expired: boolean }[] };
     console.log(`door     ${s.listening ?? 'closed'}${s.window ? `, pairing window open until ${s.window}` : ''}`);
-    for (const p of s.pending) console.log(`${p.state.padEnd(8)} ${p.code}  ${p.device} at ${p.peer}  asks ${p.scopes.join(',')}  until ${p.until}`);
+    for (const p of s.pending) console.log(`${p.state.padEnd(8)} ${p.device} at ${p.peer} (its code is on its screen)  asks ${p.scopes.join(',')}  until ${p.until}`);
     for (const p of s.paired) console.log(`paired   ${p.id}  ${p.device}  ${p.scopes.join(',')}  ${p.expired ? 'EXPIRED' : 'until'} ${p.expiresAt}`);
     if (!s.pending.length && !s.paired.length) console.log('nothing pending, nothing paired');
     break;

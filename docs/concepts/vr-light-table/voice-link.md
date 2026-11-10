@@ -45,6 +45,7 @@ The engine's sound tags, like "(laughs)" or "[music]", are removed from `text`.
 | 413 | `too-long` (+ `maxSeconds`) | the audio is over 30 s |
 | 415 | a guard sentence | the body is not `audio/wav` |
 | 429 | `busy` / `rate` (+ `retryAfterS`) | one call is already in flight, or 20 have run in the last minute |
+| 429 | `budget` (+ `words`, `limit`, `used`, `retryAfterS`; `Retry-After`) | this caller has heard its 1,800 seconds today (see Budgets) |
 | 502 | `upstream` (+ `status`) | the transcription service failed. `status` is its HTTP status, or 0 when it did not answer within 30 s |
 | 503 | `no-speech-key` | no `ELEVEN_LABS_API_KEY` in the environment or in bp's `.env` |
 
@@ -73,6 +74,7 @@ route returns a file byte-identical to `welcome.wav`.
 | 413 | `too-large` (+ `maxChars`) | `text` is over 4000 characters |
 | 415 | a guard sentence | the body is not `application/json` |
 | 429 | `busy` / `rate` (+ `retryAfterS`) | a fresh render is already in flight, or 20 have run in the last minute (cached lines are never limited) |
+| 429 | `budget` (+ `words`, `limit`, `used`, `retryAfterS`; `Retry-After`) | this caller has had its 30,000 fresh characters today (see Budgets; cached lines are free) |
 | 500 | `render-failed` | ffmpeg failed on the effect or the level pass |
 | 502 | `upstream` (+ `status`) | the voice service refused the line (its HTTP status) or did not answer (0) |
 | 503 | `no-speech-key` | no key, and the line is not cached |
@@ -81,7 +83,24 @@ route returns a file byte-identical to `welcome.wav`.
 **Cache.** The finished WAV is stored as `$BP_HOME/companion/voice-link/<hash>.wav`. By default that is
 `<repo>/.bp/companion/voice-link/`, which is git-ignored. The key of the hash is the voice (id, model, settings, seed),
 the effect chain, the rate, the level and the spoken text. A repeated line answers from disk in a few milliseconds and
-costs nothing. The MP3 under it is shared with the web lamp's cache, `$BP_HOME/companion/voice/`.
+costs nothing. The MP3 under it is shared with the web lamp's cache, `$BP_HOME/companion/voice/`. The WAV cache is capped
+at **256 MiB** (`SAY_CACHE_MAX_BYTES`, about 250 answers of 20 s): after each fresh render the least recently spoken WAVs
+(by mtime; a cache hit touches its file) are deleted until the folder fits (S3 finding 4, 2026-11-10).
+
+### Budgets (S3 finding 4, 2026-11-10)
+
+The rate above is per route, shared by every caller. On top of it each caller has a **daily budget** per UTC day, kept in
+`$BP_HOME/companion/voice-link/budget.json` (a restart does not reset it; the next UTC day does). The caller is the paired
+device apps/server named from its token (`<device>:<pairing id>`, the same over the cable and the LAN door), else `local`:
+
+| | Per caller per day | Why that number |
+|---|---|---|
+| `say` | **30,000 characters** of fresh synthesis (cached lines are free and not counted) | about 100 fresh answers at the 320-character cap; about 13,500 credits at the measured 0.45 a character |
+| `listen` | **1,800 seconds** of audio sent upstream (silence is never sent and not counted) | half an hour of speech, 300 six-second questions; about 630 credits |
+
+Past it: **429** `{ "error": "budget", "words": "Today's voice budget for this headset is spent (<limit> <unit> a day); it renews at midnight UTC.", "limit", "used", "retryAfterS" }`
+with `Retry-After` (seconds to the next UTC midnight). A refused call spends nothing; a fresh call is charged when it is
+admitted, before the upstream answers.
 
 ## Privacy, in plain words
 
@@ -141,8 +160,9 @@ Synthesis is billed by characters, about 0.45 credits per character on `eleven_v
   under its own gesture, and never opens a microphone.
 - **speech-ready-text.** `say` speaks `speakable(text)`, never raw markdown.
 - **Rate limit.** The repo has no request rate limiter. Its costly job routes refuse with 429 when their queue is full,
-  so these two routes refuse with 429 too, using an in-process counter per route. Every caller here is loopback, so
-  "per caller" can only mean per route.
+  so these two routes refuse with 429 too, using an in-process counter per route. Since S3 (2026-11-10) the budget above is
+  per caller, keyed by the paired device apps/server authenticated (rate-limiting key-design: the key is an identity the
+  server derived, never one the caller chose); the per-minute rate stays per route.
 
 ## Deviations (recorded; the standard stands)
 
@@ -160,3 +180,9 @@ Synthesis is billed by characters, about 0.45 credits per character on `eleven_v
    "decline"), and the engine misheard "kettle wing" as "Kettlewing" in the round trip. The route sends no key terms
    yet.
 4. **The level meter is coarse (stt-pipeline, metering).** The listening caption shows the input level as eight steps redrawn only when the step changes (a widget redraw per frame would cost the Quest's budget), and the lamp's light follows the level only where that light can change at run time. A flat meter still tells "the microphone hears nothing" apart; a finer meter is the closing step.
+5. **`local` is one shared budget (rate-limiting, key-design).** Every caller without a paired device (a script on the PC, a
+   tether request without a Bearer) shares the key `local`, and a loopback caller can name any `x-bp-device` it likes when it
+   sends no Bearer, so the budget bounds a paired headset, not a program already running on the PC.
+6. **The shared MP3 cache is not capped here.** `$BP_HOME/companion/voice/` (voice.server.ts, shared with the web lamp)
+   keeps every synthesized line; only this link's WAV cache is capped. Each MP3 is spent against the `say` budget, so it
+   grows at most by a day's budget of lines per device.

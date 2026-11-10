@@ -22,8 +22,9 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { listener, loadRoutes } from '../apps/server/src/mount.ts';
-import { LanDoor, privatePeer, verbOf, readRegistry, registryFile, REFUSAL_DELAY_MS, SCOPES } from '../apps/server/src/lan-door.ts';
+import { listener, loadRoutes, type Route } from '../apps/server/src/mount.ts';
+import { LanDoor, privatePeer, verbOf, readRegistry, registryFile, REFUSAL_DELAY_MS, SCOPES, VERBS, MAX_PEER_INFLIGHT, MAX_CONNECTIONS } from '../apps/server/src/lan-door.ts';
+import { wavOf } from '../packages/core/src/server/companion/voice-link.server.ts';
 import { humanToken } from '../packages/core/src/server/api/companion/door.server.ts';
 import { SLUG_RE } from '../packages/core/src/scan/readiness.ts';
 
@@ -92,7 +93,7 @@ let T = Date.parse('2026-10-29T09:00:00Z');
 const logs: string[] = [];
 const PEER = 'x-check-peer';
 const door = new LanDoor({
-  routes, loopbackPort: LOOP, host: '127.0.0.1', port: 0, home: HOME, now: () => T, log: (s) => logs.push(s),
+  routes, loopbackPort: LOOP, host: '127.0.0.1', port: 0, home: HOME, now: () => T, log: (s) => logs.push(s), timeouts: { headersMs: 500, requestMs: 1000, checkMs: 100 },
   peerOf: (req) => { const p = req.headers[PEER]; return typeof p === 'string' ? p : req.socket.remoteAddress; },
 });
 routes.push(...door.adminRoutes());
@@ -141,6 +142,11 @@ const QUEST = '192.168.1.50', OTHER = '10.0.0.7';
 refused('a public peer', await lan('8.8.8.8', 'POST', '/pair', { body: { nonce: nonce(), device: 'quest3s' } }), false);
 refused('a loopback peer (loopback callers use the loopback port)', await lan('127.0.0.1', 'GET', '/api/products/kettle/structure'), false);
 refused('a link-local peer', await lan('169.254.3.4', 'GET', '/api/products/kettle/structure'), false);
+
+// S3 finding 5: the Host must name the door exactly (DNS rebinding: a page's name for this address is refused)
+refused('a foreign Host (a DNS-rebound page)', await lan(QUEST, 'POST', '/pair', { body: { nonce: nonce(), device: 'quest3s' }, headers: { host: `evil.example:${door.port}` } }));
+refused('a loopback name in the Host', await lan(QUEST, 'GET', '/pair/me', { headers: { host: `localhost:${door.port}` } }));
+refused('the right address on another port', await lan(QUEST, 'GET', '/pair/me', { headers: { host: '127.0.0.1:1' } }));
 
 // the ceremony
 refused('a short nonce', await lan(QUEST, 'POST', '/pair', { body: { nonce: 'short', device: 'quest3s' } }));
@@ -285,7 +291,65 @@ const tokenG = String(r.json.token), idG = String(r.json.device).split(':')[1];
 check('scan: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('scan'), r.body);
 r = await lan(QUEST, 'POST', '/api/products/kettle/scans', { token: tokenG, body: { lens: 'design', scope: { kind: 'all', label: 'Everything', features: [] }, focus: 'Best practice penetration test' } });
 check('scan: POST .../scans reaches the route (Kettle with no sim hosted: its 405, not the door\'s 403)', r.status === 405, `${r.status} ${r.body.slice(0, 120)}`);
-for (const id of [idC, deviceE.split(':')[1], idF, idG]) await admin('POST', '/lan/pair/revoke', { id });
+// S3 finding 2 (2026-11-10): what the door copies from the device. The whole allow-list: Content-Type and Accept on every
+// verb, and x-bp-speech-consent and Content-Length on POST /api/companion/listen alone
+check('the forwarded headers, as a whole: content-type and accept everywhere; consent and length on listen only',
+  VERBS.every((v) => (v.path.test('/api/companion/listen') && v.method === 'POST') ? JSON.stringify(v.forward) === JSON.stringify(['x-bp-speech-consent', 'content-length']) : v.forward === undefined)
+  && JSON.stringify(verbOf(['standup'], 'POST', '/api/companion/listen')?.forward) === JSON.stringify(['content-type', 'accept', 'x-bp-speech-consent', 'content-length'])
+  && JSON.stringify(verbOf(['standup'], 'POST', '/api/companion/say')?.forward) === JSON.stringify(['content-type', 'accept']));
+const NV = nonce();
+const codeV = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NV, device: 'quest-v', scopes: ['standup'] } })).json.code);
+await admin('POST', '/lan/pair/approve', { code: codeV, scopes: ['standup'] });
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NV } });
+const tokenV = String(r.json.token), idV = String(r.json.device).split(':')[1];
+const silent = wavOf(new Int16Array(1600), 16000);
+const listen = (extra: Record<string, string>) => new Promise<Res>((resolve, reject) => {
+  const t0 = performance.now();
+  const q = http.request({ host: '127.0.0.1', port: door.port as number, method: 'POST', path: '/api/companion/listen', headers: { [PEER]: QUEST, authorization: `Bearer ${tokenV}`, 'content-type': 'audio/wav', 'content-length': String(silent.length), ...extra } }, (res) => {
+    const parts: Buffer[] = [];
+    res.on('data', (b: Buffer) => parts.push(b));
+    res.on('end', () => { const b = Buffer.concat(parts).toString('utf8'); let json: Record<string, unknown> = {}; try { json = JSON.parse(b) as Record<string, unknown>; } catch { /* not JSON */ } resolve({ status: res.statusCode ?? 0, body: b, json, ms: performance.now() - t0, sig: '' }); });
+  });
+  q.on('error', reject);
+  q.end(silent);
+});
+const speechWas = process.env.BP_CLOUD_SPEECH;
+delete process.env.BP_CLOUD_SPEECH;
+r = await listen({ 'x-bp-speech-consent': 'cloud' });
+check('listen through the door with the consent header reaches the route (a silent capture: 200 heard silence)', r.status === 200 && r.json.heard === 'silence', `${r.status} ${r.body}`);
+r = await listen({});
+check('listen through the door without the consent header: 403 no-consent', r.status === 403 && r.json.error === 'no-consent', `${r.status} ${r.body}`);
+if (speechWas !== undefined) process.env.BP_CLOUD_SPEECH = speechWas;
+{
+  // the say route swapped for an echo of what reached it: only the allow-list and the door's own headers arrive
+  const echo: Route = { path: '/api/companion/say', file: 'echo', methods: ['POST'], handlers: { POST: (q) => Response.json([...q.headers.keys()].sort()) }, match: (p) => (p === '/api/companion/say' ? {} : null) };
+  routes.unshift(echo);
+  r = await lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' }, headers: { 'x-bp-speech-consent': 'cloud', cookie: 'a=b', origin: 'http://evil.example', 'x-bp-human': humanToken(), 'x-bp-device': 'forged', 'x-forwarded-for': '8.8.8.8', 'x-bp-decider-seal': 'f'.repeat(64), accept: 'audio/wav' } });
+  routes.splice(routes.indexOf(echo), 1);
+  check('say through the door: only content-type, accept and the door\'s own host, x-forwarded-for and x-bp-device reach the route', r.status === 200 && JSON.stringify(r.json) === JSON.stringify(['accept', 'content-type', 'host', 'x-bp-device', 'x-forwarded-for']), r.body);
+}
+// S3 finding 7: the door's timeouts bound the REQUEST, never the answer; one peer holds at most MAX_PEER_INFLIGHT requests
+{
+  const slow: Route = { path: '/api/companion/say', file: 'slow', methods: ['POST'], handlers: { POST: async () => { await new Promise((res) => setTimeout(res, 1600)); return Response.json({ late: true }); } }, match: (p) => (p === '/api/companion/say' ? {} : null) };
+  routes.unshift(slow);
+  const t0 = performance.now();
+  r = await lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } });
+  check('an answer that takes longer than the request timeout (1.6 s against 1 s here; a 600 s turn on the server) still arrives whole', r.status === 200 && r.json.late === true && performance.now() - t0 >= 1500, `${r.status} ${r.body}`);
+  const burst = await Promise.all(Array.from({ length: MAX_PEER_INFLIGHT + 1 }, () => lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } })));
+  const late = burst.filter((x) => x.status === 200), cut = burst.filter((x) => x.status === 403);
+  check(`one peer holds at most ${MAX_PEER_INFLIGHT} requests in flight: the next is the bare 403 at once`, late.length === MAX_PEER_INFLIGHT && cut.length === 1 && cut[0].body === '' && cut[0].ms < REFUSAL_DELAY_MS, burst.map((x) => x.status).join());
+  routes.splice(routes.indexOf(slow), 1);
+  // a request whose body never finishes is cut by the request timeout (it holds no socket for long)
+  const stalled = await new Promise<string>((resolve) => {
+    const q = http.request({ host: '127.0.0.1', port: door.port as number, method: 'POST', path: '/api/companion/say', headers: { [PEER]: QUEST, authorization: `Bearer ${tokenV}`, 'content-type': 'application/json', 'content-length': '100' } }, (res) => { res.resume(); res.on('end', () => resolve(`answered ${res.statusCode}`)); });
+    q.on('error', () => resolve('closed'));
+    q.write('{"text":');
+    setTimeout(() => { resolve('still open'); q.destroy(); }, 4000);
+  });
+  check('a request whose body stalls is cut within the request timeout', stalled !== 'still open', stalled);
+  check('the door sets maxConnections', MAX_CONNECTIONS === 32);
+}
+for (const id of [idC, deviceE.split(':')[1], idF, idG, idV]) await admin('POST', '/lan/pair/revoke', { id });
 check('decide: both pairings revoked again', readRegistry(HOME).map((p) => p.device).join() === 'quest-b');
 
 // the ceremony's other ends: deny, the pending cap, the window
@@ -294,8 +358,22 @@ const codeD = String((await lan(OTHER, 'POST', '/pair', { body: { nonce: ND, dev
 check('pair deny: 200', (await admin('POST', '/lan/pair/deny', { code: codeD })).status === 200);
 refused('a denied request cannot claim', await lan(OTHER, 'POST', '/pair/claim', { body: { nonce: ND } }));
 refused('a denied request cannot be re-registered into pending', await lan(OTHER, 'POST', '/pair', { body: { nonce: ND, device: 'tablet' } }));
-for (let i = 0; i < 4; i++) await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: `spam${i}` } });
-refused('a fifth open request (the pending cap)', await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: 'spam9' } }));
+// S3 finding 5 (2026-11-10): one open request per peer. A new request from the same address replaces its earlier one (the
+// same device asking again), so one LAN host cannot fill every pending slot and lock the real headset out
+const twice = '10.0.0.40';
+const first = String((await lan(twice, 'POST', '/pair', { body: { nonce: nonce(), device: 'again' } })).json.code);
+const second = String((await lan(twice, 'POST', '/pair', { body: { nonce: nonce(), device: 'again' } })).json.code);
+check('a second request from the same peer replaces its first: the first code approves nothing (404)', (await admin('POST', '/lan/pair/approve', { code: first })).status === 404);
+check('...and the pending list holds that peer once', door.status().pending.filter((x) => x.peer === twice).length === 1);
+check('pair list shows no pending code (the code is on the device only)', !JSON.stringify(door.status()).includes(second) && !('code' in (door.status().pending[0] ?? {})));
+check('...the second is denied by its code', (await admin('POST', '/lan/pair/deny', { code: second })).status === 200);
+const spam: string[] = [];
+for (let i = 0; i < 4; i++) spam.push(String((await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: `spam${i}` } })).json.code));
+check('four requests from one peer hold one pending slot', door.status().pending.filter((x) => x.peer === OTHER && x.state === 'pending').length === 1);
+for (let i = 1; i < 4; i++) spam.push(String((await lan(`10.0.0.${20 + i}`, 'POST', '/pair', { body: { nonce: nonce(), device: `spam${i}` } })).json.code));
+check('four open requests from four peers: four distinct codes, so a code names exactly one request', new Set(spam.slice(3)).size === 4 && spam.slice(3).every((c) => /^[A-HJ-NP-Z2-9]{6}$/.test(c)), spam.join());
+refused('a fifth open request (the pending cap)', await lan('10.0.0.30', 'POST', '/pair', { body: { nonce: nonce(), device: 'spam9' } }));
+check('the server log never carries a pairing code', ![codeA, codeB, codeC, codeD, codeE, codeF, codeG, codeV, first, second, ...spam].some((c) => logs.join('\n').includes(c)) && logs.some((l) => /code is on that device's screen/.test(l)));
 T += 3 * 60_000;
 refused('a pairing request after the window closed', await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: 'late' } }));
 check('a live pairing keeps the door open after the window', (await door.converge(), door.listening));

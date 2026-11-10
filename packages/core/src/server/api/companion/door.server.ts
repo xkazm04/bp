@@ -10,7 +10,8 @@
 // CLI sees, and the CLI has no shell or file tools to fetch it with). A local program can still send the two headers by hand:
 // the server is loopback-only, so this is a guard against the agent, not against an attacker already on this machine.
 // A grant (policies.json, written only by the human path) covers a card when its product matches (or `*`), the tool is in
-// its tools, it has not expired and, with minTier, every finding the args name that carries a tier has tier >= minTier (that severe or milder); a
+// its tools, it has not expired and, with minTier, every finding the args name has tier >= minTier (that severe or milder;
+// an untiered or unknown finding counts as tier 0); a
 // covered card runs at once and records `decidedBy: 'policy'` and the grant's id. No grant may cover policy.propose.
 // Execution: one fetch to this server's own BOUND origin (selfOrigin, never the request's Host), the request tool-call.ts builds; the human token rides along only on a
 // human approval (so policy.propose can reach POST /policies when, and only when, a person approved it). Every card state
@@ -30,6 +31,7 @@ import { listWaves } from '../../waves.server.ts';
 import { decidedRows, itemsOf, listRules, trustedLenses } from '../../rules.server.ts';
 import { grantFor, type Rule } from '../../../scan/rules.ts';
 import { FOCUS_NOTE_MAX } from '../../../scan/focus.ts';
+import { deviceDriven, grantWithinTableBound } from '../../table-bound.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
 
@@ -60,7 +62,7 @@ export function agentSigner(req: Request, args: Record<string, unknown>): { by: 
   const id = req.headers.get(RULE_HEADER), got = Buffer.from(req.headers.get(RULE_TOKEN_HEADER) ?? ''), want = Buffer.from(ruleToken());
   if (!id || got.length !== want.length || !timingSafeEqual(got, want) || !PERMIT_ID.test(id)) return null;
   const t = toolOf(req.headers.get(RULE_TOOL_HEADER));
-  const still = t ? (id.startsWith('G-') ? ruleGrantFor(t, args)?.id : policyFor(t, args)?.id) : undefined;
+  const still = t ? (id.startsWith('G-') ? ruleGrantFor(t, args)?.id : policyFor(t, args, Date.now(), (p) => p.id === id)?.id) : undefined;
   if (still !== id) return { refuse: Response.json({ error: `${id} no longer covers this call (${t?.name ?? 'unknown tool'}): it waits for the person` }, { status: 403 }) };
   return { by: (id.startsWith('G-') ? 'rule:' : 'policy:') + id };
 }
@@ -100,12 +102,17 @@ export const listPolicies = (): PolicyGrant[] => {
   return Array.isArray(d.policies) ? d.policies : [];
 };
 /** `grantedBy` (decider.server.ts DeciderMarks): who granted it and where; kept on the grant itself. */
-export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number; grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } }): PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } } {
+/** `replaces` (a grant from the table, S3 finding 6): the grants it supersedes, removed in the same write. */
+export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number; grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } }, replaces: (g: PolicyGrant & { grantedBy?: { surface?: string } }) => boolean = () => false): PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string }; replaced?: string[] } {
   const now = Date.now();
   const grant: PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } } = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString(), ...(p.grantedBy ? { grantedBy: p.grantedBy } : {}) };
-  writeJson('policies.json', { policies: [grant, ...listPolicies()] });
-  return grant;
+  const all = listPolicies(), gone = all.filter(replaces).map((x) => x.id);
+  writeJson('policies.json', { policies: [grant, ...all.filter((x) => !gone.includes(x.id))] });
+  return { ...grant, ...(gone.length ? { replaced: gone } : {}) };
 }
+/** A grant the table made (grantedBy.surface `vr`) for this product: a new grant from the table replaces it, so the table
+ *  holds at most one grant per product and a renewal never stacks (S3 finding 6). */
+export const tableGrantFor = (product: string) => (g: PolicyGrant & { grantedBy?: { surface?: string } }): boolean => g.product === product && g.grantedBy?.surface === 'vr';
 export function removePolicy(id: string): boolean {
   const all = listPolicies(), rest = all.filter((p) => p.id !== id);
   if (rest.length === all.length) return false;
@@ -113,8 +120,10 @@ export function removePolicy(id: string): boolean {
   return true;
 }
 
-/** The tiers of the findings `args` name (id, ids, or a wave's packages); null when one cannot be read. Untiered ones are left out. */
-function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | undefined): number[] | null {
+/** The tiers of the findings `args` name (id, ids, or a wave's packages); null when one cannot be read. A finding with no
+ *  tier, or one the store does not hold, counts as tier 0 (stop-ship): a tier floor is never passed by what cannot be read
+ *  (S3 finding 6, 2026-11-10; it used to be left out, so `minTier: 1` covered it). */
+export function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | undefined): number[] | null {
   let ids: string[] = [];
   if (typeof args.id === 'string' && /proposals/.test(t.route.path)) ids = [args.id];
   else if (Array.isArray(args.ids)) ids = args.ids.filter((x): x is string => typeof x === 'string');
@@ -130,16 +139,17 @@ function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | u
   if (!p || !hasStore(p)) return null;
   try {
     const by = new Map(snapshotOf(storeFile(p)).proposals.map((x) => [x.id, x.tier]));
-    return ids.map((id) => by.get(id)).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    return ids.map((id) => by.get(id) ?? 0);
   } catch { return null; }
 }
 
-/** The live grant that covers this call, or null. */
-export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now()): PolicyGrant | null {
+/** The live grant that covers this call, or null. `accept`: only grants it passes are considered (a named grant, or one
+ *  within the table's bound for a card a device-driven turn filed). */
+export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now(), accept: (p: PolicyGrant) => boolean = () => true): PolicyGrant | null {
   if (t.name === 'policy.propose') return null;
   const slug = productOf(args);
   for (const p of listPolicies()) {
-    if (Date.parse(p.expiresAt) <= now || !p.tools.includes(t.name)) continue;
+    if (Date.parse(p.expiresAt) <= now || !p.tools.includes(t.name) || !accept(p)) continue;
     if (p.product !== '*' && p.product !== slug) continue;
     if (p.minTier !== undefined) {
       const tiers = namedTiers(t, args, slug);
@@ -303,7 +313,11 @@ export async function fileCard(tool: unknown, args: unknown, o: Origin): Promise
   if ('error' in req) return { ok: false, status: 400, error: req.error };
   const product = productOf(a);
   const card: Card = { id: sortableId('card_'), tool: t.name, args: a, summary: summaryOf(t, a), ...(product ? { product } : {}), state: 'pending', createdAt: new Date().toISOString() };
-  const grant = policyFor(t, a)?.id ?? ruleGrantFor(t, a)?.id;
+  // a card a device-driven turn filed (the table's conversation, table-bound.server.ts) runs at once only under a grant the
+  // table itself could have made: a wider grant made at the PC, or a standing rule grant, never becomes reachable from the
+  // table through the agent; the card waits for a person instead (S3 finding 3b)
+  const fromTable = deviceDriven(o.conversation);
+  const grant = fromTable ? policyFor(t, a, Date.now(), grantWithinTableBound)?.id : policyFor(t, a)?.id ?? ruleGrantFor(t, a)?.id;
   if (!grant) return { ok: true, card: put(card) };
   const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant });
   return { ok: true, card: await execute(approved, t, o, false) };

@@ -23,7 +23,7 @@ import { harness } from './lib/expect.ts';
 import { VOICE } from '../packages/core/src/companion/voice.ts';
 import { voiceKey } from '../packages/core/src/server/companion/voice.server.ts';
 import {
-  LISTEN_MAX_BYTES, RATE_PER_MINUTE, TOUR_LINK, parseWav, peakDbfs, resetRate, takeSlot, wavOf,
+  DAILY_BUDGET, LISTEN_MAX_BYTES, RATE_PER_MINUTE, SAY_CACHE_MAX_BYTES, TOUR_LINK, parseWav, peakDbfs, resetRate, spendBudget, takeSlot, trimSayCache, wavOf,
 } from '../packages/core/src/server/companion/voice-link.server.ts';
 import { POST as listen } from '../packages/core/src/server/api/companion/listen/route.ts';
 import { POST as say } from '../packages/core/src/server/api/companion/say/route.ts';
@@ -101,6 +101,45 @@ const silence = (seconds: number, rate = 16000) => new Int16Array(Math.round(sec
     expect(r.status === 503 && (await errOf(r)) === 'no-speech-key', 'say: no key is 503 no-speech-key', r.status);
   } finally {
     process.chdir(cwd); if (env !== undefined) process.env.ELEVEN_LABS_API_KEY = env; if (bh !== undefined) process.env.BP_HOME = bh; else delete process.env.BP_HOME;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+}
+
+// ------------------------------------------------------------------------------------------------ budget and cache (S3 finding 4)
+{
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-voice-budget-')), env = process.env.ELEVEN_LABS_API_KEY, bh = process.env.BP_HOME;
+  process.env.BP_HOME = home;
+  try {
+    const day = Date.parse('2026-11-10T12:00:00Z');
+    expect(DAILY_BUDGET.sayChars === 30_000 && DAILY_BUDGET.listenSeconds === 1_800, 'budget: 30,000 characters spoken and 1,800 seconds heard a day per caller');
+    expect(spendBudget('quest3s:aaaa0001', 'sayChars', 29_990, day) === null, 'budget: a device spends up to its daily characters');
+    const over = spendBudget('quest3s:aaaa0001', 'sayChars', 11, day);
+    const ob = over ? (await over.refuse.json()) as { error: string; words: string; limit: number; used: number; retryAfterS: number } : null;
+    expect(!!over && over.refuse.status === 429 && ob?.error === 'budget' && /voice budget/.test(ob.words) && ob.limit === 30_000 && ob.used === 29_990 && ob.retryAfterS === 12 * 3600 && over.refuse.headers.get('retry-after') === String(12 * 3600),
+      'budget: past it, 429 budget with words, the limit, what was used and the seconds to midnight UTC', ob);
+    expect(spendBudget('quest3s:aaaa0001', 'sayChars', 10, day) === null, 'budget: a refused call spent nothing (the last 10 still fit)');
+    expect(spendBudget('quest3s:bbbb0002', 'sayChars', 1000, day) === null, 'budget: another device has its own');
+    expect(spendBudget('quest3s:aaaa0001', 'sayChars', 1000, day + 86_400_000) === null, 'budget: a new UTC day renews it');
+    // listen through the route: a device past its seconds is refused before any upstream call (a fake key: never sent)
+    process.env.ELEVEN_LABS_API_KEY = 'not-a-key-the-check-never-sends';
+    spendBudget('quest3s:cccc0003', 'listenSeconds', 1_800);
+    resetRate();
+    const r = await listen(wavReq(wavOf(tone(1), 16000), { 'x-bp-device': 'quest3s:cccc0003' }));
+    expect(r.status === 429 && (await errOf(r)) === 'budget', 'budget: listen from a device past its seconds is 429 budget, before the upstream', r.status);
+    // the cache folder is capped: the least recently spoken lines go first
+    const dir = path.join(home, 'companion', 'voice-link');
+    fs.mkdirSync(dir, { recursive: true });
+    const names = [0, 1, 2, 3].map((i) => path.join(dir, `${String(i).repeat(32)}.wav`));
+    names.forEach((f, i) => { fs.writeFileSync(f, Buffer.alloc(1000)); const t = new Date(Date.parse('2026-11-01T00:00:00Z') + i * 60_000); fs.utimesSync(f, t, t); });
+    fs.writeFileSync(path.join(dir, 'budget.json.keep'), 'x');
+    const gone = trimSayCache(2500);
+    expect(gone === 2 && !fs.existsSync(names[0]) && !fs.existsSync(names[1]) && fs.existsSync(names[2]) && fs.existsSync(names[3]) && fs.existsSync(path.join(dir, 'budget.json.keep')),
+      'cache: over its cap, the oldest WAVs are deleted first until it fits; nothing else in the folder is touched', gone);
+    expect(SAY_CACHE_MAX_BYTES === 256 * 1024 * 1024, 'cache: the cap is 256 MiB');
+  } finally {
+    if (env !== undefined) process.env.ELEVEN_LABS_API_KEY = env; else delete process.env.ELEVEN_LABS_API_KEY;
+    if (bh !== undefined) process.env.BP_HOME = bh; else delete process.env.BP_HOME;
+    resetRate();
     fs.rmSync(home, { recursive: true, force: true });
   }
 }

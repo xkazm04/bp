@@ -9,6 +9,7 @@
 // 500 `render-failed` (ffmpeg), 502 `upstream` (+ the upstream `status`), 503 `no-speech-key` / `no-ffmpeg`.
 // The text is never logged. Localhost only (the LAN door forwards the headset's call as a loopback one).
 import { jsonOnly, localOnly } from '../../../../scan/local-only.ts';
+import { deviceOf } from '../../session/baton.server.ts';
 import { SAY_MAX_BODY_CHARS, VOICE_NAME, fail, sayWav } from '../../../companion/voice-link.server.ts';
 
 export async function POST(req: Request): Promise<Response> {
@@ -21,7 +22,9 @@ export async function POST(req: Request): Promise<Response> {
   try { b = (await req.json()) as typeof b; } catch { return fail(400, 'bad-text', { reason: 'body must be JSON' }); }
   if (typeof b?.text !== 'string' || !b.text.trim()) return fail(400, 'bad-text', { reason: 'text must be a non-empty string' });
   if (b.text.length > SAY_MAX_BODY_CHARS) return fail(413, 'too-large', { maxChars: SAY_MAX_BODY_CHARS });
-  const r = await sayWav(b.text, req.signal);
+  // the caller whose daily budget a fresh line spends: the paired device apps/server named, else this machine (S3 finding 4)
+  const r = await sayWav(b.text, req.signal, deviceOf(req) ?? 'local');
+  if (!r.ok && 'budget' in r) return r.budget;
   if (!r.ok) return fail(r.status, r.error, r.upstream !== undefined ? { status: r.upstream } : {});
   return new Response(new Uint8Array(r.wav), {
     headers: {

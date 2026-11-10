@@ -655,9 +655,10 @@ async function main() {
           && guardAt >= 0 && consentAt > guardAt && sendAt > consentAt && (lit.match(/"x-bp-speech-consent"/g) ?? []).length === 1,
           `guard ${guardAt}, header ${consentAt}, send ${sendAt}`);
       }
-      // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/decider.server.ts), read as text.
+      // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/table-bound.server.ts since S3,
+      // 2026-11-10; decider.server.ts re-exports it), read as text.
       {
-        const decider = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/decider.server.ts'), 'utf8');
+        const decider = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/table-bound.server.ts'), 'utf8');
         const bound = /VR_POLICY_BOUND\s*=\s*\{[\s\S]*?tools:\s*\[([^\]]*)\][\s\S]*?maxHours:\s*(\d+)/.exec(decider);
         const serverTools = bound ? [...bound[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : null;
         check(`link source: BpLink's grant bound is the server's VR_POLICY_BOUND (tools ${ls.policyTools}, at most ${ls.maxHours} h)`,

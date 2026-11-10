@@ -11,7 +11,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { companionHome } from './companion/home.server.ts';
-import { isHuman } from './api/companion/door.server.ts';
+import { isHuman, namedTiers } from './api/companion/door.server.ts';
+import { productOf, toolOf } from './api/companion/tool-call.ts';
+import { VR_POLICY_BOUND } from './table-bound.server.ts';
 import { deviceOf } from './api/session/baton.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('decider.server.ts is server-only');
@@ -41,8 +43,11 @@ export const notPerson = (): Response =>
   Response.json({ error: "a person's answer: needs the x-bp-human token from bp's own page, or a paired headset's token with the decide scope" }, { status: 403 });
 
 export const SHOWN_MAX = 1000;
+/** What `shown` may not carry: control characters except newline, C1 controls, format characters (\p{Cf}: bidi overrides
+ *  and isolates, zero-width joiners, soft hyphen) and the line and paragraph separators, so the text the PC page shows as
+ *  "what the table showed" cannot be reordered or hidden (S3 finding 8, 2026-11-10). */
 // eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f]/;
+const CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029\p{Cf}]/u;
 /** The body's `shown` as the record keeps it: required from a headset (what the person read before the pinch), optional
  *  from the page. `{ marks }` or `{ refuse }`. */
 export function marksOf(who: Decider, body: Record<string, unknown>): { marks: DeciderMarks } | { refuse: Response } {
@@ -74,14 +79,26 @@ export function readDecisions(): DecisionRecord[] {
 }
 
 // ------------------------------------------------------------------------------------------------ the VR grant's bound
-/** What a policy grant made from the table may carry (table-link-v2.md 3.4). Anything wider is refused 403 with this. */
-export const VR_POLICY_BOUND = {
-  tools: ['decision.answer', 'finding.decline', 'scan.directed', 'wave.dispatch'] as readonly string[],
-  /** Required; a grant from the table never covers a stop-ship (tier 0) finding. */
-  minTier: [1, 2, 3] as readonly number[],
-  maxHours: 12,
-  /** One product slug; never `*`. */
-  product: 'one product slug, never *',
-} as const;
+/** What a policy grant made from the table may carry (table-link-v2.md 3.4): table-bound.server.ts, a leaf the cards share. */
+export { VR_POLICY_BOUND };
 /** Tools whose card sets the owner's standing permissions: answered on bp's page only. */
 export const PAGE_ONLY_CARD_TOOLS: readonly string[] = ['rule.propose', 'policy.propose'];
+
+/** Why a card's APPROVE from the table is outside what the table may approve, or null when it is inside: the same test a
+ *  grant from the table meets (VR_POLICY_BOUND), applied to the one call the card would run (S3 finding 1, 2026-11-10).
+ *  Its tool is one of the bound's tools; it names exactly one product (never `*`, never two that disagree); every finding
+ *  or wave package it names is tier 1 or milder, an untiered or unknown finding counting as 0 (namedTiers). A decline is
+ *  never tested: declining runs nothing. */
+export function outsideTableBound(tool: string, args: Record<string, unknown>): string | null {
+  const t = toolOf(tool);
+  if (!t || !VR_POLICY_BOUND.tools.includes(t.name)) return `${tool} is not one of ${VR_POLICY_BOUND.tools.join(', ')}`;
+  const named = [args.slug, args.product].filter((x) => x !== undefined);
+  const slug = productOf(args);
+  if (!slug || slug === '*' || named.some((x) => x !== slug)) return 'it does not name exactly one product';
+  const tiers = namedTiers(t, args, slug);
+  if (!tiers) return 'its findings cannot be read';
+  if (tiers.some((x) => !VR_POLICY_BOUND.minTier.includes(x))) return 'it touches a stop-ship or untiered finding';
+  return null;
+}
+/** The 403 a card approve from the table meets when outsideTableBound says why. The card stays pending for bp's page. */
+export const outsideTableWords = (why: string): string => `Answer this one at your PC: it is outside what the table may approve (${why})`;

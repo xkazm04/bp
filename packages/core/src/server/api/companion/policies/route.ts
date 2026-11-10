@@ -2,14 +2,16 @@
 // POST /api/companion/policies, body `{ product: <slug> | '*', tools: string[], minTier?: 0..3, hours (0 < h <= 720), shown? }`:
 // a person only, bp's page (the `x-bp-human` token) or a paired headset with the decide scope (decider.server.ts; `shown`
 // required from it); 403 otherwise. A grant lets the companion run the GATED tools it names, on that product, until it
-// expires; with minTier, only when every tiered finding the call names has tier >= minTier (that severe or milder). Tools
+// expires; with minTier, only when every finding the call names has tier >= minTier (that severe or milder; an untiered or
+// unknown finding counts as tier 0). Tools
 // are catalog names (dotted or wire), stored dotted; an AUTO tool and policy.propose are refused (no grant may grant).
 // A grant from the table is bounded (VR_POLICY_BOUND: one product, four tools, minTier 1..3 required, hours <= 12): wider
-// is 403 `{ error, bound }` (docs/concepts/vr-light-table/table-link-v2.md 3.4). 201 + the PolicyGrant with `grantedBy`
+// is 403 `{ error, bound }` (docs/concepts/vr-light-table/table-link-v2.md 3.4), and it replaces the table's earlier grant on
+// the same product (one per product; `replaced: [ids]` in the 201 when it did). 201 + the PolicyGrant with `grantedBy`
 // (surface, device, shown) and `hours`; 400 for a bad body; 404 for an unknown product. Localhost only.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { KETTLE_SLUG, findProduct } from '../../../products.server.ts';
-import { POLICY_MAX_HOURS, addPolicy, listPolicies } from '../door.server.ts';
+import { POLICY_MAX_HOURS, addPolicy, listPolicies, tableGrantFor } from '../door.server.ts';
 import { isGated, toolOf } from '../tool-call.ts';
 import { VR_POLICY_BOUND, deciderOf, marksOf, notPerson, recordDecision } from '../../../decider.server.ts';
 
@@ -51,7 +53,8 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
   if (b.product !== '*' && b.product !== KETTLE_SLUG && !findProduct(b.product)) return Response.json({ error: `unknown product ${b.product}` }, { status: 404 });
-  const grant = addPolicy({ product: b.product, tools: names, ...(b.minTier !== undefined ? { minTier: b.minTier as 0 | 1 | 2 | 3 } : {}), hours: b.hours, grantedBy: m.marks });
-  recordDecision({ kind: 'policy-grant', ...m.marks, product: b.product, target: grant.id, verdict: `grant ${names.join(',')}${grant.minTier !== undefined ? ` tier ${grant.minTier}+` : ''} until ${grant.expiresAt}` });
+  // the table holds at most one grant per product: a new one replaces the table's earlier grant there, never stacks on it
+  const grant = addPolicy({ product: b.product, tools: names, ...(b.minTier !== undefined ? { minTier: b.minTier as 0 | 1 | 2 | 3 } : {}), hours: b.hours, grantedBy: m.marks }, who.surface === 'vr' ? tableGrantFor(b.product) : undefined);
+  recordDecision({ kind: 'policy-grant', ...m.marks, product: b.product, target: grant.id, verdict: `grant ${names.join(',')}${grant.minTier !== undefined ? ` tier ${grant.minTier}+` : ''} until ${grant.expiresAt}${grant.replaced ? `, replacing ${grant.replaced.join(',')}` : ''}` });
   return Response.json({ ...grant, hours: b.hours }, { status: 201 });
 }
