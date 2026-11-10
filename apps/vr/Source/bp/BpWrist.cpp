@@ -621,7 +621,7 @@ void ABpPawn::PanelAct(const FString& Act)
 	if (Act.StartsWith(TEXT("toggle:")))
 	{
 		const FString What = Act.Mid(7);
-		const TCHAR* Name = What == TEXT("face") ? TEXT("bp.WristFace") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("room") ? TEXT("bp.Room") : nullptr;
+		const TCHAR* Name = What == TEXT("face") ? TEXT("bp.WristFace") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("room") ? TEXT("bp.Room") : What == TEXT("legend") ? TEXT("bp.Legend") : nullptr;
 		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
 		{
 			Var->Set(Var->GetInt() != 0 ? 0 : 1, ECVF_SetByConsole);
@@ -1018,7 +1018,7 @@ void ABpPawn::DrawWrist()
 		break;
 	case ECard::Offer:
 	{
-		Kicker = TEXT("THE LAMP SUGGESTS");
+		Kicker = TEXT("GLIM SUGGESTS");
 		Tone = BpSheet::Accent;
 		// Its first line is what it names (the title), the rest what it says of it, each line kept.
 		Words = Table->GetLampAnswer();

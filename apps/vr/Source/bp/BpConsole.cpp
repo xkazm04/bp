@@ -233,7 +233,7 @@ struct FBpConsolePages
 	static const FBpConsolePage* Find(const FString& Key)
 	{
 		// TALK is the consent sheet (BpTalk.cpp): opened by the first hold to talk and from SETTINGS, never a HOME tile.
-		static const FBpConsolePage Talk = { TEXT("talk"), TEXT("TALK TO THE LAMP"), TEXT("T"), &TalkRows, &TalkSummary, nullptr, nullptr };
+		static const FBpConsolePage Talk = { TEXT("talk"), TEXT("TALK TO GLIM"), TEXT("T"), &TalkRows, &TalkSummary, nullptr, nullptr };
 		if (Key == Talk.Key) return &Talk;
 		// ACCESSIBILITY (night two V4): SETTINGS' first row opens it, never a HOME tile.
 		static const FBpConsolePage Access = { TEXT("access"), TEXT("ACCESSIBILITY"), TEXT("G"), &AccessRows, &AccessSummary, nullptr, nullptr };
@@ -250,12 +250,12 @@ struct FBpConsolePages
 	{
 		const int32 Consent = ABpTable::TalkConsent();
 		Sub = Consent == 1 ? FString(TEXT("Allowed · SETTINGS › TALK turns it off")) : FString(TEXT("Your choice · you can change it in SETTINGS"));
-		Out.Add(Note(TEXT("Hold X, pinch and hold the lamp, or hold TALK on your wrist, and speak. Let go to send. The lamp says LISTENING while the microphone is on.")));
-		Out.Add(Note(TEXT("Your voice goes to your PC, and from your PC to a cloud speech service that turns it into words. The lamp's answer is spoken the same way."), 2));
+		Out.Add(Note(TEXT("Hold X, pinch and hold Glim, or hold TALK on your wrist, and speak. Let go to send. Glim says LISTENING while the microphone is on.")));
+		Out.Add(Note(TEXT("Your voice goes to your PC, and from your PC to a cloud speech service that turns it into words. Glim's answer is spoken the same way."), 2));
 		Out.Add(Note(TEXT("Nothing you say is kept, on this headset or on your PC. The microphone is on only while you hold.")));
 		FBpConsoleRow Row;
-		Row.Label = TEXT("Talk to the lamp?");
-		Row.Detail = TEXT("Without it, MENU › ASK still asks the lamp");
+		Row.Label = TEXT("Talk to Glim?");
+		Row.Detail = TEXT("Without it, MENU › ASK still asks Glim");
 		Row.Buttons = { { TEXT("NOT NOW"), TEXT("talk:notnow") }, { TEXT("ALLOW"), TEXT("talk:allow"), true } };
 		Row.Tone = Consent == 1 ? 1 : 0;
 		Out.Add(Row);
@@ -286,7 +286,7 @@ struct FBpConsolePages
 		const float Size = TextSizeNow();
 		Choice(TEXT("TEXT SIZE"), TEXT("The console, the wrist and the captions"), { { TEXT("100%"), TEXT("set:text:1.0"), Size < 1.07f }, { TEXT("115%"), TEXT("set:text:1.15"), Size >= 1.07f && Size < 1.22f }, { TEXT("130%"), TEXT("set:text:1.3"), Size >= 1.22f } });
 		const bool bAlways = CvarInt(TEXT("bp.Captions")) != 0;
-		Choice(TEXT("CAPTIONS"), TEXT("The lamp's lines in words, always or with its voice"), { { TEXT("ALWAYS"), TEXT("set:captions:1"), bAlways }, { TEXT("WITH VOICE"), TEXT("set:captions:0"), !bAlways } });
+		Choice(TEXT("CAPTIONS"), TEXT("Glim's lines in words, always or with his voice"), { { TEXT("ALWAYS"), TEXT("set:captions:1"), bAlways }, { TEXT("WITH VOICE"), TEXT("set:captions:0"), !bAlways } });
 		const bool bRight = CvarInt(TEXT("bp.WristHand")) != 0;
 		Choice(TEXT("HAND"), TEXT("The wrist panel's hand"), { { TEXT("LEFT"), TEXT("set:hand:0"), !bRight }, { TEXT("RIGHT"), TEXT("set:hand:1"), bRight } });
 	}
@@ -313,7 +313,7 @@ struct FBpConsolePages
 			FBpConsoleRow Next;
 			Next.Act = TEXT("room:next");
 			Next.Label = TEXT("NEXT ROOM");
-			Next.Detail = TEXT("The lamp picks it and says why");
+			Next.Detail = TEXT("Glim picks it and says why");
 			Next.Tag = TEXT("GO");
 			Out.Add(Next);
 		}
@@ -587,7 +587,7 @@ struct FBpConsolePages
 		if (!T || !T->GetScanResult(R))
 		{
 			Sub = TEXT("No scan has ended here yet");
-			Out.Add(Note(TEXT("Start one on the SCAN page: the lamp follows it room by room, and its result opens here.")));
+			Out.Add(Note(TEXT("Start one on the SCAN page: Glim follows it room by room, and its result opens here.")));
 			return;
 		}
 		const FString Lens = BpWords::Lens(R.Lens);
@@ -779,9 +779,9 @@ struct FBpConsolePages
 	// ASK: the lamp's three asks (the wrist's ASK tab), its last answer, and what that answer offers.
 	static void AskRows(ABpPawn& Pawn, TArray<FBpConsoleRow>& Out, FString& Sub)
 	{
-		if (!Plan(Pawn)) { Sub = TEXT("The lamp"); Out.Add(Note(TEXT("The lamp answers once the plan has arrived."))); return; }
+		if (!Plan(Pawn)) { Sub = TEXT("Glim"); Out.Add(Note(TEXT("Glim answers once the plan has arrived."))); return; }
 		ABpTable* T = Table(Pawn);
-		Sub = T->IsLampAsking() ? FString(TEXT("Asking the companion")) : FString(TEXT("Ask the lamp; it answers from the store, and the companion with your PC"));
+		Sub = T->IsLampAsking() ? FString(TEXT("Asking the companion")) : FString(TEXT("Ask Glim; he answers from the store, and with the companion on your PC"));
 		const TCHAR* Asks[][2] = { { TEXT("What should I do next?"), TEXT("ask:next") }, { TEXT("Plan my next step here"), TEXT("ask:here") }, { TEXT("Scan this"), TEXT("ask:scan") } };
 		for (const auto& Ask : Asks)
 		{
@@ -806,14 +806,14 @@ struct FBpConsolePages
 			FBpConsoleRow Hint;
 			Hint.Tone = 6;
 			Hint.Label = TEXT("Or ask in your own words");
-			Hint.Detail = ABpTable::TalkConsent() == 1 ? FString(TEXT("Hold X, or pinch and hold the lamp, and speak. Let go to send.")) : FString(TEXT("Talking to the lamp is off: SETTINGS › TALK turns it on."));
+			Hint.Detail = ABpTable::TalkConsent() == 1 ? FString(TEXT("Hold X, or pinch and hold Glim, and speak. Let go to send.")) : FString(TEXT("Talking to Glim is off: SETTINGS › TALK turns it on."));
 			Hint.Tag = TEXT("2");
 			Out.Add(Hint);
 		}
 	}
 	static FString AskSummary(ABpPawn& Pawn)
 	{
-		return Plan(Pawn) && !Table(Pawn)->LampOfferLabel().IsEmpty() ? Table(Pawn)->LampOfferLabel() : FString(TEXT("Three questions for the lamp"));
+		return Plan(Pawn) && !Table(Pawn)->LampOfferLabel().IsEmpty() ? Table(Pawn)->LampOfferLabel() : FString(TEXT("Three questions for Glim"));
 	}
 
 	// PROJECTS: every product and its onboarding (the wrist's PROJECTS tab), the open one marked; a press switches to it.
@@ -1232,13 +1232,13 @@ struct FBpConsolePages
 			Row.Buttons = { { TEXT("−"), Minus }, { TEXT("+"), Plus } };
 			Out.Add(Row);
 		};
-		Value(TEXT("VOICE"), TEXT("The lamp's voice"), BpAudio::VoiceLevel(), TEXT("voice:minus"), TEXT("voice:plus"));
+		Value(TEXT("VOICE"), TEXT("Glim's voice"), BpAudio::VoiceLevel(), TEXT("voice:minus"), TEXT("voice:plus"));
 		Value(TEXT("MUSIC"), BpAudio::MusicLevel() > 0.f ? TEXT("The background music") : TEXT("Off: no stream"), BpAudio::MusicLevel(), TEXT("music:minus"), TEXT("music:plus"));
 		const bool bTour = Plan(Pawn) && Table(Pawn)->IsTourRunning();
 		{
 			FBpConsoleRow Row;
 			Row.Label = TEXT("TABLE");
-			Row.Detail = TEXT("To your seat · the lamp's tour");
+			Row.Detail = TEXT("To your seat · Glim's tour");
 			Row.Buttons = { { TEXT("SEAT"), TEXT("seat") }, { bTour ? TEXT("STOP TOUR") : TEXT("TOUR"), TEXT("tour"), bTour } };
 			Out.Add(Row);
 		}
@@ -1247,6 +1247,15 @@ struct FBpConsolePages
 			Row.Label = TEXT("WRIST");
 			Row.Detail = TEXT("How it turns (its hand: ACCESSIBILITY)");
 			Row.Buttons = { { CvarInt(TEXT("bp.WristFace")) != 0 ? TEXT("FACES YOU") : TEXT("FIXED"), TEXT("toggle:face") } };
+			Out.Add(Row);
+		}
+		{
+			// The controls legend beside the table (BpLegend.cpp, wave Q1).
+			const bool bLegend = CvarInt(TEXT("bp.Legend")) != 0;
+			FBpConsoleRow Row;
+			Row.Label = TEXT("LEGEND");
+			Row.Detail = bLegend ? TEXT("What each control does, at the table's right") : TEXT("Off: the controls are in the tour");
+			Row.Buttons = { { bLegend ? TEXT("ON") : TEXT("OFF"), TEXT("toggle:legend"), bLegend } };
 			Out.Add(Row);
 		}
 		{
@@ -1802,7 +1811,7 @@ void ABpPawn::RefreshConsole()
 			// The consent sheet, designed (night two V2): the one sentence about the cloud service is the thing to read; ALLOW
 			// and NOT NOW are the largest controls on it.
 			const FBpConsoleRow& Choice = Rows[3];
-			Put(FBox2f(FVector2f(Pad + 20.f, 160.f), FVector2f(LW - Pad, 196.f)), SNew(STextBlock).Text(FText::FromString(TEXT("BEFORE YOU TALK TO THE LAMP"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber)));
+			Put(FBox2f(FVector2f(Pad + 20.f, 160.f), FVector2f(LW - Pad, 196.f)), SNew(STextBlock).Text(FText::FromString(TEXT("BEFORE YOU TALK TO GLIM"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber)));
 			const FSlateFontInfo ReadFont = Font(TEXT("Bold"), 32.f);
 			const FString Cloud = BpSheet::Wrap(Rows[1].Label, ReadFont, LW - 2.f * Pad - 40.f, 3);
 			const float CloudH = LineCount(Cloud) * Pitch(32.f);
@@ -2208,11 +2217,11 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 	const bool bInFlight = !Word.IsEmpty();
 	// The header: the lamp, drawn; THE LAMP; the state as a chip; STOP while it is in flight, else CLOSE.
 	Put(FBox2f(FVector2f(Pad - 6.f, HeadY0 - 6.f), FVector2f(Pad + 70.f, HeadY1 + 6.f)), SNew(BpSheet::SMotif).Kind(2));
-	Put(FBox2f(FVector2f(Pad + 84.f, HeadY0), FVector2f(Pad + 360.f, HeadY1)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(TEXT("THE LAMP"))).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+	Put(FBox2f(FVector2f(Pad + 84.f, HeadY0), FVector2f(Pad + 360.f, HeadY1)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(TEXT("GLIM"))).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
 	const FString State = bInFlight ? Word : bSample ? FString(TEXT("SAMPLE")) : FString(TEXT("ANSWERED"));
 	const bool bAmber = bListening || State == TEXT("SAMPLE");
 	const bool bSolid = bListening || Word == TEXT("ANSWERING") || Word == TEXT("SAMPLE");
-	const float ChipX = Pad + 84.f + BpSheet::TextWidth(TEXT("THE LAMP"), TitleFont) + 24.f;
+	const float ChipX = Pad + 84.f + BpSheet::TextWidth(TEXT("GLIM"), TitleFont) + 24.f;
 	Put(FBox2f(FVector2f(ChipX, HeadY0 + 13.f), FVector2f(ChipX + BpSheet::ChipWidth(State, SmallBold), HeadY1 - 13.f)), BpSheet::Chip(State, SmallBold, 44.f, bAmber ? BpSheet::Amber : BpSheet::Accent, bSolid));
 	{
 		const FBox2f Box(FVector2f(LW - Pad - 190.f, HeadY0), FVector2f(LW - Pad, HeadY1));
@@ -2225,7 +2234,7 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 	}
 	const FString Sub = bListening ? FString(TEXT("Speak now · let go to send · up to 30 s"))
 		: Word == TEXT("HEARING") ? FString(TEXT("Turning your words into text on your PC"))
-		: Word == TEXT("THINKING") ? FString(TEXT("Your PC's companion is thinking · B or a pinch on the lamp cancels"))
+		: Word == TEXT("THINKING") ? FString(TEXT("Your PC's companion is thinking · B or a pinch on Glim cancels"))
 		: Word == TEXT("ANSWERING") ? FString(TEXT("Spoken aloud · B stops it · it clears after the voice"))
 		: bSample ? FString(TEXT("A sample exchange: no microphone, nothing sent"))
 		: FString(TEXT("This clears itself in a moment · CLOSE clears it now"));
@@ -2260,7 +2269,7 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.3f)));
 		Y += 16.f;
 	}
-	Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("THE LAMP · SAMPLE") : TEXT("THE LAMP"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
+	Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("GLIM · SAMPLE") : TEXT("GLIM"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
 	Y += 40.f;
 	FString Body = !Reply.IsEmpty() ? Reply : Line;
 	if (Word == TEXT("THINKING")) Body = TEXT("Thinking");

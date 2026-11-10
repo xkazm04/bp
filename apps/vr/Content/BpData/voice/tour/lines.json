@@ -15,7 +15,7 @@
     }
   },
   "lines": {
-    "welcome": "Welcome to the light table. Each block here is a part of your product.",
+    "welcome": "Welcome. My name is Glim. Each block here is part of your product.",
     "open-wing": "Tap a wing to open it.",
     "open-room": "Now tap the glowing room.",
     "step-in": "Tap it once more, to step inside.",
@@ -33,6 +33,7 @@
     "hands-pull": "Pinch a wing and pull it toward you. It opens, like a tap.",
     "hands-push": "Push away to go back out. It works like BACK.",
     "hands-wrist": "Your wrist holds quick decisions. On a controller, A taps and B goes back.",
+    "hands-legend": "The legend at your right shows every control.",
     "scan-arm": "Tap SCAN once to arm it, then again to start.",
     "scan-watch": "Each room lights up as it is read. The findings land below.",
     "morning-decide": "Each card is one decision. Approve it, or leave it for later.",

@@ -1662,6 +1662,19 @@ private:
 	TObjectPtr<UWidgetComponent> LampCaption;
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> LampRing;
+	/** The controls legend (BpLegend.cpp, wave Q1, the owner on the Quest 3S 2026-11-10: "which control element does what was
+	 *  not clear, hinting graphics/legend on left or right side from the table could help"): a small standing plate beyond the
+	 *  table's right end at its near corner, turned to the seat; one opaque unlit quad, drawn only when its content changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> Legend;
+	/** What the legend shows now (mode, lit line, order, text size, on): a change redraws it, nothing else does. */
+	FString LegendKey;
+	int32 LegendDraws = 0;
+	void InitLegend();
+	/** At the table's tick rate (4 Hz at rest): builds the key, redraws and places the plate only when it changed. */
+	void TickLegend();
+	/** The legend's line lit for the tour's step ("" when none): the HANDS line, or the CONTROLLERS one. */
+	FString LegendLitLine(bool bControllers) const;
 	FString LampLine;
 	float LampCaptionClock = 0.f;
 	float LampHoldFill = 0.f;

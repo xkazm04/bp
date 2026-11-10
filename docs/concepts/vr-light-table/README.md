@@ -82,8 +82,8 @@ lenses, scans and waves, drawn for a headset.
 > **2026-11-10 (day two, all of it).** What the table does now, on the PC: none of this is on the headset yet (it holds the
 > build of 11:44, through night two); the record is [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md).
 > - **The tour**: a first tour of about 90 s that runs once and resumes after a quit; MENU > TOUR replays it and holds
->   seven chapters (hands and wrist, scan a room, your morning, your room, talk to the lamp, text size, your PC).
-> - **The scan theatre**: the lamp follows a scan room to room and narrates it, findings land as pins, a SCAN RESULT
+>   seven chapters (hands and wrist, scan a room, your morning, your room, talk to Glim, text size, your PC).
+> - **The scan theatre**: Glim follows a scan room to room and narrates it, findings land as pins, a SCAN RESULT
 >   sheet closes it (on the sample; a linked scan was not run).
 > - **YESTERDAY**: the stand-up shows what earlier approvals became, with BEFORE and AFTER, and opens with "Welcome
 >   back" on a later day.

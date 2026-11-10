@@ -570,12 +570,20 @@ void ABpTable::TickLampLook()
 	if (AActor* Floor = L.Floor.Get())
 	{
 		// The table's yaw and place on the floor plane (its own origin stands on the floor: SM_LightTableFrame's feet are at 0).
+		// Wave Q1 (the real headset, 2026-11-10: the floor gone for the rest of a session once a wearer was seated): a seated
+		// eye sinks the table (BpView.Seat clamps its feet between the level's floor and SeatTopMinCm under it), and a quad at
+		// the sunk feet lay under the studio's own floor, which the Quest draws black. The quad stays on the level's floor
+		// (the table's home height) whenever the table sinks, its pool and leg shadows still centred on the table and turned
+		// with it; the legs pass through it as they pass through the studio's floor.
 		const FTransform Table = GetActorTransform();
-		const FTransform At(FRotator(0.0, Table.Rotator().Yaw, 0.0), Table.GetLocation() + FVector(0.0, 0.0, FloorLiftCm), FVector(FloorCm / 100.0, FloorCm / 100.0, 1.0));
+		const double FloorZ = FMath::Max(Table.GetLocation().Z, GetHomeTransform().GetLocation().Z);
+		const FTransform At(FRotator(0.0, Table.Rotator().Yaw, 0.0), FVector(Table.GetLocation().X, Table.GetLocation().Y, FloorZ + FloorLiftCm), FVector(FloorCm / 100.0, FloorCm / 100.0, 1.0));
 		if (!At.Equals(L.FloorAt, 0.01))
 		{
 			L.FloorAt = At;
 			Floor->SetActorTransform(At);
+			UE_LOG(LogBpTable, Log, TEXT("BpLampLook: studio floor follows the table: at (%.0f, %.0f, %.1f) yaw %.0f (the table's feet %.1f cm %s the level's floor)"), At.GetLocation().X, At.GetLocation().Y, At.GetLocation().Z,
+				At.Rotator().Yaw, FMath::Abs(GetHomeTransform().GetLocation().Z - Table.GetLocation().Z), Table.GetLocation().Z < GetHomeTransform().GetLocation().Z ? TEXT("under") : TEXT("on"));
 		}
 		if (FloorWant != L.FloorShown)
 		{

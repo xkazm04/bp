@@ -143,6 +143,8 @@ public:
 	void OpenConsole(const FString& Page);
 	void CloseConsole();
 	bool IsConsoleOpen() const { return bConsoleOpen; }
+	/** The controllers lead (UBpHands' input), as the legend reads it (BpLegend.cpp). */
+	bool UsesControllers() const;
 	/** The open page's key ("home" on the MENU's tiles; meaningful while IsConsoleOpen). */
 	const FString& GetConsolePage() const { return ConsolePageKey; }
 	/** The tour's mark (BpTour.cpp, wave T1): the control a step asks for ("console:menu", "console:bar:back") wears the amber

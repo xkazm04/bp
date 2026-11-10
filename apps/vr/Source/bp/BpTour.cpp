@@ -548,7 +548,7 @@ bool ABpTable::PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip)
 	Wave->Duration = static_cast<float>(Bytes) / (2.f * Channels * Rate);
 	Wave->SoundGroup = SOUNDGROUP_Voice;
 	Wave->bLooping = false;
-	// The clip at the level (bp.VoiceLevel: twice the level as gain), limited sample by sample: a gain over 1 must not clip.
+	// The clip at the level (bp.VoiceLevel x BpAudio::VoiceGainAtFull as gain), limited sample by sample: a gain over 1 must not clip.
 	TourVoiceGain = BpAudio::VoiceGain();
 	TArray<uint8> Scaled;
 	Scaled.SetNumUninitialized(Bytes);

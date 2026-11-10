@@ -19,7 +19,7 @@ namespace
 	TAutoConsoleVariable<float> CVarVoiceLevel(
 		TEXT("bp.VoiceLevel"),
 		1.f,
-		TEXT("The lamp's voice, 0 to 1.5 (shown as 0 to 150 %; 1 plays what the old bp.VoiceVolume 2 played: the clips at twice their levelled -14 LUFS, limited, never clipped). Settings' VOICE - and + step it; saved across runs."),
+		TEXT("Glim's voice, 0 to 1.5 (shown as 0 to 150 %; 1 plays the clips at BpAudio::VoiceGainAtFull = 2.4 x their levelled -14 LUFS, the old 120 % (2026-11-10), soft-limited, never clipped). Settings' VOICE - and + step it; saved across runs."),
 		ECVF_Default);
 	TAutoConsoleVariable<float> CVarMusicLevel(
 		TEXT("bp.MusicLevel"),
@@ -76,6 +76,7 @@ namespace
 		{ TEXT("bp.Room"), SettingsSection, TEXT("Room"), 0.f, 1.f },
 		{ TEXT("bp.TextSize"), SettingsSection, TEXT("TextSize"), 1.f, 1.3f },
 		{ TEXT("bp.Captions"), SettingsSection, TEXT("Captions"), 0.f, 1.f },
+		{ TEXT("bp.Legend"), SettingsSection, TEXT("Legend"), 0.f, 1.f },
 	};
 	bool bLoading = false;
 
@@ -100,7 +101,7 @@ namespace
 namespace BpAudio
 {
 	float VoiceLevel() { return FMath::Clamp(CVarVoiceLevel.GetValueOnGameThread(), 0.f, 1.5f); }
-	float VoiceGain() { return 2.f * VoiceLevel(); }
+	float VoiceGain() { return VoiceGainAtFull * VoiceLevel(); }
 	float MusicLevel() { return FMath::Clamp(CVarMusicLevel.GetValueOnGameThread(), 0.f, 1.f); }
 
 	void StepVoiceLevel(float Delta)

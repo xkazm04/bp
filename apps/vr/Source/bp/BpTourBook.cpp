@@ -8,7 +8,7 @@ namespace BpTourBook
 	{
 		static const TArray<FLine> All = {
 			// ---- The core tour (first launch; SETTINGS > TABLE > TOUR replays it) ----
-			{ TEXT("welcome"), TEXT("Welcome to the light table. Each block here is a part of your product.") },
+			{ TEXT("welcome"), TEXT("Welcome. My name is Glim. Each block here is part of your product.") },
 			{ TEXT("open-wing"), TEXT("Tap a wing to open it.") },
 			{ TEXT("open-room"), TEXT("Now tap the glowing room.") },
 			{ TEXT("step-in"), TEXT("Tap it once more, to step inside.") },
@@ -27,6 +27,7 @@ namespace BpTourBook
 			{ TEXT("hands-pull"), TEXT("Pinch a wing and pull it toward you. It opens, like a tap.") },
 			{ TEXT("hands-push"), TEXT("Push away to go back out. It works like BACK.") },
 			{ TEXT("hands-wrist"), TEXT("Your wrist holds quick decisions. On a controller, A taps and B goes back.") },
+		{ TEXT("hands-legend"), TEXT("The legend at your right shows every control.") },
 			// ---- SCAN A ROOM ----
 			{ TEXT("scan-arm"), TEXT("Tap SCAN once to arm it, then again to start.") },
 			{ TEXT("scan-watch"), TEXT("Each room lights up as it is read. The findings land below.") },
@@ -37,7 +38,7 @@ namespace BpTourBook
 			// ---- YOUR ROOM ----
 			{ TEXT("room-switch"), TEXT("Tap the room switch on the bar. Your own room appears around the table.") },
 			{ TEXT("room-back"), TEXT("Tap it again, and the studio comes back.") },
-			// ---- TALK TO THE LAMP ----
+			// ---- TALK TO GLIM ----
 			{ TEXT("talk-hold"), TEXT("Hold me, or hold TALK on your wrist, and speak. Let go to send.") },
 			{ TEXT("talk-where"), TEXT("Your words go to your PC, then a speech service. Nothing is kept.") },
 			{ TEXT("talk-choice"), TEXT("It stays off until you allow it. SETTINGS, under TALK, changes it.") },
@@ -88,11 +89,11 @@ namespace BpTourBook
 	{
 		// In any order here: the TOUR page lists them in the MENU's order, read from the console's page registry.
 		static const TArray<FChapter> All = {
-			{ TEXT("hands"), TEXT("HANDS AND WRIST"), TEXT("rooms"), TEXT("Pull and push · the wrist · the pad"), 25, { TEXT("hands-pull"), TEXT("hands-push"), TEXT("hands-wrist"), nullptr } },
+			{ TEXT("hands"), TEXT("HANDS AND WRIST"), TEXT("rooms"), TEXT("Pull and push · the wrist · the pad · the legend"), 30, { TEXT("hands-pull"), TEXT("hands-push"), TEXT("hands-wrist"), TEXT("hands-legend") } },
 			{ TEXT("scan"), TEXT("SCAN A ROOM"), TEXT("scan"), TEXT("Arm, start, watch the findings land"), 20, { TEXT("scan-arm"), TEXT("scan-watch"), nullptr, nullptr } },
 			{ TEXT("morning"), TEXT("YOUR MORNING"), TEXT("standup"), TEXT("Decisions · PLAN MY DAY · HAND OVER"), 30, { TEXT("morning-decide"), TEXT("morning-plan"), TEXT("morning-hand"), nullptr } },
 			{ TEXT("room"), TEXT("YOUR ROOM"), TEXT("settings"), TEXT("Your own room around the table, and back"), 20, { TEXT("room-switch"), TEXT("room-back"), nullptr, nullptr } },
-			{ TEXT("talk"), TEXT("TALK TO THE LAMP"), TEXT("talk"), TEXT("Hold to talk · where it goes · your choice"), 30, { TEXT("talk-hold"), TEXT("talk-where"), TEXT("talk-choice"), nullptr } },
+			{ TEXT("talk"), TEXT("TALK TO GLIM"), TEXT("talk"), TEXT("Hold to talk · where it goes · your choice"), 30, { TEXT("talk-hold"), TEXT("talk-where"), TEXT("talk-choice"), nullptr } },
 			{ TEXT("text"), TEXT("TEXT SIZE"), TEXT("access"), TEXT("Larger words · motion · captions · hand"), 20, { TEXT("text-size"), TEXT("text-more"), nullptr, nullptr } },
 			{ TEXT("pc"), TEXT("YOUR PC"), TEXT("link"), TEXT("What linking adds · pairing"), 20, { TEXT("pc-what"), TEXT("pc-pair"), nullptr, nullptr } },
 		};

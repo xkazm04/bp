@@ -768,6 +768,8 @@ void ABpTable::Tick(float DeltaSeconds)
 	BpSurround::Tick(GetWorld(), DeltaSeconds);
 	// The lamp's look and light state, its home, the studio floor (BpLampLook.cpp): writes only when something changed.
 	TickLampLook();
+	// The controls legend (BpLegend.cpp): a key compared here, a redraw only when it changed.
+	TickLegend();
 	const float Height = HeightCvarCm();
 	if (!FMath::IsNearlyEqual(Height, PlacedHeightCm, 0.01f))
 	{

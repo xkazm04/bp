@@ -415,7 +415,7 @@ packaging machine, with a real product's names and findings. Fix: stage `BpData/
 
 - **Cloud speech is allowed.** Voice audio goes from the headset to the owner's PC and from there to a cloud speech
   service, only after ALLOW on the consent sheet; the deviation from the registry's `voice-io` standard stays recorded in
-  `voice-link.md`. How it works is in `apps/vr/README.md` ("How the lamp speaks and listens").
+  `voice-link.md`. How it works is in `apps/vr/README.md` ("How Glim speaks and listens").
 - **The table's grant bound keeps `wave.dispatch`.** A hand-over from the headset may let the companion dispatch waves
   (real builds) within the bound in `table-link-v2.md`.
 - **Receipts for the generated music, voice and sample screens are not needed** (owner). The licence rows above keep

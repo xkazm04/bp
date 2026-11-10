@@ -125,6 +125,7 @@ namespace
 	}
 
 	/** Wave 4: the soft halos round the beads, off by default (a translucent sprite per bead; the plan's marker has none). */
+	TAutoConsoleVariable<float> CVarScanSweepGain(TEXT("bp.ScanSweepGain"), 0.45f, TEXT("On the Quest tier, the scan sweep's tint (the lens's colour, or the line's cyan) is scaled by this, 0 to 2, so the band tints what it reads rather than clipping it white on the LDR path (wave Q1). The PC keeps 1. Read while a scan runs."));
 	TAutoConsoleVariable<int32> CVarPinHalos(TEXT("bp.PinHalos"), 0, TEXT("The soft translucent halos round the pins' beads: 0 off (wave 4, the default), 1 on."));
 
 	/** The survey pin as modelled (ArtSource/survey-pin): its height, and its tag's height (the tag sits at the top). */
@@ -1113,7 +1114,16 @@ void ABpTable::WriteScanParams(float Strength)
 	// c1_scan_tint.py; its default is the line's own cyan). A collection without it is left alone.
 	if (ScanParams->GetVectorParameterByName(TEXT("ScanTint")))
 	{
-		const FLinearColor Tint = bTheatre ? TheatreTint : FLinearColor(0.0395f, 0.5776f, 1.f, 1.f);
+		FLinearColor Tint = bTheatre ? TheatreTint : FLinearColor(0.0395f, 0.5776f, 1.f, 1.f);
+		// Wave Q1 (the real headset, 2026-11-10: the Design lens's pink sweep drew the line and the room it read as solid
+		// white-pink blocks): the band adds Scan x Band light to the paper and the edges (fg_holo.py), which the PC's tonemapper
+		// rolls off and the Quest's LDR path clips per channel. On the Quest tier the tint is scaled by bp.ScanSweepGain, so
+		// the band tints the lines in the lens's colour and what lies under it still reads. The PC keeps its look (gain 1).
+		if (BpTier::IsOn(World))
+		{
+			const float Gain = FMath::Clamp(CVarScanSweepGain.GetValueOnGameThread(), 0.f, 2.f);
+			Tint = FLinearColor(Tint.R * Gain, Tint.G * Gain, Tint.B * Gain, 1.f);
+		}
 		if (!Tint.Equals(ScanTintShown))
 		{
 			ScanTintShown = Tint;

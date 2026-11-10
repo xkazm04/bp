@@ -42,15 +42,15 @@ new words and the 24 kHz clips. Until you install a new build, the steps below t
 ## 2. First launch and the first tour (hands only: leave the controllers on the desk)
 
 - [ ] Start Developer's Blueprint from the headset's library. **See:** the table seats itself in front of you at your eye,
-      a wooden floor under it, the lamp at the table's left, the console's slim bar below your line of sight.
+      a wooden floor under it, Glim (the companion, a drafting lamp) at the table's left, the console's slim bar below your line of sight.
       Off: `BpView.Seat` (or SETTINGS > TABLE > SEAT).
 - [ ] **Hear:** Glim's welcome, the music bed softly under it. **See:** a caption for each line. The tour starts by itself
       only on a first launch (or to resume one a quit interrupted). No tour: `BpTour.Start`. Voice missing but captions
       show: `bp.TourVoice 1`.
 - [ ] Follow it: tap a wing, tap the glowing room, tap it once more to step in, approve or decline the card, BACK, MENU,
-      one stand-up decision, hold to talk. **See:** the lamp points at the wing on the first tap step; on the stand-up
-      step the caption shows and the lamp stands beside the sheet (known on the PC: the caption overlaps the sheet's left
-      edge); it ends with "That's the table. It's yours." About 95 s when you follow it (PC). Left alone, the lamp shows
+      one stand-up decision, hold to talk. **See:** Glim points at the wing on the first tap step; on the stand-up
+      step the caption shows and Glim stands beside the sheet (known on the PC: the caption overlaps the sheet's left
+      edge); it ends with "That's the table. It's yours." About 95 s when you follow it (PC). Left alone, Glim shows
       each step after 14 s ("Like this."); about 172 s for the whole tour (PC).
 - [ ] Resume: start the tour again (`BpTour.Forget`, force-stop, launch), quit at the BACK step
       (`adb shell am force-stop com.developersblueprint.vr`), launch again. **See:** it resumes at BACK.
@@ -62,7 +62,7 @@ new words and the 24 kHz clips. Until you install a new build, the steps below t
 ## 3. The TOUR page and its chapters
 
 - [ ] MENU > TOUR (also SETTINGS > TABLE > TOUR, or TOUR on the wrist). **See:** THE FIRST TOUR (REPLAY) and seven
-      chapters, each with NEW until seen: HANDS AND WRIST, SCAN A ROOM, YOUR MORNING, YOUR ROOM, TALK TO THE LAMP,
+      chapters, each with NEW until seen: HANDS AND WRIST, SCAN A ROOM, YOUR MORNING, YOUR ROOM, TALK TO GLIM,
       TEXT SIZE, YOUR PC.
 - [ ] Open one chapter (TEXT SIZE is short). **See:** it opens the page it teaches, the bar says which chapter runs with
       STOP TOUR, and the table is put back at its end; its NEW chip is gone. A chapter by command:
@@ -128,19 +128,19 @@ Put the controllers down.
 ## 9. The scan theatre on the sample (still no PC)
 
 - [ ] Go to the site plan (thumbstick click, or BACK until the whole plan shows). MENU > SCAN, tap **SCAN THIS** once (it
-      says PRESS AGAIN), then again. **Hear:** the lamp say the start ("Scanning everything." on the site, "Scanning this
+      says PRESS AGAIN), then again. **Hear:** Glim say the start ("Scanning everything." on the site, "Scanning this
       wing." in a wing, "Scanning this room." in a room).
-- [ ] **See:** the lamp leaves its home and flies to the room being read, its light in the lens's colour; a caption per room
+- [ ] **See:** Glim leaves its home and flies to the room being read, its light in the lens's colour; a caption per room
       ("Reading <room>, 3 of 13"); the scan line in the same colour; new findings drop onto their rooms as the walk passes
       them (on the sample, up to six).
 - [ ] **See and hear at the end:** the SCAN RESULT sheet (what was read and found by severity, the three most severe as
-      rows that raise their room, DECIDE THEM), and the lamp's result line, for example "Done. Thirteen rooms read, six new
+      rows that raise their room, DECIDE THEM), and Glim's result line, for example "Done. Thirteen rooms read, six new
       findings." If another sheet was open, a chip on the bar opens the result instead.
-- [ ] Start one and hold to talk mid-scan. **See:** the lamp stays with you, then catches up with the scan after.
+- [ ] Start one and hold to talk mid-scan. **See:** Glim stays with you, then catches up with the scan after.
 - [ ] Start one and cancel it on the SCAN page. **See:** the bar, the wrist and the SCAN page clear at once; "Stopped. Here
       is what it read."
 - [ ] Tune: `bp.ScanTheatre 0` shows the scan with its marks only (as before day two), `1` back. `bp.ScanVoice 0` keeps the
-      captions and drops the two spoken lines. `bp.Lamp.State 5` forces the lamp's scanning light for a look (`-1` back).
+      captions and drops the two spoken lines. `bp.Lamp.State 5` forces Glim's scanning light for a look (`-1` back).
       `BpScan.TheatreLines` logs, for the sample, each scope's rooms and the findings it would land. Known on the PC: a
       stop-ship pin lands in the usual colour; a room's count updates once per room; DECIDE THEM opens the stand-up at
       its first card.
@@ -203,19 +203,19 @@ with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_
 - [ ] Tune: `bp.AddProject 0` hides ADD A PROJECT, `1` shows it (default). Never run on the device; on the PC only with a
       stubbed job runner.
 
-## 13. Talk to the lamp (PC linked)
+## 13. Talk to Glim (PC linked)
 
-- [ ] Hold **X** (or pinch and hold the lamp, or hold TALK on the wrist). **See:** the sheet TALK TO THE LAMP in plain words
+- [ ] Hold **X** (or pinch and hold Glim, or hold TALK on the wrist). **See:** the sheet TALK TO GLIM in plain words
       (your voice goes to the PC and from there to a cloud speech service). Tap **ALLOW**.
 - [ ] **See:** the Android microphone permission dialog (never seen on the device yet). Allow it.
 - [ ] Hold X, say "what should I do first today?", let go. **See:** LISTENING with a level meter that moves with your voice,
-      the lamp's light change (listening, thinking, answering), your words as a caption. **Hear:** a spoken reply with the
+      Glim's light change (listening, thinking, answering), your words as a caption. **Hear:** a spoken reply with the
       music dipped. Note how long the reply runs (night two's test reply was 23 s, too long; the spoken part now stops at
       280 characters).
-- [ ] Press B (or pinch the lamp) while it speaks. **See/hear:** it stops.
+- [ ] Press B (or pinch Glim) while it speaks. **See/hear:** it stops.
 - [ ] Ask for something that needs your approval ("plan my day and start the wave"). **See:** a pending card to answer
       (never seen on the device yet).
-- [ ] Tune: `BpTalk.Stat` logs the talk's state, the microphone and the consent. The lamp's light reacts too little:
+- [ ] Tune: `BpTalk.Stat` logs the talk's state, the microphone and the consent. Glim's light reacts too little:
       `bp.TalkLightGain 3` (default 1.5; 0 to 4). A light state for a look: `bp.Lamp.State 2` (listening), `3` (thinking),
       `4` (answering), `-1` back. Longer spoken replies: `bp.TalkSpokenMax 400`. The sheet again: `BpTalk.Consent unset`.
       The permission dialog again: `adb shell pm revoke com.developersblueprint.vr android.permission.RECORD_AUDIO`.
@@ -223,9 +223,9 @@ with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_
 ## 14. Your room (passthrough) and back
 
 - [ ] Tap **STUDIO** on the bar (or SETTINGS > ROOM). **See:** the studio fades out over about a second, your real room
-      around the table; the table, the lamp (lit, visible) and the console stay; a soft shadow under the table.
+      around the table; the table, Glim (lit, visible) and the console stay; a soft shadow under the table.
 - [ ] Your room too dark or washed out: `bp.Room.Brightness 0.2` (-1 to 1), `bp.Room.Contrast 0.1`, `bp.Room.Saturation 0`,
-      `bp.Room.Opacity 1` (below 1 darkens it). The fade too slow: `bp.Room.FadeS 0.6` (default 1.2; 0 is a cut). The lamp
+      `bp.Room.Opacity 1` (below 1 darkens it). The fade too slow: `bp.Room.FadeS 0.6` (default 1.2; 0 is a cut). Glim
       too dim against the room: `bp.Lamp.SelfLight 1.5` (0 to 3), `bp.Lamp.Glow 1.5`. Shadow too strong:
       `bp.Room.Shadow 0.15`; off: `0`.
 - [ ] Tap **YOUR ROOM** on the bar. **See:** back to the studio. Then switch to your room again for step 15.
@@ -243,7 +243,7 @@ with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_
 ## 16. Night two's visual rounds (in the 11:44 build, never seen by a person)
 
 - [ ] Lift a room. **See:** one white-on-blue nameplate under its near edge, the other wings stepped back, the bar on one
-      line. The lamp glides aside if the lifted room would be behind it. Lamp in the way: `bp.Lamp.HomeClear 0` to compare.
+      line. Glim glides aside if the lifted room would be behind it. Glim in the way: `bp.Lamp.HomeClear 0` to compare.
 - [ ] Room names on the site plan read from the seat. Too big or small: `bp.Table.RoomNameArcmin 45` (default 40);
       furniture too loud: `bp.Table.GlyphRest 0`.
 - [ ] The desk's front edge has no blown-out spot. Compare: `bp.Frame.StripLights 1`, then `0`. Frame too dark or flat:
@@ -252,7 +252,7 @@ with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_
       hold the pinch; the stamp settles. Stamp too quick: `bp.StandupAdvanceS 2`.
 - [ ] The wrist: same buttons and chips as the console, the decision's title in full, nothing cut.
 - [ ] SETTINGS > ACCESSIBILITY: TEXT SIZE 130 %. **See:** the console, the wrist and the captions grow together and nothing
-      breaks. Known: the lamp's caption touches the bar's left end at 130 %. Back: `bp.TextSize 1`.
+      breaks. Known: Glim's caption touches the bar's left end at 130 %. Back: `bp.TextSize 1`.
 - [ ] The pressed state on controls (could not be captured on the PC).
 
 ## After the check

@@ -65,6 +65,9 @@ public:
 
 	UBpHands();
 
+	/** The controllers lead now (no hand seen, a controller is): the legend shows the pad's column (BpLegend.cpp). */
+	bool UsesControllers() const { return Input == EInput::Controllers; }
+
 	/** BpHands.* console commands, run one after another by the first UBpHands that ticks. */
 	static TArray<FString>& PendingCommands();
 

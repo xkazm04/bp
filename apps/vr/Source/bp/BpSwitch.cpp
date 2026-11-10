@@ -243,6 +243,7 @@ void ABpTable::InitSwitch()
 	if (RoomBeads && RoomBeads->GetMaterial(0)) LassoBars->SetMaterial(0, RoomBeads->GetMaterial(0));
 	RoomModeChanged.AddUObject(this, &ABpTable::OnSwitchRoomChanged);
 	FindLamp();
+	InitLegend();
 }
 
 FVector ABpTable::EyeLocal() const
@@ -575,7 +576,7 @@ void ABpTable::LayoutLampCaption()
 				+ SOverlay::Slot().Padding(FMargin(Pad + 6.f, 14.f, Pad, 14.f))
 				[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(ChipH).WidthOverride(BpSheet::ChipWidth(TEXT("THE LAMP"), ChipFont))[BpSheet::Chip(TEXT("THE LAMP"), ChipFont, ChipH, BpSheet::Amber)]]
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(ChipH).WidthOverride(BpSheet::ChipWidth(TEXT("GLIM"), ChipFont))[BpSheet::Chip(TEXT("GLIM"), ChipFont, ChipH, BpSheet::Amber)]]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Words)).Font(Font).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
 				]
 			]);
