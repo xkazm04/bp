@@ -147,6 +147,7 @@ void ABpPawn::BeginPlay()
 	{
 		HeadOnHandle = FCoreDelegates::VRHeadsetPutOnHead.AddUObject(this, &ABpPawn::OnHeadOn);
 		HeadOffHandle = FCoreDelegates::VRHeadsetRemovedFromHead.AddUObject(this, &ABpPawn::OnHeadOff);
+		RecenterHandle = FCoreDelegates::VRHeadsetRecenter.AddUObject(this, &ABpPawn::OnRecenter);
 		GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
 	}
 }
@@ -172,6 +173,8 @@ void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (Music) Music->Stop();
 	FCoreDelegates::VRHeadsetPutOnHead.Remove(HeadOnHandle);
 	FCoreDelegates::VRHeadsetRemovedFromHead.Remove(HeadOffHandle);
+	FCoreDelegates::VRHeadsetRecenter.Remove(RecenterHandle);
+	GetWorldTimerManager().ClearTimer(RecenterTimer);
 	Super::EndPlay(EndPlayReason);
 }
 

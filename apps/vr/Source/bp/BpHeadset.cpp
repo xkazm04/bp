@@ -393,6 +393,22 @@ void ABpPawn::OnHeadOn()
 	Seat();
 }
 
+void ABpPawn::OnRecenter()
+{
+	// OpenXR raises this on XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING: the new origin applies at the event's change
+	// time, a few frames on. Seating now would read the old pose; 0.35 s later the eye is where the runtime put it.
+	UE_LOG(LogBpTable, Log, TEXT("BpView: the headset recentered: the table is seated again in a moment"));
+	TWeakObjectPtr<ABpPawn> Self(this);
+	GetWorldTimerManager().SetTimer(RecenterTimer, FTimerDelegate::CreateLambda([Self]()
+	{
+		ABpPawn* Pawn = Self.Get();
+		if (!Pawn) return;
+		Pawn->GetWorldTimerManager().ClearTimer(Pawn->SeatTimer);
+		Pawn->bSeatProvisional = false;
+		Pawn->Seat();
+	}), 0.35f, false);
+}
+
 void ABpPawn::ForgetHead()
 {
 	HeadPresence = EBpHeadPresence::Unknown;

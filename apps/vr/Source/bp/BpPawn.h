@@ -551,6 +551,11 @@ public:
 	 *  the headset on the desk must not seat to a false eye. The first time it is really put on, a seat made before that (with
 	 *  the head only assumed) is undone and made again; later doffing and donning never re-seat (the wrist's SEAT is there). */
 	void OnHeadOn();
+	/** The runtime recentered (the wearer held the Meta button): the table is seated again to the way the head now faces.
+	 *  The change is pending when the event comes, so the seat runs a beat later (RecenterTimer). */
+	void OnRecenter();
+	FTimerHandle RecenterTimer;
+	FDelegateHandle RecenterHandle;
 	void OnHeadOff();
 	/** BpView.FakeHead unknown: a runtime that says nothing about the head (the guard's check). */
 	void ForgetHead();
