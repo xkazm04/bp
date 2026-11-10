@@ -9,7 +9,7 @@
 // compared in constant time over its full length.
 import { timingSafeEqual } from 'node:crypto';
 import { DEVICE_HEADER } from '@bp/core/server/api/session/baton.server';
-import { DECIDER_SEAL_HEADER, deciderSeal } from '@bp/core/server/decider.server';
+import { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER, deciderSeal, onboardSeal } from '@bp/core/server/decider.server';
 import { deviceId, fingerprintOf, lanHome, readRegistry, type Pairing } from './lan-door.ts';
 
 export const BEARER = /^Bearer ([A-Za-z0-9_-]{43})$/;
@@ -27,10 +27,15 @@ export function pairingOf(token: string, now = Date.now(), home = lanHome(), war
 const seen = new Map<string, number>();
 export const lastSeen = (id: string): string | undefined => { const t = seen.get(id); return t === undefined ? undefined : new Date(t).toISOString(); };
 
-/** The headers a request from this pairing carries into the handlers: its device id, and the seal when it may decide. */
+/** The headers a request from this pairing carries into the handlers: its device id, the decider seal when it may decide, and
+ *  the onboard seal when it may start reading a project (table-link-v2.md section 14). */
 export function deviceOverlay(p: Pairing): Record<string, string> {
   seen.set(deviceId(p), Date.now());
-  return { [DEVICE_HEADER]: deviceId(p), ...(p.scopes.includes('decide') ? { [DECIDER_SEAL_HEADER]: deciderSeal() } : {}) };
+  return {
+    [DEVICE_HEADER]: deviceId(p),
+    ...(p.scopes.includes('decide') ? { [DECIDER_SEAL_HEADER]: deciderSeal() } : {}),
+    ...(p.scopes.includes('onboard') ? { [ONBOARD_SEAL_HEADER]: onboardSeal() } : {}),
+  };
 }
 
 /** The loopback listener's hook: no Authorization (or another scheme) is a plain loopback call (null); a Bearer that names a

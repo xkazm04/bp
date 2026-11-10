@@ -15,8 +15,10 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import { jsonOnly, localOnly } from '@bp/core/scan/local-only';
 import { isHuman } from '@bp/core/server/api/companion/door.server';
-import { DECIDER_SEAL_HEADER } from '@bp/core/server/decider-header';
+import { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER } from '@bp/core/server/decider-header';
 import { DEVICE_HEADER } from '@bp/core/server/api/session/baton.server';
+import { DEVICE_IN_FLIGHT, DEVICE_STARTS_PER_DAY, deviceOnboards } from '@bp/core/server/onboard-start.server';
+import { cancel } from '@bp/core/server/jobs.server';
 import type { Route } from './mount.ts';
 import {
   DEFAULT_DAYS, MAX_DAYS, MAX_PAIRED, MAX_PENDING, MAX_WRONG_CODES, NAMED_ONLY, REFUSAL_DELAY_MS, SCOPES,
@@ -51,7 +53,7 @@ export function headsetGate(req: Request): Response | null {
   const denied = localOnly(req);
   if (denied) return fail(denied, 403);
   if (req.method !== 'GET') { const notJson = jsonOnly(req); if (notJson) return fail(notJson, 415); }
-  if (req.headers.has('authorization') || req.headers.has(DECIDER_SEAL_HEADER) || req.headers.has(DEVICE_HEADER)) {
+  if (req.headers.has('authorization') || req.headers.has(DECIDER_SEAL_HEADER) || req.headers.has(ONBOARD_SEAL_HEADER) || req.headers.has(DEVICE_HEADER)) {
     return fail("a headset cannot pair or revoke headsets: that is bp's own page's to do", 403);
   }
   if (!isHuman(req)) return fail("only bp's own page may pair or revoke headsets (it needs the page's x-bp-human token)", 403);
@@ -74,6 +76,9 @@ export function headsetState(sw: DoorSwitch) {
     namedOnly: NAMED_ONLY,
     days: { default: DEFAULT_DAYS, max: MAX_DAYS },
     limits: { pending: MAX_PENDING, paired: MAX_PAIRED },
+    // project reads a headset started (onboard scope), newest first, each with its job as this server sees it
+    onboards: deviceOnboards(),
+    onboardBounds: { perDay: DEVICE_STARTS_PER_DAY, inFlight: DEVICE_IN_FLIGHT },
   };
 }
 
@@ -144,6 +149,16 @@ export function headsetRoutes(sw: DoorSwitch): Route[] {
       if (b.mode !== 'pair' && b.mode !== 'lan') return fail("body must be { mode: 'pair' | 'lan' }", 400);
       const err = await sw.switchOn(b.mode);
       return err ? fail(err, 409) : answer(headsetState(sw));
+    }),
+    // STOP on a project read a headset started (table-link-v2.md section 14): the existing job cancel, for a job the decision
+    // log says a headset started, and only from bp's own page (the gate above)
+    write('stop', (b) => {
+      if (typeof b.slug !== 'string' || typeof b.job !== 'string') return fail('body must be { slug, job }', 400);
+      const row = deviceOnboards(200).find((r) => r.slug === b.slug && r.job === b.job);
+      if (!row) return fail('No project read started from a headset matches that', 404);
+      const j = cancel(row.slug, row.job);
+      if (!j) return fail('That read is no longer known to this server', 404);
+      return answer({ ok: true, status: j.status });
     }),
   ];
 }

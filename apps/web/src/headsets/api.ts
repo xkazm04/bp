@@ -12,7 +12,7 @@
 import { humanToken } from '@/components/crossing/follow';
 
 export type DoorMode = 'off' | 'pair' | 'lan';
-export type Scope = 'read' | 'standup' | 'place' | 'focus' | 'decide' | 'scan';
+export type Scope = 'read' | 'standup' | 'place' | 'focus' | 'decide' | 'scan' | 'onboard';
 export interface PendingView { id: string; device: string; peer: string; state: 'pending' | 'approved'; requested: Scope[]; granted?: Scope[]; at: string; until: string }
 export interface PairedView { id: string; device: string; name: string; scopes: Scope[]; createdAt: string; expiresAt: string; expired: boolean; lastSeen?: string }
 export interface HeadsetState {
@@ -29,10 +29,14 @@ export interface HeadsetState {
   namedOnly: Scope[];
   days: { default: number; max: number };
   limits: { pending: number; paired: number };
+  /** Project reads a headset started (the onboard scope), newest first (table-link-v2.md section 14). */
+  onboards: OnboardView[];
+  onboardBounds: { perDay: number; inFlight: number };
 }
+export interface OnboardView { at: string; device: string; slug: string; name: string; shown?: string; job: string; status: string }
 export interface Marks { surface: 'web' | 'vr'; device?: string; shown?: string }
 export interface Grant { id: string; product: string; tools: string[]; minTier?: number; expiresAt: string; createdAt: string; grantedBy?: Marks }
-export interface Decision { at: string; kind: 'morning' | 'card' | 'policy-grant' | 'policy-revoke'; surface: 'web' | 'vr'; device?: string; shown?: string; product?: string; target: string; verdict: string }
+export interface Decision { at: string; kind: 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard'; surface: 'web' | 'vr'; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string }
 export interface DecisionPage { rows: Decision[]; matched: number; total: number; limit: number; unreadable: number; recorded: boolean; filter: { surface?: string; device?: string } }
 
 /** The page cannot reach bp's server: `noserver` (nothing answers behind the web app) or `nowire` (the web app serves its
@@ -58,6 +62,8 @@ export interface HeadsetsApi {
   grants(): Promise<Grant[]>;
   revokeGrant(id: string): Promise<void>;
   decisions(surface: 'vr' | 'web' | null): Promise<DecisionPage>;
+  /** STOP a project read a headset started (the existing job cancel, from this page only). */
+  stop(slug: string, job: string): Promise<void>;
 }
 
 const TIMEOUT_MS = 15_000;
@@ -95,10 +101,11 @@ const real: HeadsetsApi = {
   grants: () => call<Grant[]>('/api/companion/policies'),
   revokeGrant: async (id) => { await call('/api/companion/policies/' + encodeURIComponent(id), 'DELETE'); },
   decisions: (surface) => call<DecisionPage>('/api/companion/decisions' + (surface ? '?surface=' + surface : '')),
+  stop: async (slug, job) => { await call(H + '/stop', 'POST', { slug, job }); },
 };
 
 // ------------------------------------------------------------------------------------------------ the fixture
-const SCOPES: Scope[] = ['read', 'standup', 'place', 'focus', 'decide', 'scan'];
+const SCOPES: Scope[] = ['read', 'standup', 'place', 'focus', 'decide', 'scan', 'onboard'];
 const ago = (s: number) => new Date(Date.now() - s * 1000).toISOString();
 const ahead = (s: number) => new Date(Date.now() + s * 1000).toISOString();
 
@@ -111,7 +118,7 @@ function fixtureApi(kind: string): HeadsetsApi {
     ? [{ id: '3f2a9c01', device: 'quest3s', peer: kind === 'cable' ? 'loopback' : '192.168.1.50', state: 'pending', requested: ['standup', 'place', 'focus', 'decide', 'scan'], at: ago(36), until: ahead(84) }]
     : [];
   const paired: PairedView[] = kind === 'off' || kind === 'cable' || kind === 'empty' ? [] : [
-    { id: 'b81c44e0', device: 'quest3s:b81c44e0', name: 'quest3s', scopes: ['standup', 'place', 'focus', 'decide', 'scan'], createdAt: ago(86400 * 3), expiresAt: ahead(86400 * 27), expired: false, lastSeen: ago(42) },
+    { id: 'b81c44e0', device: 'quest3s:b81c44e0', name: 'quest3s', scopes: ['standup', 'place', 'focus', 'decide', 'scan', 'onboard'], createdAt: ago(86400 * 3), expiresAt: ahead(86400 * 27), expired: false, lastSeen: ago(42) },
     { id: '0d9e7a12', device: 'quest-lan:0d9e7a12', name: 'quest-lan', scopes: ['read'], createdAt: ago(86400 * 40), expiresAt: ago(86400 * 10), expired: true },
   ];
   const grants: Grant[] = kind === 'empty' || kind === 'off' || kind === 'cable' ? [] : [
@@ -126,6 +133,11 @@ function fixtureApi(kind: string): HeadsetsApi {
     { at: ago(5400), kind: 'morning', surface: 'web', product: 'kettle-phone', target: 'find-kettle-phone-1', verdict: 'defer' },
     { at: ago(86400), kind: 'policy-revoke', surface: 'vr', device: 'quest3s:b81c44e0', product: 'kettle-desk', target: 'pol_0mw8a1b2c03d4e5', verdict: 'revoke' },
   ];
+  const onboards: OnboardView[] = kind === 'empty' || kind === 'off' || kind === 'cable' ? [] : [
+    { at: ago(420), device: 'quest3s:b81c44e0', slug: 'harbor', name: 'harbor', shown: 'Read harbor now? "Add the tide table export". This starts a paid agent run on your PC.', job: 'j-mh2k1x9-a7q2', status: 'running' },
+  ];
+  log.unshift({ at: ago(420), kind: 'onboard', surface: 'vr', device: 'quest3s:b81c44e0', shown: onboards[0]?.shown, product: 'harbor', target: 'harbor', verdict: 'start', job: 'j-mh2k1x9-a7q2' });
+  if (!onboards.length) log.shift();
   const pause = (ms = 200) => new Promise<void>((r) => setTimeout(r, ms));
   const state = (): HeadsetState => {
     if (window && Date.parse(window) <= Date.now()) window = null;
@@ -134,7 +146,8 @@ function fixtureApi(kind: string): HeadsetsApi {
       wifi: mode === 'lan' ? { address: '192.168.1.20', port: 3101, listening: true } : null,
       wifiAt: mode === 'lan' ? null : { address: '192.168.1.20', port: 3101 },
       pending: pending.map((p) => ({ ...p })), wrongCodes: { count: wrong, limit: 5 }, paired: paired.map((p) => ({ ...p })),
-      scopes: SCOPES, namedOnly: ['decide', 'scan'], days: { default: 30, max: 30 }, limits: { pending: 4, paired: 8 },
+      scopes: SCOPES, namedOnly: ['decide', 'scan', 'onboard'], days: { default: 30, max: 30 }, limits: { pending: 4, paired: 8 },
+      onboards: onboards.map((o) => ({ ...o })), onboardBounds: { perDay: 3, inFlight: 1 },
     };
   };
   const need = () => { if (mode === 'off') throw new ApiError('pairing is off on this server: switch it on first', 409); };
@@ -177,6 +190,11 @@ function fixtureApi(kind: string): HeadsetsApi {
       await pause();
       const rows = log.filter((r) => !surface || r.surface === surface);
       return { rows, matched: rows.length, total: log.length, limit: 100, unreadable: 0, recorded: log.length > 0, filter: surface ? { surface } : {} };
+    },
+    async stop(slug, job) {
+      await pause(); const o = onboards.find((x) => x.slug === slug && x.job === job);
+      if (!o) throw new ApiError('No project read started from a headset matches that', 404);
+      o.status = 'cancelled';
     },
   };
 }

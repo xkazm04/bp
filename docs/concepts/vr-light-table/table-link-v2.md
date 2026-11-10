@@ -159,6 +159,55 @@ Types quoted by name: `Decider`, `DeciderMarks`, `DecisionRecord`, `VR_POLICY_BO
 `POST /api/products/<slug>/proposals/<id>/approve`, `.../proposals/<id>/decline`, `.../proposals/approve` keep their
 rules (BpLink.h); LAN scope `decide`.
 
+### 3.7 What the decisions became: the `outcomes` card (`GET /api/companion/morning`, added 2026-11-10, ES1)
+
+The owner's pick E: "the morning shows what yesterday's approvals became (built or failed, with before and after screens on
+the table)". The morning deck (morning-deck-1) gains one card kind, additive: `cardKind` gains `"outcomes"` (appended to the
+enum), `morningCard` gains the optional `outcomes`, and `$defs.outcome` is new. Nothing was renamed, removed or reordered.
+
+- **Where**: at most one per product, after `open` (and `agents`) and before every product's `built` card. LAN scope:
+  `standup` (the deck's own).
+- **The card**: the deck's usual fields (`id: "outcomes:<slug>"`, `kind: "outcomes"`, `product`, `productName`, `headline`,
+  `lines`, `tone`, `place?`) plus `outcomes: Outcome[]`, 1 to 8, newest decision first. `lines` holds one plain line per
+  outcome (`<title>: built (<commit>)`, `<title>: failed - <reason>`, `building now`, `approved, not built yet`) for a reader
+  that shows text only; `place` is the room most of them sit in (L2).
+- `headline`: a count in words, `"<n> approved yesterday on <product>: 2 built, 1 failed"` (`"this week"` when one is older
+  than 48 h; `"2 approved yesterday on <product>, not built yet"` when none was built). `tone`: `bad` if any failed, else
+  `warn` if any waits, else `calm` if any is building, else `good`.
+- **`Outcome`** (`packages/core/src/companion/outcomes.ts`; absent values are omitted, never null or empty):
+
+  | field | type | meaning |
+  | --- | --- | --- |
+  | `proposal` | string | the proposal id the person approved |
+  | `title` | string | its title as the store has it now |
+  | `room?` | string | the room id on the plan, when its feature maps to one (as decision cards resolve it) |
+  | `decided_at` | ISO string | the approval's `at` (an event time: the decision log's row) |
+  | `decided_by` | `"web"` \| `"vr"` | the row's surface (a steering-log row with no `surface` is the page's) |
+  | `outcome` | `"built"` \| `"failed"` \| `"building"` \| `"waiting"` | below |
+  | `reason?` | string, at most 160 | failed only: the failure record's stage and reason in one sentence |
+  | `commit?` | string | built only: the short sha (7) when the store has one |
+  | `wave?` | string | the wave id: the job's wave, else the newest wave whose package names it |
+  | `before?`, `after?` | string, `.png`/`.jpg`/`.webp` | the proposal's `Shot.path` for that phase (light theme first, then newest) |
+
+- **`outcome`**: `built` = the store says `done`, or a later triage or release of a built item (`accepted`, `rework`,
+  `released`); `failed` = `failed`; `building` = `executing`, or a `queued`/`running` execute job in the job journal names it
+  (a journal line older than 12 h is a process a restart lost, not a build); `waiting` = approved and nothing builds it yet
+  ("approved, not built yet": an approval does not queue a build; a wave or `/dispatch` does).
+- **Which decisions**: approve rows for the product from `$BP_HOME/companion/decisions.jsonl` (kind `morning`) and the
+  product's own steering log, at most 7 days old and before the deck's window (`since`); one per proposal, its latest
+  approve before the window. Dropped: a proposal whose latest row (any time, this morning included) is a hold, defer or
+  decline; one the store has declined, descoped or reopened; one that no longer exists. A card answer (`kind: "card"`)
+  records the card's id, not a proposal, so it is not an approval here.
+- **The screens**: a live product's `before`/`after` is a store path (`shots/<run>/<file>.png`): fetch it as
+  `GET /api/products/<slug>/shots/<path without the leading shots/>` (png, jpg, webp only). The bundled Kettle sample's are
+  bare file names (`finding-kf-011.png`, `finding-kf-011-after.png`): read them from the bundle's `kettle/shots/` folder (the
+  PC serves the same names at `/api/products/kettle/shots/<file>`, section 7).
+- **The sample** (`apps/vr/Content/BpData/kettle/morning.json`, `bundle-morning.ts`): three approvals made from the table
+  yesterday morning: `kf-011` and `kf-041` built (each with a generated before and after screen), `kf-045` failed ("A check
+  failed after the change: the new end-to-end test still fails because the total stays at 120.00 with the promo code
+  applied."), all in wave `w-sample-yesterday`. Live will often say "approved, not built yet".
+- The agent view (`view=agent`) carries the card with its `lines` only (no `outcomes` array).
+
 ## 4. Pairing (device-pairing: pairing-ceremony, token-binding-and-transport, revocation-and-expiry)
 
 The server must run with `--lan` (LAN listener on :3101 plus the ceremony) or `--pair` (the ceremony on the tether only,
@@ -176,7 +225,7 @@ cancel every open request and shut the window (`MAX_WRONG_CODES`).
 | 1 | headset (tether) | `GET http://127.0.0.1:3100/lan/where` | 200 `{ door: { address: string, port: number } \| null, listening: boolean, window: string \| null, pairing: boolean }` |
 | 2 | headset (tether or LAN) | `POST /pair` `{ nonce, device, scopes? }` | 201 `{ state: "pending", code, expiresAt }`; a retry with the same nonce: 201 pending or 200 `{ state: "approved", code, expiresAt }` |
 | 3 | headset | shows `code` on the lamp's tag | |
-| 4 | owner on the PC | bp's Headsets page (`/headsets`): types the code, ticks the permissions, APPROVE (section 13); or `npm run server -- pair approve <code> --scope standup,place,focus,decide,scan` | `decide` and `scan` are granted ONLY when ticked or named here |
+| 4 | owner on the PC | bp's Headsets page (`/headsets`): types the code, ticks the permissions, APPROVE (section 13); or `npm run server -- pair approve <code> --scope standup,place,focus,decide,scan` | `decide`, `scan` and `onboard` are granted ONLY when ticked or named here |
 | 5 | headset, every 2 s | `POST /pair/claim` `{ nonce }` | 202 `{ state: "pending" }`; then 200 `{ token, device, scopes, expiresAt }` exactly once; again: 410 `{ state: "claimed" }` |
 | 6 | headset | keeps `token` (and `device`, `scopes`, `expiresAt`) | |
 | 7 | headset, at launch and every minute | `GET /pair/me` with Bearer | 200 `{ device, scopes, expiresAt }`; revoked/expired: 401 on the tether, bare 403 on the LAN |
@@ -184,7 +233,7 @@ cancel every open request and shut the window (`MAX_WRONG_CODES`).
 
 - `nonce`: 22..128 characters of `[A-Za-z0-9_-]` (128 bits or more, from the headset's own RNG; never reused).
   `device`: 1..40 of `[A-Za-z0-9_.-]` (e.g. `quest3s`). `scopes`: a subset of
-  `["read","standup","place","focus","decide","scan"]`, default `["read"]`.
+  `["read","standup","place","focus","decide","scan","onboard"]`, default `["read"]` (`onboard`: section 14).
 - Step 2 and 5 must come from the same transport and peer: a request made over the tether is claimed over the tether.
 - **The code is shown on the requesting device only** (S3 finding 5, 2026-11-10). The server's log line says that a request
   arrived, from which peer, under which claimed device name and for which scopes, and that its code is on that device's
@@ -232,6 +281,10 @@ cancel every open request and shut the window (`MAX_WRONG_CODES`).
 | decide | DELETE | `/api/companion/policies/<ID>` | section 3.5 |
 | scan | POST | `/api/products/<SLUG>/scans` | plain `{ lens, scope }`, directed `{ lens, scope, focus }`, every lens `{ lens: "all", scope: { kind: "all", label, features: [] }, phase?: "measure" \| "propose" }`; 202 `ScanJob` (packages/core/src/scan/jobs.ts) |
 | scan | DELETE | `/api/products/<SLUG>/scans/<ID>` | cancel; 200 `ScanJob`; 404 unknown job |
+| read | GET | `/api/onboarding` | no query; section 14 |
+| read | GET | `/api/products/<SLUG>/onboarding/feed` | query exactly `after=<1..9 digits>&job=<ID>`, optionally followed by `&layout=islands` (the VR app's two forms); section 14 |
+| onboard | GET | `/api/onboarding/candidates` | section 14 |
+| onboard | POST | `/api/onboarding/start` | section 14: a paid agent run, no confirmation at the PC |
 
 Never reachable through the door: `GET /api/companion/human-token`, the plan's free decide `POST .../proposals/<id>`,
 `.../dispatch`, `.../waves/<w>/dispatch`, release build/finish/tag, `/api/companion/stream` (SSE: VR polls), `/lan/*`,
@@ -479,6 +532,25 @@ what changed, with its numbers (each held by `check:table-link`, `check:lan-door
    a read-access row in the same log, if bp ever has more than one person.
 10. **"Last seen" lives in the server's memory** (`device-auth.ts`), on both listeners: a restart forgets it and the page says
    "not seen since the server started". It is a convenience, not an audit field; the ledger keeps claims, refusals and revokes.
+11. **A headset holding `onboard` starts a paid agent run with no confirmation at the PC (owner's decision, 2026-11-10).**
+   (hitl-approval, consent-gates; authorization, privilege-tiers: a spend is a person's act in the PC's chrome.) The owner chose
+   "Pick and start on the headset ... no PC click" over a confirm on the PC, knowing a taken headset could start paid runs on
+   any offered folder. What bounds it (section 14): `onboard` is named-only (never by asking); only folders the PC offers
+   (git work trees next to registered products, by an opaque id re-derived at the start); the job runs with the page's own
+   options (no model, flags or path from the device); one headset-started read at a time per PC (`DEVICE_IN_FLIGHT` 1); three
+   a rolling day per pairing (`DEVICE_STARTS_PER_DAY` 3); every start in the decision log with the words shown, listed on the
+   Headsets page with STOP; REVOKE ends the pairing. Closing it: a confirm on the PC (the Director's recommendation), or a
+   spend cap per day in money rather than in runs.
+12. **The day bound is per pairing.** A re-pair (an owner's act on the page) starts a fresh count; the device name alone is
+   the headset's claim and keys nothing. The count is read from the decision log, so a restart forgets nothing.
+13. **A refused start is not in the decision log** (verb-allowlists: "every act, success or failure, writes a ledger row").
+   It is one 4xx answer to the device; a successful start is logged and printed. Through the door a scope refusal is still
+   the ledger's `refused` row. Closing it: a rate-capped `onboard-refused` row, as the door caps its refusal rows.
+14. **Watching under `read` shows the whole job record** (verb-allowlists, "reads are a projection"): `GET /api/onboarding`
+   and the feed answer `ScanJob` with `log_tail` and `error`, which can name files of the product being read, as
+   `GET .../scans` already does under `read`; `GET /api/products` (under `read` since section 5) carries each product's
+   `root`, an absolute path. The candidates route alone is a projection. Closing it: a `read`-scoped view of these routes
+   for a device (no root, no log tail).
 
 ## 13. The Headsets page (owner, 2026-11-10: "Pair from the PC app")
 
@@ -546,3 +618,61 @@ renders each state without a server (in the fixture, `K7QX4M` is the right code)
 
 **What the headset's PC LINK page says** (apps/vr; the Director's to place): "Open bp on your PC, go to Headsets, and type
 this code there."
+
+## 14. Onboarding from the headset (owner, 2026-11-10: "Pick and start on the headset")
+
+Registry standards: `device-pairing` (verb-allowlists: reads are a projection, writes act only on what the projection showed),
+`authorization` (scope-design: a scope names its gate) and `rate-limiting` (key-design, refusal-contract). Code:
+`apps/server/src/lan-door.ts` (the scope and the verbs), `device-auth.ts` (the onboard seal), `mount.ts` (strips a client's
+seal), `packages/core/src/server/onboard-start.server.ts` (the offer, the start, the bounds), the routes under
+`packages/core/src/server/api/onboarding/{candidates,start}`, `apps/server/src/headsets.ts` (the page's list and STOP).
+Proof: `npm run check:onboard-door` (57 expectations; 13 seeded defects each turn it red).
+
+**The scope `onboard`** is named-only like `decide` and `scan`: a headset may ask for it, only the owner's approve that ticks or
+names it grants it. The page's line: "this headset may start reading a new project from the folders this PC offers: a paid
+agent run". A pairing that holds it gets an in-process seal (`x-bp-onboard-seal`, its own per-process secret, not the decider
+seal: `decide` does not imply `onboard` nor the reverse) beside `x-bp-device`, on both listeners; the loopback mount strips a
+client-sent one. The door forwards nothing new from the device.
+
+| Method, path | Who | Answer |
+| --- | --- | --- |
+| GET `/api/onboarding/candidates` | Wi-Fi: scope `onboard`. Cable: a Bearer whose pairing holds `onboard` (a Bearer without it: 403 in words); a plain loopback caller (the PC) too | 200 `{ candidates: [{ id, name, hint, state }], roots }` |
+| POST `/api/onboarding/start` `{ candidate, shown }` | a pairing holding `onboard` (Wi-Fi or cable), or bp's own page (`x-bp-human`); anyone else 403 | 202 `{ slug, name, job }` |
+| GET `/api/onboarding` | `read` (or `standup`), no query | 200 `{ items: [{ slug, name, job: ScanJob \| null }] }` (unchanged) |
+| GET `/api/products/<SLUG>/onboarding/feed?after=<n>&job=<id>[&layout=islands]` | `read`, that query exactly | 200 `{ job, events, next, done }` (unchanged) |
+
+- **What is offered**: git work trees (a directory with its own `.git`, not a link, not hidden) that are direct children of the
+  parent folders of the registered products, not registered, or registered but never read (no map, no finished adopt job);
+  at most 24 (`MAX_CANDIDATES`), sorted by name; at most 400 entries of one parent are looked at. `state`: `new` (not
+  registered), `registered` (registered, never read), `onboarding` (its adopt job is queued or running). `roots`: how many
+  parent folders were looked in. The list is cached 10 s; a start always re-derives it.
+- `id`: 24 lower-case hex, an HMAC of the folder's real path under a per-process key: opaque, stable while the server runs,
+  different after a restart (read the list again). `name`: the folder's name. `hint`: at most 60 characters, the last commit's
+  subject, else the remote's repo name (the last segment of `remote.origin.url`), else a plain phrase; a candidate text that
+  holds a drive letter, a backslash, a home-style absolute path or this account's user name is not used. Nothing else.
+- **The start**: the body is exactly `{ candidate, shown }` (any other key is 400: no model, no flags, no path). `candidate`
+  must be 24 hex (a path or a name is 400) and one of the ids the PC offers NOW (else 404, also when the folder is gone or no
+  longer a git work tree). `shown` (1..1000 characters, the decision rule of section 2) is required from a headset and
+  optional from the page. The PC runs the existing folder check, registers the folder under the slug /projects proposes
+  (`slugOf`/`uniqueSlug`, `-2` when taken; a registered one keeps its slug), and queues the adopt job with the options the
+  /projects page sends for a first read (`{}`: no model, no resume).
+- **Bounds on a start from a headset** (`onboard-start.server.ts`): one headset-started read queued or running on this PC at a
+  time, from any headset (`DEVICE_IN_FLIGHT` 1: **409** `{ error, slug }` naming the running one; also while another start
+  is being set up); three a rolling 24 h per pairing (`DEVICE_STARTS_PER_DAY` 3: **429** `{ error, limit, retryAfterS }` with
+  `Retry-After`). The page is not bounded. A candidate already being read: **409** `{ error, slug }` (watch it).
+- **Recorded**: every start is one row of the decision log `{ at, kind: "onboard", surface, device?, shown?, product: slug,
+  target: slug, verdict: "start", job }` and one server log line. The Headsets page lists the headset-started ones under
+  WHAT THE TABLE DID, "Projects started from the table" (the state's `onboards: [{ at, device, slug, name, shown?, job, status }]`
+  and `onboardBounds: { perDay, inFlight }`), with **STOP** on a queued or running one: `POST /api/companion/headsets/stop
+  { slug, job }` (the page's gate; only a job the log says a headset started; the existing job cancel; 200 `{ ok, status }`).
+- Errors are `{ error }` in words a person can read, plus the fields named above.
+
+**The headset's flow** (for the VR builder): with `onboard` in `/pair/me`'s scopes, show a list from GET candidates (name,
+hint, state; `onboarding` rows are watchable, not startable). On a pick, show the words ("Read <name> now? This starts a paid
+agent run on your PC.") and send them as `shown` with the id. On 202, watch `slug`: poll GET `/api/onboarding` for its
+job and the feed with `after` and `job` exactly as BpLink.cpp does today. On 409 with `slug`, watch that one. On 429 say the
+words. A 403 over Wi-Fi is the bare one (no scope, or revoked: ask `/pair/me`).
+
+**As built against the brief**: the brief's contract, with three choices recorded: a path or name in place of the id is
+**400** (malformed) rather than 404 (an id of the right shape the PC does not offer is 404); the in-flight bound answers
+**409** with the running slug, the daily bound **429**; a body key beyond `candidate` and `shown` is refused, not ignored.

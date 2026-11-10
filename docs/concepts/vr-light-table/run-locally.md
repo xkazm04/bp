@@ -130,6 +130,14 @@ node apps/vr/tools/quest-tether.mjs                    # the cable route
 6. **REVOKE** under PAIRED ends a pairing on the PC (UNPAIR on the headset only forgets it there). **WHAT THE TABLE DID**
    lists the permissions the headset gave the companion (REVOKE on a live one) and every decision, filterable to the table's.
 
+**Reading a new project from the headset** (owner, 2026-11-10; table-link-v2.md section 14): tick **Onboard** when you
+approve (it starts unticked, like Decide and Scan). The headset then lists the git folders next to your registered projects
+(the PC chooses; the headset never sees a path) and starts reading the one you pick at once, with no click on the PC: a
+paid agent run, the same one **Start onboarding** on /projects runs. Bounds: one headset-started read at a time on this PC,
+three a day per headset. Each start shows on the Headsets page under **WHAT THE TABLE DID**, Projects started from the
+table, with **STOP** while it runs, and in the decision log with the words the headset showed. To try it without paying,
+start the server with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_FILE`.
+
 The command line still works, as the fallback (a terminal on the PC: no page token, table-link-v2.md section 12, deviation 6):
 
 ```bash
@@ -146,8 +154,25 @@ stream (403), so the app polls. Start the server from the repo root: from anothe
 not found and every companion turn fails.
 
 **The console** (the main menu, in front of you below the line of sight): MENU opens the pages ROOMS, SCAN, STAND-UP, ASK,
-PROJECTS, PACKAGES, SETTINGS and PC LINK; TALK TO THE LAMP opens from a first hold to talk or SETTINGS > TALK. SETTINGS
+PROJECTS, PACKAGES, SETTINGS, PC LINK and TOUR; TALK TO THE LAMP opens from a first hold to talk or SETTINGS > TALK. SETTINGS
 holds VOICE and MUSIC levels, TABLE (SEAT, TOUR), WRIST, MOTION, ROOM and TALK.
+
+**The tour** (wave T1, `BpTour.cpp`, its words in `BpTourBook.cpp`): the first tour (about 90 s: tap a wing, tap a room,
+step in, decide on the deck, BACK, MENU, one stand-up decision, hold to talk) runs by itself once, at the first launch, on
+any product, and resumes at the step a quit interrupted. After it is finished or dismissed it never starts by itself again,
+also after a content version bump (new chapters show as NEW). MENU > TOUR (also SETTINGS > TABLE > TOUR and the wrist's
+TOUR) lists THE FIRST TOUR (REPLAY) and a chapter per page in the MENU's order: HANDS AND WRIST, SCAN A ROOM, YOUR MORNING,
+YOUR ROOM, TALK TO THE LAMP, TEXT SIZE, YOUR PC, each NEW until seen (finished, or stopped past half way). While one runs
+the bar says which, with STOP TOUR; B on the site plan with nothing open ends it too (dismissed). Every step completes on
+the person's act; left alone for its idle wait (14 s, 8 s in a chapter) the lamp shows it ("Like this."), never a write. Its
+state is the store's `[/Script/bp.BpTour]` section: `Version`, `Core` (`done@<v>` or `dismissed@<v>`), `At` (the step in
+progress), `Seen` (chapter ids). The lines are rendered by `node apps/vr/tools/tour-voice.ts` (16 kHz, levelled, cached by
+text) and pinned by `npm run check:vr-tour`.
+
+Deviations from the guided-tours standard, recorded: the welcome step moves on after its 7 s beat (there is nothing to do
+yet), the MENU step's beat on the open menu is 4 s, and a chapter's page-showing step moves on on any act of the person
+(a tap anywhere counts), not on a specific one. A refusal (a scan that did not start) does not pause the tour; a talk, the
+consent sheet and a stand-up the person opened do.
 
 **The app's saved settings** live in its own file, `Saved/BpTable.json` (`FBpStore`): the pairing token, the Wi-Fi door,
 the talk consent, both volumes, the wrist, reduced motion, the room mode and the last stand-up's time. Not
@@ -168,6 +193,9 @@ GameUserSettings.ini: on the Quest the engine deleted that file at every launch 
 | `BpStore.Dump` | Logs the saved file's path and key names, never values (non-Shipping) |
 | `BpView.Bench [pitch] [yaw]` | A headset lying on the desk renders the seated view (non-Shipping) |
 | `bp.Room 0\|1`, `bp.VoiceLevel`, `bp.MusicLevel`, `bp.WristFace` | The studio or your room; the two volumes; the wrist facing the eye |
+| `BpTour.Start [step]`, `BpTour.Chapter <hands\|scan\|morning\|room\|talk\|text\|pc>`, `BpTour.Stop` | The first tour (from a step id), one chapter, STOP TOUR |
+| `BpTour.Forget`, `BpTour.Stat` | Forgets the tour's saved section only (a first launch for the tour); logs it |
+| `bp.Tour -1\|1\|0` | The first tour at a cold start: -1 once (first launch or resume, the default), 1 every cold start, 0 never (tests) |
 
 What to tune when something is off on the headset: [`headset-morning-check.md`](headset-morning-check.md).
 

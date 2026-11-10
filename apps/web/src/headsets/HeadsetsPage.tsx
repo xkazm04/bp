@@ -18,10 +18,11 @@ const SCOPE_WORDS: Record<Scope, { name: string; line: string }> = {
   focus: { name: 'Focus', line: 'follow and set the shared focus with this page' },
   decide: { name: 'Decide as you', line: 'approve or decline findings and cards, and give the companion time-limited permission' },
   scan: { name: 'Scan', line: 'start and cancel scans of your projects' },
+  onboard: { name: 'Onboard', line: 'this headset may start reading a new project from the folders this PC offers: a paid agent run' },
 };
 const DEFAULT_ON: Scope[] = ['read', 'standup', 'place', 'focus'];
 const DAY_CHOICES = [1, 7, 14, 30];
-const KIND_WORDS: Record<Decision['kind'], string> = { morning: 'Stand-up verdict', card: 'Card answer', 'policy-grant': 'Permission given', 'policy-revoke': 'Permission taken back' };
+const KIND_WORDS: Record<Decision['kind'], string> = { morning: 'Stand-up verdict', card: 'Card answer', 'policy-grant': 'Permission given', 'policy-revoke': 'Permission taken back', onboard: 'Project read started' };
 
 const secs = (iso: string, now: number) => Math.round((Date.parse(iso) - now) / 1000);
 function ago(iso: string, now: number): string {
@@ -77,7 +78,7 @@ export function HeadsetsPage() {
   useEffect(() => { if (api && !down) void readLog(api, surface); }, [api, surface, down, readLog]);
 
   // the door's state every 2 s while something is in motion (a window, a request), else every 10 s; the clock every second
-  const busy = !!st && (!!st.window || st.pending.length > 0);
+  const busy = !!st && (!!st.window || st.pending.length > 0 || st.onboards.some((o) => o.status === 'queued' || o.status === 'running'));
   useEffect(() => {
     if (!api) return;
     const t = setInterval(() => { void readState(api); }, busy ? POLL_MS : SLOW_POLL_MS);
@@ -116,7 +117,8 @@ export function HeadsetsPage() {
             {err && <p className={s.err} role="alert">{err}</p>}
             <Pair st={st} now={now} act={act} api={api} />
             <Paired st={st} now={now} onRevoke={(id) => act(() => api.revoke(id))} />
-            <TableDid grants={grants} log={log} surface={surface} now={now}
+            <TableDid st={st} onStop={(slug, job) => act(() => api.stop(slug, job), () => { void readLog(api, surface); })}
+              grants={grants} log={log} surface={surface} now={now}
               onSurface={(f) => { setSurface(f); setLog({ state: 'loading' }); }}
               onRevokeGrant={(id) => act(() => api.revokeGrant(id), () => { void readGrants(api); void readLog(api, surface); })} />
           </>
@@ -314,13 +316,32 @@ function Paired({ st, now, onRevoke }: { st: HeadsetState; now: number; onRevoke
 }
 
 // ------------------------------------------------------------------------------------------------ what the table did
-function TableDid({ grants, log, surface, now, onSurface, onRevokeGrant }: {
+function TableDid({ st, onStop, grants, log, surface, now, onSurface, onRevokeGrant }: {
+  st: HeadsetState; onStop: (slug: string, job: string) => void;
   grants: Load<Grant[]>; log: Load<DecisionPage>; surface: 'vr' | 'web' | null; now: number;
   onSurface: (f: 'vr' | 'web' | null) => void; onRevokeGrant: (id: string) => void;
 }) {
+  const running = (x: string) => x === 'queued' || x === 'running';
   return (
     <section className={s.part} aria-labelledby="hs-did">
       <h2 id="hs-did" className={s.sec}>What the table did</h2>
+      <h3 className={s.h3}>Projects started from the table</h3>
+      {st.onboards.length === 0 ? <p className={s.empty}>No headset has started reading a project. A headset with Onboard may start {st.onboardBounds.perDay} a day, {st.onboardBounds.inFlight} at a time.</p> : (
+        <ul className={s.list}>
+          {st.onboards.map((o) => (
+            <li key={o.job} className={`${s.row} ${running(o.status) ? '' : s.rowOff}`}>
+              <div className={s.rowMain}>
+                <span className={s.name}>{o.name} <span className={s.id}>{o.slug}</span></span>
+                <span className={s.meta}>
+                  {running(o.status) ? <b>Being read now (a paid agent run)</b> : `Read ${o.status}`} · started {ago(o.at, now)} at the table by {deviceName(o.device) || 'a headset'} · <span className={s.id}>{o.job}</span>
+                </span>
+                {o.shown && <Shown text={o.shown} />}
+              </div>
+              {running(o.status) && <button type="button" className={`${s.bt} ${s.danger}`} onClick={() => onStop(o.slug, o.job)}>Stop</button>}
+            </li>
+          ))}
+        </ul>
+      )}
       <h3 className={s.h3}>Permissions given to the companion</h3>
       {grants.state === 'loading' && <p className={s.note} role="status">Reading the permissions…</p>}
       {grants.state === 'error' && <p className={s.err}>{grants.error}</p>}

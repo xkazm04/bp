@@ -40,6 +40,10 @@
 //    them only with the decider seal, which this door adds for a pairing that holds `decide`, device-auth.ts), `standup`
 //    adds the morning deck, the inbox, the policy list and the voice routes, `scan` adds the cancel, `read` adds the product
 //    list and the shots, and `any` live pairing reaches the liveness probe (/api/health) and GET /pair/me.
+//    Onboarding from the table (owner, 2026-11-10; table-link-v2.md section 14): `read` adds GET /api/onboarding and the
+//    build-up feed with exactly the VR app's query (FEED_QUERY); `onboard`, named-only like decide and scan, adds the PC's
+//    candidate list and the start (a paid agent run, no click at the PC: the route's bounds are onboard-start.server.ts's).
+//    The routes know the scope by the onboard seal the device overlay adds for a pairing that holds it (device-auth.ts).
 // 5. The rewrite. Only Content-Type and Accept are copied from the device (FORWARDED), and on POST /api/companion/listen
 //    alone also x-bp-speech-consent and Content-Length (LISTEN_FORWARDED; S3 finding 2); Host becomes this server's loopback address,
 //    X-Forwarded-For the door itself, and `x-bp-device` the paired device's id (`<device>:<pairing id>`), so whatever
@@ -94,9 +98,10 @@ const DEVICE = /^[A-Za-z0-9_.-]{1,40}$/;
 const TOKEN = /^Bearer ([A-Za-z0-9_-]{43})$/;
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O, 1/I: read off a headset, typed on a keyboard
 
-export const SCOPES = ['read', 'standup', 'place', 'focus', 'decide', 'scan'] as const;
-/** Granted only when the owner's approve names it (never by a device's request alone). */
-export const NAMED_ONLY: readonly Scope[] = ['decide', 'scan'];
+export const SCOPES = ['read', 'standup', 'place', 'focus', 'decide', 'scan', 'onboard'] as const;
+/** Granted only when the owner's approve names it (never by a device's request alone). `onboard` (owner, 2026-11-10): the
+ *  headset may start reading a project the PC offers, a paid agent run with no click at the PC (table-link-v2.md section 14). */
+export const NAMED_ONLY: readonly Scope[] = ['decide', 'scan', 'onboard'];
 export type Scope = (typeof SCOPES)[number];
 export const isScopes = (v: unknown): v is Scope[] =>
   Array.isArray(v) && v.length > 0 && v.length <= SCOPES.length && v.every((s) => (SCOPES as readonly string[]).includes(s)) && new Set(v).size === v.length;
@@ -137,6 +142,9 @@ const MORNING_QUERY = new RegExp(`^(?:since|opened)=${ISO}(?:&(?:since|opened)=$
 // SLUG: the registry's own rule (registry.server.ts SLUG_RE, focus.ts), so the door never forwards a slug no product can have (E6, D3)
 const SLUG = '[a-z0-9][a-z0-9-]{0,62}', ID = '[A-Za-z0-9_.-]{1,80}';
 const products = (rest: string) => new RegExp(`^/api/products/${SLUG}/${rest}$`);
+/** The onboarding feed's query, exactly as the VR app sends it (BpLink.cpp: `after=<n>&job=<id>`, and the build-up's
+ *  `&layout=islands`): nothing wider, no other order, no other key. */
+export const FEED_QUERY = new RegExp(`^after=\\d{1,9}&job=${ID}(?:&layout=islands)?$`);
 /** The whole remote vocabulary. A request that matches no row is refused; nothing else is reachable through the door. */
 export const VERBS: readonly Verb[] = [
   { scope: 'read', method: 'GET', path: products('structure') },
@@ -178,6 +186,11 @@ export const VERBS: readonly Verb[] = [
   { scope: 'decide', method: 'POST', path: /^\/api\/companion\/policies$/ },
   { scope: 'decide', method: 'DELETE', path: new RegExp(`^/api/companion/policies/${ID}$`) },
   { scope: 'scan', method: 'DELETE', path: products(`scans/${ID}`) },
+  // onboarding from the table (owner, 2026-11-10; table-link-v2.md section 14): watching under read, starting under onboard
+  { scope: 'read', method: 'GET', path: /^\/api\/onboarding$/ },
+  { scope: 'read', method: 'GET', path: products('onboarding/feed'), query: FEED_QUERY },
+  { scope: 'onboard', method: 'GET', path: /^\/api\/onboarding\/candidates$/ },
+  { scope: 'onboard', method: 'POST', path: /^\/api\/onboarding\/start$/ },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */

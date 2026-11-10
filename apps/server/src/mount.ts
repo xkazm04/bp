@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isLoopbackAddr } from '@bp/core/scan/local-only';
 import { recordRefusal, type RefusalReason } from '@bp/core/scan/refusals';
-import { DECIDER_SEAL_HEADER } from '@bp/core/server/decider-header';
+import { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER } from '@bp/core/server/decider-header';
 
 /** The largest request body the server reads (bytes); a longer one answers 413. bp's writes are small JSON documents. */
 export const MAX_BODY = 4 * 1024 * 1024;
@@ -177,6 +177,7 @@ export async function dispatch(routes: Route[], req: IncomingMessage, res: Serve
     headers.set('x-forwarded-for', headers.has('x-forwarded-for') ? `${headers.get('x-forwarded-for')}, ${remote}` : remote);
     // the decider seal is this process's own mark (decider.server.ts): a client never brings it in; only a token earns it
     headers.delete(DECIDER_SEAL_HEADER);
+    headers.delete(ONBOARD_SEAL_HEADER); // the same for the onboard scope's seal (table-link-v2.md section 14)
     for (const [k, v] of Object.entries(overlay ?? {})) headers.set(k, v);
   }
   const abort = new AbortController();

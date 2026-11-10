@@ -24,15 +24,25 @@ export interface Decider { surface: Surface; device?: string }
 /** The marks a decided entity's row carries: who, where, and what the decider was shown. */
 export interface DeciderMarks { surface: Surface; device?: string; shown?: string }
 
-import { DECIDER_SEAL_HEADER } from './decider-header.ts';
-export { DECIDER_SEAL_HEADER };
-const g = globalThis as unknown as { __bpDeciderSeal?: string };
+import { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER } from './decider-header.ts';
+export { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER };
+const g = globalThis as unknown as { __bpDeciderSeal?: string; __bpOnboardSeal?: string };
 /** Minted once per process (globalThis: Next bundles each route apart). Only apps/server's device auth sets it on a request. */
 export const deciderSeal = (): string => (g.__bpDeciderSeal ??= randomBytes(32).toString('hex'));
+/** The `onboard` scope's seal: its own per-process secret (table-link-v2.md section 14), set by apps/server's device auth only
+ *  for a pairing that holds `onboard`, stripped from every client request by the loopback mount like the decider seal. */
+export const onboardSeal = (): string => (g.__bpOnboardSeal ??= randomBytes(32).toString('hex'));
 
 /** The request carries the seal and a device id: a paired headset with `decide`, authenticated by this process. */
 export function deviceDecider(req: Request): Decider | null {
   const got = Buffer.from(req.headers.get(DECIDER_SEAL_HEADER) ?? ''), want = Buffer.from(deciderSeal());
+  if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
+  const device = deviceOf(req);
+  return device ? { surface: 'vr', device } : null;
+}
+/** The request carries the `onboard` seal and a device id: a paired headset holding `onboard`, authenticated by this process. */
+export function deviceOnboarder(req: Request): Decider | null {
+  const got = Buffer.from(req.headers.get(ONBOARD_SEAL_HEADER) ?? ''), want = Buffer.from(onboardSeal());
   if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
   const device = deviceOf(req);
   return device ? { surface: 'vr', device } : null;
@@ -59,8 +69,9 @@ export function marksOf(who: Decider, body: Record<string, unknown>): { marks: D
 }
 
 // ------------------------------------------------------------------------------------------------ the record
-export type DecisionKind = 'morning' | 'card' | 'policy-grant' | 'policy-revoke';
-export interface DecisionRecord { at: string; kind: DecisionKind; surface: Surface; device?: string; shown?: string; product?: string; target: string; verdict: string }
+/** `onboard`: a project read started (table-link-v2.md section 14): target and product the slug, verdict `start`, `job` the adopt job. */
+export type DecisionKind = 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard';
+export interface DecisionRecord { at: string; kind: DecisionKind; surface: Surface; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string }
 export const decisionsFile = (): string => path.join(companionHome(), 'decisions.jsonl');
 /** Append one row. The entity's own row already carries the marks (atomic with its state); this cross-cutting log is an
  *  index, so a failed append is logged and never undoes the decision. */
