@@ -390,6 +390,8 @@ void ABpPawn::StandupOpened()
 void ABpPawn::StandupClosed()
 {
 	GetWorldTimerManager().ClearTimer(StandupTimer);
+	// The stamp's settle runs at 30 Hz on a handle inside the state: closed mid-settle and the state dropped, nothing could clear it.
+	if (Standup.IsValid()) GetWorldTimerManager().ClearTimer(Standup->StampTimer);
 	StandupReleaseShot();
 	if (ABpTable* Table = WristTable.Get(); Table && Standup.IsValid() && !Standup->Room.IsEmpty()) Table->SetHighlight(FString(), FString());
 	// Unsent answers stay (the PC was gone): the page says what was not sent when it opens again. Otherwise nothing stays.
