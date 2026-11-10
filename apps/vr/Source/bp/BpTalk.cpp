@@ -262,6 +262,21 @@ void ABpTable::SetTalkConsent(int32 Value)
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: consent %s (saved)"), Value == 1 ? TEXT("ALLOW") : Value == 2 ? TEXT("NOT NOW") : TEXT("unset"));
 }
 
+int32 ABpTable::TalkLampState() const
+{
+	if (!Talk.IsValid()) return 0;
+	switch (Talk->Step)
+	{
+	case FBpTalkState::EStep::Arming:
+	case FBpTalkState::EStep::Listening:
+	case FBpTalkState::EStep::Hearing: return 1;
+	case FBpTalkState::EStep::Thinking: return 2;
+	case FBpTalkState::EStep::Speaking:
+	case FBpTalkState::EStep::Sample: return 3;
+	default: return 0;
+	}
+}
+
 bool ABpTable::IsTalkListening() const
 {
 	return Talk.IsValid() && (Talk->Step == FBpTalkState::EStep::Listening || Talk->Step == FBpTalkState::EStep::Arming);

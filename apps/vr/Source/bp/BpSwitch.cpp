@@ -290,6 +290,8 @@ void ABpTable::FindLamp()
 	const FVector HeadAt = GetActorTransform().InverseTransformPosition(Head);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp %s at table (%.1f, %.1f, %.1f) yaw %.0f, head at (%.1f, %.1f, %.1f); moves with it: %s"), *Lamp->GetName(), At.X, At.Y, At.Z,
 		LampRest.Rotator().Yaw, HeadAt.X, HeadAt.Y, HeadAt.Z, *FString::Join(Names, TEXT(", ")));
+	// Its site home clear of the console's slot (bp.Lamp.HomeX/HomeY, BpLampLook.cpp).
+	ApplyLampHome();
 }
 
 FVector ABpTable::GetCaptionWorld() const

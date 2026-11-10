@@ -1746,6 +1746,17 @@ private:
 	/** The talk's state (BpTalk.cpp): made at the first hold, never ticked while idle. */
 	TSharedPtr<struct FBpTalkState> Talk;
 	bool TickTalk(float DeltaSeconds);
+	/** The talk as the lamp's light reads it (BpLampLook.cpp): 0 idle, 1 the wearer speaking (arming, listening, hearing),
+	 *  2 thinking, 3 the lamp answering (its reply or the sample). */
+	int32 TalkLampState() const;
+	// ---- The lamp's look, its home and the studio floor (BpLampLook.cpp; night two V1) -----------------------------------
+	/** Every tick, cheap at rest: the Quest tier's self-lit lamp materials, its light state (idle, waiting on you, listening,
+	 *  thinking, answering) when it changes, bp.Lamp.HomeX/Y when they change, the studio floor and the engine's screen
+	 *  warnings. */
+	void TickLampLook();
+	/** The lamp's site home from bp.Lamp.HomeX/HomeY (table cm), turned toward the seat; FindLamp calls it once. */
+	void ApplyLampHome();
+	TSharedPtr<struct FBpLampLook> LampLookState;
 	void TalkBegin();
 	void TalkSend();
 	void TalkTurn(const FString& Heard);

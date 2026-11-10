@@ -649,6 +649,7 @@ void ABpTable::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		Link->OnMilestone().Remove(MilestoneHandle);
 		Link->OnBuildup().Remove(BuildupHandle);
 	}
+	LampLookState.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -661,6 +662,8 @@ void ABpTable::Tick(float DeltaSeconds)
 	BpTier::Apply(GetWorld());
 	// Your room (BpSurround.h) follows bp.Room: the studio fades out to the passthrough room, or back.
 	BpSurround::Tick(GetWorld(), DeltaSeconds);
+	// The lamp's look and light state, its home, the studio floor (BpLampLook.cpp): writes only when something changed.
+	TickLampLook();
 	const float Height = HeightCvarCm();
 	if (!FMath::IsNearlyEqual(Height, PlacedHeightCm, 0.01f))
 	{
