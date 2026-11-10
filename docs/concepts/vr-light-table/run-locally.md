@@ -78,7 +78,7 @@ so the desk and the headset share one companion (`docs/blueprint-ui.md`, "One co
 - **No server answering?** BpLink falls back to the bundled snapshot and says so in the log. Writes (scans, draft
   waves) are refused until a server answers.
 
-## Over the cable (a real directed scan from the Quest, no LAN pairing)
+## Over the cable (a real directed scan from the Quest)
 
 The standalone APK (`standalone-plan.md`) defaults to `http://127.0.0.1:3100` and falls back to the bundled snapshot when
 nothing answers there. With the Quest on USB, `adb reverse` makes that address the PC's server, so the table reads the
@@ -93,7 +93,7 @@ loopback, so the server's loopback-only door applies and the LAN door is not inv
 ```bash
 npm run server                                 # on the PC, port 3100
 node apps/vr/tools/quest-tether.mjs            # adb reverse tcp:3100 tcp:3100, then prints the device, the reverses and whether :3100 answers
-adb shell am force-stop com.developersblueprint.vr   # then start the app from the headset: it reads the product once, at launch
+adb shell am force-stop com.developersblueprint.vr   # optional since 2026-11-10: the app notices the PC within about 5 s without a restart
 adb logcat -d -s UE | findstr BpLink           # which source it read (Development APK)
 ```
 
@@ -103,8 +103,55 @@ that server instead of the bundled snapshot, so remove it before checking the bu
 **Which source it read.** In a Development APK, logcat shows `BpLink: reading kettle from http://127.0.0.1:3100`, and then
 either `BpLink: Kettle wings=5` alone (the server answered) or `BpLink: GET .../structure failed`, `BpLink: reading kettle
 from the build's bundled snapshot`, `BpLink: kettle's bundle lists 2 sample focuses` (the fallback). A Shipping APK compiles
-UE's logs out: there, the wrist's Scan tab says it (`Sample scan · <place>` from the bundle; `N saved · would scan <place>` and a
+UE's logs out: there, the console's SCAN page (MENU > SCAN) says it (`Sample scan · <place>` from the bundle; `N saved · would scan <place>` and a
 real scan from the server), and a bundle's table never lists the PC's saved focuses.
+
+## Pairing and Wi-Fi (night two, 2026-11-10)
+
+The contract is [`table-link-v2.md`](table-link-v2.md). A person's decisions from the headset (stand-up answers, card
+answers, a hand-over) need a pairing, over the cable too. The headset's side is on the console's **PC LINK** page.
+
+```bash
+npm run server -- --lan                     # from the repo root: :3100 plus the Wi-Fi door on :3101 and the pairing ceremony
+node apps/vr/tools/quest-tether.mjs         # the cable route
+# in the headset: MENU > PC LINK > PAIR shows a 6-character code for 2 minutes
+npm run server -- pair approve <code> --scope standup,place,focus,decide,scan
+npm run server -- pair open                 # a new 2-minute window, when PAIR is refused for lack of one
+npm run server -- pair list                 # pairings and open requests (never the code)
+npm run server -- pair revoke <id>          # ends a pairing on the PC; UNPAIR on the headset only forgets it there
+```
+
+Then remove the cable route and relaunch the app (or restart the server): `adb reverse --remove` leaves kept-alive
+connections working, so the headset only moves to Wi-Fi after one of the two. The app picks the cable, then the saved
+Wi-Fi door, then the bundled sample, and moves between them without a restart. Over Wi-Fi the door refuses the event
+stream (403), so the app polls. Start the server from the repo root: from another folder the companion's tool server is
+not found and every companion turn fails.
+
+**The console** (the main menu, in front of you below the line of sight): MENU opens the pages ROOMS, SCAN, STAND-UP, ASK,
+PROJECTS, PACKAGES, SETTINGS and PC LINK; TALK TO THE LAMP opens from a first hold to talk or SETTINGS > TALK. SETTINGS
+holds VOICE and MUSIC levels, TABLE (SEAT, TOUR), WRIST, MOTION, ROOM and TALK.
+
+**The app's saved settings** live in its own file, `Saved/BpTable.json` (`FBpStore`): the pairing token, the Wi-Fi door,
+the talk consent, both volumes, the wrist, reduced motion, the room mode and the last stand-up's time. Not
+GameUserSettings.ini: on the Quest the engine deleted that file at every launch (found 2026-11-10).
+
+**Console commands added on night two** (on the Quest, a Development APK:
+`adb shell am broadcast -a android.intent.action.RUN -e cmd "'<command>'"`):
+
+| Command | Does |
+|---|---|
+| `BpConsole.Open <home\|rooms\|scan\|standup\|ask\|projects\|packages\|settings\|close>` | Opens a console page, or folds it to its bar |
+| `BpConsole.Rows`, `BpConsole.Stat` | Logs the open page's rows; the console's state |
+| `BpPad.Press <A\|B\|X\|Y\|Menu\|Up\|Down\|Left\|Right\|Home>` | A controller press through the real handler |
+| `BpStandup.Act <next\|prev\|approve\|defer\|hold\|decline\|plan\|handover\|grant\|revoke\|...>`, `BpStandup.Line` | Drives the stand-up; logs its card |
+| `BpStandup.Forget`, `BpStandup.Last <hours>` | A first morning again; a returning morning |
+| `BpTalk.Say <text>`, `BpTalk.Hold <s>`, `BpTalk.Consent allow\|notnow\|unset`, `BpTalk.Cancel`, `BpTalk.Stat` | Talk to the lamp without or with the microphone |
+| `BpLink.Pair [cancel]`, `BpLink.Unpair`, `BpLink.Where`, `BpLink.Link` | Pairing and the route (the token shows as its last 4 characters) |
+| `BpStore.Dump` | Logs the saved file's path and key names, never values (non-Shipping) |
+| `BpView.Bench [pitch] [yaw]` | A headset lying on the desk renders the seated view (non-Shipping) |
+| `bp.Room 0\|1`, `bp.VoiceLevel`, `bp.MusicLevel`, `bp.WristFace` | The studio or your room; the two volumes; the wrist facing the eye |
+
+What to tune when something is off on the headset: [`headset-morning-check.md`](headset-morning-check.md).
 
 ## When something fails
 

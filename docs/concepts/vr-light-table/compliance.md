@@ -1,6 +1,6 @@
 # Competition compliance pass: what ships in the Quest APK
 
-Date: 2026-11-04. Scope: the Quest APK of `apps/vr` (UE 5.8, Meta XR v207) entered in the Meta VR Start Developer
+Date: 2026-11-04, updated 2026-11-10 ("Night two update" below). Scope: the Quest APK of `apps/vr` (UE 5.8, Meta XR v207) entered in the Meta VR Start Developer
 Competition 2026 (deadline 2026-11-18). It does not cover the repository, the web app or the demo video.
 
 The rules checked (official rules, section 4):
@@ -21,6 +21,71 @@ How this was checked. The app and art were not changed, and no editor or build w
 The strongest single piece of evidence is the staged manifest of the last Quest package:
 `apps/vr/Saved/StagedBuilds/Android_ASTC/Manifest_UFSFiles_Android.txt` (2026-10-28, local and not in git, 2951 files).
 It lists exactly what went into that APK.
+
+## Night two update (2026-11-10)
+
+Night two (2026-11-09 evening to 2026-11-10 morning, run note
+[`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md)) added a microphone, a PC link over Wi-Fi, passthrough, a
+music bed, more voice clips and generated sample screens. Evidence level as above: **Record** unless marked **Seen**. The
+staged manifest of the night's APKs was not re-read for this update.
+
+### The APK's permissions and features
+
+| Entry | Where it comes from | When it is asked | Status |
+|---|---|---|---|
+| `android.permission.RECORD_AUDIO` | New, `Config/DefaultEngine.ini` `+ExtraPermissions` (**Seen**), for talk to the lamp | At run time, at the first hold to talk after the consent sheet's ALLOW; never at launch (`BpTalk.cpp`). The APK packaged with it on 2026-11-10 (record) | ok; the dialog itself has not been seen on the device |
+| `com.oculus.feature.PASSTHROUGH` | The Meta XR plugin, because `bInsightPassthroughEnabled=True`; `Source/bp/bp_APL.xml` makes it `android:required="false"` (**Seen**) | Not a permission; a headset without passthrough still installs the app and stays in the studio | ok |
+| `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` | UE's manifest (table-link-v2.md section 10) | Install time | ok: the PC link needs them. No `usesCleartextTraffic` was added |
+| `EYE_TRACKING`, `BILLING`, `CHECK_LICENSE`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS` | Engine or plugin defaults, not added tonight (record). Whether they were in earlier APKs was not checked | Mixed | **check** (P11) |
+
+### What leaves the headset, and when
+
+- **On the bundled sample (no PC linked): nothing.** The stand-up, the scans and the talk play the build's sample; the
+  talk sample opens no microphone (seen on the device, 2026-11-10) and sends nothing.
+- **To the owner's PC, once it is linked** (USB cable through `adb reverse`, or Wi-Fi to the PC's LAN door after pairing):
+  reads of the product, the person's decisions with the words the card showed and the paired device id, scan starts and
+  cancels, policy grants and revokes, companion questions. Over Wi-Fi this is plain HTTP on the home network with a bearer
+  token (a recorded deviation in table-link-v2.md section 11). The token is kept in the app's own file
+  `Saved/BpTable.json` in plain text.
+- **Voice, only after ALLOW:** what the wearer records while holding to talk, one WAV of at most 30 s, goes to the owner's
+  PC. The PC sends it once to ElevenLabs speech-to-text (Scribe v2), unless it measures it as silence; the words come back
+  and are not written to a file. The PC sends the reply's text to ElevenLabs to be spoken. NOT NOW, or no consent, means
+  nothing is recorded or sent. The PC can turn transcription off (`BP_CLOUD_SPEECH=off`). Full terms: voice-link.md
+  "Privacy, in plain words".
+- **Not checked:** whether the engine or the platform plugins send anything of their own (telemetry, crash reports).
+
+### Assets added or changed tonight
+
+| Asset | How made | Licence | Status |
+|---|---|---|---|
+| Music bed `BpData/music/bed.wav` | ElevenLabs music API, 2026-11-09 (row below) | Eleven Music terms (P2) | **check** (P2). Now plays under the voice in the app (af8e8333) |
+| Tour clip `voice/tour/standup.wav` (new) and `hand-off.wav` (re-rendered) | ElevenLabs `eleven_v3`, the Vintage Tin voice, `tools/tour-voice.ts`, 2026-11-10 (commit c9041a89) | ElevenLabs terms (P2) | **check** (P2) |
+| Talk sample clips `voice/talk/{next,plan,scan}.wav`, `sample.json` | Rendered through the PC's `say` route (ElevenLabs `eleven_v3`, the same voice and level), 2026-11-10 (commit 6b4b9402). **Seen:** the three lines are English, name no brand or person | ElevenLabs terms (P2) | **check** (P2) |
+| Kettle finding screens `BpData/kettle/shots/` | Codex CLI image generation, 2026-11-09 (row below) | OpenAI terms for the owner's ChatGPT plan | **check** (owner: plan terms). Now shown on stand-up cards in the app |
+| `M_QuestLit` and 36 `MI_QL_*` instances, `M_QuestUnlit`, `M_QuestLamp`, `M_StudioFloor`, `T_StudioFloor` | Editor-scripted materials (`tools/mcp-steps/py/quest_lit.py`, `v1_scene.py`); the floor texture is drawn by that script in pure Python (dark oak planks); the lamp material reuses the lamp's own textures | Own work | ok |
+
+### Proof the owner should keep (the Sponsor may ask)
+
+1. ElevenLabs: the invoices covering 2026-10-27 (voice designed), 2026-11-04 (tour clips), 2026-11-09 (music bed, song
+   `rhW4mZtPHG9pDv9JGTA6`) and 2026-11-10 (the stand-up clip and the talk clips), showing a paid plan on each date.
+2. OpenAI / ChatGPT: the plan receipt covering 2026-11-09 (the eight Kettle screens).
+3. Leonardo: the receipts covering 2026-10-24 and 2026-10-25, and that the generations were private (P3).
+4. The generation records already in the repo: `apps/vr/Content/BpData/music/bed.json`,
+   `scripts/fixtures/kettle-finding-shots.manifest.json`, `voice/tour/lines.json`, `voice/talk/sample.json`, the art
+   `manifest.json` files, `lookdev/log.jsonl`.
+5. The free licences: Barlow's `OFL.txt`, the Poly Haven and MakeHuman CC0 pages (sources below).
+
+**P11. Manifest permissions to look at before store review.** Risk: low to medium (store review asks why each permission
+is there). Who: agent to read the merged manifest, owner to decide.
+
+- Read the packaged `AndroidManifest.xml` of the next APK and list every `uses-permission` and `uses-feature`.
+- `EYE_TRACKING`: no code in `apps/vr/Source` mentions eye tracking (grep, 2026-11-10). If no plugin setting needs it,
+  remove it, since a reviewer will ask.
+- `BILLING`, `CHECK_LICENSE`: the app sells nothing and no code in `Source/` mentions billing, licence checks or
+  entitlements (same grep); remove unless the store's entitlement check needs `CHECK_LICENSE`.
+- `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_DATA_SYNC`, `POST_NOTIFICATIONS`: the app runs no background service and posts
+  no notification; remove if nothing needs them.
+- Keep `RECORD_AUDIO` (asked at use, with the consent sheet's plain words) and the optional passthrough feature.
 
 ## Inventory
 
@@ -52,10 +117,10 @@ current map and config.
 | Engine fonts: Roboto, DroidSansFallback | Engine content | Redistributable under the UE EULA (Apache 2.0 upstream) | staged 10-28 | Yes | ok |
 | Meta XR v207 (`OculusXR`) and Interaction SDK (`OculusInteraction`). Shipped content includes Quest Touch Plus, Touch Pro and Quest 2 controller meshes and `SK_OpenXRHand_*`. | Meta Platforms. Installed by `tools/install-xr.ps1` from Meta's CDN after the owner accepts the Oculus SDK licence. | Oculus / Meta Platform SDK licence | `Plugins/MetaXR/OculusXR.uplugin` (1.207.0), staged 10-28 | Yes | ok. The controllers are the Sponsor's own products, shipped by its SDK for its platform. |
 | PoFToolset, ModelContextProtocol, ToolsetRegistry, EditorToolset, PythonScriptPlugin, GameplayAbilities, ModelingToolsEditorMode, MetaHumanCharacter | Editor tooling | n/a | `bp.uproject` `TargetAllowList: ["Editor"]` for all eight. `PoFToolset.uplugin` is `"EditorOnly": true` and content-only Python. | **No.** No `PoFToolset` or `Python` path is in the staged manifest (seen). | ok |
-| Tour voice (`BpData/voice/tour/*.wav`, 9 clips, `lines.json`) | **ElevenLabs** TTS, model `eleven_v3`. Voice "Vintage Tin" (`SVlo1tpEuzf5ilPRxsRZ`) is an ElevenLabs Voice Design voice (`eleven_ttv_v3`), designed 2026-10-27 from a text description ("retro 1950s tin-can male robot"). Rendered 2026-11-04 by `tools/tour-voice.ts`. | ElevenLabs terms: commercial use only for content made on a **paid** plan (P2) | `packages/core/src/companion/voice.ts`, `docs/voice/glim.md`, file dates. **Seen:** all lines in `lines.json` are English, name no brand, and cast no real person's voice. | Yes. `DirectoriesToAlwaysStageAsUFS=BpData`. The clips are newer than the 10-28 build. | **check** (P2) |
-| Music bed (`BpData/music/bed.wav`, `bed.json`) | **ElevenLabs** music API (`POST /v1/music`, model `music_v1`, `force_instrumental`), generated 2026-11-09 (song id `rhW4mZtPHG9pDv9JGTA6`) by `tools/music-bed.ts`, then looped and levelled there. The prompt names no artist, song, label or brand (s. 2.1 of the music terms). | Eleven Music model-specific terms (last updated 2026-10-09), see P2 | `bed.json` holds the prompt, model, date and the original's SHA-256. The untouched MP3 is under `.bp/companion/music/` (git-ignored). | Yes, staged with `BpData` once committed (not in any build yet) | **check** (P2) |
+| Tour voice (`BpData/voice/tour/*.wav`, 10 clips since 2026-11-10 (`standup.wav` added, `hand-off.wav` re-rendered), `lines.json`); talk sample clips (`BpData/voice/talk/*.wav`, 3 clips, 2026-11-10) | **ElevenLabs** TTS, model `eleven_v3`. Voice "Vintage Tin" (`SVlo1tpEuzf5ilPRxsRZ`) is an ElevenLabs Voice Design voice (`eleven_ttv_v3`), designed 2026-10-27 from a text description ("retro 1950s tin-can male robot"). Rendered 2026-11-04 by `tools/tour-voice.ts`. | ElevenLabs terms: commercial use only for content made on a **paid** plan (P2) | `packages/core/src/companion/voice.ts`, `docs/voice/glim.md`, file dates. **Seen:** all lines in `lines.json` are English, name no brand, and cast no real person's voice. | Yes. `DirectoriesToAlwaysStageAsUFS=BpData`. The clips are newer than the 10-28 build. | **check** (P2) |
+| Music bed (`BpData/music/bed.wav`, `bed.json`) | **ElevenLabs** music API (`POST /v1/music`, model `music_v1`, `force_instrumental`), generated 2026-11-09 (song id `rhW4mZtPHG9pDv9JGTA6`) by `tools/music-bed.ts`, then looped and levelled there. The prompt names no artist, song, label or brand (s. 2.1 of the music terms). | Eleven Music model-specific terms (last updated 2026-10-09), see P2 | `bed.json` holds the prompt, model, date and the original's SHA-256. The untouched MP3 is under `.bp/companion/music/` (git-ignored). | Yes: committed 2026-11-09 and staged with `BpData`; the app plays it under the voice since `af8e8333` (2026-11-09) | **check** (P2) |
 | Kettle sample (`BpData/kettle/*.json`) | Generated by `tools/bundle-data.mjs` from `apps/server` over `packages/core/data`. Kettle is a fictional fitness-studio booking product. | Own content | **Seen:** string scan of all 6 files (below) | Yes (staged 10-28) | **problem** (P4), **check** (P5) |
-| Kettle finding screens (`BpData/kettle/shots/finding-<id>.png`, 8 files, 1280x720, 151 to 266 KB each; the same files as `apps/web/public/sample-shots/`) | **Codex CLI** (`codex-cli 0.166.0`, `codex exec`, its built-in image generation tool; the model is not reported by `codex exec`), signed in with the owner's ChatGPT account, generated 2026-11-09 by `scripts/fixtures/kettle-finding-shots.mjs`, then resized and palette-compressed there. Each is a flat UI screen of the fictional Kettle studio app showing one sample finding's problem (a half-rendered invoice form, unescaped markup in a payout table, a blank mandate list, a promo code that does not change the total, a slow SMS report, a sign-in link that never arrives, a janky class-pack grid, a nine-step setup wizard), each stamped "SAMPLE SCREEN". | OpenAI's terms for ChatGPT plans assign the output to the user; the owner confirms the plan (as P3 for Leonardo). | `scripts/fixtures/kettle-finding-shots.manifest.json` holds each prompt, the tool, the date, the bytes and the SHA-256; `npm run check:finding-shots` verifies the web and bundle files against it. **Seen** (all 8, at full size): no real brand, product or company name, no logo, no face, photo or person (no avatar is drawn at all), no real personal data (member numbers such as M-1042 only; no email address or phone number). The prompts forbid all three. | Yes, staged with `BpData` once committed (not in any build yet) | **check** (owner: plan terms) |
+| Kettle finding screens (`BpData/kettle/shots/finding-<id>.png`, 8 files, 1280x720, 151 to 266 KB each; the same files as `apps/web/public/sample-shots/`) | **Codex CLI** (`codex-cli 0.166.0`, `codex exec`, its built-in image generation tool; the model is not reported by `codex exec`), signed in with the owner's ChatGPT account, generated 2026-11-09 by `scripts/fixtures/kettle-finding-shots.mjs`, then resized and palette-compressed there. Each is a flat UI screen of the fictional Kettle studio app showing one sample finding's problem (a half-rendered invoice form, unescaped markup in a payout table, a blank mandate list, a promo code that does not change the total, a slow SMS report, a sign-in link that never arrives, a janky class-pack grid, a nine-step setup wizard), each stamped "SAMPLE SCREEN". | OpenAI's terms for ChatGPT plans assign the output to the user; the owner confirms the plan (as P3 for Leonardo). | `scripts/fixtures/kettle-finding-shots.manifest.json` holds each prompt, the tool, the date, the bytes and the SHA-256; `npm run check:finding-shots` verifies the web and bundle files against it. **Seen** (all 8, at full size): no real brand, product or company name, no logo, no face, photo or person (no avatar is drawn at all), no real personal data (member numbers such as M-1042 only; no email address or phone number). The prompts forbid all three. | Yes: committed 2026-11-09 and staged with `BpData`; shown on the stand-up's cards since `c9041a89` (2026-11-10) | **check** (owner: plan terms) |
 | Other `BpData/*` folders | Live-product bundles, git-ignored and machine-local | Could hold a real product's names | `DefaultGame.ini` stages all of `BpData` | Only if one exists locally when packaging. Lynx today has `kettle` and `voice` only (seen). | **check** (P10) |
 | App identity: "Developer's Blueprint", `com.developersblueprint.vr`; companion "Glim" | Owner's title (D3, 2026-10-27) | Own | `Config/DefaultEngine.ini:287-288` | Yes | ok. Low risk: "Blueprint" is a common word, and no Epic mark or logo is used. |
 | Tripo3D experiments (meeting table, sofa, desk, frame) | Tripo API, 2026-10-25 | Tripo free tier keeps the rights. Paid tier needed for commercial use. | `lookdev/tripo-log.jsonl` (18 calls) | **No.** No Tripo-derived asset is in `Content` or the staged manifest (seen). | ok |
@@ -224,8 +289,9 @@ Also add a short `CREDITS.txt` there listing:
 - Barlow (OFL)
 - MakeHuman (CC0)
 - Poly Haven sources (CC0)
-- ElevenLabs voice
+- ElevenLabs voice and music
 - Leonardo images
+- The Kettle sample screens (generated with OpenAI's image tool through Codex CLI)
 - Meta XR SDK
 
 A credits line on the wrist panel is optional.
@@ -272,12 +338,15 @@ packaging machine, with a real product's names and findings. Fix: stage `BpData/
 
 1. The ElevenLabs plan was paid (Starter or higher) on 2026-10-27 and on 2026-11-04, and `eleven_v3` and
    `eleven_ttv_v3` were not beta in the account. Keep the invoice. (P2)
+   For the 2026-11-10 tour and talk clips: the same paid plan on that date. (P2)
    For the music bed: keep the November 2026 invoice (song `rhW4mZtPHG9pDv9JGTA6`, 2026-11-09), and confirm the app
    is not a monetized "Studio Game" under the Eleven Music terms (unmonetized, or an Indie Game). (P2)
 2. The Leonardo Studio account and the API key were on a paid plan or paid credit on 2026-10-24 and 2026-10-25, with
    private generations. Keep the receipts. (P3)
 3. Approve neutral wording for the Kettle feature names and summaries in the VR bundle. (P4)
 4. Look at the binder and pencils in the headset (P7), and decide on the Epic MetaHuman engine plugins (P9).
+5. The ChatGPT plan on 2026-11-09 (the Kettle screens), and keep its receipt. (night two update)
+6. Decide which of the default manifest permissions to remove before store review. (P11)
 
 ## Sources (fetched 2026-11-04)
 

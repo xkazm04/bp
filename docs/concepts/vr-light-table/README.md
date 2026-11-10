@@ -59,8 +59,20 @@ lenses, scans and waves, drawn for a headset.
   later session.
 - [`machine.md`](machine.md): the build host's measured facts and readings 1 to 14.
 - [`wolf-plan.md`](wolf-plan.md): the retired Wolf plan (2026-10-23), kept for its readings and history.
+- [`table-link-v2.md`](table-link-v2.md) and [`voice-link.md`](voice-link.md): the headset-to-PC contract (pairing, the
+  Wi-Fi door, the stand-up's decisions, bounded grants) and the speech routes (2026-11-09/10).
+- [`compliance.md`](compliance.md): what ships in the APK against the competition's rules, its permissions, what leaves
+  the headset, and the licence proof the owner keeps.
+- [`headset-morning-check.md`](headset-morning-check.md): the 15-minute check wearing the headset, with the console value
+  to tune for each step.
+- [`runs/`](runs/): one note per build run; the latest is [`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md).
 
 ## Status
+
+> **2026-11-10 (night two).** Built and on the owner's Quest 3S: the console, the stand-up, talk to the lamp,
+> pairing over the cable and Wi-Fi, your room in passthrough, and the app's own settings file `Saved/BpTable.json`. What
+> was measured on the headset and what still needs a person wearing it: [`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md).
+> The paragraphs below are the history.
 
 Planned, not started. Nothing in this folder is built. Execution happens on the GPU workstation;
 this checkout only holds the plan.
