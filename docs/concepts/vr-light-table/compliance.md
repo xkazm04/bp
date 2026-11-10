@@ -1,6 +1,6 @@
 # Competition compliance pass: what ships in the Quest APK
 
-Date: 2026-11-04, updated 2026-11-10 ("Night two update" below). Scope: the Quest APK of `apps/vr` (UE 5.8, Meta XR v207) entered in the Meta VR Start Developer
+Date: 2026-11-04, updated 2026-11-10 ("Night two update" and "Day two update" below). Scope: the Quest APK of `apps/vr` (UE 5.8, Meta XR v207) entered in the Meta VR Start Developer
 Competition 2026 (deadline 2026-11-18). It does not cover the repository, the web app or the demo video.
 
 The rules checked (official rules, section 4):
@@ -87,6 +87,51 @@ is there). Who: agent to read the merged manifest, owner to decide.
   no notification; remove if nothing needs them.
 - Keep `RECORD_AUDIO` (asked at use, with the consent sheet's plain words) and the optional passthrough feature.
 
+## Day two update (2026-11-10)
+
+Day two (2026-11-10, daytime, run note [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md)) added two generated
+screens, 47 voice clips and a pairing scope. None of it is on the headset yet: the installed APK was packaged at 11:44
+through `9f6283bd` (night two's work). Evidence level as above: **Record** unless marked **Seen**. No staged manifest was
+read for this update.
+
+**Permissions and features: no change.** No day-two commit touches `apps/vr/Config/` or `Source/bp/bp_APL.xml` (seen in
+`git log --stat 9f6283bd..029aaaf2`); the permission table above stands.
+
+### Assets added or changed on day two
+
+| Asset | How made | Licence | Status |
+|---|---|---|---|
+| Kettle after-screens `BpData/kettle/shots/finding-kf-011-after.png` and `finding-kf-041-after.png` (and the same files in `apps/web/public/sample-shots/`), 1280x720, 289,278 and 214,844 bytes | The same generator and rules as the eight before-screens: `scripts/fixtures/kettle-finding-shots.mjs --generate --after`, `codex-cli 0.166.0 exec` with its built-in image generation (model not reported), 2026-11-10 (commit `00bdcfb6`). Each is the same screen as its before-screen with the finding fixed, stamped SAMPLE SCREEN. Prompt, tool, date, bytes and SHA-256 are in `scripts/fixtures/kettle-finding-shots.manifest.json`; `npm run check:finding-shots` verifies them. **Seen** (both, at full size): the fictional "Kettle" wordmark as text, "Riverside studio", a paper invoice from a fictional supplier, an instructor form; no real brand, logo, face, person or personal data | OpenAI's terms for the owner's ChatGPT plan, as the before-screens | The owner said receipts are not needed (2026-11-10), so no plan proof is being collected for these either; the licence position is the before-screens' and stays **check** (owner: plan terms) |
+| Tour clips `BpData/voice/tour/*.wav`: 31 new clips, per the commit (the tour's second edition: the core tour and seven chapters), then every clip re-rendered at 24 kHz | ElevenLabs `eleven_v3`, the Vintage Tin voice (`SVlo1tpEuzf5ilPRxsRZ`), the same seed, settings, effect chain and loudness as before, `tools/tour-voice.ts`, 2026-11-10 (commits `655209bf`, then `5f55fc9d`). The words are in `BpTourBook.cpp` and `voice/tour/lines.json`. 33 clips now | ElevenLabs terms (P2) | **check** (P2). Receipts not collected (owner) |
+| Scan clips `BpData/voice/scan/*.wav`: 14 lines (the scan's start for the site, a wing, a room or a place; done; stopped; eight "Done. N rooms read, M new findings." results for the sample's scopes) | Same voice, model and tool (`tour-voice.ts --scan`), 2026-11-10 (commit `5f55fc9d`); `voice/scan/lines.json` | ElevenLabs terms (P2) | **check** (P2) |
+| Stand-up clips `voice/scan/standup-welcome.wav`, `standup-yesterday.wav` ("Welcome back. Here is what your approvals became."; "Here is what yesterday's approvals became.") | Same voice, model and tool, 2026-11-10 (commit `029aaaf2`) | ElevenLabs terms (P2) | **check** (P2) |
+
+**Seen:** every line in `voice/tour/lines.json` and `voice/scan/lines.json` is English, names no brand and no person, and
+the voice is the designed one (no cloned voice).
+
+### The `onboard` scope: what a paired headset may now ask for
+
+- A new pairing scope `onboard` (table-link-v2.md section 14). It is named only: the headset may ask for it when it pairs
+  (the app does since `029aaaf2`), but only the owner's tick on the PC's Headsets page grants it; it starts unticked, like
+  Decide and Scan. The CLI fallback never adds it unless the owner types it.
+- With it, the headset may read a list of folders the PC offers (an opaque id, the folder's name, a hint of at most 60
+  characters: the last commit's subject or the repository's name; never a path), and **ask** the PC to read one. The ask
+  carries the folder's id and the words the headset showed. Nothing runs until the owner presses CONFIRM on the Headsets
+  page; the agent run that follows is on the owner's PC and account. Bounds: one at a time, three confirmed a day per
+  pairing, six asks an hour, an ask expires after 10 minutes. Folders with their own agent settings are never offered.
+- The headset may then watch that read through the routes it already had under `read` (the job's state and the build-up
+  feed). To a device, jobs come without their log tail and products without their root path.
+- Open (section 12, deviation 15): the agent reads the confirmed folder with permissions skipped, so a planted instruction
+  in that folder's files can steer it. The PC confirm is the human gate; it does not make the run safe on a hostile folder.
+
+### What leaves the headset: nothing new beyond the owner's PC
+
+Everything above goes only to the owner's PC, over the same link as before (cable, or the paired Wi-Fi door). New on that
+link: the onboarding list, ask and status calls, and, on a linked scan, the scan's two spoken lines sent as text to the
+PC's existing `say` route (which renders them as it renders the lamp's answers). On the bundled sample nothing leaves the
+headset: the scan theatre, YESTERDAY and the welcome back play bundled clips and screens. The Headsets page itself is on
+the PC and receives nothing from the headset that the pairing did not already carry (it never receives the code).
+
 ## Inventory
 
 "Staged 10-28" means the asset is listed in that manifest. "Ships" is whether it ships in the next build, given the
@@ -117,10 +162,10 @@ current map and config.
 | Engine fonts: Roboto, DroidSansFallback | Engine content | Redistributable under the UE EULA (Apache 2.0 upstream) | staged 10-28 | Yes | ok |
 | Meta XR v207 (`OculusXR`) and Interaction SDK (`OculusInteraction`). Shipped content includes Quest Touch Plus, Touch Pro and Quest 2 controller meshes and `SK_OpenXRHand_*`. | Meta Platforms. Installed by `tools/install-xr.ps1` from Meta's CDN after the owner accepts the Oculus SDK licence. | Oculus / Meta Platform SDK licence | `Plugins/MetaXR/OculusXR.uplugin` (1.207.0), staged 10-28 | Yes | ok. The controllers are the Sponsor's own products, shipped by its SDK for its platform. |
 | PoFToolset, ModelContextProtocol, ToolsetRegistry, EditorToolset, PythonScriptPlugin, GameplayAbilities, ModelingToolsEditorMode, MetaHumanCharacter | Editor tooling | n/a | `bp.uproject` `TargetAllowList: ["Editor"]` for all eight. `PoFToolset.uplugin` is `"EditorOnly": true` and content-only Python. | **No.** No `PoFToolset` or `Python` path is in the staged manifest (seen). | ok |
-| Tour voice (`BpData/voice/tour/*.wav`, 10 clips since 2026-11-10 (`standup.wav` added, `hand-off.wav` re-rendered), `lines.json`); talk sample clips (`BpData/voice/talk/*.wav`, 3 clips, 2026-11-10) | **ElevenLabs** TTS, model `eleven_v3`. Voice "Vintage Tin" (`SVlo1tpEuzf5ilPRxsRZ`) is an ElevenLabs Voice Design voice (`eleven_ttv_v3`), designed 2026-10-27 from a text description ("retro 1950s tin-can male robot"). Rendered 2026-11-04 by `tools/tour-voice.ts`. | ElevenLabs terms: commercial use only for content made on a **paid** plan (P2) | `packages/core/src/companion/voice.ts`, `docs/voice/glim.md`, file dates. **Seen:** all lines in `lines.json` are English, name no brand, and cast no real person's voice. | Yes. `DirectoriesToAlwaysStageAsUFS=BpData`. The clips are newer than the 10-28 build. | **check** (P2) |
+| Tour voice (`BpData/voice/tour/*.wav`, 10 clips on the morning of 2026-11-10 (`standup.wav` added, `hand-off.wav` re-rendered), 33 since day two, plus `voice/scan/` (16): see "Day two update", `lines.json`); talk sample clips (`BpData/voice/talk/*.wav`, 3 clips, 2026-11-10) | **ElevenLabs** TTS, model `eleven_v3`. Voice "Vintage Tin" (`SVlo1tpEuzf5ilPRxsRZ`) is an ElevenLabs Voice Design voice (`eleven_ttv_v3`), designed 2026-10-27 from a text description ("retro 1950s tin-can male robot"). Rendered 2026-11-04 by `tools/tour-voice.ts`. | ElevenLabs terms: commercial use only for content made on a **paid** plan (P2) | `packages/core/src/companion/voice.ts`, `docs/voice/glim.md`, file dates. **Seen:** all lines in `lines.json` are English, name no brand, and cast no real person's voice. | Yes. `DirectoriesToAlwaysStageAsUFS=BpData`. The clips are newer than the 10-28 build. | **check** (P2) |
 | Music bed (`BpData/music/bed.wav`, `bed.json`) | **ElevenLabs** music API (`POST /v1/music`, model `music_v1`, `force_instrumental`), generated 2026-11-09 (song id `rhW4mZtPHG9pDv9JGTA6`) by `tools/music-bed.ts`, then looped and levelled there. The prompt names no artist, song, label or brand (s. 2.1 of the music terms). | Eleven Music model-specific terms (last updated 2026-10-09), see P2 | `bed.json` holds the prompt, model, date and the original's SHA-256. The untouched MP3 is under `.bp/companion/music/` (git-ignored). | Yes: committed 2026-11-09 and staged with `BpData`; the app plays it under the voice since `af8e8333` (2026-11-09) | **check** (P2) |
 | Kettle sample (`BpData/kettle/*.json`) | Generated by `tools/bundle-data.mjs` from `apps/server` over `packages/core/data`. Kettle is a fictional fitness-studio booking product. | Own content | **Seen:** string scan of all 6 files (below) | Yes (staged 10-28) | **problem** (P4), **check** (P5) |
-| Kettle finding screens (`BpData/kettle/shots/finding-<id>.png`, 8 files, 1280x720, 151 to 266 KB each; the same files as `apps/web/public/sample-shots/`) | **Codex CLI** (`codex-cli 0.166.0`, `codex exec`, its built-in image generation tool; the model is not reported by `codex exec`), signed in with the owner's ChatGPT account, generated 2026-11-09 by `scripts/fixtures/kettle-finding-shots.mjs`, then resized and palette-compressed there. Each is a flat UI screen of the fictional Kettle studio app showing one sample finding's problem (a half-rendered invoice form, unescaped markup in a payout table, a blank mandate list, a promo code that does not change the total, a slow SMS report, a sign-in link that never arrives, a janky class-pack grid, a nine-step setup wizard), each stamped "SAMPLE SCREEN". | OpenAI's terms for ChatGPT plans assign the output to the user; the owner confirms the plan (as P3 for Leonardo). | `scripts/fixtures/kettle-finding-shots.manifest.json` holds each prompt, the tool, the date, the bytes and the SHA-256; `npm run check:finding-shots` verifies the web and bundle files against it. **Seen** (all 8, at full size): no real brand, product or company name, no logo, no face, photo or person (no avatar is drawn at all), no real personal data (member numbers such as M-1042 only; no email address or phone number). The prompts forbid all three. | Yes: committed 2026-11-09 and staged with `BpData`; shown on the stand-up's cards since `c9041a89` (2026-11-10) | **check** (owner: plan terms) |
+| Kettle finding screens (`BpData/kettle/shots/finding-<id>.png`, 8 files, plus 2 after-screens since day two (see "Day two update"), 1280x720, 151 to 266 KB each; the same files as `apps/web/public/sample-shots/`) | **Codex CLI** (`codex-cli 0.166.0`, `codex exec`, its built-in image generation tool; the model is not reported by `codex exec`), signed in with the owner's ChatGPT account, generated 2026-11-09 by `scripts/fixtures/kettle-finding-shots.mjs`, then resized and palette-compressed there. Each is a flat UI screen of the fictional Kettle studio app showing one sample finding's problem (a half-rendered invoice form, unescaped markup in a payout table, a blank mandate list, a promo code that does not change the total, a slow SMS report, a sign-in link that never arrives, a janky class-pack grid, a nine-step setup wizard), each stamped "SAMPLE SCREEN". | OpenAI's terms for ChatGPT plans assign the output to the user; the owner confirms the plan (as P3 for Leonardo). | `scripts/fixtures/kettle-finding-shots.manifest.json` holds each prompt, the tool, the date, the bytes and the SHA-256; `npm run check:finding-shots` verifies the web and bundle files against it. **Seen** (all 8, at full size): no real brand, product or company name, no logo, no face, photo or person (no avatar is drawn at all), no real personal data (member numbers such as M-1042 only; no email address or phone number). The prompts forbid all three. | Yes: committed 2026-11-09 and staged with `BpData`; shown on the stand-up's cards since `c9041a89` (2026-11-10) | **check** (owner: plan terms) |
 | Other `BpData/*` folders | Live-product bundles, git-ignored and machine-local | Could hold a real product's names | `DefaultGame.ini` stages all of `BpData` | Only if one exists locally when packaging. Lynx today has `kettle` and `voice` only (seen). | **check** (P10) |
 | App identity: "Developer's Blueprint", `com.developersblueprint.vr`; companion "Glim" | Owner's title (D3, 2026-10-27) | Own | `Config/DefaultEngine.ini:287-288` | Yes | ok. Low risk: "Blueprint" is a common word, and no Epic mark or logo is used. |
 | Tripo3D experiments (meeting table, sofa, desk, frame) | Tripo API, 2026-10-25 | Tripo free tier keeps the rights. Paid tier needed for commercial use. | `lookdev/tripo-log.jsonl` (18 calls) | **No.** No Tripo-derived asset is in `Content` or the staged manifest (seen). | ok |
@@ -377,4 +422,5 @@ packaging machine, with a real product's names and findings. Fix: stage `BpData/
   their status; no proof is being collected.
 - **The manifest's default permissions** (eye tracking, billing, licence check, foreground service, notifications) are
   acknowledged; no change asked.
-- **The tour runs once** at first launch and can be started again from SETTINGS (built in the tour follow-up).
+- **The tour runs once** at first launch and can be started again from SETTINGS (built in `655209bf`, 2026-11-10: also
+  MENU > TOUR and the wrist).

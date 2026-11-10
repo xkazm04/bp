@@ -63,9 +63,9 @@ lenses, scans and waves, drawn for a headset.
   Wi-Fi door, the stand-up's decisions, bounded grants) and the speech routes (2026-11-09/10).
 - [`compliance.md`](compliance.md): what ships in the APK against the competition's rules, its permissions, what leaves
   the headset, and the licence proof the owner keeps.
-- [`headset-morning-check.md`](headset-morning-check.md): the 15-minute check wearing the headset, with the console value
-  to tune for each step.
-- [`runs/`](runs/): one note per build run; the latest is [`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md).
+- [`headset-morning-check.md`](headset-morning-check.md): the headset check for the next time the owner wears it (package
+  and install first), with the console value to tune for each step.
+- [`runs/`](runs/): one note per build run; the latest is [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md).
 
 ## Status
 
@@ -78,6 +78,19 @@ lenses, scans and waves, drawn for a headset.
 > on the headset: the stand-up's YESTERDAY sheet (what earlier approvals became, BEFORE and AFTER side by side), its
 > welcome-back opening, PROJECTS' ADD A PROJECT (the headset asks, you confirm on the PC's Headsets page), and PC LINK's
 > pairing words naming the Headsets page. How to run each: [`run-locally.md`](run-locally.md).
+
+> **2026-11-10 (day two, all of it).** What the table does now, on the PC: none of this is on the headset yet (it holds the
+> build of 11:44, through night two); the record is [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md).
+> - **The tour**: a first tour of about 90 s that runs once and resumes after a quit; MENU > TOUR replays it and holds
+>   seven chapters (hands and wrist, scan a room, your morning, your room, talk to the lamp, text size, your PC).
+> - **The scan theatre**: the lamp follows a scan room to room and narrates it, findings land as pins, a SCAN RESULT
+>   sheet closes it (on the sample; a linked scan was not run).
+> - **YESTERDAY**: the stand-up shows what earlier approvals became, with BEFORE and AFTER, and opens with "Welcome
+>   back" on a later day.
+> - **The Headsets page** in the PC's web app (`/headsets`): pair by typing the code the headset shows, revoke, and read
+>   what the table did.
+> - **Add a project**: PROJECTS > ADD A PROJECT asks the PC to read a new folder; the run starts only after the owner
+>   confirms on the Headsets page (tried with a stubbed job runner only).
 
 Planned, not started. Nothing in this folder is built. Execution happens on the GPU workstation;
 this checkout only holds the plan.

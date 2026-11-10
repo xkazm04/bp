@@ -615,7 +615,7 @@ verb. The CLI's `/lan/pair/*` routes are unchanged (section 12, deviation 6). `c
 | --- | --- | --- |
 | GET `/api/companion/headsets` | | 200 the state below |
 | POST `/api/companion/headsets/open` | `{}` | 200 the state, a 2-minute window open; 409 when pairing is off |
-| POST `/api/companion/headsets/approve` | `{ code, scopes, days }`: the 6 characters TYPED from the headset's screen, a non-empty subset of the six scopes, 1..30 | 200 `{ ok, device, peer, scopes, days }`; 400 a bad body (in words); 404 a wrong code, after the door's 250 ms, `{ error, wrong: { count, limit, cancelled } }`; 409 off or 8 paired |
+| POST `/api/companion/headsets/approve` | `{ code, scopes, days }`: the 6 characters TYPED from the headset's screen, a non-empty subset of the scopes (seven with `onboard`), 1..30 | 200 `{ ok, device, peer, scopes, days }`; 400 a bad body (in words); 404 a wrong code, after the door's 250 ms, `{ error, wrong: { count, limit, cancelled } }`; 409 off or 8 paired |
 | POST `/api/companion/headsets/deny` | `{ id }` (a pending request's opaque id) | 200; 404 no longer open |
 | POST `/api/companion/headsets/revoke` | `{ id }` (8 hex) | 200; 404. Works with the door off too (the registry is on disk) |
 | POST `/api/companion/headsets/door` | `{ mode: "pair" \| "lan" }` | 200 the state; 409 in words (no home-network address, still starting) |
@@ -670,7 +670,7 @@ routes under `apps/web/src/app/api` are thin mirrors of core handlers that open 
 headset reading paths*: section 12, deviation 14. *A stuck door switch*: a switch that throws answers its failure in a
 sentence and the next one runs (`serializeSwitch`); the door is set, and its routes mounted, only after it started.
 
-**What the headset's PC LINK page says** (apps/vr; the Director's to place): "Open bp on your PC, go to Headsets, and type
+**What the headset's PC LINK page says** (apps/vr; the Director's to place): "Open Developer's Blueprint on your PC, go to Headsets, and type
 this code there."
 
 ## 14. Onboarding from the headset (owner, 2026-11-10: "Pick and start on the headset")

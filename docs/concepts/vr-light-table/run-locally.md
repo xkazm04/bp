@@ -194,7 +194,7 @@ YOUR ROOM, TALK TO THE LAMP, TEXT SIZE, YOUR PC, each NEW until seen (finished, 
 the bar says which, with STOP TOUR; B on the site plan with nothing open ends it too (dismissed). Every step completes on
 the person's act; left alone for its idle wait (14 s, 8 s in a chapter) the lamp shows it ("Like this."), never a write. Its
 state is the store's `[/Script/bp.BpTour]` section: `Version`, `Core` (`done@<v>` or `dismissed@<v>`), `At` (the step in
-progress), `Seen` (chapter ids). The lines are rendered by `node apps/vr/tools/tour-voice.ts` (16 kHz, levelled, cached by
+progress), `Seen` (chapter ids). The lines are rendered by `node apps/vr/tools/tour-voice.ts` (24 kHz, the live voice's exact chain, levelled, cached by
 text) and pinned by `npm run check:vr-tour`.
 
 Deviations from the guided-tours standard, recorded: the welcome step moves on after its 7 s beat (there is nothing to do
