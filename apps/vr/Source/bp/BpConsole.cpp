@@ -16,6 +16,7 @@
 #include "BpPawn.h"
 
 #include "BpAudio.h"
+#include "BpProjector.h"
 #include "BpLink.h"
 #include "BpSheet.h"
 #include "BpTable.h"
@@ -1259,6 +1260,16 @@ struct FBpConsolePages
 			Out.Add(Row);
 		}
 		{
+			// Wave PJ1, the main screen: the open sheet on the desk (as before), or thrown far and large on the wall. STAGE is the
+			// next wave's: until it exists it is drawn quiet and the throw stands in.
+			const int32 Mode = CvarInt(TEXT("bp.Projector"));
+			FBpConsoleRow Row;
+			Row.Label = TEXT("MAIN SCREEN");
+			Row.Detail = Mode == 0 ? TEXT("The sheet opens on the desk, close") : TEXT("The sheet is thrown on the wall, far and large");
+			Row.Buttons = { { TEXT("DESK"), TEXT("set:screen:0"), Mode == 0 }, { TEXT("WALL"), TEXT("set:screen:1"), Mode == 1 } };
+			Out.Add(Row);
+		}
+		{
 			// Your room (BpSurround.cpp, night two W4): the table in the wearer's own room, or the studio; on the bar too.
 			const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 			FBpConsoleRow Row;
@@ -1394,6 +1405,44 @@ void ABpPawn::PlaceConsole()
 	// panel keeps its foot where it was and grows upward, the bar keeps its edge on the slot's.
 	const float S = BpSheet::TextScale();
 	ConsoleScaleShown = S;
+	ConsoleProjShown = BpProjector::Mode();
+	// Wave PJ1, the projector: an open sheet goes to the far surface (bp.Projector 1: THE THROW), at the size and distance the
+	// surface gives it, drawn at about 36 px a degree; the bar stays the desk's.
+	if (bPanel && BpProjector::IsOn())
+	{
+		const bool bPassthrough = CvarInt(TEXT("bp.Room")) != 0;
+		const FVector Eye = Table->ConsoleEyeLocal();
+		const IBpFarSurface& Surface = BpProjector::Surface();
+		FVector Centre;
+		FRotator Facing;
+		FVector2D SizeCm;
+		Surface.Place(Eye, Table->ConsoleSlotPose().GetLocation() - Eye, bPassthrough, Centre, Facing, SizeCm);
+		const float Dist = FVector::Dist(Eye, Centre);
+		const FIntPoint Px = BpProjector::DrawSizeFor(SizeCm, Dist);
+		const FVector2D Draw(Px.X, Px.Y);
+		if (ConsolePanel->GetDrawSize() != Draw) ConsolePanel->SetDrawSize(Draw);
+		ConsoleLayout = FVector2f(LW, LH);
+		ConsoleDrawPerLayout = Px.X / LW;
+		ConsoleFarSizeCm = SizeCm;
+		bConsoleFar = true;
+		ConsolePanel->SetRelativeTransform(FTransform(Facing, Centre, FVector(SizeCm.X / Px.X)));
+		Table->SetDeckHeld(false);
+		BpProjector::SetFar(true, Centre);
+		BpProjector::SetFarCentre(Centre);
+		const FString FarKey = FString::Printf(TEXT("far %s %.0f %.0f %d"), Surface.Name(), SizeCm.X, Dist, bPassthrough);
+		if (FarKey != ConsolePlaceKey)
+		{
+			ConsolePlaceKey = FarKey;
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: the sheet on the %s (%s): %.0f x %.0f cm, %.0f cm from the eye (%.1f x %.1f deg), centre %.0f cm above the eye, drawn %dx%d (%.1f px a degree)%s"),
+				Surface.Name(), BpProjector::Mode() == 2 ? TEXT("THE LIGHT STAGE is not built yet: the throw stands in") : TEXT("THE THROW"), SizeCm.X, SizeCm.Y, Dist,
+				2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist)), 2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.Y * 0.5f, Dist)), Centre.Z - Eye.Z, Px.X, Px.Y,
+				Px.X / (2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist))), bPassthrough ? TEXT("; your room: brought nearer, no wall known") : TEXT(""));
+		}
+		return;
+	}
+	bConsoleFar = false;
+	BpProjector::SetFar(false, FVector::ZeroVector);
+	ConsoleDrawPerLayout = ConsolePxPerCm / ConsoleLayoutPxPerCm;
 	const FString Key = FString::Printf(TEXT("%d%d%d %.2f"), bConsoleOpen, bConsoleTalk, bRoom, S);
 	// The draw size follows what it shows (the bar's or the panel's), at ConsolePxPerCm.
 	const float HeightCm = bPanel ? ConsoleHeightCm : ConsoleBarHeightCm;
@@ -1462,6 +1511,23 @@ void ABpPawn::TickConsoleLive()
 	if (TourNow != TourShown) { TourShown = TourNow; RefreshConsole(); }
 	// The text size changed (SETTINGS › ACCESSIBILITY, or adb): the console's scale and place again; nothing is redrawn.
 	if (BpSheet::TextScale() != ConsoleScaleShown) PlaceConsole();
+	// Wave PJ1: the main screen's mode (SETTINGS > MAIN SCREEN, adb) and the far sheet's cvars: placed and drawn again, live.
+	static FString FarShown;
+	const FString FarNow = FString::Printf(TEXT("%d|%d|%s|%s|%s|%s"), BpProjector::Mode(), CvarInt(TEXT("bp.Room")),
+		*IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.DistanceCm"))->GetString(), *IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.WidthCm"))->GetString(),
+		*IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.LiftCm"))->GetString(), *IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Projector.RoomDistanceCm"))->GetString());
+	if (FarNow != FarShown)
+	{
+		const bool bModeChanged = BpProjector::Mode() != ConsoleProjShown;
+		FarShown = FarNow;
+		PlaceConsole();
+		if (bModeChanged)
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: main screen %s"), BpProjector::Mode() == 0 ? TEXT("DESK") : BpProjector::Mode() == 1 ? TEXT("WALL (the throw)") : TEXT("STAGE (not built yet: the throw stands in)"));
+			ConsoleKey.Reset();
+			RefreshConsole();
+		}
+	}
 }
 
 void ABpPawn::OpenConsole(const FString& Page)
@@ -1612,7 +1678,7 @@ void ABpPawn::RefreshConsole()
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
 	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
-	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d|res%s"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun, *ResultChip);
+	Key += FString::Printf(TEXT("|down%d%d|mark%s|tour%d|res%s|far%d"), bConsoleHoverDown, bPadADown && bConsolePadSel, *ConsoleMark, bTourRun, *ResultChip, BpProjector::Mode());
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -1634,6 +1700,7 @@ void ABpPawn::RefreshConsole()
 	if (Key == ConsoleKey) return;
 	ConsoleKey = Key;
 	ConsoleBoxes.Reset();
+	LoupeAimLayout = FVector2f(-1.f, -1.f);
 
 	TSharedRef<SCanvas> Canvas = SNew(SCanvas);
 	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
@@ -1982,19 +2049,41 @@ void ABpPawn::RefreshConsole()
 			Put(Box->Box.ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
 		}
 	}
-	const float Scale = ConsolePxPerCm / ConsoleLayoutPxPerCm;
+	const float Scale = ConsoleDrawPerLayout;
+	TSharedRef<SOverlay> Sheet = SNew(SOverlay)
+		+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(bConsoleOpen || bTalk ? 5.f : 4.f)]
+		+ SOverlay::Slot()[Canvas];
+	if (bConsoleFar)
+	{
+		// Wave PJ1: thrown light has a soft edge. The quad stays opaque (no overdraw, nothing of the scene through it in your
+		// room); its outer 36 layout px (about 7 cm on the wall) fall off to the studio's dark in six steps, drawn once.
+		for (int32 Ring = 0; Ring < 6; ++Ring)
+		{
+			Sheet->AddSlot().Padding(Ring * 6.f)[SNew(BpSheet::SPlate).Edge(FLinearColor(0.012f, 0.016f, 0.026f, 0.9f - Ring * 0.15f)).EdgePx(6.f)];
+		}
+	}
 	ConsolePanel->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(Scale)
 		[
 			SNew(SBox).WidthOverride(LW).HeightOverride(bConsoleOpen || bTalk ? LH : BarLH)
 			[
-				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(bConsoleOpen || bTalk ? 5.f : 4.f)]
-				+ SOverlay::Slot()[Canvas]
+				Sheet
 			]
 		]);
 	ConsolePanel->RequestRenderUpdate();
 	++ConsoleDraws;
+	if (bConsoleFar)
+	{
+		// Wave PJ1: what Glim turns to on the far sheet: the loupe's region on its screen, else the answer he waits for
+		// (APPROVE), else the sheet's centre (table space, BpProjector::FarAimLocal).
+		const FConsoleBox* Primary = ConsoleBoxes.FindByPredicate([](const FConsoleBox& Each) { return Each.Id == TEXT("console:standup:approve"); });
+		const FVector2f AimPx = LoupeAimLayout.X >= 0.f ? LoupeAimLayout : Primary ? Primary->Box.GetCenter() : ConsoleLayout * 0.5f;
+		FTransform Pose = ConsolePanel->GetComponentTransform();
+		Pose.SetScale3D(FVector::OneVector);
+		const FVector World = BpProjector::Surface().UvToWorld(Pose, ConsoleFarSizeCm, FVector2D(AimPx.X / ConsoleLayout.X, AimPx.Y / ConsoleLayout.Y));
+		BpProjector::SetFar(true, Table->GetActorTransform().InverseTransformPosition(World));
+		UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's aim on the sheet: %s at layout (%.0f, %.0f)"), LoupeAimLayout.X >= 0.f ? TEXT("the loupe's region") : Primary ? TEXT("APPROVE") : TEXT("its centre"), AimPx.X, AimPx.Y);
+	}
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: drawn #%d %s%s \"%s\" (%d controls)"), ConsoleDraws, bTalk ? TEXT("conversation ") : bConsoleOpen ? TEXT("panel ") : TEXT("bar"), bConsoleOpen ? *GetConsoleLine() : TEXT(""), *Status, ConsoleBoxes.Num());
 }
 
@@ -2004,6 +2093,21 @@ bool ABpPawn::ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FS
 {
 	if (!ConsolePanel || !ConsolePanel->IsVisible() || ConsoleBoxes.Num() == 0) return false;
 	const FTransform& T = ConsolePanel->GetComponentTransform();
+	if (bConsoleFar)
+	{
+		// Wave PJ1: the far surface answers the ray (IBpFarSurface: the throw's plane now, the stage's curve next).
+		FVector2D Uv;
+		FTransform Pose = T;
+		Pose.SetScale3D(FVector::OneVector);
+		if (!BpProjector::Surface().RayToUv(Pose, ConsoleFarSizeCm, WorldOrigin, WorldDir, Uv)) return false;
+		const FVector2f FarPx(static_cast<float>(Uv.X) * ConsoleLayout.X, static_cast<float>(Uv.Y) * ConsoleLayout.Y);
+		for (int32 Index = ConsoleBoxes.Num() - 1; Index >= 0; --Index)
+		{
+			if (ConsoleBoxes[Index].Box.IsInside(FarPx)) { OutId = ConsoleBoxes[Index].Id; return true; }
+		}
+		OutId = TEXT("console:panel");
+		return true;
+	}
 	const FVector Normal = T.GetUnitAxis(EAxis::X);
 	const double Denom = FVector::DotProduct(WorldDir, Normal);
 	if (Denom >= -KINDA_SMALL_NUMBER) return false;
@@ -2012,7 +2116,7 @@ bool ABpPawn::ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FS
 	// UWidgetComponent's mapping: widget x = -local Y, y = -local Z from its pivot, in draw px; then the layout's px.
 	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
 	const FVector2D Draw = ConsolePanel->GetDrawSize();
-	const float ToLayout = ConsoleLayoutPxPerCm / ConsolePxPerCm;
+	const float ToLayout = 1.f / ConsoleDrawPerLayout;
 	const FVector2f Px(static_cast<float>((-Local.Y + Draw.X * 0.5) * ToLayout), static_cast<float>((-Local.Z + Draw.Y * 0.5) * ToLayout));
 	if (Px.X < 0.f || Px.Y < 0.f || Px.X > ConsoleLayout.X || Px.Y > ConsoleLayout.Y) return false;
 	// The last box laid out over a point wins (a row's buttons over the row).
@@ -2034,8 +2138,15 @@ bool ABpPawn::ConsoleAim(const FString& Id, FVector& OutWorld) const
 	const FConsoleBox* Box = ConsoleBoxes.FindByPredicate([&Id](const FConsoleBox& Each) { return Each.Id == Id; });
 	if (!ConsolePanel || !Box) return false;
 	const FVector2f C = Box->Box.GetCenter();
+	if (bConsoleFar)
+	{
+		FTransform Pose = ConsolePanel->GetComponentTransform();
+		Pose.SetScale3D(FVector::OneVector);
+		OutWorld = BpProjector::Surface().UvToWorld(Pose, ConsoleFarSizeCm, FVector2D(C.X / ConsoleLayout.X, C.Y / ConsoleLayout.Y));
+		return true;
+	}
 	const FVector2D Draw = ConsolePanel->GetDrawSize();
-	const float ToDraw = ConsolePxPerCm / ConsoleLayoutPxPerCm;
+	const float ToDraw = ConsoleDrawPerLayout;
 	OutWorld = ConsolePanel->GetComponentTransform().TransformPosition(FVector(0.0, -(C.X * ToDraw - Draw.X * 0.5), -(C.Y * ToDraw - Draw.Y * 0.5)));
 	return true;
 }
@@ -2191,7 +2302,8 @@ void ABpPawn::ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const
 {
 	if (!ConsolePanel) return;
 	const FTransform& T = ConsolePanel->GetComponentTransform();
-	const double CmPerLayoutPx = 1.0 / ConsoleLayoutPxPerCm;
+	// The world scale is cm a draw pixel; a layout pixel is ConsoleDrawPerLayout of those (the desk's and the far sheet's alike).
+	const double CmPerLayoutPx = T.GetScale3D().X * ConsoleDrawPerLayout;
 	const auto Add = [&](const TCHAR* Name, double CapPx) { Out.Add({ Name, CapPx * CmPerLayoutPx, T.GetLocation(), T.GetUnitAxis(EAxis::Z) }); };
 	Add(TEXT("console title"), CapTitle);
 	Add(TEXT("console label"), CapLabel);

@@ -3,6 +3,7 @@
 // polls (GET .../scans, .../scan, .../waves); nothing here invents a finding, a job or a place. Places are the plan's
 // boxes, as the sheet draws them (BpTable.h's frame of reference).
 #include "BpTable.h"
+#include "BpProjector.h"
 #include "BpSheet.h"
 
 #include "BpGameMode.h"
@@ -1823,7 +1824,8 @@ void ABpTable::SeatKeepouts(TArray<FBox2D>& Out) const
 			Pawn->GetComponents(Widgets);
 			for (const UWidgetComponent* Widget : Widgets)
 			{
-				if (Widget && Widget->GetName() == TEXT("ConsolePanel")) Bounds(Widget);
+				// Wave PJ1: not the sheet on the far surface (behind everything on the table).
+				if (Widget && Widget->GetName() == TEXT("ConsolePanel") && !BpProjector::IsFar()) Bounds(Widget);
 			}
 		}
 	}

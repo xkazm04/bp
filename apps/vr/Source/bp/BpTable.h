@@ -2063,6 +2063,8 @@ private:
 	/** The nod's bow now, degrees (0 outside a nod). */
 	float LampNodDeg() const;
 	float LampFace = 0.f;
+	/** Wave PJ1: Glim turned to the far sheet (0 to 1, eased; BpProjector::FarAimLocal is where), while it shows a sheet. */
+	float LampProj = 0.f;
 	float LampNodT = -1.f;
 	double LampNodSince = 0.0;
 	void TalkBegin();

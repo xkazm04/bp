@@ -394,6 +394,14 @@ private:
 	TArray<FConsoleBox> ConsoleBoxes;
 	/** The layout's size in its own pixels (the bar's or the panel's). */
 	FVector2f ConsoleLayout = FVector2f::ZeroVector;
+	/** Wave PJ1: the draw's pixels per layout pixel (the desk's 21/32; the far sheet's from its angular size), whether the open
+	 *  sheet stands on the far surface (BpProjector.h), its size there (cm), and the mode it was placed for. */
+	float ConsoleDrawPerLayout = ConsolePxPerCm / ConsoleLayoutPxPerCm;
+	bool bConsoleFar = false;
+	FVector2D ConsoleFarSizeCm = FVector2D::ZeroVector;
+	int32 ConsoleProjShown = -1;
+	/** The far sheet's point of interest this draw (layout px; negative: none): the loupe's region on its screen. */
+	FVector2f LoupeAimLayout = FVector2f(-1.f, -1.f);
 	void MakeConsole();
 	void RefreshConsole();
 	void PlaceConsole();

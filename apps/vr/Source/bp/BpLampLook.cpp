@@ -18,6 +18,7 @@
 //     lines "StereoView: Instanced / Stereo rendering method: Multi-view (mobile)" (SceneRendering.cpp) that hung red in
 //     the headset's upper left.
 #include "BpTable.h"
+#include "BpProjector.h"
 
 #include "BpSurround.h"
 #include "BpTier.h"
@@ -278,7 +279,7 @@ bool ABpTable::TickLampStep(float DeltaSeconds)
 	FBpLampLook& L = *LampLookState;
 	if (L.BaseZ == TNumericLimits<double>::Max()) return false;
 	// Only at home on the site plan with nothing else moving it (a ride, a station, room mode, a turn to the person).
-	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty() && LampAway <= 0.f && LampLook <= 0.f && LampFace <= 0.f && LampNodT < 0.f;
+	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty() && LampAway <= 0.f && LampLook <= 0.f && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f;
 	const double Now = FPlatformTime::Seconds();
 	if (!bHome)
 	{
@@ -419,6 +420,8 @@ bool ABpTable::ConsoleSeatBox(FBox2D& Out) const
 	for (const UWidgetComponent* Widget : Widgets)
 	{
 		if (!Widget || Widget->GetName() != TEXT("ConsolePanel") || !Widget->IsVisible()) continue;
+		// Wave PJ1: the far sheet keeps this rule: Glim stands beside the screen he throws, never in front of it (the first
+		// captures without it had him hovering over a raised room, square in front of the sheet).
 		// The quad's own four corners (its draw size about its pivot, in the component's space), not its world box.
 		const FVector2D Size = Widget->GetDrawSize();
 		const FVector2D Pivot = Widget->GetPivot();
@@ -945,17 +948,26 @@ bool ABpTable::TickLampManner(float DeltaSeconds)
 	if (bReduced || !RoomModeId.IsEmpty()) Want = 0.f;
 	const float WasFace = LampFace;
 	if (LampFace != Want) LampFace = bReduced ? Want : FMath::FInterpConstantTo(LampFace, Want, DeltaSeconds, 1.f / FaceS);
+	// Wave PJ1: a sheet on the far surface: Glim turns his lens to it (0.6 s, the README's head turn; reduced motion: at once),
+	// and back to the table when it closes. Facing the person while he listens or speaks still wins (PlaceLamp's order).
+	const float WasProj = LampProj;
+	const float WantProj = BpProjector::IsFar() && RoomModeId.IsEmpty() ? 1.f : 0.f;
+	if (LampProj != WantProj) LampProj = bReduced ? WantProj : FMath::FInterpConstantTo(LampProj, WantProj, DeltaSeconds, 1.f / 0.6f);
+	if ((WasProj <= 0.f) != (LampProj <= 0.f)) UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim turns %s"), LampProj > 0.f ? TEXT("to the far sheet") : TEXT("back to the table"));
+	static FVector AimShown = FVector::ZeroVector;
+	const bool bAimMoved = LampProj > 0.f && !BpProjector::FarAimLocal().Equals(AimShown, 0.5);
+	if (bAimMoved) AimShown = BpProjector::FarAimLocal();
 	const bool bNodding = LampNodT >= 0.f;
 	if (bNodding)
 	{
 		LampNodT += DeltaSeconds;
 		if (LampNodT >= NodS) LampNodT = -1.f;
 	}
-	if (LampFace != WasFace || bNodding)
+	if (LampFace != WasFace || bNodding || LampProj != WasProj || bAimMoved)
 	{
 		// Home with nothing else moving: PlaceLamp puts it back exactly at its home once both are done.
 		PlaceLamp();
 		ApplyLampWidgets();
 	}
-	return LampFace != Want || LampNodT >= 0.f;
+	return LampFace != Want || LampNodT >= 0.f || LampProj != WantProj;
 }

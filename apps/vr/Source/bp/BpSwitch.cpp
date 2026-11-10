@@ -7,6 +7,7 @@
 // glyphs inside into the draft wave (BpLink AddToDraft: compose or PATCH, never a dispatch). Urgency is the owner's order:
 // T0 then T1 findings, then open findings, then the plan's order; nothing here computes a layout or a health.
 #include "BpTable.h"
+#include "BpProjector.h"
 
 #include "BpGameMode.h"
 #include "BpLink.h"
@@ -323,7 +324,7 @@ void ABpTable::PlaceLamp()
 	double RideYaw = 0.0;
 	float LeanDeg = 0.f;
 	const bool bRide = LampRidePose(RideAt, RideYaw, LeanAxis, LeanDeg);
-	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampNodT < 0.f;
+	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f;
 	const auto SetMovable = [](AActor* Actor, uint8 Mobility)
 	{
 		const EComponentMobility::Type Want = static_cast<EComponentMobility::Type>(Mobility);
@@ -373,6 +374,8 @@ void ABpTable::PlaceLamp()
 		Yaw = LampStationYaw;
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
+	// Wave PJ1: to the far sheet's point of interest while a sheet is thrown (TickLampManner eases LampProj).
+	if (LampProj > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, BpProjector::FarAimLocal())) * SwitchEase(LampProj);
 	// V3: to the person while it listens or speaks (TickLampManner), and a nod toward them.
 	if (LampFace > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, Eye)) * SwitchEase(LampFace);
 	FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));

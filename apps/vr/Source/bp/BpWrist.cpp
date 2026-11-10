@@ -609,7 +609,7 @@ void ABpPawn::PanelAct(const FString& Act)
 	{
 		FString What, Value;
 		Act.Mid(4).Split(TEXT(":"), &What, &Value);
-		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : nullptr;
+		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("screen") ? TEXT("bp.Projector") : nullptr;
 		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
 		{
 			Var->Set(*Value, ECVF_SetByConsole);

@@ -14,6 +14,7 @@
 // the game thread when its card shows and released when the card leaves or the page closes; the replay and the auto-advance are
 // one-shot timers. Closed, the state is dropped (BpStandup.Stat says so).
 #include "BpPawn.h"
+#include "BpProjector.h"
 
 #include "Algo/AnyOf.h"
 #include "Algo/Count.h"
@@ -1647,7 +1648,9 @@ void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunc
 		IImageWrapperModule* Wrappers = &FModuleManager::LoadModuleChecked<IImageWrapperModule>(TEXT("ImageWrapper"));
 		// PNG, or JPEG (an outcome's screen may be one, wave EV), told by its bytes.
 		const EImageFormat Format = Wrappers->DetectImageFormat(Png.GetData(), Png.Num()) == EImageFormat::JPEG ? EImageFormat::JPEG : EImageFormat::PNG;
-		Async(EAsyncExecution::ThreadPool, [Then, bSample, Png, Wrappers, Format]()
+		// Wave PJ1: on the far sheet a screen is drawn about 2.5 times larger and its loupe crops it: kept up to 1600 px wide.
+		const int32 MaxW = BpProjector::IsOn() ? 1600 : 800;
+		Async(EAsyncExecution::ThreadPool, [Then, bSample, Png, Wrappers, Format, MaxW]()
 		{
 			TSharedPtr<IImageWrapper> Image = Wrappers->CreateImageWrapper(Format);
 			TArray64<uint8> Raw;
@@ -1656,7 +1659,7 @@ void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunc
 			{
 				W = Image->GetWidth();
 				H = Image->GetHeight();
-				while (W > 800 && W % 2 == 0 && H % 2 == 0)
+				while (W > MaxW && W % 2 == 0 && H % 2 == 0)
 				{
 					const int32 W2 = W / 2, H2 = H / 2;
 					TArray64<uint8> Half;
@@ -1677,7 +1680,10 @@ void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunc
 					H = H2;
 				}
 			}
-			AsyncTask(ENamedThreads::GameThread, [Then, bSample, Raw = MoveTemp(Raw), W, H]()
+			// The loupe's thumbnail, made here on the worker (BpProjector.h): where a pair differs is found on it later.
+			int32 TW = 0, TH = 0;
+			TArray<uint8> Thumb = W > 0 && H > 0 && Raw.Num() == static_cast<int64>(W) * H * 4 ? BpProjector::MakeThumb(Raw.GetData(), W, H, TW, TH) : TArray<uint8>();
+			AsyncTask(ENamedThreads::GameThread, [Then, bSample, Raw = MoveTemp(Raw), W, H, Thumb = MoveTemp(Thumb), TW, TH]() mutable
 			{
 				if (W <= 0 || H <= 0 || Raw.Num() != static_cast<int64>(W) * H * 4) { (*Then)(nullptr, false); return; }
 				UTexture2D* Texture = UTexture2D::CreateTransient(W, H, PF_B8G8R8A8);
@@ -1691,6 +1697,7 @@ void ABpPawn::FetchBeforeShot(const FString& Product, const FString& Path, TFunc
 				FMemory::Memcpy(Data, Raw.GetData(), Raw.Num());
 				Mip.BulkData.Unlock();
 				Texture->UpdateResource();
+				BpProjector::KeepThumb(Texture, MoveTemp(Thumb), TW, TH);
 				(*Then)(Texture, bSample);
 			});
 		});
@@ -1957,6 +1964,25 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		}
 		return Y;
 	};
+	/** Wave PJ1, the loupe (BpProjector.h): a crop of a screen's own texture (its brush with a UV sub-rect: no new decode), in
+	 *  an amber frame with its caption pinned at the top left, and how much larger it is than the screen beside it. */
+	const auto Loupe = [&](const FBox2f& Box, const TSharedPtr<FSlateBrush>& Of, const FBox2f& Uv, const FString& Caption, const FLinearColor& CapInk)
+	{
+		if (!Of.IsValid()) return;
+		const TSharedPtr<FSlateBrush> Crop = MakeShared<FSlateBrush>(*Of);
+		Crop->SetUVRegion(Uv);
+		Put(Box.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Amber).EdgePx(3.f));
+		Put(Box, SNew(SImage).Image_Lambda([Crop]() { return Crop.Get(); }));
+		const float CapW = BpSheet::TextWidth(Caption, SmallBold) + 28.f;
+		Put(FBox2f(Box.Min, FVector2f(Box.Min.X + CapW, Box.Min.Y + 40.f)), BpSheet::Pin(Caption, SmallBold, 40.f, CapInk, CapW));
+	};
+	/** The loupe's place drawn on the screen it crops: a fine amber frame. */
+	const auto LoupeMark = [&](const FBox2f& Img, const FBox2f& Uv)
+	{
+		const FVector2f Sz = Img.GetSize();
+		Put(FBox2f(Img.Min + Uv.Min * Sz, Img.Min + Uv.Max * Sz).ExpandBy(2.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(3.f));
+	};
+	const auto TextureOf = [](const TSharedPtr<FSlateBrush>& Brush) { return Brush.IsValid() ? Cast<UTexture2D>(Brush->GetResourceObject()) : nullptr; };
 
 	if (!Standup.IsValid()) return;
 	FBpStandupState& S = *Standup;
@@ -2168,7 +2194,37 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		const FString Place = !S.Room.IsEmpty() && WristTable.IsValid() ? WristTable->StandupPlaceName(S.Room).ToUpper() : FString();
 		const FString BeforeCap = Place.IsEmpty() ? FString(TEXT("BEFORE")) : TEXT("BEFORE · ") + Place;
 		const FString AfterCap = bBuilt && !O->commit.IsEmpty() ? FString::Printf(TEXT("AFTER · %s"), *O->commit) : FString(TEXT("AFTER"));
-		if (Screens == 2)
+		if (Screens == 2 && bConsoleFar)
+		{
+			// Wave PJ1, the far sheet: the pair stands small at the left, BEFORE over AFTER (their structure), and the loupe takes
+			// the rest: the part that changed, from BEFORE over the same part of AFTER, several times larger so its words read.
+			const float Gap = 14.f, H = (BandY1 - BandY0 - Gap) * 0.5f, W = H * 16.f / 9.f;
+			const FBox2f A(FVector2f(BandX0, BandY0), FVector2f(BandX0 + W, BandY0 + H)), B(FVector2f(BandX0, BandY0 + H + Gap), FVector2f(BandX0 + W, BandY1));
+			Screen(A, S.OutcomeShots[0], TEXT("BEFORE"), BpSheet::Ink);
+			Screen(B, S.OutcomeShots[1], TEXT("AFTER"), Tone);
+			const float LX0 = A.Max.X + 40.f, LH1 = (BandY1 - BandY0 - Gap) * 0.5f;
+			const FBox2f LA(FVector2f(LX0, BandY0), FVector2f(BandX1, BandY0 + LH1)), LB(FVector2f(LX0, BandY0 + LH1 + Gap), FVector2f(BandX1, BandY1));
+			const UTexture2D* TA = TextureOf(S.OutcomeShots[0].Brush);
+			const UTexture2D* TB = TextureOf(S.OutcomeShots[1].Brush);
+			FBox2f Uv;
+			constexpr float Frac = 0.45f;
+			if (TA && TB && BpProjector::LoupeRegion(TA, TB, LA.GetSize().X / LA.GetSize().Y, Frac, Uv))
+			{
+				const int32 Times = FMath::RoundToInt(LA.GetSize().X / (Uv.GetSize().X * W));
+				Loupe(LA, S.OutcomeShots[0].Brush, Uv, FString::Printf(TEXT("BEFORE · %d×"), Times), BpSheet::Ink);
+				Loupe(LB, S.OutcomeShots[1].Brush, Uv, FString::Printf(TEXT("AFTER · %d×"), Times), Tone);
+				LoupeMark(A, Uv);
+				LoupeMark(B, Uv);
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: yesterday's loupe of %s: screens %.0fx%.0f, crops %.0fx%.0f each, %dx the screen (source %dx%d px, crop %.0fx%.0f px at %.0f,%.0f)"),
+					*O->proposal, W, H, LA.GetSize().X, LA.GetSize().Y, Times, TA->GetSizeX(), TA->GetSizeY(), Uv.GetSize().X * TA->GetSizeX(), Uv.GetSize().Y * TA->GetSizeY(), Uv.Min.X * TA->GetSizeX(), Uv.Min.Y * TA->GetSizeY());
+			}
+			else
+			{
+				Put(FBox2f(LA.Min, LB.Max), SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
+					.Text(FText::FromString(TEXT("READING THE SCREENS"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+			}
+		}
+		else if (Screens == 2)
 		{
 			// Side by side, 16:9, as large as the band allows; an arrow between them reads before to after.
 			const float Gap = 34.f, AvailW = BandX1 - BandX0, H = FMath::Min(BandY1 - BandY0, (AvailW - Gap) * 0.5f * 9.f / 16.f), W = H * 16.f / 9.f;
@@ -2321,8 +2377,27 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		// The screen: the finding's "before", unlit on the sheet in a fine frame, large, with what it is under it.
 		// The screen fills the right half down to the title block; its caption is a strip across its foot.
 		const float ImgX0 = ColX1 + 30.f, ImgX1 = TextX1, ImgW = ImgX1 - ImgX0, ImgH = FMath::Min(ImgW * 9.f / 16.f, Frame.Max.Y - 62.f - FrameY0 - 16.f);
-		const FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
+		FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
 			: FBox2f(FVector2f(TextX1 - 470.f, Frame.Max.Y - 200.f), FVector2f(TextX1, Frame.Max.Y - 60.f));
+		if (bScreen && bConsoleFar)
+		{
+			// Wave PJ1, the far sheet: the screen stands smaller at the top right, and under it the loupe: its densest words
+			// (there is only a BEFORE for a decision, so no change to find), several times larger, read from the seat.
+			const float SmallH = 200.f;
+			Img = FBox2f(FVector2f(ImgX1 - SmallH * 16.f / 9.f, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + SmallH));
+			const FBox2f Lb(FVector2f(ImgX0, Img.Max.Y + 16.f), FVector2f(ImgX1, Frame.Max.Y - 58.f));
+			const UTexture2D* T = S.ShotBrush.IsValid() ? StandupShot.Get() : nullptr;
+			FBox2f Uv;
+			if (T && Lb.GetSize().Y > 60.f && BpProjector::LoupeRegion(T, nullptr, Lb.GetSize().X / Lb.GetSize().Y, 0.3f, Uv))
+			{
+				const int32 Times = FMath::RoundToInt(Lb.GetSize().X / (Uv.GetSize().X * Img.GetSize().X));
+				Loupe(Lb, S.ShotBrush, Uv, FString::Printf(TEXT("BEFORE · %d×"), Times), BpSheet::Ink);
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: the decision's loupe of %s: screen %.0fx%.0f, crop %.0fx%.0f, %dx (source %dx%d px, crop %.0fx%.0f px at %.0f,%.0f)"), *S.ShotFor,
+					Img.GetSize().X, Img.GetSize().Y, Lb.GetSize().X, Lb.GetSize().Y, Times, T->GetSizeX(), T->GetSizeY(), Uv.GetSize().X * T->GetSizeX(), Uv.GetSize().Y * T->GetSizeY(), Uv.Min.X * T->GetSizeX(), Uv.Min.Y * T->GetSizeY());
+				// Glim turns to the loupe's region on the screen (the table reads it as the far sheet's aim).
+				LoupeAimLayout = Img.Min + (Uv.Min + Uv.Max) * 0.5f * Img.GetSize();
+			}
+		}
 		if (bScreen && S.ShotBrush.IsValid())
 		{
 			Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.8f)).EdgePx(2.f));

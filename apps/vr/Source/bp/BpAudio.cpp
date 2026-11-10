@@ -77,6 +77,7 @@ namespace
 		{ TEXT("bp.TextSize"), SettingsSection, TEXT("TextSize"), 1.f, 1.3f },
 		{ TEXT("bp.Captions"), SettingsSection, TEXT("Captions"), 0.f, 1.f },
 		{ TEXT("bp.Legend"), SettingsSection, TEXT("Legend"), 0.f, 1.f },
+		{ TEXT("bp.Projector"), SettingsSection, TEXT("Projector"), 0.f, 2.f },
 	};
 	bool bLoading = false;
 
