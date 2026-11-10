@@ -105,6 +105,55 @@ and prints the Kettle line (readings 10 and 14).* The other C++ front end in thi
 `FBpStructureEnvelope` and `FBpScanWire` have never been through it. No gate runs that command: `check:schema` asserts
 only that `check.cpp` names all six roots.
 
+## How the lamp speaks and listens (text to speech, speech to text)
+
+The headset itself runs no speech model. It plays audio and records audio; everything that turns text into a voice or a
+voice into text happens on the owner's PC, which calls a cloud speech service (ElevenLabs). The owner allowed this on
+2026-11-10; it is a recorded deviation from the registry's `voice-io` standard, which prefers on-device recognition. The
+exact wire contract, error codes, privacy statement and budgets are in
+[`docs/concepts/vr-light-table/voice-link.md`](../../docs/concepts/vr-light-table/voice-link.md).
+
+**Three kinds of speech, by where the audio comes from**
+
+| What you hear | Made when | Needs at run time |
+|---|---|---|
+| The tour's lines and the sample talk exchange | At build time, by `apps/vr/tools/tour-voice.ts` and the `say` route; the WAVs are in `Content/BpData/voice/` and ship inside the APK | Nothing: no PC, no network, no microphone |
+| The lamp's live answers | When the lamp answers, by `POST /api/companion/say` on the PC | The PC link (cable or the paired Wi-Fi door) |
+| Your own words | When you hold to talk, by `POST /api/companion/listen` on the PC | The PC link, your ALLOW on the consent sheet, the microphone permission |
+
+**Text to speech (the lamp's voice)**
+1. The headset posts the text to its PC: `POST /api/companion/say { "text": ... }` (scope `standup`).
+2. The PC cleans the text into speakable words, asks the cloud service for the voice (one designed voice, the same id,
+   model, seed and settings as the tour's clips), runs the same effect chain and loudness levelling, and answers one
+   mono 16-bit 24 kHz WAV. A line it has rendered before comes from the PC's cache and costs nothing.
+3. The headset plays the WAV through the tour's playback at `bp.VoiceLevel`, the music ducks 8 dB under it, and the whole
+   reply is shown on the conversation sheet. The lamp speaks at most the first sentences up to 280 characters
+   (`bp.TalkSpokenMax`); the sheet keeps the full text.
+
+**Speech to text (you, to the lamp)**
+1. Nothing is recorded until you hold: X on the left controller, a pinch held on the lamp, or TALK on the wrist. The
+   first time, a sheet says in plain words where your voice goes, with ALLOW and NOT NOW; the microphone permission is
+   asked for then, never at launch. Without ALLOW nothing is recorded and nothing is sent.
+2. While you hold, the microphone is open (48 kHz mono on the Quest), the lamp and the sheet say LISTENING with a level
+   meter. When you let go, the headset resamples to 16 kHz 16-bit mono, wraps it as one WAV (at most 30 seconds) and
+   closes the microphone. Losing focus during a hold drops the recording.
+3. The headset posts the WAV to its PC: `POST /api/companion/listen` with the header `x-bp-speech-consent: cloud`. The
+   PC first measures the recording: silence is answered at once and never leaves the PC. Otherwise the PC sends it once
+   to the cloud service's speech-to-text model and answers `{ text, heard }`.
+4. The heard words are shown (so a mishearing is visible), then go to the companion as a normal turn; its reply comes
+   back through text to speech above.
+
+**What is kept and what it costs.** The PC keeps nothing of what you said; it keeps a capped cache of the lamp's own
+answers. Each paired headset has a daily budget on the PC (30,000 fresh characters of speech, 1,800 seconds of
+listening); past it the route answers 429 with a sentence the lamp shows. `BP_CLOUD_SPEECH=off` on the PC refuses every
+listen call while the lamp can still speak.
+
+**Without a PC** (the bundled sample, the judged build): holding to talk plays a scripted exchange from bundled clips,
+labelled SAMPLE, and the microphone is never opened.
+
+**Try it from the PC:** `BpTalk.Say <text>` runs a turn from text, `BpTalk.Hold <seconds>` records for real,
+`BpTalk.Consent allow|notnow|unset` sets the saved choice, `BpTalk.Stat` logs the state.
+
 ## MetaHuman hands (built locally, never committed)
 
 The capture hands can be MetaHuman Creator's forearms and hands with its skin (spark vr-fidelity-40 FT/FT2). MetaHuman is

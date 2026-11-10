@@ -365,3 +365,16 @@ packaging machine, with a real product's names and findings. Fix: stage `BpData/
   https://www.tripo3d.ai/help/privacy-policy/how-to-use-tripo-models-commercially
 - MakeHuman / MPFB FAQ (CC0 core assets): https://static.makehumancommunity.org/mpfb/faq/can_i_sell_models.html
 - Poly Haven licence (CC0): https://polyhaven.com/license
+
+## Owner's decisions, 2026-11-10 (after night two)
+
+- **Cloud speech is allowed.** Voice audio goes from the headset to the owner's PC and from there to a cloud speech
+  service, only after ALLOW on the consent sheet; the deviation from the registry's `voice-io` standard stays recorded in
+  `voice-link.md`. How it works is in `apps/vr/README.md` ("How the lamp speaks and listens").
+- **The table's grant bound keeps `wave.dispatch`.** A hand-over from the headset may let the companion dispatch waves
+  (real builds) within the bound in `table-link-v2.md`.
+- **Receipts for the generated music, voice and sample screens are not needed** (owner). The licence rows above keep
+  their status; no proof is being collected.
+- **The manifest's default permissions** (eye tracking, billing, licence check, foreground service, notifications) are
+  acknowledged; no change asked.
+- **The tour runs once** at first launch and can be started again from SETTINGS (built in the tour follow-up).
