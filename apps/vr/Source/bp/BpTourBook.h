@@ -38,6 +38,12 @@ namespace BpTourBook
 	 *  start per scope kind, the sample's results at the counts it lands (BpScan.TheatreLines lists them), and the generic
 	 *  ones for any other count. */
 	const TArray<FLine>& ScanLines();
+	/** Wave N3-W3, every step narrated (BpNarrate.cpp; tour-voice.ts --narrate renders them into voice/narrate/): a line for each
+	 *  wing and room of the bundled sample (their facts fixed in the bundle), each console page, each stand-up sheet kind and
+	 *  answer, the deck, your room, the legend and a chapter's end. Never a count that a session can change. */
+	const TArray<FLine>& NarrateLines();
+	/** The words of a narration line ("" when there is none). */
+	FString NarrateWords(const FString& Id);
 	/** The core tour's steps in order (each id is also its line's id). */
 	const TArray<const TCHAR*>& Core();
 	const TArray<FChapter>& Chapters();

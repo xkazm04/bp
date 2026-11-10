@@ -378,7 +378,7 @@ void ABpTable::PlaceLamp()
 	// its rectangle from the seated eye (the sheet is at most about 22 degrees each side; he stands about 34 degrees left).
 	if (LampProj > 0.f && !bRide && !bLampAtStation)
 	{
-		const FVector FootAt(TableDepthCm * 0.5 - 7.0, -(TableWidthCm * 0.5 - 14.0), RestAt.Z);
+		const FVector FootAt = LampFootClearOfSheet(FVector(TableDepthCm * 0.5 - 7.0, -(TableWidthCm * 0.5 - 14.0), RestAt.Z));
 		At = FMath::Lerp(At, FootAt, static_cast<double>(SwitchEase(LampProj)));
 	}
 	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
@@ -431,6 +431,78 @@ void ABpTable::PlaceLamp()
 	{
 		if (AActor* Each = LampGroup[Index].Get()) Each->SetActorTransform(LampGroupRel[Index] * World);
 	}
+}
+
+namespace
+{
+	TAutoConsoleVariable<float> CVarFootClearDeg(TEXT("bp.Glim.SheetClearDeg"), 3.f,
+		TEXT("Wave N3-W3: while a sheet is far, the least angle (degrees, from the seated eye) between Glim's whole silhouette (his arm and hand included) and the sheet's edge; 0 turns the rule off (he stands at the far rim's left end, as before)."), ECVF_Default);
+}
+
+FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
+{
+	FTransform FarPose;
+	FVector2D Size;
+	const float MarginDeg = FMath::Clamp(CVarFootClearDeg.GetValueOnGameThread(), 0.f, 15.f);
+	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size)) return Want;
+	static FString KeptKey;
+	static FVector Kept = FVector::ZeroVector;
+	const FString Key = FString::Printf(TEXT("%s|%s|%s|%.1f"), *FarPose.GetLocation().ToString(), *FarPose.Rotator().ToString(), *Size.ToString(), MarginDeg) + Want.ToString();
+	if (Key == KeptKey) return Kept;
+	// His body: the corners of his mesh's own box about his pivot (the arm and the hand are part of the mesh), so its reach
+	// from his vertical axis holds whichever way he turns; and its top over the pivot. In table cm (the table is unscaled).
+	double Reach = 30.0, Top = 50.0;
+	TArray<UStaticMeshComponent*> Meshes;
+	Lamp->GetComponents(Meshes);
+	for (const UStaticMeshComponent* Mesh : Meshes)
+	{
+		if (!Mesh->GetStaticMesh() || Mesh->GetStaticMesh()->GetName() != LampMeshName) continue;
+		const FBox Box = Mesh->GetStaticMesh()->GetBoundingBox();
+		const FTransform& T = Mesh->GetComponentTransform();
+		const FVector Pivot = Lamp->GetActorLocation();
+		Reach = 0.0;
+		Top = -TNumericLimits<double>::Max();
+		for (int32 C = 0; C < 8; ++C)
+		{
+			const FVector Corner((C & 1) ? Box.Max.X : Box.Min.X, (C & 2) ? Box.Max.Y : Box.Min.Y, (C & 4) ? Box.Max.Z : Box.Min.Z);
+			const FVector Off = T.TransformPosition(Corner) - Pivot;
+			Reach = FMath::Max(Reach, Off.Size2D());
+			Top = FMath::Max(Top, Off.Z);
+		}
+	}
+	const FVector Eye = EyeLocal();
+	const auto Yaw = [&Eye](const FVector& P) { return FMath::RadiansToDegrees(FMath::Atan2(P.Y - Eye.Y, P.X - Eye.X)); };
+	const auto Elev = [&Eye](const FVector& P, double Along) { return FMath::RadiansToDegrees(FMath::Atan2(P.Z - Eye.Z, FMath::Max(1.0, Along))); };
+	double YawMin = TNumericLimits<double>::Max(), YawMax = -TNumericLimits<double>::Max(), Bottom = TNumericLimits<double>::Max();
+	for (int32 C = 0; C < 4; ++C)
+	{
+		const FVector P = FarPose.TransformPositionNoScale(FVector(0.0, (C & 1) ? Size.X * 0.5 : -Size.X * 0.5, (C & 2) ? Size.Y * 0.5 : -Size.Y * 0.5));
+		YawMin = FMath::Min(YawMin, Yaw(P));
+		YawMax = FMath::Max(YawMax, Yaw(P));
+		Bottom = FMath::Min(Bottom, Elev(P, FVector::Dist2D(P, Eye)));
+	}
+	// Along the table's left side from Want toward the seat: the first place where his silhouette's nearest edge stands
+	// MarginDeg outside the sheet's side (or his top under its bottom edge); none clear: the one that clears most.
+	FVector Best = Want;
+	double BestClear = -TNumericLimits<double>::Max();
+	bool bClear = false;
+	const double NearX = -(TableDepthCm * 0.5) + 8.0;
+	for (double X = Want.X; X >= NearX; X -= 2.0)
+	{
+		const FVector P(X, Want.Y, Want.Z);
+		const double D = FVector::Dist2D(P, Eye);
+		const double Half = FMath::RadiansToDegrees(FMath::Asin(FMath::Min(1.0, Reach / FMath::Max(1.0, D))));
+		const double Side = FMath::Max(YawMin - (Yaw(P) + Half), (Yaw(P) - Half) - YawMax);
+		const double Under = Bottom - Elev(P + FVector(0.0, 0.0, Top), D - Reach);
+		const double Clear = FMath::Max(Side, Under);
+		if (Clear > BestClear) { BestClear = Clear; Best = P; }
+		if (Clear >= MarginDeg) { Best = P; BestClear = Clear; bClear = true; break; }
+	}
+	KeptKey = Key;
+	Kept = Best;
+	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim stands at table (%.0f, %.0f) %s the far sheet: his silhouette (reach %.0f cm, top +%.0f cm) clears its edge by %.1f deg (the sheet spans yaw %.1f to %.1f, its foot at %.1f deg; at the far rim's end it cleared %s)"),
+		Best.X, Best.Y, bClear ? TEXT("clear of") : TEXT("as clear as he can be of"), Reach, Top, BestClear, YawMin, YawMax, Bottom, Best.Equals(Want) ? TEXT("already") : TEXT("too little"));
+	return Best;
 }
 
 FString ABpTable::LampCaptionFit(const FString& Text) const

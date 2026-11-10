@@ -78,6 +78,88 @@ namespace BpTourBook
 		return All;
 	}
 
+	const TArray<FLine>& NarrateLines()
+	{
+		static const TArray<FLine> All = {
+			// ---- A wing entered (BpLevels.cpp): "enter-wing-" + the wing's name as a slug; the sample's five, then any other ----
+			{ TEXT("enter-wing-foundations"), TEXT("Foundations. Two rooms, thirty-two features: the platform, and signing in.") },
+			{ TEXT("enter-wing-studio-operations"), TEXT("Studio operations. Four rooms, thirty-eight features. Booking needs the most care.") },
+			{ TEXT("enter-wing-money"), TEXT("Money. One room, seventeen features, and the most open findings.") },
+			{ TEXT("enter-wing-members-reach"), TEXT("Members and reach. Three rooms, twenty-four features, all about your members.") },
+			{ TEXT("enter-wing-frontier"), TEXT("Frontier. Three rooms, twenty-two features: reports, connections and the assistant.") },
+			{ TEXT("enter-wing-other"), TEXT("This wing is open. Tap a room to look closer.") },
+			// ---- A room lifted (BpLevels.cpp): "enter-room-" + the room's id; the sample's thirteen, then any other ----
+			{ TEXT("enter-room-platform"), TEXT("Platform and operations. Twenty-two features: what everything else stands on.") },
+			{ TEXT("enter-room-identity"), TEXT("Identity and access. Ten features: signing in, and who may do what.") },
+			{ TEXT("enter-room-scheduling"), TEXT("Scheduling and classes. Thirteen features: the timetable, appointments and courses.") },
+			{ TEXT("enter-room-booking"), TEXT("Booking and attendance. Ten features, and several findings waiting here.") },
+			{ TEXT("enter-room-studio-setup"), TEXT("Studio setup. Nine features: onboarding, locations and rooms.") },
+			{ TEXT("enter-room-instructor-tools"), TEXT("Instructor tools. Six features: teaching, pay and performance.") },
+			{ TEXT("enter-room-payments"), TEXT("Memberships and payments. Seventeen features, and the most findings on the table.") },
+			{ TEXT("enter-room-member-experience"), TEXT("Member experience. Ten features: the member app and the public booking page.") },
+			{ TEXT("enter-room-communications"), TEXT("Communications. Seven features: messages and campaigns.") },
+			{ TEXT("enter-room-growth"), TEXT("Growth and marketing. Seven features, and nothing open right now.") },
+			{ TEXT("enter-room-analytics"), TEXT("Analytics and reporting. Eight features: dashboards and insight.") },
+			{ TEXT("enter-room-integrations"), TEXT("Integrations and API. Eight features: the developer platform and connected systems.") },
+			{ TEXT("enter-room-assistant"), TEXT("The assistant. Six features, for studios and for members.") },
+			{ TEXT("enter-room-other"), TEXT("This room is lifted. Tap it once more to step inside.") },
+			// ---- Moving on the table (BpLevels.cpp, BpRoom.cpp) ----
+			{ TEXT("back-wing"), TEXT("Back to the whole wing.") },
+			{ TEXT("back-plan"), TEXT("The whole plan again.") },
+			{ TEXT("inside-room"), TEXT("You're inside. Each card here is one decision.") },
+			{ TEXT("outside-room"), TEXT("Back on the site plan.") },
+			// ---- The deck in a room (BpDeck.cpp) ----
+			{ TEXT("deck-next"), TEXT("The next decision. Approve it, or decline.") },
+			{ TEXT("deck-end"), TEXT("That's every decision in this room.") },
+			{ TEXT("deck-answer-approved"), TEXT("Approved. I've put this one in the draft wave.") },
+			{ TEXT("deck-answer-noted"), TEXT("Noted. On this sample, nothing is sent.") },
+			{ TEXT("deck-answer-declined"), TEXT("Declined. It's off this room's queue for today.") },
+			// ---- A console page opened (BpConsole.cpp): "page-" + its key; the stand-up and the scan result speak their own ----
+			{ TEXT("page-home"), TEXT("Here's the menu. Every page is one tap away.") },
+			{ TEXT("page-rooms"), TEXT("Every room, the most urgent first.") },
+			{ TEXT("page-scan"), TEXT("Scan a room, a wing, or everything, and watch it work.") },
+			{ TEXT("page-ask"), TEXT("Ask me what's next, or about the place you're looking at.") },
+			{ TEXT("page-projects"), TEXT("Your projects. Linked to your PC, you can switch between them.") },
+			{ TEXT("page-packages"), TEXT("The next wave's packages, and how far each one is built.") },
+			{ TEXT("page-settings"), TEXT("Sound, the screen, your room, and how I speak.") },
+			{ TEXT("page-link"), TEXT("Link this headset to your PC, to see your own projects.") },
+			{ TEXT("page-tour"), TEXT("The first tour, and a short chapter for each part.") },
+			{ TEXT("page-talk"), TEXT("Talking to me is your choice. Here's what happens to your words.") },
+			{ TEXT("page-access"), TEXT("Motion, text size, captions, and which hand holds the wrist.") },
+			{ TEXT("scan-armed"), TEXT("Tap it once more, and I'll start.") },
+			// ---- The stand-up (BpStandup.cpp): each sheet kind, the sample's decisions by their place, each answer ----
+			{ TEXT("su-open"), TEXT("Good morning. First what happened overnight, then your decisions.") },
+			{ TEXT("su-built"), TEXT("Here's what was built overnight, and what failed.") },
+			{ TEXT("su-outcome-built"), TEXT("This one was built. You'll find it on the plan.") },
+			{ TEXT("su-outcome-failed"), TEXT("This one failed a check. It waits for you again.") },
+			{ TEXT("su-outcome-building"), TEXT("This one is still being built.") },
+			{ TEXT("su-outcome-waiting"), TEXT("Approved, and waiting for a wave.") },
+			{ TEXT("su-decide-payout-reconciliation"), TEXT("First, a stop-ship: unsafe pages in payout reconciliation. Your call.") },
+			{ TEXT("su-decide-magic-link-login"), TEXT("Next, a health probe for magic-link sign-in. Small, but risky to change.") },
+			{ TEXT("su-decide-bank-debit-sepa"), TEXT("Last, the empty and error states of bank debit.") },
+			{ TEXT("su-decide-other"), TEXT("One decision. Approve it, leave it for later, or hold it.") },
+			{ TEXT("su-companion"), TEXT("I'd like to run this for you. Approve it, or decline.") },
+			{ TEXT("su-close"), TEXT("That's the morning. Close it whenever you're ready.") },
+			{ TEXT("su-answer-approved"), TEXT("Approved. That one goes ahead.") },
+			{ TEXT("su-answer-later"), TEXT("Later. I'll bring it back tomorrow morning.") },
+			{ TEXT("su-answer-held"), TEXT("Held. It stays on the deck, marked.") },
+			{ TEXT("su-answer-declined"), TEXT("Declined. It won't come back.") },
+			// ---- Your room, the legend, the tour's ends (BpSurround.cpp, BpLegend.cpp, BpTour.cpp) ----
+			{ TEXT("your-room-on"), TEXT("Your own room, around the table. The studio comes back anytime.") },
+			{ TEXT("your-room-off"), TEXT("The studio is back.") },
+			{ TEXT("legend-first"), TEXT("On your right, every control in one place.") },
+			{ TEXT("chapter-done"), TEXT("That's the chapter. The others wait on the TOUR page.") },
+			{ TEXT("tour-stopped"), TEXT("Tour stopped. It's in the menu whenever you like.") },
+		};
+		return All;
+	}
+
+	FString NarrateWords(const FString& Id)
+	{
+		const FLine* Line = NarrateLines().FindByPredicate([&Id](const FLine& L) { return Id == L.Id; });
+		return Line ? FString(Line->Words) : FString();
+	}
+
 	const TArray<const TCHAR*>& Core()
 	{
 		static const TArray<const TCHAR*> Steps = { TEXT("welcome"), TEXT("open-wing"), TEXT("open-room"), TEXT("step-in"), TEXT("decide"),

@@ -1877,6 +1877,32 @@ public:
 	/** A voice line from bytes (a WAV) at the lamp's head, at the tour's level; false when it is not a 16-bit PCM WAV. */
 	bool PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip);
 	void StopVoice();
+
+	// ---- Every step narrated (BpNarrate.cpp, wave N3-W3) ---------------------------------------------------------------------
+	/** One short line from Glim for a step (BpTourBook::NarrateLines, a bundled clip in voice/narrate/): never while a tour runs
+	 *  (the tour narrates), while the person talks to him or a talk reply plays, or under bp.Narration below ALL. A newer line
+	 *  replaces an older one, except an answer's acknowledgment (and the stand-up's opening), which the step it causes waits
+	 *  for. bCaption: the words go on the lamp's caption too (where the step has no caption of its own). */
+	void Narrate(const FString& Id, const TCHAR* Why, bool bCaption = false);
+	/** The step was left: a narration line still playing is cut, one waiting is dropped. */
+	void NarrateCut(const TCHAR* Why);
+	/** The line ids of a wing and a room: the sample's own line, else the generic one. */
+	FString NarrateWingId(const FString& InWingId) const;
+	FString NarrateRoomId(const FString& InRoomId) const;
+	/** Steps that make other steps (Home's walk back, a room entered from the site plan) say only the last one. */
+	int32 NarrateHush = 0;
+	/** A tour's end says its line; what its put-back changes after it (the room switch fading back) stays quiet until then. */
+	double NarrateQuietUntil = 0.0;
+	bool bLegendSaid = false;
+	FString NarrateNext;
+	FTimerHandle NarrateTimer;
+	TMap<FString, TArray<uint8>> NarrateClips;
+	void NarratePlay(const FString& Id, const TCHAR* Why);
+	/** Wave N3-W3 (the device, 2026-11-10: his pointing arm and hand covered the wall's left column): where Glim stands while a
+	 *  sheet is far, so that his whole silhouette, the arm and hand included, stays outside the sheet's rectangle from the
+	 *  seated eye: Want (the far rim's left end) when that is clear, else the farthest place along the table's left side that
+	 *  is. Table space. */
+	FVector LampFootClearOfSheet(const FVector& Want) const;
 	void LogTalk() const;
 	/** The conversation as the console's sheet shows it (night two V2): the state's word, the words heard (whole), the reply
 	 *  (whole), the caption's own line for the other states (a refusal, no PC), the input level 0..1 while listening, and

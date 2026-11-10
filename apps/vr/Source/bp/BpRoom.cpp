@@ -410,6 +410,8 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	ApplyRoomVisuals();
 	// The owner's move, published once it settles (BpFollow.cpp).
 	NotePlaceMoved();
+	// Wave N3-W3: the step inside, said.
+	Narrate(TEXT("inside-room"), TEXT("stepped inside a room"));
 	return true;
 }
 
@@ -436,6 +438,7 @@ void ABpTable::ExitRoomMode()
 	ApplyRoomVisuals();
 	// The owner's move, published once it settles (BpFollow.cpp).
 	NotePlaceMoved();
+	Narrate(TEXT("outside-room"), TEXT("left the room"));
 }
 
 bool ABpTable::IsRoomModeMoving() const

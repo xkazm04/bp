@@ -1142,6 +1142,12 @@ void ABpTable::ShowDeckAt(int32 Screen, int32 Page, int32 Direction)
 	UE_LOG(LogBpTable, Log, TEXT("BpDeck: front %s%s"), *GetDeckLine(), Direction > 0 ? TEXT(" (forward)") : Direction < 0 ? TEXT(" (back)") : TEXT(""));
 	ApplyDeckPoses();
 	ApplyDeckLight();
+	// Wave N3-W3: a step along the deck is said (its first showing is the room's own line); a page turn is not a step.
+	if (Direction != 0 && !bPageTurn)
+	{
+		if (Front.Kind == KDecision) Narrate(TEXT("deck-next"), TEXT("the deck moved to a decision"));
+		else if (Front.Kind == KSummary) Narrate(TEXT("deck-end"), TEXT("the deck's end"));
+	}
 }
 
 void ABpTable::ApplyDeckPoses()
@@ -1298,6 +1304,8 @@ void ABpTable::DeckApprove()
 		Self->DeckInDraft.Add(Id);
 		Self->RefreshDeck();
 	});
+	// Wave N3-W3: the answer acknowledged (the sample keeps nothing); the next card's line waits for it.
+	Narrate(FBpLinkModule::Get().IsFromBundle() ? TEXT("deck-answer-noted") : TEXT("deck-answer-approved"), TEXT("approved on the deck"));
 	// Resolving advances: the next screen; the answered one carries its stamp as it slides away.
 	if (DeckAt + 1 < DeckScreens.Num())
 	{
@@ -1389,6 +1397,7 @@ void ABpTable::DeckDecline()
 	}
 	StampFront(DeckCards.Num() > 0 ? DeckCards[0].Get() : nullptr, Id, TEXT("DECLINED"), [this]() { return DeckWidget(DeckAt, DeckPage); });
 	DeckDeclined.Add(Id);
+	Narrate(TEXT("deck-answer-declined"), TEXT("declined on the deck"));
 	UE_LOG(LogBpTable, Log, TEXT("BpDeck: decline %s: off this session's queue (memory only; the store is not written: it repeats no declined idea)"), *Id);
 	// The queue without it; the screen that was next comes forward.
 	BuildDeckQueue();

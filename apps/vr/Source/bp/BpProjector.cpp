@@ -312,7 +312,7 @@ namespace BpProjector
 		const FThumb* B = After ? GThumbs.Find(TWeakObjectPtr<UTexture2D>(const_cast<UTexture2D*>(After))) : nullptr;
 		if (!A || (After && !B)) return false;
 		const FString Key = FString::Printf(TEXT("%p|%p|%.3f|%.3f"), Before, After, Aspect, WidthFrac);
-		if (const FBox2f* Cached = GRegions.Find(Key)) { OutUv = *Cached; return true; }
+		if (const FBox2f* Cached = GRegions.Find(Key)) { OutUv = *Cached; return Cached->GetArea() > 0.f; }
 		const int32 W = A->W, H = A->H;
 		// The score: where the pair differs (After sampled on Before's grid), or one screen's horizontal edges (its words).
 		TArray<int32> Score;
@@ -346,6 +346,70 @@ namespace BpProjector
 		if (B && Hot < 4) return LoupeRegion(Before, nullptr, Aspect, WidthFrac, OutUv);
 		const int32 WW = FMath::Clamp(FMath::RoundToInt(W * WidthFrac), 4, W);
 		const int32 WH = FMath::Clamp(FMath::RoundToInt(WW / FMath::Max(0.2f, Aspect)), 2, H);
+		// Wave N3-W3 (the device, 2026-11-10: a decision with only a BEFORE showed "PAI", a giant red PAID stamp cut in half):
+		// the densest edges were one large glyph's. Its large shapes are found first: solid ink (far from the screen's paper
+		// grey even at the thumbnail's scale, where small words blur to a light grey) in a component taller than a line of text
+		// and filled like a glyph, not like a frame's thin rule. No window may cut through one or hold one. The words are then
+		// counted as text-like rows: a run of rows, at most a few thumbnail rows tall, holding several edges; the window with
+		// the most such rows wins (its edges break a tie), and with fewer than MinTextRows there is no loupe at all.
+		TArray<uint8> Large;
+		Large.SetNumZeroed(W * H);
+		int32 LargeShapes = 0;
+		{
+			int32 Hist[256] = {};
+			for (const uint8 G : A->Grey) ++Hist[G];
+			int32 Paper = 0;
+			for (int32 G = 1; G < 256; ++G) if (Hist[G] > Hist[Paper]) Paper = G;
+			TArray<uint8> Solid;
+			Solid.SetNumZeroed(W * H);
+			for (int32 I = 0; I < W * H; ++I) Solid[I] = FMath::Abs(A->Grey[I] - Paper) > 96 ? 1 : 0;
+			TArray<int32> Seen, Stack, Members;
+			Seen.SetNumZeroed(W * H);
+			const int32 TallRows = FMath::Max(5, H / 16);
+			for (int32 Start = 0; Start < W * H; ++Start)
+			{
+				if (!Solid[Start] || Seen[Start]) continue;
+				Members.Reset();
+				Stack.Reset();
+				Stack.Add(Start);
+				Seen[Start] = 1;
+				int32 X0 = W, X1 = -1, Y0 = H, Y1 = -1;
+				while (Stack.Num())
+				{
+					const int32 I = Stack.Pop(EAllowShrinking::No);
+					Members.Add(I);
+					const int32 X = I % W, Y = I / W;
+					X0 = FMath::Min(X0, X); X1 = FMath::Max(X1, X); Y0 = FMath::Min(Y0, Y); Y1 = FMath::Max(Y1, Y);
+					const int32 Next[4] = { X > 0 ? I - 1 : -1, X + 1 < W ? I + 1 : -1, Y > 0 ? I - W : -1, Y + 1 < H ? I + W : -1 };
+					for (const int32 N : Next) if (N >= 0 && Solid[N] && !Seen[N]) { Seen[N] = 1; Stack.Add(N); }
+				}
+				const int32 BW = X1 - X0 + 1, BH = Y1 - Y0 + 1;
+				if (BH < TallRows || BW < 3 || Members.Num() < BW * BH / 5) continue;
+				++LargeShapes;
+				// The shape's box, a cell wider all round (a glyph's anti-aliased rim).
+				for (int32 Y = FMath::Max(0, Y0 - 1); Y <= FMath::Min(H - 1, Y1 + 1); ++Y) for (int32 X = FMath::Max(0, X0 - 1); X <= FMath::Min(W - 1, X1 + 1); ++X) Large[Y * W + X] = 1;
+			}
+			// A large shape's own edges are no words.
+			for (int32 I = 0; I < W * H; ++I) if (Large[I] && Score[I]) { Score[I] = 0; --Hot; }
+		}
+		TArray<int32> LargeSat;
+		LargeSat.SetNumZeroed((W + 1) * (H + 1));
+		for (int32 Y = 0; Y < H; ++Y)
+		{
+			int32 Row = 0;
+			for (int32 X = 0; X < W; ++X)
+			{
+				Row += Large[Y * W + X];
+				LargeSat[(Y + 1) * (W + 1) + X + 1] = LargeSat[Y * (W + 1) + X + 1] + Row;
+			}
+		}
+		// Per row, the running count of edges (a window's row count is one subtraction).
+		TArray<int32> RowRun;
+		RowRun.SetNumZeroed(H * (W + 1));
+		for (int32 Y = 0; Y < H; ++Y) for (int32 X = 0; X < W; ++X) RowRun[Y * (W + 1) + X + 1] = RowRun[Y * (W + 1) + X] + Score[Y * W + X];
+		constexpr int32 MinTextRows = 3;
+		const int32 MinEdgesInRow = FMath::Max(3, WW / 12);
+		const int32 MaxBandRows = 4;
 		TArray<int32> Sat;
 		Sat.SetNumZeroed((W + 1) * (H + 1));
 		for (int32 Y = 0; Y < H; ++Y)
@@ -357,21 +421,42 @@ namespace BpProjector
 				Sat[(Y + 1) * (W + 1) + X + 1] = Sat[Y * (W + 1) + X + 1] + Row;
 			}
 		}
-		int32 Best = -1, BX = 0, BY = 0;
+		int32 Best = -1, BX = 0, BY = 0, BestRows = -1;
 		// Below the screen's top quarter (an app's header and page title: the largest words on it already, and where two
 		// generated screens differ most only because their framing moved).
 		for (int32 Y = FMath::Min(H / 4, H - WH); Y + WH <= H; ++Y)
 		{
 			for (int32 X = 0; X + WW <= W; ++X)
 			{
+				// No window through or around a large shape.
+				if (LargeSat[(Y + WH) * (W + 1) + X + WW] - LargeSat[Y * (W + 1) + X + WW] - LargeSat[(Y + WH) * (W + 1) + X] + LargeSat[Y * (W + 1) + X] > 0) continue;
 				const int32 Sum = Sat[(Y + WH) * (W + 1) + X + WW] - Sat[Y * (W + 1) + X + WW] - Sat[(Y + WH) * (W + 1) + X] + Sat[Y * (W + 1) + X];
-				if (Sum > Best) { Best = Sum; BX = X; BY = Y; }
+				// Its text-like rows: bands of busy rows no taller than MaxBandRows (a taller band is a picture, not a line).
+				int32 Rows = 0, Band = 0;
+				for (int32 R = Y; R <= Y + WH; ++R)
+				{
+					const bool bBusy = R < Y + WH && RowRun[R * (W + 1) + X + WW] - RowRun[R * (W + 1) + X] >= MinEdgesInRow;
+					if (bBusy) { ++Band; continue; }
+					if (Band > 0 && Band <= MaxBandRows) ++Rows;
+					Band = 0;
+				}
+				// The pair's change ranks by how much changed (as before); one screen by its text rows.
+				const bool bBetter = B ? Sum > Best : (Rows > BestRows || (Rows == BestRows && Sum > Best));
+				if (bBetter) { BestRows = Rows; Best = Sum; BX = X; BY = Y; }
 			}
+		}
+		if (B ? Best <= 0 : BestRows < MinTextRows)
+		{
+			// No region of words worth a loupe: none (the screen takes the space).
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe: none (%s: the best window held %d text rows, %d large shapes kept out), thumbs %dx%d"),
+				B ? TEXT("the pair's change") : TEXT("the screen's words"), FMath::Max(0, BestRows), LargeShapes, W, H);
+			GRegions.Add(Key, FBox2f(FVector2f(0.f), FVector2f(0.f)));
+			return false;
 		}
 		OutUv = FBox2f(FVector2f(static_cast<float>(BX) / W, static_cast<float>(BY) / H), FVector2f(static_cast<float>(BX + WW) / W, static_cast<float>(BY + WH) / H));
 		GRegions.Add(Key, OutUv);
-		UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe %s: uv (%.3f, %.3f) to (%.3f, %.3f), %d of %d cells hot in it (%d in the screen), thumbs %dx%d"),
-			B ? TEXT("the pair's change") : TEXT("the screen's densest words"), OutUv.Min.X, OutUv.Min.Y, OutUv.Max.X, OutUv.Max.Y, Best, WW * WH, Hot, W, H);
+		UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe %s: uv (%.3f, %.3f) to (%.3f, %.3f), %d text rows, %d of %d cells hot in it (%d in the screen), %d large shapes kept out, thumbs %dx%d"),
+			B ? TEXT("the pair's change") : TEXT("the screen's densest words"), OutUv.Min.X, OutUv.Min.Y, OutUv.Max.X, OutUv.Max.Y, BestRows, Best, WW * WH, Hot, LargeShapes, W, H);
 		return true;
 	}
 }

@@ -23,6 +23,7 @@
 #include "BpSheet.h"
 #include "BpStore.h"
 #include "BpTable.h"
+#include "BpTourBook.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Components/WidgetComponent.h"
@@ -558,6 +559,8 @@ void ABpPawn::StandupClosed()
 		}), 2.f, false);
 	}
 	if (ABpTable* Table = WristTable.Get(); Table && Standup.IsValid() && !Standup->Room.IsEmpty()) Table->SetHighlight(FString(), FString());
+	// Wave N3-W3: the stand-up left, its line still playing is cut.
+	if (ABpTable* Table = WristTable.Get()) Table->NarrateCut(TEXT("the stand-up left"));
 	// Unsent answers stay (the PC was gone): the page says what was not sent when it opens again. Otherwise nothing stays.
 	const bool bKeep = Standup.IsValid() && Standup->Answers.Num() > 0 && !Standup->bSample
 		&& Algo::AnyOf(Standup->Answers, [](const TPair<FString, FBpStandupAnswer>& A) { return A.Value.State == FBpStandupAnswer::EState::Unsent; });
@@ -816,6 +819,7 @@ void ABpPawn::StandupShowSheet()
 	{
 		S.Room = Table->StandupShow(FString(), FString(), FString());
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: sheet %d/%d companion card %s (%s)"), S.At + 1, S.Sheets.Num(), *Sheet.Companion.Id, *Sheet.Companion.Tool);
+		Table->Narrate(TEXT("su-companion"), TEXT("a stand-up sheet"));
 	}
 	else if (S.Deck.cards.IsValidIndex(Sheet.Card))
 	{
@@ -828,6 +832,20 @@ void ABpPawn::StandupShowSheet()
 		S.Room = Table->StandupShow(Card.place.target.kind.IsEmpty() && !Card.place.target.id.IsEmpty() ? FString(TEXT("room")) : Card.place.target.kind, Card.place.target.id, Line);
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: sheet %d/%d %s %s \"%s\"%s"), S.At + 1, S.Sheets.Num(), *Card.kind, *Card.id, *Card.headline,
 			S.Answers.Contains(Card.id) ? *FString::Printf(TEXT(" (answered: %s)"), *S.Answers[Card.id].Verdict) : TEXT(""));
+		// Wave N3-W3: each sheet said: the opening, what was built, each decision by its place (the sample's own line, else the
+		// generic one; on the wall Glim points at it as he says it), the close.
+		{
+			FString Said;
+			if (bDecision)
+			{
+				Said = TEXT("su-decide-") + Card.place.target.id;
+				if (BpTourBook::NarrateWords(Said).IsEmpty()) Said = TEXT("su-decide-other");
+			}
+			else if (Card.kind == BpVocab::MorningCard::Kind::Open) Said = TEXT("su-open");
+			else if (Card.kind == BpVocab::MorningCard::Kind::Built) Said = TEXT("su-built");
+			else if (Card.kind == BpVocab::MorningCard::Kind::Close) Said = TEXT("su-close");
+			if (!Said.IsEmpty()) Table->Narrate(Said, TEXT("a stand-up sheet"));
+		}
 		if (Card.kind == BpVocab::MorningCard::Kind::Close)
 		{
 			// The stand-up happened: its time is the next morning's "since".
@@ -929,6 +947,7 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 		A.Words = TEXT("Sending to your PC");
 		A.At = FPlatformTime::Seconds();
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s companion card %s by %s"), *A.Verdict, *Id, Route);
+		if (ABpTable* Table = WristTable.Get()) Table->Narrate(bApprove ? TEXT("su-answer-approved") : TEXT("su-answer-declined"), TEXT("an answer"));
 		TWeakObjectPtr<ABpPawn> Self(this);
 		Link.AnswerCompanionCard(Id, bApprove, Shown, [Self, Id, bApprove, Advance](int32 Status, const FString& Body)
 		{
@@ -981,6 +1000,12 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 	A.Product = Card.product;
 	A.Proposal = Card.decision.proposal;
 	A.At = FPlatformTime::Seconds();
+	// Wave N3-W3: the answer acknowledged as it is taken (the next sheet's line waits for it).
+	if (ABpTable* Table = WristTable.Get())
+	{
+		Table->Narrate(Verdict == BpVocab::SteerPost::Verdict::Approve ? TEXT("su-answer-approved") : Verdict == BpVocab::SteerPost::Verdict::Defer ? TEXT("su-answer-later")
+			: Verdict == BpVocab::SteerPost::Verdict::Hold ? TEXT("su-answer-held") : TEXT("su-answer-declined"), TEXT("an answer"));
+	}
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s %s (%s) by %s; shown \"%s\""), *Verdict, *Card.decision.proposal, *Card.product, Route, *Shown.Replace(TEXT("\n"), TEXT(" / ")));
 	if (S.bSample)
 	{
@@ -1554,6 +1579,8 @@ void ABpPawn::StandupShowOutcome()
 		S.bOpeningSaid = true;
 		Table->StandupVoice(S.bSample ? TEXT("standup-yesterday") : TEXT(""), S.bSample ? FString() : FString(TEXT("Here is what yesterday's approvals became.")));
 	}
+	// Wave N3-W3: each outcome said by what it became (after the opening line when there is one).
+	Table->Narrate(TEXT("su-outcome-") + O.outcome, TEXT("a yesterday outcome"));
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday %d/%d %s %s \"%s\"%s%s, approved by %s (room %s)"), S.OutcomeAt + 1, Card->outcomes.Num(), *O.outcome, *O.proposal, *O.title,
 		O.commit.IsEmpty() ? TEXT("") : *(TEXT(" commit ") + O.commit), O.reason.IsEmpty() ? TEXT("") : *(TEXT(" reason \"") + O.reason + TEXT("\"")), *ApprovedWords(O, S.bSample), S.Room.IsEmpty() ? TEXT("none raised") : *S.Room);
 	StandupLoadOutcomeShots();
@@ -2483,6 +2510,16 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 					Img.GetSize().X, Img.GetSize().Y, Lb.GetSize().X, Lb.GetSize().Y, Times, T->GetSizeX(), T->GetSizeY(), Uv.GetSize().X * T->GetSizeX(), Uv.GetSize().Y * T->GetSizeY(), Uv.Min.X * T->GetSizeX(), Uv.Min.Y * T->GetSizeY());
 				// Glim turns to the loupe's region on the screen (the table reads it as the far sheet's aim).
 				LoupeAimLayout = Img.Min + (Uv.Min + Uv.Max) * 0.5f * Img.GetSize();
+			}
+			else if (T)
+			{
+				// Wave N3-W3: no region of words worth a loupe (a large stamp or picture, no lines of text): no loupe, and the screen
+				// takes the column's space, as large as it fits, centred in it.
+				const float AvailH = Lb.Max.Y - (FrameY0 + 16.f);
+				const float H = FMath::Min(ImgW * 9.f / 16.f, AvailH), W = H * 16.f / 9.f;
+				const float X0 = ImgX0 + (ImgW - W) * 0.5f, Y0 = FrameY0 + 16.f + (AvailH - H) * 0.5f;
+				Img = FBox2f(FVector2f(X0, Y0), FVector2f(X0 + W, Y0 + H));
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: the decision's screen of %s without a loupe: %.0fx%.0f"), *S.ShotFor, W, H);
 			}
 		}
 		if (bScreen && S.ShotBrush.IsValid())

@@ -47,6 +47,11 @@ namespace
 		0,
 		TEXT("The lamp's captions: 1 always on (every line the lamp says gets its caption, on the site plan too), 0 with its voice (the default, as before: the lines it says in a room and its notices). Saved across runs."),
 		ECVF_Default);
+	TAutoConsoleVariable<int32> CVarNarration(
+		TEXT("bp.Narration"),
+		2,
+		TEXT("Wave N3-W3, SETTINGS > NARRATION: 2 ALL (default: the tour's lines and one short line from Glim for every step on the table, from bundled clips), 1 TOUR ONLY (the tour's and its chapters' lines), 0 OFF (nothing said unasked: a talk reply still speaks; captions carry the rest). Saved across runs."),
+		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarTourFocus(
 		TEXT("bp.TourFocus"),
 		-1,
@@ -78,6 +83,7 @@ namespace
 		{ TEXT("bp.Captions"), SettingsSection, TEXT("Captions"), 0.f, 1.f },
 		{ TEXT("bp.Legend"), SettingsSection, TEXT("Legend"), 0.f, 1.f },
 		{ TEXT("bp.Projector"), SettingsSection, TEXT("Projector"), 0.f, 2.f },
+		{ TEXT("bp.Narration"), AudioSection, TEXT("Narration"), 0.f, 2.f },
 	};
 	bool bLoading = false;
 
@@ -104,6 +110,7 @@ namespace BpAudio
 	float VoiceLevel() { return FMath::Clamp(CVarVoiceLevel.GetValueOnGameThread(), 0.f, 1.5f); }
 	float VoiceGain() { return VoiceGainAtFull * VoiceLevel(); }
 	float MusicLevel() { return FMath::Clamp(CVarMusicLevel.GetValueOnGameThread(), 0.f, 1.f); }
+	int32 Narration() { return FMath::Clamp(CVarNarration.GetValueOnGameThread(), 0, 2); }
 
 	void StepVoiceLevel(float Delta)
 	{

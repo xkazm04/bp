@@ -261,6 +261,12 @@ void ABpTable::TickLegend()
 		UE_LOG(LogBpTable, Log, TEXT("BpLegend: hidden (%s)"), CVarLegend.GetValueOnGameThread() == 0 ? TEXT("bp.Legend 0") : TEXT("no plan yet"));
 		return;
 	}
+	// Wave N3-W3: its first appearance in a session, said (the tour's hands chapter says it in its own words).
+	if (!bLegendSaid)
+	{
+		bLegendSaid = true;
+		Narrate(TEXT("legend-first"), TEXT("the legend appeared"), true);
+	}
 
 	// The lines, in the order that fits where the person is: in a room what acts there leads.
 	TArray<const FLegendLine*> Lines;

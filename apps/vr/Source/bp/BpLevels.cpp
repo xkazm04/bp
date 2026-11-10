@@ -176,6 +176,8 @@ bool ABpTable::EnterWing(const FString& InWingId)
 	KickLevels();
 	// The owner's move, published once it settles (BpFollow.cpp).
 	NotePlaceMoved();
+	// Wave N3-W3: Glim names the wing and one thing about it.
+	Narrate(NarrateWingId(InWingId), TEXT("a wing entered"), true);
 	return true;
 }
 
@@ -202,7 +204,11 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 	}
 	if (Level == EBpLevel::L0)
 	{
-		if (!EnterWing(Room->parentId)) return false;
+		// Wave N3-W3: the room is the step said; its wing opens quietly on the way.
+		++NarrateHush;
+		const bool bWing = EnterWing(Room->parentId);
+		--NarrateHush;
+		if (!bWing) return false;
 	}
 	else if (Room->parentId != WingId)
 	{
@@ -221,6 +227,7 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 	KickLevels();
 	// The owner's move, published once it settles (BpFollow.cpp).
 	NotePlaceMoved();
+	Narrate(NarrateRoomId(InRoomId), TEXT("a room lifted"), true);
 	return true;
 }
 
@@ -252,12 +259,16 @@ void ABpTable::Back()
 	UpdateBreadcrumb();
 	KickLevels();
 	NotePlaceMoved();
+	Narrate(Level == EBpLevel::L1 ? TEXT("back-wing") : TEXT("back-plan"), TEXT("back"));
 }
 
 void ABpTable::Home()
 {
+	// Wave N3-W3: the walk home is no step of its own: whatever called it says the step.
+	++NarrateHush;
 	if (!RoomModeId.IsEmpty()) ExitRoomMode();
 	while (Level != EBpLevel::L0) Back();
+	--NarrateHush;
 }
 
 bool ABpTable::IsLevelMoving() const

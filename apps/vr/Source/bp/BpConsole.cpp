@@ -1240,6 +1240,15 @@ struct FBpConsolePages
 		};
 		Value(TEXT("VOICE"), TEXT("Glim's voice"), BpAudio::VoiceLevel(), TEXT("voice:minus"), TEXT("voice:plus"));
 		Value(TEXT("MUSIC"), BpAudio::MusicLevel() > 0.f ? TEXT("The background music") : TEXT("Off: no stream"), BpAudio::MusicLevel(), TEXT("music:minus"), TEXT("music:plus"));
+		{
+			// Wave N3-W3: what Glim says unasked (bp.Narration, saved): every step, the tour only, or nothing.
+			const int32 Mode = BpAudio::Narration();
+			FBpConsoleRow Row;
+			Row.Label = TEXT("NARRATION");
+			Row.Detail = Mode == BpAudio::NarrationAll ? TEXT("Glim says a line for every step") : Mode == BpAudio::NarrationTourOnly ? TEXT("Glim speaks on the tour only") : TEXT("Off: captions only");
+			Row.Buttons = { { TEXT("ALL"), TEXT("set:narration:2"), Mode == BpAudio::NarrationAll }, { TEXT("TOUR ONLY"), TEXT("set:narration:1"), Mode == BpAudio::NarrationTourOnly }, { TEXT("OFF"), TEXT("set:narration:0"), Mode == 0 } };
+			Out.Add(Row);
+		}
 		const bool bTour = Plan(Pawn) && Table(Pawn)->IsTourRunning();
 		{
 			FBpConsoleRow Row;
@@ -1848,6 +1857,9 @@ void ABpPawn::OpenConsole(const FString& Page)
 		if (Found && Found->OnOpen) Found->OnOpen(*this);
 		// HOME's STAND-UP tile counts the companion's requests pending on the PC (one read, linked only).
 		if (Key == TEXT("home")) StandupPeekRequests();
+		// Wave N3-W3: Glim says what the page is for (the menu itself only as the console opens; the stand-up and the scan
+		// result speak their own lines).
+		if (ABpTable* Table = WristTable.Get(); Table && (Key != TEXT("home") || !bWas)) Table->Narrate(TEXT("page-") + Key, TEXT("a console page opened"));
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: open %s"), *ConsolePageKey);
 	PlaceConsole();
@@ -1862,6 +1874,7 @@ void ABpPawn::CloseConsole()
 	ConsoleSel.Reset();
 	ConsoleHover.Reset();
 	if (ConsolePageKey == TEXT("standup")) StandupClosed();
+	if (ABpTable* Table = WristTable.Get()) Table->NarrateCut(TEXT("the console closed"));
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: closed"));
 	PlaceConsole();
 	RefreshConsole();

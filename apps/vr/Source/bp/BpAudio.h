@@ -32,6 +32,12 @@ namespace BpAudio
 	void StepMusicLevel(float Delta);
 	constexpr float VoiceStep = 0.1f;
 	constexpr float MusicStep = 0.05f;
+	/** Wave N3-W3, SETTINGS > NARRATION (bp.Narration, saved): 2 ALL (default: the tour's lines and a line for every step on
+	 *  the table, BpNarrate.cpp), 1 TOUR ONLY (the tour's and its chapters' lines), 0 OFF (Glim says nothing unasked; a talk
+	 *  reply still speaks, the captions carry the rest). */
+	int32 Narration();
+	constexpr int32 NarrationAll = 2;
+	constexpr int32 NarrationTourOnly = 1;
 	/** Reads the saved levels and toggles (once a run: the pawn at BeginPlay), migrating the old voice key, and from then on
 	 *  saves each change. The toggles saved beside them: bp.WristFace, bp.WristHand, bp.ReducedMotion, bp.Room ([/Script/bp.BpSettings]). */
 	void LoadSettings();

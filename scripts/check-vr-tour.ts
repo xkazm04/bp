@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOUR_LINES, SCAN_LINES, SCAN_CLIPS } from '../apps/vr/tools/tour-voice.ts';
+import { TOUR_LINES, SCAN_LINES, SCAN_CLIPS, NARRATE_LINES, NARRATE_CLIPS } from '../apps/vr/tools/tour-voice.ts';
 import { TOUR_LINK } from '../packages/core/src/server/companion/voice-link.server.ts';
 import { MUSIC_CHANNELS, MUSIC_INDEX, MUSIC_LOUDNESS, MUSIC_RATE, MUSIC_WAV } from '../apps/vr/tools/music-bed.ts';
 
@@ -151,6 +151,52 @@ else {
   const scanIndex = fs.existsSync(scanIndexFile) ? JSON.parse(fs.readFileSync(scanIndexFile, 'utf8')) : {};
   for (const [id, text] of Object.entries(SCAN_LINES)) check(`${id}.wav was read from today's line`, scanIndex.lines?.[id] === text, 're-run node apps/vr/tools/tour-voice.ts --scan');
   check('the scan clips share the tour clips\' voice record', JSON.stringify(scanIndex.voice) === JSON.stringify(recordedIndex.voice));
+}
+
+// ---- Every step narrated (wave N3-W3: BpTourBook.cpp's NarrateLines -> voice/narrate/, played by BpNarrate.cpp) ----
+{
+  const narrateSrc = fs.readFileSync(path.join(SRC, 'BpNarrate.cpp'), 'utf8');
+  const allSrc = fs.readdirSync(SRC).filter((f) => f.endsWith('.cpp')).map((f) => fs.readFileSync(path.join(SRC, f), 'utf8')).join('\n');
+  const ids = Object.keys(NARRATE_LINES);
+  check('the narration book has its lines', ids.length >= 40, `${ids.length}`);
+  for (const [id, text] of Object.entries(NARRATE_LINES)) {
+    check(`narration line ${id} is a minted name`, /^[a-z][a-z-]*[a-z]$/.test(id));
+    check(`narration line ${id} is ${maxWords} words or fewer`, text.split(/\s+/).filter(Boolean).length <= maxWords, text);
+    check(`narration id ${id} is no tour or scan id`, !(id in TOUR_LINES) && !(id in SCAN_LINES));
+  }
+  // Each kind of step the brief names has its lines: the sample's five wings and thirteen rooms (from the bundle's plan), the
+  // console's pages, each stand-up sheet kind and answer, the deck, your room, the legend, a chapter's end.
+  const plan = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/vr/Content/BpData/kettle/plan.json'), 'utf8'));
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  for (const w of plan.wings) check(`the sample's wing ${w.name} has its line`, `enter-wing-${slug(w.name)}` in NARRATE_LINES);
+  for (const r of plan.rooms) check(`the sample's room ${r.name} has its line`, `enter-room-${slug(r.id)}` in NARRATE_LINES);
+  const morning = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/vr/Content/BpData/kettle/morning.json'), 'utf8'));
+  for (const c of morning.cards.filter((c: { kind: string }) => c.kind === 'decision')) check(`the sample's decision on ${c.place.target.id} has its line`, `su-decide-${c.place.target.id}` in NARRATE_LINES);
+  for (const id of ['enter-wing-other', 'enter-room-other', 'back-wing', 'back-plan', 'inside-room', 'outside-room', 'deck-next', 'deck-end', 'deck-answer-approved', 'deck-answer-noted', 'deck-answer-declined',
+    'page-home', 'page-rooms', 'page-scan', 'page-settings', 'page-tour', 'su-open', 'su-built', 'su-outcome-built', 'su-outcome-failed', 'su-decide-other', 'su-close',
+    'su-answer-approved', 'su-answer-later', 'su-answer-held', 'su-answer-declined', 'your-room-on', 'your-room-off', 'legend-first', 'chapter-done', 'tour-stopped']) {
+    check(`the narration book has ${id}`, id in NARRATE_LINES);
+  }
+  // Every fixed id is named by the code that says it (the built ids: enter-wing-, enter-room-, page-, su-decide-, su-outcome-).
+  const built = /^(enter-wing-|enter-room-|page-|su-decide-|su-outcome-)/;
+  for (const id of ids) if (!built.test(id)) check(`narration line ${id} is said by the code`, allSrc.includes(`"${id}"`));
+  check('BpNarrate.cpp plays from voice/narrate', narrateSrc.includes('BpData/voice/narrate'));
+  check('bp.Narration is saved through FBpStore', /\{ TEXT\("bp\.Narration"\), AudioSection/.test(fs.readFileSync(path.join(SRC, 'BpAudio.cpp'), 'utf8')));
+  if (!fs.existsSync(NARRATE_CLIPS)) check('voice/narrate exists', false, 'run node apps/vr/tools/tour-voice.ts --narrate');
+  else {
+    for (const id of ids) {
+      const file = path.join(NARRATE_CLIPS, `${id}.wav`);
+      if (!fs.existsSync(file)) { check(`narration clip ${id}.wav exists`, false, 'run node apps/vr/tools/tour-voice.ts --narrate'); continue; }
+      const w = wav(file);
+      check(`narration clip ${id}.wav is 16-bit mono at the say route's rate, 0.5-8 s`, !!w && w.bits === 16 && w.channels === 1 && w.rate === TOUR_LINK.rate && w.seconds >= 0.5 && w.seconds <= 8,
+        w ? `${w.bits}-bit ${w.channels} ch ${w.rate} Hz ${w.seconds.toFixed(2)} s` : 'not PCM');
+    }
+    for (const f of fs.readdirSync(NARRATE_CLIPS).filter((f) => f.endsWith('.wav'))) check(`narration clip ${f} has a line (no orphan)`, f.slice(0, -4) in NARRATE_LINES);
+    const idxFile = path.join(NARRATE_CLIPS, 'lines.json');
+    const idx = fs.existsSync(idxFile) ? JSON.parse(fs.readFileSync(idxFile, 'utf8')) : {};
+    for (const [id, text] of Object.entries(NARRATE_LINES)) check(`${id}.wav was read from today's line`, idx.lines?.[id] === text, 're-run node apps/vr/tools/tour-voice.ts --narrate');
+    check('the narration clips share the tour clips\' voice record (levelled, the say route\'s chain)', JSON.stringify(idx.voice) === JSON.stringify(recordedIndex.voice));
+  }
 }
 
 // The background music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav): the same WAV route, stereo at

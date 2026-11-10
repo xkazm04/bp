@@ -343,7 +343,10 @@ void ABpTable::TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed)
 			FBpStore::SetString(GTourSection, TEXT("Seen"), FString::Join(Seen.Array(), TEXT(",")));
 			UE_LOG(LogBpTable, Log, TEXT("BpTour: chapter %s seen"), *Chapter);
 		}
+		// Wave N3-W3: the put-back's moves are no steps of the person's: unsaid.
+		++NarrateHush;
 		TourPutBack();
+		--NarrateHush;
 		// The first tour this chapter interrupted: on again after a finished chapter; a stopped one leaves it to the next cold
 		// start (its At); another product drops it here (the store's At still resumes it); another chapter keeps it waiting.
 		if (!TourResumeFrom.IsEmpty() && FCString::Strcmp(Why, TEXT("another tour")) != 0)
@@ -360,6 +363,10 @@ void ABpTable::TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed)
 	TourChapter.Reset();
 	TourSteps.Reset();
 	FBpStore::Flush();
+	// Wave N3-W3: a chapter's end, and a tour the person stopped, said; the put-back's own changes (the room switch) stay quiet.
+	if (!Chapter.IsEmpty() && bFinished) Narrate(TEXT("chapter-done"), TEXT("a chapter finished"), true);
+	else if (bDismissed) Narrate(TEXT("tour-stopped"), TEXT("the tour stopped"), true);
+	NarrateQuietUntil = (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0) + 1.5;
 }
 
 void ABpTable::TourPutBack()
@@ -524,6 +531,8 @@ void ABpTable::SpeakTour(const TCHAR* Clip)
 	TourVoiceClip = Clip;
 	TourVoiceNext.Reset();
 	if (CVarTourVoice.GetValueOnGameThread() == 0) return;
+	// Wave N3-W3: SETTINGS > NARRATION OFF: the tour is captions only.
+	if (BpAudio::Narration() == 0) return;
 	TArray<uint8>* File = TourClips.Find(Clip);
 	if (!File)
 	{

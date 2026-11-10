@@ -436,6 +436,8 @@ void BpSurround::Tick(UWorld* World, float DeltaSeconds)
 			StartPass(World);
 		}
 		for (TActorIterator<ABpPawn> It(World); It; ++It) It->OnRoomChanged();
+		// Wave N3-W3: your room on and off, said (not the saved room coming back as the app starts).
+		if (World->GetTimeSeconds() > 3.0) for (TActorIterator<ABpTable> It(World); It; ++It) It->Narrate(bWant ? TEXT("your-room-on") : TEXT("your-room-off"), TEXT("the room switch"), true);
 		UE_LOG(LogBpTable, Log, TEXT("BpSurround: bp.Room %d: %s over %.1f s%s"), bWant ? 1 : 0, bWant ? TEXT("the studio fades to your room") : TEXT("the studio comes back"),
 			CVarRoomFadeS.GetValueOnGameThread(), Reduced() ? TEXT(" (reduced motion: the meshes cut, the light fades)") : TEXT(""));
 	}

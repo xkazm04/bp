@@ -19,6 +19,7 @@
 // is in the air.
 #include "BpTable.h"
 
+#include "BpAudio.h"
 #include "BpLink.h"
 #include "BpPawn.h"
 #include "BpWords.h"
@@ -197,6 +198,8 @@ void ABpTable::TheatreFly(int32 Room)
 void ABpTable::TheatreVoice(const FString& Clip, const FString& Say)
 {
 	if (CVarScanVoice.GetValueOnGameThread() == 0 || (Clip.IsEmpty() && Say.IsEmpty())) return;
+	// Wave N3-W3: SETTINGS > NARRATION below ALL: the scan's and the stand-up's opening lines are captions only.
+	if (BpAudio::Narration() < BpAudio::NarrationAll) { UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: line %s%s not said: bp.Narration %d"), *Clip, *Say, BpAudio::Narration()); return; }
 	TheatreVoiceClip = Clip;
 	TheatreVoiceSay = Say;
 	TheatreVoiceAt = FPlatformTime::Seconds();

@@ -502,6 +502,7 @@ void ABpPawn::PanelAct(const FString& Act)
 			WristScanWords.Reset();
 			bWristScanRefused = false;
 			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: %s"), *Act, Token == TEXT("@this") ? *FString::Printf(TEXT("Scan %s with %s"), *WristArmedLabel, *BpWords::Lens(Table->GetActiveLens())) : TEXT("Scan everything with every lens"));
+			Table->Narrate(TEXT("scan-armed"), TEXT("a scan armed"));
 		}
 		else if (Now - WristArmedAt < WristConfirmGuardS)
 		{
@@ -552,6 +553,7 @@ void ABpPawn::PanelAct(const FString& Act)
 			WristScanWords.Reset();
 			bWristScanRefused = false;
 			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: Scan %s for: %s"), *FocusId, *WristArmedLabel, *Focus->Note);
+			Table->Narrate(TEXT("scan-armed"), TEXT("a scan armed"));
 		}
 		else if (Now - WristArmedAt < WristConfirmGuardS)
 		{
@@ -609,7 +611,7 @@ void ABpPawn::PanelAct(const FString& Act)
 	{
 		FString What, Value;
 		Act.Mid(4).Split(TEXT(":"), &What, &Value);
-		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("screen") ? TEXT("bp.Projector") : nullptr;
+		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("screen") ? TEXT("bp.Projector") : What == TEXT("narration") ? TEXT("bp.Narration") : nullptr;
 		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
 		{
 			Var->Set(*Value, ECVF_SetByConsole);

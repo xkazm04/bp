@@ -55,6 +55,21 @@ export function readScanBook(file = TOUR_BOOK_CPP): Record<string, string> {
 export const SCAN_LINES: Record<string, string> = readScanBook();
 export const SCAN_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'scan');
 
+/** Wave N3-W3, every step narrated (BpTourBook.cpp's NarrateLines(), same one-line form): a wing or room entered on the bundled
+ *  sample, each console page, each stand-up sheet and answer, the deck, your room, the legend, a chapter's end. `--narrate`
+ *  renders them into voice/narrate/ (BpNarrate.cpp plays them). */
+export function readNarrateBook(file = TOUR_BOOK_CPP): Record<string, string> {
+  const src = fs.readFileSync(file, 'utf8');
+  const start = src.indexOf('const TArray<FLine>& NarrateLines()');
+  const end = start >= 0 ? src.indexOf('return All;', start) : -1;
+  const block = start >= 0 && end > start ? src.slice(start, end) : '';
+  const out: Record<string, string> = {};
+  for (const m of block.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("((?:[^"\\]|\\.)*)"\)\s*\}/g)) out[m[1]] = m[2].replace(/\\(.)/g, '$1');
+  return out;
+}
+export const NARRATE_LINES: Record<string, string> = readNarrateBook();
+export const NARRATE_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'narrate');
+
 const TOUR_OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
 /** 24 kHz, the live `say` route's own rate (voice-link.server.ts TOUR_LINK): the bundled voice and the live voice are one
  *  voice, byte for byte for the same line (check:voice-link). Wave C1 put it back from wave T1's 16 kHz. */
@@ -100,10 +115,11 @@ function fxChain(): string {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const onlyLevel = process.argv.includes('--loudness');
-  // --scan: the scan theatre's lines (voice/scan/), else the tour's (voice/tour/).
+  // --scan: the scan theatre's lines (voice/scan/); --narrate: every step's (voice/narrate/, wave N3-W3); else the tour's.
   const scan = process.argv.includes('--scan');
-  const LINES = scan ? SCAN_LINES : TOUR_LINES;
-  const OUT = scan ? SCAN_CLIPS : TOUR_OUT;
+  const narrate = process.argv.includes('--narrate');
+  const LINES = narrate ? NARRATE_LINES : scan ? SCAN_LINES : TOUR_LINES;
+  const OUT = narrate ? NARRATE_CLIPS : scan ? SCAN_CLIPS : TOUR_OUT;
   if (!onlyLevel && !voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
   if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) { console.log('REFUSED: ffmpeg is not on PATH'); process.exit(2); }
   const force = process.argv.includes('--force');
