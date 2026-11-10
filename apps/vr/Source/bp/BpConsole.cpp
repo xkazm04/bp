@@ -1045,6 +1045,7 @@ void ABpPawn::RefreshConsole()
 	ConsolePageAt = FMath::Clamp(ConsolePageAt, 0, Pages - 1);
 	const bool bRoom = CvarInt(TEXT("bp.Room")) != 0;
 	FString Key = FString::Printf(TEXT("%d|%s|%d|%s|%s|%d|%s|%s|%s|%d|%d|%d"), bConsoleOpen, *ConsolePageKey, ConsolePageAt, *Product, *Status, bCanBack, *ConsoleHover, *ConsoleSel, *Sub, bConsolePadSel, bShowPc, bRoom);
+	Key += FString::Printf(TEXT("|down%d%d"), bConsoleHoverDown, bPadADown && bConsolePadSel);
 	for (const FBpConsoleRow& Row : Rows)
 	{
 		Key += FString::Printf(TEXT("|%s/%s/%s/%s/%d"), *Row.Act, *Row.Label, *Row.Detail, *Row.Tag, Row.Tone);
@@ -1078,13 +1079,17 @@ void ABpPawn::RefreshConsole()
 	// the pad is on is brighter still, and gets the amber edge drawn over everything at the end.
 	const FString PadLit = bConsolePadSel ? ConsoleSel : FString();
 	const auto IsLit = [&](const FString& Id) { return !Id.IsEmpty() && (Id == ConsoleHover || Id == PadLit); };
+	// Night two V6: held (a pinch closed on it, or A on the pad's selection) it sinks, as BpSheet::Control's bDown does.
+	const auto IsDown = [&](const FString& Id) { return !Id.IsEmpty() && ((Id == ConsoleHover && bConsoleHoverDown) || (Id == PadLit && bPadADown)); };
 	const auto Button = [&](const FBox2f& Box, const FString& Word, EBtn Look, const FString& Act, const FSlateFontInfo& WordFont)
 	{
 		const bool bLit = IsLit(TEXT("console:") + Act);
-		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::RowFill(bLit);
+		const bool bDown = IsDown(TEXT("console:") + Act);
+		FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::RowFill(bLit);
+		if (bDown) Fill = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : Fill * 0.72f;
 		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f) : FLinearColor::Transparent;
 		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : BpSheet::PaperLo;
-		Put(Box, SNew(SOverlay)
+		Put(bDown ? Box.ExpandBy(-3.f) : Box, SNew(SOverlay)
 			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
@@ -1120,6 +1125,8 @@ void ABpPawn::RefreshConsole()
 		const FString Name = BpSheet::Cut(Product.ToUpper(), NameFont, TextWFor(true) * 0.45f);
 		const float NameW = BpSheet::TextWidth(Name, NameFont);
 		const FString Short = Status.Replace(TEXT(" decisions waiting"), TEXT(" waiting")).Replace(TEXT(" decision waiting"), TEXT(" waiting"));
+		const FString PlacePrefix = Table->GetBpLevel() != EBpLevel::L0 && Table->GetRoomModeId().IsEmpty() ? Table->DirectedLabel(Table->DirectedTarget()) + TEXT(" · ") : FString();
+		const FString Placed = !PlacePrefix.IsEmpty() && Status.StartsWith(PlacePrefix) ? Status.RightChop(PlacePrefix.Len()) : FString();
 		FString StatusFit;
 		bool bTwo = false, bRoomBtn = true;
 		for (const bool bWithRoom : { true, false })
@@ -1128,6 +1135,12 @@ void ABpPawn::RefreshConsole()
 			bRoomBtn = bWithRoom;
 			if (BpSheet::TextWidth(Status, StatusFont) <= W) { StatusFit = Status; bTwo = false; break; }
 			if (BpSheet::TextWidth(Short, StatusFont) <= W) { StatusFit = Short; bTwo = false; break; }
+			// Night two V6: two lines never fit inside the bar's frame (the second was clipped at the bottom: cap\v6-walk-17-room-lifted.png).
+			// A lifted wing or room names itself on its nameplate and the breadcrumb, so the bar keeps one line: what waits.
+			if (!Placed.IsEmpty() && BpSheet::TextWidth(Placed, StatusFont) <= W) { StatusFit = Placed; bTwo = false; break; }
+			// Else the status up to its last clause ("Sample scan: 3 of 13 rooms", the rest is on the scan's title block and wrist).
+			FString Head;
+			if (Short.Split(TEXT(" · "), &Head, nullptr, ESearchCase::CaseSensitive, ESearchDir::FromEnd) && BpSheet::TextWidth(Head, StatusFont) <= W) { StatusFit = Head; bTwo = false; break; }
 			const FString Two = BpSheet::Wrap(Short, Status2Font, W, 0);
 			if (LineCount(Two) <= 2) { StatusFit = Two; bTwo = true; break; }
 			StatusFit = BpSheet::Wrap(Short, Status2Font, W, 2);
@@ -1189,7 +1202,8 @@ void ABpPawn::RefreshConsole()
 				const FBpConsolePage& Each = Registry[Index];
 				const float X0 = Pad + (Index % 2) * (TileW + Gap), Y0 = Top + (Index / 2) * (TileH + Gap);
 				const FBox2f Box(FVector2f(X0, Y0), FVector2f(X0 + TileW, Y0 + TileH));
-				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(IsLit(FString::Printf(TEXT("console:open:%s"), Each.Key)))).Edge(BpSheet::RowEdge(false)).EdgePx(2.f));
+				const FString TileId = FString::Printf(TEXT("console:open:%s"), Each.Key);
+				Put(Box, SNew(BpSheet::SPlate).Fill(IsDown(TileId) ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : BpSheet::RowFill(IsLit(TileId))).Edge(BpSheet::RowEdge(false)).EdgePx(2.f));
 				Put(FBox2f(Box.Min + FVector2f(22.f, 0.f), Box.Max - FVector2f(18.f, 0.f)),
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 18.f, 0.f)[BpSheet::Bubble(Each.Letter, Font(TEXT("Bold"), 18.f), 40.f, BpSheet::Accent)]
@@ -1320,7 +1334,8 @@ void ABpPawn::RefreshConsole()
 				const FLinearColor ToneInk = Row.Tone == 1 ? BpSheet::Accent : Row.Tone == 2 ? BpSheet::Amber : Row.Tone == 3 ? BpSheet::Red : BpSheet::Ink.CopyWithNewOpacity(0.85f);
 				// The row: a step lighter than the sheet, brighter under the focus; its tone a bar down its left edge.
 				const bool bRowLit = !Row.Act.IsEmpty() && IsLit(TEXT("console:") + Row.Act);
-				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(bRowLit)).Edge(Row.Tone == 0 ? BpSheet::RowEdge(false) : ToneInk.CopyWithNewOpacity(0.55f)).EdgePx(2.f)
+				const bool bRowDown = !Row.Act.IsEmpty() && IsDown(TEXT("console:") + Row.Act);
+				Put(Box, SNew(BpSheet::SPlate).Fill(bRowDown ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : BpSheet::RowFill(bRowLit)).Edge(Row.Tone == 0 ? BpSheet::RowEdge(false) : ToneInk.CopyWithNewOpacity(0.55f)).EdgePx(2.f)
 					.Bar(Row.Tone == 0 ? FLinearColor::Transparent : ToneInk).BarPx(8.f));
 				// The buttons at the right, then the tag left of them; the words take the rest.
 				float Right = Box.Max.X - 12.f;
@@ -1429,11 +1444,15 @@ bool ABpPawn::ConsoleAim(const FString& Id, FVector& OutWorld) const
 	return true;
 }
 
-void ABpPawn::SetConsoleHover(const FString& Id)
+void ABpPawn::SetConsoleHover(const FString& Id, bool bDown)
 {
 	const FString Lit = Id == TEXT("console:panel") ? FString() : Id;
-	if (Lit == ConsoleHover) return;
+	const bool bHeld = bDown && !Lit.IsEmpty();
+	if (Lit == ConsoleHover && bHeld == bConsoleHoverDown) return;
+	const bool bSameLit = Lit == ConsoleHover;
 	ConsoleHover = Lit;
+	bConsoleHoverDown = bHeld;
+	if (bSameLit) { RefreshConsole(); return; }
 	// A hand is pointing: the pad's selection steps back until the pad is used again.
 	if (!Lit.IsEmpty()) bConsolePadSel = false;
 	RefreshConsole();
@@ -1608,7 +1627,7 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 	const FString Sub = bListening ? FString(TEXT("Speak now · let go to send · up to 30 s"))
 		: Word == TEXT("HEARING") ? FString(TEXT("Turning your words into text on your PC"))
 		: Word == TEXT("THINKING") ? FString(TEXT("Your PC's companion is thinking · B or a pinch on the lamp cancels"))
-		: Word == TEXT("ANSWERING") ? FString(TEXT("Spoken aloud · B stops it · this clears itself after"))
+		: Word == TEXT("ANSWERING") ? FString(TEXT("Spoken aloud · B stops it · it clears after the voice"))
 		: bSample ? FString(TEXT("A sample exchange: no microphone, nothing sent"))
 		: FString(TEXT("This clears itself in a moment · CLOSE clears it now"));
 	Put(FBox2f(FVector2f(Pad, SubY), FVector2f(LW - Pad, SubY + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Sub, SmallFont, LW - 2.f * Pad))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));

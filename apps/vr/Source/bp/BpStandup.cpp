@@ -1449,10 +1449,13 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	{
 		// One control family (BpSheet's): the quiet button a step lighter than the sheet, brighter under a hand or the pad.
 		const bool bLit = !Act.IsEmpty() && (TEXT("console:") + Act == ConsoleHover || TEXT("console:") + Act == PadLit);
-		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : Look == EBtn::Off ? FLinearColor::Transparent : BpSheet::RowFill(bLit);
+		// Night two V6: held by a pinch or A, the answer sinks until the release (BpSheet::Control's pressed look).
+		const bool bDown = Look != EBtn::Off && !Act.IsEmpty() && ((TEXT("console:") + Act == ConsoleHover && bConsoleHoverDown) || (TEXT("console:") + Act == PadLit && bPadADown));
+		FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : Look == EBtn::Off ? FLinearColor::Transparent : BpSheet::RowFill(bLit);
+		if (bDown) Fill = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : Fill * 0.72f;
 		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f) : Look == EBtn::Off ? BpSheet::OffEdge() : FLinearColor::Transparent;
 		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : Look == EBtn::Off ? BpSheet::OffInk() : BpSheet::PaperLo;
-		Put(Box, SNew(SOverlay)
+		Put(bDown ? Box.ExpandBy(-3.f) : Box, SNew(SOverlay)
 			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
@@ -1643,12 +1646,13 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		float Y = FrameY0 + 58.f + HeadLines * Pitch(CapHead) + 6.f;
 		const FSlateFontInfo LeadFont = Font(TEXT("Regular"), CapLabel);
 		/** The one line of consequence: 28 px, bright, under the title. */
-		const auto Lead = [&](const FString& Words, const FLinearColor& Ink, int32 MaxLines)
+		const auto Lead = [&](const FString& Words, const FLinearColor& Ink, int32 MaxLines, float Cap = CapLabel)
 		{
-			const FString Fit = BpSheet::Wrap(Words, LeadFont, ColX1 - InX, MaxLines);
+			const FSlateFontInfo WordFont = Cap == CapLabel ? LeadFont : Font(TEXT("Regular"), Cap);
+			const FString Fit = BpSheet::Wrap(Words, WordFont, ColX1 - InX, MaxLines);
 			const int32 N = LineCount(Fit);
-			Put(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + N * Pitch(CapLabel) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(LeadFont).ColorAndOpacity(FSlateColor(Ink)));
-			Y += N * Pitch(CapLabel) + 10.f;
+			Put(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + N * Pitch(Cap) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(WordFont).ColorAndOpacity(FSlateColor(Ink)));
+			Y += N * Pitch(Cap) + 10.f;
 		};
 		if (bCompanion)
 		{
@@ -1669,10 +1673,19 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		{
 			// The consequence: the brief's one line, large; then the tier chip with its class and age; then the evidence, quiet.
 			const FBpCardBrief& Brief = D->brief;
-			if (!Brief.Short_.IsEmpty()) Lead(Brief.Short_, BpSheet::InkHi, 3);
+			// Night two V6: a three-line title over a three-line consequence pushed the tier chip out of the frame onto the footnote
+			// (cap\v6-walk-58-su-dec3.png); the consequence then takes the 24 px face, and the chip row stays inside the frame.
+			const float ChipRowH = Card->lines.Num() > 1 ? 50.f : 0.f;
+			if (!Brief.Short_.IsEmpty())
+			{
+				const int32 AtLabel = LineCount(BpSheet::Wrap(Brief.Short_, LeadFont, ColX1 - InX, 3));
+				const bool bTight = Y + AtLabel * Pitch(CapLabel) + 10.f + ChipRowH > Frame.Max.Y - 6.f;
+				Lead(Brief.Short_, BpSheet::InkHi, 3, bTight ? CapSmall : CapLabel);
+			}
 			// The PC refused an approval from here (night two V4): its reason, whole, under the consequence.
 			if (Answer && Answer->State == FBpStandupAnswer::EState::Refused && !Answer->Words.IsEmpty()) Lead(Answer->Words, BpSheet::Red, 0);
-			if (Card->lines.Num() > 1)
+			// The chip row only inside the frame: when even the smaller consequence leaves no room it goes (the tier is on the deck).
+			if (Card->lines.Num() > 1 && Y + 40.f <= Frame.Max.Y - 6.f)
 			{
 				const FString Chip = Tier.IsEmpty() ? FString(TEXT("UNTIERED")) : Tier.ToUpper();
 				const float ChipW = BpSheet::TextWidth(Chip, SmallBold) + 28.f;

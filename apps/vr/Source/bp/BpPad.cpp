@@ -136,6 +136,12 @@ void ABpPawn::TickPad(float DeltaSeconds)
 				UE_LOG(LogBpTable, Log, TEXT("BpPad: key %s"), *Each.Key.ToString());
 				PadQueue.Add(Each.Button);
 			}
+			// Night two V6: A held draws the pad's selection pressed until it is released (only on the change: no per-frame redraw).
+			if (FCString::Strcmp(Each.Button, TEXT("A")) == 0 && bDown != bPadADown)
+			{
+				bPadADown = bDown;
+				RefreshConsole();
+			}
 			bWas = bDown;
 		}
 		const float Dead = FMath::Clamp(CVarPadDeadZone.GetValueOnGameThread(), 0.2f, 0.95f);

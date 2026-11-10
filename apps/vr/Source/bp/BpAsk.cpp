@@ -216,12 +216,13 @@ void ABpTable::AskNextStep(const TCHAR* Route)
 	const FFindingWorth& Top = Open[0];
 	const FString TopRoom = LampRoomOf(Top.Proposal->feature);
 	const FBpPlanRoom* Room = FindRoom(TopRoom);
-	FString Why = FString::Printf(TEXT("Top of %d open · %s · %s"), Open.Num(), Room ? *Room->name : TEXT("?"), *WorthWords(Top));
+	// Night two V6: the worth estimate ("worth est. 1.00") stays in the log; on the wrist and in the caption it read as debug text.
+	FString Why = FString::Printf(TEXT("Top of %d open · %s"), Open.Num(), Room ? *Room->name : TEXT("?"));
 	if (Top.TierRank < 4) Why = TierWords(Top.TierRank) + TEXT(" · ") + Why;
 	PresentLamp(LampTargetForFeature(Top.Proposal->feature), TEXT("next"));
 	SetLampOffer(ELampOffer::OpenFinding, TopRoom, Top.Proposal->feature, Top.Proposal->id);
 	LampSayAnswer(Top.Proposal->title, Why, TEXT("Pinch me: open it on the deck"), Top.TierRank < 4 ? FString::Printf(TEXT("%s · %s"), *TierWords(Top.TierRank), Room ? *Room->name : TEXT("?")) : FString::Printf(TEXT("Top of %d · %s"), Open.Num(), Room ? *Room->name : TEXT("?")));
-	UE_LOG(LogBpTable, Log, TEXT("BpLamp: next -> %s (%s) in room %s: %s"), *Top.Proposal->id, *Top.Proposal->title, *TopRoom, *Why);
+	UE_LOG(LogBpTable, Log, TEXT("BpLamp: next -> %s (%s) in room %s: %s · %s"), *Top.Proposal->id, *Top.Proposal->title, *TopRoom, *Why, *WorthWords(Top));
 	LampAskTurn(MoveTemp(Text));
 }
 

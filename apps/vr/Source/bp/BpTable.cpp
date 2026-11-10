@@ -3131,7 +3131,9 @@ void ABpTable::DrawSheetText(UCanvas* Canvas, TArray<FCanvasUVTri>& Tris)
 		const double L = Cx - Half, R = Cx + Half;
 		// V5: while a wing or a room is lifted the title block steps back with the rest of the sheet (the lift's nameplate
 		// hangs in front of it when the shortest wing's room is up); a scan's status keeps full ink.
-		const float Block = Level != EBpLevel::L0 && !bScanStatus ? TitleLiftedInk : 1.f;
+		// V6: with a room lifted its nameplate hung over the dimmed block (cap\v6-walk-17-room-lifted.png: "MEMBERSHIPS & PAYMENTS"
+		// across "WING PLAN — LEVEL 1"); the block then gives way whole, the breadcrumb still says where you are.
+		const float Block = bScanStatus ? 1.f : Level == EBpLevel::L2 ? 0.f : Level != EBpLevel::L0 ? TitleLiftedInk : 1.f;
 		Put(Title, BpType::Title, Cx, TitleTop, TitleCap, Ink(WarmPaper, Block), 0.5);
 		Put(Sub, BpType::TitleSub, Cx, SubTop, SubCap, Ink(CyanWhite, 0.9f * Block), 0.5);
 		Report(TEXT("title"), Title, Cx, TitleTop + TitleCap, TitleCap, FloorAt(U0, U1, TitleTop + TitleCap));

@@ -741,10 +741,12 @@ void ABpPawn::TickWristFace(float DeltaSeconds)
 	WristPanel->SetWorldRotation(WristFaceQuat);
 }
 
-void ABpPawn::SetWristHover(const FString& Id)
+void ABpPawn::SetWristHover(const FString& Id, bool bDown)
 {
-	if (Id == WristHover) return;
+	const bool bHeld = bDown && !Id.IsEmpty();
+	if (Id == WristHover && bHeld == bWristHoverDown) return;
 	WristHover = Id;
+	bWristHoverDown = bHeld;
 	DrawWrist();
 }
 
@@ -879,8 +881,10 @@ void ABpPawn::DrawWrist()
 	const bool bTour = bPlan && Table->IsTourRunning();
 	// The link in one word (night two W2a): CABLE, WI-FI, OFFLINE or PAIRING, at the card's top right.
 	const FString LinkWord = FBpLinkModule::RouteWord(FBpLinkModule::Get().GetLinkStatus());
-	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
-		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord);
+	// Night two V6: the calm card counts what waits, as the bar does ("40 decisions waiting" over a wrist that said NOTHING WAITING).
+	const int32 Waiting = Card == ECard::Calm && bPlan ? Table->OpenDecisionCount() : 0;
+	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|w%d"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
+		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord, Waiting);
 	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
 	if (Card == ECard::Talk) Key += TEXT("|t") + TalkWord + Table->TalkStateLine();
 	if (Card == ECard::Standup)
@@ -888,7 +892,7 @@ void ABpPawn::DrawWrist()
 		Key += TEXT("|s") + SuKicker + SuTitle + SuWords;
 		for (const TPair<FString, FString>& B : SuButtons) Key += TEXT("/") + B.Key;
 	}
-	Key += TEXT("|h") + WristHover;
+	Key += TEXT("|h") + WristHover + (bWristHoverDown ? TEXT("|down") : TEXT(""));
 	if (Key == WristKey) return;
 	WristKey = Key;
 	WristBoxes.Reset();
@@ -905,7 +909,7 @@ void ABpPawn::DrawWrist()
 	const auto Button = [&](const FBox2f& Box, const FString& Word, ELook Look, const FString& Id, const FSlateFontInfo& Font)
 	{
 		const FString Full = TEXT("wrist:") + Id;
-		Put(Box, BpSheet::Control(Word, Font, Look, Full == WristHover));
+		Put(Box, BpSheet::Control(Word, Font, Look, Full == WristHover, Full == WristHover && bWristHoverDown));
 		WristBoxes.Add({ Full, Box });
 	};
 
@@ -1009,9 +1013,9 @@ void ABpPawn::DrawWrist()
 		break;
 	}
 	default:
-		Kicker = TEXT("NOTHING WAITING");
-		Tone = BpSheet::Ink.CopyWithNewOpacity(0.7f);
-		Words = bPlan ? TEXT("Rooms, scans, projects and settings are in the menu.") : TEXT("The table is reading the plan.");
+		Kicker = Waiting > 0 ? FString::Printf(TEXT("%d %s WAITING"), Waiting, Waiting == 1 ? TEXT("DECISION") : TEXT("DECISIONS")) : FString(TEXT("NOTHING WAITING"));
+		Tone = Waiting > 0 ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.7f);
+		Words = !bPlan ? TEXT("The table is reading the plan.") : Waiting > 0 ? TEXT("The stand-up and the rooms are in the menu.") : TEXT("Rooms, scans, projects and settings are in the menu.");
 		break;
 	}
 

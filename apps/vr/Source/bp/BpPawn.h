@@ -113,7 +113,7 @@ public:
 	 *  "Scan this"): a second pinch starts it. */
 	void WristArmFocus(const FString& FocusId);
 	/** The control a hand's ray is on (UBpHands, the aim cursor): it lights, since no cursor is drawn over the panel. */
-	void SetWristHover(const FString& Id);
+	void SetWristHover(const FString& Id, bool bDown = false);
 	/** The wrist panel's text classes where it stands (BpView.TextCard): its buttons, the decision's kicker and title, the
 	 *  scan band. */
 	void WristTextClasses(TArray<BpType::FClassSample>& Out) const;
@@ -138,7 +138,7 @@ public:
 	bool ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
 	bool ConsoleAim(const FString& Id, FVector& OutWorld) const;
 	void ConsoleTap(const FString& Id);
-	void SetConsoleHover(const FString& Id);
+	void SetConsoleHover(const FString& Id, bool bDown = false);
 	/** Opens the console on a page ("home" when empty or unknown); CloseConsole puts it back to its bar. */
 	void OpenConsole(const FString& Page);
 	void CloseConsole();
@@ -279,6 +279,8 @@ private:
 	void ReceiveScanState(const FBpScanState& State);
 	FString WristKey;
 	FString WristHover;
+	/** Night two V6: a pinch closed on the hovered wrist control and not yet released: it draws pressed. */
+	bool bWristHoverDown = false;
 	FDelegateHandle ScanHandle;
 	/** The room the table shows (empty on the site plan), and each control's box in the panel's pixels as last laid out. */
 	FDelegateHandle WristOnboardingHandle;
@@ -354,6 +356,10 @@ private:
 	FString ConsoleSel;
 	bool bConsolePadSel = false;
 	FString ConsoleHover;
+	/** Night two V6: the hovered console control held by a pinch (bConsoleHoverDown), or the pad's selection held by A
+	 *  (bPadADown): it draws pressed until the release. */
+	bool bConsoleHoverDown = false;
+	bool bPadADown = false;
 	FString ConsoleKey;
 	FString ConsolePlaceKey;
 	int32 ConsoleDraws = 0;

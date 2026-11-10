@@ -1020,20 +1020,25 @@ void UBpHands::UpdateAim()
 	const float RayLen = FMath::Clamp(CVarAimRayCm.GetValueOnGameThread(), 20.f, 400.f);
 	const float RayW = FMath::Clamp(CVarAimRayWidthCm.GetValueOnGameThread(), 0.03f, 1.f);
 	FString WristHover, ConsoleHover;
+	// Night two V6: a pinch that closed on the control the ray is still on, not yet released nor spent: it draws pressed.
+	bool bWristDown = false, bConsoleDown = false;
 	for (int32 Slot = 0; T && Pawn && Slot < SlotCount; ++Slot)
 	{
 		const FSlot& S = Slots[Slot];
 		if (!S.bAiming || (Slot == Synthetic && (Mode < 2 || !bSyntheticActive))) continue;
+		const bool bHeldHere = S.bPinch && !S.bFired && S.TargetKind == S.HoverKind && S.TargetId == S.HoverId;
 		// Over the wrist panel a ray and a reticle would cover the control being read: the control itself lights instead.
 		if (S.HoverKind == TEXT("wrist"))
 		{
 			WristHover = S.HoverId;
+			bWristDown = bHeldHere;
 			continue;
 		}
 		// The console's too (night two W1): its control lights, as the wrist's.
 		if (S.HoverKind == TEXT("console"))
 		{
 			ConsoleHover = S.HoverId;
+			bConsoleDown = bHeldHere;
 			continue;
 		}
 		const bool bHover = !S.HoverId.IsEmpty();
@@ -1081,8 +1086,8 @@ void UBpHands::UpdateAim()
 	}
 	if (ABpPawn* Owner = Cast<ABpPawn>(GetOwner()))
 	{
-		Owner->SetWristHover(Mode > 0 ? WristHover : FString());
-		Owner->SetConsoleHover(Mode > 0 ? ConsoleHover : FString());
+		Owner->SetWristHover(Mode > 0 ? WristHover : FString(), bWristDown);
+		Owner->SetConsoleHover(Mode > 0 ? ConsoleHover : FString(), bConsoleDown);
 	}
 	if (Marks.Num() == 0)
 	{

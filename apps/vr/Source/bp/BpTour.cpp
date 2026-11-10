@@ -255,8 +255,10 @@ void ABpTable::EnterTourStep(int32 Step)
 		APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
 		const ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr;
 		const FString Verdict = Pawn && Pawn->StandupAnsweredSince(TourStandupFrom) ? Pawn->StandupLastVerdictWords() : FString();
-		Line = Verdict == TEXT("approve") ? TEXT("Approved: that is how every morning starts.\nThe table is yours.")
-			: !Verdict.IsEmpty() ? TEXT("Left for later: that is how every morning starts.\nThe table is yours.")
+		// Night two V6: the verdict on a line of its own; "Approved: that is how every morning starts." wrapped to leave "starts."
+		// alone on the caption's second line (cap\v6-walk-06-tour-handoff.png).
+		Line = Verdict == TEXT("approve") ? TEXT("Approved.\nThat is how every morning starts.\nThe table is yours.")
+			: !Verdict.IsEmpty() ? TEXT("Left for later.\nThat is how every morning starts.\nThe table is yours.")
 			: TEXT("That is how every morning starts.\nThe table is yours.");
 		break;
 	}
