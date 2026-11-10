@@ -139,6 +139,11 @@ public:
 	static constexpr int32 ConsoleRowsPerPage = 5;
 	bool ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
 	bool ConsoleAim(const FString& Id, FVector& OutWorld) const;
+	/** Wave N3-W1, the laser pointer: where a ray that ConsoleHit or WristHit took meets that panel, in the world (the near
+	 *  console, the near bar, the far sheet on the wall or the stage, the wrist). Kind is the hands' hover kind. */
+	bool PanelHitPoint(const FString& Kind, const FVector& WorldOrigin, const FVector& WorldDir, FVector& OutWorld) const;
+	/** The far sheet is up (the wall or the stage): the pointer's ray runs to it. */
+	bool IsConsoleFar() const { return bConsoleFar; }
 	void ConsoleTap(const FString& Id);
 	void SetConsoleHover(const FString& Id, bool bDown = false);
 	/** Opens the console on a page ("home" when empty or unknown); CloseConsole puts it back to its bar. */

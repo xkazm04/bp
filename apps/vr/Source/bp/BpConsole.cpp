@@ -1271,7 +1271,8 @@ struct FBpConsolePages
 			FBpConsoleRow Row;
 			Row.Label = TEXT("MAIN SCREEN");
 			Row.Detail = Mode == 0 ? TEXT("The sheet opens on the desk, close") : Mode == 1 ? TEXT("The sheet is thrown on the wall, far and large") : TEXT("The sheet stands on a curved stage of light around you");
-			Row.Buttons = { { TEXT("DESK"), TEXT("set:screen:0"), Mode == 0 }, { TEXT("WALL"), TEXT("set:screen:1"), Mode == 1 }, { TEXT("STAGE"), TEXT("set:screen:2"), Mode == 2 } };
+			// Wave N3-W1: the owner chose the wall (2026-11-10); the stage is parked, reachable by `bp.Projector 2` only.
+			Row.Buttons = { { TEXT("DESK"), TEXT("set:screen:0"), Mode == 0 }, { TEXT("WALL"), TEXT("set:screen:1"), Mode == 1 } };
 			Out.Add(Row);
 		}
 		{
@@ -2142,7 +2143,59 @@ void ABpPawn::RefreshConsole()
 		Put(FBox2f(FVector2f(Pad, SubY), FVector2f(LW - Pad, SubY + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::FitClause(SubLine, SmallFont, LW - 2.f * Pad))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
 		// A fine rule under the header, as the sheet's title block.
 		Put(FBox2f(FVector2f(Pad, SubY + 46.f), FVector2f(LW - Pad, SubY + 48.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
-		if (!Page)
+		if (!Page && bConsoleFar)
+		{
+			// Wave N3-W1, the MENU on the wall: three columns of tall tiles, each its title (28 px: 60 arc minutes at 2.6 m) and up
+			// to two lines of what it holds (24 px: 51'); the stand-up's tile carries what waits as a large figure and yesterday's
+			// outcomes. Every tile is a control at least 6 degrees tall.
+			const TArray<FBpConsolePage>& Registry = FBpConsolePages::Registry();
+			constexpr int32 Cols = 3;
+			const int32 RowsN = FMath::Max(1, FMath::DivideAndRoundUp(Registry.Num(), Cols));
+			const float Gap = 16.f, Top = 164.f;
+			const float TileW = (LW - 2.f * Pad - (Cols - 1) * Gap) / Cols, TileH = (LH - 26.f - Top - (RowsN - 1) * Gap) / RowsN;
+			const int32 Waiting = Table->OpenDecisionCount();
+			const FString Yesterday = StandupYesterdayWords();
+			const FSlateFontInfo FigFont = Font(TEXT("Bold"), 44.f);
+			for (int32 Index = 0; Index < Registry.Num(); ++Index)
+			{
+				const FBpConsolePage& Each = Registry[Index];
+				const float X0 = Pad + (Index % Cols) * (TileW + Gap), Y0 = Top + (Index / Cols) * (TileH + Gap);
+				const FBox2f Box(FVector2f(X0, Y0), FVector2f(X0 + TileW, Y0 + TileH));
+				const FString TileId = FString::Printf(TEXT("console:open:%s"), Each.Key);
+				const bool bStandupTile = FCString::Strcmp(Each.Key, TEXT("standup")) == 0;
+				Put(Box, SNew(BpSheet::SPlate).Fill(IsDown(TileId) ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : BpSheet::RowFill(IsLit(TileId))).Edge(bStandupTile && Waiting > 0 ? BpSheet::Amber.CopyWithNewOpacity(0.7f) : BpSheet::RowEdge(false)).EdgePx(2.f)
+					.Bar(bStandupTile && Waiting > 0 ? BpSheet::Amber : FLinearColor::Transparent).BarPx(8.f));
+				// The figure (the stand-up's tile): what waits, large, at the right of its title row.
+				float TileTitleX1 = Box.Max.X - 18.f;
+				const float WX0 = Box.Min.X + 24.f;
+				float WX1 = Box.Max.X - 44.f;
+				if (bStandupTile && Waiting > 0)
+				{
+					const FString Fig = FString::FromInt(Waiting);
+					const float StackW = FMath::Max(BpSheet::TextWidth(Fig, FigFont), BpSheet::TextWidth(TEXT("WAITING"), SmallBold)) + 4.f;
+					// Under the title row (the title keeps the tile's width), beside the two lines of what it holds.
+					Put(FBox2f(FVector2f(Box.Max.X - 18.f - StackW, Box.Min.Y + 56.f), FVector2f(Box.Max.X - 18.f, Box.Max.Y - 6.f)),
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(Fig)).Font(FigFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)[SNew(STextBlock).Text(FText::FromString(TEXT("WAITING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
+					WX1 = Box.Max.X - 30.f - StackW;
+				}
+				Put(FBox2f(FVector2f(WX0, Box.Min.Y + 16.f), FVector2f(TileTitleX1, Box.Min.Y + 64.f)),
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)[BpSheet::Bubble(Each.Letter, Font(TEXT("Bold"), 18.f), 40.f, BpSheet::Accent)]
+					+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Each.Title, LabelFont, TileTitleX1 - WX0 - 56.f))).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+				// What it holds: its summary (the stand-up's: yesterday's outcomes when there are any), two lines at most.
+				const FString Holds = bStandupTile && !Yesterday.IsEmpty() ? Yesterday.Left(1).ToUpper() + Yesterday.Mid(1) : Summaries[Index];
+				const FString HoldsFit = BpSheet::Wrap(Holds, SmallFont, WX1 - WX0, 2);
+				const float WordsX1 = WX1;
+				Put(FBox2f(FVector2f(WX0, Box.Min.Y + 74.f), FVector2f(WordsX1, Box.Max.Y - 8.f)),
+					SNew(STextBlock).Text(FText::FromString(HoldsFit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+				if (!(bStandupTile && Waiting > 0)) Put(FBox2f(FVector2f(Box.Max.X - 40.f, Box.Max.Y - 52.f), FVector2f(Box.Max.X - 12.f, Box.Max.Y - 6.f)),
+					SNew(STextBlock).Text(FText::FromString(TEXT("›"))).Font(Font(TEXT("Bold"), 34.f)).ColorAndOpacity(FSlateColor(BpSheet::Accent)));
+				ConsoleBoxes.Add({ TileId, Box });
+			}
+		}
+		else if (!Page)
 		{
 			// HOME: a tile per page, two columns, in the registry's order.
 			const TArray<FBpConsolePage>& Registry = FBpConsolePages::Registry();
@@ -2540,6 +2593,36 @@ bool ABpPawn::ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FS
 	return true;
 }
 
+bool ABpPawn::PanelHitPoint(const FString& Kind, const FVector& WorldOrigin, const FVector& WorldDir, FVector& OutWorld) const
+{
+	// A flat panel facing +X (a world widget): where the ray crosses its plane, from the front only.
+	const auto Plane = [&](const UWidgetComponent* Panel) -> bool
+	{
+		if (!Panel || !Panel->IsVisible()) return false;
+		const FTransform& T = Panel->GetComponentTransform();
+		const FVector Normal = T.GetUnitAxis(EAxis::X);
+		const double Denom = FVector::DotProduct(WorldDir, Normal);
+		if (Denom >= -KINDA_SMALL_NUMBER) return false;
+		const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
+		if (Along < 0.0) return false;
+		OutWorld = WorldOrigin + WorldDir * Along;
+		return true;
+	};
+	if (Kind == TEXT("wrist")) return Plane(WristPanel);
+	if (Kind != TEXT("console")) return false;
+	if (!bConsoleFar) return Plane(ConsolePanel);
+	// The near bar at the desk is in front of the far sheet (ConsoleHit's order).
+	FString NearId;
+	if (NearBarHit(WorldOrigin, WorldDir, NearId)) return Plane(ConsoleNearBar);
+	if (!ConsolePanel) return false;
+	FTransform Pose = ConsolePanel->GetComponentTransform();
+	Pose.SetScale3D(FVector::OneVector);
+	FVector2D Uv;
+	if (!BpProjector::Surface().RayToUv(Pose, ConsoleFarSizeCm, WorldOrigin, WorldDir, Uv)) return false;
+	OutWorld = BpProjector::Surface().UvToWorld(Pose, ConsoleFarSizeCm, Uv);
+	return true;
+}
+
 bool ABpPawn::ConsoleAim(const FString& Id, FVector& OutWorld) const
 {
 	const FConsoleBox* Box = ConsoleBoxes.FindByPredicate([&Id](const FConsoleBox& Each) { return Each.Id == Id; });
@@ -2575,6 +2658,8 @@ void ABpPawn::SetConsoleHover(const FString& Id, bool bDown)
 	const bool bHeld = bDown && !Lit.IsEmpty();
 	if (Lit == ConsoleHover && bHeld == bConsoleHoverDown) return;
 	const bool bSameLit = Lit == ConsoleHover;
+	// Wave N3-W1: on the far sheet the ray's hit lights the control as on the desk; logged once per change (the proof).
+	if (!bSameLit && bConsoleFar) UE_LOG(LogBpTable, Log, TEXT("BpConsole: the ray's focus on the far sheet: %s"), Lit.IsEmpty() ? TEXT("none") : *Lit);
 	ConsoleHover = Lit;
 	bConsoleHoverDown = bHeld;
 	if (bSameLit) { RefreshConsole(); return; }
@@ -2799,8 +2884,18 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.3f)));
 		Y += 16.f;
 	}
-	Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("GLIM · SAMPLE") : TEXT("GLIM"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
-	Y += 40.f;
+	if (bConsoleFar)
+	{
+		// Wave N3-W1, the wall: Glim's name as a chip (who speaks, read from the seat).
+		const FString Name = bSample ? TEXT("GLIM · SAMPLE") : TEXT("GLIM");
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X0 + BpSheet::ChipWidth(Name, SmallBold), Y + 42.f)), BpSheet::Chip(Name, SmallBold, 42.f, bSample ? BpSheet::Amber : BpSheet::Accent, true));
+		Y += 54.f;
+	}
+	else
+	{
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("GLIM · SAMPLE") : TEXT("GLIM"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
+		Y += 40.f;
+	}
 	FString Body = !Reply.IsEmpty() ? Reply : Line;
 	if (Word == TEXT("THINKING")) Body = TEXT("Thinking");
 	// A line of the lamp's own (no PC, a refusal): its first line is the headline, the rest under it.
@@ -2821,6 +2916,13 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 	FSlateFontInfo BodyFont = Font(bQuiet ? TEXT("Bold") : TEXT("Regular"), bQuiet ? CapTitle : CapLabel);
 	float P = Pitch(bQuiet ? CapTitle : CapLabel);
 	FString Fit = BpSheet::Wrap(Body, BodyFont, X1 - X0, 0);
+	// Wave N3-W1, the wall: the reply a step larger while it fits (32 px: 69 arc minutes at 2.6 m), then the desk's steps.
+	if (bConsoleFar && !bQuiet)
+	{
+		const FSlateFontInfo Big = Font(TEXT("Regular"), 32.f);
+		const FString BigFit = BpSheet::Wrap(Body, Big, X1 - X0, 0);
+		if (LineCount(BigFit) * Pitch(32.f) <= Avail) { BodyFont = Big; P = Pitch(32.f); Fit = BigFit; }
+	}
 	if (LineCount(Fit) * P > Avail)
 	{
 		BodyFont = Font(TEXT("Regular"), CapSmall);

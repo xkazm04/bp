@@ -52,6 +52,24 @@ namespace
 		TEXT("The aim assist: a ray that meets nothing takes the nearest pinchable paper target within this cone (degrees, 0 off, up to 10)."),
 		ECVF_Default);
 
+	TAutoConsoleVariable<float> CVarAimDotDeg(
+		TEXT("bp.AimDotDeg"),
+		0.35f,
+		TEXT("Wave N3-W1, the laser pointer: the dot where the ray meets a panel (the console, the near bar, the far sheet, the wrist, Glim), facing the eye at this angular size whatever its distance (degrees, 0.1 to 2; 1.3x on a control that will act). On the paper the reticle is never smaller than it either."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimFade(
+		TEXT("bp.AimFade"),
+		0.55f,
+		TEXT("Wave N3-W1: a ray longer than 60 cm narrows and dims over its far part from this fraction of its length (0.2 to 1; 1 keeps it whole), and stops short of the dot, so it never draws a hard line across the far sheet's words."),
+		ECVF_Default);
+
+	/** BpHands.AimStat: the next frame's aim, logged per aiming hand. */
+	bool GAimStat = false;
+	FAutoConsoleCommand CmdHandsAimStat(
+		TEXT("BpHands.AimStat"),
+		TEXT("BpHands.AimStat: logs each aiming hand's ray (what it meets, its length, the dot's size and colour) on the next frame."),
+		FConsoleCommandDelegate::CreateLambda([]() { GAimStat = true; }));
+
 	TAutoConsoleVariable<float> CVarAimSynthOffset(
 		TEXT("bp.AimSynthOffsetCm"),
 		0.f,
@@ -897,6 +915,12 @@ void UBpHands::RunCommands(float DeltaTime)
 					bAimed = true;
 				}
 			}
+			else if (Gesture.Id == TEXT("air"))
+			{
+				// Wave N3-W1: nothing at all (up and to the left, over the studio): the pointer's short ray, no dot.
+				Gesture.Aim = Eye() + T->GetActorForwardVector() * 120.0 - T->GetActorRightVector() * 90.0 + FVector(0.0, 0.0, 110.0);
+				bAimed = true;
+			}
 			else if (Gesture.Id.StartsWith(TEXT("wrist:"))) bAimed = Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim);
 			else if (Gesture.Id.StartsWith(TEXT("console:"))) bAimed = Pawn && Pawn->ConsoleAim(Gesture.Id, Gesture.Aim);
 			else bAimed = T->AimAt(Gesture.Id, Gesture.Aim);
@@ -908,7 +932,9 @@ void UBpHands::RunCommands(float DeltaTime)
 			}
 		}
 		// The hand stands on the line from the eye to the target, so its ray meets the target as drawn now.
-		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, static_cast<double>(SyntheticReach));
+		// Wave N3-W1: never further than an arm's reach (45 cm) from the eye, so a far target (the wall's sheet) is pointed at
+		// from where a hand is.
+		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, FMath::Min(static_cast<double>(SyntheticReach), 45.0 / FMath::Max(1.0, FVector::Dist(Eye(), Gesture.Aim))));
 		if (const float Aside = CVarAimSynthOffset.GetValueOnGameThread(); Aside != 0.f)
 		{
 			// Seen from the side: a ray on the eye's own line is a point to the eye.
@@ -1012,7 +1038,7 @@ void UBpHands::TickComponent(float DeltaTime, ELevelTick TickType, FActorCompone
 void UBpHands::UpdateAim()
 {
 	struct FMark { FTransform Place; FLinearColor Color; };
-	TArray<FMark, TInlineAllocator<6>> Marks;
+	TArray<FMark, TInlineAllocator<12>> Marks;
 	const int32 Mode = CVarAim.GetValueOnGameThread();
 	ABpTable* T = Mode > 0 ? FindTable() : nullptr;
 	const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
@@ -1022,25 +1048,73 @@ void UBpHands::UpdateAim()
 	FString WristHover, ConsoleHover;
 	// Night two V6: a pinch that closed on the control the ray is still on, not yet released nor spent: it draws pressed.
 	bool bWristDown = false, bConsoleDown = false;
+	const float DotDeg = FMath::Clamp(CVarAimDotDeg.GetValueOnGameThread(), 0.1f, 2.f);
+	const float FadeAt = FMath::Clamp(CVarAimFade.GetValueOnGameThread(), 0.2f, 1.f);
+	const FVector EyeAt = Eye();
+	/** The dot's size (cm across) for the constant angular size at a point. */
+	const auto DotCm = [&](const FVector& At, float Deg) { return 2.0 * FVector::Dist(EyeAt, At) * FMath::Tan(FMath::DegreesToRadians(Deg * 0.5)); };
+	// Wave N3-W1: with both hands tracked the dominant one leads (the one without the wrist panel, bp.WristHand); the wrist's
+	// own hand shows its ray only while it is raised toward something.
+	static const IConsoleVariable* WristHandVar = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.WristHand"));
+	const int32 WristSide = WristHandVar && WristHandVar->GetInt() != 0 ? Right : Left;
+	const bool bBothAim = Slots[Left].bAiming && Slots[Right].bAiming;
+	// The ray from Start to End: one bar, or (long, wave N3-W1) a bar then three narrowing, dimming steps that stop short of
+	// the end, so its far part never draws a hard line across the words it lands on. Opaque and unlit: one instanced draw.
+	const auto AddRay = [&](const FVector& From, const FVector& End, const FVector& Up, const FLinearColor& Color, float Width)
+	{
+		const FVector Along = End - From;
+		const double Len = Along.Size();
+		if (Len < 0.5) return;
+		const FVector Dir = Along / Len;
+		const FQuat Rot = FRotationMatrix::MakeFromXZ(Dir, FMath::Abs(FVector::DotProduct(Dir, Up)) < 0.99 ? Up : FVector::RightVector).ToQuat();
+		const auto Bar = [&](double T0, double T1, float W, float Dim)
+		{
+			const FVector A = From + Along * T0, B = From + Along * T1;
+			Marks.Add({ FTransform(Rot, (A + B) * 0.5, FVector((T1 - T0) * Len / 100.0, W / 100.0, W / 100.0)), Color * Dim });
+		};
+		if (Len < 60.0 || FadeAt >= 1.f)
+		{
+			Bar(0.0, 1.0, Width, 0.55f);
+			return;
+		}
+		const double F = FadeAt, Step = (0.97 - F) / 3.0;
+		Bar(0.0, F, Width, 0.55f);
+		Bar(F, F + Step, Width * 0.7f, 0.46f);
+		Bar(F + Step, F + 2.0 * Step, Width * 0.45f, 0.36f);
+		Bar(F + 2.0 * Step, 0.97, Width * 0.25f, 0.26f);
+	};
 	for (int32 Slot = 0; T && Pawn && Slot < SlotCount; ++Slot)
 	{
 		const FSlot& S = Slots[Slot];
 		if (!S.bAiming || (Slot == Synthetic && (Mode < 2 || !bSyntheticActive))) continue;
 		const bool bHeldHere = S.bPinch && !S.bFired && S.TargetKind == S.HoverKind && S.TargetId == S.HoverId;
-		// Over the wrist panel a ray and a reticle would cover the control being read: the control itself lights instead.
-		if (S.HoverKind == TEXT("wrist"))
+		const bool bQuiet = Slot == WristSide && bBothAim && S.HoverId.IsEmpty();
+		// Wave N3-W1, the laser pointer: a panel (the wrist, the console at the desk, its near bar, the far sheet) lights the
+		// control under the ray as before, and the ray now runs to it with a dot where it meets it: on the wall 2.6 m away the
+		// person sees where they aim.
+		if (S.HoverKind == TEXT("wrist") || S.HoverKind == TEXT("console"))
 		{
-			WristHover = S.HoverId;
-			bWristDown = bHeldHere;
+			const bool bWrist = S.HoverKind == TEXT("wrist");
+			(bWrist ? WristHover : ConsoleHover) = S.HoverId;
+			(bWrist ? bWristDown : bConsoleDown) = bHeldHere;
+			FVector Hit;
+			if (bQuiet || !Pawn->PanelHitPoint(S.HoverKind, S.AimFrom, S.AimDir, Hit)) continue;
+			const bool bControl = !S.HoverId.IsEmpty() && S.HoverId != TEXT("console:panel");
+			const FLinearColor Color = bControl ? AimOnTarget : AimOnPaper;
+			AddRay(S.AimFrom + S.AimDir * 3.0, Hit, T->GetActorUpVector(), Color, RayW);
+			const FVector Normal = (EyeAt - Hit).GetSafeNormal();
+			const double Size = DotCm(Hit, DotDeg * (bControl ? 1.3f : 1.f)) / 100.0;
+			const FQuat Facing = FRotationMatrix::MakeFromZ(Normal).ToQuat() * FQuat(FVector::UpVector, FMath::DegreesToRadians(45.0));
+			// Lifted toward the eye off the panel (more on the far sheet, whose depth is coarser at 2.6 m).
+			Marks.Add({ FTransform(Facing, Hit + Normal * (FVector::Dist(EyeAt, Hit) > 150.0 ? 1.0 : 0.3), FVector(Size, Size, 0.0006)), Color });
+			if (GAimStat)
+			{
+				UE_LOG(LogBpHands, Log, TEXT("BpHands: aim hand=%s meets %s %s at %.0f cm (the eye %.0f cm), dot %.2f cm (%.2f deg) %s"), SlotName(Slot), *S.HoverKind, *S.HoverId,
+					FVector::Dist(S.AimFrom, Hit), FVector::Dist(EyeAt, Hit), Size * 100.0, DotDeg * (bControl ? 1.3f : 1.f), bControl ? TEXT("amber") : TEXT("cyan"));
+			}
 			continue;
 		}
-		// The console's too (night two W1): its control lights, as the wrist's.
-		if (S.HoverKind == TEXT("console"))
-		{
-			ConsoleHover = S.HoverId;
-			bConsoleDown = bHeldHere;
-			continue;
-		}
+		if (bQuiet) continue;
 		const bool bHover = !S.HoverId.IsEmpty();
 		bool bPoint = false, bFlat = false;
 		FVector Point = FVector::ZeroVector;
@@ -1066,23 +1140,33 @@ void UBpHands::UpdateAim()
 		{
 			const FVector End = bPoint ? Point : S.AimFrom + S.AimDir * RayLen;
 			const FVector Start = S.AimFrom + S.AimDir * 3.0;
-			const FVector Along = End - Start;
-			if (FVector::DotProduct(Along, S.AimDir) > 0.5)
+			// A ray that meets something narrows toward it (wave N3-W1); one that meets nothing keeps its short, whole length.
+			if (FVector::DotProduct(End - Start, S.AimDir) > 0.5)
 			{
-				const FVector Dir = Along.GetSafeNormal();
-				const FTransform Place(FRotationMatrix::MakeFromXZ(Dir, FMath::Abs(FVector::DotProduct(Dir, TableUp)) < 0.99 ? TableUp : FVector::RightVector).ToQuat(), Start + Along * 0.5, FVector(Along.Size() / 100.0, RayW / 100.0, RayW / 100.0));
-				Marks.Add({ Place, Color * 0.55f });
+				if (bPoint) AddRay(Start, End, TableUp, Color, RayW);
+				else Marks.Add({ FTransform(FRotationMatrix::MakeFromXZ(S.AimDir, FMath::Abs(FVector::DotProduct(S.AimDir, TableUp)) < 0.99 ? TableUp : FVector::RightVector).ToQuat(), (Start + End) * 0.5, FVector((End - Start).Size() / 100.0, RayW / 100.0, RayW / 100.0)), Color * 0.55f });
 			}
+		}
+		if (GAimStat)
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: aim hand=%s meets %s at %.0f cm (%s)"), SlotName(Slot), bHover ? *FString::Printf(TEXT("%s %s"), *S.HoverKind, *S.HoverId) : bPoint ? TEXT("the paper") : TEXT("nothing"),
+				bPoint ? FVector::Dist(S.AimFrom, Point) : RayLen, bHover ? TEXT("amber") : TEXT("cyan"));
 		}
 		if (bPoint)
 		{
-			const double Size = ReticleCm * (bHover ? 1.4 : 0.85) / 100.0;
+			// Never smaller than the dot's angular size (wave N3-W1).
+			const double Size = FMath::Max(ReticleCm * (bHover ? 1.4 : 0.85), DotCm(Point, DotDeg * (bHover ? 1.3f : 1.f))) / 100.0;
 			// Lying on the paper (lifted a hair, so it never z-fights the glass), else square to the hand.
 			const FVector Normal = bFlat ? TableUp : -S.AimDir;
 			const FVector At = Point + Normal * 0.25;
 			const FQuat Facing = FRotationMatrix::MakeFromZ(Normal).ToQuat() * FQuat(FVector::UpVector, FMath::DegreesToRadians(45.0));
 			Marks.Add({ FTransform(Facing, At, FVector(Size, Size, 0.0006)), Color });
 		}
+	}
+	if (GAimStat)
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: aim marks %d (rays, steps and dots in one instanced draw)"), Marks.Num());
+		GAimStat = false;
 	}
 	if (ABpPawn* Owner = Cast<ABpPawn>(GetOwner()))
 	{
