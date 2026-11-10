@@ -60,6 +60,7 @@
     "check:morning-brief": "node --import @bp/core/register scripts/check-morning-brief.ts",
     "check:crossing": "node --import @bp/core/register scripts/check-crossing.ts",
     "check:lan-door": "node --import @bp/core/register scripts/check-lan-door.ts",
+    "check:headsets": "node --import @bp/core/register scripts/check-headsets.ts",
     "check:table-link": "node --import @bp/core/register scripts/check-table-link.ts",
     "check:vr-decline": "node --import @bp/core/register scripts/check-vr-decline.ts",
     "check:vr-approve": "node --import @bp/core/register scripts/check-vr-approve.ts",

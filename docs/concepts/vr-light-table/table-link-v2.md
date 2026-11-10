@@ -162,22 +162,25 @@ rules (BpLink.h); LAN scope `decide`.
 ## 4. Pairing (device-pairing: pairing-ceremony, token-binding-and-transport, revocation-and-expiry)
 
 The server must run with `--lan` (LAN listener on :3101 plus the ceremony) or `--pair` (the ceremony on the tether only,
-no LAN listener). Without either, the ceremony routes answer 404 and only an existing token works on the tether.
+no LAN listener), or have the door switched on from bp's Headsets page for this run (section 13). Without any of these,
+the ceremony routes answer 404 and only an existing token works on the tether.
 The numbers: code 6 characters from `ABCDEFGHJKLMNPQRSTUVWXYZ23456789`; a request lives 120 s (`PAIR_TTL_MS`); an approved
 pairing waits 120 s for its claim (`CLAIM_TTL_MS`); a token lives 30 days unless the owner says fewer (`--days 1..30`);
 at most 4 pending requests and 8 pairings. A pairing window (120 s) is open at server start when nothing is paired, and
-again after `npm run server -- pair open`. Requests outside a window are refused.
+again after OPEN PAIRING on the Headsets page or `npm run server -- pair open`. Requests outside a window are refused.
+Five wrong codes in a row at the owner's approve (the page and the CLI count together; a right code resets the count)
+cancel every open request and shut the window (`MAX_WRONG_CODES`).
 
 | Step | Who | Call | Answer |
 | --- | --- | --- | --- |
 | 1 | headset (tether) | `GET http://127.0.0.1:3100/lan/where` | 200 `{ door: { address: string, port: number } \| null, listening: boolean, window: string \| null, pairing: boolean }` |
 | 2 | headset (tether or LAN) | `POST /pair` `{ nonce, device, scopes? }` | 201 `{ state: "pending", code, expiresAt }`; a retry with the same nonce: 201 pending or 200 `{ state: "approved", code, expiresAt }` |
 | 3 | headset | shows `code` on the lamp's tag | |
-| 4 | owner on the PC | `npm run server -- pair approve <code> --scope standup,place,focus,decide,scan` | `decide` and `scan` are granted ONLY when named here |
+| 4 | owner on the PC | bp's Headsets page (`/headsets`): types the code, ticks the permissions, APPROVE (section 13); or `npm run server -- pair approve <code> --scope standup,place,focus,decide,scan` | `decide` and `scan` are granted ONLY when ticked or named here |
 | 5 | headset, every 2 s | `POST /pair/claim` `{ nonce }` | 202 `{ state: "pending" }`; then 200 `{ token, device, scopes, expiresAt }` exactly once; again: 410 `{ state: "claimed" }` |
 | 6 | headset | keeps `token` (and `device`, `scopes`, `expiresAt`) | |
 | 7 | headset, at launch and every minute | `GET /pair/me` with Bearer | 200 `{ device, scopes, expiresAt }`; revoked/expired: 401 on the tether, bare 403 on the LAN |
-| 8 | owner | `npm run server -- pair revoke <id>` (`pair list` shows ids) | the next request with that token is refused; requests in flight on the LAN door are cut |
+| 8 | owner | REVOKE on the Headsets page, or `npm run server -- pair revoke <id>` (`pair list` shows ids) | the next request with that token is refused; requests in flight on the LAN door are cut |
 
 - `nonce`: 22..128 characters of `[A-Za-z0-9_-]` (128 bits or more, from the headset's own RNG; never reused).
   `device`: 1..40 of `[A-Za-z0-9_.-]` (e.g. `quest3s`). `scopes`: a subset of
@@ -390,7 +393,8 @@ What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pin
 ## 11. Residual risks (plain words)
 
 - **A program on the PC can still decide.** The human token's own residual (door.server.ts) stands: any local program can
-  forge the browser headers, and it can also run the `pair` CLI's loopback routes and approve a pairing for itself. The
+  forge the browser headers, and it can also run the `pair` CLI's loopback routes and approve a pairing for itself (the
+  Headsets page's routes need the page's token, which such a program can fetch the same way; section 13). The
   device marker guards against the companion agent (which has no shell and never sees a token) and against the LAN, not
   against something already running as the owner on the PC. A loopback script with no token is refused exactly as before.
 - **The token travels in cleartext** over Wi-Fi (S8's recorded deviation; TLS is the follow-up). Anyone who sniffs the home
@@ -456,4 +460,89 @@ what changed, with its numbers (each held by `check:table-link`, `check:lan-door
    agent itself never sets the header (the MCP process does, from its environment).
 5. **The registry cache** keys on the file's inode, size and mtime. Every write the server makes is a rename to a new file, so
    a revoke reaches the next request; a hand edit that keeps the same size within one mtime tick could be missed until the
-   next change. Editing `paired.json` by hand is not a supported path (`pair revoke` is).
+   next change. Editing `paired.json` by hand is not a supported path (`pair revoke` or the Headsets page is).
+6. **The CLI's approval path has no human token** (device-pairing, pairing-ceremony: "the mint gate: a person, in the
+   application's own chrome"; added 2026-11-10 with section 13). `npm run server -- pair approve` calls the loopback
+   `/lan/pair/*` routes guarded by `localOnly` and `jsonOnly` only: it is a terminal on the PC, and any local program can
+   call those routes. The Headsets page's path (section 13) needs the page's human token and refuses any device. Both share
+   one mint (`LanDoor.approve`) and one wrong-code count. Closing it: retire the CLI's approve once the page has proven itself,
+   or give the CLI a token file only the owner's account can read.
+7. **The human token is fetchable by a local program** (section 11's residual, now also on the pairing gate): a program
+   that forges `Sec-Fetch-Site: same-origin` and `Sec-Fetch-Mode: cors` reads the token and can approve a pairing for a
+   request it made itself. The page's gate stops the companion agent (no shell, never sees the token) and every headset
+   (a Bearer, the seal or `x-bp-device` is refused before the token is looked at), not a program already running as the owner.
+8. **Five wrong codes cancel every open request** (MAX_WRONG_CODES; timing-defenses, pairing-ceremony). A local program can
+   use it to cancel the owner's pairing in progress; it could already decline it (it holds the same routes). The owner sees
+   "pairing is shut" on the page and reopens it.
+9. **Reading the decision log is not itself recorded** (audit-logging, audit-querying: "reading the trail is itself an
+   auditable act"). A single-operator tool on the owner's PC; the reader is bp's own page only (`fromOwnPage`). Closing it:
+   a read-access row in the same log, if bp ever has more than one person.
+10. **"Last seen" lives in the server's memory** (`device-auth.ts`), on both listeners: a restart forgets it and the page says
+   "not seen since the server started". It is a convenience, not an audit field; the ledger keeps claims, refusals and revokes.
+
+## 13. The Headsets page (owner, 2026-11-10: "Pair from the PC app")
+
+Registry standards: `device-pairing` (pairing-ceremony, revocation-and-expiry, timing-defenses), `authorization`
+(ceiling-before-consent) and `audit-logging` (audit-querying, decision-records). Code: `apps/server/src/headsets.ts` (the
+routes), `lan-door.ts` (`pageState`, `approve`'s wrong-code count, `denyId`, `widen`), `main.ts` (the door switch),
+`packages/core/src/server/api/companion/decisions/route.ts` (the reader), `apps/web/src/headsets/` (the page at `/headsets`,
+linked from the rail's VR · Table card and the project switcher's menu). Proof: `npm run check:headsets` (66 expectations;
+nine seeded defects each turn it red), `check:server` (the six routes on every start).
+
+**The page is the human.** Every route below runs, in order: `localOnly` (+ `jsonOnly` on a write); a refusal **403**
+`{ error: "a headset cannot pair or revoke headsets: that is bp's own page's to do" }` for any request carrying
+`Authorization`, the decider seal or `x-bp-device` (so a paired headset, even one holding `decide`, never manages headsets);
+then the page's `x-bp-human` token (`isHuman`, never `deciderOf`), else **403**. They are apps/server's own routes (core
+cannot reach the door), mounted on every start, under `/api/companion/headsets` so the web app's rewrite to this server
+(`BP_COMPANION_URL`) carries them; the page's token is minted by the same process through the same rewrite. None is a LAN
+verb. The CLI's `/lan/pair/*` routes are unchanged (section 12, deviation 6). `cache-control: no-store` on every answer.
+
+| Method, path | Body | Answer |
+| --- | --- | --- |
+| GET `/api/companion/headsets` | | 200 the state below |
+| POST `/api/companion/headsets/open` | `{}` | 200 the state, a 2-minute window open; 409 when pairing is off |
+| POST `/api/companion/headsets/approve` | `{ code, scopes, days }`: the 6 characters TYPED from the headset's screen, a non-empty subset of the six scopes, 1..30 | 200 `{ ok, device, peer, scopes, days }`; 400 a bad body (in words); 404 a wrong code, after the door's 250 ms, `{ error, wrong: { count, limit, cancelled } }`; 409 off or 8 paired |
+| POST `/api/companion/headsets/deny` | `{ id }` (a pending request's opaque id) | 200; 404 no longer open |
+| POST `/api/companion/headsets/revoke` | `{ id }` (8 hex) | 200; 404. Works with the door off too (the registry is on disk) |
+| POST `/api/companion/headsets/door` | `{ mode: "pair" \| "lan" }` | 200 the state; 409 in words (no home-network address, still starting) |
+
+The state: `{ now, door: "off" | "pair" | "lan", started, window: iso | null, wifi: { address, port, listening } | null,
+wifiAt: { address | null, port } | null, pending: [{ id, device, peer, state: "pending" | "approved", requested, granted?,
+at, until }], wrongCodes: { count, limit }, paired: [{ id, device, name, scopes, createdAt, expiresAt, expired, lastSeen? }],
+scopes, namedOnly, days: { default, max }, limits: { pending, paired } }`. **Never a code, a nonce, a fingerprint or a
+token**: the code is the proof the owner is looking at THAT headset, so the page lists who asks (the claimed name, the
+peer: `loopback` is the cable, the request's age and the scopes it asked for) and the owner types what the headset shows.
+`peer` is the socket's, never the body's. `lastSeen` is when this process last authenticated the pairing (section 12, 10).
+
+**The permissions on the page** (ceiling-before-consent): all six are offered, each with one line; See, Stand-up, Hand over
+and Focus are ticked by default; Decide as you (`decide`) and Scan (`scan`) start unticked whatever the headset asked, and
+say so ("a headset never gets this by asking"). What the page sends is what the token holds (`approve` mints from the
+owner's list). The lifetime is 1, 7, 14 or 30 days (default 30, `DEFAULT_DAYS`). A request that came over Wi-Fi carries the
+cleartext warning beside APPROVE. DECLINE is one click; APPROVE needs the typed code.
+
+**The door switch (this run only).** When the server was started without `--lan` or `--pair`, the page shows pairing off
+and two buttons: PAIR OVER THE CABLE attaches the door as `--pair` does (its routes join the loopback mount, which `dispatch`
+reads per request; a window opens when nothing is paired), and TURN WI-FI ON as `--lan` does, on the first private-range
+interface and port 3101, saying "Opens port 3101 on <address> to devices on your home network. Only a headset you paired gets
+past it, and its key travels unencrypted on your Wi-Fi." A cable-only door (started `--pair` or switched) can be widened to
+Wi-Fi the same way (`LanDoor.widen`). Each switch is one ledger row `{ event: "door-on", mode, by: "page", until: "this run of
+the server" }` and one log line; nothing is saved, and a restart goes back to the command line. The page never switches the
+door off (stopping the server does). Calls are serialized, so two clicks never attach two doors.
+
+**The decision log reader**: `GET /api/companion/decisions?surface=vr|web&device=<name>:<pairing id>&limit=1..200` (core,
+mirrored by apps/web). `localHost`, then bp's own page only (`fromOwnPage`: `Sec-Fetch-Site: same-origin`,
+`Sec-Fetch-Mode: cors`), else 403; an unknown filter 400. 200 `{ rows, matched, total, limit, unreadable, recorded, filter }`:
+rows newest first exactly as recorded (`shown` included), at most 200 (default 100); `matched` before the cap, `total` in
+the file, `unreadable` torn lines, `recorded: false` when the file does not exist yet, so the page tells "nothing decided
+yet", "nothing matched" and "the newest 100 of 253" apart (audit-querying).
+
+**The page's three parts**, in order: PAIR A HEADSET (the door, the window with OPEN PAIRING, the requests with DECLINE, the
+code field, the permissions, the lifetime, APPROVE), PAIRED (each pairing's permissions, dates, last seen, REVOKE), WHAT THE
+TABLE DID (the companion's grants, live and expired, who gave them and the words shown, REVOKE on a live one through the
+existing `DELETE /api/companion/policies/<id>` with the page's token; then the decision log with an All / At the table /
+On this PC filter). When the page cannot reach this server it says so with the one command (`npm run server`, or the web app
+restarted with `BP_COMPANION_URL=http://127.0.0.1:3100`) and shows nothing else. `?fixture=1|off|cable|paired|empty|noserver|nowire`
+renders each state without a server (in the fixture, `K7QX4M` is the right code).
+
+**What the headset's PC LINK page says** (apps/vr; the Director's to place): "Open bp on your PC, go to Headsets, and type
+this code there."

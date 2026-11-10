@@ -22,8 +22,14 @@ export function pairingOf(token: string, now = Date.now(), home = lanHome(), war
   return hit && Date.parse(hit.expiresAt) > now ? hit : null;
 }
 
+/** When this process last authenticated each pairing (`<device>:<pairing id>`), on either listener: the Headsets page's
+ *  "last seen". In memory: a restart forgets it, and the page says "not since the server started". */
+const seen = new Map<string, number>();
+export const lastSeen = (id: string): string | undefined => { const t = seen.get(id); return t === undefined ? undefined : new Date(t).toISOString(); };
+
 /** The headers a request from this pairing carries into the handlers: its device id, and the seal when it may decide. */
 export function deviceOverlay(p: Pairing): Record<string, string> {
+  seen.set(deviceId(p), Date.now());
   return { [DEVICE_HEADER]: deviceId(p), ...(p.scopes.includes('decide') ? { [DECIDER_SEAL_HEADER]: deciderSeal() } : {}) };
 }
 

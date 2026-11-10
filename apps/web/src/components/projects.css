@@ -16,6 +16,7 @@
 .projsw-it .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .projsw-it .lv { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; font: 500 12px var(--mono); letter-spacing: 0.04em; color: var(--ink-2); }
 .projsw-it.mg { border-top: 1px solid var(--ink-4); margin-top: 4px; color: var(--accent); }
+.projsw-it.hs { color: var(--accent); }
 .projsw-err { padding: 6px 12px; font-size: 12px; color: var(--red-2); }
 
 /* the empty state's header: the switcher alone, where the header would be */

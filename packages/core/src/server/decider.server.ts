@@ -73,9 +73,20 @@ export function recordDecision(r: Omit<DecisionRecord, 'at'>): DecisionRecord {
   return row;
 }
 export function readDecisions(): DecisionRecord[] {
+  return readDecisionLog().rows;
+}
+/** The log as written, oldest first, with the count of lines that did not parse (a torn last line) and whether the file
+ *  exists at all, so a reader can tell "nothing recorded yet" from "nothing matched" (audit-logging, audit-querying). */
+export function readDecisionLog(): { rows: DecisionRecord[]; unreadable: number; exists: boolean } {
   let text = '';
-  try { text = fs.readFileSync(decisionsFile(), 'utf8'); } catch { return []; }
-  return text.split('\n').filter((l) => l.trim()).flatMap((l) => { try { return [JSON.parse(l) as DecisionRecord]; } catch { return []; } });
+  try { text = fs.readFileSync(decisionsFile(), 'utf8'); } catch { return { rows: [], unreadable: 0, exists: false }; }
+  let unreadable = 0;
+  const rows = text.split('\n').filter((l) => l.trim()).flatMap((l) => {
+    try { const r = JSON.parse(l) as DecisionRecord; if (r && typeof r === 'object' && typeof r.at === 'string') return [r]; } catch { /* counted below */ }
+    unreadable++;
+    return [];
+  });
+  return { rows, unreadable, exists: true };
 }
 
 // ------------------------------------------------------------------------------------------------ the VR grant's bound

@@ -493,3 +493,5 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .tcard .tc-state.s-armed { border-color: var(--amber); } .tcard .tc-state.s-claimed, .tcard .tc-state.s-live { border-color: var(--mint); } .tcard .tc-state.s-expired { border-color: var(--red); }
 .tcard .tc-err { margin: 8px 0 0; color: var(--red-2); }
 .tcard .tc-how { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+.tcard .tc-hs { display: block; margin-top: 10px; font-size: 13px; color: var(--accent); text-decoration: none; border-bottom: 1px dashed transparent; width: fit-content; }
+.tcard .tc-hs:hover, .tcard .tc-hs:focus-visible { border-bottom-color: var(--accent); }

@@ -17,12 +17,16 @@
 // pairing routes on the loopback listener only (a headset on the USB tether pairs over the cable), with no LAN listener.
 // Either way, a loopback request that carries `Authorization: Bearer <token>` is authenticated against $BP_HOME/lan/paired.json
 // (device-auth.ts): a live pairing's device id (and, with `decide`, the decider seal) joins the request; any other Bearer is 401.
+// Always, bp's Headsets page's routes (headsets.ts, /api/companion/headsets*, the page's human token only): pair a headset by
+// the code it shows, list and revoke pairings, and switch the door on (as --pair or --lan) for this run only, never saved.
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hostKettleSims } from './kettle-sim.ts';
 import { listener, loadRoutes } from './mount.ts';
 import { loopbackDevice } from './device-auth.ts';
+import { headsetRoutes, type DoorMode } from './headsets.ts';
+import { LAN_PORT as DEFAULT_LAN_PORT, lanAddress } from './lan-door.ts';
 import { setSelfOrigin } from '@bp/core/server/api/companion/door.server';
 
 // `pair ...` is the owner's command line for the LAN door, not a server start
@@ -55,7 +59,7 @@ const LAN = process.argv.includes('--lan');
 const PAIR_ONLY = !LAN && process.argv.includes('--pair');
 const lanHostFlag = arg('--lan-host'), lanPortFlag = arg('--lan-port');
 if (!LAN && (lanHostFlag !== undefined || lanPortFlag !== undefined)) die('--lan-host and --lan-port need --lan');
-const door = LAN || PAIR_ONLY ? await import('./lan-door.ts') : null;
+let door = LAN || PAIR_ONLY ? await import('./lan-door.ts') : null;
 const LAN_PORT = Number(lanPortFlag ?? door?.LAN_PORT ?? 0);
 if (LAN && !(/^\d{1,5}$/.test(lanPortFlag ?? '0') && LAN_PORT >= 0 && LAN_PORT <= 65535)) die(`not a port: ${JSON.stringify(lanPortFlag)} (an integer 0-65535)`);
 const LAN_HOST = LAN ? lanHostFlag ?? door?.lanAddress() ?? die('--lan: no private-range IPv4 interface found; name one with --lan-host') : '';
@@ -67,6 +71,14 @@ const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/cor
 // a sim that cannot be built or a handler module that cannot be imported ends with one line too, not an uncaught stack
 try { hostKettleSims(); } catch (e) { die(`cannot build the Kettle sims: ${(e as Error).message}`); }
 const routes = await loadRoutes(API).catch((e: unknown) => die(`cannot load the routes: ${(e as Error).message}`));
+// the Headsets page's routes (headsets.ts), on every start: the page shows a door that is off and can switch it on
+routes.push(...headsetRoutes({
+  door: () => lanDoor,
+  mode: () => doorMode,
+  started: LAN ? 'lan' : PAIR_ONLY ? 'pair' : 'off',
+  wifiAt: () => ({ address: LAN ? LAN_HOST : lanAddress(), port: LAN ? LAN_PORT : DEFAULT_LAN_PORT }),
+  switchOn: (m) => (switching = switching.then(() => switchDoorOn(m))),
+}));
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
 const server = http.createServer(listener(routes, (authorization) => loopbackDevice(authorization)));
 // listen failures (EADDRINUSE, an unresolvable --host) end with one line and exit 1, not an uncaught throw
@@ -82,19 +94,45 @@ server.listen(PORT, HOST, () => {
   console.log(`bp server listening on http://${dial}:${port}${wildcard ? ` (bound to ${HOST}, every interface; peers off this machine get 403)` : ''}`);
   if (ATHENA) void attachAthena(ATHENA, port);
   // a door that cannot start (an unwritable or occupied $BP_HOME/lan) ends with one line too, not an unhandled rejection
-  if (door) attachDoor(port).catch((e: unknown) => die(`cannot open the LAN door: ${(e as Error).message}`));
+  boundPort = port;
+  if (door) attachDoor(port, LAN_HOST, LAN_PORT, LAN).catch((e: unknown) => die(`cannot open the LAN door: ${(e as Error).message}`));
   if (PAIR_ONLY) console.log('lan door: --pair: the pairing ceremony on this loopback listener only (POST /pair, /pair/claim), no LAN listener');
 });
 
 let lanDoor: import('./lan-door.ts').LanDoor | null = null;
-/** Open the LAN door: its owner routes join the loopback mount, then the door listens when there is a reason to. */
-async function attachDoor(loopbackPort: number): Promise<void> {
+let doorMode: DoorMode = LAN ? 'lan' : PAIR_ONLY ? 'pair' : 'off';
+let boundPort = 0;
+let switching: Promise<string | null> = Promise.resolve(null);
+/** Open the LAN door: its owner routes join the loopback mount, then the door listens when there is a reason to. The route
+ *  table is one array that dispatch walks per request, so routes pushed after the server listens are served from the next
+ *  request on (the athena host joins the same way). */
+async function attachDoor(loopbackPort: number, host: string, port: number, lan: boolean): Promise<void> {
   if (!door) return;
-  lanDoor = new door.LanDoor({ routes, loopbackPort, host: LAN_HOST, port: LAN_PORT, lan: LAN });
+  lanDoor = new door.LanDoor({ routes, loopbackPort, host, port, lan });
   const mine = lanDoor.adminRoutes();
   routes.push(...mine);
   for (const r of mine) console.log(`route ${r.methods.join(',')} ${r.path}`);
   await lanDoor.start();
+}
+/** The Headsets page's switch (headsets.ts), for THIS run only: nothing is saved, and a restart goes back to what the command
+ *  line said. off -> pair attaches the door as --pair does; off or pair -> lan as --lan does, on the first private-range
+ *  interface and port 3101 (the defaults --lan uses). Never off again from the page: stopping the server does that.
+ *  Calls are serialized (main.ts chains them), so two clicks never attach two doors. */
+async function switchDoorOn(want: 'pair' | 'lan'): Promise<string | null> {
+  if (doorMode === 'lan' || doorMode === want) return null;
+  if (!boundPort) return 'the server is still starting: try again in a moment';
+  door ??= await import('./lan-door.ts');
+  const host = want === 'lan' ? door.lanAddress() : '';
+  if (want === 'lan' && !host) return 'this PC has no home-network address (no private-range IPv4 interface): start the server with --lan --lan-host <address>';
+  const port = want === 'lan' ? DEFAULT_LAN_PORT : 0;
+  if (!lanDoor) await attachDoor(boundPort, host as string, port, want === 'lan');
+  else await lanDoor.widen(host as string, port);
+  doorMode = want;
+  lanDoor?.ledger({ event: 'door-on', mode: want, by: 'page', until: 'this run of the server', ...(want === 'lan' ? { address: `${host}:${port}` } : {}) });
+  console.log(want === 'lan'
+    ? `lan door: Wi-Fi switched on from bp's Headsets page, for this run only: http://${host}:${port} (private-range peers only)`
+    : "lan door: pairing over the cable switched on from bp's Headsets page, for this run only (POST /pair, /pair/claim on this listener)");
+  return null;
 }
 
 /** Register with the daemon. A refusal is one line and the server keeps serving: nothing of bp depends on athena. */

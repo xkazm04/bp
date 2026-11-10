@@ -56,6 +56,7 @@ export function TableCard({ E, onPlay, onClose }: { E: Engine; onPlay: () => voi
       {new URLSearchParams(location.search).get('lamp-fixture') === '1' && <p className="tc-err">The lamp is playing its fixture (lamp-fixture=1): there is no companion stream, so this page will not follow the table.</p>}
       <p className="tc-how">The headset (the standalone APK, paired through the LAN door) claims it when you put it on, lifts this place off your monitor onto the desk, and this page follows the table while you are in it. The door and the APK’s side are not built; the baton and the page’s side are.</p>
       <button type="button" className="tc-play" onClick={onPlay}>▶ Play the crossing from here (prototype)</button>
+      <a className="tc-hs" href={'/headsets' + location.search}>Headsets… pair one, see what it may do and what it decided</a>
     </section>
   );
 }

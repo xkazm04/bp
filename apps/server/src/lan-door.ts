@@ -49,7 +49,8 @@
 // cause goes to $BP_HOME/lan/ledger.jsonl (with grants, claims, denials and revocations), rate-capped. Two answers are
 // deliberately not that 403, both only to a holder of the nonce: 202 `pending`, and 410 `claimed`.
 // Recorded deviations (plan.md D1): the token travels in cleartext HTTP (S8; TLS is the follow-up); the binding is the
-// token plus the private-range class, not a device key; the approval surface is the CLI, the web lamp's is not built.
+// token plus the private-range class, not a device key. The approval surfaces are the CLI (these loopback routes, no human
+// token: a terminal on the PC) and bp's Headsets page (headsets.ts: the page's human token; table-link-v2.md section 13).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -72,6 +73,10 @@ export const MAX_DAYS = 30;
 export const REFUSAL_DELAY_MS = 250;
 export const MAX_PENDING = 4;
 export const MAX_PAIRED = 8;
+/** Wrong codes typed at the owner's approve (the CLI or the Headsets page, one count) before every open request is cancelled
+ *  and the window shuts: a guesser on this PC gets 5 tries out of 32^6 codes, then must wait for the owner to open a new
+ *  window, which the owner sees. A right code resets the count. */
+export const MAX_WRONG_CODES = 5;
 /** Event-loop pressure from peers that hold sockets (S3 finding 7): at most this many sockets on the door at once, and this
  *  many requests in flight from one peer (past it: the bare 403 at once, no delay held). A headset polls health, reads a
  *  plan, talks and keeps one 600 s companion turn open: 8 is above that, 32 above a household. */
@@ -93,7 +98,7 @@ export const SCOPES = ['read', 'standup', 'place', 'focus', 'decide', 'scan'] as
 /** Granted only when the owner's approve names it (never by a device's request alone). */
 export const NAMED_ONLY: readonly Scope[] = ['decide', 'scan'];
 export type Scope = (typeof SCOPES)[number];
-const isScopes = (v: unknown): v is Scope[] =>
+export const isScopes = (v: unknown): v is Scope[] =>
   Array.isArray(v) && v.length > 0 && v.length <= SCOPES.length && v.every((s) => (SCOPES as readonly string[]).includes(s)) && new Set(v).size === v.length;
 
 // ------------------------------------------------------------------------------------------------ admission
@@ -242,9 +247,36 @@ export function writeRegistry(rows: Pairing[], home = lanHome()): void {
 export const fingerprintOf = (token: string): Buffer => createHash('sha256').update(token, 'utf8').digest();
 /** The id the baton and every route see for a pairing: `<device>:<pairing id>`. */
 export const deviceId = (p: Pick<Pairing, 'device' | 'id'>): string => `${p.device}:${p.id}`;
+/** The pairings as the Headsets page lists them: never the fingerprint. */
+export const pairedView = (rows: Pairing[], t: number, lastSeen: (deviceId: string) => string | undefined = () => undefined) =>
+  rows.map((r) => {
+    const seen = lastSeen(deviceId(r));
+    return { id: r.id, device: deviceId(r), name: r.device, scopes: r.scopes, createdAt: r.createdAt, expiresAt: r.expiresAt, expired: Date.parse(r.expiresAt) <= t, ...(seen ? { lastSeen: seen } : {}) };
+  });
+
+/** One ledger row ($BP_HOME/lan/ledger.jsonl). A record, never a reason to fail a request. Shared by the door and the Headsets
+ *  page's routes (headsets.ts), which also write while no door is attached (a revoke, a door switched on). */
+export function appendLedger(home: string, row: Record<string, unknown>, at = Date.now()): void {
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    fs.appendFileSync(path.join(home, 'ledger.jsonl'), JSON.stringify({ at: new Date(at).toISOString(), ...row }) + '\n');
+  } catch { /* the ledger is a record, never a reason to fail a request */ }
+}
+
+/** Remove a pairing from the registry on disk; false when no row has that id. The door's revoke also cuts what is in flight. */
+export function removePairing(id: string, home = lanHome()): boolean {
+  const rows = readRegistry(home);
+  if (!rows.some((r) => r.id === id)) return false;
+  writeRegistry(rows.filter((r) => r.id !== id), home);
+  return true;
+}
 
 // ------------------------------------------------------------------------------------------------ the door
 interface Pending {
+  /** An opaque handle the Headsets page names a request by (to deny it): never the code, never the nonce. */
+  id: string;
+  /** When the request arrived. */
+  at: number;
   nonceHash: Buffer;
   code: string;
   device: string;
@@ -327,6 +359,8 @@ export class LanDoor {
   private refusalsThisMinute = 0;
   private refusalMinute = 0;
   private suppressed = 0;
+  /** Wrong codes typed at approve since the last right one (MAX_WRONG_CODES). */
+  private wrongCodes = 0;
   /** The bound port while listening (the configured one, or the ephemeral one when it was 0). */
   port: number | null = null;
 
@@ -367,10 +401,10 @@ export class LanDoor {
     if (reason && !this.server && this.o.lan !== false) await this.listen();
     else if (!reason && this.server) { await this.close(); this.log('lan door: closed (nothing paired, no pairing window)'); }
   }
-  openWindow(): number {
+  openWindow(by?: string): number {
     this.windowUntil = this.now() + WINDOW_MS;
-    this.ledger({ event: 'window-open', until: new Date(this.windowUntil).toISOString() });
-    this.log(`lan door: pairing window open until ${new Date(this.windowUntil).toISOString()} (npm run server -- pair open reopens it)`);
+    this.ledger({ event: 'window-open', until: new Date(this.windowUntil).toISOString(), ...(by ? { by } : {}) });
+    this.log(`lan door: pairing window open until ${new Date(this.windowUntil).toISOString()} (the Headsets page, or npm run server -- pair open, reopens it)`);
     // the caller converges (the listener comes up); the window's end is a reason to look again (the 15 s sweep would get there too, later)
     setTimeout(() => { void this.converge(); }, WINDOW_MS + 50).unref();
     return this.windowUntil;
@@ -408,12 +442,7 @@ export class LanDoor {
   }
 
   // ---------------------------------------------------------------------------------------------- the ledger
-  private ledger(row: Record<string, unknown>): void {
-    try {
-      fs.mkdirSync(this.home, { recursive: true });
-      fs.appendFileSync(path.join(this.home, 'ledger.jsonl'), JSON.stringify({ at: new Date(this.now()).toISOString(), ...row }) + '\n');
-    } catch { /* the ledger is a record, never a reason to fail a request */ }
-  }
+  ledger(row: Record<string, unknown>): void { appendLedger(this.home, row, this.now()); }
   /** A refusal row, at most 30 a minute; the rest are counted and written as one `suppressed` row. */
   private refusalRow(cause: string, peer: string | undefined): void {
     const minute = Math.floor(this.now() / 60_000);
@@ -497,14 +526,14 @@ export class LanDoor {
     do code = Array.from({ length: 6 }, () => CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]).join('');
     while (this.pending.some((p) => p.code === code));
     const p: Pending = {
-      nonceHash: createHash('sha256').update(b.nonce, 'utf8').digest(), code, device: b.device, peer,
+      id: randomBytes(4).toString('hex'), at: this.now(), nonceHash: createHash('sha256').update(b.nonce, 'utf8').digest(), code, device: b.device, peer,
       requested: (b.scopes as Scope[] | undefined) ?? ['read'], state: 'pending', until: this.now() + PAIR_TTL_MS,
     };
     this.pending.push(p);
     this.ledger({ event: 'pair-request', device: p.device, peer, scopes: p.requested });
     // the code is shown on the requesting device only, never here (S3 finding 5): the owner types what the headset shows,
     // so a request from another host has no code in a log to be pasted by mistake
-    this.log(`lan door: pairing request from ${peer}, claiming to be ${p.device}, for ${p.requested.join(',')}: its code is on that device's screen (npm run server -- pair approve <code>)`);
+    this.log(`lan door: pairing request from ${peer}, claiming to be ${p.device}, for ${p.requested.join(',')}: its code is on that device's screen (type it on bp's Headsets page, or npm run server -- pair approve <code>)`);
     return { status: 201, body: { state: 'pending', code, expiresAt: new Date(p.until).toISOString() } };
   }
 
@@ -599,18 +628,33 @@ export class LanDoor {
     };
   }
   /** The one mint gate: a person typed the code the device shows. Scopes and days may be narrowed (or scopes chosen) here. */
-  approve(code: string, scopes?: Scope[], days?: number): { ok: true; device: string; peer: string; scopes: Scope[]; days: number } | { ok: false; status: number; error: string } {
+  approve(code: string, scopes?: Scope[], days?: number, by?: string): { ok: true; device: string; peer: string; scopes: Scope[]; days: number } | { ok: false; status: number; error: string; wrong?: { count: number; limit: number; cancelled: number } } {
     this.prune();
     const p = this.pending.find((x) => x.code === code.toUpperCase() && x.state === 'pending');
-    if (!p) return { ok: false, status: 404, error: `no pending request with code ${code} (it lives ${PAIR_TTL_MS / 1000} s)` };
+    if (!p) {
+      // a wrong code counts, from the CLI and the Headsets page alike (MAX_WRONG_CODES); the code typed is never recorded
+      const count = ++this.wrongCodes;
+      this.ledger({ event: 'wrong-code', count, limit: MAX_WRONG_CODES });
+      let cancelled = 0;
+      if (count >= MAX_WRONG_CODES) {
+        for (const x of this.pending) if (x.state === 'pending') { x.state = 'denied'; cancelled++; }
+        this.windowUntil = 0;
+        this.wrongCodes = 0;
+        this.ledger({ event: 'wrong-code-limit', cancelled });
+        this.log(`lan door: ${MAX_WRONG_CODES} wrong codes: every open pairing request is cancelled and the window is shut`);
+        void this.converge();
+      }
+      return { ok: false, status: 404, error: `no pending request with code ${code} (it lives ${PAIR_TTL_MS / 1000} s)`, wrong: { count, limit: MAX_WRONG_CODES, cancelled } };
+    }
     if (this.live().length >= MAX_PAIRED) return { ok: false, status: 409, error: `${MAX_PAIRED} devices are paired already; pair revoke one first` };
+    this.wrongCodes = 0;
     p.state = 'approved';
     // a named-only scope (decide, scan) is granted when the owner's approve names it, never because the device asked
     p.granted = scopes ?? p.requested.filter((s) => !NAMED_ONLY.includes(s));
     if (!p.granted.length) p.granted = ['read'];
     p.days = days ?? DEFAULT_DAYS;
     p.until = this.now() + CLAIM_TTL_MS;
-    this.ledger({ event: 'approve', device: p.device, peer: p.peer, requested: p.requested, granted: p.granted, days: p.days });
+    this.ledger({ event: 'approve', device: p.device, peer: p.peer, requested: p.requested, granted: p.granted, days: p.days, ...(by ? { by } : {}) });
     void this.converge();
     return { ok: true, device: p.device, peer: p.peer, scopes: p.granted, days: p.days };
   }
@@ -622,14 +666,46 @@ export class LanDoor {
     this.ledger({ event: 'deny', device: p.device, peer: p.peer });
     return true;
   }
+  /** The Headsets page's decline: by the request's opaque id (the page never holds a code). */
+  denyId(id: string, by = 'page'): boolean {
+    this.prune();
+    const p = this.pending.find((x) => x.id === id && (x.state === 'pending' || x.state === 'approved'));
+    if (!p) return false;
+    p.state = 'denied';
+    this.ledger({ event: 'deny', device: p.device, peer: p.peer, by });
+    return true;
+  }
+  /** Turn the Wi-Fi listener on in a running door that was started without it (the Headsets page's switch, this run only):
+   *  the same admission, Host rule and verbs as `--lan`, on `host:port`. */
+  async widen(host: string, port: number): Promise<void> {
+    if (this.o.lan !== false) return;
+    this.o.host = host;
+    this.o.port = port;
+    this.o.lan = true;
+    await this.converge();
+  }
+  /** What the Headsets page shows: no code, no nonce, no fingerprint, no token. `lastSeen` (headsets.ts) is when this
+   *  process last authenticated each pairing, on either listener. */
+  pageState(lastSeen: (deviceId: string) => string | undefined = () => undefined) {
+    this.prune();
+    const t = this.now();
+    return {
+      window: this.windowUntil > t ? new Date(this.windowUntil).toISOString() : null,
+      wifi: this.o.lan === false ? null : { address: this.o.host, port: this.port ?? this.o.port, listening: this.server !== null },
+      pending: this.pending.filter((p) => p.state === 'pending' || p.state === 'approved').map((p) => ({
+        id: p.id, device: p.device, peer: p.peer, state: p.state, requested: p.requested, ...(p.granted ? { granted: p.granted } : {}),
+        at: new Date(p.at).toISOString(), until: new Date(p.until).toISOString(),
+      })),
+      wrongCodes: { count: this.wrongCodes, limit: MAX_WRONG_CODES },
+      paired: pairedView(this.rows(), t, lastSeen),
+    };
+  }
   /** Remove a pairing: its next request is refused, and its requests in flight are cut now. */
-  async revoke(id: string): Promise<boolean> {
-    const rows = this.rows();
-    if (!rows.some((r) => r.id === id)) return false;
-    writeRegistry(rows.filter((r) => r.id !== id), this.home);
+  async revoke(id: string, by?: string): Promise<boolean> {
+    if (!removePairing(id, this.home)) return false;
     for (const res of this.inflight.get(id) ?? []) res.destroy();
     this.inflight.delete(id);
-    this.ledger({ event: 'revoke', id });
+    this.ledger({ event: 'revoke', id, ...(by ? { by } : {}) });
     await this.converge();
     return true;
   }

@@ -49,7 +49,7 @@ export function ProjectSwitcher({ current, fallbackName }: { current: string | n
   const cur = current ? list?.find((p) => p.slug === current) : null;
   const regName = useProductName(current, fallbackName || current || '');
   const curName = current ? regName : 'Kettle (sample)';
-  const nItems = items.length + 1; // + Manage projects…
+  const nItems = items.length + 2; // + Manage projects…, Headsets…
 
   const focusItem = (i: number) => pop.current?.querySelectorAll<HTMLElement>('[role^="menuitem"]')[i]?.focus();
   const close = (refocus = true) => { setOpen(false); if (refocus) trigger.current?.focus(); };
@@ -127,6 +127,7 @@ export function ProjectSwitcher({ current, fallbackName }: { current: string | n
           {stale && <div className="projsw-err" role="status">{stale === 'removed' ? 'This project was removed from the list.' : 'This project’s root changed.'} <button type="button" className="projsw-rl" onClick={() => location.reload()}>Reload</button></div>}
           {error && <div className="projsw-err" role="alert">{error}</div>}
           <a role="menuitem" tabIndex={-1} className="projsw-it mg" href={'/projects' + (current ? '?product=' + encodeURIComponent(current) : '')}>Manage projects…</a>
+          <a role="menuitem" tabIndex={-1} className="projsw-it hs" href={'/headsets' + (current ? '?product=' + encodeURIComponent(current) : '')}>Headsets…</a>
         </div>
       )}
     </div>

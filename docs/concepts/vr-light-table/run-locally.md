@@ -108,17 +108,35 @@ real scan from the server), and a bundle's table never lists the PC's saved focu
 
 ## Pairing and Wi-Fi (night two, 2026-11-10)
 
-The contract is [`table-link-v2.md`](table-link-v2.md). A person's decisions from the headset (stand-up answers, card
-answers, a hand-over) need a pairing, over the cable too. The headset's side is on the console's **PC LINK** page.
+The contract is [`table-link-v2.md`](table-link-v2.md) (the page: section 13). A person's decisions from the headset
+(stand-up answers, card answers, a hand-over) need a pairing, over the cable too. The headset's side is on the console's
+**PC LINK** page; the PC's side is bp's **Headsets** page.
 
 ```bash
-npm run server -- --lan                     # from the repo root: :3100 plus the Wi-Fi door on :3101 and the pairing ceremony
-node apps/vr/tools/quest-tether.mjs         # the cable route
-# in the headset: MENU > PC LINK > PAIR shows a 6-character code for 2 minutes
+npm run server                                         # from the repo root, port 3100
+BP_COMPANION_URL=http://127.0.0.1:3100 npm run dev     # the web app on :3010, talking to that server
+node apps/vr/tools/quest-tether.mjs                    # the cable route
+```
+
+1. Open `http://127.0.0.1:3010/headsets` (or the VR · Table card's **Headsets…**, or the project switcher's menu).
+2. If it says pairing is off, press **PAIR OVER THE CABLE** (or **TURN WI-FI ON** to let the headset in over your home
+   network too). This lasts until the server stops; `npm run server -- --lan` (or `--pair`) starts it that way every time.
+3. Press **OPEN PAIRING FOR 2 MINUTES** if pairing is closed.
+4. In the headset: MENU > PC LINK > PAIR shows a 6-character code. The page lists the request (the name it gives, where it
+   came from, what it asks for).
+5. Type the code into **Type the 6 characters shown in the headset**, tick what it may do (Decide as you and Scan start
+   unticked), pick how long it lasts, and press **APPROVE**. The headset collects its key within 2 minutes and shows under
+   **PAIRED**. Five wrong codes in a row cancel every open request; open pairing again and ask the headset for a new code.
+6. **REVOKE** under PAIRED ends a pairing on the PC (UNPAIR on the headset only forgets it there). **WHAT THE TABLE DID**
+   lists the permissions the headset gave the companion (REVOKE on a live one) and every decision, filterable to the table's.
+
+The command line still works, as the fallback (a terminal on the PC: no page token, table-link-v2.md section 12, deviation 6):
+
+```bash
 npm run server -- pair approve <code> --scope standup,place,focus,decide,scan
 npm run server -- pair open                 # a new 2-minute window, when PAIR is refused for lack of one
 npm run server -- pair list                 # pairings and open requests (never the code)
-npm run server -- pair revoke <id>          # ends a pairing on the PC; UNPAIR on the headset only forgets it there
+npm run server -- pair revoke <id>          # ends a pairing on the PC
 ```
 
 Then remove the cable route and relaunch the app (or restart the server): `adb reverse --remove` leaves kept-alive
