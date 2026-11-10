@@ -543,7 +543,14 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 	bSheetCaption = false;
 	LampCaptionClock = FMath::Max(LampCaptionS, PendingSwitch.IsEmpty() ? 0.f : CVarLampSwitchDelayS.GetValueOnGameThread() + 1.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
-	if (LampCaption)
+	LayoutLampCaption();
+	SetActorTickInterval(0.f);
+	ApplyLampWidgets();
+}
+
+void ABpTable::LayoutLampCaption()
+{
+	if (!LampCaption) return;
 	{
 		// Night two V4: the sheet's family (BpSheet.h): its paper and ink, THE LAMP as a chip for who is speaking, the line
 		// wrapped whole (never cut), the plate as tall as its lines; it still leaves by itself (LampCaptionClock).
@@ -552,10 +559,10 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 		// V7: TEXT SIZE scales the plate as a whole (ApplyLampWidgets), so it is laid out narrower: on the table it grows by the
 		// square root of the size (26 cm at 1.0, 29.6 at 1.3, not 33.8), the larger words taking more lines upward; CaptionAt
 		// keeps it whole inside the view.
-		const float W = FMath::RoundToFloat(CaptionWidthCm * CaptionPxPerCm / FMath::Sqrt(BpSheet::TextScale())), Pad = 20.f;
+		const float W = FMath::RoundToFloat(CaptionWidthCm * CaptionNarrow * CaptionPxPerCm / FMath::Sqrt(BpSheet::TextScale())), Pad = 20.f;
 		const float Pitch = Cap / static_cast<float>(BpType::CapPerEm) * 1.2f, ChipH = Cap * 0.85f / static_cast<float>(BpType::CapPerEm) * 1.2f + 6.f;
 		TArray<FString> Parts, Wrapped;
-		Line.ParseIntoArrayLines(Parts);
+		LampLine.ParseIntoArrayLines(Parts);
 		for (const FString& Part : Parts) Wrapped.Add(BpSheet::Wrap(Part, Font, W - 2.f * Pad - 14.f, 0));
 		const FString Words = FString::Join(Wrapped, TEXT("\n"));
 		const float H = FMath::CeilToFloat(14.f + ChipH + 8.f + BpSheet::Lines(Words) * Pitch + 14.f);
@@ -577,8 +584,6 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 			FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)),
 			CaptionCapCm * 800.0 / FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)));
 	}
-	SetActorTickInterval(0.f);
-	ApplyLampWidgets();
 }
 
 FVector ABpTable::CaptionAt() const
@@ -590,7 +595,7 @@ FVector ABpTable::CaptionAt() const
 	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty();
 	// V7: at a station the caption goes with the lamp's step beside the console's slot.
 	const FVector2D Step = bHome ? LampStepCm : bLampAtStation ? FVector2D(0.0, LampAsideCm) : FVector2D::ZeroVector;
-	FVector At(CaptionXCm + Step.X, LampCaptionY + Step.Y, PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
+	FVector At(CaptionXCm + Step.X, LampCaptionY + Step.Y + (RoomModeId.IsEmpty() ? CaptionSlideCm : 0.f), PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
 	// V7: whole inside the comfortable view (BpView.Fov's 30 degrees either side, a degree to spare) at every text size and
 	// wherever the lamp stands: it slides inward along the table's width before an edge would leave the view.
 	const FVector Eye = EyeLocal();
@@ -607,33 +612,87 @@ void ABpTable::UpdateCaptionLift()
 	TArray<FBox2D> Keep;
 	SeatKeepouts(Keep);
 	const FVector Eye = EyeLocal();
-	const double W = LampCaption->GetDrawSize().X / CaptionPxPerCm * BpSheet::TextScale();
-	const double H = LampCaption->GetDrawSize().Y / CaptionPxPerCm * BpSheet::TextScale();
-	const float Was = CaptionLiftCm;
-	// The plate's four corners as it stands square to the eye, at a lift; the least lift (0.5 cm steps) that covers nothing.
+	const float Was = CaptionLiftCm, WasSlide = CaptionSlideCm;
 	// V7: at a station beside an open sheet the plate may rise over the sheet's top edge (above the lamp, not beside it).
 	const float MaxLift = bLampAtStation ? CaptionMaxStationLiftCm : CaptionMaxLiftCm;
 	FBox2D Slot;
 	const bool bSlot = ConsoleSeatBox(Slot);
-	float Best = CaptionMaxLiftCm;
-	for (float Lift = 0.f; Lift <= MaxLift + 1e-3f; Lift += 0.5f)
+	// The search runs again only when what it reads changed (it is checked every LampStepCheckS while the lamp is home).
 	{
-		CaptionLiftCm = Lift;
+		uint32 Hash = GetTypeHash(LampCaption->GetDrawSize().ToString()) ^ GetTypeHash(LampStepCm.ToString()) ^ GetTypeHash(LampAsideCm) ^ (bLampAtStation ? 7u : 3u) ^ GetTypeHash(CaptionNarrow);
+		if (bSlot) Hash = HashCombine(Hash, GetTypeHash(Slot.ToString()));
+		for (const FBox2D& K : Keep) Hash = HashCombine(Hash, GetTypeHash(FIntPoint(FMath::RoundToInt(K.Min.X * 4.0), FMath::RoundToInt(K.Min.Y * 4.0))) ^ GetTypeHash(FIntPoint(FMath::RoundToInt(K.Max.X * 4.0), FMath::RoundToInt(K.Max.Y * 4.0))));
+		if (Hash == CaptionLiftHash) return;
+		CaptionLiftHash = Hash;
+	}
+	const auto SeenAt = [&]()
+	{
+		const double W = LampCaption->GetDrawSize().X / CaptionPxPerCm * BpSheet::TextScale();
+		const double H = LampCaption->GetDrawSize().Y / CaptionPxPerCm * BpSheet::TextScale();
 		const FVector At = CaptionAt();
 		const FVector Right = FVector::CrossProduct(FVector::UpVector, (At - Eye).GetSafeNormal()).GetSafeNormal() * (W * 0.5);
 		const FVector Up = FVector(0.0, 0.0, H * 0.5);
 		FBox Plate(ForceInit);
 		for (const FVector& C : { At - Right - Up, At + Right - Up, At - Right + Up, At + Right + Up }) Plate += C;
-		const FBox2D Seen = SeatAngles(Plate);
-		const bool bCovers = Keep.ContainsByPredicate([&Seen](const FBox2D& K) { return Seen.Intersect(K); });
-		// V7: never over the top of the comfortable view (a lift past the console's top edge by more than a few degrees is out).
-		if (Lift > CaptionMaxLiftCm && bSlot && Seen.Max.Y > Slot.Max.Y + 4.0) break;
-		if (!bCovers) { Best = Lift; break; }
-	}
-	CaptionLiftCm = Best;
-	if (CaptionLiftCm != Was)
+		return SeatAngles(Plate);
+	};
+	// The plate's four corners as it stands square to the eye, at a lift; the least lift (0.5 cm steps) that covers nothing.
+	// Wave P1 (the tour's stand-up step, cap/ev-tour-standup.png): at home with a sheet open no lift cleared the sheet's edge and
+	// the plate stood over it. Then (an open sheet, not the bar) the plate slides along the table's width away from the slot,
+	// the least slide then the least lift that covers nothing, and when the comfortable view leaves it no room beside the sheet
+	// it is laid out narrower (CaptionNarrowScale, more lines upward) and tried again. The sheet wins over a tag or a name.
+	const auto Search = [&](float Dir, bool bSheetOnly, float& OutLift, float& OutSlide)
 	{
-		UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp caption rises %.1f cm clear of the tags and names"), CaptionLiftCm);
+		for (float Slide = 0.f; Slide <= (Dir != 0.f ? CaptionMaxSlideCm : 0.f) + 1e-3f; Slide += 1.f)
+		{
+			CaptionSlideCm = Dir * Slide;
+			for (float Lift = 0.f; Lift <= MaxLift + 1e-3f; Lift += 0.5f)
+			{
+				CaptionLiftCm = Lift;
+				const FBox2D Seen = SeenAt();
+				// V7: never over the top of the comfortable view (a lift past the console's top edge by more than a few degrees is out).
+				if (Lift > CaptionMaxLiftCm && bSlot && Seen.Max.Y > Slot.Max.Y + 4.0) break;
+				const bool bCovers = bSheetOnly ? Seen.Intersect(Slot) : Keep.ContainsByPredicate([&Seen](const FBox2D& K) { return Seen.Intersect(K); });
+				if (!bCovers) { OutLift = Lift; OutSlide = CaptionSlideCm; return true; }
+			}
+		}
+		return false;
+	};
+	CaptionSlideCm = 0.f;
+	CaptionLiftCm = 0.f;
+	const bool bSheet = bSlot && Slot.GetSize().Y > 8.0;
+	float Best = CaptionMaxLiftCm, BestSlide = 0.f;
+	FString How;
+	bool bFound = Search(0.f, false, Best, BestSlide);
+	if (!bFound && bSheet)
+	{
+		const float Dir = SeenAt().GetCenter().X < Slot.GetCenter().X ? -1.f : 1.f;
+		bFound = Search(Dir, false, Best, BestSlide) || Search(Dir, true, Best, BestSlide);
+		if (bFound) How = TEXT(" beside the open sheet");
+		else if (CaptionNarrow == 1.f)
+		{
+			CaptionNarrow = CaptionNarrowScale;
+			LayoutLampCaption();
+			UE_LOG(LogBpTable, Log, TEXT("BpLampLook: no room for the caption beside the open sheet: laid out at %.0f%% width"), CaptionNarrow * 100.f);
+			CaptionSlideCm = CaptionLiftCm = 0.f;
+			bFound = Search(Dir, false, Best, BestSlide) || Search(Dir, true, Best, BestSlide);
+			How = TEXT(" beside the open sheet, narrower");
+		}
+	}
+	else if (!bSheet && CaptionNarrow != 1.f)
+	{
+		// The sheet closed: the plate takes its width back.
+		CaptionNarrow = 1.f;
+		LayoutLampCaption();
+	}
+	if (!bFound) { Best = CaptionMaxLiftCm; BestSlide = 0.f; }
+	CaptionLiftCm = Best;
+	CaptionSlideCm = BestSlide;
+	if (CaptionLiftCm != Was || CaptionSlideCm != WasSlide)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp caption rises %.1f cm%s clear of the tags and names%s%s"), CaptionLiftCm,
+			CaptionSlideCm != 0.f ? *FString::Printf(TEXT(" and slides %.0f cm %s"), FMath::Abs(CaptionSlideCm), CaptionSlideCm < 0.f ? TEXT("left") : TEXT("right")) : TEXT(""), *How,
+			bFound ? TEXT("") : TEXT(" (no clear place: it covers something)"));
 		ApplyLampWidgets();
 	}
 }

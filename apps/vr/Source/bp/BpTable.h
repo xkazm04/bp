@@ -1323,7 +1323,22 @@ private:
 		/** Wave C1, a finding landing (BpScanTheatre.cpp): seconds into PinLandClock when this pin starts to drop onto its
 		 *  tile (-1: it stands where it is). */
 		float LandDelay = -1.f;
+		/** Wave P1: the tag stands for a stop-ship finding (ScanSeverity 0, its own or one merged into it): its rule and second
+		 *  line in the stop-ship red, landing or at rest. */
+		bool bStopShip = false;
+		/** Wave P1, a landing's count: the findings on this pin's own feature that arrived in this build, and the features whose
+		 *  findings its tag counts (its own, then those merged into it): the tag's +N ticks up as each of them lands. */
+		int32 NewHere = 0;
+		TArray<int32> CountTiles;
 	};
+	/** Wave P1: a tag's second line for a count of findings (longest first; BuildPins and a landing's tick). */
+	static TArray<FString> PinLine2(const FPin& Pin, int32 Findings);
+	/** The findings a tag counts now: during a landing, those whose pins have not touched down are not counted yet. */
+	int32 ShownFindings(const FPin& Pin) const;
+	/** The tags' counts last drawn during a landing (a change redraws the atlas once). */
+	FString PinCountsKey;
+	/** During a landing: the tags' counts now, the atlas redrawn when one ticked. */
+	void TickPinCounts();
 	TArray<FPin> PinList;
 	/** The far edge (paper v, cm) of the wing labels the sheet last drew: the risen tags clear it (FE). */
 	double WingLabelTopV = -1.0e9;  // unset; the floating labels (FM) put the row past the paper (v < 0)
@@ -1699,6 +1714,16 @@ private:
 	float CaptionLiftCm = 0.f;
 	static constexpr float CaptionMaxLiftCm = 14.f;
 	static constexpr float CaptionMaxStationLiftCm = 28.f;
+	/** Wave P1: how far the caption slides along the table's width off an open sheet a lift cannot clear (UpdateCaptionLift). */
+	float CaptionSlideCm = 0.f;
+	static constexpr float CaptionMaxSlideCm = 30.f;
+	/** Wave P1: the caption laid out narrower beside an open sheet the view leaves no room beside (1: its width). */
+	float CaptionNarrow = 1.f;
+	static constexpr float CaptionNarrowScale = 0.62f;
+	/** What UpdateCaptionLift last searched over (the plate, the lamp, the slot, the keep-outs): unchanged, it does not search. */
+	uint32 CaptionLiftHash = 0;
+	/** The lamp caption's plate for LampLine at CaptionNarrow (SayLamp, and UpdateCaptionLift when the width changes). */
+	void LayoutLampCaption();
 	bool TickLampStep(float DeltaSeconds);
 	/** The lamp caption's centre (table space) as ApplyLampWidgets places it, and its lift judged against SeatKeepouts. */
 	FVector CaptionAt() const;
@@ -1891,8 +1916,12 @@ public:
 		double Seconds = 0.0;
 		int32 Severity[3] = { 0, 0, 0 };
 		TArray<FString> Top;
+		/** Every new finding's id, most severe first (DECIDE THEM looks for the first the stand-up has). */
+		TArray<FString> Found;
 		int32 New = 0;
 	};
+	/** A finding's room opened with its deck at that finding (the lamp's way, LampAct), with a line on the lamp's caption. */
+	void OpenFindingInRoom(const FString& ProposalId, const FString& Line);
 	bool GetScanResult(FScanResult& Out) const { Out = TheatreResult; return bTheatreResult; }
 	/** A result the person has not seen yet (the bar's chip "SCAN DONE · 6 NEW"). */
 	bool IsScanResultWaiting() const { return bTheatreResult && !bTheatreResultSeen; }

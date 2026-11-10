@@ -106,6 +106,9 @@ struct FBpStandupState
 	/** The tour opens the stand-up on its first open decision, not on the opening card, and keeps it there once answered (the
 	 *  lamp's closing line is about that card). */
 	bool bJumpToDecision = false;
+	/** Wave P1, the scan result's DECIDE THEM: its findings, most severe first. Once the morning is read the stand-up shows the
+	 *  first decision that is one of them; when none is, it says so and the room's deck opens at the first of them instead. */
+	TArray<FString> JumpToProposals;
 	/** A spoken request raised a pending card (BpTalk.cpp): once the morning is read, the pending cards are pulled in. */
 	bool bPullCards = false;
 	bool bTour = false;
@@ -164,6 +167,11 @@ namespace
 	constexpr float StatusY0 = 572.f, StatusY1 = 612.f;
 	/** The answers are the sheet's largest controls (night two V2): 78 px tall; PREV and NEXT stand quieter inside the same band. */
 	constexpr float BtnY0 = 618.f, BtnY1 = 696.f;
+	/** PREV and NEXT stand this far inside the answers' band (quieter, shorter). */
+	constexpr float QuietIn = 12.f;
+	/** Wave P1: a YESTERDAY sheet has no answers' band: its frame ends here and its foot (PREV, the status line, NEXT) is one
+	 *  quiet row at BtnY0 + QuietIn .. BtnY1 - QuietIn. */
+	constexpr float YesterdayFrameY1 = BtnY0 + QuietIn - 10.f;
 	/** The stamp lands in this long (a cut with bp.ReducedMotion). */
 	constexpr double StampS = 0.26;
 	constexpr float CapHead = 36.f, CapLabel = 28.f, CapSmall = 24.f;
@@ -639,6 +647,33 @@ void ABpPawn::StandupLoad()
 				return S.Deck.cards.IsValidIndex(Sh.Card) && S.Deck.cards[Sh.Card].kind == BpVocab::MorningCard::Kind::Decision && !S.Answers.Contains(S.Deck.cards[Sh.Card].id);
 			});
 			if (First != INDEX_NONE) S.At = First;
+		}
+		if (S.JumpToProposals.Num() > 0)
+		{
+			// DECIDE THEM: the stand-up's decisions find a finding by its proposal id (DecisionSheetFor); a scan's findings are not
+			// always among the morning's ranked decisions (the deck ranks what it had when it was built).
+			const TArray<FString> Want = MoveTemp(S.JumpToProposals);
+			S.JumpToProposals.Reset();
+			int32 To = INDEX_NONE;
+			FString Hit;
+			for (const FString& Id : Want)
+			{
+				To = DecisionSheetFor(S, FString(), Id);
+				if (To != INDEX_NONE) { Hit = Id; break; }
+			}
+			if (To != INDEX_NONE)
+			{
+				S.At = To;
+				UE_LOG(LogBpTable, Log, TEXT("BpStandup: DECIDE THEM opens at %s, sheet %d of %d (the first of the scan's %d findings the deck has)"), *Hit, To + 1, S.Sheets.Num(), Want.Num());
+			}
+			else
+			{
+				UE_LOG(LogBpTable, Log, TEXT("BpStandup: DECIDE THEM: none of the scan's %d findings (%s) is among this morning's %d decisions; the room's deck opens at %s"), Want.Num(), *FString::Join(Want, TEXT(", ")),
+					Algo::CountIf(S.Deck.cards, [](const FBpMorningCard& C) { return C.kind == BpVocab::MorningCard::Kind::Decision; }), *Want[0]);
+				Pawn->CloseConsole();
+				if (ABpTable* Table = Pawn->WristTable.Get()) Table->OpenFindingInRoom(Want[0], TEXT("Not among this morning's decisions yet: its room's screens show it."));
+				return;
+			}
 		}
 		Pawn->StandupShowSheet();
 		// The companion's requests already pending on the PC are sheets too (before the close); a spoken request jumps to its own.
@@ -1698,6 +1733,16 @@ bool ABpPawn::OpenStandupForTour()
 	return true;
 }
 
+void ABpPawn::OpenStandupForFindings(const TArray<FString>& Proposals)
+{
+	if (IsStandupOpen()) CloseConsole();
+	OpenConsole(TEXT("standup"));
+	if (!IsStandupOpen() || Proposals.Num() == 0) return;
+	// The deck answers on a later tick: the first of these that is a decision is shown when it does.
+	Standup->JumpToProposals = Proposals;
+	UE_LOG(LogBpTable, Log, TEXT("BpStandup: opened for the scan's findings (%s)"), *FString::Join(Proposals, TEXT(", ")));
+}
+
 bool ABpPawn::StandupAnsweredSince(double Since) const
 {
 	if (!Standup.IsValid()) return false;
@@ -1919,7 +1964,10 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	const FString ProductName = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
 
 	// The frame: the sheet's border, and its title block at the bottom right (the drawing set's: sheet number, project, date).
-	const FBox2f Frame(FVector2f(Pad, FrameY0), FVector2f(LW - Pad, FrameY1));
+	// Wave P1: a YESTERDAY sheet's frame runs down to the foot, whose one row carries PREV, the status line and NEXT, so the
+	// two screens get the sheet's height (they were 230 px wide in a 1600 px eye image, cap/ev-f-y2-built.png).
+	const bool bYesterdaySheet = !S.bLoading && S.Error.IsEmpty() && ShownOutcome(S) != nullptr;
+	const FBox2f Frame(FVector2f(Pad, FrameY0), FVector2f(LW - Pad, bYesterdaySheet ? YesterdayFrameY1 : FrameY1));
 	Put(Frame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
 	const auto TitleBlock = [&](const FString& SheetNo, const FString& Project)
 	{
@@ -2067,10 +2115,11 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		const FString Approved = FString::Printf(TEXT("Approved by %s%s"), *ApprovedWords(*O, S.bSample), O->wave.IsEmpty() || S.bSample ? TEXT("") : *FString::Printf(TEXT(" · wave %s"), *O->wave));
 		const bool bBefore = !O->before.IsEmpty(), bAfter = !O->after.IsEmpty();
 		const int32 Screens = (bBefore ? 1 : 0) + (bAfter ? 1 : 0);
-		// The screens' band: two side by side over the full width; one at the right with the words beside it; none: words only.
+		// The screens' band (wave P1): the pair over the sheet's full width and the height left under the title, down to the frame's
+		// foot; one screen alone takes the same band; none: words only.
 		const float BandY1 = Frame.Max.Y - 10.f;
-		// Who approved it and when stands in the sheet's status line (under the frame), so the screens keep the height.
-		const float LeftX1 = Screens == 1 ? Pad + 690.f : TextX1;
+		// Who approved it and when stands in the sheet's status line (the foot's row), so the screens keep the height.
+		const float BandX0 = Frame.Min.X + 14.f, BandX1 = Frame.Max.X - 14.f;
 		Y += 4.f;
 		const int32 Jump = bFailed ? DecisionSheetFor(S, Card->product, O->proposal) : INDEX_NONE;
 		TArray<FItem> Words;
@@ -2083,17 +2132,15 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			const FString Place = !S.Room.IsEmpty() && WristTable.IsValid() ? WristTable->StandupPlaceName(S.Room) : FString();
 			Words.Add({ Place.IsEmpty() ? FString(TEXT("No screens for this one.")) : FString::Printf(TEXT("No screens for this one: its room, %s, is raised on the plan."), *Place), BpSheet::Ink.CopyWithNewOpacity(0.7f) });
 		}
-		// A failure's reason with two screens: one wrapped sentence above them (at most two lines, the screens give way).
-		if (Screens == 2 && Words.Num() > 0)
-		{
-			const FString Fit = BpSheet::Wrap(Words[0].Words, SmallFont, TextX1 - InX - 28.f, 2);
-			Mark(InX, Y + Pitch(CapSmall) * 0.5f - 8.f, Words[0].Ink);
-			Put(FBox2f(FVector2f(InX + 28.f, Y), FVector2f(TextX1, Y + LineCount(Fit) * Pitch(CapSmall) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(SmallFont).ColorAndOpacity(FSlateColor(Words[0].Ink)));
-			Y += LineCount(Fit) * Pitch(CapSmall) + 8.f;
-			Words.RemoveAt(0);
-		}
-		const float BandY0 = Screens == 1 ? FrameY0 + 54.f + TitleLines * Pitch(TitleCap) + 10.f : Y + 4.f;
-		if (Screens != 2) Lines(InX, LeftX1, Y + 2.f, BandY1, Words, 2);
+		// Two screens: the words (a failure's reason, where its decision is) stand above them, at most three lines, each item at
+		// most two, the screens give way. One screen: it stands at the band's right as large as one of the pair would be (the
+		// pair's size from the title down), the words in the column beside it. None: the words have the sheet.
+		const float PairGap = 34.f, PairH = FMath::Min(BandY1 - (Y + 4.f), (BandX1 - BandX0 - PairGap) * 0.5f * 9.f / 16.f);
+		const float OneX0 = BandX1 - PairH * 16.f / 9.f;
+		if (Screens == 2 && Words.Num() > 0) Y = Lines(InX, TextX1, Y, Y + 3.f * Pitch(CapSmall) + 24.f, Words, 2);
+		const float BandY0 = Y + 4.f;
+		if (Screens == 1) Lines(InX, OneX0 - 24.f, Y + 2.f, BandY1, Words, 3);
+		if (Screens == 0) Lines(InX, TextX1, Y + 2.f, BandY1, Words, 2);
 		// One screen in its frame with its caption strip (BEFORE / AFTER, SAMPLE when it is one); the loading and missing faces.
 		const auto Screen = [&](const FBox2f& Img, const FBpStandupState::FOutcomeShot& Shot, const FString& Caption, const FLinearColor& CapInk)
 		{
@@ -2124,18 +2171,20 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		if (Screens == 2)
 		{
 			// Side by side, 16:9, as large as the band allows; an arrow between them reads before to after.
-			const float Gap = 44.f, AvailW = TextX1 - InX, H = FMath::Min(BandY1 - BandY0, (AvailW - Gap) * 0.5f * 9.f / 16.f), W = H * 16.f / 9.f;
-			const float X0 = InX + (AvailW - (2.f * W + Gap)) * 0.5f;
+			const float Gap = 34.f, AvailW = BandX1 - BandX0, H = FMath::Min(BandY1 - BandY0, (AvailW - Gap) * 0.5f * 9.f / 16.f), W = H * 16.f / 9.f;
+			const float X0 = BandX0 + (AvailW - (2.f * W + Gap)) * 0.5f;
 			const FBox2f A(FVector2f(X0, BandY1 - H), FVector2f(X0 + W, BandY1)), B(FVector2f(X0 + W + Gap, BandY1 - H), FVector2f(X0 + 2.f * W + Gap, BandY1));
 			Screen(A, S.OutcomeShots[0], BeforeCap, BpSheet::Ink);
 			Screen(B, S.OutcomeShots[1], AfterCap, Tone);
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's pair %.0fx%.0f each of a %.0f px sheet"), W, H, LW);
 			Put(FBox2f(FVector2f(A.Max.X, A.Min.Y), FVector2f(B.Min.X, A.Max.Y)), SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(FText::FromString(TEXT("›"))).Font(Font(TEXT("Bold"), 48.f)).ColorAndOpacity(FSlateColor(Tone))]);
 		}
 		else if (Screens == 1)
 		{
-			const float X0 = LeftX1 + 30.f, W = TextX1 - X0, H = FMath::Min(BandY1 - BandY0, W * 9.f / 16.f);
-			const FBox2f A(FVector2f(TextX1 - H * 16.f / 9.f, BandY1 - H), FVector2f(TextX1, BandY1));
+			// Alone: one of the pair's size at the band's right, the words beside it (wave P1).
+			const FBox2f A(FVector2f(OneX0, BandY1 - PairH), FVector2f(BandX1, BandY1));
+			UE_LOG(LogBpTable, Log, TEXT("BpStandup: yesterday's one screen %.0fx%.0f of a %.0f px sheet"), A.GetSize().X, A.GetSize().Y, LW);
 			Screen(A, S.OutcomeShots[bBefore ? 0 : 1], bBefore ? BeforeCap : AfterCap, bBefore ? BpSheet::Ink : Tone);
 		}
 		// The foot: PREV and NEXT step through the outcomes, then on; a failure that waits again offers its decision.
@@ -2557,30 +2606,47 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		Status = FString::Printf(TEXT("Your PC is gone: %d sent and kept, %d not sent. They go when it is back."), Sent, NotSent);
 		StatusInk = BpSheet::Red;
 	}
-	// The status fits by rule: a server's sentence too long for the line loses its parenthesis, then whole words go.
-	FString StatusFit = Status;
-	FString Plain, Aside;
-	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(" ("), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
-	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(" · "), &Plain, &Aside)) StatusFit = Plain;
-	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(". "), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
-	Text(FBox2f(FVector2f(Pad + 4.f, StatusY0), FVector2f(LW - Pad, StatusY1)), BpSheet::CutWords(StatusFit, SmallFont, LW - 2.f * Pad - 4.f), SmallFont, StatusInk, 1, VAlign_Center);
 	// The foot: PREV at the left edge, NEXT at the right, the card's own answers centred between them.
 	TArray<FRowButton> Middle;
-	bool bHasPrev = false, bHasNext = false;
+	const FRowButton* PrevButton = nullptr;
+	bool bHasNext = false;
 	for (const FRowButton& B : Buttons)
 	{
-		if (B.Act == TEXT("standup:prev")) bHasPrev = true;
+		if (B.Act == TEXT("standup:prev")) PrevButton = &B;
 		else if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) bHasNext = true;
 		else Middle.Add(B);
 	}
 	// PREV and NEXT stand quieter than the answers: shorter, and on a decision NEXT is an edge, never a second primary.
-	const float QuietIn = 12.f;
-	if (bHasPrev) Button(FBox2f(FVector2f(Pad, BtnY0 + QuietIn), FVector2f(Pad + Prev.W, BtnY1 - QuietIn)), Prev.Word, Prev.Look, Prev.Act);
+	if (PrevButton) Button(FBox2f(FVector2f(Pad, BtnY0 + QuietIn), FVector2f(Pad + PrevButton->W, BtnY1 - QuietIn)), PrevButton->Word, PrevButton->Look, PrevButton->Act);
 	for (const FRowButton& B : Buttons)
 	{
 		if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) Button(FBox2f(FVector2f(LW - Pad - B.W, BtnY0 + QuietIn), FVector2f(LW - Pad, BtnY1 - QuietIn)), B.Word, bDecision && B.Look == EBtn::Fill ? EBtn::Edge : B.Look, B.Act);
 	}
-	Row(Pad + (bHasPrev ? Prev.W + 16.f : 0.f), LW - Pad - (bHasNext ? Next.W + 16.f : 0.f), Middle);
+	// The status line: under the frame over the full width; on a YESTERDAY sheet in the foot's row between PREV and NEXT, its
+	// other controls (TO ITS DECISION) quiet at the row's right before NEXT.
+	float StatusX0 = Pad + 4.f, StatusX1 = LW - Pad, StatusTop = StatusY0, StatusBottom = StatusY1;
+	if (bYesterdaySheet)
+	{
+		StatusX0 = Pad + (PrevButton ? PrevButton->W + 20.f : 4.f);
+		StatusX1 = LW - Pad - (bHasNext ? Next.W + 16.f : 0.f);
+		for (int32 Index = Middle.Num() - 1; Index >= 0; --Index)
+		{
+			const FRowButton& B = Middle[Index];
+			Button(FBox2f(FVector2f(StatusX1 - B.W, BtnY0 + QuietIn), FVector2f(StatusX1, BtnY1 - QuietIn)), B.Word, B.Look, B.Act);
+			StatusX1 -= B.W + 16.f;
+		}
+		StatusTop = BtnY0 + QuietIn;
+		StatusBottom = BtnY1 - QuietIn;
+	}
+	else Row(Pad + (PrevButton ? PrevButton->W + 16.f : 0.f), LW - Pad - (bHasNext ? Next.W + 16.f : 0.f), Middle);
+	// The status fits by rule: a server's sentence too long for the line loses its parenthesis, then whole words go.
+	const float StatusW = StatusX1 - StatusX0 - 4.f;
+	FString StatusFit = Status;
+	FString Plain, Aside;
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > StatusW && StatusFit.Split(TEXT(" ("), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > StatusW && StatusFit.Split(TEXT(" · "), &Plain, &Aside)) StatusFit = Plain;
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > StatusW && StatusFit.Split(TEXT(". "), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
+	Text(FBox2f(FVector2f(StatusX0, StatusTop), FVector2f(StatusX1, StatusBottom)), BpSheet::CutWords(StatusFit, SmallFont, StatusW), SmallFont, StatusInk, 1, VAlign_Center);
 	// The position on the title row (the console's header): "SHEET 3 OF 7", and whose morning it is at a glance: SAMPLE (amber,
 	// solid) or FROM YOUR PC (cyan, an edge).
 	const FString Pos = FString::Printf(TEXT("SHEET %d OF %d"), S.At + 1, S.Sheets.Num());

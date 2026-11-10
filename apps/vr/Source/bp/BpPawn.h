@@ -171,6 +171,9 @@ public:
 	const struct FBpPolicy* LiveGrant() const;
 	/** The tour's last step (BpTour.cpp): the stand-up opens on its first decision card; the tour asks whether one was answered. */
 	bool OpenStandupForTour();
+	/** The scan result's DECIDE THEM (wave P1): the stand-up opens at the first decision that is one of these proposals (most
+	 *  severe first); when the morning's deck has none of them it closes, says so and opens the room's deck at the first. */
+	void OpenStandupForFindings(const TArray<FString>& Proposals);
 	bool StandupAnsweredSince(double Since) const;
 	/** The open stand-up's decisions still unanswered (-1 while its morning loads or when it is closed): the tour's stand-up
 	 *  step says "nothing waits" at 0 rather than ask for an answer nobody can give. */

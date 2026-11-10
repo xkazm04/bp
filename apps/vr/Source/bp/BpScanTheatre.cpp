@@ -23,6 +23,7 @@
 #include "BpPawn.h"
 #include "BpWords.h"
 #include "Schema/BpSchemaVocab.h"
+#include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -344,6 +345,9 @@ void ABpTable::FinishTheatreResult(bool bCancelled, bool bFailed)
 		TSet<FString> Read;
 		for (const FBpActivity& A : State.Scan.activity) if (A.run_id == ScanRun && A.kind == BpVocab::Activity::Kind::Measured && !A.feature.IsEmpty()) Read.Add(A.feature);
 		R.Features = Read.Num();
+		// No feature measured is no room read, whatever the marks counted as entered (the first real scan said "1 room read"
+		// over 0 features).
+		if (R.Features == 0) R.RoomsRead = 0;
 	}
 	// What it found: the sample's landed findings; a real run's proposals by its run id, else the ones that landed while it ran.
 	TArray<const FBpProposal*> Found;
@@ -361,6 +365,7 @@ void ABpTable::FinishTheatreResult(bool bCancelled, bool bFailed)
 	{
 		++R.Severity[ScanSeverity(*P, State.Tiers.Find(P->id))];
 		if (R.Top.Num() < 3) R.Top.Add(P->id);
+		R.Found.Add(P->id);
 	}
 	R.New = Found.Num();
 	TheatreResult = R;
@@ -447,6 +452,28 @@ void ABpTable::ScanResultRaise(const FString& ProposalId)
 	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: result row %s raises %s"), *ProposalId, Room.IsEmpty() ? TEXT("nothing") : *Room);
 }
 
+void ABpTable::OpenFindingInRoom(const FString& ProposalId, const FString& Line)
+{
+	const FBpProposal* P = FBpLinkModule::Get().GetScanState().Scan.proposals.FindByPredicate([&ProposalId](const FBpProposal& Each) { return Each.id == ProposalId; });
+	const FString Room = P ? StandupRoomOf(P->feature) : FString();
+	if (!P || Room.IsEmpty())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s has no room on this plan; nothing opens"), *ProposalId);
+		if (!Line.IsEmpty()) SayLamp(Line, true);
+		return;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s opens in %s's deck"), *ProposalId, *Room);
+	// The lamp's way into a room at a finding (LampAct): already there, the deck turns to it; else the room opens with it in front.
+	if (RoomModeId == Room) DeckFocusProposal(P->id, P->feature);
+	else
+	{
+		PendingDeckProposal = P->id;
+		PendingDeckFeature = P->feature;
+		SwitchRoom(Room, TEXT("result"));
+	}
+	if (!Line.IsEmpty()) SayLamp(Line, true);
+}
+
 bool ABpTable::GetScanReading(FScanReading& Out) const
 {
 	if (!bTheatre || !SheetPlan.IsValid()) return false;
@@ -457,6 +484,38 @@ bool ABpTable::GetScanReading(FScanReading& Out) const
 	Out.StartedAt = TheatreStartedAt;
 	Out.bSample = bTheatreSample;
 	return true;
+}
+
+int32 ABpTable::ShownFindings(const FPin& Pin) const
+{
+	if (PinLandClock < 0.f) return Pin.Findings;
+	int32 N = Pin.Findings;
+	for (const int32 Tile : Pin.CountTiles)
+	{
+		// A pin counts once it touches down (the fall's end, before its settle).
+		const FPin* Of = PinList.FindByPredicate([Tile](const FPin& P) { return P.Tile == Tile; });
+		if (Of && Of->LandDelay >= 0.f && PinLandClock < Of->LandDelay + PinLandS * 0.8f) N -= Of->NewHere;
+	}
+	return FMath::Max(N, 0);
+}
+
+void ABpTable::TickPinCounts()
+{
+	// The tags' counts as they stand now: a change redraws the tag atlas once (only while pins are in the air).
+	FString Key;
+	TArray<FString> Ticks;
+	for (const FPin& Pin : PinList)
+	{
+		if (!Pin.bTagged || Pin.Cell == INDEX_NONE) continue;
+		const int32 Shown = ShownFindings(Pin);
+		Key += FString::Printf(TEXT("%d:%d,"), Pin.Cell, Shown);
+		if (Shown != Pin.Findings || PinLandClock < 0.f) Ticks.Add(FString::Printf(TEXT("%s %d/%d"), *Pin.Line1, Shown, Pin.Findings));
+	}
+	if (Key == PinCountsKey) return;
+	const bool bFirst = PinCountsKey.IsEmpty();
+	PinCountsKey = Key;
+	if (TagAtlas) TagAtlas->UpdateResource();
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: tag counts %s at %.2f s: [%s]"), bFirst ? TEXT("start") : TEXT("tick"), PinLandClock, *FString::Join(Ticks, TEXT(", ")));
 }
 
 bool ABpTable::TickScanTheatre(float DeltaSeconds)
@@ -470,10 +529,14 @@ bool ABpTable::TickScanTheatre(float DeltaSeconds)
 		for (FPin& Pin : PinList) Pin.LandDelay = -1.f;
 		PinLandClock = -1.f;
 		PlacePins();
+		// Every count whole again (and a tag that was waiting drawn at its full count).
+		TickPinCounts();
+		PinCountsKey.Reset();
 		UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: landed (the pins rest)"));
 		return false;
 	}
 	PlacePins();
+	TickPinCounts();
 	return true;
 }
 

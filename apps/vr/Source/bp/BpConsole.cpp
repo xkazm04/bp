@@ -637,7 +637,8 @@ struct FBpConsolePages
 		T->GetScanResult(R);
 		T->ScanResultSeen();
 		if (Act == TEXT("result:close")) { Pawn.CloseConsole(); return true; }
-		if (Act == TEXT("result:decide")) { Pawn.OpenConsole(TEXT("standup")); return true; }
+		// DECIDE THEM (wave P1): the stand-up at the first decision that came from this scan, else the room's deck at the first.
+		if (Act == TEXT("result:decide")) { Pawn.OpenStandupForFindings(R.Found); return true; }
 		if (Act.StartsWith(TEXT("result:raise:"))) { T->ScanResultRaise(Act.Mid(13)); return true; }
 		if (Act.StartsWith(TEXT("result:sev:")))
 		{

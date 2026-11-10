@@ -49,6 +49,10 @@ namespace
 	const FLinearColor CardInk(FColor(0x14, 0x22, 0x3C));
 	const FLinearColor CardPaper(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor AmberInk(FColor(0xFF, 0xB5, 0x47));
+	/** Wave P1: a stop-ship tag's rule (the result sheet's STOP-SHIP red, BpSheet::Red, deepened to hold on the tag's tan paper)
+	 *  and its second line darkened further (the high-risk mark's red). */
+	const FLinearColor StopShipInk(FColor(0xD9, 0x3B, 0x2C));
+	const FLinearColor StopShipText(FColor(0xA8, 0x1F, 0x15));
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
 	/** The card's glass and its edge (FE): near-white, a little cool, as the concept's card. */
 	const FLinearColor CardGlass(FColor(0xF4, 0xF7, 0xFB));
@@ -405,7 +409,21 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 			TheatreBegin(false, Job->id, Job->lens, Job->scope.label.IsEmpty() ? FString(TEXT("Everything")) : Job->scope.label, ScopeWords, ScopeRooms.Num(), bFresh);
 			if (!bTheatre) PresentScanPlace(TEXT("scan"));
 		}
+		const FString WasRun = ScanRun;
 		ScanRun = Job->run_id;
+		// Wave P1 (the first linked scan, 2026-11-10): the server learns a job's run only through the stream route, which the table
+		// does not read, so a running job's run_id is empty here. The run that names the job in its note (`bp-job:<id>`, or
+		// `bp-job:<id> <more>`: jobs.ts isJobNote, as the scan marks find it) is its run; without it no reading row matched and
+		// the lamp never left home.
+		if (ScanRun.IsEmpty())
+		{
+			const FString Named = TEXT("bp-job:") + Job->id;
+			if (const FBpRun* Run = State.Scan.runs.FindByPredicate([&Named](const FBpRun& R) { return R.note == Named || R.note.StartsWith(Named + TEXT(" ")); }))
+			{
+				ScanRun = Run->id;
+				if (ScanRun != WasRun) UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s's run is %s (named in its note)"), *Job->id, *ScanRun);
+			}
+		}
 		// The feature being read: the run's latest reading or measured row (blueprint-ui.md, Views: "current").
 		const FBpActivity* Current = nullptr;
 		for (const FBpActivity& Row : State.Scan.activity)
@@ -451,7 +469,21 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 			const bool bFailed = Ended && Ended->status == BpVocab::ScanJob::Status::Failed;
 			const bool bCancelled = !Ended || Ended->status == BpVocab::ScanJob::Status::Cancelled;
 			UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s left running (%s); the result in %.0f s"), *ScanJob, Ended ? *Ended->status : TEXT("gone"), 2.0);
-			GetWorldTimerManager().SetTimer(TheatreEndTimer, FTimerDelegate::CreateWeakLambda(this, [this, bFailed, bCancelled]() { TheatreEnd(bCancelled, bFailed, false); }), 2.f, false);
+			const FString EndedRun = Ended && !Ended->run_id.IsEmpty() ? Ended->run_id : ScanRun;
+			GetWorldTimerManager().SetTimer(TheatreEndTimer, FTimerDelegate::CreateWeakLambda(this, [this, bFailed, bCancelled, EndedRun]()
+			{
+				// Wave P1 (the first real linked scan, 2026-11-10): a job can exit `done` while the run it wrote is `failed` (the
+				// model found nothing it could read and closed its run so). The store's run is the truth the result tells.
+				bool bRunFailed = bFailed;
+				const FBpRun* Run = EndedRun.IsEmpty() ? nullptr : FBpLinkModule::Get().GetScanState().Scan.runs.FindByPredicate([&EndedRun](const FBpRun& R) { return R.id == EndedRun; });
+				if (!bFailed && !bCancelled && Run && (Run->status == BpVocab::Run::Status::Failed || Run->status == BpVocab::Run::Status::Aborted))
+				{
+					bRunFailed = true;
+					UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the job ended done but its run %s is %s (%s): the result says it failed"), *EndedRun, *Run->status, *Run->note.Left(160));
+				}
+				if (!EndedRun.IsEmpty()) ScanRun = EndedRun;
+				TheatreEnd(bCancelled, bRunFailed, false);
+			}), 2.f, false);
 		}
 		bScanLive = false;
 		ScanJob.Reset();
@@ -487,6 +519,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	// Wave C1: a finding the pins did not show last time lands (while a scan runs or just ended); the sample's held ones wait.
 	const bool bLand = LandingsWanted();
 	TArray<int32> Arrived;
+	TMap<int32, int32> NewOfTile;
 	TSet<FString> ShownOpen;
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
@@ -498,16 +531,22 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		Key += Proposal.id + (HasTier ? FString::Printf(TEXT(":%d,"), *HasTier) : FString(TEXT(",")));
 		const int32* Tile = TileOf.Find(Proposal.feature);
 		if (!Tile) continue;
-		if (bLand && !PinsKnownOpen.Contains(Proposal.id)) Arrived.AddUnique(*Tile);
+		if (bLand && !PinsKnownOpen.Contains(Proposal.id))
+		{
+			Arrived.AddUnique(*Tile);
+			++NewOfTile.FindOrAdd(*Tile);
+		}
 		FPin Pin;
 		Pin.Line1 = Proposal.id.ToUpper();
 		Pin.Tier = HasTier ? *HasTier : -1;
 		Pin.Risk = FMath::RoundToInt(Proposal.risk);
 		Pin.bUrgent = HasTier ? *HasTier <= PinTagTierMax : Pin.Risk >= PinTagRiskMin;
+		Pin.bStopShip = ScanSeverity(Proposal, HasTier) == 0;
 		if (const int32* Have = PinOfTile.Find(*Tile))
 		{
 			FPin& Into = Next[*Have];
 			++Into.Findings;
+			Into.bStopShip |= Pin.bStopShip;
 			if (MoreUrgent(Pin, Into))
 			{
 				Into.Line1 = Pin.Line1;
@@ -520,10 +559,15 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		Pin.Tile = *Tile;
 		Pin.Room = TileRoom.IsValidIndex(*Tile) ? TileRoom[*Tile] : INDEX_NONE;
 		Pin.Findings = 1;
+		Pin.CountTiles = { *Tile };
 		PinOfTile.Add(*Tile, Next.Num());
 		Next.Add(Pin);
 	}
-	for (FPin& Pin : Next) Pin.bTagged = Pin.bUrgent;
+	for (FPin& Pin : Next)
+	{
+		Pin.bTagged = Pin.bUrgent;
+		Pin.NewHere = NewOfTile.FindRef(Pin.Tile);
+	}
 	// Tags that would overlap from the target eye merge (FC3): in store order, a tagged pin within TagClearUCm across of an
 	// earlier tagged pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives
 	// its tag up to that pin, whose count then carries its findings. Every pin keeps its bead on its own feature.
@@ -549,6 +593,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			if (FMath::Abs(Here.X - There.X) >= TagClearUCm || FMath::Abs(Here.Y - There.Y) >= Hidden) continue;
 			Next[Index].bTagged = false;
 			Next[Earlier].Findings += Next[Index].Findings;
+			Next[Earlier].CountTiles.Append(Next[Index].CountTiles);
+			Next[Earlier].bStopShip |= Next[Index].bStopShip;
 			if (MoreUrgent(Next[Index], Next[Earlier]))
 			{
 				Next[Earlier].Line1 = Next[Index].Line1;
@@ -591,21 +637,7 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	{
 		Pin.Cell = Pin.bTagged && Cells < TagAtlasCols * TagAtlasRows ? Cells++ : INDEX_NONE;
 		Pin.bTagged = Pin.Cell != INDEX_NONE;
-		// The second line, longest first: the tier with its word (the ledger's T0..T3 chip) or the risk, then how many more
-		// findings the tag stands for (DrawTags sets the first that fits).
-		const FString More = Pin.Findings > 1 ? FString::Printf(TEXT("  +%d"), Pin.Findings - 1) : FString();
-		Pin.Line2.Reset();
-		if (Pin.Tier >= 0)
-		{
-			const FString Chip = FString::Printf(TEXT("T%d"), Pin.Tier);
-			Pin.Line2 = { Chip + TEXT(" ") + TierWord(Pin.Tier) + More, Chip + More, Chip };
-		}
-		else
-		{
-			// The ledger's mark and number (DrawTags draws the mark): the same words as the PC's risk column.
-			const FString Risk = FString::FromInt(Pin.Risk);
-			Pin.Line2 = { Risk + More, Risk };
-		}
+		Pin.Line2 = PinLine2(Pin, Pin.Findings);
 	}
 	PinsKnownOpen = MoveTemp(ShownOpen);
 	bPinsPrimed = true;
@@ -639,13 +671,31 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
 	if (Beads.Num() > 0 && CVarPinHalos.GetValueOnGameThread() != 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
 	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
-	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
 	PlacePins();
 	NoteArrivals(Arrived);
+	// After the arrivals are known, so a landing's tags first show the counts already on the plan (TickScanTheatre ticks them up).
+	PinCountsKey.Reset();
+	if (PinLandClock >= 0.f) TickPinCounts();
+	else if (TagAtlas) TagAtlas->UpdateResource();
 	// The wing labels slide off the new stems (SlideOffStems).
 	RedrawSheet();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
+}
+
+TArray<FString> ABpTable::PinLine2(const FPin& Pin, int32 Findings)
+{
+	// The second line, longest first: the tier with its word (the ledger's T0..T3 chip) or the risk, then how many more
+	// findings the tag stands for (DrawTags sets the first that fits).
+	const FString More = Findings > 1 ? FString::Printf(TEXT("  +%d"), Findings - 1) : FString();
+	if (Pin.Tier >= 0)
+	{
+		const FString Chip = FString::Printf(TEXT("T%d"), Pin.Tier);
+		return { Chip + TEXT(" ") + TierWord(Pin.Tier) + More, Chip + More, Chip };
+	}
+	// The ledger's mark and number (DrawTags draws the mark): the same words as the PC's risk column.
+	const FString Risk = FString::FromInt(Pin.Risk);
+	return { Risk + More, Risk };
 }
 
 double ABpTable::TagRaiseCm(const FPin& Pin) const
@@ -833,7 +883,9 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		// A pixel of margin so the mips never bleed one card into the next.
 		const FVector2D Min = Cell + FVector2D(4.0, 4.0), Max = Cell + FVector2D(TagCellWidthPx - 4.0, TagCellHeightPx - 4.0);
 		Fill(Min, Max, TagPaper);
-		Fill(Min, FVector2D(Max.X, Min.Y + 8.0), AmberInk);
+		// Wave P1: a stop-ship tag's rule in the stop-ship red (the result sheet's STOP-SHIP), from its landing on.
+		const bool bStop = PinList[Index].bStopShip;
+		Fill(Min, FVector2D(Max.X, Min.Y + (bStop ? 12.0 : 8.0)), bStop ? StopShipInk : AmberInk);
 		const float Room = TagCellWidthPx - 8.f - 2.f * Pad;
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
 		const auto FitsAt = [&](const FString& Text, float Tracking) { return !Text.IsEmpty() && Measure(Text, Bold).X + Tracking * Text.Len() <= Room; };
@@ -851,13 +903,15 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		// FAF: an id a little wider than the tag (pof's "A0AB2A") sets without the tracking rather than going missing.
 		if (Fits(Id)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, Track });
 		else if (FitsAt(Id, 0.f)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, 0.f });
-		// The second line as it fits: the risk and the count, else the risk alone.
-		const FString* Line2 = PinList[Index].Line2.FindByPredicate(FitsLine2);
+		// The second line as it fits: the risk and the count, else the risk alone. During a landing the count is what has
+		// touched down so far (wave P1: it ticks up pin by pin).
+		const TArray<FString> Line2s = PinLandClock >= 0.f ? PinLine2(PinList[Index], ShownFindings(PinList[Index])) : PinList[Index].Line2;
+		const FString* Line2 = Line2s.FindByPredicate(FitsLine2);
 		if (Line2)
 		{
 			const float LineTop = Min.Y + 26.f + Cap + 20.f;
 			float TextX = Min.X + Pad;
-			FLinearColor LineInk = CountInk;
+			FLinearColor LineInk = bStop ? StopShipText : CountInk;
 			if (bRiskLine)
 			{
 				// ▲ high, ◆ medium, ▽ low, in the ledger's colours darkened for the tag's paper.
