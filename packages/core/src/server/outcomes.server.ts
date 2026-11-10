@@ -18,7 +18,7 @@ import { listWaves } from './waves.server.ts';
 import { journalFile } from './jobs.server.ts';
 import { close, openRead } from './store.server.ts';
 import { storeFile } from './products.server.ts';
-import { joinOutcomes, type Approval, type BuildTrail, type Outcome } from '../companion/outcomes.ts';
+import { joinOutcomes, storeApprovals, type Approval, type BuildTrail, type Outcome } from '../companion/outcomes.ts';
 import type { ProductEntry, ScanSnapshot } from '../scan/types.ts';
 
 if (typeof window !== 'undefined') throw new Error('outcomes.server.ts is server-only');
@@ -90,9 +90,10 @@ export function approvalsOf(slug: string, steerRows: readonly (Approval & { surf
 
 /** The join for one product: what its approvals before `since` (and at most a week old) became. */
 export function outcomesFor(p: ProductEntry, scan: ScanSnapshot, steerRows: readonly (Approval & { surface?: string })[], since: string, now: number, where?: ReadonlyMap<string, { room: string }>): Outcome[] {
-  const approvals = approvalsOf(p.slug, steerRows);
-  if (!approvals.some((a) => a.verdict === 'approve')) return [];
-  const failed = scan.proposals.filter((x) => x.status === 'failed' && approvals.some((a) => a.proposal === x.id)).map((x) => x.id);
+  // the logs here; the store's own approvals (a person's approve on the plan or in the ledger) join inside joinOutcomes
+  const approvals = approvalsOf(p.slug, steerRows), stored = new Set(storeApprovals(p.slug, scan.proposals).map((a) => a.proposal));
+  if (!approvals.some((a) => a.verdict === 'approve') && !stored.size) return [];
+  const failed = scan.proposals.filter((x) => x.status === 'failed' && (stored.has(x.id) || approvals.some((a) => a.proposal === x.id))).map((x) => x.id);
   const trail: BuildTrail = { waves: listWaves(p.root), jobs: journalJobs(p.root, p.slug, now), failures: failuresOf(storeFile(p), failed, scan.activity) };
   return joinOutcomes(p.slug, scan.proposals, scan.shots, approvals, trail, since, now, where);
 }

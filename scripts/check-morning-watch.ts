@@ -54,20 +54,29 @@ check('the open card counts the night', /2 products of 3 moved: 6 items built, 1
 // morning-demo.mjs: three Kettle findings approved from the table yesterday morning on kettle-web, two built (with before and
 // after screens), one failed with lens-scan's failure record; the server's join (outcomes.server.ts) makes one card of it.
 {
-  const oc = d.cards.find((c) => c.kind === 'outcomes'), xs = oc?.outcomes ?? [], by = (id: string) => xs.find((x) => x.proposal === id);
+  const oc = d.cards.find((c) => c.id === 'outcomes:kettle-web');
   const at = (id: string) => d.cards.findIndex((c) => c.id === id);
-  check('outcomes: one card for kettle-web, after the open card and before what was built overnight', !!oc && oc.id === 'outcomes:kettle-web' && d.cards.filter((c) => c.kind === 'outcomes').length === 1 && at('outcomes:kettle-web') > at('open') && at('outcomes:kettle-web') < at('built:kettle-web'), kinds.join(','));
-  check('outcomes: the headline counts them in words, the tone follows the failure', oc?.headline === '3 approved yesterday on Kettle Web: 2 built, 1 failed' && oc.tone === 'bad', oc?.headline);
+  check('outcomes: one card for kettle-web, after the open card and before what was built overnight', !!oc && d.cards.filter((c) => c.id === 'outcomes:kettle-web').length === 1 && at('outcomes:kettle-web') > at('open') && d.cards.every((c, i) => c.kind !== 'outcomes' || d.cards.slice(0, i).every((p) => p.kind === 'open' || p.kind === 'agents' || p.kind === 'outcomes')), kinds.join(','));
+  check('outcomes: the headline counts them in words, the tone follows the failure', /^\d+ approved yesterday on Kettle Web: \d+ built, \d+ failed$/.test(oc?.headline ?? '') && oc!.tone === 'bad', oc?.headline);
+  // scan-demo's own sample train signs its synthetic decisions user:sample, a person by the store rule, newer than the demo
+  // night's three: the cap of 8 keeps the newest. The night's three are read through the same join without that train.
+  const { outcomesFor: joinFor } = await import('../packages/core/src/server/outcomes.server.ts');
+  const { findProduct: findP } = await import('../packages/core/src/server/products.server.ts');
+  const { snapshots: snaps } = await import('../packages/core/src/server/api/companion/views.server.ts');
+  const { readSteer } = await import('../packages/core/src/server/api/companion/morning.server.ts');
+  const kw = snaps('kettle-web').read[0].scan, night = { ...kw, proposals: kw.proposals.filter((x) => x.decided_by !== 'user:sample') };
+  const xs = joinFor(findP('kettle-web')!, night, readSteer(findP('kettle-web')!), d.since, Date.parse(d.until)), by = (id: string) => xs.find((x) => x.proposal === id);
+  check("outcomes: the card holds the night's failure too", !!oc?.outcomes?.some((x) => x.proposal === 'kf-045' && x.outcome === 'failed'), JSON.stringify(oc?.outcomes?.map((x) => x.proposal)));
   const k11 = by('kf-011');
   check('outcomes: a decided-then-built proposal is built, with its short commit and both screens', k11?.outcome === 'built' && k11.commit === 'de3011a' && k11.before === 'shots/demo-yesterday/finding-kf-011.png' && k11.after === 'shots/demo-yesterday/finding-kf-011-after.png' && k11.decided_by === 'vr' && k11.wave === 'w-demo-yesterday', JSON.stringify(k11));
   const k45 = by('kf-045');
   check("outcomes: a failed one says the failure record's stage and reason in one sentence, and has no commit or after screen", k45?.outcome === 'failed' && k45.reason === 'A check failed after the change: the new end-to-end test still fails because the total stays at 120.00 with the promo code applied.' && !('commit' in k45) && !('after' in k45), JSON.stringify(k45));
-  check('outcomes: newest decision first', xs.map((x) => x.proposal).join() === 'kf-045,kf-041,kf-011', xs.map((x) => x.proposal).join());
-  check('outcomes: no key carries null or an empty string', xs.every((x) => Object.values(x).every((v) => v !== null && v !== '')), JSON.stringify(xs));
+  check('outcomes: newest decision first', xs.slice(0, 3).map((x) => x.proposal).join() === 'kf-045,kf-041,kf-011' && (oc?.outcomes ?? []).every((x, i, all) => i === 0 || all[i - 1].decided_at >= x.decided_at), xs.map((x) => x.proposal).join());
+  check('outcomes: no key carries null or an empty string', [...xs, ...(oc?.outcomes ?? [])].every((x) => Object.values(x).every((v) => v !== null && v !== '')), JSON.stringify(xs));
   const { wire } = await import('./lib/wire-schema.ts');
   const deckOk = await wire('morning-deck-1', 'morningDeck');
   check('outcomes: the deck with the card is morning-deck-1', !deckOk(d), String(deckOk(d)));
-  const withCard = (c: object) => ({ ...d, cards: d.cards.map((x) => (x.kind === 'outcomes' ? c : x)) });
+  const withCard = (c: object) => ({ ...d, cards: d.cards.map((x) => (x.id === 'outcomes:kettle-web' ? c : x)) });
   check('outcomes: a card with an unknown field is not', !!deckOk(withCard({ ...oc, extra: 1 })) && !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[0], extra: 1 }] })));
   check('outcomes: an outcome with null for an absent key is not, nor an svg screen', !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[1], reason: null }] })) && !!deckOk(withCard({ ...oc, outcomes: [{ ...xs[1], after: 'shots/x/after.svg' }] })));
 
@@ -201,8 +210,22 @@ check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(pat
   const [jb, wt, hd, old, gone] = ['oc-job', 'oc-wait', 'oc-held', 'oc-old', 'oc-gone'];
   {
     const w = new DatabaseSync(file), f = (w.prepare("SELECT feature, run_id FROM proposals WHERE id LIKE 'find-%' LIMIT 1").get() as { feature: string; run_id: string });
-    const put = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, decided_by, decided_at, created_at, updated_at) VALUES (?, ?, ?, 'design', ?, 'fix', ?, 'user:check', ?, ?, ?)");
-    for (const id of [jb, wt, hd, old, gone]) put.run(id, f.run_id, f.feature, 'Check item ' + id, id === gone ? 'declined' : 'approved', iso(now - 30 * H), iso(now - 40 * H), iso(now - 30 * H));
+    const put = w.prepare("INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, decided_by, decided_at, created_at, updated_at, commit_sha, attempt_of, triaged_by) VALUES (?, ?, ?, 'design', ?, 'fix', ?, ?, ?, ?, ?, ?, ?, ?)");
+    const add = (id: string, status: string, by: string | null, decidedAt: string | null, extra: { commit?: string; attemptOf?: string; triagedBy?: string } = {}) =>
+      put.run(id, f.run_id, f.feature, 'Check item ' + id, status, by, decidedAt, iso(now - 40 * H), iso(now - 30 * H), extra.commit ?? null, extra.attemptOf ?? null, extra.triagedBy ?? null);
+    // the store's own decision time on the logged ones is 33 h ago: the log's row (30 h, its surface) must win
+    for (const id of [jb, wt, hd, old, gone]) add(id, id === gone ? 'declined' : 'approved', 'user:check', iso(now - 33 * H));
+    // approved on the plan or in the ledger: no log row, only the store's fields (a person's decided_by and decided_at)
+    add('oc-plan', 'approved', 'human:owner', iso(now - 31 * H));
+    add('oc-plan-built', 'accepted', 'operator:jane', iso(now - 32 * H), { commit: 'abcdef1234567' });
+    // not a person's approval: a machine's decision (L1) then the L2 machine accept, an agent's door, bp's bare default
+    add('oc-machine', 'accepted', 'machine:lens-scan', iso(now - 30 * H), { commit: 'fedcba7654321', triagedBy: 'machine:lens-scan' });
+    add('oc-agent', 'approved', 'agent:personas', iso(now - 30 * H));
+    add('oc-bare', 'approved', 'blueprint', iso(now - 30 * H));
+    // no decided_at: updated_at (30 h ago) is the row's last rewrite, never a decision time
+    add('oc-upd', 'done', 'user:check', null, { commit: '1234567abcdef' });
+    // a rework rebuild: lens-scan copies the original's decision onto it; the time is not this row's decision
+    add('oc-attempt', 'approved', 'operator:jane', iso(now - 32 * H), { attemptOf: 'oc-plan-built' });
     w.close();
   }
   const row = (id: string, verdict: string, ms: number, surface = 'web') => JSON.stringify({ at: iso(ms), kind: 'morning', surface, product: 'kettle-phone', target: id, verdict });
@@ -212,7 +235,9 @@ check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(pat
   fs.mkdirSync(path.dirname(journal), { recursive: true });
   const job = (id: string, status: string, ids: string[], ms: number) => JSON.stringify({ at: iso(ms), slug: 'kettle-phone', phase: status, job: { id, kind: 'execute', status, proposals: ids, queued_at: iso(ms) } });
   fs.writeFileSync(journal, [job('j-check-1', 'queued', [jb], now - 2 * H), job('j-check-1', 'running', [jb], now - 1 * H), job('j-check-stale', 'running', [wt], now - 13 * H)].join('\n') + '\n');
-  const scan = snapshots('kettle-phone').read[0].scan, got = outcomesFor(P, scan, [], iso(now - 16 * H), now), o = (id: string) => got.find((x) => x.proposal === id);
+  // without scan-demo's sample train (signed user:sample, newer than these rows: the cap of 8 would keep it first)
+  const all = snapshots('kettle-phone').read[0].scan, scan = { ...all, proposals: all.proposals.filter((x) => x.decided_by !== 'user:sample') };
+  const got = outcomesFor(P, scan, [], iso(now - 16 * H), now), o = (id: string) => got.find((x) => x.proposal === id);
   check('outcomes: building while an execute job naming it is queued or running', o(jb)?.outcome === 'building' && o(jb)?.decided_by === 'vr', JSON.stringify(o(jb)));
   check('outcomes: waiting when nothing builds it (a 13 h old running line is a lost process, not a build)', o(wt)?.outcome === 'waiting', JSON.stringify(o(wt)));
   check("outcomes: an approval made inside this morning's window is this morning's, not yesterday's (the earlier approve is kept)", o(wt)?.decided_at === iso(now - 29 * H), JSON.stringify(o(wt)));
@@ -220,8 +245,18 @@ check('one jsonl row per verdict', [d0, d1, d2].every((c) => fs.readFileSync(pat
   check('outcomes: a decision older than 7 days is dropped', !o(old), JSON.stringify(got.map((x) => x.proposal)));
   check('outcomes: a proposal the store declined since is dropped', !o(gone), JSON.stringify(got.map((x) => x.proposal)));
   check('outcomes: a waiting one has no commit, reason, wave or screens: absent keys, never null', !!o(wt) && ['commit', 'reason', 'wave', 'before', 'after'].every((k) => !(k in o(wt)!)) && Object.values(o(wt)!).every((v) => v !== null && v !== ''), JSON.stringify(o(wt)));
+  // the third source: the store's own approval fields (Director, 2026-11-10)
+  check('outcomes (store): a proposal approved on the plan by a person, with no log row, appears as waiting at its decided_at, from the web', o('oc-plan')?.outcome === 'waiting' && o('oc-plan')?.decided_at === iso(now - 31 * H) && o('oc-plan')?.decided_by === 'web', JSON.stringify(o('oc-plan')));
+  check('outcomes (store): one a person approved and that was built and accepted appears as built with its commit', o('oc-plan-built')?.outcome === 'built' && o('oc-plan-built')?.commit === 'abcdef1', JSON.stringify(o('oc-plan-built')));
+  check('outcomes (store): a machine decision and the L2 machine accept are not the person\'s approval', !o('oc-machine'), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes (store): an agent\'s door or bp\'s bare default signer is not a person on the PC', !o('oc-agent') && !o('oc-bare'), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes (store): updated_at alone never creates an outcome (no decided_at, no outcome)', !o('oc-upd'), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes (store): a rework rebuild\'s copied decision is not a second approval', !o('oc-attempt'), JSON.stringify(got.map((x) => x.proposal)));
+  check('outcomes (store): a log row for the same proposal wins: its time and its surface, not the store\'s', o(jb)?.decided_at === iso(now - 30 * H) && o(jb)?.decided_by === 'vr' && !o(old), JSON.stringify(o(jb)));
   const later2 = await deck(), oc2 = later2.cards.find((c) => c.id === 'outcomes:kettle-phone');
-  check("outcomes: the route's deck carries kettle-phone's card too: 2 approved yesterday, 1 building, 1 not built yet", oc2?.headline === '2 approved yesterday on Kettle Phone: 1 building, 1 not built yet' && oc2.tone === 'warn', oc2?.headline);
+  check("outcomes: the route's deck carries kettle-phone's card too", !!oc2 && /^\d+ approved yesterday on Kettle Phone: /.test(oc2.headline) && oc2.outcomes!.length <= 8 && (oc2.tone === 'warn' || oc2.tone === 'bad'), oc2?.headline);
+  check('outcomes: the card is morning-deck-1', !(await (await import('./lib/wire-schema.ts')).wire('morning-deck-1', 'morningDeck'))(later2));
+  if (oc2) console.log('kettle-phone card: ' + oc2.headline + ' | ' + oc2.outcomes!.map((x) => x.proposal + ':' + x.outcome).join(' '));
   fs.rmSync(journal, { force: true });
 }
 

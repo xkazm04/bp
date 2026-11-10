@@ -13,6 +13,9 @@
 //   failed    the store says failed; `reason` is the failure activity's stage and reason in one sentence, when one is recorded.
 //   building  executing in the store, or approved with a queued or running execute job naming it.
 //   waiting   approved, and no job builds it ("approved, not built yet"); `wave` says when a draft or dispatched wave holds it.
+// Sources, in order: $BP_HOME/companion/decisions.jsonl and the product's steering log (the server reads both), then the
+// store's own approval fields for a proposal neither log names (storeApprovals: a person's approve on the plan or in the
+// ledger reaches no log). Machine decisions are never the person's approval.
 // Dropped: a proposal whose latest steering after the approval was not an approve (held, deferred, declined), one the store has
 // declined, descoped or reopened (proposed again), one that no longer exists; an approval inside the deck's window (it is this
 // morning's, the close card says it) or older than OUTCOMES_DAYS.
@@ -78,6 +81,26 @@ export function shotOf(shots: readonly Pick<Shot, 'path' | 'proposal_id' | 'phas
   return xs[0]?.path;
 }
 
+/** A store row approved by a person counts as an approval at its `decided_at` (the plan's and the ledger's Approve, a
+ *  wave dispatch's approve and lens-scan's `decide --by` all write status `approved` with `decided_by` and `decided_at`;
+ *  no later writer touches those two except a veto, which puts the row back at `proposed`).
+ * A person signs `user:<login>` (bp's routes), `operator:<name>` (lens-scan's decide door) or `human:<name>` (found on bp's
+ * own store). Kept out:
+ *   - a machine decision: `decided_by` `machine:*` (lens-scan's L1 `decide --machine`; the L2 machine accept writes only
+ *     `triaged_by`, never an approval), and every signer that is not a person on the PC: `agent:*` (a headless caller such
+ *     as Personas), `skill:*`, and bp's bare default `blueprint` (a caller that passed no person);
+ *   - a row with `attempt_of` (a rework rebuild): lens-scan copies the original's `decided_by`/`decided_at` onto it, so its
+ *     time is not a decision on that row; the original (status `rework`) carries it;
+ *   - a row with no `decided_at`: `updated_at` is the row's last rewrite, never a decision time;
+ *   - statuses that are not an approval: proposed (a veto or a reopen), declined, descoped. */
+export const PERSON_SIGNER = /^(user|operator|human):./;
+const APPROVED_LIKE = new Set(['approved', 'executing', 'done', 'failed', 'accepted', 'rework', 'released']);
+export function storeApprovals(product: string, proposals: readonly Proposal[]): Approval[] {
+  // decided_at as UTC ISO, comparable as text with the window (a writer may have stored an offset)
+  return proposals.filter((x) => APPROVED_LIKE.has(x.status) && !x.attempt_of && typeof x.decided_at === 'string' && Number.isFinite(Date.parse(x.decided_at)) && PERSON_SIGNER.test(x.decided_by ?? ''))
+    .map((x) => ({ at: new Date(Date.parse(x.decided_at!)).toISOString(), product, proposal: x.id, verdict: 'approve', surface: 'web' }));
+}
+
 /** The join: each proposal the person approved before `since` and at most OUTCOMES_DAYS ago, at its latest approve, with what
  *  became of it; newest decision first, at most OUTCOMES_MAX. `where`: feature -> its room on the plan (as decision cards
  *  resolve it). */
@@ -87,7 +110,12 @@ export function joinOutcomes(product: string, proposals: readonly Proposal[], sh
   // the latest steering row per proposal (any verdict, any time: a hold this morning drops yesterday's approve), and the
   // latest approve before the window (a second approve this morning, from another surface, keeps yesterday's)
   const last = new Map<string, Approval>(), approve = new Map<string, Approval>();
-  for (const r of [...steering].filter((x) => x.product === product && typeof x.at === 'string' && typeof x.proposal === 'string').sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
+  const logged = steering.filter((x) => x.product === product && typeof x.at === 'string' && typeof x.proposal === 'string');
+  // the third source, the store itself (storeApprovals): only for a proposal neither log has a row for (a log row carries
+  // the surface, so the logs win)
+  const inLog = new Set(logged.map((r) => r.proposal));
+  const rows = [...logged, ...storeApprovals(product, proposals).filter((r) => !inLog.has(r.proposal))];
+  for (const r of rows.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))) {
     last.set(r.proposal, r);
     if (r.verdict === 'approve' && r.at < since) approve.set(r.proposal, r);
   }
