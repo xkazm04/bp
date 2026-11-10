@@ -179,7 +179,7 @@ export const FINDING_SHOTS: readonly string[] = ['kf-011', 'kf-053', 'kf-020', '
 export const findingShotFile = (id: string): string => `finding-${id}.png`;
 /** The FINDING_SHOTS findings that also carry a generated "after" screen: the same screen with the finding fixed, made by the
  *  same script with the same look (its manifest holds each prompt). The sample morning's "what yesterday's approvals became"
- *  card (companion/outcomes.ts; apps/vr/tools/bundle-morning.ts, scripts/morning-demo.mjs) shows each before beside its after. */
+ *  card (packages/core/src/companion/outcomes.ts; apps/vr/tools/bundle-morning.ts, scripts/morning-demo.mjs) shows each before beside its after. */
 export const AFTER_SHOTS: readonly string[] = ['kf-011', 'kf-041'];
 /** A finding's after screen's Shot.path: a bare file name beside its before screen. */
 export const afterShotFile = (id: string): string => `finding-${id}-after.png`;

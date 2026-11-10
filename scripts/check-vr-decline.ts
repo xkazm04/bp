@@ -105,7 +105,7 @@ check('...and the like idea and the plain card are untouched', st('brief-o4').st
 r = await at('brief-o2', DEV);
 check('a second pinch: 409, already declined', r.status === 409 && /already declined/.test(await r.text()));
 const steerLog = fs.readFileSync(path.join(TMP, 'kettle-web', '.ai', 'lens-scan', 'work', 'steering-log.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l) as { proposal: string; verdict: string; note?: string });
-check('one steering-log row, the same the deck writes', steerLog.filter((x) => x.proposal === 'brief-o2').length === 1 && steerLog[0].verdict === 'decline' && steerLog[0].note === rep?.note, JSON.stringify(steerLog));
+check('one steering-log row, the same the deck writes', steerLog.filter((x) => x.proposal === 'brief-o2').length === 1 && steerLog.find((x) => x.proposal === 'brief-o2')?.verdict === 'decline' && steerLog.find((x) => x.proposal === 'brief-o2')?.note === rep?.note, JSON.stringify(steerLog));
 const after = await deck();
 check('the morning deck keeps the repeat in its slot, marked declined', after.cards.find((c) => c.decision?.proposal === 'brief-o2')?.decision?.steered?.verdict === 'decline');
 db.close();

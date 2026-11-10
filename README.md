@@ -37,6 +37,7 @@ repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's wor
 | `/v/[variant]` | One lens expression on its own (`/v/subtle`, `/v/shaped`, `/v/bold`) |
 | `/projects` | The repositories bp can draw: add one and onboard it, rename or move it, follow its onboarding, remove it |
 | `/projects/[slug]/onboarding` | The project being onboarded: its plan drawn as the run learns it |
+| `/headsets` | The VR headsets paired with this PC: pair one by typing the code it shows, choose what it may do, revoke it; the permissions and decisions made at the table |
 | `/crossing` | The crossing from the web blueprint to the VR light table, as a web prototype (sample data) |
 | `/buildup` | The onboarding build-up lab (the outline becomes the building), driven by the onboarding event contract |
 | `?theme=light` | The light theme (a toggle in the header too) |
@@ -143,7 +144,7 @@ document index), [`apps/vr/README.md`](apps/vr/README.md) (how to run it on Lynx
 
 ```
 apps/web/                      the Next.js app (npm workspace @bp/web); run from the repo root: npm run dev
-apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant], /projects, /projects/[slug]/onboarding,
+apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant], /projects, /projects/[slug]/onboarding, /headsets,
                                /crossing, /buildup
 apps/web/src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
 apps/web/src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)

@@ -97,6 +97,14 @@ The place the owner is looking at, which any surface publishes and any other fol
   with `&opened=<iso>`. What landed after it (findings raised, items built) is never put into the part already read:
   it comes at the end, before the close card, each card marked `news`, and `deck.news.count` says how many ("1 new").
   The ranked decisions are read as of `opened`, so a stop-ship finding raised mid-standup never takes a ranked slot.
+- **What yesterday's approvals became** (rev 9). The card-kind enum widens by one value, `outcomes`, appended last. At
+  most one such card per product, after `open` (and `agents`) and before `built`, carries `outcomes`: 1 to 8 rows, newest
+  decision first, each `{ proposal, title, room?, decided_at, decided_by: web|vr, outcome: built|failed|building|waiting,
+  reason?, commit?, wave?, before?, after? }`. An absent value omits its key; it is never null. `decided_at` is the time
+  the person decided (the decision log, the steering log, else the store's person-signed `decided_at`), never a row's
+  `updated_at`. A proposal held, deferred or declined after its approval is left out, as is a decision older than seven
+  days. `before` and `after` are shot paths (png, jpg, webp). A reader that does not know the kind shows the card's
+  `lines`, which say the same in text. The full table is `docs/concepts/vr-light-table/table-link-v2.md` section 3.7.
 - **Steer.** `POST /api/companion/morning` with `{ product, proposal, verdict }` is the **human path only**: it needs the
   `x-bp-human` token, which bp hands only to its own same-origin page. `approve` writes the store through bp's
   `decide`. `defer` and `hold` are steering-log rows only. The readable `steering-log.md` is rendered from the
