@@ -89,6 +89,26 @@ namespace
 		return FCoreStyle::GetDefaultFontStyle(Style, CapPx / (0.711f * 96.f / 72.f));
 	}
 
+	TAutoConsoleVariable<int32> CVarTalkSheet(TEXT("bp.TalkSheet"), 1, TEXT("The conversation with the lamp (heard words, state, the whole reply) on the console's panel: 1 on (default), 0 the lamp's own caption box as before."), ECVF_Default);
+	/** A line's pitch for a cap height (Barlow's 1.2 em). */
+	float Pitch(float CapPx) { return CapPx / static_cast<float>(BpType::CapPerEm) * 1.2f; }
+	int32 LineCount(const FString& Wrapped) { int32 N = 1; for (const TCHAR C : Wrapped) N += C == TEXT('\n') ? 1 : 0; return Wrapped.IsEmpty() ? 0 : N; }
+	FString DayWord()
+	{
+		static const TCHAR* const Months[] = { TEXT("JAN"), TEXT("FEB"), TEXT("MAR"), TEXT("APR"), TEXT("MAY"), TEXT("JUN"), TEXT("JUL"), TEXT("AUG"), TEXT("SEP"), TEXT("OCT"), TEXT("NOV"), TEXT("DEC") };
+		const FDateTime Now = FDateTime::Now();
+		return FString::Printf(TEXT("%d %s"), Now.GetDay(), Months[FMath::Clamp(Now.GetMonth(), 1, 12) - 1]);
+	}
+
+	/** The bar's status fits by rule (night two V2): whole; else "N decisions waiting" says "N waiting"; else whole words with an
+	 *  ellipsis, never inside a word. */
+	FString BarFit(const FString& Status, const FSlateFontInfo& Font, float MaxW)
+	{
+		if (BpSheet::TextWidth(Status, Font) <= MaxW) return Status;
+		const FString Shorter = Status.Replace(TEXT(" decisions waiting"), TEXT(" waiting")).Replace(TEXT(" decision waiting"), TEXT(" waiting"));
+		return BpSheet::CutWords(Shorter, Font, MaxW);
+	}
+
 	TAutoConsoleVariable<int32> CVarConsole(TEXT("bp.Console"), 1, TEXT("The console (the main menu in the deck's slot): 1 shown (default), 0 hidden (a profiling baseline: its draw is the difference)."), ECVF_Default);
 
 	FString Percent(float Level) { return FString::Printf(TEXT("%d%%"), FMath::RoundToInt(Level * 100.f)); }
@@ -518,6 +538,8 @@ struct FBpConsolePages
 	{
 		const FBpLinkStatus& S = FBpLinkModule::Get().GetLinkStatus();
 		if (S.Pair == EBpPairState::Waiting) return FString::Printf(TEXT("Code %s · approve it on the PC"), *S.Code);
+		// Short by rule on the tile (night two V2): the long route words ("Not connected: showing the sample") stay on the page.
+		if (S.Route == EBpLinkRoute::None) return TEXT("Not connected · the sample");
 		return FString::Printf(TEXT("%s · %s"), *FBpLinkModule::RouteWords(S), S.Pair == EBpPairState::Paired ? TEXT("paired") : TEXT("not paired"));
 	}
 
@@ -537,6 +559,9 @@ struct FBpConsolePages
 		if (Pawn.LiveGrant()) return Pawn.StandupBarStatus();
 		const int32 Waiting = Plan(Pawn) ? Table(Pawn)->OpenDecisionCount() : 0;
 		if (!FBpLinkModule::Get().HasPcLink()) return TEXT("The sample morning · 3 decisions");
+		// The companion's requests pending on the PC count here too (night two V2).
+		const int32 Requests = Pawn.StandupPendingRequests();
+		if (Requests > 0) return FString::Printf(TEXT("%d %s · %d %s"), Waiting, Waiting == 1 ? TEXT("decision") : TEXT("decisions"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests"));
 		return Waiting > 0 ? FString::Printf(TEXT("The morning · %d %s waiting"), Waiting, Waiting == 1 ? TEXT("decision") : TEXT("decisions")) : FString(TEXT("The morning · nothing waiting"));
 	}
 
@@ -564,6 +589,16 @@ struct FBpConsolePages
 			Row.Tone = 2;
 			Out.Add(Row);
 		}
+		// The page's free space: talking, drawn (night two V2), when the rows leave room for it.
+		if (Out.Num() < ABpPawn::ConsoleRowsPerPage - 1)
+		{
+			FBpConsoleRow Hint;
+			Hint.Tone = 6;
+			Hint.Label = TEXT("Or ask in your own words");
+			Hint.Detail = ABpTable::TalkConsent() == 1 ? FString(TEXT("Hold X, or pinch and hold the lamp, and speak. Let go to send.")) : FString(TEXT("Talking to the lamp is off: SETTINGS › TALK turns it on."));
+			Hint.Tag = TEXT("2");
+			Out.Add(Hint);
+		}
 	}
 	static FString AskSummary(ABpPawn& Pawn)
 	{
@@ -583,7 +618,14 @@ struct FBpConsolePages
 		if (Onboarding.Products.Num() == 0)
 		{
 			Sub = FString::Printf(TEXT("%s open%s"), *Link.NameOf(Open), Link.IsFromBundle() ? TEXT(" · the sample") : TEXT(""));
-			Out.Add(Note(Link.IsFromBundle() ? FString(TEXT("Offline: this build carries one sample project. Your PC lists your real ones once it is linked (PC LINK).")) : FString(TEXT("Reading the projects…"))));
+			if (!Link.IsFromBundle()) { Out.Add(Note(TEXT("Reading the projects…"))); return; }
+			FBpConsoleRow Empty;
+			Empty.Tone = 6;
+			Empty.Label = TEXT("One sample project on this headset");
+			Empty.Detail = TEXT("Your real projects are listed here once this headset is linked to your PC.");
+			Empty.Tag = TEXT("1");
+			Empty.Buttons = { { TEXT("OPEN PC LINK"), TEXT("open:link"), true } };
+			Out.Add(Empty);
 			return;
 		}
 		TArray<const FBpProductEntry*> Order;
@@ -626,7 +668,17 @@ struct FBpConsolePages
 		FString Key;
 		const FBpWave* Wave = Pawn.PackagesState(Rows, bDraft, Key);
 		Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString(TEXT("No wave yet"));
-		if (Rows.Num() == 0) { Out.Add(Note(TEXT("No draft yet. Approve a decision to start one."))); return; }
+		if (Rows.Num() == 0)
+		{
+			FBpConsoleRow Empty;
+			Empty.Tone = 6;
+			Empty.Label = TEXT("No packages yet");
+			Empty.Detail = TEXT("A draft starts when you approve a decision. The stand-up brings this morning's.");
+			Empty.Tag = TEXT("0");
+			Empty.Buttons = { { TEXT("START THE STAND-UP"), TEXT("open:standup"), true } };
+			Out.Add(Empty);
+			return;
+		}
 		for (const ABpPawn::FPackageRow& R : Rows)
 		{
 			FBpConsoleRow Row;
@@ -759,16 +811,18 @@ void ABpPawn::PlaceConsole()
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
 	const bool bRoom = !Table->GetRoomModeId().IsEmpty();
-	const FString Key = FString::Printf(TEXT("%d%d"), bConsoleOpen, bRoom);
+	// The panel: a page open, or the conversation with the lamp (night two V2) filling it.
+	const bool bPanel = bConsoleOpen || bConsoleTalk;
+	const FString Key = FString::Printf(TEXT("%d%d%d"), bConsoleOpen, bConsoleTalk, bRoom);
 	// The draw size follows what it shows (the bar's or the panel's), at ConsolePxPerCm.
-	const float HeightCm = bConsoleOpen ? ConsoleHeightCm : ConsoleBarHeightCm;
+	const float HeightCm = bPanel ? ConsoleHeightCm : ConsoleBarHeightCm;
 	const FVector2D Draw(FMath::RoundToInt(ConsoleWidthCm * ConsolePxPerCm), FMath::RoundToInt(HeightCm * ConsolePxPerCm));
 	if (ConsolePanel->GetDrawSize() != Draw) ConsolePanel->SetDrawSize(Draw);
-	ConsoleLayout = FVector2f(LW, bConsoleOpen ? LH : BarLH);
+	ConsoleLayout = FVector2f(LW, bPanel ? LH : BarLH);
 	const FTransform Slot = Table->ConsoleSlotPose();
 	const FVector Up = Slot.GetRotation().GetUpVector();
 	FVector At = Slot.GetLocation();
-	if (!bConsoleOpen)
+	if (!bPanel)
 	{
 		// The site plan: along the slot's top edge, the plan below it clear. Room mode: under the deck, clear of its screens.
 		At += bRoom ? -Up * (ABpTable::DeckHeightCm * 0.5f + ConsoleBarGapCm + ConsoleBarHeightCm * 0.5f) : Up * (ABpTable::DeckHeightCm * 0.5f - ConsoleBarHeightCm * 0.5f);
@@ -776,13 +830,19 @@ void ABpPawn::PlaceConsole()
 	const FVector Eye = Table->ConsoleEyeLocal();
 	ConsolePanel->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / ConsolePxPerCm)));
 	// The deck gives the slot to the open console in room mode, and has it back when it closes.
-	Table->SetDeckHeld(bConsoleOpen && bRoom);
+	Table->SetDeckHeld(bPanel && bRoom);
 	if (Key != ConsolePlaceKey)
 	{
 		ConsolePlaceKey = Key;
-		UE_LOG(LogBpTable, Log, TEXT("BpConsole: %s %s (%.0f x %.1f cm, %.0f cm from the eye)"), bConsoleOpen ? TEXT("panel") : TEXT("bar"),
-			bConsoleOpen ? TEXT("in the deck's slot") : bRoom ? TEXT("under the deck") : TEXT("along the slot's top edge"), ConsoleWidthCm, HeightCm, FVector::Dist(Eye, At));
+		UE_LOG(LogBpTable, Log, TEXT("BpConsole: %s %s (%.0f x %.1f cm, %.0f cm from the eye)"), bConsoleTalk && !bConsoleOpen ? TEXT("conversation") : bPanel ? TEXT("panel") : TEXT("bar"),
+			bPanel ? TEXT("in the deck's slot") : bRoom ? TEXT("under the deck") : TEXT("along the slot's top edge"), ConsoleWidthCm, HeightCm, FVector::Dist(Eye, At));
 	}
+}
+
+bool ABpPawn::ConsoleShowsTalk() const
+{
+	// The stand-up and the consent sheet keep the panel (a card a spoken request raised takes the conversation's place).
+	return CVarTalkSheet.GetValueOnGameThread() != 0 && !(bConsoleOpen && (ConsolePageKey == TEXT("standup") || ConsolePageKey == TEXT("talk")));
 }
 
 void ABpPawn::TickConsoleLive()
@@ -827,6 +887,8 @@ void ABpPawn::OpenConsole(const FString& Page)
 		ConsolePageAt = 0;
 		ConsoleSel.Reset();
 		if (Found && Found->OnOpen) Found->OnOpen(*this);
+		// HOME's STAND-UP tile counts the companion's requests pending on the PC (one read, linked only).
+		if (Key == TEXT("home")) StandupPeekRequests();
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: open %s"), *ConsolePageKey);
 	PlaceConsole();
@@ -949,6 +1011,15 @@ void ABpPawn::RefreshConsole()
 	if (bConsoleOpen && !Page) Key += FBpConsolePages::LinkLine();
 	const bool bStandupPage = bConsoleOpen && Page && ConsolePageKey == TEXT("standup");
 	if (bStandupPage) Key += StandupKey();
+	// The conversation with the lamp (night two V2): while a talk's words are on show the panel is the conversation.
+	ABpTable::FTalkView Talk;
+	const bool bTalk = ConsoleShowsTalk() && Table->TalkView(Talk);
+	if (bTalk) Key += FString::Printf(TEXT("|talk|%s|%s|%s|%s|%d|%d"), *Talk.Word, *Talk.Heard, *Talk.Reply, *Talk.Line, FMath::RoundToInt(Talk.Level * 8.f), Talk.bSample);
+	if (bTalk != bConsoleTalk)
+	{
+		bConsoleTalk = bTalk;
+		PlaceConsole();
+	}
 	if (Key == ConsoleKey) return;
 	ConsoleKey = Key;
 	ConsoleBoxes.Reset();
@@ -960,10 +1031,15 @@ void ABpPawn::RefreshConsole()
 	};
 	const FSlateFontInfo LabelFont = Font(TEXT("Bold"), CapLabel), SmallFont = Font(TEXT("Regular"), CapSmall), SmallBold = Font(TEXT("Bold"), CapSmall);
 	enum class EBtn : uint8 { Fill, Edge, Amber };
+	// One control family (BpSheet's, night two V2): a quiet control is a step lighter than the sheet; the one a hand's ray or
+	// the pad is on is brighter still, and gets the amber edge drawn over everything at the end.
+	const FString PadLit = bConsolePadSel ? ConsoleSel : FString();
+	const auto IsLit = [&](const FString& Id) { return !Id.IsEmpty() && (Id == ConsoleHover || Id == PadLit); };
 	const auto Button = [&](const FBox2f& Box, const FString& Word, EBtn Look, const FString& Act, const FSlateFontInfo& WordFont)
 	{
-		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::PaperLo.CopyWithNewOpacity(0.45f);
-		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(0.8f) : FLinearColor::Transparent;
+		const bool bLit = IsLit(TEXT("console:") + Act);
+		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::RowFill(bLit);
+		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f) : FLinearColor::Transparent;
 		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : BpSheet::PaperLo;
 		Put(Box, SNew(SOverlay)
 			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
@@ -974,7 +1050,11 @@ void ABpPawn::RefreshConsole()
 		ConsoleBoxes.Add({ TEXT("console:") + Act, Box });
 	};
 
-	if (!bConsoleOpen)
+	if (bTalk)
+	{
+		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample);
+	}
+	else if (!bConsoleOpen)
 	{
 		// The bar: MENU, the product and the status, YOUR ROOM / STUDIO, BACK.
 		const float Y0 = 12.f, Y1 = BarLH - 12.f;
@@ -998,7 +1078,7 @@ void ABpPawn::RefreshConsole()
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Name)).Font(NameFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18.f, 0.f)[SNew(SBox).WidthOverride(2.f).HeightOverride(BarLH * 0.5f)[SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f))]]
-			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Status, StatusFont, TextW - NameW - 40.f))).Font(StatusFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))]);
+			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BarFit(Status, StatusFont, TextW - NameW - 40.f))).Font(StatusFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))]);
 	}
 	else
 	{
@@ -1012,7 +1092,23 @@ void ABpPawn::RefreshConsole()
 		}
 		Button(FBox2f(FVector2f(LW - Pad - 190.f, HeadY0), FVector2f(LW - Pad, HeadY1)), TEXT("CLOSE"), EBtn::Edge, TEXT("close"), LabelFont);
 		const FSlateFontInfo TitleFont = Font(TEXT("Bold"), CapTitle);
-		Put(FBox2f(FVector2f(TitleX, HeadY0), FVector2f(LW - Pad - 210.f, HeadY1)),
+		// The title block on every sheet (night two V2), the stand-up's own aside: the sheet's number, the product, SAMPLE or the
+		// date, between the title and CLOSE, so the set reads as one.
+		float TitleX1 = LW - Pad - 210.f;
+		if (!bStandupPage && ConsolePageKey != TEXT("talk"))
+		{
+			const FString No = FString::Printf(TEXT("%s-%02d"), Page ? Page->Letter : TEXT("M"), Page ? ConsolePageAt + 1 : 0);
+			const FString Proj = Product.ToUpper() + TEXT(" · ") + (Link.HasPcLink() ? DayWord() : FString(TEXT("SAMPLE")));
+			const FSlateFontInfo BlockBold = Font(TEXT("Bold"), CapSmall);
+			const float NoW = BpSheet::TextWidth(No, BlockBold), ProjW = FMath::Min(300.f, BpSheet::TextWidth(Proj, SmallFont));
+			const FBox2f Block(FVector2f(LW - Pad - 210.f - NoW - ProjW - 62.f, HeadY0 + 11.f), FVector2f(LW - Pad - 210.f, HeadY1 - 11.f));
+			Put(Block, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.5f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
+			Put(FBox2f(FVector2f(Block.Min.X + NoW + 28.f, Block.Min.Y + 8.f), FVector2f(Block.Min.X + NoW + 30.f, Block.Max.Y - 8.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f)));
+			Put(FBox2f(Block.Min + FVector2f(14.f, 0.f), FVector2f(Block.Min.X + NoW + 20.f, Block.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(No)).Font(BlockBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
+			Put(FBox2f(FVector2f(Block.Min.X + NoW + 44.f, Block.Min.Y), Block.Max - FVector2f(10.f, 0.f)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Proj, SmallFont, ProjW))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]);
+			TitleX1 = Block.Min.X - 16.f;
+		}
+		Put(FBox2f(FVector2f(TitleX, HeadY0), FVector2f(TitleX1, HeadY1)),
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)[BpSheet::Bubble(Page ? Page->Letter : TEXT("M"), Font(TEXT("Bold"), 20.f), 44.f, BpSheet::Accent)]
 			+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Title)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
@@ -1032,7 +1128,7 @@ void ABpPawn::RefreshConsole()
 				const FBpConsolePage& Each = Registry[Index];
 				const float X0 = Pad + (Index % 2) * (TileW + Gap), Y0 = Top + (Index / 2) * (TileH + Gap);
 				const FBox2f Box(FVector2f(X0, Y0), FVector2f(X0 + TileW, Y0 + TileH));
-				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.35f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.45f)).EdgePx(2.f));
+				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(IsLit(FString::Printf(TEXT("console:open:%s"), Each.Key)))).Edge(BpSheet::RowEdge(false)).EdgePx(2.f));
 				Put(FBox2f(Box.Min + FVector2f(22.f, 0.f), Box.Max - FVector2f(18.f, 0.f)),
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 18.f, 0.f)[BpSheet::Bubble(Each.Letter, Font(TEXT("Bold"), 18.f), 40.f, BpSheet::Accent)]
@@ -1040,7 +1136,7 @@ void ABpPawn::RefreshConsole()
 					[
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(Each.Title)).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Summaries[Index], SmallFont, TileW - 110.f))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Summaries[Index], SmallFont, TileW - 140.f))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f)))]
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(TEXT("›"))).Font(Font(TEXT("Bold"), 34.f)).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
 				ConsoleBoxes.Add({ FString::Printf(TEXT("console:open:%s"), Each.Key), Box });
@@ -1055,6 +1151,37 @@ void ABpPawn::RefreshConsole()
 					[
 						SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(FBpConsolePages::LinkLine(), SmallFont, TileW - 30.f, 2))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.75f)))
 					]);
+			}
+		}
+		else if (Page && ConsolePageKey == TEXT("talk") && Rows.Num() >= 4)
+		{
+			// The consent sheet, designed (night two V2): the one sentence about the cloud service is the thing to read; ALLOW
+			// and NOT NOW are the largest controls on it.
+			const FBpConsoleRow& Choice = Rows[3];
+			Put(FBox2f(FVector2f(Pad + 20.f, 160.f), FVector2f(LW - Pad, 196.f)), SNew(STextBlock).Text(FText::FromString(TEXT("BEFORE YOU TALK TO THE LAMP"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber)));
+			const FSlateFontInfo ReadFont = Font(TEXT("Bold"), 32.f);
+			const FString Cloud = BpSheet::Wrap(Rows[1].Label, ReadFont, LW - 2.f * Pad - 40.f, 3);
+			const float CloudH = LineCount(Cloud) * Pitch(32.f);
+			Put(FBox2f(FVector2f(Pad + 20.f, 198.f), FVector2f(LW - Pad, 202.f + CloudH)), SNew(STextBlock).Text(FText::FromString(Cloud)).Font(ReadFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+			float Y = 216.f + CloudH;
+			for (const int32 At : { 0, 2 })
+			{
+				const FString Fit = BpSheet::Wrap(Rows[At].Label, SmallFont, LW - 2.f * Pad - 80.f, 2);
+				const float H = LineCount(Fit) * Pitch(CapSmall);
+				Put(FBox2f(FVector2f(Pad + 22.f, Y + Pitch(CapSmall) * 0.5f - 6.f), FVector2f(Pad + 34.f, Y + Pitch(CapSmall) * 0.5f + 6.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
+				Put(FBox2f(FVector2f(Pad + 52.f, Y), FVector2f(LW - Pad, Y + H + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+				Y += H + 8.f;
+			}
+			Put(FBox2f(FVector2f(Pad, 588.f), FVector2f(LW - Pad, 590.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.35f)));
+			Put(FBox2f(FVector2f(Pad + 20.f, 604.f), FVector2f(660.f, 642.f)), SNew(STextBlock).Text(FText::FromString(Choice.Label)).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+			Put(FBox2f(FVector2f(Pad + 20.f, 648.f), FVector2f(660.f, 690.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Choice.Detail, SmallFont, 600.f))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.75f))));
+			float Right = LW - Pad;
+			for (int32 B = Choice.Buttons.Num() - 1; B >= 0; --B)
+			{
+				const FBpConsoleRow::FButton& Each = Choice.Buttons[B];
+				const float W = Each.bPrimary ? 300.f : 250.f;
+				Button(FBox2f(FVector2f(Right - W, 602.f), FVector2f(Right, 692.f)), Each.Word, Each.bPrimary ? EBtn::Amber : EBtn::Edge, Each.Act, Font(TEXT("Bold"), 34.f));
+				Right -= W + 20.f;
 			}
 		}
 		else if (bStandupPage)
@@ -1074,6 +1201,36 @@ void ABpPawn::RefreshConsole()
 				const FBpConsoleRow& Row = Rows[At];
 				const float Y0 = RowsY0 + Index * (RowH + RowGap);
 				const FBox2f Box(FVector2f(Pad, Y0), FVector2f(LW - Pad, Y0 + RowH));
+				if (Row.Tone == 6)
+				{
+					// An empty page, composed (night two V2): a headline, one line of why, the one action that fixes it, and a
+					// quiet drawing in the sheet's own lines filling the space. It takes the rest of the page.
+					const float AreaY1 = Pages > 1 ? PagerY0 - 12.f : LH - 26.f;
+					const FBox2f Area(FVector2f(Pad, Y0), FVector2f(LW - Pad, AreaY1));
+					const float Tall = Area.GetSize().Y, MotifS = FMath::Min(Tall - 16.f, 420.f);
+					Put(FBox2f(FVector2f(Area.Max.X - MotifS - 30.f, Area.Min.Y + (Tall - MotifS) * 0.5f), FVector2f(Area.Max.X - 30.f, Area.Min.Y + (Tall + MotifS) * 0.5f)), SNew(BpSheet::SMotif).Kind(FCString::Atoi(*Row.Tag)));
+					const float TX0 = Area.Min.X + 24.f, TX1 = Area.Max.X - MotifS - 70.f;
+					const float HeadCap = Tall > 300.f ? CapTitle : CapLabel;
+					const FSlateFontInfo HeadF = Font(TEXT("Bold"), HeadCap), WhyF = Font(TEXT("Regular"), CapLabel);
+					const FString HeadFit = BpSheet::Wrap(Row.Label, HeadF, TX1 - TX0, 2), WhyFit = BpSheet::Wrap(Row.Detail, WhyF, TX1 - TX0, 3);
+					const float HeadH = LineCount(HeadFit) * Pitch(HeadCap), WhyH = LineCount(WhyFit) * Pitch(CapLabel);
+					const float BtnH = Row.Buttons.Num() > 0 ? 84.f : 0.f;
+					const float BlockH = HeadH + 14.f + WhyH + (BtnH > 0.f ? 30.f + BtnH : 0.f);
+					float TY = Area.Min.Y + FMath::Max(10.f, (Tall - BlockH) * 0.5f);
+					Put(FBox2f(FVector2f(TX0 - 24.f, TY), FVector2f(TX0 - 18.f, TY + HeadH + 14.f + WhyH)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent.CopyWithNewOpacity(0.8f)));
+					Put(FBox2f(FVector2f(TX0, TY), FVector2f(TX1, TY + HeadH + 4.f)), SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(HeadF).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+					TY += HeadH + 14.f;
+					Put(FBox2f(FVector2f(TX0, TY), FVector2f(TX1, TY + WhyH + 4.f)), SNew(STextBlock).Text(FText::FromString(WhyFit)).Font(WhyF).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+					TY += WhyH + 30.f;
+					if (Row.Buttons.Num() > 0)
+					{
+						const FBpConsoleRow::FButton& Fix = Row.Buttons[0];
+						const FSlateFontInfo FixFont = Font(TEXT("Bold"), 32.f);
+						const float W = BpSheet::TextWidth(Fix.Word, FixFont) + 72.f;
+						Button(FBox2f(FVector2f(TX0, TY), FVector2f(TX0 + W, TY + BtnH)), Fix.Word, EBtn::Amber, Fix.Act, FixFont);
+					}
+					break;
+				}
 				if (Row.Tone == 5)
 				{
 					// The pairing code (PC LINK): six characters, large and spaced, on an amber plate the owner reads from across
@@ -1100,8 +1257,10 @@ void ABpPawn::RefreshConsole()
 					continue;
 				}
 				const FLinearColor ToneInk = Row.Tone == 1 ? BpSheet::Accent : Row.Tone == 2 ? BpSheet::Amber : Row.Tone == 3 ? BpSheet::Red : BpSheet::Ink.CopyWithNewOpacity(0.85f);
-				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(Row.Tone == 1 ? 0.6f : 0.35f)).Edge(Row.Tone == 0 ? BpSheet::Ink.CopyWithNewOpacity(0.42f) : ToneInk.CopyWithNewOpacity(0.8f)).EdgePx(2.f)
-					.Bar(Row.Tone == 1 ? BpSheet::Accent : FLinearColor::Transparent).BarPx(8.f));
+				// The row: a step lighter than the sheet, brighter under the focus; its tone a bar down its left edge.
+				const bool bRowLit = !Row.Act.IsEmpty() && IsLit(TEXT("console:") + Row.Act);
+				Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(bRowLit)).Edge(Row.Tone == 0 ? BpSheet::RowEdge(false) : ToneInk.CopyWithNewOpacity(0.55f)).EdgePx(2.f)
+					.Bar(Row.Tone == 0 ? FLinearColor::Transparent : ToneInk).BarPx(8.f));
 				// The buttons at the right, then the tag left of them; the words take the rest.
 				float Right = Box.Max.X - 12.f;
 				for (int32 B = Row.Buttons.Num() - 1; B >= 0; --B)
@@ -1114,20 +1273,18 @@ void ABpPawn::RefreshConsole()
 				}
 				if (!Row.Tag.IsEmpty())
 				{
-					const FString Tag = BpSheet::Cut(Row.Tag, SmallBold, 380.f);
-					const float TagW = BpSheet::TextWidth(Tag, SmallBold);
-					Put(FBox2f(FVector2f(Right - TagW - 14.f, Box.Min.Y), FVector2f(Right - 6.f, Box.Max.Y)), SNew(SBox).VAlign(VAlign_Center).HAlign(HAlign_Right)
-						[
-							SNew(STextBlock).Text(FText::FromString(Tag)).Font(SmallBold).ColorAndOpacity(FSlateColor(Row.Tone == 0 ? BpSheet::Accent : ToneInk))
-						]);
-					Right -= TagW + 32.f;
+					// The value or state: one chip design at the right (OPEN counts, FOCUS, OFFLINE, 100 %).
+					const FString Tag = BpSheet::CutWords(Row.Tag, SmallBold, 360.f);
+					const float TagW = BpSheet::ChipWidth(Tag, SmallBold);
+					Put(FBox2f(FVector2f(Right - TagW - 6.f, Box.Min.Y + 25.f), FVector2f(Right - 6.f, Box.Max.Y - 25.f)), BpSheet::Chip(Tag, SmallBold, 42.f, Row.Tone == 0 ? BpSheet::Accent : ToneInk));
+					Right -= TagW + 24.f;
 				}
-				const float TextX = Box.Min.X + (Row.Tone == 1 ? 32.f : 24.f), TextW = Right - TextX;
+				const float TextX = Box.Min.X + (Row.Tone == 0 ? 24.f : 32.f), TextW = Right - TextX;
 				TSharedRef<SVerticalBox> Words = SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Row.Label, LabelFont, TextW))).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
+					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Label, LabelFont, TextW))).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))];
 				if (!Row.Detail.IsEmpty())
 				{
-					Words->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Row.Detail, SmallFont, TextW))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))];
+					Words->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Row.Detail, SmallFont, TextW))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))];
 				}
 				Put(FBox2f(FVector2f(TextX, Box.Min.Y), FVector2f(Right, Box.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[Words]);
 				if (!Row.Act.IsEmpty()) ConsoleBoxes.Insert({ TEXT("console:") + Row.Act, Box }, RowsAt + RowsAdded++);
@@ -1150,23 +1307,23 @@ void ABpPawn::RefreshConsole()
 		if (Lit.IsEmpty()) continue;
 		if (const FConsoleBox* Box = ConsoleBoxes.FindByPredicate([&Lit](const FConsoleBox& Each) { return Each.Id == Lit; }))
 		{
-			Put(Box->Box.ExpandBy(5.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(6.f));
+			Put(Box->Box.ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
 		}
 	}
 	const float Scale = ConsolePxPerCm / ConsoleLayoutPxPerCm;
 	ConsolePanel->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(Scale)
 		[
-			SNew(SBox).WidthOverride(LW).HeightOverride(bConsoleOpen ? LH : BarLH)
+			SNew(SBox).WidthOverride(LW).HeightOverride(bConsoleOpen || bTalk ? LH : BarLH)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(bConsoleOpen ? 5.f : 4.f)]
+				+ SOverlay::Slot()[SNew(BpSheet::SSheet).GridPx(PX).RulePx(bConsoleOpen || bTalk ? 5.f : 4.f)]
 				+ SOverlay::Slot()[Canvas]
 			]
 		]);
 	ConsolePanel->RequestRenderUpdate();
 	++ConsoleDraws;
-	UE_LOG(LogBpTable, Log, TEXT("BpConsole: drawn #%d %s%s \"%s\" (%d controls)"), ConsoleDraws, bConsoleOpen ? TEXT("panel ") : TEXT("bar"), bConsoleOpen ? *GetConsoleLine() : TEXT(""), *Status, ConsoleBoxes.Num());
+	UE_LOG(LogBpTable, Log, TEXT("BpConsole: drawn #%d %s%s \"%s\" (%d controls)"), ConsoleDraws, bTalk ? TEXT("conversation ") : bConsoleOpen ? TEXT("panel ") : TEXT("bar"), bConsoleOpen ? *GetConsoleLine() : TEXT(""), *Status, ConsoleBoxes.Num());
 }
 
 // ---- The hands and the console's acts ----------------------------------------------------------------------------------
@@ -1251,6 +1408,9 @@ void ABpPawn::ConsoleTap(const FString& Id)
 		ShowOnPc();
 		return;
 	}
+	// The conversation's own controls (night two V2): STOP cancels the talk in flight, CLOSE clears the words at once.
+	if (Act == TEXT("talk:stop")) { if (Table) Table->TalkCancel(TEXT("the console")); return; }
+	if (Act == TEXT("talk:close")) { if (Table) Table->TalkDismiss(); return; }
 	const FBpConsolePage* Page = FBpConsolePages::Find(ConsolePageKey);
 	if (Page && Page->Tap && Page->Tap(*this, Act)) { RefreshConsole(); return; }
 	PanelAct(Act);
@@ -1349,4 +1509,105 @@ void ABpPawn::ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const
 	Add(TEXT("console label"), CapLabel);
 	Add(TEXT("console detail"), CapSmall);
 	Add(TEXT("console bar status"), CapBarStatus);
+}
+
+// ---- The conversation with the lamp (night two V2) -----------------------------------------------------------------------
+// The owner's device test, 2026-11-10: the lamp's caption was a small tilted box far left, on a pin tag, cut after two lines
+// while the voice went on for 23 s. Here the exchange fills the console's panel, readable from the seat: the words heard (a
+// mishearing is visible), the state (LISTENING with its level, THINKING, ANSWERING), and the reply whole, wrapped at the
+// console's text size. It clears itself bp.TalkLingerS after the voice ends, on CLOSE, or on B; a card the turn raised takes
+// its place as a decision sheet (StandupShowCompanionCards).
+
+void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample)
+{
+	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
+	{
+		Canvas->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
+	};
+	const FSlateFontInfo TitleFont = Font(TEXT("Bold"), CapTitle), LabelFont = Font(TEXT("Bold"), CapLabel), SmallFont = Font(TEXT("Regular"), CapSmall), SmallBold = Font(TEXT("Bold"), CapSmall);
+	const bool bListening = Word == TEXT("LISTENING") || Word == TEXT("MICROPHONE…");
+	const bool bInFlight = !Word.IsEmpty();
+	// The header: the lamp, drawn; THE LAMP; the state as a chip; STOP while it is in flight, else CLOSE.
+	Put(FBox2f(FVector2f(Pad - 6.f, HeadY0 - 6.f), FVector2f(Pad + 70.f, HeadY1 + 6.f)), SNew(BpSheet::SMotif).Kind(2));
+	Put(FBox2f(FVector2f(Pad + 84.f, HeadY0), FVector2f(Pad + 360.f, HeadY1)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(TEXT("THE LAMP"))).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+	const FString State = bInFlight ? Word : bSample ? FString(TEXT("SAMPLE")) : FString(TEXT("ANSWERED"));
+	const bool bAmber = bListening || State == TEXT("SAMPLE");
+	const bool bSolid = bListening || Word == TEXT("ANSWERING") || Word == TEXT("SAMPLE");
+	const float ChipX = Pad + 84.f + BpSheet::TextWidth(TEXT("THE LAMP"), TitleFont) + 24.f;
+	Put(FBox2f(FVector2f(ChipX, HeadY0 + 13.f), FVector2f(ChipX + BpSheet::ChipWidth(State, SmallBold), HeadY1 - 13.f)), BpSheet::Chip(State, SmallBold, 44.f, bAmber ? BpSheet::Amber : BpSheet::Accent, bSolid));
+	{
+		const FBox2f Box(FVector2f(LW - Pad - 190.f, HeadY0), FVector2f(LW - Pad, HeadY1));
+		const FString Act = bInFlight ? TEXT("console:talk:stop") : TEXT("console:talk:close");
+		const bool bLit = Act == ConsoleHover;
+		Put(Box, SNew(SOverlay)
+			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(bLit)).Edge(BpSheet::Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f)).EdgePx(2.5f)]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(bInFlight ? TEXT("STOP") : TEXT("CLOSE"))).Font(LabelFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+		ConsoleBoxes.Add({ Act, Box });
+	}
+	const FString Sub = bListening ? FString(TEXT("Speak now · let go to send · up to 30 s"))
+		: Word == TEXT("HEARING") ? FString(TEXT("Turning your words into text on your PC…"))
+		: Word == TEXT("THINKING") ? FString(TEXT("Your PC's companion is thinking · B or a pinch on the lamp cancels"))
+		: Word == TEXT("ANSWERING") ? FString(TEXT("Spoken aloud · B stops it · this clears itself after"))
+		: bSample ? FString(TEXT("A sample exchange: no microphone, nothing sent"))
+		: FString(TEXT("This clears itself in a moment · CLOSE clears it now"));
+	Put(FBox2f(FVector2f(Pad, SubY), FVector2f(LW - Pad, SubY + 44.f)), SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(Sub, SmallFont, LW - 2.f * Pad))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+	Put(FBox2f(FVector2f(Pad, SubY + 46.f), FVector2f(LW - Pad, SubY + 48.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+	const float X0 = Pad + 24.f, X1 = LW - Pad - 24.f;
+	float Y = 172.f;
+	if (bListening)
+	{
+		// Listening: the level as a row of cells, amber up to the voice's level (eight steps, one redraw a step).
+		Put(FBox2f(FVector2f(X0, 192.f), FVector2f(X1, 262.f)), SNew(STextBlock).Text(FText::FromString(Word == TEXT("LISTENING") ? TEXT("I am listening.") : TEXT("Opening the microphone…"))).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		const int32 Cells = 24, Lit = FMath::RoundToInt(FMath::Clamp(Level, 0.f, 1.f) * Cells);
+		const float Gap = 8.f, CellW = (X1 - X0 - Gap * (Cells - 1)) / Cells;
+		for (int32 I = 0; I < Cells; ++I)
+		{
+			const float CX = X0 + I * (CellW + Gap);
+			const float H = 40.f + 60.f * FMath::Sin(UE_PI * (I + 0.5f) / Cells);
+			Put(FBox2f(FVector2f(CX, 400.f - H), FVector2f(CX + CellW, 400.f)), SNew(BpSheet::SPlate).Fill(I < Lit ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.08f)).Edge(I < Lit ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.3f)).EdgePx(1.5f));
+		}
+		Put(FBox2f(FVector2f(X0, 440.f), FVector2f(X1, 490.f)), SNew(STextBlock).Text(FText::FromString(TEXT("Let go of X, the pinch or TALK to send what you said."))).Font(Font(TEXT("Regular"), CapLabel)).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
+		Put(FBox2f(FVector2f(X0, 500.f), FVector2f(X1, 540.f)), SNew(STextBlock).Text(FText::FromString(TEXT("Nothing is sent before you let go; nothing you say is kept."))).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.6f))));
+		return;
+	}
+	if (!Heard.IsEmpty())
+	{
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(TEXT("YOU SAID"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.65f))));
+		Y += 38.f;
+		const FString Said = BpSheet::Wrap(FString::Printf(TEXT("“%s”"), *Heard), TitleFont, X1 - X0, 2);
+		const float H = LineCount(Said) * Pitch(CapTitle);
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + H + 4.f)), SNew(STextBlock).Text(FText::FromString(Said)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		Y += H + 14.f;
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.3f)));
+		Y += 16.f;
+	}
+	Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("THE LAMP · SAMPLE") : TEXT("THE LAMP"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
+	Y += 40.f;
+	FString Body = !Reply.IsEmpty() ? Reply : Line;
+	if (Word == TEXT("THINKING")) Body = TEXT("Thinking…");
+	// A line of the lamp's own (no PC, a refusal): its first line is the headline, the rest under it.
+	if (Heard.IsEmpty() && Reply.IsEmpty())
+	{
+		FString First, Rest;
+		if (!Body.Split(TEXT("\n"), &First, &Rest)) { First = Body; Rest.Reset(); }
+		const FString HeadFit = BpSheet::Wrap(First, TitleFont, X1 - X0, 2);
+		const float H = LineCount(HeadFit) * Pitch(CapTitle);
+		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + H + 4.f)), SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		Y += H + 12.f;
+		Body = Rest;
+	}
+	if (Body.IsEmpty()) return;
+	// The reply whole, at the console's text size: 28 px while it fits, 24 px (the floor) when it is long.
+	const float Avail = LH - 30.f - Y;
+	const bool bQuiet = Word == TEXT("THINKING");
+	FSlateFontInfo BodyFont = Font(bQuiet ? TEXT("Bold") : TEXT("Regular"), bQuiet ? CapTitle : CapLabel);
+	float P = Pitch(bQuiet ? CapTitle : CapLabel);
+	FString Fit = BpSheet::Wrap(Body, BodyFont, X1 - X0, 0);
+	if (LineCount(Fit) * P > Avail)
+	{
+		BodyFont = Font(TEXT("Regular"), CapSmall);
+		P = Pitch(CapSmall);
+		Fit = BpSheet::Wrap(Body, BodyFont, X1 - X0, FMath::Max(1, FMath::FloorToInt(Avail / P)));
+	}
+	Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + LineCount(Fit) * P + 6.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(BodyFont).ColorAndOpacity(FSlateColor(bQuiet ? BpSheet::Ink.CopyWithNewOpacity(0.7f) : BpSheet::InkHi)));
 }

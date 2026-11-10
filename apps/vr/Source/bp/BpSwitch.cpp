@@ -528,6 +528,8 @@ void ABpTable::SayLamp(const FString& Line, bool bNotice)
 {
 	LampLine = Line;
 	bLampNotice = bNotice;
+	// A line that is not the talk's (BpTalk.cpp sets it again after this for its own): the lamp's box shows it.
+	bTalkCaption = false;
 	LampCaptionClock = FMath::Max(LampCaptionS, PendingSwitch.IsEmpty() ? 0.f : CVarLampSwitchDelayS.GetValueOnGameThread() + 1.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
 	if (LampCaption)
@@ -564,7 +566,8 @@ void ABpTable::ApplyLampWidgets()
 	const FVector Eye = EyeLocal();
 	if (LampCaption)
 	{
-		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice);
+		// The talk's lines read on the console's conversation sheet (night two V2), not in this box, while it shows them.
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice) && !(bTalkCaption && TalkOnConsole());
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
 		const FVector At(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm);
 		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / CaptionPxPerCm)));
@@ -697,6 +700,7 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 			LampLine.Reset();
 			bLampNotice = false;
 			LampLookTarget = 0.f;
+			if (bTalkCaption) { bTalkCaption = false; TalkCaptionEnded(); }
 			// The answer has had its time: its offer lapses, and the lamp goes back to rest.
 			if (LampOffer != ELampOffer::None) { ClearLampOffer(); LampNotifyAsk(); }
 			if (TourStep < 0 && (bLampAtStation || LampTravelT >= 0.f)) LampGoHome(TEXT("caption ended"));

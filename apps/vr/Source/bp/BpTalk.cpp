@@ -53,6 +53,8 @@ namespace
 	constexpr int32 SendRate = 16000;
 
 	TAutoConsoleVariable<int32> CVarTalk(TEXT("bp.Talk"), 1, TEXT("Talk to the lamp (BpTalk.cpp): 1 a hold on X, the lamp or the wrist's TALK talks; 0 off (the holds act as taps)."));
+	TAutoConsoleVariable<float> CVarTalkLingerS(TEXT("bp.TalkLingerS"), 6.f, TEXT("After the lamp's spoken reply ends, the conversation stays on the console this many seconds, then clears itself (1 to 30)."));
+	TAutoConsoleVariable<int32> CVarTalkSpokenMax(TEXT("bp.TalkSpokenMax"), 280, TEXT("The lamp speaks a reply's first sentences up to this many characters, cut at a sentence end (the caption keeps it whole; 80 to 1200)."));
 	TAutoConsoleVariable<float> CVarTalkLightGain(TEXT("bp.TalkLightGain"), 1.5f, TEXT("While listening the lamp's light rises by up to this share of its own intensity with the input level (0 to 4; 0: the light stays)."));
 
 	ABpPawn* TalkPawn(const UWorld* World)
@@ -112,6 +114,25 @@ namespace
 			Out[I] = static_cast<int16>(FMath::Clamp(FMath::RoundToInt(V * 32767.f), -32768, 32767));
 		}
 		return Out;
+	}
+
+	/** A reply's first sentences, at most Max characters, cut after a sentence's end (". ", "! ", "? "); one sentence longer
+	 *  than Max is cut at the last word before it. */
+	FString SpokenPart(const FString& Reply, int32 Max)
+	{
+		if (Reply.Len() <= Max) return Reply;
+		int32 Cut = INDEX_NONE;
+		for (int32 I = 0; I < Reply.Len() - 1 && I < Max; ++I)
+		{
+			const TCHAR C = Reply[I];
+			if ((C == TEXT('.') || C == TEXT('!') || C == TEXT('?')) && FChar::IsWhitespace(Reply[I + 1])) Cut = I + 1;
+		}
+		if (Cut == INDEX_NONE)
+		{
+			Cut = Reply.Left(Max).Find(TEXT(" "), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
+			return (Cut > 0 ? Reply.Left(Cut) : Reply.Left(Max)) + TEXT(".");
+		}
+		return Reply.Left(Cut);
 	}
 
 	FString ErrorOf(const FString& Body)
@@ -181,6 +202,14 @@ namespace
 			const FString V = Args.Num() > 0 ? Args[0] : FString();
 			ABpTable::SetTalkConsent(V == TEXT("allow") ? 1 : V == TEXT("notnow") ? 2 : 0);
 			if (ABpPawn* Pawn = TalkPawn(World)) Pawn->TalkChanged();
+		}));
+	FAutoConsoleCommandWithWorldAndArgs CmdTalkPreview(TEXT("BpTalk.Preview"), TEXT("BpTalk.Preview listening|thinking|answering [heard words | reply]: a still of the conversation for captures (no microphone, nothing sent or spoken); BpTalk.Cancel ends it."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const FString Step = Args.Num() > 0 ? Args[0] : FString(TEXT("answering"));
+			FString Heard, Reply;
+			if (!FString::Join(TArray<FString>(Args.GetData() + FMath::Min(1, Args.Num()), FMath::Max(0, Args.Num() - 1)), TEXT(" ")).Split(TEXT("|"), &Heard, &Reply)) Heard = TEXT("plan my day");
+			WithTalkTables(World, [&](ABpTable& T) { T.TalkPreview(Step, Heard.TrimStartAndEnd(), Reply.TrimStartAndEnd()); });
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkCancel(TEXT("BpTalk.Cancel"), TEXT("BpTalk.Cancel: what B or a pinch on the lamp does to a talk in flight."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithTalkTables(World, [](ABpTable& T) { T.TalkCancel(TEXT("console")); }); }));
@@ -320,8 +349,80 @@ void ABpTable::LogTalk() const
 void ABpTable::TalkSays(const FString& Line, float Seconds)
 {
 	SayLamp(Line, true);
+	bTalkCaption = true;
 	if (Seconds > 0.f) LampCaptionClock = Seconds;
+	ApplyLampWidgets();
 	if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
+}
+
+bool ABpTable::TalkOnConsole() const
+{
+	const ABpPawn* Pawn = TalkPawn(GetWorld());
+	return Pawn && Pawn->ConsoleShowsTalk();
+}
+
+void ABpTable::TalkCaptionEnded()
+{
+	if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
+}
+
+bool ABpTable::TalkView(FTalkView& Out) const
+{
+	if (!bTalkCaption || LampLine.IsEmpty() || LampCaptionClock <= 0.f) return false;
+	Out = FTalkView();
+	Out.Word = TalkStateWord();
+	FString Line = LampLine;
+	if (Line.StartsWith(TEXT("SAMPLE · "))) { Out.bSample = true; Line = Line.Mid(9); }
+	if (Talk.IsValid() && Talk->Step == FBpTalkState::EStep::Listening) Out.Level = FMath::Clamp(Talk->MeterShown / 8.f, 0.f, 1.f);
+	FString First, Rest;
+	if (!Line.Split(TEXT("\n"), &First, &Rest)) { First = Line; Rest.Reset(); }
+	if (First.StartsWith(TEXT("You: \"")))
+	{
+		// The words heard, whole (the caption carried 60 or 80 characters of them), so a mishearing is visible.
+		Out.Heard = Talk.IsValid() && !Talk->Heard.IsEmpty() ? Talk->Heard : First.Mid(6).LeftChop(1);
+		// The reply, whole (the caption carried 150 characters of it).
+		if (Talk.IsValid() && !Talk->Reply.IsEmpty() && !Rest.IsEmpty() && Talk->Reply.StartsWith(Rest.Left(20))) Rest = Talk->Reply;
+		Out.Reply = Rest;
+	}
+	else Out.Line = Line;
+	return true;
+}
+
+void ABpTable::TalkPreview(const FString& Step, const FString& Heard, const FString& Reply)
+{
+	if (!Talk.IsValid()) Talk = MakeShared<FBpTalkState>();
+	FBpTalkState& S = *Talk;
+	++S.Serial;
+	S.Heard = Heard;
+	S.Reply = Reply;
+	const FString You = FString::Printf(TEXT("You: \"%s\""), *Heard.Left(60));
+	UE_LOG(LogBpTable, Log, TEXT("BpTalk: preview %s (a still: no microphone, nothing sent)"), *Step);
+	if (Step == TEXT("listening"))
+	{
+		S.Step = FBpTalkState::EStep::Listening;
+		S.MeterShown = 5;
+		TalkSays(TEXT("LISTENING  ■■■■■□□□\nLet go to send · up to 30 s"), 60.f);
+	}
+	else if (Step == TEXT("thinking"))
+	{
+		S.Step = FBpTalkState::EStep::Thinking;
+		TalkSays(You + TEXT("\nThinking… B or a pinch on me cancels"), 60.f);
+	}
+	else
+	{
+		// Answering: held there (as if its voice were still being rendered) until BpTalk.Cancel.
+		S.Step = FBpTalkState::EStep::Speaking;
+		S.bAwaitSay = true;
+		TalkSays(You + TEXT("\n") + Reply.Left(150), 60.f);
+	}
+}
+
+void ABpTable::TalkDismiss()
+{
+	if (Talk.IsValid() && Talk->Step != FBpTalkState::EStep::Idle) TalkCancel(TEXT("the conversation's CLOSE"));
+	// The words leave on the next tick (the caption's clock ends them, the lamp turns back and goes home as after any line).
+	if (bTalkCaption && LampCaptionClock > 0.05f) LampCaptionClock = 0.05f;
+	SetActorTickInterval(0.f);
 }
 
 void ABpTable::TalkIdle()
@@ -569,7 +670,11 @@ bool ABpTable::TickTalk(float DeltaSeconds)
 			for (int32 I = 0; I < 8; ++I) Meter += I < Bars ? TEXT("■") : TEXT("□");
 			LampLine = FString::Printf(TEXT("LISTENING  %s\nLet go to send · up to 30 s"), *Meter);
 			SayLamp(LampLine, true);
+			bTalkCaption = true;
+			ApplyLampWidgets();
 			LampCaptionClock = 60.f;
+			// The console's level meter: one redraw per step of the eight (its key), only while listening.
+			if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
 		}
 		if (UPointLightComponent* Light = S.Light.Get(); Light && S.LightBase >= 0.f)
 		{
@@ -597,6 +702,9 @@ bool ABpTable::TickTalk(float DeltaSeconds)
 			const FString Act = S.SampleAct;
 			S.SampleAct.Reset();
 			S.Step = FBpTalkState::EStep::Idle;
+			// The voice ended: the exchange stays readable a little longer (bp.TalkLingerS), then clears itself. A reply that was
+			// never voiced keeps its reading time.
+			if (S.bSpoke && bTalkCaption) LampCaptionClock = FMath::Min(LampCaptionClock, FMath::Clamp(CVarTalkLingerS.GetValueOnGameThread(), 1.f, 30.f));
 			if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
 			UE_LOG(LogBpTable, Log, TEXT("BpTalk: the reply is done%s"), Act.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("; the sample acts: %s"), *Act));
 			if (Act == TEXT("next")) AskNextStep(TEXT("sample"));
@@ -708,7 +816,7 @@ void ABpTable::TalkTurn(const FString& Heard)
 	// The place as context: the room in view, else the lifted one, else the site.
 	const FString Target = DirectedTarget();
 	const FString Place = DirectedLabel(Target);
-	const FString Text = FString::Printf(TEXT("(Spoken aloud at the VR table; it shows %s%s on %s. Answer in two short spoken sentences.) %s"),
+	const FString Text = FString::Printf(TEXT("(Spoken aloud at the VR table; it shows %s%s on %s. Answer in at most two short spoken sentences, under 40 words, the most useful first; anything longer belongs on a card.) %s"),
 		Place.IsEmpty() ? TEXT("the site plan") : *Place, Target.IsEmpty() || Target == TEXT("site") ? TEXT("") : *FString::Printf(TEXT(" [%s]"), *Target), *Link.GetProductSlug(), *Heard);
 	TWeakObjectPtr<ABpTable> Self(this);
 	Link.PostCompanionTurn(Text, [Self, Serial](const FBpCompanionTurn& Turn)
@@ -765,7 +873,11 @@ void ABpTable::TalkSpeak(const FString& Reply)
 	const int32 Serial = S.Serial;
 	S.bAwaitSay = true;
 	TWeakObjectPtr<ABpTable> Self(this);
-	FBpLinkModule::Get().PostSay(Reply, [Self, Serial](int32 Status, const TArray<uint8>& Wav, const FString& Body)
+	// Spoken: the first sentences up to bp.TalkSpokenMax characters, cut at a sentence end (a 569-character reply was 23 s of
+	// voice on the device); the console's sheet keeps the reply whole.
+	const FString Spoken = SpokenPart(Reply, FMath::Clamp(CVarTalkSpokenMax.GetValueOnGameThread(), 80, 1200));
+	if (Spoken.Len() < Reply.Len()) UE_LOG(LogBpTable, Log, TEXT("BpTalk: speaking %d of the reply's %d characters (to a sentence end)"), Spoken.Len(), Reply.Len());
+	FBpLinkModule::Get().PostSay(Spoken, [Self, Serial](int32 Status, const TArray<uint8>& Wav, const FString& Body)
 	{
 		ABpTable* T = Self.Get();
 		if (T && T->Talk.IsValid()) T->Talk->bAwaitSay = false;

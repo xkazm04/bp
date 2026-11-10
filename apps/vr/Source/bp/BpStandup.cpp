@@ -109,6 +109,12 @@ struct FBpStandupState
 	/** A spoken request raised a pending card (BpTalk.cpp): once the morning is read, the pending cards are pulled in. */
 	bool bPullCards = false;
 	bool bTour = false;
+	/** The answer's stamp (night two V2): which answer it is for, when it began to land, the redraws while it lands. */
+	FString StampFor;
+	FString UnstampedShown;
+	double StampAt = -100.0;
+	int32 StampFrame = 0;
+	FTimerHandle StampTimer;
 };
 
 namespace
@@ -133,10 +139,13 @@ namespace
 	constexpr float Pad = 40.f;
 	/** The panel's double-rule wall takes its outer 14 px: the foot's buttons end clear of it. */
 	constexpr float StripY0 = 154.f, StripY1 = 161.f;
-	constexpr float FrameY0 = 170.f, FrameY1 = 584.f;
+	constexpr float FrameY0 = 170.f, FrameY1 = 568.f;
 	constexpr float InX = Pad + 26.f;
-	constexpr float StatusY0 = 588.f, StatusY1 = 632.f;
-	constexpr float BtnY0 = 636.f, BtnY1 = 692.f;
+	constexpr float StatusY0 = 572.f, StatusY1 = 612.f;
+	/** The answers are the sheet's largest controls (night two V2): 78 px tall; PREV and NEXT stand quieter inside the same band. */
+	constexpr float BtnY0 = 618.f, BtnY1 = 696.f;
+	/** The stamp lands in this long (a cut with bp.ReducedMotion). */
+	constexpr double StampS = 0.26;
 	constexpr float CapHead = 36.f, CapLabel = 28.f, CapSmall = 24.f;
 
 	FSlateFontInfo Font(const TCHAR* Style, float CapPx)
@@ -185,6 +194,7 @@ namespace
 		if (Tool == TEXT("finding.decline")) return TEXT("decline findings");
 		if (Tool == TEXT("scan.directed")) return TEXT("run directed scans");
 		if (Tool == TEXT("wave.dispatch")) return TEXT("dispatch waves to build");
+		if (Tool == TEXT("release.build")) return TEXT("build a draft release");
 		return Tool;
 	}
 
@@ -196,6 +206,57 @@ namespace
 		if (Verdict == BpVocab::SteerPost::Verdict::Decline) return TEXT("Declined");
 		return Verdict;
 	}
+
+	/** The companion's pending requests as last read from the PC (any read: the stand-up's, the spoken request's, HOME's), for
+	 *  the MENU's STAND-UP tile and the wrist while the page is closed. -1: never read. */
+	int32 GPendingRequests = -1;
+
+	/** The pending cards into the sheets (night two V2): new ones before the close card, in the order read (newest first);
+	 *  a companion sheet whose card is no longer pending and was not answered here drops out (answered elsewhere). The sheet
+	 *  shown stays shown, by its identity. Returns the sheet of the newest pending card (INDEX_NONE: none). */
+	int32 MergeCompanionCards(FBpStandupState& S, const TArray<FBpCompanionCard>& Cards)
+	{
+		const auto IdOf = [&S](const FBpStandupSheet& Sh) -> FString
+		{
+			if (Sh.Kind == FBpStandupSheet::EKind::Companion) return TEXT("c:") + Sh.Companion.Id;
+			if (Sh.Kind == FBpStandupSheet::EKind::Since) return TEXT("since");
+			return S.Deck.cards.IsValidIndex(Sh.Card) ? TEXT("d:") + S.Deck.cards[Sh.Card].id : FString();
+		};
+		const FString Shown = S.Sheets.IsValidIndex(S.At) ? IdOf(S.Sheets[S.At]) : FString();
+		TArray<const FBpCompanionCard*> Pending;
+		for (const FBpCompanionCard& Card : Cards) if (Card.State == TEXT("pending")) Pending.Add(&Card);
+		GPendingRequests = Pending.Num();
+		// Gone: answered elsewhere (or expired) and not here.
+		S.Sheets.RemoveAll([&](const FBpStandupSheet& Sh)
+		{
+			return Sh.Kind == FBpStandupSheet::EKind::Companion && !S.Answers.Contains(Sh.Companion.Id)
+				&& !Pending.ContainsByPredicate([&Sh](const FBpCompanionCard* C) { return C->Id == Sh.Companion.Id; });
+		});
+		int32 Newest = INDEX_NONE;
+		for (const FBpCompanionCard* Card : Pending)
+		{
+			int32 At = S.Sheets.IndexOfByPredicate([Card](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion && Sh.Companion.Id == Card->Id; });
+			if (At == INDEX_NONE)
+			{
+				FBpStandupSheet Sheet;
+				Sheet.Kind = FBpStandupSheet::EKind::Companion;
+				Sheet.Companion = *Card;
+				// Before the close card; after the requests already placed (the list is newest first, so the newest leads).
+				int32 Close = S.Sheets.IndexOfByPredicate([&S](const FBpStandupSheet& Sh) { return S.Deck.cards.IsValidIndex(Sh.Card) && S.Deck.cards[Sh.Card].kind == BpVocab::MorningCard::Kind::Close; });
+				At = S.Sheets.Insert(Sheet, Close == INDEX_NONE ? S.Sheets.Num() : Close);
+			}
+			else S.Sheets[At].Companion = *Card;
+			if (Newest == INDEX_NONE) Newest = At;
+		}
+		// Newest was taken before later inserts could move it: find it again by id.
+		if (Pending.Num() > 0) Newest = S.Sheets.IndexOfByPredicate([&](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion && Sh.Companion.Id == Pending[0]->Id; });
+		const int32 Back = Shown.IsEmpty() ? INDEX_NONE : S.Sheets.IndexOfByPredicate([&](const FBpStandupSheet& Sh) { return IdOf(Sh) == Shown; });
+		S.At = FMath::Clamp(Back != INDEX_NONE ? Back : S.At, 0, FMath::Max(0, S.Sheets.Num() - 1));
+		return Newest;
+	}
+
+	/** The companion's requests among the sheets. */
+	int32 CompanionSheets(const FBpStandupState& S) { return Algo::CountIf(S.Sheets, [](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion; }); }
 
 	ABpPawn* StandupPawn(UWorld* World)
 	{
@@ -407,7 +468,7 @@ void ABpPawn::StandupLoad()
 		Pawn->StandupBuildSheets();
 		// A read again (the close card's) keeps the card shown by its id.
 		const int32 Back = Keep.IsEmpty() ? INDEX_NONE : S.Sheets.IndexOfByPredicate([&S, &Keep](const FBpStandupSheet& Sh) { return S.Deck.cards.IsValidIndex(Sh.Card) && S.Deck.cards[Sh.Card].id == Keep; });
-		if (Back != INDEX_NONE) { S.At = Back; Pawn->RefreshConsole(); Pawn->DrawWrist(); return; }
+		if (Back != INDEX_NONE) { S.At = Back; Pawn->RefreshConsole(); Pawn->DrawWrist(); if (!S.bSample) Pawn->StandupReadCards(false); return; }
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the morning %s: %d cards, %d sheets, %d decisions%s"), S.bSample ? TEXT("(the sample)") : TEXT("from your PC"), S.Deck.cards.Num(), S.Sheets.Num(),
 			Algo::CountIf(S.Deck.cards, [](const FBpMorningCard& C) { return C.kind == BpVocab::MorningCard::Kind::Decision; }), S.Marks.Num() ? *FString::Printf(TEXT(", a replay of %d rooms"), S.Marks.Num()) : TEXT(""));
 		S.At = 0;
@@ -421,7 +482,9 @@ void ABpPawn::StandupLoad()
 			if (First != INDEX_NONE) S.At = First;
 		}
 		Pawn->StandupShowSheet();
+		// The companion's requests already pending on the PC are sheets too (before the close); a spoken request jumps to its own.
 		if (S.bPullCards) Pawn->StandupShowCompanionCards();
+		else if (!S.bSample) Pawn->StandupReadCards(false);
 	});
 	RefreshConsole();
 }
@@ -838,34 +901,52 @@ void ABpPawn::StandupShowCompanionCards()
 		return;
 	}
 	Standup->bPullCards = false;
+	StandupReadCards(true);
+}
+
+void ABpPawn::StandupReadCards(bool bJumpToNewest)
+{
+	if (!Standup.IsValid() || Standup->bSample || !FBpLinkModule::Get().HasPcLink()) return;
+	const TWeakObjectPtr<ABpPawn> Again(this);
+	const TWeakPtr<FBpStandupState> Weak = Standup;
+	FBpLinkModule::Get().GetCompanionCards([Again, Weak, bJumpToNewest](bool bOk, const TArray<FBpCompanionCard>& Cards)
+	{
+		ABpPawn* P = Again.Get();
+		const TSharedPtr<FBpStandupState> Pin = Weak.Pin();
+		if (!P || !Pin.IsValid() || P->Standup != Pin || !bOk) return;
+		FBpStandupState& St = *Pin;
+		const int32 WasAt = St.At, WasN = St.Sheets.Num();
+		// The newest pending card (the list is newest first) is the one a spoken request raised.
+		const int32 Newest = MergeCompanionCards(St, Cards);
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: %s: %d companion cards read, %d pending as sheets%s"), bJumpToNewest ? TEXT("a spoken request") : TEXT("the morning's requests"), Cards.Num(), CompanionSheets(St),
+			bJumpToNewest && Newest != INDEX_NONE ? *FString::Printf(TEXT(", showing sheet %d"), Newest + 1) : TEXT(""));
+		if (bJumpToNewest && Newest != INDEX_NONE) { St.At = Newest; P->StandupShowSheet(); }
+		else if (St.At != WasAt || St.Sheets.Num() != WasN) P->StandupShowSheet();
+		P->RefreshConsole();
+		P->DrawWrist();
+	});
+}
+
+int32 ABpPawn::StandupPendingRequests() const
+{
+	if (Standup.IsValid() && !Standup->bLoading && !Standup->bSample)
+	{
+		int32 N = 0;
+		for (const FBpStandupSheet& Sh : Standup->Sheets) N += Sh.Kind == FBpStandupSheet::EKind::Companion && !Standup->Answers.Contains(Sh.Companion.Id) ? 1 : 0;
+		return N;
+	}
+	return FBpLinkModule::Get().HasPcLink() ? FMath::Max(0, GPendingRequests) : 0;
+}
+
+void ABpPawn::StandupPeekRequests()
+{
+	if (FBpLinkModule::Get().IsFromBundle() || !FBpLinkModule::Get().HasPcLink()) return;
 	const TWeakObjectPtr<ABpPawn> Again(this);
 	FBpLinkModule::Get().GetCompanionCards([Again](bool bOk, const TArray<FBpCompanionCard>& Cards)
 	{
-		ABpPawn* P = Again.Get();
-		if (!P || !P->Standup.IsValid() || !bOk) return;
-		FBpStandupState& St = *P->Standup;
-		int32 First = INDEX_NONE;
-		for (const FBpCompanionCard& Card : Cards)
-		{
-			if (Card.State != TEXT("pending")) continue;
-			int32 At = St.Sheets.IndexOfByPredicate([&Card](const FBpStandupSheet& Sh) { return Sh.Kind == FBpStandupSheet::EKind::Companion && Sh.Companion.Id == Card.Id; });
-			if (At == INDEX_NONE)
-			{
-				FBpStandupSheet Sheet;
-				Sheet.Kind = FBpStandupSheet::EKind::Companion;
-				Sheet.Companion = Card;
-				At = St.Sheets.Add(Sheet);
-			}
-			// The newest pending card (the list is newest first) is the one the spoken request raised.
-			if (First == INDEX_NONE) First = At;
-		}
-		UE_LOG(LogBpTable, Log, TEXT("BpStandup: a spoken request: %d companion cards read, %s"), Cards.Num(), First == INDEX_NONE ? TEXT("none pending") : *FString::Printf(TEXT("showing sheet %d"), First + 1));
-		if (First != INDEX_NONE)
-		{
-			St.At = First;
-			P->StandupShowSheet();
-		}
-		P->RefreshConsole();
+		if (!bOk) return;
+		GPendingRequests = Algo::CountIf(Cards, [](const FBpCompanionCard& C) { return C.State == TEXT("pending"); });
+		if (ABpPawn* P = Again.Get()) { P->RefreshConsole(); P->DrawWrist(); }
 	});
 }
 
@@ -1308,6 +1389,15 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 			return true;
 		}
 	}
+	if (const int32 Requests = IsStandupOpen() ? 0 : StandupPendingRequests(); Requests > 0)
+	{
+		// The companion's requests waiting on the PC (night two V2): the wrist says so and opens the stand-up on them.
+		OutKicker = TEXT("THE COMPANION ASKS");
+		OutTitle = FString::Printf(TEXT("%d %s from the companion %s for you"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests"), Requests == 1 ? TEXT("waits") : TEXT("wait"));
+		OutWords = TEXT("The stand-up shows each one with APPROVE and DECLINE.");
+		OutButtons.Emplace(TEXT("STAND-UP"), TEXT("open:standup"));
+		return true;
+	}
 	if (const FBpPolicy* Grant = LiveGrant())
 	{
 		OutKicker = TEXT("HANDED OVER");
@@ -1327,6 +1417,8 @@ FString ABpPawn::StandupKey() const
 		static_cast<int32>(S.Plan), *S.PlanWords, *S.PlanText.Left(64), S.bConfirm, S.bGrantOut, *S.GrantWords, S.MarkAt);
 	for (const TPair<FString, FBpStandupAnswer>& Each : S.Answers) Key += FString::Printf(TEXT("|%s=%s%d%s"), *Each.Key, *Each.Value.Verdict, static_cast<int32>(Each.Value.State), *Each.Value.Words);
 	for (const FBpCardLine& Line : S.CloseLines) Key += TEXT("|c") + Line.text;
+	for (const FBpStandupSheet& Sh : S.Sheets) if (Sh.Kind == FBpStandupSheet::EKind::Companion) Key += TEXT("|r") + Sh.Companion.Id;
+	Key += FString::Printf(TEXT("|st%d"), S.StampFrame);
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	Key += FString::Printf(TEXT("|l%d%d|g%s"), Link.HasPcLink(), Link.CanDecide(), LiveGrant() ? *LiveGrant()->Id : TEXT(""));
 	return Key;
@@ -1340,7 +1432,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	{
 		Canvas->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
-	const FSlateFontInfo HeadFont = Font(TEXT("Bold"), CapHead), LabelFont = Font(TEXT("Bold"), CapLabel), SmallFont = Font(TEXT("Regular"), CapSmall), SmallBold = Font(TEXT("Bold"), CapSmall);
+	const FSlateFontInfo HeadFont = Font(TEXT("Bold"), CapHead), LabelFont = Font(TEXT("Bold"), CapLabel), SmallFont = Font(TEXT("Regular"), CapSmall), SmallBold = Font(TEXT("Bold"), CapSmall), AnswerFont = Font(TEXT("Bold"), 32.f);
 	const auto Text = [&](const FBox2f& Box, const FString& Words, const FSlateFontInfo& WordFont, const FLinearColor& Ink, int32 MaxLines = 1, EVerticalAlignment V = VAlign_Top)
 	{
 		const FString Fit = MaxLines <= 1 ? BpSheet::Cut(Words, WordFont, Box.GetSize().X) : BpSheet::Wrap(Words, WordFont, Box.GetSize().X, MaxLines);
@@ -1350,16 +1442,19 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	struct FItem { FString Words; FLinearColor Ink; };
 	const auto LineCount = [](const FString& Wrapped) { int32 N = 1; for (const TCHAR C : Wrapped) N += C == TEXT('\n') ? 1 : 0; return Wrapped.IsEmpty() ? 0 : N; };
 	enum class EBtn : uint8 { Fill, Edge, Amber, Off };
+	const FString PadLit = bConsolePadSel ? ConsoleSel : FString();
 	const auto Button = [&](const FBox2f& Box, const FString& Word, EBtn Look, const FString& Act)
 	{
-		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : BpSheet::PaperLo.CopyWithNewOpacity(Look == EBtn::Off ? 0.25f : 0.45f);
-		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(0.8f) : Look == EBtn::Off ? BpSheet::Ink.CopyWithNewOpacity(0.28f) : FLinearColor::Transparent;
-		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : Look == EBtn::Off ? BpSheet::Ink.CopyWithNewOpacity(0.42f) : BpSheet::PaperLo;
+		// One control family (BpSheet's): the quiet button a step lighter than the sheet, brighter under a hand or the pad.
+		const bool bLit = !Act.IsEmpty() && (TEXT("console:") + Act == ConsoleHover || TEXT("console:") + Act == PadLit);
+		const FLinearColor Fill = Look == EBtn::Fill ? BpSheet::Accent : Look == EBtn::Amber ? BpSheet::Amber : Look == EBtn::Off ? FLinearColor::Transparent : BpSheet::RowFill(bLit);
+		const FLinearColor Edge = Look == EBtn::Edge ? BpSheet::Ink.CopyWithNewOpacity(bLit ? 1.f : 0.7f) : Look == EBtn::Off ? BpSheet::OffEdge() : FLinearColor::Transparent;
+		const FLinearColor Ink = Look == EBtn::Edge ? BpSheet::InkHi : Look == EBtn::Off ? BpSheet::OffInk() : BpSheet::PaperLo;
 		Put(Box, SNew(SOverlay)
 			+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(Fill).Edge(Edge).EdgePx(2.5f)]
 			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Word, LabelFont, Box.GetSize().X - 20.f))).Font(LabelFont).ColorAndOpacity(FSlateColor(Ink))
+				SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(Word, Box.GetSize().Y >= 70.f ? AnswerFont : LabelFont, Box.GetSize().X - 20.f))).Font(Box.GetSize().Y >= 70.f ? AnswerFont : LabelFont).ColorAndOpacity(FSlateColor(Ink))
 			]);
 		// A control that cannot act now is drawn, never pressed (no box: neither a hand nor the pad lands on it).
 		if (Look != EBtn::Off && !Act.IsEmpty()) ConsoleBoxes.Add({ TEXT("console:") + Act, Box });
@@ -1456,9 +1551,9 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	FString Status;
 	FLinearColor StatusInk = BpSheet::Ink.CopyWithNewOpacity(0.85f);
 	TArray<FRowButton> Buttons;
-	const FRowButton Prev = { TEXT("‹  PREV"), S.At > 0 ? EBtn::Edge : EBtn::Off, TEXT("standup:prev"), 170.f };
+	const FRowButton Prev = { TEXT("‹  PREV"), S.At > 0 ? EBtn::Edge : EBtn::Off, TEXT("standup:prev"), 150.f };
 	const bool bLast = S.At >= S.Sheets.Num() - 1;
-	const FRowButton Next = { TEXT("NEXT  ›"), bLast ? EBtn::Off : EBtn::Fill, TEXT("standup:next"), 170.f };
+	const FRowButton Next = { TEXT("NEXT  ›"), bLast ? EBtn::Off : EBtn::Fill, TEXT("standup:next"), 150.f };
 	bool bPager = true;
 
 	if (Sheet.Kind == FBpStandupSheet::EKind::Since)
@@ -1483,129 +1578,208 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	}
 	else if (bDecision)
 	{
-		// The decision as a sheet: the words left, the finding's screen right, the answers along the foot. With no screen to show
-		// (a companion card, a finding nobody captured) the words take the width.
+		// The decision as a sheet (night two V2: the product's money shot). The title and the one line of consequence lead; the
+		// finding's screen takes the sheet's right half, large enough to read as a screen; the answers are the largest controls on
+		// the sheet, APPROVE the primary; the answer taken lands as a stamp. A companion's card is the same family told apart: a
+		// cyan rule down its left (the system's colour), "THE COMPANION ASKS", a human sentence first and its raw ids set small.
 		const bool bScreen = !bCompanion && (S.ShotBrush.IsValid() || S.bShotLoading);
-		const float ColX1 = bScreen ? Pad + 640.f : TextX1;
+		const float ColX1 = bScreen ? Pad + 556.f : bCompanion ? TextX1 - 330.f : TextX1;
 		const FBpCardDecision* D = Card ? &Card->decision : nullptr;
 		const bool bStop = D && Card->tone == BpVocab::MorningCard::Tone::Bad;
 		// The generated tier reads an absent one as 0: the deck's own second line says "Untiered" when it has none.
 		const bool bTiered = D && Card->lines.Num() > 1 && !Card->lines[1].text.StartsWith(TEXT("Untiered"));
 		const FString Tier = bTiered ? BpWords::TierSays(D->tier) : FString();
-		FString Kicker = bCompanion ? FString::Printf(TEXT("THE COMPANION ASKS · %s"), *Sheet.Companion.Tool.ToUpper()) : FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
+		if (bCompanion)
+		{
+			Put(FBox2f(Frame.Min, FVector2f(Frame.Min.X + 8.f, Frame.Max.Y)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
+		}
+		FString Kicker = bCompanion ? FString(TEXT("THE COMPANION ASKS")) : FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
 		if (Card && Card->news) Kicker += TEXT(" · NEW");
-		// Where it is, on the kicker: the deck's first line ("1 of 3 · Kettle · Memberships & Payments") without its count.
+		// Where it is, on the kicker when it fits whole (the plan raises the room as well): the deck's first line without its count.
 		if (Card && Card->lines.Num() > 0)
 		{
 			FString Where = Card->lines[0].text;
 			Where.Split(TEXT(" · "), nullptr, &Where);
 			// One product on the deck: its name is the title block's, the kicker names the room only.
 			if (S.Deck.products.Num() <= 1) Where.Split(TEXT(" · "), nullptr, &Where);
-			if (!Where.IsEmpty()) Kicker += TEXT(" · ") + Where.ToUpper();
+			const FString Longer = Kicker + TEXT(" · ") + Where.ToUpper();
+			if (!Where.IsEmpty() && BpSheet::TextWidth(Longer, SmallBold) <= ColX1 - InX) Kicker = Longer;
 		}
-		Text(FBox2f(FVector2f(InX, FrameY0 + 20.f), FVector2f(ColX1, FrameY0 + 52.f)), Kicker, SmallBold, bStop ? BpSheet::Red : BpSheet::Amber);
-		const FString Headline = bCompanion ? Sheet.Companion.Summary : Card->headline;
-		const FString HeadFit = BpSheet::Wrap(Headline, HeadFont, ColX1 - InX, 3);
-		const int32 HeadLines = LineCount(HeadFit);
-		Put(FBox2f(FVector2f(InX, FrameY0 + 58.f), FVector2f(ColX1, FrameY0 + 58.f + HeadLines * Pitch(CapHead) + 6.f)), SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(HeadFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
-		float Y = FrameY0 + 64.f + HeadLines * Pitch(CapHead) + 8.f;
+		Text(FBox2f(FVector2f(InX, FrameY0 + 16.f), FVector2f(ColX1, FrameY0 + 48.f)), Kicker, SmallBold, bCompanion ? BpSheet::Accent : bStop ? BpSheet::Red : BpSheet::Amber);
+		// A companion's summary: the human sentence first, the ids after it set small ("…edit code (kettle-web): wave w-…, packages
+		// [...]" reads as the sentence, then "kettle-web · wave w-…, packages [...]").
+		FString Headline = bCompanion ? Sheet.Companion.Summary : Card->headline;
+		FString Raw;
 		if (bCompanion)
 		{
+			FString Left, Right;
+			if (Headline.Split(TEXT(": "), &Left, &Right, ESearchCase::CaseSensitive, ESearchDir::FromEnd) && (Left.EndsWith(TEXT(")")) || Right.Contains(TEXT("[")) || Right.Contains(TEXT("\"")) || Right.Contains(TEXT("{")) || Right.Contains(TEXT("-"))))
+			{
+				Headline = Left;
+				Raw = Right;
+				FString Before, Slug;
+				if (Headline.EndsWith(TEXT(")")) && Headline.Split(TEXT(" ("), &Before, &Slug, ESearchCase::CaseSensitive, ESearchDir::FromEnd)) { Headline = Before; Raw = Slug.LeftChop(1) + TEXT(" · ") + Raw; }
+			}
+			Raw = Sheet.Companion.Tool + (Raw.IsEmpty() ? FString() : TEXT(" · ") + Raw);
+			if (!Headline.EndsWith(TEXT("."))) Headline += TEXT(".");
+		}
+		const FString HeadFit = BpSheet::Wrap(Headline, HeadFont, ColX1 - InX, 3);
+		const int32 HeadLines = LineCount(HeadFit);
+		Put(FBox2f(FVector2f(InX, FrameY0 + 52.f), FVector2f(ColX1, FrameY0 + 52.f + HeadLines * Pitch(CapHead) + 6.f)), SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(HeadFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+		float Y = FrameY0 + 58.f + HeadLines * Pitch(CapHead) + 6.f;
+		const FSlateFontInfo LeadFont = Font(TEXT("Regular"), CapLabel);
+		/** The one line of consequence: 28 px, bright, under the title. */
+		const auto Lead = [&](const FString& Words, const FLinearColor& Ink, int32 MaxLines)
+		{
+			const FString Fit = BpSheet::Wrap(Words, LeadFont, ColX1 - InX, MaxLines);
+			const int32 N = LineCount(Fit);
+			Put(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + N * Pitch(CapLabel) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(LeadFont).ColorAndOpacity(FSlateColor(Ink)));
+			Y += N * Pitch(CapLabel) + 10.f;
+		};
+		if (bCompanion)
+		{
+			const FString Wants = ToolWords(Sheet.Companion.Tool);
+			Lead(FString::Printf(TEXT("It asks to %s%s."), *Wants, Sheet.Companion.Product.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" on %s"), *Link.NameOf(Sheet.Companion.Product))), BpSheet::Accent, 2);
+			const FString RawFit = BpSheet::Wrap(Raw, SmallFont, ColX1 - InX, 2);
+			const int32 RawN = LineCount(RawFit);
+			Put(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + RawN * Pitch(CapSmall) + 4.f)), SNew(STextBlock).Text(FText::FromString(RawFit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.5f))));
+			Y += RawN * Pitch(CapSmall) + 14.f;
 			TArray<FItem> Items;
 			Items.Add({ FString::Printf(TEXT("Filed by the companion at %s for %s"), *LocalClock(Sheet.Companion.CreatedAt), *(Sheet.Companion.Product.IsEmpty() ? FString(TEXT("every product")) : Link.NameOf(Sheet.Companion.Product))), BpSheet::Ink.CopyWithNewOpacity(0.6f) });
 			Items.Add({ TEXT("Approve runs it on your PC now; decline drops it."), BpSheet::Amber });
-			Lines(InX, ColX1, Y, Frame.Max.Y - 16.f, Items, 2);
+			Lines(InX, ColX1, Y, Frame.Max.Y - 12.f, Items, 1);
+			// The lamp, drawn: who is asking.
+			Put(FBox2f(FVector2f(ColX1 + 40.f, FrameY0 + 30.f), FVector2f(TextX1, FrameY0 + 280.f)), SNew(BpSheet::SMotif).Kind(2));
 		}
 		else
 		{
-			// Where it is (the card's first line: "1 of 3 · Kettle · Room"), the tier chip and the stakes, then the evidence.
+			// The consequence: the brief's one line, large; then the tier chip with its class and age; then the evidence, quiet.
+			const FBpCardBrief& Brief = D->brief;
+			if (!Brief.Short_.IsEmpty()) Lead(Brief.Short_, BpSheet::InkHi, 3);
 			if (Card->lines.Num() > 1)
 			{
-				// The tier in words (BpWords: the queue's chip), its class and age beside it, what deciding buys under it.
 				const FString Chip = Tier.IsEmpty() ? FString(TEXT("UNTIERED")) : Tier.ToUpper();
 				const float ChipW = BpSheet::TextWidth(Chip, SmallBold) + 28.f;
-				Put(FBox2f(FVector2f(InX, Y), FVector2f(InX + ChipW, Y + 42.f)), BpSheet::Pin(Chip, SmallBold, 42.f, bStop ? BpSheet::Red : BpSheet::Amber, ChipW));
+				Put(FBox2f(FVector2f(InX, Y), FVector2f(InX + ChipW, Y + 40.f)), BpSheet::Pin(Chip, SmallBold, 40.f, bStop ? BpSheet::Red : BpSheet::Amber, ChipW));
 				FString Rest = Card->lines[1].text;
 				Rest.Split(TEXT(" · "), nullptr, &Rest);
-				Text(FBox2f(FVector2f(InX + ChipW + 16.f, Y), FVector2f(ColX1, Y + 42.f)), Rest, SmallFont, BpSheet::Ink, 1, VAlign_Center);
+				Text(FBox2f(FVector2f(InX + ChipW + 16.f, Y), FVector2f(ColX1, Y + 40.f)), Rest, SmallFont, BpSheet::Ink, 1, VAlign_Center);
 				Y += 50.f;
-				const FString Stakes = Card->lines.Num() > 2 && Card->lines[2].tone.IsEmpty() ? Card->lines[2].text : FString();
-				if (!Stakes.IsEmpty())
-				{
-					Text(FBox2f(FVector2f(InX, Y), FVector2f(ColX1, Y + Pitch(CapSmall) + 6.f)), Stakes, SmallFont, BpSheet::Ink.CopyWithNewOpacity(0.75f));
-					Y += Pitch(CapSmall) + 10.f;
-				}
 			}
-			// The evidence: the brief's one line, then what deciding costs and how it is undone (the web's facts), each one line.
-			const FBpCardBrief& Brief = D->brief;
 			TArray<FItem> Items;
-			if (!Brief.Short_.IsEmpty()) Items.Add({ Brief.Short_, Brief.advice.say == BpVocab::BriefAdvice::Say::Ask || !Brief.recommend.IsEmpty() ? BpSheet::Amber : BpSheet::Accent });
+			const FString Stakes = Card->lines.Num() > 2 && Card->lines[2].tone.IsEmpty() ? Card->lines[2].text : FString();
+			if (!Stakes.IsEmpty()) Items.Add({ Stakes, BpSheet::Ink.CopyWithNewOpacity(0.45f) });
+			for (int32 L = 3; L < Card->lines.Num(); ++L) Items.Add(FItem{ Card->lines[L].text, ToneInk(Card->lines[L].tone) });
 			for (const FBpBriefFact& Fact : Brief.facts)
 			{
 				if (Fact.key == BpVocab::BriefFact::Key::Undo || Fact.key == BpVocab::BriefFact::Key::Cost) Items.Add({ Fact.text, BpSheet::Ink.CopyWithNewOpacity(0.45f) });
 			}
-			for (int32 L = 3; L < Card->lines.Num(); ++L) Items.Insert(FItem{ Card->lines[L].text, ToneInk(Card->lines[L].tone) }, FMath::Min(1, Items.Num()));
-			Put(FBox2f(FVector2f(InX - 2.f, Y - 4.f), FVector2f(ColX1, Y - 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.3f)));
 			// Full width (no screen), the lines stop above the title block.
-			Lines(InX, ColX1, Y + 10.f, Frame.Max.Y - (bScreen ? 16.f : 56.f), Items, 2);
+			Lines(InX, ColX1, Y + 2.f, Frame.Max.Y - (bScreen ? 12.f : 56.f), Items, 1);
 		}
-		// The screen: the finding's "before", unlit on the sheet in a fine frame, with what it is under it.
-		const float ImgX0 = ColX1 + 34.f, ImgX1 = TextX1, ImgW = ImgX1 - ImgX0, ImgH = ImgW * 9.f / 16.f;
-		// With no screen the stamp stands above the title block instead.
-		const FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 24.f), FVector2f(ImgX1, FrameY0 + 24.f + ImgH))
-			: FBox2f(FVector2f(TextX1 - 470.f, Frame.Max.Y - 126.f), FVector2f(TextX1, Frame.Max.Y - 40.f));
+		// The screen: the finding's "before", unlit on the sheet in a fine frame, large, with what it is under it.
+		// The screen fills the right half down to the title block; its caption is a strip across its foot.
+		const float ImgX0 = ColX1 + 30.f, ImgX1 = TextX1, ImgW = ImgX1 - ImgX0, ImgH = FMath::Min(ImgW * 9.f / 16.f, Frame.Max.Y - 62.f - FrameY0 - 16.f);
+		const FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
+			: FBox2f(FVector2f(TextX1 - 470.f, Frame.Max.Y - 200.f), FVector2f(TextX1, Frame.Max.Y - 60.f));
 		if (bScreen && S.ShotBrush.IsValid())
 		{
-			Put(Img.ExpandBy(4.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.7f)).EdgePx(2.f));
+			Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.8f)).EdgePx(2.f));
 			Put(Img, SNew(SImage).Image(S.ShotBrush.Get()));
 		}
 		else if (bScreen)
 		{
 			Put(Img, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
 			Put(Img, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
-				.Text(FText::FromString(bCompanion ? TEXT("NO SCREEN: A COMPANION CARD") : S.bShotLoading ? TEXT("READING THE SCREEN…") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+				.Text(FText::FromString(S.bShotLoading ? TEXT("READING THE SCREEN…") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
 		}
-		float CapY = Img.Max.Y + 14.f;
 		if (bScreen)
 		{
+			const float CapY = Img.Max.Y - 40.f;
+			Put(FBox2f(FVector2f(Img.Min.X, CapY), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)));
 			const FString Feature = WristTable.IsValid() ? WristTable->StandupPlaceName(Card->place.target.id) : Card->place.target.id;
 			// The screen's own "sample screen" label stays in the image; the caption says which screen, and SAMPLE when it is one.
 			const bool bSampleShot = S.ShotBrush.IsValid() && S.bShotSample;
 			const float TagW = bSampleShot ? BpSheet::TextWidth(TEXT("SAMPLE"), SmallBold) + 28.f : 0.f;
-			Text(FBox2f(FVector2f(ImgX0, CapY), FVector2f(ImgX1 - TagW - 12.f, CapY + 42.f)), FString::Printf(TEXT("BEFORE · %s"), *(Feature.IsEmpty() ? Card->place.target.id : Feature)).ToUpper(), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.8f), 1, VAlign_Center);
-			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, CapY), FVector2f(ImgX1, CapY + 42.f)), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 42.f, BpSheet::Amber, TagW));
+			const FString Caption = FString::Printf(TEXT("BEFORE · %s"), *(Feature.IsEmpty() ? Card->place.target.id : Feature)).ToUpper();
+			Text(FBox2f(FVector2f(ImgX0 + 12.f, CapY), FVector2f(ImgX1 - TagW - 12.f, CapY + 40.f)), BpSheet::CutWords(Caption, SmallBold, ImgX1 - TagW - 24.f - ImgX0), SmallBold, BpSheet::InkHi, 1, VAlign_Center);
+			if (bSampleShot) Put(FBox2f(FVector2f(ImgX1 - TagW, CapY), FVector2f(ImgX1, CapY + 40.f)), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, TagW));
 		}
 		TitleBlock(SheetNo, Project);
 		// The answers. Approve is the primary (amber); LATER is the web's Defer (back tomorrow); DECLINE only on a repeat.
-		const bool bOpen = !Answer || Answer->State == FBpStandupAnswer::EState::Refused || Answer->State == FBpStandupAnswer::EState::Unsent;
+		const bool bRefused = Answer && Answer->State == FBpStandupAnswer::EState::Refused;
+		const bool bOpen = !Answer || bRefused || Answer->State == FBpStandupAnswer::EState::Unsent;
 		const bool bMay = S.bSample || Link.CanDecide();
 		const bool bArmed = S.Armed == TEXT("approve");
 		// Answered: the answer taken is the one filled button, and the sheet carries its stamp (the drawing set's approval block).
 		const bool bTaken = Answer && (Answer->State == FBpStandupAnswer::EState::Sent || Answer->State == FBpStandupAnswer::EState::Sample || Answer->State == FBpStandupAnswer::EState::Sending);
-		const auto LookOf = [&](const TCHAR* Verdict, EBtn Open) { return bTaken ? (Answer->Verdict == Verdict ? EBtn::Fill : EBtn::Off) : bOpen && bMay ? Open : EBtn::Off; };
+		// The PC refused an approval from the table (403 with its sentence): the card stays, APPROVE goes quiet, DECLINE stays.
+		const bool bApproveRefused = bRefused && Answer->Verdict == BpVocab::SteerPost::Verdict::Approve;
+		const auto LookOf = [&](const TCHAR* Verdict, EBtn Open)
+		{
+			if (bTaken) return Answer->Verdict == Verdict ? EBtn::Fill : EBtn::Off;
+			if (bApproveRefused && FCString::Strcmp(Verdict, BpVocab::SteerPost::Verdict::Approve) == 0) return EBtn::Off;
+			return bOpen && bMay ? Open : EBtn::Off;
+		};
 		if (bTaken && Answer->State != FBpStandupAnswer::EState::Sending)
 		{
+			// The stamp lands: scaled down onto the sheet and settled in StampS (a cut with bp.ReducedMotion), then still.
 			const FLinearColor StampInk = Answer->Verdict == BpVocab::SteerPost::Verdict::Approve ? BpSheet::Accent : Answer->Verdict == BpVocab::SteerPost::Verdict::Decline ? BpSheet::Red : BpSheet::Amber;
 			const FString Stamp = FString::Printf(TEXT("%s%s"), *VerdictWord(Answer->Verdict).ToUpper(), Answer->State == FBpStandupAnswer::EState::Sample ? TEXT(" · SAMPLE") : TEXT(" · SENT"));
-			const float StampW = BpSheet::TextWidth(Stamp, LabelFont) + 40.f;
-			const FBox2f StampBox(FVector2f(Img.Min.X + 18.f, Img.Max.Y - 70.f), FVector2f(Img.Min.X + 18.f + StampW, Img.Max.Y - 16.f));
-			Put(StampBox, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.92f)).Edge(StampInk).EdgePx(4.f));
-			Put(StampBox, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Stamp)).Font(LabelFont).ColorAndOpacity(FSlateColor(StampInk))]);
+			const FSlateFontInfo StampFont = Font(TEXT("Bold"), 40.f);
+			const float StampW = BpSheet::TextWidth(Stamp, StampFont) + 56.f, StampH = 84.f;
+			const FVector2f C = bScreen ? FVector2f(Img.Min.X + StampW * 0.5f + 24.f, Img.Max.Y - StampH * 0.5f - 60.f) : Img.GetCenter();
+			const FBox2f StampBox(C - FVector2f(StampW, StampH) * 0.5f, C + FVector2f(StampW, StampH) * 0.5f);
+			const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
+			const bool bCut = Reduced && Reduced->GetInt() != 0;
+			const double StampNow = FPlatformTime::Seconds();
+			if (S.StampFor != AnswerId)
+			{
+				S.StampFor = AnswerId;
+				// Only an answer taken while this sheet showed lands; a sheet revisited shows its stamp still.
+				S.StampAt = S.UnstampedShown == AnswerId && !bCut ? StampNow : -100.0;
+				if (S.StampAt > 0.0)
+				{
+					const TWeakObjectPtr<ABpPawn> Self(this);
+					GetWorldTimerManager().SetTimer(S.StampTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+					{
+						if (!Standup.IsValid() || FPlatformTime::Seconds() - Standup->StampAt > StampS + 0.05) { if (Standup.IsValid()) GetWorldTimerManager().ClearTimer(Standup->StampTimer); RefreshConsole(); return; }
+						++Standup->StampFrame;
+						RefreshConsole();
+					}), 1.f / 30.f, true);
+				}
+			}
+			const float E = FMath::Clamp(static_cast<float>((StampNow - S.StampAt) / StampS), 0.f, 1.f);
+			const float Settle = 1.f - FMath::Square(1.f - E);
+			const float Scale = 1.f + 0.7f * (1.f - Settle);
+			const float Angle = FMath::DegreesToRadians(-7.f + 5.f * (1.f - Settle));
+			Put(StampBox, SNew(SBox).RenderTransformPivot(FVector2D(0.5, 0.5)).RenderTransform(FSlateRenderTransform(Concatenate(FScale2D(Scale), FQuat2D(Angle)))).RenderOpacity(FMath::Clamp(E * 2.5f, 0.f, 1.f))
+				[
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(StampInk).EdgePx(5.f)]
+					+ SOverlay::Slot().Padding(9.f)[SNew(BpSheet::SPlate).Edge(StampInk.CopyWithNewOpacity(0.6f)).EdgePx(1.5f)]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Stamp)).Font(StampFont).ColorAndOpacity(FSlateColor(StampInk))]
+				]);
 		}
+		else if (!bTaken) S.UnstampedShown = AnswerId;
 		if (bCompanion)
 		{
-			Buttons = { Prev, { TEXT("APPROVE"), LookOf(TEXT("approve"), EBtn::Amber), TEXT("standup:approve"), 250.f }, { TEXT("DECLINE"), LookOf(TEXT("decline"), EBtn::Edge), TEXT("standup:decline"), 200.f }, Next };
+			Buttons = { Prev, { TEXT("APPROVE"), LookOf(TEXT("approve"), EBtn::Amber), TEXT("standup:approve"), 300.f }, { TEXT("DECLINE"), LookOf(TEXT("decline"), EBtn::Edge), TEXT("standup:decline"), 230.f }, Next };
 		}
 		else
 		{
 			const bool bApproved = bTaken && Answer->Verdict == BpVocab::SteerPost::Verdict::Approve, bHeld = bTaken && Answer->Verdict == BpVocab::SteerPost::Verdict::Hold;
-			Buttons = { Prev, { bArmed ? TEXT("A AGAIN: APPROVE") : bApproved ? TEXT("APPROVED") : TEXT("APPROVE"), LookOf(BpVocab::SteerPost::Verdict::Approve, EBtn::Amber), TEXT("standup:approve"), bArmed ? 300.f : 230.f },
-				{ TEXT("LATER"), LookOf(BpVocab::SteerPost::Verdict::Defer, EBtn::Edge), TEXT("standup:defer"), 170.f }, { bHeld ? TEXT("HELD") : TEXT("HOLD"), LookOf(BpVocab::SteerPost::Verdict::Hold, EBtn::Edge), TEXT("standup:hold"), 160.f } };
+			Buttons = { Prev, { bArmed ? TEXT("A AGAIN: APPROVE") : bApproved ? TEXT("APPROVED") : TEXT("APPROVE"), LookOf(BpVocab::SteerPost::Verdict::Approve, EBtn::Amber), TEXT("standup:approve"), bArmed ? 320.f : 280.f },
+				{ TEXT("LATER"), LookOf(BpVocab::SteerPost::Verdict::Defer, EBtn::Edge), TEXT("standup:defer"), 180.f }, { bHeld ? TEXT("HELD") : TEXT("HOLD"), LookOf(BpVocab::SteerPost::Verdict::Hold, EBtn::Edge), TEXT("standup:hold"), 170.f } };
 			if (Card->decision.brief.recommend == BpVocab::SteerPost::Verdict::Decline) Buttons.Add({ TEXT("DECLINE"), LookOf(BpVocab::SteerPost::Verdict::Decline, EBtn::Edge), TEXT("standup:decline"), 190.f });
 			if (!S.bSample && !Link.CanDecide()) Buttons.Add({ TEXT("PC LINK"), EBtn::Fill, TEXT("open:link"), 190.f });
 			Buttons.Add(Next);
 		}
-		if (Answer) { Status = Answer->Words; StatusInk = Answer->State == FBpStandupAnswer::EState::Refused || Answer->State == FBpStandupAnswer::EState::Unsent ? BpSheet::Red : Answer->State == FBpStandupAnswer::EState::Sending ? BpSheet::Amber : BpSheet::Accent; }
+		if (Answer)
+		{
+			Status = Answer->Words;
+			StatusInk = Answer->State == FBpStandupAnswer::EState::Unsent ? BpSheet::Red : bRefused || Answer->State == FBpStandupAnswer::EState::Sending ? BpSheet::Amber : BpSheet::Accent;
+		}
 		else if (!bMay) { Status = Link.HasPcLink() ? TEXT("Pair this headset to decide here: PC LINK pairs it, with decide.") : TEXT("Your PC is gone: answers cannot be sent now. Those taken are kept."); StatusInk = BpSheet::Amber; }
 		else if (bArmed) { Status = TEXT("Press A again to approve · B cancels"); StatusInk = BpSheet::Amber; }
 		else Status = S.bSample ? FString(TEXT("Sample: what you decide is kept on this headset for the day, nothing is sent.")) : FString(TEXT("Your answer goes to your PC with the words on this card."));
@@ -1652,8 +1826,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 				Items.Add({ FString::Printf(TEXT("%s%s: %s"), *VerdictWord(A->Verdict), bNotSent ? TEXT(" (NOT SENT)") : TEXT(""), *A->Title), bNotSent ? BpSheet::Red : A->Verdict == BpVocab::SteerPost::Verdict::Approve ? BpSheet::Accent : BpSheet::Amber });
 			}
 			const FString Counts = Items.Num() == 0 ? FString(TEXT("Nothing decided yet: the decisions wait on the deck.")) : FString::Printf(TEXT("%d approved, %d later, %d held%s."), Approved, Later, Held, Declined ? *FString::Printf(TEXT(", %d declined"), Declined) : TEXT(""));
-			Text(FBox2f(FVector2f(InX, FrameY0 + 128.f), FVector2f(ColX1, FrameY0 + 128.f + Pitch(CapSmall) + 6.f)), Counts, SmallBold, BpSheet::Ink);
-			float Y = Lines(InX, ColX1, FrameY0 + 178.f, Frame.Max.Y - 16.f, Items, 1);
+			Text(FBox2f(FVector2f(InX, FrameY0 + 128.f), FVector2f(ColX1, FrameY0 + 128.f + 2.f * Pitch(CapSmall) + 6.f)), Counts, SmallBold, BpSheet::Ink, 2);
+			float Y = Lines(InX, ColX1, FrameY0 + 128.f + (BpSheet::TextWidth(Counts, SmallBold) > ColX1 - InX ? 2.f : 1.f) * Pitch(CapSmall) + 14.f, Frame.Max.Y - 16.f, Items, 1);
 			// The server's own close lines (linked): what the steering log says, the log's place.
 			if (!S.bSample)
 			{
@@ -1677,7 +1851,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 			const bool bLinked = !S.bSample && Link.HasPcLink();
 			const bool bMay = bLinked && Link.CanDecide();
 			Buttons = { Prev,
-				{ S.Plan == FBpStandupState::EPlan::Asking ? TEXT("PLANNING…") : TEXT("PLAN MY DAY"), bLinked && S.Plan != FBpStandupState::EPlan::Asking ? EBtn::Amber : EBtn::Off, TEXT("standup:plan"), 240.f },
+				{ S.Plan == FBpStandupState::EPlan::Asking ? TEXT("PLANNING…") : TEXT("PLAN MY DAY"), bLinked && S.Plan != FBpStandupState::EPlan::Asking ? EBtn::Amber : EBtn::Off, TEXT("standup:plan"), 290.f },
 				LiveGrant() ? FRowButton{ TEXT("TAKE BACK"), EBtn::Edge, TEXT("standup:revoke"), 230.f } : FRowButton{ TEXT("HAND OVER"), bMay ? EBtn::Edge : EBtn::Off, TEXT("standup:handover"), 260.f },
 				{ TEXT("DONE"), EBtn::Fill, TEXT("standup:done"), 150.f } };
 			Status = S.bSample ? FString(TEXT("Sample: both need your PC (PC LINK connects it). Nothing was sent."))
@@ -1702,13 +1876,19 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		float Y = FrameY0 + 64.f + HeadLines * Pitch(CapHead) + 10.f;
 		TArray<FItem> Items;
 		for (const FBpCardLine& Line : Card->lines) Items.Add({ Line.text, ToneInk(Line.tone) });
+		// The companion's requests pending on the PC, counted with the decisions (night two V2): they come before the close.
+		const int32 Requests = CompanionSheets(S);
+		if (bOpen && Requests > 0)
+		{
+			Items.Insert(FItem{ FString::Printf(TEXT("%d %s and %d %s from the companion wait for you."), Of, Of == 1 ? TEXT("decision") : TEXT("decisions"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests")), BpSheet::Amber }, 0);
+		}
 		const bool bTable = bOpen && S.Deck.products.Num() > 1;
 		const bool bFigures = bOpen && !bTable;
 		const float LinesX1 = bTable ? Pad + 600.f : bFigures ? Pad + 550.f : TextX1 - 120.f;
 		// A list of what was built or released reads one line an item (cut, never smaller), so all of it fits; prose wraps.
 		const bool bList = Card->kind == BpVocab::MorningCard::Kind::Built || Card->kind == BpVocab::MorningCard::Kind::Release || Card->kind == BpVocab::MorningCard::Kind::Agents;
 		Y = Lines(InX, LinesX1, Y, Frame.Max.Y - 60.f, Items, bList ? 1 : 2);
-		if (bOpen && Of == 0) Lines(InX, LinesX1, Y + 4.f, Frame.Max.Y - 60.f, TArray<FItem>{ FItem{ TEXT("Nothing waits for you this morning."), BpSheet::Accent } }, 1);
+		if (bOpen && Of == 0 && Requests == 0) Lines(InX, LinesX1, Y + 4.f, Frame.Max.Y - 60.f, TArray<FItem>{ FItem{ TEXT("Nothing waits for you this morning."), BpSheet::Accent } }, 1);
 		if (bFigures)
 		{
 			// One product: the night in four figures, a schedule of large numerals (the drawing set's).
@@ -1775,7 +1955,11 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		Status = FString::Printf(TEXT("Your PC is gone: %d sent and kept, %d not sent. They go when it is back."), Sent, NotSent);
 		StatusInk = BpSheet::Red;
 	}
-	Text(FBox2f(FVector2f(Pad + 4.f, StatusY0), FVector2f(LW - Pad, StatusY1)), Status, SmallFont, StatusInk, 1, VAlign_Center);
+	// The status fits by rule: a server's sentence too long for the line loses its parenthesis, then whole words go.
+	FString StatusFit = Status;
+	FString Plain, Aside;
+	if (BpSheet::TextWidth(StatusFit, SmallFont) > LW - 2.f * Pad - 4.f && StatusFit.Split(TEXT(" ("), &Plain, &Aside)) StatusFit = Plain + TEXT(".");
+	Text(FBox2f(FVector2f(Pad + 4.f, StatusY0), FVector2f(LW - Pad, StatusY1)), BpSheet::CutWords(StatusFit, SmallFont, LW - 2.f * Pad - 4.f), SmallFont, StatusInk, 1, VAlign_Center);
 	// The foot: PREV at the left edge, NEXT at the right, the card's own answers centred between them.
 	TArray<FRowButton> Middle;
 	bool bHasPrev = false, bHasNext = false;
@@ -1785,15 +1969,23 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		else if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) bHasNext = true;
 		else Middle.Add(B);
 	}
-	if (bHasPrev) Button(FBox2f(FVector2f(Pad, BtnY0), FVector2f(Pad + Prev.W, BtnY1)), Prev.Word, Prev.Look, Prev.Act);
+	// PREV and NEXT stand quieter than the answers: shorter, and on a decision NEXT is an edge, never a second primary.
+	const float QuietIn = 12.f;
+	if (bHasPrev) Button(FBox2f(FVector2f(Pad, BtnY0 + QuietIn), FVector2f(Pad + Prev.W, BtnY1 - QuietIn)), Prev.Word, Prev.Look, Prev.Act);
 	for (const FRowButton& B : Buttons)
 	{
-		if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) Button(FBox2f(FVector2f(LW - Pad - B.W, BtnY0), FVector2f(LW - Pad, BtnY1)), B.Word, B.Look, B.Act);
+		if (B.Act == TEXT("standup:next") || B.Act == TEXT("standup:skip")) Button(FBox2f(FVector2f(LW - Pad - B.W, BtnY0 + QuietIn), FVector2f(LW - Pad, BtnY1 - QuietIn)), B.Word, bDecision && B.Look == EBtn::Fill ? EBtn::Edge : B.Look, B.Act);
 	}
 	Row(Pad + (bHasPrev ? Prev.W + 16.f : 0.f), LW - Pad - (bHasNext ? Next.W + 16.f : 0.f), Middle);
-	// The position on the title row (the console's header): "SHEET 3 OF 7".
-	Put(FBox2f(FVector2f(LW - Pad - 520.f, 24.f), FVector2f(LW - Pad - 214.f, 94.f)), SNew(SBox).HAlign(HAlign_Right).VAlign(VAlign_Center)
+	// The position on the title row (the console's header): "SHEET 3 OF 7", and whose morning it is at a glance: SAMPLE (amber,
+	// solid) or FROM YOUR PC (cyan, an edge).
+	const FString Pos = FString::Printf(TEXT("SHEET %d OF %d"), S.At + 1, S.Sheets.Num());
+	const FString Whose = S.bSample ? FString(TEXT("SAMPLE")) : FString(TEXT("FROM YOUR PC"));
+	const float WhoseW = BpSheet::ChipWidth(Whose, SmallBold), PosW = BpSheet::TextWidth(Pos, SmallBold);
+	const float HeadX1 = LW - Pad - 214.f;
+	Put(FBox2f(FVector2f(HeadX1 - PosW, 24.f), FVector2f(HeadX1, 94.f)), SNew(SBox).HAlign(HAlign_Right).VAlign(VAlign_Center)
 		[
-			SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("SHEET %d OF %d"), S.At + 1, S.Sheets.Num()))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))
+			SNew(STextBlock).Text(FText::FromString(Pos)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))
 		]);
+	Put(FBox2f(FVector2f(HeadX1 - PosW - 18.f - WhoseW, 39.f), FVector2f(HeadX1 - PosW - 18.f, 79.f)), BpSheet::Chip(Whose, SmallBold, 40.f, S.bSample ? BpSheet::Amber : BpSheet::Accent, S.bSample));
 }

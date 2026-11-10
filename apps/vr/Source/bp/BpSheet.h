@@ -156,6 +156,22 @@ namespace BpSheet
 		return FString();
 	}
 
+	/** The fit rule for words (night two V2): the text, else whole words with an ellipsis, never cut inside a word; a single
+	 *  word too long for MaxW falls back to Cut. */
+	inline FString CutWords(const FString& Text, const FSlateFontInfo& Font, float MaxW)
+	{
+		if (TextWidth(Text, Font) <= MaxW) return Text;
+		int32 At = Text.Len();
+		while ((At = Text.Left(At).Find(TEXT(" "), ESearchCase::CaseSensitive, ESearchDir::FromEnd)) > 0)
+		{
+			FString Shorter = Text.Left(At).TrimEnd();
+			while (Shorter.EndsWith(TEXT("·")) || Shorter.EndsWith(TEXT(",")) || Shorter.EndsWith(TEXT(":"))) Shorter = Shorter.LeftChop(1).TrimEnd();
+			Shorter += TEXT("…");
+			if (TextWidth(Shorter, Font) <= MaxW) return Shorter;
+		}
+		return Cut(Text, Font, MaxW);
+	}
+
 	/** Words into lines of MaxW; past MaxLines the last kept line takes the rest, cut. */
 	inline FString Wrap(const FString& Text, const FSlateFontInfo& Font, float MaxW, int32 MaxLines)
 	{
@@ -175,7 +191,7 @@ namespace BpSheet
 			FString Rest = Lines[MaxLines - 1];
 			for (int32 Index = MaxLines; Index < Lines.Num(); ++Index) Rest += TEXT(" ") + Lines[Index];
 			Lines.SetNum(MaxLines);
-			Lines.Last() = Cut(Rest, Font, MaxW);
+			Lines.Last() = CutWords(Rest, Font, MaxW);
 		}
 		return FString::Join(Lines, TEXT("\n"));
 	}
@@ -227,6 +243,104 @@ namespace BpSheet
 		float EdgePx = 2.f;
 		FLinearColor Bar;
 		float BarPx = 0.f;
+	};
+
+	// ---- One control family (night two V2): every row, tile and button on the console, the stand-up and the wrist ----------
+	/** A row's or a quiet button's fill: a step lighter than the sheet; the focus (a hand's ray, the pad) a clear step more. */
+	inline FLinearColor RowFill(bool bFocus) { return Ink.CopyWithNewOpacity(bFocus ? 0.17f : 0.075f); }
+	inline FLinearColor RowEdge(bool bFocus) { return bFocus ? Amber : Ink.CopyWithNewOpacity(0.3f); }
+	/** A control that cannot act now: no fill, a faint edge, faint words. */
+	inline FLinearColor OffEdge() { return Ink.CopyWithNewOpacity(0.2f); }
+	inline FLinearColor OffInk() { return Ink.CopyWithNewOpacity(0.38f); }
+
+	/** A value or a state at a row's right (OPEN counts, FOCUS, OFFLINE, 100 %): one chip, an edge and words in the tone's
+	 *  colour on a dark fill, Height px tall, as wide as its words. */
+	inline TSharedRef<SWidget> Chip(const FString& Text, const FSlateFontInfo& Font, float Height, const FLinearColor& Color, bool bSolid = false)
+	{
+		return SNew(SBox).HeightOverride(Height).VAlign(VAlign_Fill)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()[SNew(SPlate).Fill(bSolid ? Color : PaperLo.CopyWithNewOpacity(0.7f)).Edge(Color.CopyWithNewOpacity(0.85f)).EdgePx(2.f)]
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.f, 0.f))
+				[
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(Font).ColorAndOpacity(FSlateColor(bSolid ? PaperLo : Color))
+				]
+			];
+	}
+	inline float ChipWidth(const FString& Text, const FSlateFontInfo& Font) { return TextWidth(Text, Font) + 30.f; }
+
+	/** A quiet drawing in the sheet's own line language for an empty page (no image: the widget's own lines). Kind: 0 a
+	 *  package (an isometric box on its dimension line), 1 a set of sheets (stacked, a title block on the top one), 2 the lamp
+	 *  (its shade, arm and pool of light on the paper). */
+	class SMotif : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SMotif) : _Kind(0) {}
+			SLATE_ARGUMENT(int32, Kind)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& Args) { Kind = Args._Kind; }
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(64.0, 64.0); }
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer,
+			const FWidgetStyle&, bool) const override
+		{
+			const FVector2f Size = FVector2f(Geometry.GetLocalSize());
+			const float U = FMath::Min(Size.X, Size.Y) / 10.f;
+			const FVector2f O = Size * 0.5f;
+			const FLinearColor Strong = Ink.CopyWithNewOpacity(0.34f), Faint = Ink.CopyWithNewOpacity(0.16f);
+			const auto Poly = [&](std::initializer_list<FVector2f> Points, const FLinearColor& Color, float Thick, bool bClosed)
+			{
+				TArray<FVector2f> P;
+				for (const FVector2f& Each : Points) P.Add(O + Each * U);
+				if (bClosed && P.Num() > 0) { const FVector2f First = P[0]; P.Add(First); }
+				FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), P, ESlateDrawEffect::None, Color, true, Thick);
+			};
+			// A dimension line under every drawing, with its ticks: the drawing set's own way of saying "a thing, measured".
+			const auto Dimension = [&](float X0, float X1, float Y)
+			{
+				Poly({ FVector2f(X0, Y), FVector2f(X1, Y) }, Faint, 1.5f, false);
+				Poly({ FVector2f(X0, Y - 0.35f), FVector2f(X0, Y + 0.35f) }, Faint, 1.5f, false);
+				Poly({ FVector2f(X1, Y - 0.35f), FVector2f(X1, Y + 0.35f) }, Faint, 1.5f, false);
+			};
+			if (Kind == 0)
+			{
+				// The box: top face, then the two visible sides, its seam taped across the top.
+				const FVector2f T(0.f, -3.f), L(-3.2f, -1.4f), R(3.2f, -1.4f), C(0.f, 0.2f), LB(-3.2f, 2.4f), RB(3.2f, 2.4f), CB(0.f, 4.f);
+				Poly({ T, R, C, L }, Strong, 2.f, true);
+				Poly({ L, C, CB, LB }, Strong, 2.f, true);
+				Poly({ C, R, RB, CB }, Strong, 2.f, true);
+				Poly({ FVector2f(-1.6f, -2.2f), FVector2f(1.6f, -0.6f) }, Faint, 2.f, false);
+				Dimension(-3.2f, 3.2f, 4.9f);
+			}
+			else if (Kind == 1)
+			{
+				// Three sheets fanned back, the front one with its grid and title block.
+				for (int32 I = 2; I >= 0; --I)
+				{
+					const float D = I * 0.55f;
+					Poly({ FVector2f(-3.6f + D, -3.f - D), FVector2f(3.f + D, -3.f - D), FVector2f(3.f + D, 2.6f - D), FVector2f(-3.6f + D, 2.6f - D) }, I == 0 ? Strong : Faint, 2.f, true);
+				}
+				for (float X = -2.6f; X < 3.f; X += 1.f) Poly({ FVector2f(X, -3.f), FVector2f(X, 2.6f) }, Faint, 1.f, false);
+				Poly({ FVector2f(0.6f, 1.6f), FVector2f(3.f, 1.6f) }, Strong, 1.5f, false);
+				Poly({ FVector2f(0.6f, 1.6f), FVector2f(0.6f, 2.6f) }, Strong, 1.5f, false);
+				Dimension(-3.6f, 3.f, 3.6f);
+			}
+			else
+			{
+				// The lamp: its base, the two arms, the shade, and the pool of light it throws.
+				Poly({ FVector2f(-3.8f, 3.6f), FVector2f(-1.8f, 3.6f) }, Strong, 2.5f, false);
+				Poly({ FVector2f(-2.8f, 3.6f), FVector2f(-1.4f, -0.6f), FVector2f(1.0f, -2.6f) }, Strong, 2.f, false);
+				Poly({ FVector2f(0.4f, -3.4f), FVector2f(2.6f, -1.8f), FVector2f(2.0f, -1.0f), FVector2f(0.0f, -2.4f) }, Strong, 2.f, true);
+				Poly({ FVector2f(2.3f, -1.4f), FVector2f(4.4f, 3.6f) }, Faint, 1.5f, false);
+				Poly({ FVector2f(2.3f, -1.4f), FVector2f(0.6f, 3.6f) }, Faint, 1.5f, false);
+				Poly({ FVector2f(0.2f, 3.6f), FVector2f(4.8f, 3.6f) }, Faint, 1.5f, false);
+				Dimension(-3.8f, 4.8f, 4.6f);
+			}
+			return Layer + 1;
+		}
+
+	private:
+		int32 Kind = 0;
 	};
 
 	/** The risk band's mark and colour, as the ledger shows them (useLedger.ts riskBand; ▲ high, ◆ medium, ▽ low). */

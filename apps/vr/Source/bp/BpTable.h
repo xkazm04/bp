@@ -1709,6 +1709,24 @@ public:
 	bool PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip);
 	void StopVoice();
 	void LogTalk() const;
+	/** The conversation as the console's sheet shows it (night two V2): the state's word, the words heard (whole), the reply
+	 *  (whole), the caption's own line for the other states (a refusal, no PC), the input level 0..1 while listening, and
+	 *  whether it is the sample exchange. False when no talk line is on show. */
+	struct FTalkView
+	{
+		FString Word;
+		FString Heard;
+		FString Reply;
+		FString Line;
+		float Level = 0.f;
+		bool bSample = false;
+	};
+	bool TalkView(FTalkView& Out) const;
+	/** The conversation sheet's CLOSE: a talk in flight is cancelled, and the talk's words leave at once. */
+	void TalkDismiss();
+	/** BpTalk.Preview: a still of the conversation in a state (listening, thinking, answering) for captures; no microphone is
+	 *  opened, nothing is sent or spoken; BpTalk.Cancel ends it. */
+	void TalkPreview(const FString& Step, const FString& Heard, const FString& Reply);
 
 	// ---- The console and the pad (BpConsole.cpp, BpPad.cpp; night two W1) -------------------------------------------------
 	/** The deck's slot: its front screen's resting pose in the table's space (the console's open panel stands there). */
@@ -1841,6 +1859,12 @@ private:
 	bool bEmptySheet = false;
 	/** The lamp's caption shows outside room mode too while it says an onboarding's milestone. */
 	bool bLampNotice = false;
+	/** The caption's line is the talk's (BpTalk.cpp): the console's conversation sheet shows it, the lamp's box stays quiet. */
+	bool bTalkCaption = false;
+	/** The talk's words left the caption (their time ran out): the console and the wrist redraw. */
+	void TalkCaptionEnded();
+	/** The console shows the conversation now (bp.TalkSheet and no sheet holding the panel). */
+	bool TalkOnConsole() const;
 	/** The live plan's body (ApplyPlan's, minus the build-up's hold). */
 	void ApplyPlanNow(const FBpPlan& Plan);
 

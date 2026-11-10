@@ -171,8 +171,18 @@ public:
 	/** A spoken request raised a pending companion card (BpTalk.cpp): the STAND-UP page opens on it, as the stand-up's plan
 	 *  shows one (GET /api/companion/cards; answered with `shown`). */
 	void StandupShowCompanionCards();
+	/** The pending companion cards read from the PC and merged into the stand-up's sheets before the close card (opening, every
+	 *  re-read of the morning, a spoken request); bJumpToNewest shows the newest one. */
+	void StandupReadCards(bool bJumpToNewest);
+	/** The companion's requests waiting (the open stand-up's unanswered ones, else the last read), for HOME's tile and the wrist. */
+	int32 StandupPendingRequests() const;
+	/** A read of the pending cards only (HOME opening, linked): the count above, nothing shown. */
+	void StandupPeekRequests();
 	/** The talk's state moved (BpTalk.cpp): the console's bar and the wrist redraw if what they show changed. */
 	void TalkChanged();
+	/** The console may show the conversation (bp.TalkSheet on, and no stand-up or consent sheet open): the lamp's own caption
+	 *  box then stays quiet for the talk's lines. */
+	bool ConsoleShowsTalk() const;
 
 	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
 	 *  scan:start, scan:cancel, scan:dismiss, ask:next|here|scan|act, seat, tour, voice:minus|plus, music:minus|plus,
@@ -337,6 +347,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> ConsolePanel;
 	bool bConsoleOpen = false;
+	/** The conversation with the lamp fills the console's panel (night two V2) while a talk is on show and no page holds it. */
+	bool bConsoleTalk = false;
 	FString ConsolePageKey;
 	int32 ConsolePageAt = 0;
 	FString ConsoleSel;
@@ -392,6 +404,9 @@ private:
 	FString StandupKey() const;
 	/** The page's body on the console (the card as a sheet), its controls added to ConsoleBoxes. */
 	void DrawStandup(const TSharedRef<class SCanvas>& Canvas);
+	/** The conversation with the lamp on the console's panel (BpConsole.cpp, night two V2): the state, the heard words, the
+	 *  reply whole (or the lamp's own line), the level while listening. */
+	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample);
 	/** The pad on the open stand-up: false when it is not the stand-up's to take. */
 	bool StandupPad(const FString& Button);
 	/** The wrist's card for the stand-up (the decision on screen, or the hand-over), false when none. */
