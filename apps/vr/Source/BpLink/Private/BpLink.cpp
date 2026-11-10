@@ -386,6 +386,11 @@ void FBpLinkClient::FetchProduct(const FString& Slug, TFunction<void(bool, const
 				{
 					UE_LOG(LogBpLink, Log, TEXT("BpLink: %s has no live stream (405); using rev %s read once from structure"), *Slug, *Snapshot.Rev);
 				}
+				else if (Snapshot.StreamStatus == 403)
+				{
+					// The Wi-Fi door (apps/server/src/lan-door.ts) serves no stream verb: expected there, and the table polls.
+					UE_LOG(LogBpLink, Log, TEXT("BpLink: %s/stream is not served through the Wi-Fi door (403); the table polls and the one-time rev stands"), *Root);
+				}
 				else if (Snapshot.StreamStatus == 0)
 				{
 					// Asked, and nothing answered (-1 would be "never asked", which cannot reach this callback).
