@@ -402,7 +402,8 @@ async function run(args: string[], home: string, until: RegExp | null, ms = 30_0
   const child = spawn(process.execPath, ['--import', REGISTER, MAIN, ...args], { cwd: home, env: { ...process.env, BP_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   return new Promise((resolve) => {
-    const done = (match: RegExpExecArray | null) => { clearTimeout(timer); resolve({ out, code: child.exitCode, kill: () => child.kill(), match }); };
+    // `out` reads the output so far at each use (lines printed after the match, such as the owner routes, count too)
+    const done = (match: RegExpExecArray | null) => { clearTimeout(timer); resolve({ get out() { return out; }, code: child.exitCode, kill: () => child.kill(), match }); };
     const timer = setTimeout(() => { child.kill(); done(null); }, ms);
     const on = (d: Buffer) => { out += d; const m = until?.exec(out); if (m) done(m); };
     child.stdout.on('data', on);
@@ -419,6 +420,7 @@ check('without --lan: nothing under $BP_HOME/lan', !fs.existsSync(path.join(plai
 p.kill();
 const lanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-on-'));
 p = await run(['--port', '0', '--lan', '--lan-host', '127.0.0.1', '--lan-port', '0'], lanHome, /lan door: listening on http:\/\/127\.0\.0\.1:(\d+)/);
+await new Promise((res) => setTimeout(res, 300)); // the owner routes are mounted once the door has started (S4 finding 8), just after its listening line
 check('with --lan: a pairing window and the door listening', !!p.match && /pairing window open/.test(p.out), p.out.slice(-400));
 check('with --lan: the owner routes join the loopback mount', /route GET \/lan\/pair\b/.test(p.out) && /route POST \/lan\/pair\/approve/.test(p.out));
 if (p.match) {

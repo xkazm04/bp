@@ -10,6 +10,7 @@
 import { door } from '@bp/core/server/route-door.server';
 import { buildupPage } from '@bp/core/server/onboarding.server';
 import { SAFE_ID } from '@bp/core/scan/jobs';
+import { jobFor } from '@bp/core/server/device-view.server';
 
 const feed = door('products/[slug]/onboarding/feed', {
   GET: {
@@ -19,7 +20,7 @@ const feed = door('products/[slug]/onboarding/feed', {
       if (job !== null && !SAFE_ID.test(job)) return Response.json({ error: 'bad job id' }, { status: 400 });
       if (!/^\d{1,9}$/.test(afterRaw)) return Response.json({ error: 'after must be a whole number' }, { status: 400 });
       const page = buildupPage(p, { after: Number(afterRaw), jobId: job, islands: q.get('layout') === 'islands' });
-      return page ? Response.json(page) : Response.json({ error: `no onboarding job ${job} for ${slug}` }, { status: 404 });
+      return page ? Response.json({ ...page, job: jobFor(req, page.job) }) : Response.json({ error: `no onboarding job ${job} for ${slug}` }, { status: 404 });
     },
   },
 });

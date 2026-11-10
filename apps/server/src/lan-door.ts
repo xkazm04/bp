@@ -121,6 +121,14 @@ export function privatePeer(addr: string | undefined): boolean {
 
 /** The address `--lan` binds when no --lan-host is given: the first private-range IPv4 interface, a home-network one
  *  (10/8, 172.16/12, 192.168/16) before a tailnet one (100.64/10), since the headset is on the home Wi-Fi. */
+/** Whether a pairing request's peer is this PC itself: the cable's `loopback`, a loopback address, or one of this PC's own
+ *  interface addresses (a local program reaching the Wi-Fi listener at the PC's own address). Such a request may be a local
+ *  program's own, so approving it does not reset the wrong-code count (S4, 2026-11-10). */
+export function peerIsThisPc(peer: string): boolean {
+  const a = peer.trim().replace(/^::ffff:/i, '');
+  if (a === 'loopback' || /^(127(?:\.\d{1,3}){3}|::1|localhost)$/i.test(a)) return true;
+  return Object.values(os.networkInterfaces()).flatMap((l) => l ?? []).some((i) => i.address.replace(/^::ffff:/i, '') === a);
+}
 export function lanAddress(): string | null {
   const found = Object.values(os.networkInterfaces()).flatMap((l) => l ?? []).filter((i) => i.family === 'IPv4' && !i.internal && privatePeer(i.address)).map((i) => i.address);
   return found.find((a) => !a.startsWith('100.')) ?? found[0] ?? null;
@@ -191,6 +199,8 @@ export const VERBS: readonly Verb[] = [
   { scope: 'read', method: 'GET', path: products('onboarding/feed'), query: FEED_QUERY },
   { scope: 'onboard', method: 'GET', path: /^\/api\/onboarding\/candidates$/ },
   { scope: 'onboard', method: 'POST', path: /^\/api\/onboarding\/start$/ },
+  // a headset's start is an ask the owner confirms at the PC (owner, 2026-11-10): what became of it, no query
+  { scope: 'onboard', method: 'GET', path: /^\/api\/onboarding\/requests\/[0-9a-f]{24}$/ },
 ];
 /** The verb a request names, or null. `standup` includes `read`. The raw request target is parsed here, strictly: printable
  *  ASCII, no percent-escape, no dot segment, no empty segment, and a query only where the verb names it exactly. */
@@ -415,6 +425,7 @@ export class LanDoor {
     else if (!reason && this.server) { await this.close(); this.log('lan door: closed (nothing paired, no pairing window)'); }
   }
   openWindow(by?: string): number {
+    if (this.windowUntil <= this.now()) this.wrongCodes = 0; // a fresh window, a fresh count (an open one keeps its count)
     this.windowUntil = this.now() + WINDOW_MS;
     this.ledger({ event: 'window-open', until: new Date(this.windowUntil).toISOString(), ...(by ? { by } : {}) });
     this.log(`lan door: pairing window open until ${new Date(this.windowUntil).toISOString()} (the Headsets page, or npm run server -- pair open, reopens it)`);
@@ -660,7 +671,10 @@ export class LanDoor {
       return { ok: false, status: 404, error: `no pending request with code ${code} (it lives ${PAIR_TTL_MS / 1000} s)`, wrong: { count, limit: MAX_WRONG_CODES, cancelled } };
     }
     if (this.live().length >= MAX_PAIRED) return { ok: false, status: 409, error: `${MAX_PAIRED} devices are paired already; pair revoke one first` };
-    this.wrongCodes = 0;
+    // a right code resets the count only for a request from another device than this PC: a local program could otherwise
+    // open its own request, approve it every few guesses and guess on forever (S4, 2026-11-10). The count also restarts
+    // when a closed window is opened again (openWindow).
+    if (!peerIsThisPc(p.peer)) this.wrongCodes = 0;
     p.state = 'approved';
     // a named-only scope (decide, scan) is granted when the owner's approve names it, never because the device asked
     p.granted = scopes ?? p.requested.filter((s) => !NAMED_ONLY.includes(s));
@@ -753,12 +767,13 @@ export class LanDoor {
         await this.converge();
         return Response.json({ window: new Date(until).toISOString(), listening: this.server ? `http://${this.o.host}:${this.port}` : null });
       }),
-      write('approve', (b) => {
+      write('approve', async (b) => {
         const c = code(b);
         if (!c) return Response.json({ error: 'body must name the 6-character code' }, { status: 400 });
         if (b.scopes !== undefined && !isScopes(b.scopes)) return Response.json({ error: `scopes must be a list of ${SCOPES.join(', ')}` }, { status: 400 });
         if (b.days !== undefined && !(Number.isInteger(b.days) && (b.days as number) >= 1 && (b.days as number) <= MAX_DAYS)) return Response.json({ error: `days must be an integer 1-${MAX_DAYS}` }, { status: 400 });
         const r = this.approve(c, b.scopes as Scope[] | undefined, b.days as number | undefined);
+        if (!r.ok && r.wrong) await sleep(REFUSAL_DELAY_MS); // a wrong code waits as the page's does (S4, 2026-11-10)
         return r.ok ? Response.json(r) : Response.json({ error: r.error }, { status: r.status });
       }),
       write('deny', (b) => {

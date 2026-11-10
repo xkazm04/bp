@@ -107,3 +107,6 @@
   .row { flex-direction: column; }
   .scopes { grid-template-columns: 1fr; }
 }
+/* a headset's ask waiting for the owner (the PC confirm, owner 2026-11-10): first in WHAT THE TABLE DID, amber-edged */
+.ask { border-color: var(--amber); border-left-width: var(--bw-bar); }
+.askActs { display: flex; gap: var(--sp-8); flex: 0 0 auto; }

@@ -61,7 +61,7 @@ try {
     const got = new Map([...out.matchAll(/^route (\S+) (\S+)$/gm)].map((m) => [m[2], m[1].split(',').sort().join(',')]));
     // the server's own routes on every start: bp's Headsets page (apps/server/src/headsets.ts; it drives the LAN door, which
     // core cannot reach), exactly these and only these beyond the core table
-    const OWN = new Map([['/api/companion/headsets', 'GET'], ...['open', 'approve', 'deny', 'revoke', 'door', 'stop'].map((n) => [`/api/companion/headsets/${n}`, 'POST'])]);
+    const OWN = new Map([['/api/companion/headsets', 'GET'], ...['open', 'approve', 'deny', 'revoke', 'door', 'stop', 'ask/confirm', 'ask/decline'].map((n) => [`/api/companion/headsets/${n}`, 'POST'])]);
     const missing = [...want.keys()].filter((p) => !got.has(p)), extra = [...got.keys()].filter((p) => !want.has(p) && !OWN.has(p));
     const differ = [...want.keys()].filter((p) => got.has(p) && got.get(p) !== want.get(p));
     check(`routes: the ${want.size} core handler routes, no more, no fewer`, want.size > 0 && !missing.length && !extra.length, `missing ${missing.join(' ')} extra ${extra.join(' ')}`);

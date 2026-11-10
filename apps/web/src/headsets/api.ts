@@ -8,7 +8,7 @@
 //
 // `?fixture=1` swaps every call for an in-memory fake (the /projects precedent), so every state can be seen and screenshotted
 // without a headset: `1` (Wi-Fi on, a request waiting, two pairings, grants and a log), `off`, `cable`, `paired`, `empty`,
-// `noserver` and `nowire`. In the fixture the code K7QX4M approves the waiting request; any other code is wrong.
+// `noserver`, `nowire` and `ask` (a headset's ask waiting for CONFIRM; nothing running, so CONFIRM starts it). In the fixture the code K7QX4M approves the waiting request; any other code is wrong.
 import { humanToken } from '@/components/crossing/follow';
 
 export type DoorMode = 'off' | 'pair' | 'lan';
@@ -32,11 +32,15 @@ export interface HeadsetState {
   /** Project reads a headset started (the onboard scope), newest first (table-link-v2.md section 14). */
   onboards: OnboardView[];
   onboardBounds: { perDay: number; inFlight: number };
+  /** A headset's asks to read a folder, waiting for CONFIRM or DECLINE on this page (owner, 2026-11-10: the PC confirm). */
+  asks: AskView[];
 }
+/** One open ask: the folder's name and hint as the PC knows them, and the words the headset says it showed. */
+export interface AskView { id: string; device: string; name: string; hint: string; shown: string; askedAt: string; expiresAt: string }
 export interface OnboardView { at: string; device: string; slug: string; name: string; shown?: string; job: string; status: string }
 export interface Marks { surface: 'web' | 'vr'; device?: string; shown?: string }
 export interface Grant { id: string; product: string; tools: string[]; minTier?: number; expiresAt: string; createdAt: string; grantedBy?: Marks }
-export interface Decision { at: string; kind: 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard'; surface: 'web' | 'vr'; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string }
+export interface Decision { at: string; kind: 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard' | 'onboard-ask'; surface: 'web' | 'vr'; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string; request?: string; reason?: string }
 export interface DecisionPage { rows: Decision[]; matched: number; total: number; limit: number; unreadable: number; recorded: boolean; filter: { surface?: string; device?: string } }
 
 /** The page cannot reach bp's server: `noserver` (nothing answers behind the web app) or `nowire` (the web app serves its
@@ -64,6 +68,9 @@ export interface HeadsetsApi {
   decisions(surface: 'vr' | 'web' | null): Promise<DecisionPage>;
   /** STOP a project read a headset started (the existing job cancel, from this page only). */
   stop(slug: string, job: string): Promise<void>;
+  /** CONFIRM a headset's ask: the PC starts reading the folder (its answer, or the sentence it failed with). */
+  confirmAsk(id: string): Promise<{ slug: string; name: string; job: string }>;
+  declineAsk(id: string): Promise<void>;
 }
 
 const TIMEOUT_MS = 15_000;
@@ -102,6 +109,8 @@ const real: HeadsetsApi = {
   revokeGrant: async (id) => { await call('/api/companion/policies/' + encodeURIComponent(id), 'DELETE'); },
   decisions: (surface) => call<DecisionPage>('/api/companion/decisions' + (surface ? '?surface=' + surface : '')),
   stop: async (slug, job) => { await call(H + '/stop', 'POST', { slug, job }); },
+  confirmAsk: (id) => call(H + '/ask/confirm', 'POST', { id }),
+  declineAsk: async (id) => { await call(H + '/ask/decline', 'POST', { id }); },
 };
 
 // ------------------------------------------------------------------------------------------------ the fixture
@@ -138,6 +147,12 @@ function fixtureApi(kind: string): HeadsetsApi {
   ];
   log.unshift({ at: ago(420), kind: 'onboard', surface: 'vr', device: 'quest3s:b81c44e0', shown: onboards[0]?.shown, product: 'harbor', target: 'harbor', verdict: 'start', job: 'j-mh2k1x9-a7q2' });
   if (!onboards.length) log.shift();
+  // `?fixture=ask`: a headset's ask waits for the owner's CONFIRM (the PC confirm, owner 2026-11-10); nothing is running
+  if (kind === 'ask') { onboards.forEach((o) => { o.status = 'done'; }); }
+  const asks: AskView[] = kind === 'ask' ? [
+    { id: '5c1e0b7a9d2f4e6a8b3c1d0e', device: 'quest3s:b81c44e0', name: 'tidewater', hint: 'Add the harbour schedule importer', shown: 'Read tidewater now? It is read on your PC once you confirm it there.', askedAt: ago(25), expiresAt: ahead(575) },
+  ] : [];
+  if (asks.length) log.unshift({ at: asks[0].askedAt, kind: 'onboard-ask', surface: 'vr', device: asks[0].device, shown: asks[0].shown, target: asks[0].name, verdict: 'ask', request: asks[0].id });
   const pause = (ms = 200) => new Promise<void>((r) => setTimeout(r, ms));
   const state = (): HeadsetState => {
     if (window && Date.parse(window) <= Date.now()) window = null;
@@ -148,6 +163,7 @@ function fixtureApi(kind: string): HeadsetsApi {
       pending: pending.map((p) => ({ ...p })), wrongCodes: { count: wrong, limit: 5 }, paired: paired.map((p) => ({ ...p })),
       scopes: SCOPES, namedOnly: ['decide', 'scan', 'onboard'], days: { default: 30, max: 30 }, limits: { pending: 4, paired: 8 },
       onboards: onboards.map((o) => ({ ...o })), onboardBounds: { perDay: 3, inFlight: 1 },
+      asks: asks.map((a) => ({ ...a })),
     };
   };
   const need = () => { if (mode === 'off') throw new ApiError('pairing is off on this server: switch it on first', 409); };
@@ -195,6 +211,27 @@ function fixtureApi(kind: string): HeadsetsApi {
       await pause(); const o = onboards.find((x) => x.slug === slug && x.job === job);
       if (!o) throw new ApiError('No project read started from a headset matches that', 404);
       o.status = 'cancelled';
+    },
+    async confirmAsk(id) {
+      await pause(600); const i = asks.findIndex((a) => a.id === id);
+      if (i < 0) throw new ApiError('That ask is no longer known to this server.', 404);
+      const a = asks.splice(i, 1)[0];
+      const busy = onboards.find((o) => o.status === 'running');
+      if (busy) {
+        const reason = `A project a headset asked for is still being read (${busy.slug}): one at a time. Stop it first, or wait.`;
+        log.unshift({ at: new Date().toISOString(), kind: 'onboard', surface: 'web', device: a.device, shown: a.shown, target: a.name, verdict: 'decline', reason, request: a.id });
+        throw new ApiError(reason, 409);
+      }
+      const job = 'j-mh3q8c2-k4d1';
+      onboards.unshift({ at: new Date().toISOString(), device: a.device, slug: a.name, name: a.name, shown: a.shown, job, status: 'running' });
+      log.unshift({ at: new Date().toISOString(), kind: 'onboard', surface: 'web', device: a.device, shown: a.shown, product: a.name, target: a.name, verdict: 'confirm', job, request: a.id });
+      return { slug: a.name, name: a.name, job };
+    },
+    async declineAsk(id) {
+      await pause(); const i = asks.findIndex((a) => a.id === id);
+      if (i < 0) throw new ApiError('That ask is no longer known to this server.', 404);
+      const a = asks.splice(i, 1)[0];
+      log.unshift({ at: new Date().toISOString(), kind: 'onboard', surface: 'web', device: a.device, shown: a.shown, target: a.name, verdict: 'decline', reason: 'declined at the PC', request: a.id });
     },
   };
 }

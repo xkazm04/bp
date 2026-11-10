@@ -39,7 +39,16 @@ process.env.BP_PRODUCTS_FILE = path.join(tmp, 'products.json');
 const SKILL = path.join(tmp, 'skill', 'adopt-bp');
 fs.mkdirSync(path.join(SKILL, 'scripts'), { recursive: true });
 fs.writeFileSync(path.join(SKILL, 'SKILL.md'), '# adopt-bp (stub for check-onboard-door)\n');
-fs.writeFileSync(path.join(SKILL, 'scripts', 'adopt.mjs'), "console.log(JSON.stringify({ items: [{ key: 'map', state: 'missing', detail: 'none' }] }));\n");
+// the stub check also stages the swap of S4 finding 5: when SWAP names a folder, it replaces that folder by a junction to
+// another git folder WHILE the check runs (as a local program could in that window)
+const SWAP = path.join(tmp, 'swap.json');
+fs.writeFileSync(path.join(SKILL, 'scripts', 'adopt.mjs'), [
+  "import fs from 'node:fs'; import path from 'node:path';",
+  "const root = process.argv[process.argv.indexOf('--root') + 1];",
+  `const swap = ${JSON.stringify(SWAP)};`,
+  "if (fs.existsSync(swap)) { const s = JSON.parse(fs.readFileSync(swap, 'utf8')); if (path.basename(root) === s.name) { process.chdir(path.dirname(swap)); fs.unlinkSync(swap); fs.renameSync(root, root + '-old'); fs.symlinkSync(s.target, root, 'junction'); } }",
+  "console.log(JSON.stringify({ items: [{ key: 'map', state: 'missing', detail: 'none' }] }));",
+].join('\n') + '\n');
 process.env.BP_ADOPT_SKILL = SKILL;
 process.env.BP_CLAUDE_BIN = path.join(ROOT, 'scripts', 'fixtures', 'fake-adopt.mjs');
 process.env.FAKE_ADOPT_MS = '30000'; // long enough that a started job is still running for the bounds below
@@ -62,6 +71,13 @@ mkRepo('gamma', 'A subject that runs well past sixty characters so the hint has 
 mkRepo('delta', 'Fourth of the day');
 fs.mkdirSync(path.join(PARENT, 'plain'), { recursive: true });
 mkRepo('.hidden', 'hidden');
+// held back from a headset (S4): a folder with its own MCP servers, one with its own hooks, one whose name the prompt cannot carry
+const withMcp = mkRepo('epsilon', 'ships its own MCP server');
+fs.writeFileSync(path.join(withMcp, '.mcp.json'), JSON.stringify({ mcpServers: { x: { command: 'node', args: ['x.js'] } } }));
+const withHooks = mkRepo('zeta', 'ships its own hooks');
+fs.mkdirSync(path.join(withHooks, '.claude'), { recursive: true });
+fs.writeFileSync(path.join(withHooks, '.claude', 'settings.json'), JSON.stringify({ hooks: { SessionStart: [] } }));
+const oddName = mkRepo('odd$(name)', 'a name with a dollar');
 fs.writeFileSync(process.env.BP_PRODUCTS_FILE, JSON.stringify({ products: [{ slug: 'anchor', name: 'Anchor', root: anchor }] }));
 
 const { listener, loadRoutes } = await import('../apps/server/src/mount.ts');
@@ -70,8 +86,8 @@ const { loopbackDevice, deviceOverlay } = await import('../apps/server/src/devic
 const { headsetRoutes } = await import('../apps/server/src/headsets.ts');
 const { humanToken } = await import('../packages/core/src/server/api/companion/door.server.ts');
 const { ONBOARD_SEAL_HEADER, DECIDER_SEAL_HEADER, onboardSeal, readDecisions } = await import('../packages/core/src/server/decider.server.ts');
-const { DEVICE_STARTS_PER_DAY, HINT_MAX, MAX_CANDIDATES } = await import('../packages/core/src/server/onboard-start.server.ts');
-const { cancel, list } = await import('../packages/core/src/server/jobs.server.ts');
+const { DEVICE_STARTS_PER_DAY, HINT_MAX, MAX_CANDIDATES, ASKS_PER_HOUR, ASK_TTL_MS, candidateId, askOf, confirmAsk } = await import('../packages/core/src/server/onboard-start.server.ts');
+const { cancel, list, ADOPT_ARGS } = await import('../packages/core/src/server/jobs.server.ts');
 type Scope = (typeof SCOPES)[number];
 
 const HOME = path.join(tmp, 'lan');
@@ -159,9 +175,15 @@ expect(r.status === 403, 'a plain loopback caller with no human token: start 403
 
 // ------------------------------------------------------------------------------------------------ candidates
 r = await wifi(TA, 'GET', '/api/onboarding/candidates');
-const list0 = r.json as { candidates: Cand[]; roots: number };
+const list0 = r.json as { candidates: Cand[]; roots: number; held: number };
 const names = list0.candidates?.map((c) => c.name) ?? [];
-expect(r.status === 200 && list0.roots === 1 && JSON.stringify(names) === JSON.stringify(['alpha', 'anchor', 'beta', 'delta', 'gamma']), 'Wi-Fi with onboard: the sibling git folders and the never-read product, by name; not plain, not hidden', r.body);
+expect(r.status === 200 && list0.roots === 1 && JSON.stringify(names) === JSON.stringify(['alpha', 'anchor', 'beta', 'delta', 'gamma']), 'Wi-Fi with onboard: the sibling git folders and the never-read product, by name; not plain, not hidden, not held', r.body);
+expect(list0.held === 3, 'held (S4): a folder with .mcp.json, one with .claude/settings.json and one whose name needed replacing are counted, never offered', String(list0.held));
+for (const [dir, what] of [[withMcp, '.mcp.json'], [withHooks, '.claude/settings.json'], [oddName, 'a $( name']] as const) {
+  const x = await wifi(TA, 'POST', '/api/onboarding/start', { candidate: candidateId(dir), shown: 'Read it now?' });
+  expect(x.status === 403 && /agent settings/.test(String(x.json.error)) && !list(path.basename(dir)).length, `a held folder's id (${what}) is refused at start: 403 in words, nothing started`, `${x.status} ${x.body}`);
+}
+expect(ADOPT_ARGS.join(' ').includes('--setting-sources user') && ADOPT_ARGS.includes('--strict-mcp-config') && ADOPT_ARGS.includes('--dangerously-skip-permissions'), 'the adopt job loads only the user\'s settings and no MCP server (S4 1a: the target folder\'s hooks and .mcp.json do not load)', ADOPT_ARGS.join(' '));
 expect(list0.candidates.every((c) => /^[0-9a-f]{24}$/.test(c.id) && c.hint.length <= HINT_MAX) && list0.candidates.length <= MAX_CANDIDATES, 'ids are 24 hex, hints at most 60 characters');
 expect(list0.candidates.find((c) => c.name === 'anchor')?.state === 'registered' && list0.candidates.filter((c) => c.name !== 'anchor').every((c) => c.state === 'new'), 'states: anchor registered, the rest new');
 const user = os.userInfo().username;
@@ -171,7 +193,7 @@ const byName = (n: string) => list0.candidates.find((c) => c.name === n) as Cand
 expect(byName('alpha').hint === 'Add the tide table export', 'a hint is the last commit subject', byName('alpha').hint);
 expect(byName('beta').hint === 'beta-remote', 'a commit subject that names a path is replaced by the remote repo name', byName('beta').hint);
 expect(byName('gamma').hint.length <= HINT_MAX && byName('gamma').hint.length >= HINT_MAX - 2 &&byName('gamma').hint.endsWith('…'), 'a long subject is clipped', byName('gamma').hint);
-expect(Object.keys(byName('alpha')).sort().join() === 'hint,id,name,state' && Object.keys(list0).sort().join() === 'candidates,roots', 'nothing else is sent');
+expect(Object.keys(byName('alpha')).sort().join() === 'hint,id,name,state' && Object.keys(list0).sort().join() === 'candidates,held,roots', 'nothing else is sent');
 
 // ------------------------------------------------------------------------------------------------ start: refusals
 const shown = (n: string) => `Read ${n} now? This starts a paid agent run on your PC.`;
@@ -187,23 +209,70 @@ r = await wifi(TA, 'POST', '/api/onboarding/start', { candidate: byName('alpha')
 expect(r.status === 400 && /shown/.test(String(r.json.error)), 'a start from the table without shown: 400', `${r.status} ${r.body}`);
 expect(!list('alpha').length, 'none of the refusals started anything');
 
-// ------------------------------------------------------------------------------------------------ start, bounds, log
-const start = (t: string, n: string) => wifi(t, 'POST', '/api/onboarding/start', { candidate: byName(n).id, shown: shown(n) });
-r = await start(TA, 'alpha');
+// ------------------------------------------------------------------------------------------------ the ask, the PC confirm, the log
+// (owner, 2026-11-10: "the headset picks the folder; a confirm appears on the Headsets page naming the folder, and the run
+// starts only after your click there")
+const askFor = (t: string, n: string) => wifi(t, 'POST', '/api/onboarding/start', { candidate: byName(n).id, shown: shown(n) });
+const readAsk = (t: string, id: string, q = '') => wifi(t, 'GET', `/api/onboarding/requests/${id}${q}`);
+const confirm = (id: string, h: Record<string, string> = HUMAN) => send(LOOP, 'POST', '/api/companion/headsets/ask/confirm', h, { id });
+const regHas = (slug: string) => (JSON.parse(fs.readFileSync(process.env.BP_PRODUCTS_FILE as string, 'utf8')) as { products: { slug: string; root: string }[] }).products.find((p) => p.slug === slug);
+r = await askFor(TA, 'alpha');
+const askA = String(r.json.request);
+expect(r.status === 202 && /^[0-9a-f]{24}$/.test(askA) && r.json.name === 'alpha' && r.json.state === 'waiting' && Object.keys(r.json).sort().join() === 'name,request,state', 'a start from the table is an ask: 202 { request, name, state: waiting }', `${r.status} ${r.body}`);
+expect(!list('alpha').length && !regHas('alpha'), 'an ask starts no job and registers nothing');
+r = await readAsk(TA, askA);
+expect(r.status === 200 && r.json.state === 'waiting' && r.json.request === askA && !('slug' in r.json) && !('job' in r.json), 'the asking pairing reads its ask: waiting, no slug or job yet', `${r.status} ${r.body}`);
+r = await readAsk(TC, askA);
+expect(r.status === 404, 'another pairing (holding onboard too) reads the ask as 404', `${r.status} ${r.body}`);
+r = await readAsk(TB, askA);
+expect(r.status === 403 && r.body === '', 'a pairing without onboard: the door\'s bare 403', `${r.status}`);
+r = await readAsk(TA, askA, '?x=1');
+expect(r.status === 403 && r.body === '', 'the requests verb takes no query', `${r.status}`);
+r = await send(LOOP, 'GET', `/api/onboarding/requests/${askA}`);
+expect(r.status === 404, 'a plain loopback caller (no device) reads it as 404', `${r.status}`);
+r = await send(LOOP, 'GET', '/api/companion/headsets', HUMAN);
+const asks0 = (r.json.asks ?? []) as { id: string; device: string; name: string; hint: string; shown: string; expiresAt: string }[];
+expect(asks0.length === 1 && asks0[0].id === askA && asks0[0].device === devA && asks0[0].name === 'alpha' && asks0[0].hint === 'Add the tide table export' && asks0[0].shown === shown('alpha') && !!asks0[0].expiresAt, 'the Headsets page shows the open ask: device, the folder\'s name and hint as the PC knows them, the words shown', JSON.stringify(asks0));
+r = await cable(TA, 'POST', '/api/companion/headsets/ask/confirm', { id: askA });
+expect(r.status === 403 && !list('alpha').length, 'a confirm carrying a device\'s token is 403', `${r.status} ${r.body}`);
+r = await send(LOOP, 'POST', '/api/companion/headsets/ask/confirm', { 'x-bp-device': devA, [ONBOARD_SEAL_HEADER]: onboardSeal(), ...HUMAN }, { id: askA });
+expect(r.status === 403 && !list('alpha').length, 'a confirm carrying a device mark and seal (even beside the page token) is 403', `${r.status} ${r.body}`);
+r = await send(LOOP, 'POST', '/api/companion/headsets/ask/confirm', {}, { id: askA });
+expect(r.status === 403 && !list('alpha').length, 'a confirm without the page token is 403', `${r.status} ${r.body}`);
+r = await confirm(askA);
 const jobA = String(r.json.job);
-expect(r.status === 202 && r.json.slug === 'alpha' && r.json.name === 'alpha' && /^j-/.test(jobA), 'a start: 202 { slug, name, job }', `${r.status} ${r.body}`);
-const reg = JSON.parse(fs.readFileSync(process.env.BP_PRODUCTS_FILE, 'utf8')) as { products: { slug: string; root: string }[] };
-expect(reg.products.some((p) => p.slug === 'alpha' && path.resolve(p.root) === path.join(PARENT, 'alpha')), 'registered under the folder\'s slug');
+expect(r.status === 200 && r.json.state === 'confirmed' && r.json.slug === 'alpha' && /^j-/.test(jobA), 'the page\'s CONFIRM starts it: 200 { state: confirmed, slug, job }', `${r.status} ${r.body}`);
+expect(!!regHas('alpha') && path.resolve(regHas('alpha')!.root) === path.join(PARENT, 'alpha'), 'registered under the folder\'s slug, at the offered path');
 const jA = list('alpha').find((j) => j.id === jobA);
 expect(!!jA && jA.kind === 'adopt' && jA.model === undefined && !jA.resume, 'the adopt job is the page\'s first read: no model, no resume', JSON.stringify(jA));
-let log = readDecisions().filter((x) => x.kind === 'onboard');
-expect(log.length === 1 && log[0].surface === 'vr' && log[0].device === devA && log[0].shown === shown('alpha') && log[0].target === 'alpha' && log[0].job === jobA && log[0].verdict === 'start', 'the start is in the decision log: kind onboard, surface, device, shown, target, job', JSON.stringify(log));
-const [c1, c2] = await Promise.all([start(TA, 'beta'), start(TC, 'delta')]);
-expect(c1.status === 409 && c1.json.slug === 'alpha' && c2.status === 409 && c2.json.slug === 'alpha', 'while it runs, a second start (this device or another) is 409 with the running slug', `${c1.status} ${c1.body} | ${c2.status} ${c2.body}`);
+r = await readAsk(TA, askA);
+expect(r.status === 200 && r.json.state === 'confirmed' && r.json.slug === 'alpha' && r.json.job === jobA, 'the headset reads confirmed with the slug and job to watch', r.body);
+r = await confirm(askA);
+expect(r.status === 409, 'a second confirm of the same ask: 409', `${r.status} ${r.body}`);
+let log = readDecisions().filter((x) => x.kind === 'onboard' || x.kind === 'onboard-ask');
+expect(log.length === 2 && log[0].kind === 'onboard-ask' && log[0].surface === 'vr' && log[0].device === devA && log[0].target === 'alpha' && log[0].shown === shown('alpha') && log[0].request === askA
+  && log[1].kind === 'onboard' && log[1].surface === 'web' && log[1].device === devA && log[1].verdict === 'confirm' && log[1].target === 'alpha' && log[1].job === jobA, 'two rows: the ask (vr, device, the folder\'s name, shown) and the confirm (web, the asking device, the slug, the job)', JSON.stringify(log));
+
+// the in-flight bound at confirm; one open ask per pairing
+r = await askFor(TC, 'delta');
+const askC = String(r.json.request);
+expect(r.status === 202, 'another headset may ask while a read runs', `${r.status} ${r.body}`);
+r = await confirm(askC);
+expect(r.status === 409 && r.json.state === 'declined' && /one at a time/.test(String(r.json.error)) && !list('delta').length, 'a confirm while a headset-asked read runs: 409 in words, the ask declined, nothing started', `${r.status} ${r.body}`);
+r = await readAsk(TC, askC);
+expect(r.json.state === 'declined' && /one at a time/.test(String(r.json.reason)), 'the headset reads declined with that sentence as the reason', r.body);
+r = await askFor(TA, 'beta');
+const askB1 = String(r.json.request);
+r = await askFor(TA, 'gamma');
+const askG = String(r.json.request);
+r = await readAsk(TA, askB1);
+expect(r.json.state === 'declined' && /replaced/.test(String(r.json.reason)), 'a second ask from one pairing replaces the first', r.body);
+r = await send(LOOP, 'GET', '/api/companion/headsets', HUMAN);
+expect(((r.json.asks ?? []) as { id: string }[]).map((a) => a.id).join() === askG, 'the page shows only the open ask', JSON.stringify(r.json.asks));
+r = await wifi(TA, 'POST', '/api/onboarding/start', { candidate: byName('alpha').id, shown: shown('alpha') });
+expect(r.status === 409 && r.json.slug === 'alpha', 'asking for the one being read: 409 with its slug, to watch', `${r.status} ${r.body}`);
 r = await wifi(TA, 'GET', '/api/onboarding/candidates');
 expect((r.json as { candidates: Cand[] }).candidates.find((c) => c.name === 'alpha')?.state === 'onboarding', 'the list now shows alpha onboarding');
-r = await wifi(TA, 'POST', '/api/onboarding/start', { candidate: byName('alpha').id, shown: shown('alpha') });
-expect(r.status === 409 && r.json.slug === 'alpha', 'starting the one being read: 409 with its slug, to watch', `${r.status} ${r.body}`);
 
 // ------------------------------------------------------------------------------------------------ watch through the door
 r = await wifi(TA, 'GET', '/api/onboarding');
@@ -216,6 +285,25 @@ for (const q of [`after=0`, `job=${jobA}&after=0`, `after=0&job=${jobA}&layout=i
   r = await wifi(TA, 'GET', `/api/products/alpha/onboarding/feed${q ? '?' + q : ''}`);
   expect(r.status === 403 && r.body === '', `a wider feed query is the bare 403: "${q}"`, `${r.status}`);
 }
+// reads are a projection (S4 finding 3): a device reads no absolute path, no log tail and no error of the job's own
+{
+  const { deviceJob, DEVICE_JOB_ERROR } = await import('../packages/core/src/server/device-view.server.ts');
+  await new Promise((res) => setTimeout(res, 1500)); // let the fake run print a few lines into log_tail
+  const dev = await wifi(TA, 'GET', '/api/onboarding'), page = await send(LOOP, 'GET', '/api/onboarding');
+  const devJob = ((dev.json.items as { slug: string; job: Record<string, unknown> | null }[]) ?? []).find((x) => x.slug === 'alpha')?.job;
+  const pageJob = ((page.json.items as { slug: string; job: Record<string, unknown> | null }[]) ?? []).find((x) => x.slug === 'alpha')?.job;
+  expect(!!devJob && !('log_tail' in devJob) && typeof pageJob?.log_tail === 'string', 'GET /api/onboarding: a device reads the job without log_tail; the page still reads it', `${JSON.stringify(devJob)?.slice(0, 200)} | ${typeof pageJob?.log_tail}`);
+  const feedDev = await wifi(TA, 'GET', `/api/products/alpha/onboarding/feed?after=0&job=${jobA}`);
+  expect(!('log_tail' in ((feedDev.json.job ?? {}) as object)), 'the feed\'s job: no log_tail for a device');
+  const scansDev = await wifi(TA, 'GET', '/api/products/alpha/scans');
+  expect(scansDev.status !== 200 || ((scansDev.json as unknown as Record<string, unknown>[]) ?? []).every((j) => !('log_tail' in j)), 'GET .../scans: no log_tail for a device', `${scansDev.status} ${scansDev.body.slice(0, 160)}`);
+  const prodDev = await wifi(TA, 'GET', '/api/products'), prodPage = await send(LOOP, 'GET', '/api/products');
+  expect(prodDev.status === 200 && (prodDev.json as unknown as Record<string, unknown>[]).every((p) => !('root' in p)) && !prodDev.body.includes(PARENT.replace(/\\/g, '\\\\')) && (prodPage.json as unknown as Record<string, unknown>[]).every((p) => typeof p.root === 'string'), 'GET /api/products: a device reads no root; the page does', prodDev.body.slice(0, 200));
+  const failed = deviceJob({ id: 'j-1', kind: 'adopt', status: 'failed', queued_at: '', error: `ENOENT ${PARENT}\\alpha\\.ai`, log_tail: 'x' });
+  const timed = deviceJob({ id: 'j-2', kind: 'adopt', status: 'failed', queued_at: '', error: 'the CLI timed out after 600 s' });
+  const stopped = deviceJob({ id: 'j-3', kind: 'adopt', status: 'cancelled', queued_at: '', error: 'cancelled by the operator' });
+  expect(failed.error === DEVICE_JOB_ERROR.failed && !('log_tail' in failed) && timed.error === DEVICE_JOB_ERROR.timedOut && stopped.error === DEVICE_JOB_ERROR.stopped, 'a job\'s error reaches a device as fixed words by kind', JSON.stringify([failed, timed, stopped]));
+}
 r = await wifi(TA, 'GET', '/api/onboarding?all=1');
 expect(r.status === 403, 'GET /api/onboarding with a query: the bare 403', r.status);
 r = await wifi(TA, 'GET', '/api/products/alpha/onboarding/events');
@@ -224,7 +312,7 @@ expect(r.status === 403, 'the SSE build-up is not a door verb', r.status);
 // ------------------------------------------------------------------------------------------------ the page: list, STOP
 r = await send(LOOP, 'GET', '/api/companion/headsets', HUMAN);
 const ob = (r.json.onboards ?? []) as { slug: string; job: string; status: string; device: string; shown?: string }[];
-expect(r.status === 200 && ob.length === 1 && ob[0].slug === 'alpha' && ob[0].job === jobA && ob[0].status === 'running' && ob[0].device === devA && ob[0].shown === shown('alpha'), 'the Headsets page lists the start, running, with the words shown', r.body.slice(-400));
+expect(r.status === 200 && ob.length === 1 && ob[0].slug === 'alpha' && ob[0].job === jobA && ob[0].status === 'running' && ob[0].device === devA && ob[0].shown === shown('alpha'), 'the Headsets page lists the confirmed read, running, with the words shown', r.body.slice(-400));
 expect((r.json.scopes as string[]).includes('onboard') && (r.json.namedOnly as string[]).includes('onboard'), 'the page is offered the onboard scope, named-only');
 r = await cable(TA, 'POST', '/api/companion/headsets/stop', { slug: 'alpha', job: jobA });
 expect(r.status === 403, 'a headset cannot STOP through the page route', `${r.status} ${r.body}`);
@@ -233,16 +321,45 @@ expect(r.status === 404, 'STOP names a start the log knows, else 404', `${r.stat
 r = await send(LOOP, 'POST', '/api/companion/headsets/stop', HUMAN, { slug: 'alpha', job: jobA });
 expect(r.status === 200 && r.json.status === 'cancelled', 'the page STOPs it (the job cancel)', `${r.status} ${r.body}`);
 
-// ------------------------------------------------------------------------------------------------ the daily bound
-const startAndStop = async (t: string, n: string) => { const x = await start(t, n); if (x.status === 202) cancel(String(x.json.slug), String(x.json.job)); return x; };
-const s2 = await startAndStop(TA, 'beta'), s3 = await startAndStop(TA, 'gamma');
-expect(s2.status === 202 && s3.status === 202, 'once stopped, the next ones start (the second and third today)', `${s2.status} ${s2.body} | ${s3.status} ${s3.body}`);
-r = await start(TA, 'delta');
-expect(r.status === 429 && typeof r.json.retryAfterS === 'number' && (r.json.retryAfterS as number) > 0 && /24 hours/.test(String(r.json.error)) && !list('delta').length, `the fourth in a day from one headset: 429 with words and retryAfterS (bound ${DEVICE_STARTS_PER_DAY})`, `${r.status} ${r.body}`);
-r = await startAndStop(TC, 'delta');
-expect(r.status === 202, 'another paired headset still may', `${r.status} ${r.body}`);
+// ------------------------------------------------------------------------------------------------ the daily bound (confirmed reads), the ask cap, expiry
+const confirmAndStop = async (id: string) => { const x = await confirm(id); if (x.status === 200) cancel(String(x.json.slug), String(x.json.job)); return x; };
+const s2 = await confirmAndStop(askG);
+r = await askFor(TA, 'beta');
+const s3 = await confirmAndStop(String(r.json.request));
+expect(s2.status === 200 && s3.status === 200, 'once stopped, the next ones start on a confirm (the second and third today)', `${s2.status} ${s2.body} | ${s3.status} ${s3.body}`);
+r = await askFor(TA, 'delta');
+expect(r.status === 202, 'a fourth ask is still taken (the day bound counts confirmed reads)', `${r.status} ${r.body}`);
+r = await confirm(String(r.json.request));
+expect(r.status === 429 && r.json.state === 'declined' && /24 hours/.test(String(r.json.error)) && !list('delta').length, `the fourth confirm in a day for one headset: 429 in words, declined (bound ${DEVICE_STARTS_PER_DAY})`, `${r.status} ${r.body}`);
+r = await askFor(TA, 'delta');
+expect(r.status === 202, `the ${ASKS_PER_HOUR}th ask in an hour is taken`, `${r.status} ${r.body}`);
+r = await askFor(TA, 'delta');
+expect(r.status === 429 && typeof r.json.retryAfterS === 'number' && (r.json.retryAfterS as number) > 0 && /last hour/.test(String(r.json.error)), `the ${ASKS_PER_HOUR + 1}th ask in an hour: 429 with words and retryAfterS`, `${r.status} ${r.body}`);
+r = await askFor(TC, 'delta');
+r = await confirmAndStop(String(r.json.request));
+expect(r.status === 200, 'another paired headset still may', `${r.status} ${r.body}`);
+r = await askFor(TC, 'gamma');
+const askOld = String(r.json.request);
+const later = Date.now() + ASK_TTL_MS + 1000;
+expect(askOf(askOld, devC, later)?.state === 'expired', 'an ask expires 10 minutes after it was made', JSON.stringify(askOf(askOld, devC, later)));
+const late = await confirmAsk(askOld, later);
+expect(late.status === 409 && !list('gamma').some((j) => j.status === 'queued' || j.status === 'running'), 'an expired ask cannot be confirmed', JSON.stringify(late));
 log = readDecisions().filter((x) => x.kind === 'onboard');
-expect(log.length === 4 && log.every((x) => x.surface === 'vr' && !!x.device && !!x.shown && !!x.job) && log.filter((x) => x.device === devA).length === 3, 'every start, and only the starts, are in the log', JSON.stringify(log.map((x) => [x.device, x.target])));
+const confirmed = log.filter((x) => x.verdict === 'confirm');
+expect(confirmed.length === 4 && confirmed.every((x) => x.surface === 'web' && !!x.device && !!x.shown && !!x.job) && confirmed.filter((x) => x.device === devA).length === 3, 'every confirmed read is one confirm row, with the asking device and the job', JSON.stringify(confirmed.map((x) => [x.device, x.target])));
+expect(log.filter((x) => x.verdict === 'decline').every((x) => x.surface === 'web' && !!x.device && !!x.reason && !x.job), 'every declined ask is one decline row with its reason', JSON.stringify(log.filter((x) => x.verdict === 'decline').map((x) => x.reason)));
+expect(readDecisions().filter((x) => x.kind === 'onboard-ask' && x.device === devA).length === ASKS_PER_HOUR, 'every ask taken is one onboard-ask row (the refused one is not)');
+
+// ------------------------------------------------------------------------------------------------ a swap during the check (S4 finding 5)
+{
+  const theta = mkRepo('theta', 'the one that gets swapped');
+  const elsewhere = mkRepo(path.join('..', 'ELSEWHERE'), 'not offered: outside the parent');
+  const x = await wifi(TC, 'POST', '/api/onboarding/start', { candidate: candidateId(theta), shown: shown('theta') });
+  expect(x.status === 202, 'theta is offered and asked for', `${x.status} ${x.body}`);
+  fs.writeFileSync(SWAP, JSON.stringify({ name: 'theta', target: elsewhere }));
+  const y = await confirm(String(x.json.request));
+  expect(y.status === 409 && /changed while this PC was checking/.test(String(y.json.error)) && !list('theta').length && !regHas('theta'), 'a folder replaced by a junction during the check: 409 in words, nothing registered or started', `${y.status} ${y.body}`);
+}
 
 // ------------------------------------------------------------------------------------------------ the page may start too
 r = await send(LOOP, 'POST', '/api/onboarding/start', HUMAN, { candidate: byName('anchor').id });

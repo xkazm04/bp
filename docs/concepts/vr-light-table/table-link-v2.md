@@ -456,6 +456,11 @@ What `apps/vr/Source/BpLink` does with this contract; `npm run check:bplink` pin
   table grant per product) caps what one stolen session can hand the agent, and since S3 (2026-11-10) the same bound caps
   what it can approve through a card (3.2), what a card its turns file can run under (section 12), and what its turns and
   voice calls can spend (section 12, voice-link.md).
+- **A repository's own text can steer the adopt run** (S4, 2026-11-10; prompt-safety: "the last fence is capability, not
+  text"). Since S4 the run loads no configuration of the folder it reads (its hooks, `.mcp.json` servers and `CLAUDE.md`:
+  section 12, deviation 15), but it still reads the folder's files with permissions skipped, so instructions planted in
+  them are read by an agent that can run commands as the owner. A PC-started run shares it; since the PC confirm (section
+  14) no headset-asked run starts without the owner's click.
 - **The decision record and the entity row are two writes** for the cross-cutting `decisions.jsonl`; the entity's own row
   (steering log, card, grant) carries the marks atomically. A failed `decisions.jsonl` append is logged, not fatal.
 
@@ -495,6 +500,11 @@ what changed, with its numbers (each held by `check:table-link`, `check:lan-door
 | any decision | 400 | the existing `shown` error, now also for format characters and U+2028/U+2029 |
 | the LAN door | bare 403 | for a wrong `Host`, or a 9th request in flight from one address |
 | `POST /api/companion/listen` over Wi-Fi | 200 | (it was always 403 `no-consent` before) |
+| `GET /api/onboarding/candidates` (S4) | 200 | gains `held: number` (folders not offered: their own agent settings or a name bp will not pass on) |
+| `POST /api/onboarding/start` from a headset (S4, the PC confirm) | 202 | `{ request, name, state: "waiting" }`: an ask, no longer a start; 403 `{ error }` for a held folder's id; 429 `{ error, limit, retryAfterS }` past 6 asks an hour |
+| `GET /api/onboarding/requests/<24 hex>` (S4, new) | 200 / 404 | `{ request, name, state, slug?, job?, reason? }`; 404 for any other pairing's ask, or none |
+| `GET /api/onboarding`, the feed, `GET .../scans` from a device (S4) | 200 | each job without `log_tail`; `error` is one of "the run failed", "the run was stopped", "the run timed out" |
+| `GET /api/products` from a device (S4) | 200 | each product without `root` |
 
 ### Deviations (numbered; the standard stands)
 
@@ -519,7 +529,12 @@ what changed, with its numbers (each held by `check:table-link`, `check:lan-door
    `/lan/pair/*` routes guarded by `localOnly` and `jsonOnly` only: it is a terminal on the PC, and any local program can
    call those routes. The Headsets page's path (section 13) needs the page's human token and refuses any device. Both share
    one mint (`LanDoor.approve`) and one wrong-code count. Closing it: retire the CLI's approve once the page has proven itself,
-   or give the CLI a token file only the owner's account can read.
+   or give the CLI a token file only the owner's account can read. Since S4 (2026-11-10) the CLI's approve answers a wrong
+   code after the same 250 ms as the page's, and a right code resets the wrong-code count only when the approved request
+   came from another device than this PC (not the cable's `loopback`, a loopback address or one of this PC's own interface
+   addresses: `peerIsThisPc`), or when a closed window is opened again; so a local program can no longer approve its own
+   request every few guesses to keep guessing. What remains: a local program can still pair ITSELF (open a request and
+   approve its code) and so hold a token with the scopes it names.
 7. **The human token is fetchable by a local program** (section 11's residual, now also on the pairing gate): a program
    that forges `Sec-Fetch-Site: same-origin` and `Sec-Fetch-Mode: cors` reads the token and can approve a pairing for a
    request it made itself. The page's gate stops the companion agent (no shell, never sees the token) and every headset
@@ -532,25 +547,52 @@ what changed, with its numbers (each held by `check:table-link`, `check:lan-door
    a read-access row in the same log, if bp ever has more than one person.
 10. **"Last seen" lives in the server's memory** (`device-auth.ts`), on both listeners: a restart forgets it and the page says
    "not seen since the server started". It is a convenience, not an audit field; the ledger keeps claims, refusals and revokes.
-11. **A headset holding `onboard` starts a paid agent run with no confirmation at the PC (owner's decision, 2026-11-10).**
-   (hitl-approval, consent-gates; authorization, privilege-tiers: a spend is a person's act in the PC's chrome.) The owner chose
-   "Pick and start on the headset ... no PC click" over a confirm on the PC, knowing a taken headset could start paid runs on
-   any offered folder. What bounds it (section 14): `onboard` is named-only (never by asking); only folders the PC offers
-   (git work trees next to registered products, by an opaque id re-derived at the start); the job runs with the page's own
-   options (no model, flags or path from the device); one headset-started read at a time per PC (`DEVICE_IN_FLIGHT` 1); three
-   a rolling day per pairing (`DEVICE_STARTS_PER_DAY` 3); every start in the decision log with the words shown, listed on the
-   Headsets page with STOP; REVOKE ends the pairing. Closing it: a confirm on the PC (the Director's recommendation), or a
-   spend cap per day in money rather than in runs.
+11. **WITHDRAWN 2026-11-10 (S4): a headset no longer starts a paid run without a click at the PC.** It read: "A headset
+   holding `onboard` starts a paid agent run with no confirmation at the PC (owner's decision, 2026-11-10 morning: 'Pick and
+   start on the headset ... no PC click')". After the read-only review's finding 1 (a hostile repository beside the owner's
+   projects could run code when a headset started reading it), the owner chose on 2026-11-10: "Add the PC confirm: the
+   headset picks the folder; a confirm appears on the Headsets page naming the folder, and the run starts only after your
+   click there." Built in section 14 (the ask). hitl-approval (consent-gates) and authorization (privilege-tiers: a spend is a
+   person's act in the PC's chrome) now hold for this path. The bounds stay as a second line (one at a time, three confirmed
+   a day per pairing, six asks an hour).
 12. **The day bound is per pairing.** A re-pair (an owner's act on the page) starts a fresh count; the device name alone is
    the headset's claim and keys nothing. The count is read from the decision log, so a restart forgets nothing.
 13. **A refused start is not in the decision log** (verb-allowlists: "every act, success or failure, writes a ledger row").
    It is one 4xx answer to the device; a successful start is logged and printed. Through the door a scope refusal is still
    the ledger's `refused` row. Closing it: a rate-capped `onboard-refused` row, as the door caps its refusal rows.
-14. **Watching under `read` shows the whole job record** (verb-allowlists, "reads are a projection"): `GET /api/onboarding`
-   and the feed answer `ScanJob` with `log_tail` and `error`, which can name files of the product being read, as
-   `GET .../scans` already does under `read`; `GET /api/products` (under `read` since section 5) carries each product's
-   `root`, an absolute path. The candidates route alone is a projection. Closing it: a `read`-scoped view of these routes
-   for a device (no root, no log tail).
+14. **Narrowed by S4 (2026-11-10): what a device still reads of a job** (verb-allowlists, "reads are a projection"). To a
+   request carrying a device mark, `GET /api/onboarding`, the feed and `GET .../scans` answer each job without `log_tail`,
+   with `error` replaced by "the run failed", "the run was stopped" or "the run timed out", and `GET /api/products` answers
+   each product without `root` (`packages/core/src/server/device-view.server.ts`; the page's requests are unchanged; the
+   headset reads only `error`, as words, and never `root` or `log_tail`: BpLink.cpp). What still leaks: the rest of the job
+   record (its `scope` labels and feature ids, a directed scan's `focus` note, `adopt_phase`, times), the build-up feed's
+   events (domain and feature names, the narration lines the agent writes, tool activity by area), and `GET .../scan`'s
+   store (activity rows). These are the product's map, which `read` exists to show; a path the agent names in its
+   narration can reach the feed. Closing it: a feed projection that drops narration text for a device.
+15. **The adopt run reads a folder bp has never read with permissions skipped** (S4, 2026-11-10; prompt-safety; subprocess-
+   lifecycle, spawn contract; untrusted-extension-host: code nobody reviewed runs only isolated). Since S4 the run loads no
+   configuration of that folder: `--setting-sources user --strict-mcp-config` (jobs.server.ts `ADOPT_ARGS`; proven by
+   experiment: a SessionStart hook and an `.mcp.json` server in a scratch folder wrote their markers and its `CLAUDE.md` was
+   obeyed with the old flags, none of the three with the new; the adopt skill is still read by path), and a folder that
+   ships agent settings is never offered to a headset. What remains: (a) the folder's files are text the agent reads with
+   `--dangerously-skip-permissions`, so a planted instruction can steer it into running commands as the owner (prompt
+   injection), from the PC's /projects as from a confirmed ask; (b) the agent's own `git` commands in that folder honour its
+   `.git/config` (`core.fsmonitor`, `core.hooksPath`), which a clone does not carry but a folder copied onto the disk can;
+   (c) the user's own MCP servers are dropped from the adopt run too (it needs none). Closing (a) and (b): an adopt run
+   without skipped permissions (an allow-list of the commands adopt-bp runs, `--permission-mode` with `--allowedTools`), or
+   one in a sandbox that cannot reach the owner's files; the owner decides. The PC confirm (section 14) is the human gate
+   for the headset's path; it does not make the run safe on a hostile folder.
+16. **A folder swapped after its confirm.** The start checks that the folder still resolves to the path offered (a
+   junction swapped in during the check is 409), but the job spawns after `adopt.mjs check` (up to a minute later) in that
+   path; a swap in that window runs the agent at the junction's target. Closing it: re-resolve at spawn for an adopt job and
+   fail on a difference (a PC-registered product whose root is itself a link would need its real path registered first).
+17. **A waiting ask lives in this process's memory** (onboard-start.server.ts). A restart forgets it: the headset reads 404
+   and asks again. The ask and its answer are in the decision log on disk, and the hourly ask cap and the day bound are
+   counted from it, so a restart resets no bound.
+18. **DNS rebinding, the rest** (S4, 2026-11-10; section 13, threats considered). The web app hands `/api/companion/*` and
+   `/api/session/*` to the server only for a Host named `localhost` or `127.x.x.x`; a page at `[::1]` falls through to the
+   web app's own companion routes (Next's host match cuts at the first colon). The server refuses a forwarded host that is
+   not a loopback name; the port is not judged (a rebinding page cannot make its own name loopback).
 
 ## 13. The Headsets page (owner, 2026-11-10: "Pair from the PC app")
 
@@ -616,6 +658,18 @@ On this PC filter). When the page cannot reach this server it says so with the o
 restarted with `BP_COMPANION_URL=http://127.0.0.1:3100`) and shows nothing else. `?fixture=1|off|cable|paired|empty|noserver|nowire`
 renders each state without a server (in the fixture, `K7QX4M` is the right code).
 
+**Threats considered (S4, 2026-11-10).** *DNS rebinding through the web app's proxy*: a page at `rebind.example:3010` that
+re-resolves to 127.0.0.1 is same-origin with the web app, and Next's rewrite to this server set `changeOrigin`, so the server
+saw Host `127.0.0.1:3100` and could hand that page the human token, then the headsets state, the decisions, cards,
+policies, the morning, the stream and `/api/session/*` (writes were already refused: a POST carries the foreign Origin).
+Two locks now, either one enough: the rewrite applies only when the incoming Host is `localhost` or `127.x.x.x`
+(`apps/web/next.config.ts`, so a rebound name reaches the web app's own routes, which refuse its Host), and every guard
+(`local-only.ts` `hostVerdict`) refuses a request whose `X-Forwarded-Host` is not a loopback name. The web app's own
+routes under `apps/web/src/app/api` are thin mirrors of core handlers that open with `localHost` or `localOnly`
+(check:route-guards). Held by check:local-only and a live probe through `next start` (section 14's S4 notes). *A paired
+headset reading paths*: section 12, deviation 14. *A stuck door switch*: a switch that throws answers its failure in a
+sentence and the next one runs (`serializeSwitch`); the door is set, and its routes mounted, only after it started.
+
 **What the headset's PC LINK page says** (apps/vr; the Director's to place): "Open bp on your PC, go to Headsets, and type
 this code there."
 
@@ -626,7 +680,7 @@ Registry standards: `device-pairing` (verb-allowlists: reads are a projection, w
 `apps/server/src/lan-door.ts` (the scope and the verbs), `device-auth.ts` (the onboard seal), `mount.ts` (strips a client's
 seal), `packages/core/src/server/onboard-start.server.ts` (the offer, the start, the bounds), the routes under
 `packages/core/src/server/api/onboarding/{candidates,start}`, `apps/server/src/headsets.ts` (the page's list and STOP).
-Proof: `npm run check:onboard-door` (57 expectations; 13 seeded defects each turn it red).
+Proof: `npm run check:onboard-door` (91 expectations since S4, 2026-11-10; the seeded defects of S4 are listed in its report).
 
 **The scope `onboard`** is named-only like `decide` and `scan`: a headset may ask for it, only the owner's approve that ticks or
 names it grants it. The page's line: "this headset may start reading a new project from the folders this PC offers: a paid
@@ -636,14 +690,21 @@ client-sent one. The door forwards nothing new from the device.
 
 | Method, path | Who | Answer |
 | --- | --- | --- |
-| GET `/api/onboarding/candidates` | Wi-Fi: scope `onboard`. Cable: a Bearer whose pairing holds `onboard` (a Bearer without it: 403 in words); a plain loopback caller (the PC) too | 200 `{ candidates: [{ id, name, hint, state }], roots }` |
-| POST `/api/onboarding/start` `{ candidate, shown }` | a pairing holding `onboard` (Wi-Fi or cable), or bp's own page (`x-bp-human`); anyone else 403 | 202 `{ slug, name, job }` |
+| GET `/api/onboarding/candidates` | Wi-Fi: scope `onboard`. Cable: a Bearer whose pairing holds `onboard` (a Bearer without it: 403 in words); a plain loopback caller (the PC) too | 200 `{ candidates: [{ id, name, hint, state }], roots, held }` |
+| POST `/api/onboarding/start` `{ candidate, shown }` | a pairing holding `onboard` (Wi-Fi or cable): an ASK; bp's own page (`x-bp-human`): a start; anyone else 403 | headset 202 `{ request, name, state: "waiting" }`; page 202 `{ slug, name, job }` |
+| GET `/api/onboarding/requests/<request>` (24 hex, no query) | the pairing that made the ask (`onboard`); anyone else 404 | 200 `{ request, name, state: "waiting" \| "confirmed" \| "declined" \| "expired", slug?, job?, reason? }` |
+| POST `/api/companion/headsets/ask/confirm` `{ id }`, `/ask/decline` `{ id }` | bp's own page only (section 13's gate: a device's token, seal or mark is 403) | confirm 200 `{ ok, request, state: "confirmed", slug, name, job }`, or the failure `{ error, state: "declined" }` (403 held, 404 gone, 409 busy or changed, 429 the day bound); decline 200; 404 unknown; 409 already answered or expired |
 | GET `/api/onboarding` | `read` (or `standup`), no query | 200 `{ items: [{ slug, name, job: ScanJob \| null }] }` (unchanged) |
 | GET `/api/products/<SLUG>/onboarding/feed?after=<n>&job=<id>[&layout=islands]` | `read`, that query exactly | 200 `{ job, events, next, done }` (unchanged) |
 
 - **What is offered**: git work trees (a directory with its own `.git`, not a link, not hidden) that are direct children of the
   parent folders of the registered products, not registered, or registered but never read (no map, no finished adopt job);
-  at most 24 (`MAX_CANDIDATES`), sorted by name; at most 400 entries of one parent are looked at. `state`: `new` (not
+  at most 24 (`MAX_CANDIDATES`), sorted by name; at most 400 entries of one parent are looked at. **Held back** (S4,
+  2026-11-10; untrusted-extension-host): a folder that carries its own agent configuration (`.mcp.json`,
+  `.claude/settings.json`, `.claude/settings.local.json` or `.claude/hooks`), or whose name holds anything but letters,
+  digits, space, dot, underscore and hyphen, is never offered: it is counted in `held` (the headset says "N more folders
+  carry their own agent settings: start those on your PC"), and a start naming its id is **403** `{ error }`. The PC's
+  /projects page offers them as before. `state`: `new` (not
   registered), `registered` (registered, never read), `onboarding` (its adopt job is queued or running). `roots`: how many
   parent folders were looked in. The list is cached 10 s; a start always re-derives it.
 - `id`: 24 lower-case hex, an HMAC of the folder's real path under a per-process key: opaque, stable while the server runs,
@@ -656,22 +717,40 @@ client-sent one. The door forwards nothing new from the device.
   optional from the page. The PC runs the existing folder check, registers the folder under the slug /projects proposes
   (`slugOf`/`uniqueSlug`, `-2` when taken; a registered one keeps its slug), and queues the adopt job with the options the
   /projects page sends for a first read (`{}`: no model, no resume).
-- **Bounds on a start from a headset** (`onboard-start.server.ts`): one headset-started read queued or running on this PC at a
-  time, from any headset (`DEVICE_IN_FLIGHT` 1: **409** `{ error, slug }` naming the running one; also while another start
-  is being set up); three a rolling 24 h per pairing (`DEVICE_STARTS_PER_DAY` 3: **429** `{ error, limit, retryAfterS }` with
-  `Retry-After`). The page is not bounded. A candidate already being read: **409** `{ error, slug }` (watch it).
-- **Recorded**: every start is one row of the decision log `{ at, kind: "onboard", surface, device?, shown?, product: slug,
-  target: slug, verdict: "start", job }` and one server log line. The Headsets page lists the headset-started ones under
-  WHAT THE TABLE DID, "Projects started from the table" (the state's `onboards: [{ at, device, slug, name, shown?, job, status }]`
-  and `onboardBounds: { perDay, inFlight }`), with **STOP** on a queued or running one: `POST /api/companion/headsets/stop
-  { slug, job }` (the page's gate; only a job the log says a headset started; the existing job cancel; 200 `{ ok, status }`).
+- **The PC confirm** (owner, 2026-11-10, after the review: "the headset picks the folder; a confirm appears on the Headsets
+  page naming the folder, and the run starts only after your click there"). A headset's start creates no job and no
+  registry entry: it records an ASK and answers **202** `{ request, name, state: "waiting" }`. One open ask per pairing (a
+  new one declines the waiting one with the reason "replaced by a newer ask from this headset"); an ask expires 10 minutes
+  after it was made (`ASK_TTL_MS`); at most 6 asks a rolling hour per pairing (`ASKS_PER_HOUR`: **429** `{ error, limit,
+  retryAfterS }` with `Retry-After`). The Headsets page's state gains `asks: [{ id, device, name, hint, shown, askedAt,
+  expiresAt }]` (the folder's name and hint as the PC knows them, and what the headset said it showed, so a mismatch shows)
+  and shows each at the top of WHAT THE TABLE DID: "<device> asks to read <name>: <hint>. Reading it starts an agent on that
+  folder and spends from your account." with CONFIRM and DECLINE, polling every 2 s while one is open. CONFIRM re-derives
+  the offer (a held, gone or busy folder declines the ask with that sentence as its `reason`), re-checks the bounds, then
+  runs the start: the folder check, that the folder still resolves to the offered path (else 409), the register, the adopt
+  job with the page's options. /projects starts at once, as before.
+- **Bounds at the confirm**: one headset-asked read queued or running on this PC at a time, from any headset
+  (`DEVICE_IN_FLIGHT` 1: 409, the ask declined); three CONFIRMED reads a rolling 24 h per pairing (`DEVICE_STARTS_PER_DAY` 3:
+  429, the ask declined). At the ask: a candidate already being read is **409** `{ error, slug }` (watch it).
+- **Recorded**: the ask is one row `{ kind: "onboard-ask", surface: "vr", device, shown, target: <folder name>, verdict:
+  "ask", request }`; its answer one row `{ kind: "onboard", surface: "web", device: <the asking device>, shown, request,
+  verdict: "confirm", product: slug, target: slug, job }` or `{ ..., verdict: "decline", target: <folder name>, reason }`; a
+  page start `{ kind: "onboard", surface: "web", verdict: "start", product, target, job }` as before. The Headsets page
+  lists the confirmed ones under "Projects started from the table" (`onboards: [{ at, device, slug, name, shown?, job,
+  status }]`, `onboardBounds: { perDay, inFlight }`), with **STOP** on a queued or running one: `POST
+  /api/companion/headsets/stop { slug, job }` (the page's gate; the existing job cancel; 200 `{ ok, status }`).
 - Errors are `{ error }` in words a person can read, plus the fields named above.
 
 **The headset's flow** (for the VR builder): with `onboard` in `/pair/me`'s scopes, show a list from GET candidates (name,
-hint, state; `onboarding` rows are watchable, not startable). On a pick, show the words ("Read <name> now? This starts a paid
-agent run on your PC.") and send them as `shown` with the id. On 202, watch `slug`: poll GET `/api/onboarding` for its
-job and the feed with `after` and `job` exactly as BpLink.cpp does today. On 409 with `slug`, watch that one. On 429 say the
-words. A 403 over Wi-Fi is the bare one (no scope, or revoked: ask `/pair/me`).
+hint, state; `onboarding` rows are watchable, not startable; with `held` > 0, the line "N more folders carry their own agent
+settings: start those on your PC"). On a pick, show the words (for example "Ask your PC to read <name>? It starts when you
+confirm it there.") and send them as `shown` with the id. On 202 `{ request }`, say "Confirm it on your PC: bp's Headsets
+page" and poll GET `/api/onboarding/requests/<request>` (every few seconds, at most 10 minutes): `confirmed` gives `slug`
+and `job`: watch them through GET `/api/onboarding` and the feed with `after` and `job` exactly as BpLink.cpp does today;
+`declined` gives `reason` (say it); `expired` (or a 404 after a server restart): offer to ask again. On 409 with `slug`,
+watch that one. On 403 with `{ error }` (a held folder) or 429, say the words. A bare 403 over Wi-Fi is the door's (no
+scope, or revoked: ask `/pair/me`). Job `error` fields now read "the run failed", "the run was stopped" or "the run timed
+out" (section 12, deviation 14).
 
 **As built against the brief**: the brief's contract, with three choices recorded: a path or name in place of the id is
 **400** (malformed) rather than 404 (an id of the right shape the PC does not offer is 404); the in-flight bound answers

@@ -69,7 +69,10 @@ const FAKE = await import(pathToFileURL(path.join(ROOT, 'scripts/fixtures/fake-a
 check('2 slugOf kebabs a folder name', OS.slugOf('My Repo_v2') === 'my-repo-v2' && OS.slugOf('Žluťoučký kůň') === 'zlutoucky-kun' && OS.slugOf('___') === 'project', `${OS.slugOf('My Repo_v2')} ${OS.slugOf('Žluťoučký kůň')} ${OS.slugOf('___')}`);
 check('2 uniqueSlug suffixes -2, -3 and skips kettle', OS.uniqueSlug('app', new Set(['app', 'app-2'])) === 'app-3' && OS.uniqueSlug('kettle', new Set()) === 'kettle-2' && OS.uniqueSlug('a'.repeat(63), new Set(['a'.repeat(63)])).length <= 63);
 const prompt = OJ.adoptPrompt({ skill: 'C:\\bp\\.claude\\skills\\adopt-bp', bp: 'C:\\bp', slug: 'demo', name: 'Demo "x"\nline', resume: false });
-check('2 the prompt names the skill path, --bp, --slug and --name on one line', prompt.includes('S=C:/bp/.claude/skills/adopt-bp and --bp C:/bp.') && prompt.includes('--slug demo --name "Demo x line"'), prompt);
+check('2 the prompt names the skill path, --bp, --slug and --name on one line', prompt.includes('S=C:/bp/.claude/skills/adopt-bp and --bp C:/bp.') && prompt.includes('--slug demo --name "Demo -x--line"'), prompt);
+// S4 finding 4: a name reaches the prompt as letters, digits, space, dot, underscore and hyphen only (no $, backtick, quote)
+const hostile = OJ.adoptPrompt({ skill: 's', bp: 'b', slug: 'x', name: 'x$(rm -rf ~)`id`;"q\'', resume: false });
+check('2 a folder name with $(), backticks, quotes or ; reaches the prompt with each replaced', hostile.includes('--name "x--rm -rf ---id---q-"') && !/[$`;]/.test(/--name "([^"]*)"/.exec(hostile)?.[1] ?? '$'), /--name "[^"]*"/.exec(hostile)?.[0]);
 check('2 the prompt keeps no test-only wording and says the product is registered', !/timing test|product-tree\.d/.test(prompt) && /already registered in bp as demo/.test(prompt));
 check('2 the prompt fences the run (no commits, no edits outside lens-scan, the ignore files and the registry)', /Do not commit, do not push, do not edit files outside \.ai\/lens-scan\/, \.gitignore \(or \.git\/info\/exclude\), \.claude\/lens-scan\/ and the bp registry/.test(prompt));
 check('2 a resume prompt says so', /resumes an onboarding/.test(OJ.adoptPrompt({ skill: 's', bp: 'b', slug: 'd', name: 'D', resume: true })) && !/resumes/.test(prompt));

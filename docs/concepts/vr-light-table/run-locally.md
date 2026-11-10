@@ -132,11 +132,20 @@ node apps/vr/tools/quest-tether.mjs                    # the cable route
 
 **Reading a new project from the headset** (owner, 2026-11-10; table-link-v2.md section 14): tick **Onboard** when you
 approve (it starts unticked, like Decide and Scan). The headset then lists the git folders next to your registered projects
-(the PC chooses; the headset never sees a path) and starts reading the one you pick at once, with no click on the PC: a
-paid agent run, the same one **Start onboarding** on /projects runs. Bounds: one headset-started read at a time on this PC,
-three a day per headset. Each start shows on the Headsets page under **WHAT THE TABLE DID**, Projects started from the
-table, with **STOP** while it runs, and in the decision log with the words the headset showed. To try it without paying,
-start the server with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_FILE`.
+(the PC chooses; the headset never sees a path). Picking one only **asks**: the ask appears at the top of **WHAT THE TABLE
+DID** on the Headsets page ("quest3s asks to read tidewater: <its last commit>. Reading it starts an agent on that folder
+and spends from your account."), and the paid agent run (the same one **Start onboarding** on /projects runs) starts only
+when you press **CONFIRM** there (owner, 2026-11-10, after the review). **DECLINE**, or 10 minutes without an answer, ends
+the ask. Folders that carry their own agent settings (`.mcp.json`, `.claude/settings*.json`, `.claude/hooks`) or an
+unusual name are never offered to the headset: start those from /projects. Bounds: one headset-asked read at a time on this
+PC, three confirmed a day per headset, six asks an hour. Each confirmed read shows under Projects started from the table,
+with **STOP** while it runs, and the decision log keeps the ask and your answer. To try it without paying, start the server
+with `BP_CLAUDE_BIN=scripts/fixtures/fake-adopt.mjs` and a scratch `BP_PRODUCTS_FILE`, and the page's look alone with
+`/headsets?fixture=ask`.
+
+The web app hands `/api/companion/*` and `/api/session/*` to the server only for a page opened as `localhost` or
+`127.x.x.x` (a page at `[::1]` gets the web app's own companion routes); open the Headsets page at
+`http://127.0.0.1:3010/headsets`.
 
 The command line still works, as the fallback (a terminal on the PC: no page token, table-link-v2.md section 12, deviation 6):
 

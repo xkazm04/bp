@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 import { hostKettleSims } from './kettle-sim.ts';
 import { listener, loadRoutes } from './mount.ts';
 import { loopbackDevice } from './device-auth.ts';
-import { headsetRoutes, type DoorMode } from './headsets.ts';
+import { headsetRoutes, serializeSwitch, type DoorMode } from './headsets.ts';
 import { LAN_PORT as DEFAULT_LAN_PORT, lanAddress } from './lan-door.ts';
 import { setSelfOrigin } from '@bp/core/server/api/companion/door.server';
 
@@ -77,7 +77,7 @@ routes.push(...headsetRoutes({
   mode: () => doorMode,
   started: LAN ? 'lan' : PAIR_ONLY ? 'pair' : 'off',
   wifiAt: () => ({ address: LAN ? LAN_HOST : lanAddress(), port: LAN ? LAN_PORT : DEFAULT_LAN_PORT }),
-  switchOn: (m) => (switching = switching.then(() => switchDoorOn(m))),
+  switchOn: serializeSwitch((m) => switchDoorOn(m)), // a failure answers a sentence and never blocks the next switch (S4)
 }));
 for (const r of routes) console.log(`route ${r.methods.join(',')} ${r.path}`);
 const server = http.createServer(listener(routes, (authorization) => loopbackDevice(authorization)));
@@ -102,17 +102,19 @@ server.listen(PORT, HOST, () => {
 let lanDoor: import('./lan-door.ts').LanDoor | null = null;
 let doorMode: DoorMode = LAN ? 'lan' : PAIR_ONLY ? 'pair' : 'off';
 let boundPort = 0;
-let switching: Promise<string | null> = Promise.resolve(null);
 /** Open the LAN door: its owner routes join the loopback mount, then the door listens when there is a reason to. The route
  *  table is one array that dispatch walks per request, so routes pushed after the server listens are served from the next
  *  request on (the athena host joins the same way). */
 async function attachDoor(loopbackPort: number, host: string, port: number, lan: boolean): Promise<void> {
   if (!door) return;
-  lanDoor = new door.LanDoor({ routes, loopbackPort, host, port, lan });
-  const mine = lanDoor.adminRoutes();
+  const d = new door.LanDoor({ routes, loopbackPort, host, port, lan });
+  // started first: the page sees the door (and its routes are mounted) only once it is up; a door that fails to start
+  // leaves nothing behind (S4, 2026-11-10)
+  try { await d.start(); } catch (e) { await d.stop().catch(() => { /* never listened */ }); throw e; }
+  const mine = d.adminRoutes();
   routes.push(...mine);
   for (const r of mine) console.log(`route ${r.methods.join(',')} ${r.path}`);
-  await lanDoor.start();
+  lanDoor = d;
 }
 /** The Headsets page's switch (headsets.ts), for THIS run only: nothing is saved, and a restart goes back to what the command
  *  line said. off -> pair attaches the door as --pair does; off or pair -> lan as --lan does, on the first private-range

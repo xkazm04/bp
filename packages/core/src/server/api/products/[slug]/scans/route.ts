@@ -24,6 +24,7 @@ import { isObj } from '@bp/core/scan/guards';
 import { gateScan, refusedBy } from '@bp/core/server/rules.server';
 import { BAD_FOCUS, checkFocusNote } from '@bp/core/scan/focus';
 import { SCAN_SCOPE_KINDS } from '@bp/core/standard/schema-vocab';
+import { jobFor } from '@bp/core/server/device-view.server';
 
 const KINDS: readonly ScanScopeKind[] = SCAN_SCOPE_KINDS;
 /** Kettle's features are the sim's to check (against the sample's). */
@@ -42,7 +43,7 @@ function parseScope(x: unknown, features: { has(f: string): boolean }): ScanScop
 }
 
 const scans = door('products/[slug]/scans', {
-  GET: { kettle: (k) => k.jobs(), live: (c) => Response.json(list(c.slug)) },
+  GET: { kettle: (k) => k.jobs(), live: (c) => Response.json(list(c.slug).map((j) => jobFor(c.req, j))) }, // a device: no log tail, fixed error words (S4)
   POST: {
     body: true,
     // a bad scope reaches the sim as null, so an unknown lens still answers first, as it does below; the focus is the sim's to check

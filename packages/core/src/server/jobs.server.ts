@@ -47,8 +47,15 @@ export const SHIM_MISSING = 'Personas fleet shim not found (BP_RUNNER=personas: 
 const TAIL_LINES = 20, TAIL_BYTES = 2048, NOTIFY_MS = 400;
 /** The flags of a job run (a wave package adds `--model` and `--effort`); the prompt follows on stdin. */
 const JOB_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'text'];
-/** An adopt job's flags: its tool calls stream as JSON (the build-up's activity); the prompt follows on stdin. */
-const ADOPT_ARGS = ['-p', '--dangerously-skip-permissions', '--output-format', 'stream-json', '--verbose'];
+/** An adopt job's flags: its tool calls stream as JSON (the build-up's activity); the prompt follows on stdin. The adopt job
+ *  runs in a folder bp has never read, possibly one a headset picked (table-link-v2.md section 14), and `-p` shows no trust
+ *  prompt, so the TARGET folder's own agent configuration must not load: `--setting-sources user` reads only the owner's
+ *  own settings (no project `.claude/settings.json` hooks, no `.claude/settings.local.json`), `--strict-mcp-config` with
+ *  no `--mcp-config` starts no MCP server (not the folder's `.mcp.json`; adopt-bp needs none: it reads its SKILL.md and
+ *  its sibling lens-scan by path). Proven by experiment on 2026-11-10 (S4: a SessionStart hook and an `.mcp.json` server
+ *  in a scratch folder wrote their markers with the old flags, not with these). Scan jobs keep JOB_ARGS: they run inside
+ *  the owner's own registered products, whose project settings are the owner's. */
+export const ADOPT_ARGS = ['-p', '--dangerously-skip-permissions', '--setting-sources', 'user', '--strict-mcp-config', '--output-format', 'stream-json', '--verbose'];
 
 // ------------------------------------------------------------------------------------- the CLI
 interface Cli { file: string; args: string[]; verbatim: boolean }

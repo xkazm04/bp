@@ -22,7 +22,8 @@ const SCOPE_WORDS: Record<Scope, { name: string; line: string }> = {
 };
 const DEFAULT_ON: Scope[] = ['read', 'standup', 'place', 'focus'];
 const DAY_CHOICES = [1, 7, 14, 30];
-const KIND_WORDS: Record<Decision['kind'], string> = { morning: 'Stand-up verdict', card: 'Card answer', 'policy-grant': 'Permission given', 'policy-revoke': 'Permission taken back', onboard: 'Project read started' };
+const KIND_WORDS: Record<Decision['kind'], string> = { morning: 'Stand-up verdict', card: 'Card answer', 'policy-grant': 'Permission given', 'policy-revoke': 'Permission taken back', onboard: 'Project read', 'onboard-ask': 'Asked to read a project' };
+const VERDICT_WORDS: Record<string, string> = { ask: 'asked, waiting for the PC', confirm: 'confirmed at the PC', decline: 'declined', start: 'started' };
 
 const secs = (iso: string, now: number) => Math.round((Date.parse(iso) - now) / 1000);
 function ago(iso: string, now: number): string {
@@ -78,7 +79,7 @@ export function HeadsetsPage() {
   useEffect(() => { if (api && !down) void readLog(api, surface); }, [api, surface, down, readLog]);
 
   // the door's state every 2 s while something is in motion (a window, a request), else every 10 s; the clock every second
-  const busy = !!st && (!!st.window || st.pending.length > 0 || st.onboards.some((o) => o.status === 'queued' || o.status === 'running'));
+  const busy = !!st && (!!st.window || st.pending.length > 0 || st.onboards.some((o) => o.status === 'queued' || o.status === 'running') || st.asks.length > 0);
   useEffect(() => {
     if (!api) return;
     const t = setInterval(() => { void readState(api); }, busy ? POLL_MS : SLOW_POLL_MS);
@@ -117,7 +118,8 @@ export function HeadsetsPage() {
             {err && <p className={s.err} role="alert">{err}</p>}
             <Pair st={st} now={now} act={act} api={api} />
             <Paired st={st} now={now} onRevoke={(id) => act(() => api.revoke(id))} />
-            <TableDid st={st} onStop={(slug, job) => act(() => api.stop(slug, job), () => { void readLog(api, surface); })}
+            <TableDid st={st} onConfirm={(id) => act(() => api.confirmAsk(id), () => { void readLog(api, surface); })}
+              onDecline={(id) => act(() => api.declineAsk(id), () => { void readLog(api, surface); })} onStop={(slug, job) => act(() => api.stop(slug, job), () => { void readLog(api, surface); })}
               grants={grants} log={log} surface={surface} now={now}
               onSurface={(f) => { setSurface(f); setLog({ state: 'loading' }); }}
               onRevokeGrant={(id) => act(() => api.revokeGrant(id), () => { void readGrants(api); void readLog(api, surface); })} />
@@ -316,8 +318,8 @@ function Paired({ st, now, onRevoke }: { st: HeadsetState; now: number; onRevoke
 }
 
 // ------------------------------------------------------------------------------------------------ what the table did
-function TableDid({ st, onStop, grants, log, surface, now, onSurface, onRevokeGrant }: {
-  st: HeadsetState; onStop: (slug: string, job: string) => void;
+function TableDid({ st, onConfirm, onDecline, onStop, grants, log, surface, now, onSurface, onRevokeGrant }: {
+  st: HeadsetState; onConfirm: (id: string) => void; onDecline: (id: string) => void; onStop: (slug: string, job: string) => void;
   grants: Load<Grant[]>; log: Load<DecisionPage>; surface: 'vr' | 'web' | null; now: number;
   onSurface: (f: 'vr' | 'web' | null) => void; onRevokeGrant: (id: string) => void;
 }) {
@@ -325,6 +327,23 @@ function TableDid({ st, onStop, grants, log, surface, now, onSurface, onRevokeGr
   return (
     <section className={s.part} aria-labelledby="hs-did">
       <h2 id="hs-did" className={s.sec}>What the table did</h2>
+      {st.asks.length > 0 && (
+        <ul className={s.list} aria-label="Waiting for you">
+          {st.asks.map((a) => (
+            <li key={a.id} className={`${s.row} ${s.ask}`} role="alert">
+              <div className={s.rowMain}>
+                <span className={s.name}>{deviceName(a.device) || 'A headset'} asks to read {a.name}: {a.hint}.</span>
+                <span className={s.meta}>Reading it starts an agent on that folder and spends from your account. Asked {ago(a.askedAt, now)}; the ask lapses in {clock(secs(a.expiresAt, now))}.</span>
+                <Shown text={a.shown} />
+              </div>
+              <span className={s.askActs}>
+                <button type="button" className={`${s.bt} ${s.go}`} onClick={() => onConfirm(a.id)}>Confirm</button>
+                <button type="button" className={s.bt} onClick={() => onDecline(a.id)}>Decline</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
       <h3 className={s.h3}>Projects started from the table</h3>
       {st.onboards.length === 0 ? <p className={s.empty}>No headset has started reading a project. A headset with Onboard may start {st.onboardBounds.perDay} a day, {st.onboardBounds.inFlight} at a time.</p> : (
         <ul className={s.list}>
@@ -397,12 +416,13 @@ function Log({ page }: { page: DecisionPage }) {
               <div className={s.entryTop}>
                 <span className={s.at}>{when(r.at)}</span>
                 <span className={s.kind}>{KIND_WORDS[r.kind] ?? r.kind}</span>
-                <span className={s.verdict}>{r.verdict}</span>
+                <span className={s.verdict}>{(r.kind === 'onboard' || r.kind === 'onboard-ask') && VERDICT_WORDS[r.verdict] ? VERDICT_WORDS[r.verdict] : r.verdict}</span>
               </div>
               <div className={s.meta}>
-                {r.product ? (r.product === '*' ? 'every project' : r.product) : 'no project'} · {r.surface === 'vr' ? `at the table, ${r.device ?? 'device not recorded'}` : 'on this PC'} · <span className={s.id}>{r.target}</span>
+                {r.product ? (r.product === '*' ? 'every project' : r.product) : 'no project'} · {r.surface === 'vr' ? `at the table, ${r.device ?? 'device not recorded'}` : r.device ? `on this PC, on ${deviceName(r.device)}'s ask` : 'on this PC'} · <span className={s.id}>{r.target}</span>
               </div>
               {/* a revoke carries no words (it only narrows, table-link-v2.md 3.5); every other decision from the table must */}
+              {r.reason && <p className={s.meta}>{r.reason}</p>}
               {r.shown ? <Shown text={r.shown} /> : r.surface === 'vr' && r.kind !== 'policy-revoke' ? <p className={s.meta}>The words shown were not recorded.</p> : null}
             </li>
           ))}

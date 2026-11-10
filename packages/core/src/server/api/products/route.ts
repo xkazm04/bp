@@ -11,6 +11,7 @@ import { addProduct, localOnly } from '@bp/core/server/registry.server';
 import { lensSetupOf } from '@bp/core/server/lens-write.server';
 import { jsonOnly, localHost } from '@bp/core/scan/local-only';
 import type { ProductInfo } from '@bp/core/scan/types';
+import { productFor } from '@bp/core/server/device-view.server';
 
 export function GET(req: Request): Response {
   const bad = localHost(req);
@@ -18,7 +19,8 @@ export function GET(req: Request): Response {
   const { products, problem } = readRegistry();
   if (problem) return Response.json({ error: problem.error }, { status: problem.status }); // the writer's answer for the same file
   const out: ProductInfo[] = products.map((p) => ({ slug: p.slug, name: p.name, root: p.root, live: hasStore(p), readiness: readinessOf(p), setup: lensSetupOf(p) }));
-  return Response.json(out);
+  // a paired headset reads no absolute path (S4)
+  return Response.json(out.map((p) => productFor(req, p)));
 }
 
 export async function POST(req: Request): Promise<Response> {

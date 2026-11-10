@@ -70,8 +70,11 @@ export function marksOf(who: Decider, body: Record<string, unknown>): { marks: D
 
 // ------------------------------------------------------------------------------------------------ the record
 /** `onboard`: a project read started (table-link-v2.md section 14): target and product the slug, verdict `start`, `job` the adopt job. */
-export type DecisionKind = 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard';
-export interface DecisionRecord { at: string; kind: DecisionKind; surface: Surface; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string }
+/** `onboard-ask` (owner, 2026-11-10, the PC confirm): a headset asked to read a folder, target its name, verdict `ask`,
+ *  `request` the ask's id; its answer is an `onboard` row from the page (surface web, the asking `device`, verdict `confirm`
+ *  with the slug and job, or `decline` with the folder's name and a `reason`). */
+export type DecisionKind = 'morning' | 'card' | 'policy-grant' | 'policy-revoke' | 'onboard' | 'onboard-ask';
+export interface DecisionRecord { at: string; kind: DecisionKind; surface: Surface; device?: string; shown?: string; product?: string; target: string; verdict: string; job?: string; request?: string; reason?: string }
 export const decisionsFile = (): string => path.join(companionHome(), 'decisions.jsonl');
 /** Append one row. The entity's own row already carries the marks (atomic with its state); this cross-cutting log is an
  *  index, so a failed append is logged and never undoes the decision. */

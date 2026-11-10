@@ -5,11 +5,13 @@
 // when unreadable). Localhost only (403 `{ error }`).
 import { localHost } from '@bp/core/scan/local-only';
 import { onboardingList } from '@bp/core/server/onboarding.server';
+import { jobFor } from '@bp/core/server/device-view.server';
 
 export function GET(req: Request): Response {
   const bad = localHost(req);
   if (bad) return Response.json({ error: bad }, { status: 403 });
   const { items, problem } = onboardingList();
   if (problem) return Response.json({ error: problem.error }, { status: problem.status });
-  return Response.json({ items });
+  // a paired headset reads each job without its log tail and with its error in fixed words (S4)
+  return Response.json({ items: items.map((it) => ({ ...it, job: jobFor(req, it.job) })) });
 }

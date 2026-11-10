@@ -28,7 +28,7 @@ import { harness } from './lib/expect.ts';
 import { listener, loadRoutes } from '../apps/server/src/mount.ts';
 import { LanDoor, MAX_WRONG_CODES, REFUSAL_DELAY_MS, SCOPES, verbOf, registryFile } from '../apps/server/src/lan-door.ts';
 import { loopbackDevice } from '../apps/server/src/device-auth.ts';
-import { headsetGate, headsetRoutes, type DoorMode, type DoorSwitch } from '../apps/server/src/headsets.ts';
+import { headsetGate, headsetRoutes, serializeSwitch, type DoorMode, type DoorSwitch } from '../apps/server/src/headsets.ts';
 import { humanToken } from '../packages/core/src/server/api/companion/door.server.ts';
 import { deciderSeal, DECIDER_SEAL_HEADER } from '../packages/core/src/server/decider.server.ts';
 
@@ -63,6 +63,19 @@ const sw: DoorSwitch = {
   },
 };
 routes.push(...headsetRoutes(sw));
+
+// S4 finding 8: main.ts's switch goes through serializeSwitch: a switch that throws answers its failure in a sentence, and
+// the next switch still runs (a rejected chain used to answer 500 to every later switch until a restart)
+{
+  let calls = 0;
+  const flaky = serializeSwitch(async () => { calls++; if (calls === 1) throw new Error('EADDRINUSE 3101'); return null; });
+  const [a, b] = await Promise.all([flaky('lan'), flaky('lan')]);
+  expect(typeof a === 'string' && /could not be switched on: EADDRINUSE/.test(a) && b === null && calls === 2, 'a failed door switch answers its sentence and the next switch runs', `${a} | ${b} | ${calls}`);
+  let inFlight = 0, overlap = false;
+  const slow = serializeSwitch(async () => { inFlight++; if (inFlight > 1) overlap = true; await new Promise((r) => setTimeout(r, 20)); inFlight--; return null; });
+  await Promise.all([slow('pair'), slow('lan'), slow('lan')]);
+  expect(!overlap, 'switches never overlap (two clicks never attach two doors)');
+}
 
 interface Res { status: number; body: string; json: Record<string, unknown>; ms: number }
 function send(method: string, target: string, headers: Record<string, string> = {}, body?: unknown): Promise<Res> {
@@ -222,7 +235,11 @@ expect(r.status === 403 && /claim-denied/.test(String(r.json.error)), 'the decli
 const NC = nonce();
 r = await tether('/pair', { nonce: NC, device: 'quest3s', scopes: ['read'] });
 const codeC = String(r.json.code);
-const bad = ['ZZZZZ2', 'ZZZZZ3', 'ZZZZZ4', 'ZZZZZ5', 'ZZZZZ6'].filter((c) => c !== codeC).slice(0, MAX_WRONG_CODES);
+// the earlier wrong code still counts: the approve after it was of a cable request (this PC's own peer), which no longer
+// resets the count (S4 finding 7), so the limit is reached after the codes still left
+const already = (await state()).wrongCodes.count;
+expect(already === 1, 'a right code for a request from this PC (the cable) kept the earlier wrong code counted', String(already));
+const bad = ['ZZZZZ2', 'ZZZZZ3', 'ZZZZZ4', 'ZZZZZ5', 'ZZZZZ6'].filter((c) => c !== codeC).slice(0, MAX_WRONG_CODES - already);
 let last: Res | null = null;
 for (const c of bad) last = await page('POST', '/approve', { code: c, scopes: ['read'], days: 1 });
 s = await state();
@@ -242,6 +259,27 @@ expect(r.status === 200 && s.door === 'lan' && s.wifi?.listening === true && sw.
 r = await page('POST', '/door', { mode: 'off' });
 expect(r.status === 400, 'the switch never turns the door off (a restart does)', r.status);
 expect(!logs.join('\n').includes(codeA) && !logs.join('\n').includes(codeC), 'the server log never carries a code');
+
+// S4 finding 7: a local program cannot reset the wrong-code count by approving its own request, and the CLI's approve waits
+{
+  const { peerIsThisPc } = await import('../apps/server/src/lan-door.ts');
+  const d2 = new LanDoor({ routes: [], loopbackPort: LOOP, host: '127.0.0.1', port: 0, home: path.join(tmp, 'lan-s4'), lan: false, log: () => {} });
+  await d2.start();
+  const ask = (peer: string) => { const a = d2.requestPairing({ nonce: randomBytes(18).toString('base64url'), device: 'q', scopes: ['read'] }, peer); return 'status' in a ? String(a.body.code) : ''; };
+  const victim = ask('192.168.1.77');
+  const own = ask('loopback');
+  const miss = (n: number) => { for (let i = 0; i < n; i++) d2.approve(victim === 'ZZZZZZ' || own === 'ZZZZZZ' ? 'YYYYYY' : 'ZZZZZZ'); };
+  miss(3);
+  d2.approve(own);
+  expect(d2.pageState().wrongCodes.count === 3 && peerIsThisPc('loopback') && peerIsThisPc('127.0.0.1') && !peerIsThisPc('192.168.1.77'), 'approving a request from this PC itself keeps the wrong-code count (3 stays 3)', JSON.stringify(d2.pageState().wrongCodes));
+  d2.approve(victim);
+  expect(d2.pageState().wrongCodes.count === 0, 'approving a request from another device resets it');
+  const cli = d2.adminRoutes().find((x) => x.path === '/lan/pair/approve')!;
+  const t0 = performance.now();
+  const res = await cli.handlers.POST!(new Request(`http://127.0.0.1:${LOOP}/lan/pair/approve`, { method: 'POST', headers: { host: `127.0.0.1:${LOOP}`, 'content-type': 'application/json' }, body: JSON.stringify({ code: 'QQQQQQ' }) }), {} as never);
+  expect(res.status === 404 && performance.now() - t0 >= REFUSAL_DELAY_MS - 5, 'the CLI\'s approve answers a wrong code after the same fixed delay', `${res.status} ${(performance.now() - t0).toFixed(0)} ms`);
+  await d2.stop();
+}
 
 await sw.door()?.stop();
 loop.close();

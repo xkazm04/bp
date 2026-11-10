@@ -44,6 +44,10 @@ export function adoptSkillDir(bp: string = process.cwd(), env: NodeJS.ProcessEnv
 }
 
 const oneLine = (s: string) => s.replace(/[\r\n"]+/g, ' ').replace(/\s+/g, ' ').trim();
+/** A product name as the adopt prompt carries it (S4, prompt-safety: bound before you insert): letters, digits, space, dot,
+ *  underscore and hyphen; anything else (`$`, a backtick, a quote, a semicolon...) becomes a hyphen, so a folder named
+ *  `x$(cmd)` cannot reach a shell through the agent's `--name "..."`. At most 100 characters, `project` when nothing is left. */
+export const promptName = (s: string): string => s.replace(/[^A-Za-z0-9 ._-]/g, '-').replace(/\s+/g, ' ').trim().slice(0, 100) || 'project';
 const fwd = (p: string) => p.replace(/\\/g, '/');
 
 /** The adopt job's prompt (stdin): the harness's (scripts/buildup/onboard-live.ts) without its test-only wording. The
@@ -53,7 +57,7 @@ export function adoptPrompt(o: { skill: string; bp: string; slug: string; name: 
   return [
     `Onboard the repository in the current directory into bp (the product blueprint) with the adopt-bp skill.`,
     `The skill is not installed for you: read ${S}/SKILL.md and follow it exactly, with S=${S} and --bp ${BP}.`,
-    `Use --slug ${o.slug} --name "${oneLine(o.name)}". Run the whole run (check, supplement if needed, seed, phase A product tree, events, measure, batches, phase B judgement for every batch, judge, validate, register, report).`,
+    `Use --slug ${o.slug} --name "${promptName(o.name)}". Run the whole run (check, supplement if needed, seed, phase A product tree, events, measure, batches, phase B judgement for every batch, judge, validate, register, report).`,
     `The product is already registered in bp as ${o.slug}: the register step confirms it (and adds the ignore line when missing).`,
     ...(o.resume ? [`This resumes an onboarding that stopped part way: keep everything it already produced; check lists only what is missing, so produce only that.`] : []),
     `Narrate as you go (SKILL.md "Narrate as you go"): append one JSON line to .ai/lens-scan/work/progress.jsonl the moment you decide each domain (before you start the next), whenever you start a step (what you do now, what comes next; at least every 2 minutes) and when you dispatch each judgement batch - never save them up for later.`,

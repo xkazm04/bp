@@ -38,6 +38,13 @@ check('write allows loopback X-Forwarded-For', localOnly(req({ ...L, 'x-forwarde
 check('read denies foreign X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '203.0.113.9' })) !== null);
 check('read denies a foreign hop after a loopback one', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, 8.8.8.8' })) !== null);
 check('read allows loopback X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, ::1' })) === null);
+// DNS rebinding through the web app's proxy (S4, 2026-11-10): Next's rewrite sends Host 127.0.0.1:3100 and the page's real
+// host in X-Forwarded-Host; a rebound name there is refused for reads and writes alike, a loopback one passes.
+for (const xfh of ['rebind.example:3010', 'rebind.example', 'localhost:3010, rebind.example:3010', '127.0.0.1.evil.com:3010', '']) {
+  check(`read denies X-Forwarded-Host ${JSON.stringify(xfh)}`, localHost(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) !== null);
+  check(`write denies X-Forwarded-Host ${JSON.stringify(xfh)}`, localOnly(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) !== null);
+}
+for (const xfh of ['localhost:3010', '127.0.0.1:3010', '[::1]:3010', 'localhost']) check(`read allows X-Forwarded-Host ${xfh}`, localHost(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) === null);
 check('json allows application/json', jsonOnly(req({ 'content-type': 'application/json' })) === null);
 check('json allows charset suffix', jsonOnly(req({ 'content-type': 'Application/JSON; charset=utf-8' })) === null);
 check('json denies text/plain', jsonOnly(req({ 'content-type': 'text/plain' })) !== null);

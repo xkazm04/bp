@@ -25,10 +25,15 @@ const nextConfig: NextConfig = {
   // never sees and publish on a bus no page hears.
   async rewrites() {
     const url = companionUrl();
+    // Only a page this machine opened by a loopback name is handed over (S4, 2026-11-10: DNS rebinding). Next's proxy sets
+    // changeOrigin, so the companion would see Host 127.0.0.1 for a page at rebind.example:3010 too; with this condition such
+    // a request falls through to this app's own routes, whose Host check (local-only.ts) refuses it. The companion also
+    // refuses a foreign X-Forwarded-Host, so either one alone holds.
+    const loopback = [{ type: 'host' as const, value: '(?:localhost|127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})' }];
     return url ? {
       beforeFiles: [
-        { source: '/api/companion/:path*', destination: `${url}/api/companion/:path*` },
-        { source: '/api/session/:path*', destination: `${url}/api/session/:path*` },
+        { source: '/api/companion/:path*', has: loopback, destination: `${url}/api/companion/:path*` },
+        { source: '/api/session/:path*', has: loopback, destination: `${url}/api/session/:path*` },
       ],
       afterFiles: [], fallback: [],
     } : [];

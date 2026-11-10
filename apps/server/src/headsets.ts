@@ -17,7 +17,7 @@ import { jsonOnly, localOnly } from '@bp/core/scan/local-only';
 import { isHuman } from '@bp/core/server/api/companion/door.server';
 import { DECIDER_SEAL_HEADER, ONBOARD_SEAL_HEADER } from '@bp/core/server/decider-header';
 import { DEVICE_HEADER } from '@bp/core/server/api/session/baton.server';
-import { DEVICE_IN_FLIGHT, DEVICE_STARTS_PER_DAY, deviceOnboards } from '@bp/core/server/onboard-start.server';
+import { DEVICE_IN_FLIGHT, DEVICE_STARTS_PER_DAY, confirmAsk, declineAsk, deviceOnboards, openAsks } from '@bp/core/server/onboard-start.server';
 import { cancel } from '@bp/core/server/jobs.server';
 import type { Route } from './mount.ts';
 import {
@@ -42,6 +42,17 @@ export interface DoorSwitch {
   switchOn(mode: 'pair' | 'lan'): Promise<string | null>;
   /** $BP_HOME/lan (a check passes its own). */
   home?: string;
+}
+
+/** The page's door switch, serialized (two clicks never attach two doors) and never stuck (S4, 2026-11-10): a switch that
+ *  throws answers its failure as a sentence and the NEXT switch runs, where a rejected chain answered 500 until a restart. */
+export function serializeSwitch(run: (mode: 'pair' | 'lan') => Promise<string | null>): (mode: 'pair' | 'lan') => Promise<string | null> {
+  let chain: Promise<unknown> = Promise.resolve();
+  return (mode) => {
+    const p = chain.then(() => run(mode)).catch((e: unknown) => `The door could not be switched on: ${(e as Error)?.message ?? String(e)}`);
+    chain = p;
+    return p;
+  };
 }
 
 const NO_STORE = { 'cache-control': 'no-store' };
@@ -78,6 +89,8 @@ export function headsetState(sw: DoorSwitch) {
     limits: { pending: MAX_PENDING, paired: MAX_PAIRED },
     // project reads a headset started (onboard scope), newest first, each with its job as this server sees it
     onboards: deviceOnboards(),
+    // a headset's asks to read a folder, waiting for CONFIRM or DECLINE here (owner, 2026-11-10: the PC confirm)
+    asks: openAsks(),
     onboardBounds: { perDay: DEVICE_STARTS_PER_DAY, inFlight: DEVICE_IN_FLIGHT },
   };
 }
@@ -149,6 +162,17 @@ export function headsetRoutes(sw: DoorSwitch): Route[] {
       if (b.mode !== 'pair' && b.mode !== 'lan') return fail("body must be { mode: 'pair' | 'lan' }", 400);
       const err = await sw.switchOn(b.mode);
       return err ? fail(err, 409) : answer(headsetState(sw));
+    }),
+    // the PC confirm (owner, 2026-11-10): a headset's start is an ask; only this page's CONFIRM runs it (onboard-start.server.ts)
+    write('ask/confirm', async (b) => {
+      if (typeof b.id !== 'string' || !/^[0-9a-f]{24}$/.test(b.id)) return fail('body must name the ask (its id)', 400);
+      const r = await confirmAsk(b.id);
+      return answer(r.body, r.status);
+    }),
+    write('ask/decline', (b) => {
+      if (typeof b.id !== 'string' || !/^[0-9a-f]{24}$/.test(b.id)) return fail('body must name the ask (its id)', 400);
+      const r = declineAsk(b.id);
+      return answer(r.body, r.status);
     }),
     // STOP on a project read a headset started (table-link-v2.md section 14): the existing job cancel, for a job the decision
     // log says a headset started, and only from bp's own page (the gate above)
