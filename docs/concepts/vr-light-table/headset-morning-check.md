@@ -17,6 +17,11 @@ builder, so it becomes the default.
 
 ## 0. Before you put it on (PC, 1 minute)
 
+- [ ] **Package and install first (about 4 minutes).** The headset holds the build of 03:06. The two screens rounds, the
+      second and third scene rounds and the walk's fixes were never packaged (the machine ran low on memory at 03:50 and the
+      build was stopped). Build `bpEditor Win64 Development`, then `apps/vr/tools/package-quest.ps1 -Config Development`,
+      then `adb install -r apps/vr/Binaries/Android/bp-arm64.apk`. Until then the steps below that mention the new sheets,
+      ACCESSIBILITY, nameplates or the contact shadow will not match what you see.
 - [ ] `adb devices` lists the headset.
 - [ ] `adb shell getprop debug.oculus.guardian_pause` prints `0` (the night set it to 1 for the bench and back to 0). If it
       prints 1: `adb shell setprop debug.oculus.guardian_pause 0`.
@@ -142,6 +147,26 @@ On the PC, from the repo root (the server must start in the repo root, or compan
 - [ ] **See:** still your room, VOICE 90 %, no consent sheet on a hold, PC LINK still paired.
 - [ ] Off: `BpStore.Dump`, then `adb logcat -d -s UE | findstr BpStore` (the file's path, its last write, key names only).
 - [ ] Put it back: VOICE 100 %, STUDIO.
+
+## 12. What the night's last rounds changed (only after the new build is installed)
+
+None of this has been on a headset. Look at these first; each line names what tunes it.
+
+- [ ] Lift a room. **See:** one white-on-blue nameplate under its near edge, the other wings stepped back, the bar on one
+      line. The lamp glides aside if the lifted room would be behind it. Lamp in the way: `bp.Lamp.HomeClear 0` to compare.
+- [ ] Room names on the site plan read from the seat. Too big or small: `bp.Table.RoomNameArcmin 45` (default 40);
+      furniture too loud: `bp.Table.GlyphRest 0`.
+- [ ] The desk's front edge has no blown-out spot. Compare: `bp.Frame.StripLights 1`, then `0`. Frame too dark or flat:
+      `bp.Frame.Light 0.8`, `bp.Frame.Bevel 0.8`.
+- [ ] A stand-up decision: the title leads, the screen is on the right, APPROVE is the largest control and sinks while you
+      hold the pinch; the stamp settles. Stamp too quick: `bp.StandupAdvanceS 2`.
+- [ ] Hold to talk: the conversation fills the console (what you said, LISTENING with a meter, the whole reply). The voice
+      stops after about two sentences while the text stays. Longer: `bp.TalkSpokenMax 400`.
+- [ ] The wrist: same buttons and chips as the console, the decision's title in full, nothing cut.
+- [ ] SETTINGS > ACCESSIBILITY: TEXT SIZE 130 %. **See:** the console, the wrist and the captions grow together and nothing
+      breaks. Known: the lamp's caption touches the bar's left end at 130 %. Back: `bp.TextSize 1`.
+- [ ] Your room: a soft shadow under the table on your floor, the frame and legs looking as they do in the studio.
+      Shadow too strong: `bp.Room.Shadow 0.15`; off: `0`.
 
 ## After the check
 
