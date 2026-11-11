@@ -5,6 +5,7 @@
 //
 //   node apps/vr/tools/tour-voice.ts [--force]
 //   node apps/vr/tools/tour-voice.ts --loudness    (re-level the WAVs already on disk: no key, no credits)
+//   add --scan, --narrate, --think or --onboard to either form for that group (voice/scan, narrate, think, onboard)
 //
 // Every clip is levelled to LOUDNESS (integrated loudness, peak ceiling), measured with ffmpeg's ebur128 and applied as one
 // static gain plus a limiter, so the set is even and the headset's small speakers carry it (2026-11-08: the clips measured
@@ -70,6 +71,24 @@ export function readNarrateBook(file = TOUR_BOOK_CPP): Record<string, string> {
 export const NARRATE_LINES: Record<string, string> = readNarrateBook();
 export const NARRATE_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'narrate');
 
+/** Demo-video lines (docs/concepts/demo-video/readiness.md G3, G4; owner 2026-11-11 "Approved adding short line"), rendered
+ *  ahead of the code that says them: they are not in BpTourBook.cpp yet, so they live here, each group in its own folder so
+ *  the narrate and tour pins (check:vr-tour) are untouched. When the Unreal side moves a line into the book, keep its id and
+ *  text, and drop it here. No product names, no counts: one set serves every product.
+ *  --think: what Glim says when his turn runs long (G4, about 1.5 s with no reply yet), one picked per turn -> voice/think/.
+ *  --onboard: the onboarding build-up's start and end (G3, scene S3; BpBuildup.cpp's first event and done) -> voice/onboard/. */
+export const THINK_LINES: Record<string, string> = {
+  'think-look': 'Let me look.',
+  'think-moment': "One moment, I'm checking.",
+  'think-looking': 'Looking now.',
+};
+export const THINK_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'think');
+export const ONBOARD_LINES: Record<string, string> = {
+  'onboard-start': "I'm reading your project now. Watch it draw itself.",
+  'onboard-done': 'There it is: your building, drawn.',
+};
+export const ONBOARD_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'onboard');
+
 const TOUR_OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
 /** 24 kHz, the live `say` route's own rate (voice-link.server.ts TOUR_LINK): the bundled voice and the live voice are one
  *  voice, byte for byte for the same line (check:voice-link). Wave C1 put it back from wave T1's 16 kHz. */
@@ -118,8 +137,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   // --scan: the scan theatre's lines (voice/scan/); --narrate: every step's (voice/narrate/, wave N3-W3); else the tour's.
   const scan = process.argv.includes('--scan');
   const narrate = process.argv.includes('--narrate');
-  const LINES = narrate ? NARRATE_LINES : scan ? SCAN_LINES : TOUR_LINES;
-  const OUT = narrate ? NARRATE_CLIPS : scan ? SCAN_CLIPS : TOUR_OUT;
+  const think = process.argv.includes('--think');
+  const onboard = process.argv.includes('--onboard');
+  const LINES = think ? THINK_LINES : onboard ? ONBOARD_LINES : narrate ? NARRATE_LINES : scan ? SCAN_LINES : TOUR_LINES;
+  const OUT = think ? THINK_CLIPS : onboard ? ONBOARD_CLIPS : narrate ? NARRATE_CLIPS : scan ? SCAN_CLIPS : TOUR_OUT;
   if (!onlyLevel && !voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
   if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) { console.log('REFUSED: ffmpeg is not on PATH'); process.exit(2); }
   const force = process.argv.includes('--force');

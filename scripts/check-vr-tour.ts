@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TOUR_LINES, SCAN_LINES, SCAN_CLIPS, NARRATE_LINES, NARRATE_CLIPS } from '../apps/vr/tools/tour-voice.ts';
+import { TOUR_LINES, SCAN_LINES, SCAN_CLIPS, NARRATE_LINES, NARRATE_CLIPS, THINK_LINES, THINK_CLIPS, ONBOARD_LINES, ONBOARD_CLIPS } from '../apps/vr/tools/tour-voice.ts';
 import { TOUR_LINK } from '../packages/core/src/server/companion/voice-link.server.ts';
 import { MUSIC_CHANNELS, MUSIC_INDEX, MUSIC_LOUDNESS, MUSIC_RATE, MUSIC_WAV } from '../apps/vr/tools/music-bed.ts';
 
@@ -197,6 +197,25 @@ else {
     for (const [id, text] of Object.entries(NARRATE_LINES)) check(`${id}.wav was read from today's line`, idx.lines?.[id] === text, 're-run node apps/vr/tools/tour-voice.ts --narrate');
     check('the narration clips share the tour clips\' voice record (levelled, the say route\'s chain)', JSON.stringify(idx.voice) === JSON.stringify(recordedIndex.voice));
   }
+}
+
+// ---- The demo video's lines rendered ahead of their code (readiness.md G3, G4): voice/think/ and voice/onboard/ ----
+for (const [group, lines, dir] of [['think', THINK_LINES, THINK_CLIPS], ['onboard', ONBOARD_LINES, ONBOARD_CLIPS]] as const) {
+  if (!fs.existsSync(dir)) { check(`voice/${group} exists`, false, `run node apps/vr/tools/tour-voice.ts --${group}`); continue; }
+  for (const [id, text] of Object.entries(lines)) {
+    check(`${group} line ${id} is ${maxWords} words or fewer`, text.split(/\s+/).filter(Boolean).length <= maxWords, text);
+    check(`${group} id ${id} is no tour, scan or narration id`, !(id in TOUR_LINES) && !(id in SCAN_LINES) && !(id in NARRATE_LINES));
+    const file = path.join(dir, `${id}.wav`);
+    if (!fs.existsSync(file)) { check(`${group} clip ${id}.wav exists`, false, `run node apps/vr/tools/tour-voice.ts --${group}`); continue; }
+    const w = wav(file);
+    check(`${group} clip ${id}.wav is 16-bit mono at the say route's rate, 0.5-8 s`, !!w && w.bits === 16 && w.channels === 1 && w.rate === TOUR_LINK.rate && w.seconds >= 0.5 && w.seconds <= 8,
+      w ? `${w.bits}-bit ${w.channels} ch ${w.rate} Hz ${w.seconds.toFixed(2)} s` : 'not PCM');
+  }
+  for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.wav'))) check(`${group} clip ${f} has a line (no orphan)`, f.slice(0, -4) in lines);
+  const idxFile = path.join(dir, 'lines.json');
+  const idx = fs.existsSync(idxFile) ? JSON.parse(fs.readFileSync(idxFile, 'utf8')) : {};
+  for (const [id, text] of Object.entries(lines)) check(`${group} ${id}.wav was read from today's line`, idx.lines?.[id] === text, `re-run node apps/vr/tools/tour-voice.ts --${group}`);
+  check(`the ${group} clips share the tour clips' voice record`, JSON.stringify(idx.voice) === JSON.stringify(recordedIndex.voice));
 }
 
 // The background music bed (apps/vr/tools/music-bed.ts -> Content/BpData/music/bed.wav): the same WAV route, stereo at
