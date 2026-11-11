@@ -16,6 +16,29 @@ for example `adb shell am broadcast -a android.intent.action.RUN -e cmd "'bp.Voi
 `bp.ReducedMotion`, `bp.Room`. Every other value lasts until the app quits: write down the one that works and tell the
 builder, so it becomes the default.
 
+## Night three first (2026-11-11, about 10 minutes; the build through `ad31125c` is installed)
+
+What changed overnight and has never been worn ([`runs/2026-11-11-night-three.md`](runs/2026-11-11-night-three.md)). The wall
+is the default main screen now; nothing to package.
+
+- [ ] Hold the Meta button. **See:** the table and the wall seat in front of you again (not behind you, not black).
+- [ ] Open MENU, then the stand-up. **See:** the sheet wipes in from Glim's side (0.4 s) as his beam brightens; CLOSE wipes
+      it back (0.3 s). The text on the wall's right third reads upright (on captures it leaned: we think it is the capture's
+      lens, not the wall). Off: `bp.Wow.WallArrive 0`.
+- [ ] On a decision, pinch APPROVE and drift the ray onto HOLD before letting go. **See:** nothing happens (a release taps only
+      the control the pinch started on). Then a clean pinch on APPROVE: the stamp lands, the decided room lifts and flashes
+      once on the table (off: `bp.Wow.DecisionLands 0`).
+- [ ] Point the ray around the plan. **See:** Glim glances toward the dot and back, slowly. Too busy: `bp.Wow.GlimGlance 0`.
+- [ ] Enter a room and look at its decision. **See:** the wall's three-column layout ("1 OF 1", SCAN THIS ROOM, the answers),
+      Glim beside the sheet, pointing with his beam, his arm off the text. Watch for one stutter the first time each kind of
+      sheet opens (his clear-spot search, about 8 ms on the PC once per sheet kind).
+- [ ] The near bar is a small nameplate on the table's near rim. Back over the paper: `bp.NearBar.Edge 0`.
+- [ ] With the PC linked, hold X and talk: "how's the project doing?", "what should I do next?", "show me Billing",
+      "approve this one" (with a decision open), "how do lamps work?", "anyway, where were we?". **See:** he moves the table,
+      opens pages on the wall, puts a GLIM ASKS card on the wall for your yes, and offers up to three reply buttons under
+      his words (a pinch sends one). Note how long each reply takes to start.
+- [ ] Without a headset: `node scripts/glim-talk.mjs` talks to him in text (the Claude Code CLI as the engine).
+
 ## 0. Package and install first (PC, about 4 minutes plus the build)
 
 The headset holds the build packaged at 11:44 on 2026-11-10 (through `9f6283bd`: night two's work). Nothing of day two is
