@@ -83,6 +83,7 @@
     "check:vr-tour": "node --import @bp/core/register scripts/check-vr-tour.ts",
     "check:voice-link": "node --import @bp/core/register scripts/check-voice-link.ts",
     "check:vr-bundle": "node apps/vr/tools/bundle-words.mjs --check",
+    "check:sample-brands": "node scripts/check-sample-brands.mjs",
     "check:plan-islands": "node scripts/check-plan-islands.mjs",
     "check:gate-helpers": "node scripts/check-gate-helpers.mjs",
     "check:kettle-sim": "node scripts/check-kettle-sim.mjs",
