@@ -35,6 +35,11 @@ when apps/vr, BpLink, packages/schema or the server's Kettle routes change (Lynx
   `run-bplink.mjs --mode game --xr-sim --ue-args "-csvCaptureFrames=900" --hold 60`, CSV under
   `%LOCALAPPDATA%/UnrealEngine/5.8/Saved/Profiling/CSV`; a feature's draws are the delta against a run with it hidden
   (a show flag via `--exec`), machine.md readings 30 to 31
+- before packaging an APK after two or more apps/vr build waves: a READ-ONLY crash review of the waves' diff (another
+  agent, committed code via `git show`; the classes: a timer or brush outliving its owner, state an effect or chapter
+  changes and never restores, a per-frame tick at rest, a release acting on a different target than the press). It found
+  a use-after-free and a wrong tap on release on 2026-11-11 that no happy-path editor run showed (promoted from the log:
+  night two and night three)
 
 builder:
 - `npm run typecheck`
@@ -132,3 +137,4 @@ None declared.
 - 2026-11-02 (vr-approve-set): PoF `run_console_command` runs in the EDITOR world, so any `Bp*` command that walks `TActorIterator<ABpTable>` is deferred forever during PIE; drive PIE through `mcp-call.mjs python` with `unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_game_world()` and `SystemLibrary.execute_console_command`. `run-bplink --product kettle-web` needs `--url` to a demo server (its own registry lacks the demo products).
 - 2026-11-08 directed-scans: the real-store test, not fixtures, found the cross-process gap (a VR-started scan invisible to the PC plan) and a finished job claiming 5/5 after reading 3; a builder found the AUTO tool forwarding undeclared args (scan.place would have started a directed scan with no card). Scout a design that adds a field to a route for every caller that forwards args wholesale. Stubs-first ran 4 builders in parallel with zero collisions (6th spark).
 - 2026-11-10 vr-night-two: sixteen builder sessions in one night, one Unreal at a time, each brief written from device captures taken minutes earlier; read-only reviews ran beside the build waves and their author applied the fixes; code that could not be compiled yet was written in a worktree and compiled first time. Three process failures: no memory floor (a packaging build was stopped and the last four waves stayed PC-only), a brief that said "start a server" without "from the repo root" after the wave before had lost 600 s to it, and times in the record written from memory instead of `date`. Promoted to Repo law: the device loop is the Director's, the memory floor, the server's start directory, FBpStore, the attacker's review.
+- 2026-11-11 glim-character: a golden expectation that accepts one right answer turns red on a re-record when a second is also right ("approve that one" after two named items gets "which?"); reference-resolution turns accept a clarifying question (cardOrAsks). The route table in docs/blueprint-ui.md takes real paths only: a ?view= variant as its own row fails check:route-guards.
