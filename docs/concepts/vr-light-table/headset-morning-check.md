@@ -16,7 +16,7 @@ for example `adb shell am broadcast -a android.intent.action.RUN -e cmd "'bp.Voi
 `bp.ReducedMotion`, `bp.Room`. Every other value lasts until the app quits: write down the one that works and tell the
 builder, so it becomes the default.
 
-## Night three first (2026-11-11, about 10 minutes; the build through `60ba0038` is installed)
+## Night three first (2026-11-11, about 10 minutes; the build through `2e0e6b38` is installed)
 
 What changed overnight and has never been worn ([`runs/2026-11-11-night-three.md`](runs/2026-11-11-night-three.md)). The wall
 is the default main screen now; nothing to package.
@@ -36,7 +36,8 @@ is the default main screen now; nothing to package.
 - [ ] With the PC linked, hold X and talk: "how's the project doing?", "what should I do next?", "show me Billing",
       "approve this one" (with a decision open), "how do lamps work?", "anyway, where were we?". **See:** he moves the table,
       opens pages on the wall, puts a GLIM ASKS card on the wall for your yes, and offers up to three reply buttons under
-      his words (a pinch sends one). Note how long each reply takes to start.
+      his words (a pinch sends one). While he thinks, the sheet lists what he is doing ("Ranking what to do next…").
+      Note how long each reply takes to start: his voice comes only at the end of the turn (6 to 10 s on the PC).
 - [ ] Without a headset: `node scripts/glim-talk.mjs` talks to him in text (the Claude Code CLI as the engine).
 
 ## 0. Package and install first (PC, about 4 minutes plus the build)

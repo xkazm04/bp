@@ -92,6 +92,20 @@ the whole turn plus the speech rendering: 6 to 13 s of thinking light. Two ways 
 speak each sentence as it streams (more speech requests per reply), or a short bundled "let me look" in his voice when a
 turn runs past about 1.5 s (no cloud cost; new clips).
 
+## Watching Glim think (`2e0e6b38`, 05:2x; installed 05:35)
+
+The headset now reads the turn as it streams: the conversation sheet shows what Glim is doing in plain words while he
+thinks, his words as they arrive, and his focus events act when they arrive. On the PC with real turns: the first step
+line 2.4 to 4.4 s after a question, a decision opened at 3.8 s of a 6.3 s turn, the end at 6.0 to 9.6 s. His words still
+land about 0.7 s before the end, because the server sends the reply's text as one block (the CLI's partial messages would
+change that: a server decision). Speech still starts at the end of the turn. On the device: the byte-split parse
+self-test PASS, the sample exchange unchanged, 9.95 to 10.52 ms App GPU, 72 fps; the streamed path against a real PC over
+USB or Wi-Fi is not yet seen on the device.
+
+One process slip: the first `npm run check` on this commit exited 1 and the push went ahead (the push was chained after the
+check, not gated on it). A rerun on the same commit passed 169 of 169; the first run's failing check is unknown (its
+output was not kept), so one check may be intermittent.
+
 ## What the owner checks next
 
 See [`../headset-morning-check.md`](../headset-morning-check.md) and the morning summary.
