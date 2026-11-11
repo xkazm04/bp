@@ -16,7 +16,7 @@ for example `adb shell am broadcast -a android.intent.action.RUN -e cmd "'bp.Voi
 `bp.ReducedMotion`, `bp.Room`. Every other value lasts until the app quits: write down the one that works and tell the
 builder, so it becomes the default.
 
-## Night three first (2026-11-11, about 10 minutes; the build through `ad31125c` is installed)
+## Night three first (2026-11-11, about 10 minutes; the build through `60ba0038` is installed)
 
 What changed overnight and has never been worn ([`runs/2026-11-11-night-three.md`](runs/2026-11-11-night-three.md)). The wall
 is the default main screen now; nothing to package.
