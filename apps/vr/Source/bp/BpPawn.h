@@ -481,6 +481,11 @@ private:
 	 *  (the deck's card crashed on exactly that, 2026-11-10). */
 	UPROPERTY(Transient)
 	TObjectPtr<class UTexture2D> StandupShotKept;
+	/** Wave W1, Glim's board: the finding's "after" screen beside its "before" (the board's split), released with it. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupAfterShot;
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupAfterKept;
 	/** The YESTERDAY sheet's screens (wave EV): the outcome's before and after at once, each decoded halved (640x360 from a
 	 *  1280x720 shot, 900 KB each); released when the outcome or the sheet leaves, the last pair kept one release longer. */
 	UPROPERTY(Transient)
@@ -508,6 +513,9 @@ public:
 	 *  thread with the texture (null when it could not be read) and whether it is a sample screen. BpStandup.cpp. */
 	static const struct FBpShot* FindBeforeShot(const FString& Proposal);
 	static void FetchBeforeShot(const FString& Product, const FString& Path, TFunction<void(class UTexture2D* Texture, bool bSample)> Done);
+	/** Wave W1: the stand-up shows a finding's decision on the wall as Glim's board (BpBoard.h); the console's sub-line gives
+	 *  its band to the board's title row then. */
+	bool StandupOnBoard() const;
 private:
 	void StandupReleaseShot();
 	void StandupVerdict(const FString& Verdict, const TCHAR* Route);

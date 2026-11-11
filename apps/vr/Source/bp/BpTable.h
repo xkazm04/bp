@@ -1581,6 +1581,18 @@ private:
 	bool bDeckShotLoading = false;
 	bool bDeckShotSample = false;
 	uint32 DeckShotGen = 0;
+	/** Wave W1, Glim's board on the wall: the front decision's "after" screen (the split's), read only while the wall is in use and
+	 *  released with the "before"; where the split stands (BpBoard::EStop) and whether the front shows the split's stops now. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> DeckAfterShot;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> DeckAfterKept;
+	TSharedPtr<struct FSlateBrush> DeckAfterBrush;
+	bool bDeckAfterLoading = false;
+	int32 DeckWallStop = 1;
+	mutable bool bDeckWallSplit = false;
+	/** Wave W1: the split moved to a stop (a pinch on TODAY, SPLIT or PROPOSED), the front drawn again. */
+	void DeckSetStop(int32 Stop);
 	void DeckLoadShot();
 	void DeckReleaseShot();
 	/** The four screens: the front, the two behind it, and the one leaving in a swap. */

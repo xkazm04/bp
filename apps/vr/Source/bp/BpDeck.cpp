@@ -11,6 +11,7 @@
 // feature page read them (blueprint-ui.md, "Chrome and the feature page"); a field the data lacks is left out.
 #include "BpTable.h"
 
+#include "BpBoard.h"
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpPawn.h"
@@ -78,7 +79,7 @@ namespace
 	// ---- Wave U3: a decision on the wall, on the console's own grid (BpConsole.cpp, BpStandup.cpp: 1280 x 720 layout px) --------
 	// The header (HeadY), the sheet's frame (FrameY), the status line and the answers' row, as the stand-up's decision on the wall.
 	constexpr float WPad = 40.f, WHeadY0 = 24.f, WHeadY1 = 94.f, WSubY = 100.f;
-	constexpr float WStripY0 = 154.f, WStripY1 = 161.f, WFrameY0 = 170.f, WFrameY1 = 568.f, WInX = WPad + 26.f;
+	constexpr float WStripY0 = 154.f, WStripY1 = 161.f;
 	constexpr float WStatusY0 = 572.f, WStatusY1 = 612.f, WBtnY0 = 618.f, WBtnY1 = 696.f;
 	/** The answers' row: PREV and NEXT at the ends (the far sheet's 196 px pagers), APPROVE the primary and DECLINE between them
 	 *  (a repeat: DECLINE · REPEAT first); SCAN THIS ROOM where the console's CLOSE stands. */
@@ -86,7 +87,8 @@ namespace
 	{
 		OutPrev = FBox2f(FVector2f(WPad, WBtnY0 + 4.f), FVector2f(WPad + 196.f, WBtnY1 - 4.f));
 		OutNext = FBox2f(FVector2f(LW - WPad - 196.f, WBtnY0 + 4.f), FVector2f(LW - WPad, WBtnY1 - 4.f));
-		const float AW = bRepeat ? 240.f : 300.f, DW = bRepeat ? 340.f : 220.f, Gap = 16.f;
+		// Wave W1: APPROVE the row's widest control (Glim's board, the design's 2 to 1).
+		const float AW = bRepeat ? 240.f : 380.f, DW = bRepeat ? 340.f : 220.f, Gap = 16.f;
 		const float X0 = WPad + 196.f + 16.f, X1 = LW - WPad - 196.f - 16.f;
 		const float Start = X0 + FMath::Max(0.f, (X1 - X0 - AW - DW - Gap) * 0.5f);
 		const FBox2f First(FVector2f(Start, WBtnY0), FVector2f(Start + (bRepeat ? DW : AW), WBtnY1));
@@ -1029,6 +1031,9 @@ void ABpTable::DeckReleaseShot()
 	DeckShotFor.Reset();
 	DeckShotBrush.Reset();
 	bDeckShotLoading = bDeckShotSample = false;
+	DeckAfterBrush.Reset();
+	bDeckAfterLoading = false;
+	DeckWallStop = BpBoard::StopSplit;
 	if (DeckShot)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpDeck: the screen released (%dx%d)"), DeckShot->GetSizeX(), DeckShot->GetSizeY());
@@ -1037,6 +1042,25 @@ void ABpTable::DeckReleaseShot()
 		if (DeckShotKept.Num() > 2) DeckShotKept.SetNum(2);
 		DeckShot = nullptr;
 	}
+	if (DeckAfterShot)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: the after screen released (%dx%d)"), DeckAfterShot->GetSizeX(), DeckAfterShot->GetSizeY());
+		DeckAfterKept.Insert(DeckAfterShot, 0);
+		if (DeckAfterKept.Num() > 2) DeckAfterKept.SetNum(2);
+		DeckAfterShot = nullptr;
+	}
+}
+
+void ABpTable::DeckSetStop(int32 Stop)
+{
+	DeckWallStop = FMath::Clamp(Stop, 0, 2);
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: the board's split at %s on %s"), DeckWallStop == BpBoard::StopToday ? TEXT("TODAY") : DeckWallStop == BpBoard::StopProposed ? TEXT("PROPOSED") : TEXT("SPLIT"), *DeckShotFor);
+	if (DeckCards.Num() > 0 && DeckScreens.IsValidIndex(DeckCardState[0].Screen))
+	{
+		DeckCards[0]->SetSlateWidget(DeckWidget(DeckCardState[0].Screen, DeckCardState[0].Page));
+		DeckCards[0]->RequestRedraw();
+	}
+	ApplyDeckWallAims();
 }
 
 void ABpTable::DeckLoadShot()
@@ -1075,6 +1099,33 @@ void ABpTable::DeckLoadShot()
 			T->DeckCards[Index]->RequestRedraw();
 		}
 		// Wave U3: the loupe found on the screen just read is what Glim presents on the wall.
+		T->ApplyDeckWallAims();
+	});
+	// Wave W1: on the wall, Glim's board splits it with the finding's "after" screen when the scan has one.
+	const FBpShot* AfterShot = BpProjector::IsOn() ? BpBoard::FindShot(Proposal, BpVocab::Shot::Phase::After) : nullptr;
+	if (!AfterShot) return;
+	bDeckAfterLoading = true;
+	ABpPawn::FetchBeforeShot(FBpLinkModule::Get().GetProductSlug(), AfterShot->path, [Self, Gen](UTexture2D* Texture, bool)
+	{
+		ABpTable* T = Self.Get();
+		if (!T || T->DeckShotGen != Gen) return;
+		T->bDeckAfterLoading = false;
+		if (Texture)
+		{
+			T->DeckAfterShot = Texture;
+			T->DeckAfterBrush = MakeShared<FSlateBrush>();
+			T->DeckAfterBrush->SetResourceObject(Texture);
+			T->DeckAfterBrush->ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+			T->DeckAfterBrush->DrawAs = ESlateBrushDrawType::Image;
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpDeck: the after screen of %s %s"), *T->DeckShotFor, Texture ? *FString::Printf(TEXT("drawn at %dx%d (%.0f KB in memory)"), Texture->GetSizeX(), Texture->GetSizeY(), Texture->GetSizeX() * Texture->GetSizeY() * 4 / 1024.0) : TEXT("could not be read"));
+		for (int32 Index = 0; Index < 3 && Index < T->DeckCards.Num(); ++Index)
+		{
+			const FDeckCard& Each = T->DeckCardState[Index];
+			if (!T->DeckScreens.IsValidIndex(Each.Screen) || T->DeckScreens[Each.Screen].Proposal != T->DeckShotFor) continue;
+			T->DeckCards[Index]->SetSlateWidget(T->DeckWidget(Each.Screen, Each.Page));
+			T->DeckCards[Index]->RequestRedraw();
+		}
 		T->ApplyDeckWallAims();
 	});
 }
@@ -1473,6 +1524,7 @@ void ABpTable::DeckTap(const FString& Id)
 		if (ABpPawn* Pawn = PC ? Cast<ABpPawn>(PC->GetPawn()) : nullptr) Pawn->WristTap(TEXT("wrist:tab:scan"));
 	}
 	else if (Id == TEXT("deck:approveall")) DeckApproveAll();
+	else if (Id.StartsWith(TEXT("deck:stop:"))) DeckSetStop(FCString::Atoi(*Id.Mid(10)));
 	else if (Id.StartsWith(TEXT("feature:"))) DeckFocus(Id.Mid(8));
 }
 
@@ -1733,6 +1785,8 @@ bool ABpTable::DeckHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		else if (Prev.IsInside(Px)) OutId = TEXT("deck:prev");
 		else if (Next.IsInside(Px)) OutId = TEXT("deck:next");
 		else OutId = TEXT("deck:screen");
+		// Wave W1: the board's split stops, while the front shows the split.
+		for (int32 Stop = 0; Stop < 3 && bDeckWallSplit && OutId == TEXT("deck:screen"); ++Stop) if (BpBoard::StopBox(Stop).IsInside(Px)) OutId = FString::Printf(TEXT("deck:stop:%d"), Stop);
 		return true;
 	}
 	const bool bEnd = DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KSummary;
@@ -1764,7 +1818,9 @@ bool ABpTable::DeckAim(const FString& Id, FVector& OutWorld) const
 	DeckWallBoxes(bRepeat, WApprove, WDecline, WPrev, WNext, WScan);
 	if (bWall && DeckScreens.IsValidIndex(DeckAt) && DeckScreens[DeckAt].Kind == KDecision)
 	{
-		const FBox2f* W = Id == TEXT("deck:approve") ? &WApprove : Id == TEXT("deck:decline") ? &WDecline : Id == TEXT("deck:prev") ? &WPrev : Id == TEXT("deck:next") ? &WNext : Id == TEXT("deck:scan") ? &WScan : nullptr;
+		const FBox2f WStop = BpBoard::StopBox(Id.StartsWith(TEXT("deck:stop:")) ? FCString::Atoi(*Id.Mid(10)) : 0);
+		const FBox2f* W = Id == TEXT("deck:approve") ? &WApprove : Id == TEXT("deck:decline") ? &WDecline : Id == TEXT("deck:prev") ? &WPrev : Id == TEXT("deck:next") ? &WNext : Id == TEXT("deck:scan") ? &WScan
+			: Id.StartsWith(TEXT("deck:stop:")) && bDeckWallSplit ? &WStop : nullptr;
 		if (!W) return false;
 		const FVector2f C = W->GetCenter();
 		const float K = WallPx.X / LW;
@@ -2232,10 +2288,7 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	const FBpScanState& State = Link.GetScanState();
 	const FBpProposal* P = State.Scan.proposals.FindByPredicate([&Screen](const FBpProposal& X) { return X.id == Screen.Proposal; });
-	const FBpPlanTile* Tile = P && SheetPlan.IsValid() ? SheetPlan->tiles.FindByPredicate([P](const FBpPlanTile& T) { return T.id == P->feature; }) : nullptr;
-	const FBpPlanBay* Bay = Tile ? SheetPlan->bays.FindByPredicate([Tile](const FBpPlanBay& B) { return B.id == Tile->parentId; }) : nullptr;
 	const FBpPlanRoom* Room = FindRoom(DeckRoom);
-	const int32* Tier = P ? State.Tiers.Find(P->id) : nullptr;
 	const FBpDecisionBrief* Brief = P ? DeckBrief(P->id) : nullptr;
 	const bool bRepeat = Brief && FBpLinkModule::IsRepeat(*Brief);
 	bool bInDraft = P && DeckInDraft.Contains(P->id);
@@ -2245,9 +2298,8 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 		for (const FBpWavePackage& Package : Wave.packages) if (Package.ids.Contains(P->id)) bInDraft = true;
 	}
 	const auto SFont = [](const TCHAR* Style, float CapPx) { return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style)); };
-	const auto SPitch = [](float CapPx) { return BpSheet::LinePitch(CapPx, static_cast<float>(BpType::CapPerEm)); };
 	const FSlateFontInfo SmallBold = SFont(TEXT("Bold"), 24.f), Small = SFont(TEXT("Regular"), 24.f), LabelFont = SFont(TEXT("Bold"), 28.f), AnswerFont = SFont(TEXT("Bold"), 32.f);
-	const FSlateFontInfo TitleFont = SFont(TEXT("Bold"), 32.f), HeadTitle = SFont(TEXT("Bold"), 36.f);
+	const FSlateFontInfo HeadTitle = SFont(TEXT("Bold"), 36.f);
 	TSharedRef<SCanvas> Canvas = SNew(SCanvas);
 	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
@@ -2270,31 +2322,18 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 	const float HeadX1 = (DeckScanRoute() ? ScanB.Min.X : LW - WPad) - 24.f;
 	const float PosW = BpSheet::TextWidth(Pos, LabelFont), WhoseW = BpSheet::ChipWidth(Whose, SmallBold);
 	Words(FBox2f(FVector2f(HeadX1 - PosW, WHeadY0), FVector2f(HeadX1, WHeadY1)), Pos, LabelFont, BpSheet::Ink.CopyWithNewOpacity(0.9f), VAlign_Center);
-	// Whose morning stands at the sub-line's right end, so the room's name keeps the header (it was cut: "MEMBERSHIPS & PAYM...").
-	Put(FBox2f(FVector2f(LW - WPad - WhoseW, WSubY + 2.f), FVector2f(LW - WPad, WSubY + 42.f)), BpSheet::Chip(Whose, SmallBold, 40.f, Link.HasPcLink() ? BpSheet::Accent : BpSheet::Amber, !Link.HasPcLink()));
-	const float TitleX1 = HeadX1 - PosW - 24.f;
+	// Wave W1: whose morning stands in the header before the queue's place (the sub-line's band is the board's title row now).
+	const float WhoseX1 = HeadX1 - PosW - 20.f;
+	Put(FBox2f(FVector2f(WhoseX1 - WhoseW, WHeadY0 + 15.f), FVector2f(WhoseX1, WHeadY1 - 15.f)), BpSheet::Chip(Whose, SmallBold, 40.f, Link.HasPcLink() ? BpSheet::Accent : BpSheet::Amber, !Link.HasPcLink()));
+	const float TitleX1 = WhoseX1 - WhoseW - 24.f;
 	Put(FBox2f(FVector2f(WPad, WHeadY0), FVector2f(TitleX1, WHeadY1)),
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)[BpSheet::Bubble(TEXT("D"), SFont(TEXT("Bold"), 20.f), 44.f, BpSheet::Accent)]
 		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(RoomName.ToUpper(), HeadTitle, TitleX1 - WPad - 60.f))).Font(HeadTitle).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
 	if (DeckScanRoute()) Put(ScanB, BpSheet::Control(TEXT("SCAN THIS ROOM"), LabelFont, BpSheet::ELook::Edge));
-	// The sub-line: the finding's chips (the lens, the risk with the ledger's colour, the tier, IN DRAFT), then the fine rule.
-	{
-		float X = WPad;
-		const float ChipY0 = WSubY + 2.f, ChipH = 40.f;
-		const auto AddChip = [&](const FString& Text, const FLinearColor& Color, bool bSolid)
-		{
-			const float W = BpSheet::ChipWidth(Text, SmallBold);
-			if (X + W > LW - WPad - WhoseW - 16.f) return;
-			Put(FBox2f(FVector2f(X, ChipY0), FVector2f(X + W, ChipY0 + ChipH)), BpSheet::Chip(Text, SmallBold, ChipH, Color, bSolid));
-			X += W + 12.f;
-		};
-		if (bRepeat) AddChip(TEXT("REPEATS A DECLINE"), BpSheet::Red, false);
-		if (P) AddChip(LensWord(P->lens) + TEXT(" LENS"), BpSheet::Accent, false);
-		if (P && P->risk > 0.0) AddChip(FString::Printf(TEXT("RISK %s"), *Number(P->risk)), BpSheet::RiskColor(P->risk), false);
-		if (bInDraft) AddChip(TEXT("IN DRAFT WAVE"), BpSheet::Accent, true);
-		Put(FBox2f(FVector2f(WPad, WSubY + 46.f), FVector2f(LW - WPad, WSubY + 48.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
-	}
+	// The fine rule under the board's title row (the lens and the risk are the stage's chip now; a repeat and IN DRAFT are the
+	// status line's).
+	Put(FBox2f(FVector2f(WPad, WSubY + 46.f), FVector2f(LW - WPad, WSubY + 48.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
 	// The strip: one segment per decision of the room, the one shown amber, those before it filled.
 	{
 		const int32 N = FMath::Max(1, Of);
@@ -2307,189 +2346,31 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 		}
 	}
 
-	// ---- The frame and its three columns (the stand-up's wall: ColX1 = Pad + 506, the right column 340 wide) ---------------
-	const FBox2f WFrame(FVector2f(WPad, WFrameY0), FVector2f(LW - WPad, WFrameY1));
-	Put(WFrame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
-	const float TextX1 = WFrame.Max.X - 26.f, RightX0 = TextX1 - 340.f, ColX1 = WPad + 506.f;
-	const bool bStop = Tier && *Tier == 0;
-	const FLinearColor Tone = bRepeat || bStop ? BpSheet::Red : BpSheet::Amber;
-	// The left column: the kicker, the title, the one line of consequence, what each answer does.
-	FString Kicker = FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
-	if (BpSheet::TextWidth(Kicker + TEXT(" · IN THIS ROOM"), SmallBold) <= ColX1 - WInX) Kicker += TEXT(" · IN THIS ROOM");
-	Words(FBox2f(FVector2f(WInX, WFrameY0 + 16.f), FVector2f(ColX1, WFrameY0 + 48.f)), Kicker, SmallBold, Tone);
-	const FString HeadFit = BpSheet::Wrap(P ? P->title : Screen.Proposal, TitleFont, ColX1 - WInX, 3);
-	const int32 HeadLines = BpSheet::Lines(HeadFit);
-	const FBox2f HeadBox(FVector2f(WInX, WFrameY0 + 52.f), FVector2f(ColX1, WFrameY0 + 52.f + HeadLines * SPitch(32.f) + 6.f));
-	Put(HeadBox, SNew(STextBlock).Text(FText::FromString(HeadFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+	// ---- Wave W1 (the owner, 2026-11-11, direction C): Glim's board (BpBoard.h), the stand-up's on the wall from the deck's data:
+	// the title row, the hero, Glim's line and what it touches, and the stage the data picks. The answers' row stays below.
+	BpBoard::FIn In;
+	In.Proposal = Screen.Proposal;
+	In.Title = P ? P->title : Screen.Proposal;
+	const bool bShotHere = P && DeckShotFor == P->id;
+	In.Before = bShotHere && DeckShot ? DeckShotBrush : TSharedPtr<FSlateBrush>();
+	In.After = bShotHere && DeckAfterShot ? DeckAfterBrush : TSharedPtr<FSlateBrush>();
+	In.bReading = !bShotHere || bDeckShotLoading || bDeckAfterLoading;
+	In.Stop = DeckWallStop;
+	In.Fallback = Brief && Brief->lines.Num() > 0 ? Brief->lines[0] : FString();
+	BpBoard::FOut Board;
+	const FSlateFontInfo StopFont = SFont(TEXT("Bold"), 28.f);
+	bool bSplitShown = false;
+	BpBoard::Draw(In, Put, [&](const FBox2f& Box, const FString& Word, bool bOn, int32)
+	{
+		Put(Box, BpSheet::Control(Word, StopFont, bOn ? BpSheet::ELook::Fill : BpSheet::ELook::Edge));
+		bSplitShown = true;
+	}, Board);
+	const FBox2f Img = Board.Stage;
 	if (bFront)
 	{
-		const int32 Break = HeadFit.Find(TEXT("\n"));
-		DeckWallTitleAim = FVector2f(WInX + FMath::Min(BpSheet::TextWidth(Break == INDEX_NONE ? HeadFit : HeadFit.Left(Break), TitleFont), ColX1 - WInX) * 0.35f, HeadBox.Min.Y + SPitch(32.f) * 0.5f);
+		bDeckWallSplit = bSplitShown;
+		if (Board.Aim.X >= 0.f) DeckWallLoupeAim = Board.Aim;
 	}
-	float Y = WFrameY0 + 58.f + HeadLines * SPitch(32.f) + 6.f;
-	// The consequence: the brief's first line (where the change lands, what depends on it); without a brief, where it is.
-	TArray<FString> Evidence = Brief ? Brief->lines : TArray<FString>();
-	const FString First = Evidence.Num() > 0 ? Evidence[0] : P ? (Tile ? TEXT("On ") + Tile->name + (Bay ? TEXT(" in ") + Bay->name : FString()) : TEXT("On ") + P->feature) : FString();
-	const bool bBriefLead = Evidence.Num() > 0;
-	if (Evidence.Num() > 0) Evidence.RemoveAt(0);
-	// Without a brief the line is only where it is, which the right column says: as the stand-up's wall, it is not repeated.
-	if (!First.IsEmpty() && bBriefLead)
-	{
-		const FString Fit = BpSheet::Wrap(First, Small, ColX1 - WInX, 2);
-		Put(FBox2f(FVector2f(WInX, Y), FVector2f(ColX1, Y + BpSheet::Lines(Fit) * SPitch(24.f) + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(Small).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
-		Y += BpSheet::Lines(Fit) * SPitch(24.f) + 10.f;
-	}
-	Y += 4.f;
-	Words(FBox2f(FVector2f(WInX, Y), FVector2f(ColX1, Y + 34.f)), TEXT("WHAT EACH ANSWER DOES"), SmallBold, BpSheet::Accent);
-	Y += 40.f;
-	{
-		// In the deck's own terms (DeckApprove, DeckDecline): what each of this sheet's answers does.
-		struct FDoes { const TCHAR* Word; FString Does; FLinearColor Ink; };
-		TArray<FDoes> Does;
-		if (bRepeat) Does.Add({ TEXT("DECLINE"), TEXT("declined in the store, as a repeat"), BpSheet::Amber });
-		Does.Add({ TEXT("APPROVE"), bRepeat ? TEXT("overrides: into the draft wave") : TEXT("into the draft wave"), bRepeat ? BpSheet::InkHi : BpSheet::Amber });
-		if (!bRepeat) Does.Add({ TEXT("DECLINE"), TEXT("off this visit's queue"), BpSheet::InkHi });
-		Does.Add({ TEXT("NEXT"), TEXT("it waits here for later"), BpSheet::InkHi });
-		const float WordW = BpSheet::TextWidth(TEXT("APPROVE"), SmallBold) + 16.f;
-		for (const FDoes& Each : Does)
-		{
-			const FString Fit = BpSheet::Wrap(Each.Does, Small, ColX1 - WInX - WordW, 2);
-			const float H = BpSheet::Lines(Fit) * SPitch(24.f);
-			if (Y + H > WFrame.Max.Y - 6.f) break;
-			Put(FBox2f(FVector2f(WInX, Y), FVector2f(WInX + WordW, Y + SPitch(24.f) + 2.f)), SNew(STextBlock).Text(FText::FromString(Each.Word)).Font(SmallBold).ColorAndOpacity(FSlateColor(Each.Ink)));
-			Put(FBox2f(FVector2f(WInX + WordW, Y), FVector2f(ColX1, Y + H + 2.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(Small).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f))));
-			Y += H + 2.f;
-		}
-	}
-
-	// The middle column: the finding's "before" at the top and its loupe under it (the densest words, several times larger), as
-	// the stand-up's; no screen for this finding: its evidence there instead, quiet, each line whole.
-	const float ImgX0 = ColX1 + 24.f, ImgX1 = RightX0 - 24.f, ImgW = ImgX1 - ImgX0;
-	const bool bScreen = P && ABpPawn::FindBeforeShot(P->id) != nullptr;
-	const bool bHave = bScreen && DeckShotFor == P->id && DeckShotBrush.IsValid() && DeckShot;
-	FBox2f Img(FVector2f(ImgX0, WFrameY0 + 16.f), FVector2f(ImgX1, WFrameY0 + 16.f + ImgW * 9.f / 16.f));
-	if (bScreen)
-	{
-		const FBox2f Lb(FVector2f(ImgX0, Img.Max.Y + 16.f), FVector2f(ImgX1, WFrame.Max.Y - 12.f));
-		FBox2f Uv;
-		if (bHave && Lb.GetSize().Y > 60.f && BpProjector::LoupeRegion(DeckShot.Get(), nullptr, Lb.GetSize().X / Lb.GetSize().Y, 0.2f, Uv))
-		{
-			const int32 Times = FMath::RoundToInt(Lb.GetSize().X / (Uv.GetSize().X * Img.GetSize().X));
-			const TSharedPtr<FSlateBrush> Crop = MakeShared<FSlateBrush>(*DeckShotBrush);
-			Crop->SetUVRegion(Uv);
-			Put(Lb.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Amber).EdgePx(3.f));
-			Put(Lb, SNew(SImage).Image_Lambda([Crop]() { return Crop.Get(); }));
-			const FString Cap = FString::Printf(TEXT("BEFORE · %d×"), Times);
-			const float CapW = BpSheet::TextWidth(Cap, SmallBold) + 28.f;
-			Put(FBox2f(Lb.Min, FVector2f(Lb.Min.X + CapW, Lb.Min.Y + 40.f)), BpSheet::Pin(Cap, SmallBold, 40.f, BpSheet::Ink, CapW));
-			// Its place on the screen, a fine amber frame.
-			Put(FBox2f(Img.Min + Uv.Min * Img.GetSize(), Img.Min + Uv.Max * Img.GetSize()).ExpandBy(2.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(3.f));
-			if (bFront) DeckWallLoupeAim = Img.Min + (Uv.Min + Uv.Max) * 0.5f * Img.GetSize();
-		}
-		else if (bHave)
-		{
-			// No region of words worth a loupe: the screen takes the column, as large as it fits, centred.
-			const float AvailH = Lb.Max.Y - (WFrameY0 + 16.f);
-			const float H = FMath::Min(ImgW * 9.f / 16.f, AvailH), W = H * 16.f / 9.f;
-			const float X0 = ImgX0 + (ImgW - W) * 0.5f, Y0 = WFrameY0 + 16.f + (AvailH - H) * 0.5f;
-			Img = FBox2f(FVector2f(X0, Y0), FVector2f(X0 + W, Y0 + H));
-		}
-		if (bHave)
-		{
-			Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.8f)).EdgePx(2.f));
-			Put(Img, SNew(SImage).Image_Lambda([Brush = DeckShotBrush]() { return Brush.Get(); }));
-		}
-		else
-		{
-			Put(Img, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
-			Put(Img, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock)
-				.Text(FText::FromString(DeckShotFor != P->id || bDeckShotLoading ? TEXT("READING THE SCREEN") : TEXT("NO SCREEN FOR THIS FINDING"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
-		}
-		// The caption: which screen (the right column names the place), SAMPLE when it is one.
-		const bool bSampleShot = bHave && bDeckShotSample;
-		const float TagW = bSampleShot ? BpSheet::TextWidth(TEXT("SAMPLE"), SmallBold) + 28.f : 0.f;
-		Put(FBox2f(FVector2f(Img.Min.X, Img.Max.Y - 40.f), Img.Max), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.9f)));
-		Put(FBox2f(FVector2f(Img.Min.X + 12.f, Img.Max.Y - 40.f), FVector2f(Img.Max.X - TagW - 12.f, Img.Max.Y)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(TEXT("BEFORE"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
-		if (bSampleShot) Put(FBox2f(FVector2f(Img.Max.X - TagW, Img.Max.Y - 40.f), Img.Max), BpSheet::Pin(TEXT("SAMPLE"), SmallBold, 40.f, BpSheet::Amber, TagW));
-	}
-	else
-	{
-		// The evidence (the brief's other lines; without a brief the finding's own words, its size and date), each whole.
-		if (Evidence.Num() == 0 && P)
-		{
-			TArray<FString> Body;
-			P->body.ParseIntoArrayLines(Body, true);
-			for (const FString& Raw : Body)
-			{
-				FString Line = Plain(Raw);
-				if (Line.StartsWith(TEXT("#")) || Line.IsEmpty()) continue;
-				if (Line.StartsWith(TEXT("- ")) || Line.StartsWith(TEXT("* "))) Line = Line.Mid(2);
-				Evidence.Add(Line);
-				if (Evidence.Num() >= 4) break;
-			}
-		}
-		float EY = WFrameY0 + 16.f;
-		Words(FBox2f(FVector2f(ImgX0, EY), FVector2f(ImgX1, EY + 34.f)), TEXT("THE EVIDENCE"), SmallBold, BpSheet::Accent);
-		EY += 44.f;
-		for (const FString& Line : Evidence)
-		{
-			const FString Fit = BpSheet::Wrap(Line, Small, ImgW - 28.f, 0);
-			const float H = BpSheet::Lines(Fit) * SPitch(24.f);
-			if (EY + H > WFrame.Max.Y - 12.f) break;
-			Put(FBox2f(FVector2f(ImgX0, EY + SPitch(24.f) * 0.5f - 7.f), FVector2f(ImgX0 + 12.f, EY + SPitch(24.f) * 0.5f + 5.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
-			Put(FBox2f(FVector2f(ImgX0 + 28.f, EY), FVector2f(ImgX1, EY + H + 4.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(Small).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.85f))));
-			EY += H + 10.f;
-		}
-		Img = FBox2f(FVector2f(ImgX0, WFrameY0 + 120.f), FVector2f(ImgX1, WFrameY0 + 300.f));
-	}
-
-	// The right column: what it touches. The tier pin, the feature (bold) and where it is, who raised it, its size and age, a
-	// precedent; each whole (two lines at most), down to the title block.
-	{
-		const float RX0 = RightX0, RX1 = TextX1;
-		float RY = WFrameY0 + 16.f;
-		Words(FBox2f(FVector2f(RX0, RY), FVector2f(RX1, RY + 34.f)), TEXT("WHAT IT TOUCHES"), SmallBold, BpSheet::Accent);
-		const FString Chip = Tier ? FString::Printf(TEXT("T%d %s"), *Tier, *TierWord(*Tier)) : FString(TEXT("UNTIERED"));
-		const float ChipW = FMath::Min(RX1 - RX0, BpSheet::TextWidth(Chip, SmallBold) + 28.f);
-		Put(FBox2f(FVector2f(RX0, RY + 40.f), FVector2f(RX0 + ChipW, RY + 78.f)), BpSheet::Pin(Chip, SmallBold, 38.f, bStop ? BpSheet::Red : BpSheet::Amber, ChipW));
-		RY += 84.f;
-		struct FTouch { FString Words; const FSlateFontInfo* Face; FLinearColor Ink; };
-		TArray<FTouch> Touches;
-		Touches.Add({ Tile ? Tile->name : P ? P->feature : FString(), &SmallBold, BpSheet::InkHi });
-		const FString Where = Bay ? FString::Printf(TEXT("in %s, %s"), *Bay->name, *RoomName) : FString::Printf(TEXT("in %s"), *RoomName);
-		Touches.Add({ Where, &Small, BpSheet::Ink });
-		if (P) Touches.Add({ FString::Printf(TEXT("Raised by the %s lens%s"), *BpWords::Lens(P->lens), P->risk > 0.0 ? *FString::Printf(TEXT(", risk %s"), *Number(P->risk)) : TEXT("")), &Small, BpSheet::Ink });
-		if (P)
-		{
-			TArray<FString> Meta;
-			if (!P->size.IsEmpty()) Meta.Add(TEXT("Size ") + P->size);
-			if (!P->created_at.IsEmpty()) Meta.Add(TEXT("proposed ") + P->created_at.Left(10));
-			if (Meta.Num() > 0) Touches.Add({ FString::Join(Meta, TEXT(" · ")), &Small, BpSheet::Ink.CopyWithNewOpacity(0.75f) });
-		}
-		if (Brief) for (const auto& Fact : Brief->facts) if (Fact.key == BpVocab::BriefFact::Key::Precedent || Fact.key == BpVocab::BriefFact::Key::Declined) Touches.Add({ Fact.text, &Small, Fact.key == BpVocab::BriefFact::Key::Declined ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.75f) });
-		const float RYMax = WFrame.Max.Y - 52.f;
-		for (const FTouch& Each : Touches)
-		{
-			if (Each.Words.IsEmpty()) continue;
-			const FString Fit = BpSheet::Wrap(Each.Words, *Each.Face, RX1 - RX0, 2);
-			const float H = BpSheet::Lines(Fit) * SPitch(24.f) * 0.92f;
-			if (RY + H > RYMax) break;
-			Put(FBox2f(FVector2f(RX0, RY), FVector2f(RX1, RY + H + 2.f)), SNew(STextBlock).Text(FText::FromString(Fit)).Font(*Each.Face).LineHeightPercentage(0.92f).ColorAndOpacity(FSlateColor(Each.Ink)));
-			RY += H + 6.f;
-		}
-		// The title block closing the column: the finding's id, the product and whose morning.
-		const FString No = P ? P->id.ToUpper() : Screen.Proposal.ToUpper();
-		const FString ProductName = Link.GetProductName().IsEmpty() ? Link.NameOf(Link.GetProductSlug()) : Link.GetProductName();
-		// The product and the day (a finding's id is longer than the stand-up's "M-04"; SAMPLE is the header's chip already).
-		const FString Proj = ProductName.ToUpper() + (Link.HasPcLink() ? TEXT(" · ") + FDateTime::Now().ToString(TEXT("%d.%m.")) : FString());
-		const FBox2f Block(FVector2f(RightX0 - 12.f, WFrame.Max.Y - 46.f), WFrame.Max);
-		const float NoW = FMath::Min(BpSheet::TextWidth(No, SmallBold), Block.GetSize().X * 0.5f);
-		Put(Block, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.5f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
-		Put(FBox2f(FVector2f(Block.Min.X + NoW + 26.f, Block.Min.Y + 8.f), FVector2f(Block.Min.X + NoW + 28.f, Block.Max.Y - 8.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.5f)));
-		Words(FBox2f(Block.Min + FVector2f(14.f, 0.f), FVector2f(Block.Min.X + NoW + 20.f, Block.Max.Y)), BpSheet::Cut(No, SmallBold, NoW + 4.f), SmallBold, BpSheet::Accent, VAlign_Center);
-		Words(FBox2f(FVector2f(Block.Min.X + NoW + 40.f, Block.Min.Y), Block.Max - FVector2f(10.f, 0.f)), BpSheet::Cut(Proj, Small, Block.Max.X - Block.Min.X - NoW - 52.f), Small, BpSheet::Ink.CopyWithNewOpacity(0.85f), VAlign_Center);
-	}
-
 	// The answer taken lands as the stand-up's stamp, on the sheet as it slides away (GDeckStamp, DeckApprove/DeckDecline).
 	if (const FString* Stamp = P ? GDeckStamp.Find(P->id) : nullptr)
 	{
@@ -2507,9 +2388,10 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 	}
 
 	// The status line, then the answers' row: PREV, the answers, NEXT (the deck's acts, DeckWallBoxes).
+	// Wave W1: only what is out of the ordinary has a status line on the board (a repeat, a finding already in the draft).
 	const FString Status = bRepeat ? FString(TEXT("You declined this idea before: DECLINE · REPEAT declines it in the store, APPROVE overrides."))
-		: FString(TEXT("APPROVE puts it in the draft wave; nothing is built."));
-	Words(FBox2f(FVector2f(WPad + 4.f, WStatusY0), FVector2f(LW - WPad, WStatusY1)), BpSheet::CutWords(Status, Small, LW - 2.f * WPad - 8.f), Small, BpSheet::Ink.CopyWithNewOpacity(0.85f), VAlign_Center);
+		: bInDraft ? FString(TEXT("In the draft wave already; nothing is built.")) : FString();
+	if (!Status.IsEmpty()) Words(FBox2f(FVector2f(WPad + 4.f, WStatusY0), FVector2f(LW - WPad, WStatusY1)), BpSheet::CutWords(Status, Small, LW - 2.f * WPad - 8.f), Small, bRepeat ? BpSheet::Red : BpSheet::Accent, VAlign_Center);
 	const bool bPrevOk = DeckAt > 0, bNextOk = DeckAt + 1 < DeckScreens.Num();
 	Put(PrevB, BpSheet::Control(TEXT("‹  PREV"), LabelFont, bPrevOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
 	Put(NextB, BpSheet::Control(TEXT("NEXT  ›"), LabelFont, bNextOk ? BpSheet::ELook::Edge : BpSheet::ELook::Off));
@@ -2518,12 +2400,12 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 	if (bFront)
 	{
 		static FString Shown;
-		const FString Key = FString::Printf(TEXT("%s %d/%d %d"), *Screen.Proposal, Nth, Of, bHave);
+		const FString Key = FString::Printf(TEXT("%s %d/%d %d %d %d %d"), *Screen.Proposal, Nth, Of, In.Before.IsValid(), In.After.IsValid(), In.Stop, static_cast<int32>(Board.Case));
 		if (Key != Shown)
 		{
 			Shown = Key;
-			UE_LOG(LogBpTable, Log, TEXT("BpDeck: the wall's decision %s, %d of %d in %s (%s, the wall's three columns, drawn %.0f px wide)"), *Screen.Proposal, Nth, Of, *DeckRoom,
-				bHave ? (DeckWallLoupeAim.X >= 0.f ? TEXT("its screen and loupe") : TEXT("its screen, no loupe")) : bScreen ? TEXT("its screen being read") : TEXT("no screen: its evidence"), DeckCards.Num() > 0 ? DeckCards[0]->GetDrawSize().X : 0.0);
+			UE_LOG(LogBpTable, Log, TEXT("BpBoard: the room's decision %s on the wall, %d of %d in %s, stage %s: %s; Glim points at (%.0f, %.0f); drawn %.0f px wide"), *Screen.Proposal, Nth, Of, *DeckRoom,
+				BpBoard::CaseWord(Board.Case), *Board.Said, Board.Aim.X, Board.Aim.Y, DeckCards.Num() > 0 ? DeckCards[0]->GetDrawSize().X : 0.0);
 		}
 	}
 	return SNew(SDPIScaler).DPIScale(DeckCards.Num() > 0 ? static_cast<float>(DeckCards[0]->GetDrawSize().X) / LW : DeckPxPerCm / DeckLayoutPxPerCm)

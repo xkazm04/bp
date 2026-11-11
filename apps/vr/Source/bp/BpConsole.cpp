@@ -797,6 +797,8 @@ struct FBpConsolePages
 	static void StandupOpen(ABpPawn& Pawn) { Pawn.StandupOpened(); }
 	static void StandupRows(ABpPawn& Pawn, TArray<FBpConsoleRow>&, FString& Sub)
 	{
+		// Wave W1: a decision on the wall is Glim's board, whose title row takes the sub-line's band (SAMPLE stays a chip).
+		if (Pawn.StandupOnBoard()) return;
 		const FBpLinkModule& Link = FBpLinkModule::Get();
 		if (!Link.HasPcLink()) Sub = TEXT("Sample morning · nothing you decide here is sent");
 		else if (!Link.CanDecide()) Sub = TEXT("From your PC · pair with decide to answer here (PC LINK)");

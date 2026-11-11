@@ -474,6 +474,12 @@ public:
 	void NoteFeatureKind(const FString& Slug, const FString& Kind) { if (!Slug.IsEmpty() && !Kind.IsEmpty() && !FeatureKinds.Contains(Slug)) FeatureKinds.Add(Slug, Kind); }
 	/** A feature's one line (structure.features[].summary) by its slug; null when the structure names none. */
 	const FString* FindFeatureSummary(const FString& Slug) const { return FeatureSummaries.Find(Slug); }
+	/** A feature as the last structure that parsed gives it (structure.features[] by slug: its stage, parts, depends_on and
+	 *  notes; wave W1, the wall's board), or null. */
+	const FBpFeature* FindFeature(const FString& Slug) const { return FeaturesBySlug.Find(Slug); }
+	/** A feature's lens value as the structure's facets hold it (facets[feature][lens].values[key]) when it is a number; false
+	 *  when the structure has none (wave W1: the board's measured "today" for a finding's metric). */
+	bool FindFacetNumber(const FString& Feature, const FString& Lens, const FString& Key, double& OutValue) const;
 	/** A lens's name (structure.lenses[].manifest.name, what the web's P.LENS shows) by its id; null when the last structure
 	 *  that parsed names no such lens (spark vr-room-layers WP3: the manifest is the one source of the table's lens words). */
 	const FString* FindLensName(const FString& Lens) const { return LensNames.Find(Lens); }
@@ -887,6 +893,8 @@ private:
 	FString ProductName;
 	TMap<FString, FString> FeatureKinds;
 	TMap<FString, FString> FeatureSummaries;
+	TMap<FString, FBpFeature> FeaturesBySlug;
+	TMap<FString, FJsonObjectWrapper> Facets;
 	TMap<FString, FString> LensNames;
 	TMap<FString, FString> LensAccents;
 	TMap<FString, FString> LensShorts;
