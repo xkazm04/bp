@@ -12,7 +12,7 @@
 //            the fixture, prints a table (scenario, pass/fail per expectation, the reply's first line) and the total cost the
 //            CLI reported. `--only id,id` limits it (and then merges into the fixture).
 // expect: tools (every one called), anyTools (at least one), noTools ("*" = none at all, or a list), cardTools (each called
-// and its result a filed card), anyCardTools (one of them filed a card), noCards (no GATED tool called), mustMention (each
+// and its result a filed card), anyCardTools (one of them filed a card), cardOrAsks (one of them filed a card, or nothing gated and a question: "that one" after a reply naming two things), noCards (no GATED tool called), mustMention (each
 // regex, case-insensitive, matches the replies), mustNot (none matches), maxWordsSpoken (every turn's reply at most n words),
 // focus (each regex matches a focus event's `kind:id`), asks (a question mark), noRepeatFlourish (no lamp flourish stem in
 // two turns). G3 (2026-11-11): `perTurn[i]` holds the same rules for turn i alone (multi-turn conversations: "refers back"
@@ -37,7 +37,7 @@ const TX_FILE = path.join(ROOT, 'scripts/fixtures/glim-golden.transcripts.jsonl'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 type Surface = { kind: 'vr' | 'web'; spoken?: boolean; product?: string; place?: string; target?: string } | null;
-interface Expect { tools?: string[]; anyTools?: string[]; noTools?: '*' | string[]; cardTools?: string[]; anyCardTools?: string[]; noCards?: boolean; mustMention?: string[]; mustNot?: string[]; maxWordsSpoken?: number; focus?: string[]; asks?: boolean; noRepeatFlourish?: boolean }
+interface Expect { tools?: string[]; anyTools?: string[]; noTools?: '*' | string[]; cardTools?: string[]; anyCardTools?: string[]; cardOrAsks?: string[]; noCards?: boolean; mustMention?: string[]; mustNot?: string[]; maxWordsSpoken?: number; focus?: string[]; asks?: boolean; noRepeatFlourish?: boolean }
 /** `perTurn[i]`: the same rules, judged on turn i alone (null or absent: none). A multi-turn conversation (G3) says what each
  *  turn must do there: "refers back to turn 1's topic" is a mustMention of that topic's name on the later turn. */
 interface Scenario { id: string; group: string; surface: Surface; turns: string[]; expect: Expect; perTurn?: (Expect | null)[] }
@@ -90,6 +90,7 @@ function judgeOn(x: Expect, turns: Turned[], pre: string): { name: string; ok: b
   else for (const t of x.noTools ?? []) add(`never calls ${t}`, !called.has(t), list);
   for (const t of x.cardTools ?? []) add(`files a ${t} card`, filed.has(t), list);
   if (x.anyCardTools) add(`files a card of ${x.anyCardTools.join('|')}`, x.anyCardTools.some((t) => filed.has(t)), list);
+  if (x.cardOrAsks) add(`files a card of ${x.cardOrAsks.join('|')} or asks which (nothing filed)`, x.cardOrAsks.some((t) => filed.has(t)) || (gated.length === 0 && /\?/.test(all)), list);
   if (x.noCards) add('files no card (no GATED tool)', gated.length === 0, gated.join(','));
   for (const m of x.mustMention ?? []) add(`mentions /${m}/`, new RegExp(m, 'i').test(all), all.slice(0, 120));
   for (const m of x.mustNot ?? []) add(`never says /${m}/`, !new RegExp(m, 'i').test(all), (all.match(new RegExp(m, 'i')) ?? [''])[0]);
