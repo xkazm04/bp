@@ -252,6 +252,8 @@ void ABpPawn::RunPad(const FString& Button)
 	if (!Table || !Table->HasPlan()) return;
 	if (Button == TEXT("B")) { Table->Back(); return; }
 	if (Button == TEXT("A")) { PadSelect(); return; }
+	// Wave W2: on a room's split board on the wall, up and down move the split (TODAY, SPLIT, PROPOSED); left and right the queue.
+	if ((Button == TEXT("Up") || Button == TEXT("Down")) && !Table->GetRoomModeId().IsEmpty() && Table->DeckPadStop(Button == TEXT("Up") ? -1 : 1)) return;
 	PadStep(Button == TEXT("Left") || Button == TEXT("Up") ? -1 : 1);
 }
 
@@ -262,6 +264,7 @@ void ABpPawn::PadStep(int32 Delta)
 	// Room mode: the deck's screens are the siblings (its lit feature follows the front screen on the map).
 	if (!Table->GetRoomModeId().IsEmpty())
 	{
+		if (Delta == 0) return;
 		if (Delta > 0) Table->DeckNext();
 		else Table->DeckPrev();
 		UE_LOG(LogBpTable, Log, TEXT("BpPad: deck %s"), *Table->GetDeckLine());

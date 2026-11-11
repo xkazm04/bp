@@ -624,6 +624,9 @@ public:
 	/** The next page of the current screen, else the next screen (the queue's end holds; WP3 offers the next room there). */
 	void DeckNext();
 	void DeckPrev();
+	/** Wave W2: the pad's up and down on a room's split board on the wall move its split one stop (Up toward TODAY, Down toward
+	 *  PROPOSED); false when the front shows no split (the pad steps the queue then). */
+	bool DeckPadStop(int32 Delta);
 	/** The screen at a 1-based place in the queue ("3 / 9"), its first page. */
 	bool DeckShow(int32 Place);
 	/** The current decision into the product's draft wave (BpLink AddToDraft: compose or PATCH, never dispatch); advances. */

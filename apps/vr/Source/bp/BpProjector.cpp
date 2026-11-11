@@ -15,10 +15,10 @@ namespace
 		TEXT("The main screen (wave PJ1): 0 the desk console, 1 THE THROW (default since wave U1: the open sheet far and large over the table's far rim), 2 THE LIGHT STAGE (wave PJ2: a curved sheet of light around the seat, bp.Stage.*). Saved; SETTINGS > MAIN SCREEN."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarDistance(TEXT("bp.Projector.DistanceCm"), 260.f,
 		TEXT("THE THROW: the sheet's distance from the seated eye, cm (150 to 500). 260 by default: at 300 the studio's shelf ladder stood in front of the sheet's left edge (cap/pj1-f3-y-kf011.png); 260 clears it at the same angular size."), ECVF_Default);
-	TAutoConsoleVariable<float> CVarWidth(TEXT("bp.Projector.WidthCm"), 208.f,
-		TEXT("THE THROW: the sheet's width at DistanceCm, cm (100 to 400; its height is 9/16 of it; 208 at 260 cm is the README's 240 at 300: 43.5 x 25.3 degrees)."), ECVF_Default);
-	TAutoConsoleVariable<float> CVarLift(TEXT("bp.Projector.LiftCm"), 6.f,
-		TEXT("THE THROW: the sheet's centre above the seated eye at DistanceCm, cm (-40 to 80). 6 by default (was 17: on the device the sheet's top sat at the edge of the lenses' view, the resting gaze being 10 degrees down)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWidth(TEXT("bp.Projector.WidthCm"), 236.f,
+		TEXT("THE THROW: the sheet's width at DistanceCm, cm (100 to 400; its height is 9/16 of it). 236 by default (wave W2, the owner 2026-11-11: use the wall): 48.8 x 28.6 degrees from the seat, its top 16.0 degrees above the eye, its foot 12.6 below, clear over the site plan's tallest pin tags (13 below; the far rim's sight line is 17.7 below); was 208 (43.5 x 25.3). 260 with LiftCm -4 gives 53 degrees, but its foot then hides behind the far pins' tags at L0."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarLift(TEXT("bp.Projector.LiftCm"), 8.f,
+		TEXT("THE THROW: the sheet's centre above the seated eye at DistanceCm, cm (-40 to 80). 8 by default (wave W2: the larger sheet's top at 16.0 degrees, the 16.2 that sat at the edge of the lenses' view on the device being the limit, and its foot over the pin tags; was 6, and 17 before that)."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarRoomDistance(TEXT("bp.Projector.RoomDistanceCm"), 200.f,
 		TEXT("THE THROW in your own room (bp.Room 1, passthrough): the sheet comes to this distance, cm (120 to 400), at the same angular size, since a real wall may be nearer than 3 m."), ECVF_Default);
 

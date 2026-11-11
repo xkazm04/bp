@@ -23,8 +23,9 @@ day, nine hours of margin.
 
 ## Glim's new clips (G3, G4): the wiring lookup
 
-Rendered 2026-11-11 by `apps/vr/tools/tour-voice.ts --think` and `--onboard` (lines declared there as THINK_LINES and
-ONBOARD_LINES until BpTourBook.cpp carries them; keep the ids and words when moving them). Same voice record, 24 kHz
+Rendered 2026-11-11 by `apps/vr/tools/tour-voice.ts --think` and `--onboard`; since wave W2 the words live in
+BpTourBook.cpp (ThinkLines, OnboardLines), said by BpTalk.cpp (bp.TalkThinkS, 1.5 s) and BpBuildup.cpp through BpNarrate's
+one path. Test in PIE with `bp.TalkStubReplyS 4` then `BpTalk.Say hello`, and with `BpBuild.Replay`. Same voice record, 24 kHz
 16-bit mono, levelled to -14 LUFS like every clip; `check:vr-tour` pins format, text and no orphans. Paths are under
 `apps/vr/Content/BpData/` (staged with the rest of BpData).
 

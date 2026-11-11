@@ -71,22 +71,23 @@ export function readNarrateBook(file = TOUR_BOOK_CPP): Record<string, string> {
 export const NARRATE_LINES: Record<string, string> = readNarrateBook();
 export const NARRATE_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'narrate');
 
-/** Demo-video lines (docs/concepts/demo-video/readiness.md G3, G4; owner 2026-11-11 "Approved adding short line"), rendered
- *  ahead of the code that says them: they are not in BpTourBook.cpp yet, so they live here, each group in its own folder so
- *  the narrate and tour pins (check:vr-tour) are untouched. When the Unreal side moves a line into the book, keep its id and
- *  text, and drop it here. No product names, no counts: one set serves every product.
- *  --think: what Glim says when his turn runs long (G4, about 1.5 s with no reply yet), one picked per turn -> voice/think/.
- *  --onboard: the onboarding build-up's start and end (G3, scene S3; BpBuildup.cpp's first event and done) -> voice/onboard/. */
-export const THINK_LINES: Record<string, string> = {
-  'think-look': 'Let me look.',
-  'think-moment': "One moment, I'm checking.",
-  'think-looking': 'Looking now.',
-};
+/** Demo-video lines (docs/concepts/demo-video/readiness.md G3, G4; owner 2026-11-11 "Approved adding short line"): since wave
+ *  W2 they live in BpTourBook.cpp (ThinkLines() and OnboardLines(), same one-line form), each group with its own folder so the
+ *  narrate and tour pins (check:vr-tour) are untouched. No product names, no counts: one set serves every product.
+ *  --think: what Glim says when his turn runs long (G4, bp.TalkThinkS with no reply yet), one a turn, in turn -> voice/think/.
+ *  --onboard: the onboarding build-up's start and end (G3, scene S3; BpBuildup.cpp's first event and hand-over) -> voice/onboard/. */
+export function readBookTable(table: string, file = TOUR_BOOK_CPP): Record<string, string> {
+  const src = fs.readFileSync(file, 'utf8');
+  const start = src.indexOf(`const TArray<FLine>& ${table}()`);
+  const end = start >= 0 ? src.indexOf('return All;', start) : -1;
+  const block = start >= 0 && end > start ? src.slice(start, end) : '';
+  const out: Record<string, string> = {};
+  for (const m of block.matchAll(/\{\s*TEXT\("([^"]+)"\),\s*TEXT\("((?:[^"\\]|\\.)*)"\)\s*\}/g)) out[m[1]] = m[2].replace(/\\(.)/g, '$1');
+  return out;
+}
+export const THINK_LINES: Record<string, string> = readBookTable('ThinkLines');
 export const THINK_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'think');
-export const ONBOARD_LINES: Record<string, string> = {
-  'onboard-start': "I'm reading your project now. Watch it draw itself.",
-  'onboard-done': 'There it is: your building, drawn.',
-};
+export const ONBOARD_LINES: Record<string, string> = readBookTable('OnboardLines');
 export const ONBOARD_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'onboard');
 
 const TOUR_OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');

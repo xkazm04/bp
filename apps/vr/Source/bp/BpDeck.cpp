@@ -1051,6 +1051,15 @@ void ABpTable::DeckReleaseShot()
 	}
 }
 
+bool ABpTable::DeckPadStop(int32 Delta)
+{
+	if (!bDeckWallSplit || !IsDeckOnWall() || !DeckScreens.IsValidIndex(DeckAt) || DeckScreens[DeckAt].Kind != KDecision) return false;
+	const int32 To = FMath::Clamp(DeckWallStop + Delta, 0, 2);
+	UE_LOG(LogBpTable, Log, TEXT("BpDeck: the pad moves the board's split %s"), To == DeckWallStop ? TEXT("nowhere (at its end)") : Delta < 0 ? TEXT("toward TODAY") : TEXT("toward PROPOSED"));
+	if (To != DeckWallStop) DeckSetStop(To);
+	return true;
+}
+
 void ABpTable::DeckSetStop(int32 Stop)
 {
 	DeckWallStop = FMath::Clamp(Stop, 0, 2);
@@ -2326,10 +2335,14 @@ TSharedRef<SWidget> ABpTable::DeckWallDecision(int32 ScreenIndex) const
 	const float WhoseX1 = HeadX1 - PosW - 20.f;
 	Put(FBox2f(FVector2f(WhoseX1 - WhoseW, WHeadY0 + 15.f), FVector2f(WhoseX1, WHeadY1 - 15.f)), BpSheet::Chip(Whose, SmallBold, 40.f, Link.HasPcLink() ? BpSheet::Accent : BpSheet::Amber, !Link.HasPcLink()));
 	const float TitleX1 = WhoseX1 - WhoseW - 24.f;
+	// Wave W2 (no ellipses on the wall): the room's name a step smaller (36, 32, 28) before it is ever cut.
+	const FString RoomWords = RoomName.ToUpper();
+	FSlateFontInfo HeadFit = HeadTitle;
+	for (const float Cap : { 32.f, 28.f }) if (BpSheet::TextWidth(RoomWords, HeadFit) > TitleX1 - WPad - 60.f) HeadFit = SFont(TEXT("Bold"), Cap);
 	Put(FBox2f(FVector2f(WPad, WHeadY0), FVector2f(TitleX1, WHeadY1)),
 		SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)[BpSheet::Bubble(TEXT("D"), SFont(TEXT("Bold"), 20.f), 44.f, BpSheet::Accent)]
-		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::Cut(RoomName.ToUpper(), HeadTitle, TitleX1 - WPad - 60.f))).Font(HeadTitle).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+		+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(BpSheet::CutWords(RoomWords, HeadFit, TitleX1 - WPad - 60.f))).Font(HeadFit).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
 	if (DeckScanRoute()) Put(ScanB, BpSheet::Control(TEXT("SCAN THIS ROOM"), LabelFont, BpSheet::ELook::Edge));
 	// The fine rule under the board's title row (the lens and the risk are the stage's chip now; a repeat and IN DRAFT are the
 	// status line's).

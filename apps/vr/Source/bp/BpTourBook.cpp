@@ -154,10 +154,39 @@ namespace BpTourBook
 		return All;
 	}
 
+	const TArray<FLine>& ThinkLines()
+	{
+		static const TArray<FLine> All = {
+			// ---- A talk turn with no reply yet (BpTalk.cpp, bp.TalkThinkS): one a turn, in this order, never twice running ----
+			{ TEXT("think-look"), TEXT("Let me look.") },
+			{ TEXT("think-moment"), TEXT("One moment, I'm checking.") },
+			{ TEXT("think-looking"), TEXT("Looking now.") },
+		};
+		return All;
+	}
+
+	const TArray<FLine>& OnboardLines()
+	{
+		static const TArray<FLine> All = {
+			// ---- The build-up (BpBuildup.cpp): its first event, and the hand-over to the live table ----
+			{ TEXT("onboard-start"), TEXT("I'm reading your project now. Watch it draw itself.") },
+			{ TEXT("onboard-done"), TEXT("There it is: your building, drawn.") },
+		};
+		return All;
+	}
+
+	bool HasLine(const TArray<FLine>& Lines, const FString& Id)
+	{
+		return Lines.ContainsByPredicate([&Id](const FLine& L) { return Id == L.Id; });
+	}
+
 	FString NarrateWords(const FString& Id)
 	{
-		const FLine* Line = NarrateLines().FindByPredicate([&Id](const FLine& L) { return Id == L.Id; });
-		return Line ? FString(Line->Words) : FString();
+		for (const TArray<FLine>* Lines : { &NarrateLines(), &ThinkLines(), &OnboardLines() })
+		{
+			if (const FLine* Line = Lines->FindByPredicate([&Id](const FLine& L) { return Id == L.Id; })) return FString(Line->Words);
+		}
+		return FString();
 	}
 
 	const TArray<const TCHAR*>& Core()

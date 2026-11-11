@@ -11,6 +11,8 @@
 //   judging    -> pencil brackets on the batch being judged, its provisional health pencilled, the final reading inked
 //   narration  -> the follow caption (what it does, then "next: ..."); the phase strip in the title block
 //   done       -> the live plan takes over with the same boxes and the ink fades into it; failed keeps what was drawn
+//   Glim       -> onboard-start at a new job's first answer, onboard-done at the hand-over (BpTourBook's OnboardLines, through
+//                 Narrate); BpBuild.Replay plays a build-up from the plan on the table, for tests with no PC
 // A past batch (a join mid-run, a switch back) is drawn at its end state at once. Everything 2D is drawn into the sheet's
 // one render target, redrawn at most BuildSheetHz while something on it moves: the build-up adds no draw call of its own.
 #include "BpTable.h"
@@ -22,6 +24,7 @@
 #include "Engine/Canvas.h"
 #include "Engine/CanvasRenderTarget2D.h"
 #include "Engine/Engine.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
@@ -30,6 +33,7 @@
 #include "Misc/PackageName.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 #include "Rendering/SlateRenderer.h"
+#include "TimerManager.h"
 
 // The build-up's columns in a CSV capture (WP-V3): the table's tick, and each heavy piece of a commit.
 CSV_DEFINE_CATEGORY(BpBuild, true);
@@ -222,6 +226,94 @@ namespace
 				UE_LOG(LogBpTable, Log, TEXT("BpBuild: line %s"), Line.IsEmpty() ? TEXT("(no build-up runs)") : *Line);
 			}
 		}));
+
+	/** Wave W2: a build-up replayed from the plan BpLink holds (the bundled sample with no PC), handed to the table through the
+	 *  feed's own door (FBpLinkModule::OnBuildup) as a real job's answers would be: begin and the outline now, the structure
+	 *  after ReplayStructureS, done and the live plan (OnPlan) after the seconds asked. Nothing is read or sent. */
+	int32 GBuildReplays = 0;
+	constexpr float ReplayStructureS = 2.f;
+	FBpBuildupBatch ReplayBatch(const FString& Slug, const FString& JobId)
+	{
+		FBpBuildupBatch Batch;
+		Batch.Slug = Slug;
+		Batch.JobId = JobId;
+		Batch.JobPhase = TEXT("product-tree");
+		return Batch;
+	}
+	FAutoConsoleCommandWithWorldAndArgs CmdBuildReplay(
+		TEXT("BpBuild.Replay"),
+		TEXT("BpBuild.Replay [seconds to done, 4 to 120, default 10]: replays a build-up from the plan on the table (the bundled sample with no PC) through the feed's own door: begin and the outline now, the structure 2 s later, done and the live plan after the seconds. Nothing is read or sent."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			FBpLinkModule& Link = FBpLinkModule::Get();
+			const FBpPlan* Current = Link.GetPlan();
+			if (!World || !Current)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpBuild: replay: no plan to replay yet"));
+				return;
+			}
+			const float DoneS = FMath::Clamp(Args.Num() > 0 ? FCString::Atof(*Args[0]) : 10.f, 4.f, 120.f);
+			const FBpPlan Plan = *Current;
+			const FString Slug = Link.GetProductSlug();
+			const FString JobId = FString::Printf(TEXT("replay-%d"), ++GBuildReplays);
+			// Begin, the phase, and the outline: a domain per wing (in order), a capability per room.
+			FBpBuildupBatch First = ReplayBatch(Slug, JobId);
+			{
+				FBpBuildupEvent& Begin = First.Events.AddDefaulted_GetRef();
+				Begin.Type = TEXT("begin");
+				Begin.Text = Link.NameOf(Slug);
+				FBpBuildupEvent& Started = First.Events.AddDefaulted_GetRef();
+				Started.Type = TEXT("phase");
+				Started.Phase = TEXT("product-tree");
+				Started.State = TEXT("start");
+				FBpBuildupEvent& Outline = First.Events.AddDefaulted_GetRef();
+				Outline.Type = TEXT("outline");
+				for (const FBpPlanWing& Wing : Plan.wings)
+				{
+					FBpBuildupDomain& Domain = Outline.Domains.AddDefaulted_GetRef();
+					Domain.Id = Wing.id;
+					Domain.Name = Wing.name;
+					Domain.Order = Wing.order;
+					for (const FBpPlanRoom& Room : Plan.rooms)
+					{
+						if (Room.parentId != Wing.id) continue;
+						Domain.CapIds.Add(Room.id);
+						Domain.CapNames.Add(Room.name);
+					}
+				}
+			}
+			UE_LOG(LogBpTable, Log, TEXT("BpBuild: replay %s of %s (%d wings, %d rooms): the structure in %.0f s, done in %.0f s"), *JobId, *Slug, Plan.wings.Num(), Plan.rooms.Num(), ReplayStructureS, DoneS);
+			Link.OnBuildup().Broadcast(First);
+			const TWeakObjectPtr<UWorld> WeakWorld(World);
+			FTimerHandle StructureTimer, DoneTimer;
+			World->GetTimerManager().SetTimer(StructureTimer, FTimerDelegate::CreateLambda([WeakWorld, Plan, Slug, JobId]()
+			{
+				FBpLinkModule& L = FBpLinkModule::Get();
+				if (!WeakWorld.IsValid() || L.GetProductSlug() != Slug) return;
+				FBpBuildupBatch Batch = ReplayBatch(Slug, JobId);
+				FBpBuildupEvent& Structure = Batch.Events.AddDefaulted_GetRef();
+				Structure.Type = TEXT("structure");
+				Structure.Structure = Plan;
+				UE_LOG(LogBpTable, Log, TEXT("BpBuild: replay %s: the structure"), *JobId);
+				L.OnBuildup().Broadcast(Batch);
+			}), ReplayStructureS, false);
+			World->GetTimerManager().SetTimer(DoneTimer, FTimerDelegate::CreateLambda([WeakWorld, Plan, Slug, JobId]()
+			{
+				FBpLinkModule& L = FBpLinkModule::Get();
+				if (!WeakWorld.IsValid() || L.GetProductSlug() != Slug)
+				{
+					UE_LOG(LogBpTable, Log, TEXT("BpBuild: replay %s: the product changed; no done"), *JobId);
+					return;
+				}
+				FBpBuildupBatch Batch = ReplayBatch(Slug, JobId);
+				Batch.bDone = true;
+				FBpBuildupEvent& Done = Batch.Events.AddDefaulted_GetRef();
+				Done.Type = TEXT("done");
+				UE_LOG(LogBpTable, Log, TEXT("BpBuild: replay %s: done; the live plan follows"), *JobId);
+				L.OnBuildup().Broadcast(Batch);
+				L.OnPlan().Broadcast(Plan);
+			}), DoneS, false);
+		}));
 }
 
 // ---- Events -------------------------------------------------------------------------------------------------------------
@@ -245,6 +337,13 @@ void ABpTable::OnBuildup(const FBpBuildupBatch& Batch)
 		bEmptySheet = true;
 		EnsureSheet();
 		UE_LOG(LogBpTable, Log, TEXT("BpBuild: %s builds itself from job %s's feed (%s %s)"), *Batch.Slug, *BuildJob, *Batch.JobStatus, *Batch.JobPhase);
+		// Wave W2 (G3): Glim says the reading has begun, captioned, through the narration's path (bp.Narration, quiet under a
+		// tour or a talk). A feed first read when it has already ended is not announced.
+		if (!Batch.bDone)
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpBuild: onboarding line onboard-start for job %s (the build-up's first event)"), *BuildJob);
+			Narrate(TEXT("onboard-start"), TEXT("the build-up's first event"), true);
+		}
 	}
 	if (!bBuild) return;
 	const bool bPast = Batch.bPast || ReducedMotion();
@@ -960,6 +1059,9 @@ void ABpTable::EndBuildup()
 	NoteHeavy(TEXT("hand-over"), T0);
 	UE_LOG(LogBpTable, Log, TEXT("BpBuild: done: the live plan (rev %s) takes over; %d of %d rooms differ from the drawn boxes; the ink settles over %.1f s"),
 		*Live->rev, Moved, Live->rooms.Num(), BuildSettleS);
+	// Wave W2 (G3): the building is drawn; Glim says so, captioned, as the ink settles.
+	UE_LOG(LogBpTable, Log, TEXT("BpBuild: onboarding line onboard-done (the hand-over, rev %s)"), *Live->rev);
+	Narrate(TEXT("onboard-done"), TEXT("the build-up's hand-over"), true);
 	SetActorTickInterval(0.f);
 }
 

@@ -199,7 +199,20 @@ else {
   }
 }
 
-// ---- The demo video's lines rendered ahead of their code (readiness.md G3, G4): voice/think/ and voice/onboard/ ----
+// ---- The demo video's lines (readiness.md G3, G4; wave W2 wired them): BpTourBook.cpp's ThinkLines and OnboardLines ->
+// voice/think/ and voice/onboard/, said through BpNarrate.cpp's one path by BpTalk.cpp and BpBuildup.cpp ----
+{
+  const talkSrc = fs.readFileSync(path.join(SRC, 'BpTalk.cpp'), 'utf8');
+  const buildupSrc = fs.readFileSync(path.join(SRC, 'BpBuildup.cpp'), 'utf8');
+  const narrateSrc = fs.readFileSync(path.join(SRC, 'BpNarrate.cpp'), 'utf8');
+  check('the book has the three thinking lines', Object.keys(THINK_LINES).length === 3, Object.keys(THINK_LINES).join(', '));
+  check('the book has the two onboarding lines', Object.keys(ONBOARD_LINES).length === 2, Object.keys(ONBOARD_LINES).join(', '));
+  check('BpTalk.cpp says the thinking lines from the book, through NarratePlay', /BpTourBook::ThinkLines\(\)/.test(talkSrc) && /NarratePlay\(Id,/.test(talkSrc));
+  check('the thinking line has its delay cvar (bp.TalkThinkS, 1.5 s)', /TEXT\("bp\.TalkThinkS"\), 1\.5f/.test(talkSrc));
+  check('the stub reply is off by default (bp.TalkStubReplyS 0)', /TEXT\("bp\.TalkStubReplyS"\), 0\.f/.test(talkSrc));
+  for (const id of Object.keys(ONBOARD_LINES)) check(`BpBuildup.cpp says ${id} through Narrate`, buildupSrc.includes(`Narrate(TEXT("${id}")`));
+  check('BpNarrate.cpp plays from voice/think and voice/onboard', narrateSrc.includes('BpData/voice/think') && narrateSrc.includes('BpData/voice/onboard'));
+}
 for (const [group, lines, dir] of [['think', THINK_LINES, THINK_CLIPS], ['onboard', ONBOARD_LINES, ONBOARD_CLIPS]] as const) {
   if (!fs.existsSync(dir)) { check(`voice/${group} exists`, false, `run node apps/vr/tools/tour-voice.ts --${group}`); continue; }
   for (const [id, text] of Object.entries(lines)) {

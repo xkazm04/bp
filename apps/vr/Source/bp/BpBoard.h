@@ -13,7 +13,14 @@
 //   State   none of these: the feature's stage track (its `stage`, the next stage marked), the open findings this one closes
 //           (today -> after) and the plan's latest note.
 // Every figure is the bundle's (the scan's proposals, measurements and shots; the structure's features and facets); a field the
-// data lacks leaves its part out. The text floor is the old wall's smallest text: 24 layout px of cap.
+// data lacks leaves its part out.
+//
+// Wave W2 (the owner, 2026-11-11: "leverage the wall space ... still overcrowded with text"): the wall is larger (48.8 degrees
+// wide, from 43.5), so the board takes the design's proportions (Board.dc.html, MetricBoard, StateBoard): the hero the largest thing after
+// the stage (76 layout px of cap, 60 over a muted verdict); what it touches as a small node map (the feature lit at the top, its
+// room in the middle, up to four neighbours around, thin lines); no ellipses anywhere on it (titles shrink 32 to 22, else two
+// lines; names shorten by whole words); the stage track's words all under it; the plan's note whole (else its first sentence);
+// each fact once (the budget's number on the chart only). The floor is 20 layout px of cap: 46 arc minutes at the new size.
 //
 // Cost: drawn into the surface's own render target, only when what it shows changes (the callers' keys); no tick, no
 // material, no texture beyond the screens the callers already hold (an "after" screen is one more, released with the "before").
@@ -37,9 +44,11 @@ namespace BpBoard
 	/** The board's grid on the wall's 1280 x 720 layout: the title row in the header's sub-line band, the tiles and the stage in
 	 *  the frame's band (the queue's strip between them stays the caller's). */
 	constexpr float X0 = 40.f, X1 = 1240.f;
-	constexpr float TitleY0 = 100.f, TitleY1 = 146.f;
+	constexpr float TitleY0 = 98.f, TitleY1 = 150.f;
 	constexpr float Y0 = 170.f, Y1 = 568.f;
 	constexpr float ColX1 = 580.f, StageX0 = 600.f;
+	/** Wave W2: the left column's tiles (the hero, Glim's line; what it touches under them to Y1). */
+	constexpr float HeroY1 = 310.f, GlimY1 = 400.f;
 
 	/** A finding's screen of one phase (BpVocab::Shot::Phase), PNG only (what the headset decodes), or null. */
 	const FBpShot* FindShot(const FString& Proposal, const TCHAR* Phase);
