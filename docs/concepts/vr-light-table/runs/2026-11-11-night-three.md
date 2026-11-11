@@ -56,8 +56,17 @@ The build through `ad31125c` was packaged at 03:59 (277 MB, UAT exit 0) and inst
 
 All under the 13.9 ms of 72 Hz. The device captures show the table's straight front edge bent by the lens as much as the
 wall's text leans, which supports the slant finding. Not judged by the bench: hands, the ray's drift, sound, Glim's talk on
-the device, the clear-stand search's first-arrival hitch (no frame spike was in the 8 s samples, which came after the
-first arrival).
+the device.
+
+Measured on the device afterwards (04:12):
+- **Glim's clear-stand search** took 3.40 ms on the Quest (7,800 casts, 9 places), once per sheet kind per session: at most
+  one late frame the first time a kind of sheet opens.
+- **The game thread's own tick (`tick_ms`) is about 12.0 ms at rest** (render thread 6.5 to 7 ms, CPU/GPU level 4/4,
+  72/72 fps, no stale frames). Turning off tonight's glance and the wall (`bp.Wow.GlimGlance 0`, `bp.Projector 0`) left it
+  at 12.0 to 12.1 ms, so it is not tonight's work; there is no earlier device reading to compare (the PC read 1.31 ms on
+  2026-11-04). Either the tick holds a wait on the device that the PC's does not (12 ms is suspiciously close to the
+  frame minus the render thread's lead), or the game thread has under 2 ms of headroom. An Insights trace on the device
+  settles which; until then, read it as unknown, not as a crisis: no frame was late in any sample.
 
 ## What the owner checks next
 
