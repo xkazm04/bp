@@ -68,6 +68,21 @@ Measured on the device afterwards (04:12):
   frame minus the render thread's lead), or the game thread has under 2 ms of headroom. An Insights trace on the device
   settles which; until then, read it as unknown, not as a crisis: no frame was late in any sample.
 
+## How long Glim takes to answer (PC, 04:40, a scratch server, the CLI engine, spoken surface)
+
+A three-turn conversation ("How is the project doing?", "What should I do next?", "Show me the first one."), $0.49:
+
+| Turn | First text | Whole turn | Tools | Words |
+|---|---|---|---|---|
+| 1 | 5.2 s | 11.5 s | morning.brief, next.steps, focus.show | 35 |
+| 2 | 4.2 s | 5.0 s | none (answered from turn 1's ranking) | 30 |
+| 3 | 6.1 s | 7.2 s | focus.show (the stop-ship decision opened) | 37 |
+
+The headset speaks only when the turn is done (`BpTalk.cpp` TalkSpeak after the final event), so his voice starts after
+the whole turn plus the speech rendering: 6 to 13 s of thinking light. Two ways to shorten it, for the owner to choose:
+speak each sentence as it streams (more speech requests per reply), or a short bundled "let me look" in his voice when a
+turn runs past about 1.5 s (no cloud cost; new clips).
+
 ## What the owner checks next
 
 See [`../headset-morning-check.md`](../headset-morning-check.md) and the morning summary.
