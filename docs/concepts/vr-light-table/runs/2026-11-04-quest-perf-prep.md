@@ -56,6 +56,15 @@ build, flat at the target pose: `BpFrame: p50 over 2 s gpu_ms=4.87 game_ms=3.83 
 tick_ms=1.31`. On the device, read `tick_ms` for the game's CPU cost and `render_ms` for the draw-submission cost. Use
 `game_ms` only next to them.
 
+**Correction (2026-11-11, a device trace).** That claim was wrong: the span DID contain `xrWaitFrame`. `UWorld::Tick`
+broadcasts `OnWorldTickStart` and then calls `XRSystem->OnStartGameFrame` (LevelTick.cpp), where OpenXR blocks in
+`xrWaitFrame` (OpenXRHMD.cpp, `OnBeginSimulation_GameThread`). On the PC flat there is no XR system, hence 1.31 ms; on
+the Quest 3S at rest at home the meter read `tick_ms=12.0`, and an Insights trace of the same state (`Trace.File
+p1rest.utrace cpu,frame,bookmark` for 8 s, 600 frames) split it: `UWorld_Tick` p50 12.06 ms, of which `OpenXrWaitFrame`
+10.50 ms; the world tick's own work p50 1.58 ms (p95 2.38); the whole game thread busy (`FEngineLoop::Tick` minus the
+wait) p50 3.37 ms (p95 4.13) of the 13.9 ms frame. Since then `tick_ms` runs from `OnWorldPreActorTick` (after the wait)
+to `OnWorldPostActorTick`, and the log adds `wait_ms` (tick start to actor tick: on a headset nearly all `xrWaitFrame`).
+
 ## Game-thread hotspots: none worth a change at rest
 
 Code read and CSV `Exclusive/GameThread/*` at the target pose:
@@ -188,7 +197,8 @@ Metrics Tool's overlay and CSV recording.
 4. **The live hands.** Hold both hands over the paper for 30 s. Compare GPU time with step 2, then try
    `bp.QuestTier.HandShadowHz 18` and `72`. Look for visible lag of the shadow at 36 Hz.
 5. **The game's CPU, apart from the frame wait.** `bp.FrameMeter 1`, then read the `BpFrame` lines: `tick_ms` and
-   `render_ms`. A frame-bound `game_ms` is the runtime's wait, not our cost.
+   `render_ms`. A frame-bound `game_ms` (and `wait_ms`) is the runtime's wait, not our cost. Builds before 2026-11-11
+   count the wait inside `tick_ms` (see the correction above).
 6. **Draws and triangles on the device.** `stat rhi` (DrawPrimitive calls, triangles) or a short CSV
    (`-csvCaptureFrames=600 -csvGpuStats` in `UECommandLine.txt`, pulled with `adb pull`). Compare with the ~67 / ~156k
    estimate.

@@ -67,6 +67,9 @@ Measured on the device afterwards (04:12):
   2026-11-04). Either the tick holds a wait on the device that the PC's does not (12 ms is suspiciously close to the
   frame minus the render thread's lead), or the game thread has under 2 ms of headroom. An Insights trace on the device
   settles which; until then, read it as unknown, not as a crisis: no frame was late in any sample.
+  **Settled (05:00, a device trace): the wait.** Of `UWorld_Tick`'s 12.06 ms p50, `xrWaitFrame` took 10.50 ms; the world
+  tick's own work is 1.58 ms and the whole game thread 3.37 ms of the 13.9 ms frame. The meter now starts `tick_ms` after
+  the wait and logs it as `wait_ms` (see the correction in 2026-11-04-quest-perf-prep.md).
 
 ## How long Glim takes to answer (PC, 04:40, a scratch server, the CLI engine, spoken surface)
 
