@@ -37,6 +37,7 @@
 #include "Misc/CoreDelegates.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Misc/ScopeExit.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 #include "TimerManager.h"
@@ -55,6 +56,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarTalk(TEXT("bp.Talk"), 1, TEXT("Talk to the lamp (BpTalk.cpp): 1 a hold on X, the lamp or the wrist's TALK talks; 0 off (the holds act as taps)."));
 	TAutoConsoleVariable<float> CVarTalkLingerS(TEXT("bp.TalkLingerS"), 6.f, TEXT("After the lamp's spoken reply ends, the conversation stays on the console this many seconds, then clears itself (1 to 30)."));
 	TAutoConsoleVariable<int32> CVarTalkSpokenMax(TEXT("bp.TalkSpokenMax"), 280, TEXT("The lamp speaks a reply's first sentences up to this many characters, cut at a sentence end (the caption keeps it whole; 80 to 1200)."));
+	TAutoConsoleVariable<float> CVarTalkRepliesLingerS(TEXT("bp.TalkRepliesLingerS"), 30.f, TEXT("G2: with quick replies under Glim's answer, the conversation stays this many seconds after his voice ends (1 to 120)."));
 	TAutoConsoleVariable<float> CVarTalkLightGain(TEXT("bp.TalkLightGain"), 1.5f, TEXT("While listening the lamp's light rises by up to this share of its own intensity with the input level (0 to 4; 0: the light stays)."));
 
 	ABpPawn* TalkPawn(const UWorld* World)
@@ -174,6 +176,12 @@ namespace
 			const FString Text = FString::Join(Args, TEXT(" "));
 			WithTalkTables(World, [&Text](ABpTable& T) { T.TalkFromText(Text, TEXT("BpTalk.Say")); });
 		}));
+	FAutoConsoleCommandWithWorldAndArgs CmdTalkReply(TEXT("BpTalk.Reply"), TEXT("BpTalk.Reply <1..3>: presses quick reply n under Glim's last answer (its words go as the next turn, as the sheet's button sends them)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const int32 N = Args.Num() > 0 ? FCString::Atoi(*Args[0]) : 1;
+			WithTalkTables(World, [N](ABpTable& T) { T.TalkReply(N, TEXT("BpTalk.Reply")); });
+		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkFile(TEXT("BpTalk.File"), TEXT("BpTalk.File <wav path>: sends a mono 16-bit WAV as if it had been recorded (consent still applies)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
@@ -247,6 +255,12 @@ struct FBpTalkState
 	/** The reply's voice is being rendered (POST /api/companion/say): the talk is not over before it answers. */
 	bool bAwaitSay = false;
 	FString SampleAct;
+	/** G2: the last turn's quick replies (or the sample's: the other sample lines, Say holding the line's id), dropped when a new
+	 *  turn starts or the person speaks. */
+	TArray<FBpQuickReply> Replies;
+	bool bSampleReplies = false;
+	/** G2: when the turn now out was asked (its focus events lose to anything the person did since). */
+	double AskedAt = 0.0;
 	/** The lamp's own point light (bp.TalkLightGain), and its intensity before the talk. */
 	TWeakObjectPtr<UPointLightComponent> Light;
 	float LightBase = -1.f;
@@ -385,6 +399,39 @@ bool ABpTable::TalkView(FTalkView& Out) const
 		Out.Reply = Rest;
 	}
 	else Out.Line = Line;
+	// G2: the quick replies, once the answer is in (never while listening, hearing or thinking).
+	if (Talk.IsValid() && (Talk->Step == FBpTalkState::EStep::Idle || Talk->Step == FBpTalkState::EStep::Speaking || Talk->Step == FBpTalkState::EStep::Sample) && !Out.Heard.IsEmpty())
+	{
+		for (const FBpQuickReply& R : Talk->Replies) Out.Replies.Add(R.Label);
+	}
+	return true;
+}
+
+bool ABpTable::TalkReply(int32 N, const TCHAR* Route)
+{
+	if (!Talk.IsValid() || !Talk->Replies.IsValidIndex(N - 1))
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: %s: no quick reply %d (%d shown)"), Route, N, Talk.IsValid() ? Talk->Replies.Num() : 0);
+		return false;
+	}
+	FBpTalkState& S = *Talk;
+	const FBpQuickReply Pick = S.Replies[N - 1];
+	const bool bSample = S.bSampleReplies;
+	S.Replies.Reset();
+	S.bSampleReplies = false;
+	UE_LOG(LogBpTable, Log, TEXT("BpTalk: %s: quick reply %d \"%s\" pressed: \"%s\" goes as the next turn%s"), Route, N, *Pick.Label, *Pick.Say, bSample ? TEXT(" (the sample's line)") : TEXT(""));
+	// The press is the person speaking: Glim's voice stops (barge-in), as a hold does.
+	if (IsVoicePlaying()) StopVoice();
+	S.Queued.Reset();
+	S.bAwaitSay = false;
+	S.SampleAct.Reset();
+	if (bSample)
+	{
+		S.Step = FBpTalkState::EStep::Idle;
+		TalkSample(Pick.Say);
+		return true;
+	}
+	TalkFromText(Pick.Say, Route);
 	return true;
 }
 
@@ -452,6 +499,9 @@ bool ABpTable::TalkHold(const TCHAR* Source, bool bDown)
 		// Barge-in: the lamp's voice stops the moment the wearer talks (a tour line too).
 		if (IsVoicePlaying()) { StopVoice(); UE_LOG(LogBpTable, Log, TEXT("BpTalk: the lamp's voice stopped (barge-in)")); }
 		S.Queued.Reset();
+		// The person speaks: the last answer's quick replies go.
+		S.Replies.Reset();
+		S.bSampleReplies = false;
 		if (S.Step == FBpTalkState::EStep::Speaking || S.Step == FBpTalkState::EStep::Sample) { ++S.Serial; S.SampleAct.Reset(); S.Step = FBpTalkState::EStep::Idle; }
 		// The microphone opens at once only when the wearer already said ALLOW (so the first words are not lost); anything
 		// else waits for the hold to count (TickTalk), so a tap never raises a sheet.
@@ -705,7 +755,11 @@ bool ABpTable::TickTalk(float DeltaSeconds)
 			S.Step = FBpTalkState::EStep::Idle;
 			// The voice ended: the exchange stays readable a little longer (bp.TalkLingerS), then clears itself. A reply that was
 			// never voiced keeps its reading time.
-			if (S.bSpoke && bTalkCaption) LampCaptionClock = FMath::Min(LampCaptionClock, FMath::Clamp(CVarTalkLingerS.GetValueOnGameThread(), 1.f, 30.f));
+			// G2: quick replies keep it up longer (bp.TalkRepliesLingerS), so there is time to reach for one.
+			const float Linger = FMath::Clamp(CVarTalkLingerS.GetValueOnGameThread(), 1.f, 30.f);
+			const float Keep = S.Replies.Num() > 0 ? FMath::Max(Linger, FMath::Clamp(CVarTalkRepliesLingerS.GetValueOnGameThread(), 1.f, 120.f)) : Linger;
+			if (S.bSpoke && bTalkCaption) LampCaptionClock = FMath::Min(LampCaptionClock, Keep);
+			else if (S.Replies.Num() > 0 && bTalkCaption) LampCaptionClock = FMath::Max(LampCaptionClock, Keep);
 			if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
 			UE_LOG(LogBpTable, Log, TEXT("BpTalk: the reply is done%s"), Act.IsEmpty() ? TEXT("") : *FString::Printf(TEXT("; the sample acts: %s"), *Act));
 			if (Act == TEXT("next")) AskNextStep(TEXT("sample"));
@@ -810,23 +864,27 @@ void ABpTable::TalkTurn(const FString& Heard)
 	}
 	S.Step = FBpTalkState::EStep::Thinking;
 	S.ThinkFrom = FPlatformTime::Seconds();
+	S.AskedAt = S.ThinkFrom;
+	S.Replies.Reset();
+	S.bSampleReplies = false;
+	// A new turn: what Glim opened for the last one gives the sheet back to the conversation.
+	if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkUnyield();
 	const int32 Serial = S.Serial;
 	// The heard words first, so a mishearing is visible before anything acts on it.
 	TalkSays(FString::Printf(TEXT("You: \"%s\"\nThinking… B or a pinch on me cancels"), *Heard.Left(80)), 600.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpTalk: heard %d chars; the companion's turn is asked"), Heard.Len());
-	// The place as context: the room in view, else the lifted one, else the site.
-	const FString Target = DirectedTarget();
-	const FString Place = DirectedLabel(Target);
-	const FString Text = FString::Printf(TEXT("(Spoken aloud at the VR table; it shows %s%s on %s. Answer in at most two short spoken sentences, under 40 words, the most useful first; anything longer belongs on a card.) %s"),
-		Place.IsEmpty() ? TEXT("the site plan") : *Place, Target.IsEmpty() || Target == TEXT("site") ? TEXT("") : *FString::Printf(TEXT(" [%s]"), *Target), *Link.GetProductSlug(), *Heard);
+	// G2: the person's words alone; where they are goes beside them as the surface (the old "(Spoken aloud at the VR table; ...)"
+	// prefix is gone): the place, the target "this one" means, spoken.
+	const FBpTurnSurface Surface = TurnSurface(true);
 	TWeakObjectPtr<ABpTable> Self(this);
-	Link.PostCompanionTurn(Text, [Self, Serial](const FBpCompanionTurn& Turn)
+	Link.PostCompanionTurn(Heard, Surface, [Self, Serial](const FBpCompanionTurn& Turn)
 	{
 		ABpTable* T = Self.Get();
 		if (!T || !T->Talk.IsValid()) return;
 		const double Took = FPlatformTime::Seconds() - T->Talk->ThinkFrom;
-		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn ended in %.1f s: outcome %d, %d chars%s%s"), Took, static_cast<int32>(Turn.Outcome), Turn.Text.Len(),
-			Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a pending card"), Turn.FocusKind.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", focus %s %s"), *Turn.FocusKind, *Turn.FocusId));
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn ended in %.1f s: outcome %d, %d chars%s%s, %d focus events, %d cards, %d quick replies"), Took, static_cast<int32>(Turn.Outcome), Turn.Text.Len(),
+			Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a pending card"), Turn.FocusKind.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", focus %s %s"), *Turn.FocusKind, *Turn.FocusId),
+			Turn.Focuses.Num(), Turn.Cards.Num(), Turn.Replies.Num());
 		if (T->Talk->Serial != Serial) { UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn's answer is dropped (cancelled)")); return; }
 		const FString You = FString::Printf(TEXT("You: \"%s\""), *T->Talk->Heard.Left(60));
 		switch (Turn.Outcome)
@@ -849,27 +907,129 @@ void ABpTable::TalkTurn(const FString& Heard)
 		}
 		FString Reply = Turn.Text.TrimStartAndEnd().Replace(TEXT("\n"), TEXT(" "));
 		if (Reply.IsEmpty()) Reply = Turn.CardSummary.IsEmpty() ? FString(TEXT("Done.")) : FString::Printf(TEXT("I need your yes for this: %s"), *Turn.CardSummary);
-		T->LampAnswer = You + TEXT("\n") + Reply;
+		// G2: a card filed from a spoken request waits on the wall (the stand-up's GLIM ASKS sheet); the sheet says where. The
+		// voice says Glim's own words only.
+		FString Shown = Reply;
+		if (!Turn.CardSummary.IsEmpty() && !Shown.Contains(TEXT("on the wall"))) Shown += TEXT(" It's on the wall for your yes.");
+		T->LampAnswer = You + TEXT("\n") + Shown;
 		T->LampNotifyAsk();
-		if (Turn.FocusKind == TEXT("room")) T->PresentLamp(T->LampTargetForRoom(Turn.FocusId), TEXT("talk focus"));
-		else if (Turn.FocusKind == TEXT("feature")) T->PresentLamp(T->LampTargetForFeature(Turn.FocusId), TEXT("talk focus"));
-		// A write the companion wants waits for the wearer: its card on the console, as the stand-up shows it.
+		T->Talk->Replies = Turn.Replies;
+		T->Talk->bSampleReplies = false;
+		// One action per focus event, in order (a page, a place, a decision); the person's own act since the ask wins.
+		T->TalkActOnFocus(Turn.Focuses, T->Talk->AskedAt);
+		// A write the companion wants waits for the wearer: its card on the wall, as the stand-up shows it.
 		if (!Turn.CardSummary.IsEmpty())
 		{
 			if (ABpPawn* Pawn = TalkPawn(T->GetWorld())) Pawn->StandupShowCompanionCards();
 		}
-		T->TalkSpeak(Reply);
+		T->TalkSpeak(Reply, Shown);
 	});
 }
 
-void ABpTable::TalkSpeak(const FString& Reply)
+FBpTurnSurface ABpTable::TurnSurface(bool bSpoken)
+{
+	FBpTurnSurface Out;
+	Out.bSpoken = bSpoken;
+	// "This one", in order: the stand-up's open decision sheet, the deck's front decision (or the decision card's finding), the
+	// room in view (else the lifted one). The place says the room in words, and the decision's title when one is in view.
+	FString Id, Title, Where;
+	if (const ABpPawn* Pawn = TalkPawn(GetWorld())) Id = Pawn->StandupDecisionShown(Title);
+	if (Id.IsEmpty() && !WaitingDecision(Id, Title, Where)) { Id.Reset(); Title.Reset(); }
+	const FString Room = DirectedTarget();
+	// The site's own label is "Everything" (the scan's word): Glim is told "the site plan".
+	const FString RoomWords = Room.IsEmpty() || Room == TEXT("site") ? FString() : DirectedLabel(Room);
+	if (Id.IsEmpty() && !Room.IsEmpty() && Room != TEXT("site")) Id = Room;
+	Out.Target = FBpLinkModule::IsTurnTarget(Id) ? Id : FString();
+	Out.Place = RoomWords.IsEmpty() ? FString(TEXT("the site plan")) : RoomWords;
+	if (!Title.IsEmpty()) Out.Place += FString::Printf(TEXT("; the decision in view: %s"), *Title);
+	Out.Place = Out.Place.Left(FBpLinkModule::CompanionPlaceMax);
+	return Out;
+}
+
+void ABpTable::TalkActOnFocus(const TArray<FBpTurnFocus>& Focuses, double AskedAt)
+{
+	if (Focuses.Num() == 0) return;
+	// A newer turn's events replace what an older one had still to do.
+	TalkFocusQueue.Reset();
+	for (const FBpTurnFocus& F : Focuses) TalkFocusQueue.Emplace(F.TargetKind, F.TargetId);
+	TalkFocusAskedAt = AskedAt;
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(TalkFocusTimer);
+	TalkFocusStep();
+}
+
+void ABpTable::TalkFocusStep()
+{
+	if (TalkFocusQueue.Num() == 0) return;
+	if (OwnActAt > TalkFocusAskedAt)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus: %d event(s) dropped: the person acted %.1f s after the ask (their act wins)"), TalkFocusQueue.Num(), OwnActAt - TalkFocusAskedAt);
+		TalkFocusQueue.Reset();
+		return;
+	}
+	const TPair<FString, FString> F = TalkFocusQueue[0];
+	TalkFocusQueue.RemoveAt(0);
+	const FString& Kind = F.Key;
+	const FString& Id = F.Value;
+	ABpPawn* Pawn = TalkPawn(GetWorld());
+	// What this step moves is Glim's doing, not the person's: their last act stays what it was.
+	const double OwnBefore = OwnActAt;
+	ON_SCOPE_EXIT { OwnActAt = OwnBefore; };
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	if (Kind == TEXT("page"))
+	{
+		// A console page by its contract id; the table's own key where it differs (MENU is HOME, PC LINK is link).
+		const bool bKnown = FBpLinkModule::CompanionPageTargets().Contains(Id);
+		const FString Key = Id == TEXT("menu") ? FString(TEXT("home")) : Id == TEXT("pc-link") ? FString(TEXT("link")) : Id;
+		if (!bKnown || !Pawn) { UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus page %s: %s"), *Id, bKnown ? TEXT("no pawn") : TEXT("not a page this table has: skipped")); }
+		else
+		{
+			if (!(Key == TEXT("standup") && Pawn->IsStandupOpen())) Pawn->OpenConsole(Key);
+			// The page Glim opened takes the sheet; his words stay on his caption.
+			Pawn->TalkYield();
+			UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus page %s: the %s page is open%s"), *Id, *Key, Pawn->IsConsoleFar() ? TEXT(" on the wall") : TEXT(" at the desk"));
+		}
+	}
+	else if (Kind == TEXT("wing") || Kind == TEXT("room") || Kind == TEXT("feature"))
+	{
+		// The table goes there by its own routes (the follow's: a room in room mode, a wing by its lift, a feature's room with
+		// its screen at the deck's front); its caption says who sent it.
+		FBpFollowPlace Place;
+		Place.Product = Link.GetProductSlug();
+		Place.Kind = Kind;
+		Place.Id = Id;
+		Place.Label = TEXT("Glim");
+		Place.Surface = TEXT("vr");
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus %s %s: the table goes there"), *Kind, *Id);
+		Follow(Place);
+	}
+	else if (Kind == TEXT("decision"))
+	{
+		// A finding: its decision on the stand-up's sheet when today's deck has it, else the room's deck at it (the scan result's
+		// DECIDE THEM route); on the wall Glim points at it.
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus decision %s: the stand-up opens on it (else its room's deck)"), *Id);
+		if (Pawn) { Pawn->OpenStandupForFindings({ Id }); Pawn->TalkYield(); }
+	}
+	else UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus %s %s: a kind the table does not show: skipped"), *Kind, *Id);
+	if (TalkFocusQueue.Num() > 0)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			TWeakObjectPtr<ABpTable> Self(this);
+			World->GetTimerManager().SetTimer(TalkFocusTimer, FTimerDelegate::CreateLambda([Self]() { if (ABpTable* T = Self.Get()) T->TalkFocusStep(); }), TalkFocusStepS, false);
+		}
+	}
+}
+
+void ABpTable::TalkSpeak(const FString& Reply, const FString& ShownIn)
 {
 	FBpTalkState& S = *Talk;
-	S.Reply = Reply;
+	// The sheet's words (Shown: the reply and what the table adds, "It's on the wall for your yes."); the voice says Reply.
+	const FString Shown = ShownIn.IsEmpty() ? Reply : ShownIn;
+	S.Reply = Shown;
 	S.Step = FBpTalkState::EStep::Speaking;
 	S.bSpoke = false;
 	const FString You = FString::Printf(TEXT("You: \"%s\""), *S.Heard.Left(60));
-	const FString Body = Reply.Len() > 150 ? Reply.Left(149).TrimEnd() + BpType::Ellipsis() : Reply;
+	const FString Body = Shown.Len() > 150 ? Shown.Left(149).TrimEnd() + BpType::Ellipsis() : Shown;
 	TalkSays(You + TEXT("\n") + Body, 30.f);
 	const int32 Serial = S.Serial;
 	S.bAwaitSay = true;
@@ -968,7 +1128,7 @@ void ABpTable::TalkShowSample()
 	TalkSample();
 }
 
-void ABpTable::TalkSample()
+void ABpTable::TalkSample(const FString& ForceId)
 {
 	FBpTalkState& S = *Talk;
 	// A hold that began linked and ended on the sample (the PC went meanwhile) still has the microphone open: it is closed
@@ -985,7 +1145,8 @@ void ABpTable::TalkSample()
 	if (UPointLightComponent* Light = S.Light.Get(); Light && S.LightBase >= 0.f) Light->SetIntensity(S.LightBase);
 	LampLookTarget = 0.f;
 	// The place in view picks the ask: inside a room, scan it; on a lifted wing or room, plan the day; the site, what next.
-	const FString Id = !RoomModeId.IsEmpty() ? TEXT("scan") : GetBpLevel() != EBpLevel::L0 ? TEXT("plan") : TEXT("next");
+	// A sample quick reply (G2) names its line.
+	const FString Id = !ForceId.IsEmpty() ? ForceId : !RoomModeId.IsEmpty() ? TEXT("scan") : GetBpLevel() != EBpLevel::L0 ? TEXT("plan") : TEXT("next");
 	FTalkSampleLine Line;
 	if (!ReadSample(Id, Line))
 	{
@@ -997,6 +1158,17 @@ void ABpTable::TalkSample()
 	S.Step = FBpTalkState::EStep::Sample;
 	S.Heard = Line.Ask;
 	S.Reply = Line.Reply;
+	// G2: the sample's quick replies are the other sample lines (their asks as labels); a press plays that line, nothing is sent.
+	S.Replies.Reset();
+	S.bSampleReplies = true;
+	for (const TCHAR* Other : { TEXT("next"), TEXT("plan"), TEXT("scan") })
+	{
+		FTalkSampleLine O;
+		if (Id == Other || !ReadSample(Other, O) || O.Ask.IsEmpty()) continue;
+		FString Label = O.Ask.Replace(TEXT("?"), TEXT(""));
+		if (Label.Len() > FBpLinkModule::CompanionReplyLabelMax) Label = Label.Left(FBpLinkModule::CompanionReplyLabelMax - 1).TrimEnd() + BpType::Ellipsis();
+		S.Replies.Add({ Label, Other });
+	}
 	// While a tour runs the exchange is only shown: its follow-up (the stand-up opened, a scan armed, the lamp sent to a
 	// finding) would take the table from the step and hold the tour behind a sheet nobody asked for.
 	S.SampleAct = IsTourRunning() ? FString() : Id;

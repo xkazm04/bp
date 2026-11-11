@@ -8,6 +8,7 @@
 #include "BpTable.h"
 
 #include "BpLink.h"
+#include "BpProjector.h"
 #include "Components/PrimitiveComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/Actor.h"
@@ -147,6 +148,17 @@ void ABpTable::LampToStation(int32 Station, const FVector& TargetLocal, const TC
 {
 	if (!Lamp.IsValid()) return;
 	Station = FMath::Clamp(Station, 0, StationCount - 1);
+	// G2 (cap\u1-after-decision.png, his hand on the wall's HOLD row): with a sheet on the far wall the stand-up's "the lamp
+	// beside the room" sent him to a station on the plan (station 2, table (40, -60), beside payments), where PlaceLamp's
+	// clear-of-the-sheet stand (LampFootClearOfSheet) does not apply; there he faces the person after an answer (the nod) and
+	// his arm, out of his side, crosses the sheet's left column from the seat. While a sheet is far he keeps that clear stand
+	// and points with his beam: no station ride (the raised room still shows where); one he is at already ends.
+	if (BpProjector::IsFar() && RoomModeId.IsEmpty())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLamp: no ride to station %d (%s): a sheet is on the far wall, Glim keeps his stand clear of it"), Station, Why);
+		if (bLampAtStation || LampTravelT >= 0.f) LampGoHome(TEXT("a sheet is far"));
+		return;
+	}
 	double HomeYaw = 0.0;
 	const FVector Home = LampHomeAt(HomeYaw);
 	const FVector Base = LampStationAt(Station, Home);

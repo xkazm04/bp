@@ -210,6 +210,12 @@ public:
 	/** The console may show the conversation (bp.TalkSheet on, and no stand-up or consent sheet open): the lamp's own caption
 	 *  box then stays quiet for the talk's lines. */
 	bool ConsoleShowsTalk() const;
+	/** G2: a page or a decision Glim opened by a focus event takes the sheet from the conversation (his words stay on his caption)
+	 *  until the console closes or the person talks again. */
+	void TalkYield();
+	void TalkUnyield() { bTalkYield = false; }
+	/** G2: the stand-up's open decision sheet (a deck decision): its proposal id and title; empty when none is shown. */
+	FString StandupDecisionShown(FString& OutTitle) const;
 
 	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
 	 *  scan:start, scan:cancel, scan:dismiss, ask:next|here|scan|act, seat, tour, voice:minus|plus, music:minus|plus,
@@ -380,6 +386,7 @@ private:
 	bool bConsoleTalk = false;
 	FString ConsolePageKey;
 	int32 ConsolePageAt = 0;
+	bool bTalkYield = false;
 	FString ConsoleSel;
 	bool bConsolePadSel = false;
 	FString ConsoleHover;
@@ -508,7 +515,7 @@ private:
 	void DrawStandup(const TSharedRef<class SCanvas>& Canvas);
 	/** The conversation with the lamp on the console's panel (BpConsole.cpp, night two V2): the state, the heard words, the
 	 *  reply whole (or the lamp's own line), the level while listening. */
-	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample);
+	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies = TArray<FString>());
 	/** The pad on the open stand-up: false when it is not the stand-up's to take. */
 	bool StandupPad(const FString& Button);
 	/** The wrist's card for the stand-up (the decision on screen, or the hand-over), false when none. */

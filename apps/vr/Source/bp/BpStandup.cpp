@@ -1092,7 +1092,10 @@ void ABpPawn::StandupPlanDay()
 	if (ABpTable* Table = WristTable.Get()) Table->StandupSay(TEXT("Planning your day…"));
 	UE_LOG(LogBpTable, Log, TEXT("BpStandup: plan my day: one companion turn, %d approved findings"), Approved.Num());
 	TWeakObjectPtr<ABpPawn> Self(this);
-	Link.PostCompanionTurn(Text, [Self](const FBpCompanionTurn& Turn)
+	// G2: where the person is, beside the request (the plan is read on the stand-up's sheet, five sentences: not spoken).
+	FBpTurnSurface Surface;
+	if (ABpTable* Table = WristTable.Get()) Surface = Table->TurnSurface(false);
+	Link.PostCompanionTurn(Text, Surface, [Self](const FBpCompanionTurn& Turn)
 	{
 		ABpPawn* Pawn = Self.Get();
 		if (!Pawn || !Pawn->Standup.IsValid()) return;
@@ -1758,6 +1761,17 @@ FString ABpPawn::GetStandupLine() const
 	return Line;
 }
 
+FString ABpPawn::StandupDecisionShown(FString& OutTitle) const
+{
+	OutTitle.Reset();
+	if (!IsStandupOpen() || Standup->bLoading || !Standup->Sheets.IsValidIndex(Standup->At)) return FString();
+	const FBpStandupSheet& Sheet = Standup->Sheets[Standup->At];
+	const FBpMorningCard* Card = Standup->Deck.cards.IsValidIndex(Sheet.Card) ? &Standup->Deck.cards[Sheet.Card] : nullptr;
+	if (Sheet.Kind != FBpStandupSheet::EKind::Deck || !Card || Card->kind != BpVocab::MorningCard::Kind::Decision) return FString();
+	OutTitle = Card->headline;
+	return Card->decision.proposal;
+}
+
 bool ABpPawn::OpenStandupForTour()
 {
 	if (IsStandupOpen()) CloseConsole();
@@ -2286,7 +2300,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		// The decision as a sheet (night two V2: the product's money shot). The title and the one line of consequence lead; the
 		// finding's screen takes the sheet's right half, large enough to read as a screen; the answers are the largest controls on
 		// the sheet, APPROVE the primary; the answer taken lands as a stamp. A companion's card is the same family told apart: a
-		// cyan rule down its left (the system's colour), "THE COMPANION ASKS", a human sentence first and its raw ids set small.
+		// cyan rule down its left (the system's colour), "GLIM ASKS" (G2; the wrist's card keeps "THE COMPANION ASKS", which
+		// BpWrist reads for its tone), a human sentence first and its raw ids set small.
 		const bool bScreen = !bCompanion && (S.ShotBrush.IsValid() || S.bShotLoading);
 		// Wave N3-W2, the decision on the wall: three columns. The left the kicker, the title and what each answer does; the
 		// middle the screen and its loupe; the right what it touches (its place, what depends on it, who raised it and when, the
@@ -2306,7 +2321,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		{
 			Put(FBox2f(Frame.Min, FVector2f(Frame.Min.X + 8.f, Frame.Max.Y)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
 		}
-		FString Kicker = bCompanion ? FString(TEXT("THE COMPANION ASKS")) : FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
+		FString Kicker = bCompanion ? FString(TEXT("GLIM ASKS")) : FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
 		if (Card && Card->news) Kicker += TEXT(" · NEW");
 		// Where it is, on the kicker when it fits whole (the plan raises the room as well): the deck's first line without its count.
 		if (Card && Card->lines.Num() > 0)

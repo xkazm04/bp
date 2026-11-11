@@ -184,6 +184,8 @@ void ABpTable::NotePlaceMoved()
 	if (bFollowApplying) return;
 	const UWorld* World = GetWorld();
 	if (!World || !World->IsGameWorld()) return;
+	// G2: a move by hand is the person's own act: a focus event Glim sends after it does not yank the table back.
+	NoteOwnAct();
 	PublishAtS = World->GetRealTimeSeconds() + PublishSettleS;
 	SetActorTickInterval(0.f);
 }

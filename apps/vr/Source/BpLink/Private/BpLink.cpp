@@ -2494,10 +2494,16 @@ namespace
 				const TSharedPtr<FJsonObject>* Card = nullptr;
 				if (Event->TryGetObjectField(TEXT("card"), Card))
 				{
-					FString State;
-					(*Card)->TryGetStringField(TEXT("state"), State);
+					FBpCompanionCard C;
+					(*Card)->TryGetStringField(TEXT("id"), C.Id);
+					(*Card)->TryGetStringField(TEXT("tool"), C.Tool);
+					(*Card)->TryGetStringField(TEXT("summary"), C.Summary);
+					(*Card)->TryGetStringField(TEXT("product"), C.Product);
+					(*Card)->TryGetStringField(TEXT("state"), C.State);
+					(*Card)->TryGetStringField(TEXT("createdAt"), C.CreatedAt);
 					// A pending card is the person's (contract section 4); a policy's result is not asked of anyone.
-					if (State == TEXT("pending")) (*Card)->TryGetStringField(TEXT("summary"), Out.CardSummary);
+					if (C.State == TEXT("pending")) Out.CardSummary = C.Summary;
+					Out.Cards.Add(MoveTemp(C));
 				}
 			}
 			else if (Type == TEXT("focus"))
@@ -2506,8 +2512,16 @@ namespace
 				const TSharedPtr<FJsonObject>* Target = nullptr;
 				if (Event->TryGetObjectField(TEXT("focus"), Focus) && (*Focus)->TryGetObjectField(TEXT("target"), Target))
 				{
-					(*Target)->TryGetStringField(TEXT("kind"), Out.FocusKind);
-					(*Target)->TryGetStringField(TEXT("id"), Out.FocusId);
+					FBpTurnFocus F;
+					(*Target)->TryGetStringField(TEXT("kind"), F.TargetKind);
+					(*Target)->TryGetStringField(TEXT("id"), F.TargetId);
+					(*Focus)->TryGetStringField(TEXT("say"), F.Say);
+					if (!F.TargetKind.IsEmpty() && !F.TargetId.IsEmpty())
+					{
+						Out.FocusKind = F.TargetKind;
+						Out.FocusId = F.TargetId;
+						Out.Focuses.Add(MoveTemp(F));
+					}
 				}
 			}
 			else if (Type == TEXT("end"))
@@ -2518,13 +2532,51 @@ namespace
 				Out.Outcome = Outcome == TEXT("done") ? FBpCompanionTurn::EOutcome::Ok : FBpCompanionTurn::EOutcome::Failed;
 				if (Outcome != TEXT("done")) Event->TryGetStringField(TEXT("failure"), Out.Failure);
 				if (Outcome == TEXT("interrupted")) Out.Failure = Outcome;
+				double Cost = 0.0;
+				if (Event->TryGetNumberField(TEXT("costUsd"), Cost)) Out.CostUsd = Cost;
+				// The quick replies (G1): only a done end's, at most CompanionRepliesMax, each within its bounds and distinct; one
+				// out of bounds is dropped, never cut (a cut `say` would send words nobody proposed).
+				const TArray<TSharedPtr<FJsonValue>>* Replies = nullptr;
+				if (Outcome == TEXT("done") && Event->TryGetArrayField(TEXT("replies"), Replies))
+				{
+					for (const TSharedPtr<FJsonValue>& Each : *Replies)
+					{
+						const TSharedPtr<FJsonObject>* One = nullptr;
+						if (Out.Replies.Num() >= FBpLinkModule::CompanionRepliesMax) break;
+						if (!Each.IsValid() || !Each->TryGetObject(One)) continue;
+						FBpQuickReply R;
+						(*One)->TryGetStringField(TEXT("label"), R.Label);
+						(*One)->TryGetStringField(TEXT("say"), R.Say);
+						R.Label.TrimStartAndEndInline();
+						R.Say.TrimStartAndEndInline();
+						if (R.Label.IsEmpty() || R.Say.IsEmpty() || R.Label.Len() > FBpLinkModule::CompanionReplyLabelMax || R.Say.Len() > FBpLinkModule::CompanionReplySayMax) continue;
+						if (Out.Replies.ContainsByPredicate([&R](const FBpQuickReply& Q) { return Q.Say == R.Say; })) continue;
+						Out.Replies.Add(MoveTemp(R));
+					}
+				}
 			}
 		}
 		if (!bEnded && Out.Failure.IsEmpty()) Out.Failure = TEXT("the turn stopped without an end event");
 	}
 }
 
-void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const FBpCompanionTurn&)> OnDone)
+const TArray<FString>& FBpLinkModule::CompanionPageTargets()
+{
+	static const TArray<FString> Pages = { TEXT("menu"), TEXT("standup"), TEXT("scan"), TEXT("rooms"), TEXT("settings"), TEXT("tour"), TEXT("pc-link") };
+	return Pages;
+}
+
+bool FBpLinkModule::IsTurnTarget(const FString& Id)
+{
+	if (Id.IsEmpty() || Id.Len() > 120 || !FChar::IsAlnum(Id[0])) return false;
+	for (const TCHAR C : Id)
+	{
+		if (!(C < 128 && (FChar::IsAlnum(C) || C == TEXT('_') || C == TEXT('.') || C == TEXT(':') || C == TEXT('-')))) return false;
+	}
+	return true;
+}
+
+void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone)
 {
 	if (!HasPcLink() || GFromBundle)
 	{
@@ -2544,6 +2596,18 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 	if (!CompanionConversation.IsEmpty()) Json->SetStringField(TEXT("conversationId"), CompanionConversation);
 	Json->SetStringField(TEXT("product"), GetProductSlug());
 	Json->SetStringField(TEXT("text"), Text);
+	// Where the person is (G1's `surface`), beside the words: the route answers 400 for an unknown key or a bad value, so only
+	// the contract's keys go out, the place cut to its bound and a target that is not a valid id left out.
+	{
+		const TSharedRef<FJsonObject> Where = MakeShared<FJsonObject>();
+		Where->SetStringField(TEXT("kind"), TEXT("vr"));
+		const FString Place = Surface.Place.TrimStartAndEnd().Left(CompanionPlaceMax);
+		if (!Place.IsEmpty()) Where->SetStringField(TEXT("place"), Place);
+		if (IsTurnTarget(Surface.Target)) Where->SetStringField(TEXT("target"), Surface.Target);
+		Where->SetStringField(TEXT("product"), GetProductSlug());
+		Where->SetBoolField(TEXT("spoken"), Surface.bSpoken);
+		Json->SetObjectField(TEXT("surface"), Where);
+	}
 	FString Wire;
 	FJsonSerializer::Serialize(Json, TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&Wire));
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = NewRequest();
@@ -2561,7 +2625,8 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 	bCompanionTurnOut = true;
 	const uint32 Serial = ++GTurnSerial;
 	GTurnRequest = Request;
-	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u posted (conversation %s): %s"), Serial, CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation, *Text);
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u posted (conversation %s; surface vr, place \"%s\", target %s, spoken %d): %s"), Serial, CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation,
+		*Surface.Place.Left(CompanionPlaceMax), IsTurnTarget(Surface.Target) ? *Surface.Target : TEXT("-"), Surface.bSpoken ? 1 : 0, *Text);
 	Request->OnProcessRequestComplete().BindLambda([OnDone, Serial](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
@@ -2599,7 +2664,12 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, TFunction<void(const 
 			// A refusal's sentence (the turn's 429 budget: { error: "<a sentence>", limit, retryAfterS }) is shown as it is.
 			Turn.Words = RefusalWords(Response->GetContentAsString());
 		}
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"));
+		FString Events;
+		for (const FBpTurnFocus& F : Turn.Focuses) Events += FString::Printf(TEXT(" focus=%s:%s"), *F.TargetKind, *F.TargetId);
+		for (const FBpCompanionCard& C : Turn.Cards) Events += FString::Printf(TEXT(" card=%s/%s/%s"), *C.Tool, *C.State, *C.Id);
+		for (const FBpQuickReply& R : Turn.Replies) Events += FString::Printf(TEXT(" reply=\"%s\""), *R.Label);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s; cost %s;%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"),
+			Turn.CostUsd >= 0.0 ? *FString::Printf(TEXT("$%.4f"), Turn.CostUsd) : TEXT("-"), Events.IsEmpty() ? TEXT(" no events") : *Events);
 		if (OnDone) OnDone(Turn);
 	});
 	Request->ProcessRequest();

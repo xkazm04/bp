@@ -1816,7 +1816,15 @@ void ABpPawn::PlaceConsole()
 bool ABpPawn::ConsoleShowsTalk() const
 {
 	// The stand-up and the consent sheet keep the panel (a card a spoken request raised takes the conversation's place).
-	return CVarTalkSheet.GetValueOnGameThread() != 0 && !(bConsoleOpen && (ConsolePageKey == TEXT("standup") || ConsolePageKey == TEXT("talk")));
+	// G2: a page Glim opened by voice keeps the sheet too (his reply stays on his caption).
+	return CVarTalkSheet.GetValueOnGameThread() != 0 && !(bConsoleOpen && (bTalkYield || ConsolePageKey == TEXT("standup") || ConsolePageKey == TEXT("talk")));
+}
+
+void ABpPawn::TalkYield()
+{
+	if (!bConsoleOpen) return;
+	bTalkYield = true;
+	RefreshConsole();
 }
 
 void ABpPawn::StartWallReveal()
@@ -1980,6 +1988,7 @@ void ABpPawn::CloseConsole()
 {
 	if (!bConsoleOpen) return;
 	bConsoleOpen = false;
+	bTalkYield = false;
 	ConsoleSel.Reset();
 	ConsoleHover.Reset();
 	if (ConsolePageKey == TEXT("standup")) StandupClosed();
@@ -2119,7 +2128,7 @@ void ABpPawn::RefreshConsole()
 	// The conversation with the lamp (night two V2): while a talk's words are on show the panel is the conversation.
 	ABpTable::FTalkView Talk;
 	const bool bTalk = ConsoleShowsTalk() && Table->TalkView(Talk);
-	if (bTalk) Key += FString::Printf(TEXT("|talk|%s|%s|%s|%s|%d|%d"), *Talk.Word, *Talk.Heard, *Talk.Reply, *Talk.Line, FMath::RoundToInt(Talk.Level * 8.f), Talk.bSample);
+	if (bTalk) Key += FString::Printf(TEXT("|talk|%s|%s|%s|%s|%d|%d|%s"), *Talk.Word, *Talk.Heard, *Talk.Reply, *Talk.Line, FMath::RoundToInt(Talk.Level * 8.f), Talk.bSample, *FString::Join(Talk.Replies, TEXT("/")));
 	if (bTalk != bConsoleTalk)
 	{
 		bConsoleTalk = bTalk;
@@ -2224,7 +2233,7 @@ void ABpPawn::RefreshConsole()
 
 	if (bTalk)
 	{
-		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample);
+		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample, Talk.Replies);
 	}
 	else if (!bConsoleOpen)
 	{
@@ -2922,6 +2931,8 @@ void ABpPawn::ConsoleTap(const FString& Id)
 	if (Act == TEXT("panel")) return;
 	// The tour counts a console press as the person acting (wave T1: a step that only shows waits for one, or the idle wait).
 	if (Table) Table->NoteHand(TEXT("console"));
+	// G2: and as the person's own act, which a focus Glim sends after it never overrides.
+	if (Table) Table->NoteOwnAct();
 	if (Act == TEXT("tour:stop")) { if (Table) Table->StopTour(TEXT("STOP TOUR")); return; }
 	if (Act == TEXT("menu")) { if (bConsoleOpen) CloseConsole(); else OpenConsole(FString()); return; }
 	if (Act == TEXT("close")) { CloseConsole(); return; }
@@ -2949,6 +2960,8 @@ void ABpPawn::ConsoleTap(const FString& Id)
 	// The conversation's own controls (night two V2): STOP cancels the talk in flight, CLOSE clears the words at once.
 	if (Act == TEXT("talk:stop")) { if (Table) Table->TalkCancel(TEXT("the console")); return; }
 	if (Act == TEXT("talk:close")) { if (Table) Table->TalkDismiss(); return; }
+	// G2: a quick reply under Glim's answer: its words go as the next turn (never an action by itself).
+	if (Act.StartsWith(TEXT("talk:reply:"))) { if (Table) Table->TalkReply(FCString::Atoi(*Act.Mid(11)), TEXT("the conversation's button")); return; }
 	const FBpConsolePage* Page = FBpConsolePages::Find(ConsolePageKey);
 	if (Page && Page->Tap && Page->Tap(*this, Act)) { RefreshConsole(); return; }
 	PanelAct(Act);
@@ -3057,7 +3070,7 @@ void ABpPawn::ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const
 // console's text size. It clears itself bp.TalkLingerS after the voice ends, on CLOSE, or on B; a card the turn raised takes
 // its place as a decision sheet (StandupShowCompanionCards).
 
-void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample)
+void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies)
 {
 	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
@@ -3145,9 +3158,36 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 		Y += H + 12.f;
 		Body = Rest;
 	}
+	// G2, the quick replies: up to three large buttons along the sheet's foot, under a quiet "YOU COULD SAY"; a pinch, a ray or the
+	// pad presses one and its words go to Glim as the next turn. They go when a new turn starts.
+	float ReplyH = 0.f;
+	if (Replies.Num() > 0 && Word != TEXT("THINKING") && Word != TEXT("HEARING"))
+	{
+		const int32 N = FMath::Min(Replies.Num(), FBpLinkModule::CompanionRepliesMax);
+		const float BtnH = bConsoleFar ? 104.f : 92.f, Gap = 20.f, KickH = 38.f;
+		ReplyH = KickH + BtnH + 18.f;
+		const float BY1 = LH - 30.f, BY0 = BY1 - BtnH;
+		Put(FBox2f(FVector2f(X0, BY0 - KickH), FVector2f(X1, BY0 - 4.f)), SNew(STextBlock).Text(FText::FromString(TEXT("YOU COULD SAY"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.65f))));
+		const float W = (X1 - X0 - Gap * (N - 1)) / N;
+		for (int32 I = 0; I < N; ++I)
+		{
+			const FBox2f Box(FVector2f(X0 + I * (W + Gap), BY0), FVector2f(X0 + I * (W + Gap) + W, BY1));
+			const FString Act = FString::Printf(TEXT("console:talk:reply:%d"), I + 1);
+			const bool bLit = Act == ConsoleHover || (bConsolePadSel && Act == ConsoleSel);
+			const bool bDown = bLit && (bConsoleHoverDown || bPadADown);
+			// The words in the label face while they fit on a line, else two lines in the detail face (the 24 px floor).
+			FSlateFontInfo WordFont = LabelFont;
+			FString Fit = BpSheet::Wrap(Replies[I], WordFont, W - 36.f, 1);
+			if (BpSheet::TextWidth(Replies[I], WordFont) > W - 36.f) { WordFont = SmallBold; Fit = BpSheet::Wrap(Replies[I], WordFont, W - 36.f, 2); }
+			Put(bDown ? Box.ExpandBy(-3.f) : Box, SNew(SOverlay)
+				+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(bDown ? BpSheet::Ink.CopyWithNewOpacity(0.32f) : BpSheet::RowFill(bLit)).Edge(BpSheet::Accent.CopyWithNewOpacity(bLit ? 1.f : 0.75f)).EdgePx(2.5f).Bar(BpSheet::Accent).BarPx(6.f)]
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(14.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Fit)).Font(WordFont).Justification(ETextJustify::Center).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]);
+			ConsoleBoxes.Add({ Act, Box });
+		}
+	}
 	if (Body.IsEmpty()) return;
 	// The reply whole, at the console's text size: 28 px while it fits, 24 px (the floor) when it is long.
-	const float Avail = LH - 30.f - Y;
+	const float Avail = LH - 30.f - Y - ReplyH;
 	const bool bQuiet = Word == TEXT("THINKING");
 	FSlateFontInfo BodyFont = Font(bQuiet ? TEXT("Bold") : TEXT("Regular"), bQuiet ? CapTitle : CapLabel);
 	float P = Pitch(bQuiet ? CapTitle : CapLabel);

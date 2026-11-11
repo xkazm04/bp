@@ -92,6 +92,46 @@ struct BPLINK_API FBpScanState
 /** Fired on the game thread when a poll brought back something new. */
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnBpScanState, const FBpScanState&);
 
+/** One companion card (packages/core/src/companion/contract.ts Card): a GATED tool call waiting for a person. */
+struct BPLINK_API FBpCompanionCard
+{
+	FString Id;
+	FString Tool;
+	FString Summary;
+	FString Product;
+	/** pending, approved, declined, expired, done, failed. */
+	FString State;
+	FString CreatedAt;
+};
+
+/** Where the person is when a turn is asked (companion-link.md section 2, `surface`; contract.ts TurnSurface): sent BESIDE the
+ *  words, never inside them. BpLink adds `kind: vr` and the product slug. Place: what the table shows, in words (cut to
+ *  CompanionPlaceMax); Target: the id "this one" means (a decision's proposal id, a room's or a feature's), omitted when it is
+ *  not a valid target id; bSpoken: the reply is voiced (the talk), so Glim keeps it to two short sentences. */
+struct BPLINK_API FBpTurnSurface
+{
+	FString Place;
+	FString Target;
+	bool bSpoken = false;
+};
+
+/** One `focus` event of a turn (contract.ts FocusCommand): its target's kind (feature, room, wing, decision, page, ...) and id,
+ *  and the caption Glim gave it. */
+struct BPLINK_API FBpTurnFocus
+{
+	FString TargetKind;
+	FString TargetId;
+	FString Say;
+};
+
+/** One quick reply a `done` end proposed (contract.ts QuickReply): the button's Label, and the words a press sends as the next
+ *  turn (never an action). */
+struct BPLINK_API FBpQuickReply
+{
+	FString Label;
+	FString Say;
+};
+
 /** What POST /api/companion/turn ended as (companion-link.md section 2), for the lamp to put in words. */
 struct BPLINK_API FBpCompanionTurn
 {
@@ -109,6 +149,14 @@ struct BPLINK_API FBpCompanionTurn
 	/** The last `focus` command's target, in plan ids; empty when the turn pointed at nothing. */
 	FString FocusKind;
 	FString FocusId;
+	/** Every `focus` event of the turn, in the order it came (G2: the table acts on each, one action per event). */
+	TArray<FBpTurnFocus> Focuses;
+	/** Every `card` event's card (pending or a policy's result), in order. */
+	TArray<FBpCompanionCard> Cards;
+	/** The `done` end's quick replies, at most CompanionRepliesMax, each within its bounds. */
+	TArray<FBpQuickReply> Replies;
+	/** The end's costUsd (-1: none reported). */
+	double CostUsd = -1.0;
 };
 
 /** One focus saved on the PC for reuse (packages/core/src/scan/focus.ts SavedFocus): a lens and what it is to look for. */
@@ -337,18 +385,6 @@ struct BPLINK_API FBpMorningRead
 	FBpMorningDeck Deck;
 };
 
-/** One companion card (packages/core/src/companion/contract.ts Card): a GATED tool call waiting for a person. */
-struct BPLINK_API FBpCompanionCard
-{
-	FString Id;
-	FString Tool;
-	FString Summary;
-	FString Product;
-	/** pending, approved, declined, expired, done, failed. */
-	FString State;
-	FString CreatedAt;
-};
-
 /** One policy grant (contract.ts PolicyGrant & { grantedBy? }), as the server answered it. MinTier -1: none named. */
 struct BPLINK_API FBpPolicy
 {
@@ -545,11 +581,23 @@ public:
 	void AskOnboard(const FString& Candidate, const FString& Shown, TFunction<void(const FOnboardAsk&)> OnDone);
 	void GetOnboardAsk(const FString& Request, TFunction<void(const FOnboardAsk&)> OnDone);
 
-	/** POST /api/companion/turn { conversationId?, product, text } (companion-link.md section 2; the lamp's fixed asks). The
+	/** The turn's bounds (contract.ts): QUICK_REPLY_MAX replies, a label of at most 32 characters and a say of at most 120;
+	 *  the surface's place at most 160 characters. check:bplink pins them to the contract. */
+	static constexpr int32 CompanionRepliesMax = 3;
+	static constexpr int32 CompanionReplyLabelMax = 32;
+	static constexpr int32 CompanionReplySayMax = 120;
+	static constexpr int32 CompanionPlaceMax = 160;
+	/** The console pages a `page` focus may name (contract.ts PAGE_TARGETS), in its order. */
+	static const TArray<FString>& CompanionPageTargets();
+	/** Whether an id is a valid surface target (`[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}`). */
+	static bool IsTurnTarget(const FString& Id);
+
+	/** POST /api/companion/turn { conversationId?, product, text, surface: { kind: vr, place?, target?, product, spoken } }
+	 *  (companion-link.md section 2, G1's surface: where the person is goes beside the words, never inside them). The
 	 *  whole Server-Sent-Event body is read when the turn ends (the lamp shows the reply, not deltas; incremental reading is
 	 *  a later change). Refused without a PC link: nothing is sent, OnDone gets Unreached. One conversation per session, kept
 	 *  here. A 409 reads Busy (wait and retry, never queue). OnDone runs on the game thread. Never approves a card. */
-	void PostCompanionTurn(const FString& Text, TFunction<void(const FBpCompanionTurn&)> OnDone);
+	void PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone);
 	/** The turn still out is called off (the talk's B or pinch, the stand-up's cancel): its request is cancelled, the companion
 	 *  is free for the next turn at once, and the old turn's end writes nothing into the module (its OnDone gets Failed,
 	 *  "cancelled", which its asker's own serial drops). True when a turn was out. */

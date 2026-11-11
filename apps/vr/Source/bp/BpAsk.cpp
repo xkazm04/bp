@@ -386,7 +386,10 @@ void ABpTable::LampAskTurn(FString&& Text)
 	const FString LocalAnswer = LampAnswer;
 	const FString LocalHint = LampHint;
 	TWeakObjectPtr<ABpTable> Self(this);
-	Link.PostCompanionTurn(Text, [Self, LocalAnswer, LocalHint](const FBpCompanionTurn& Turn)
+	// G2: where the person is goes beside the ask as the surface (the ASK page's answer is read on the caption and the wrist,
+	// not voiced: spoken false). Its focus events are acted on as the talk's are.
+	const double AskedAt = FPlatformTime::Seconds();
+	Link.PostCompanionTurn(Text, TurnSurface(false), [Self, LocalAnswer, LocalHint, AskedAt](const FBpCompanionTurn& Turn)
 	{
 		ABpTable* T = Self.Get();
 		if (!T) return;
@@ -427,6 +430,11 @@ void ABpTable::LampAskTurn(FString&& Text)
 			T->LampNotifyAsk();
 			if (Turn.FocusKind == TEXT("room")) T->PresentLamp(T->LampTargetForRoom(Turn.FocusId), TEXT("turn focus"));
 			else if (Turn.FocusKind == TEXT("feature")) T->PresentLamp(T->LampTargetForFeature(Turn.FocusId), TEXT("turn focus"));
+			// Pages and decisions (G2) the way the talk acts on them; the places stay the lamp's present above.
+			{
+				TArray<FBpTurnFocus> Acts = Turn.Focuses.FilterByPredicate([](const FBpTurnFocus& F) { return F.TargetKind == TEXT("page") || F.TargetKind == TEXT("decision"); });
+				T->TalkActOnFocus(Acts, AskedAt);
+			}
 			break;
 		}
 		}

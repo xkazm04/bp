@@ -1919,8 +1919,28 @@ public:
 		FString Line;
 		float Level = 0.f;
 		bool bSample = false;
+		/** G2: the turn's quick replies (their labels), drawn as up to three large buttons under the reply; a press sends that
+		 *  reply's words as the next turn (TalkReply). Empty while a turn is in flight. */
+		TArray<FString> Replies;
 	};
 	bool TalkView(FTalkView& Out) const;
+	/** G2, quick reply N (1..3; BpTalk.Reply, the sheet's buttons): its words go to Glim as the next turn, through the same path
+	 *  as words heard. In the bundle the sample's replies play the other sample lines. False when there is no such reply. */
+	bool TalkReply(int32 N, const TCHAR* Route);
+	/** G2: where the person is for a companion turn (the surface): the place in words, and the target "this one" means, in this
+	 *  order: the stand-up's open decision sheet, else the deck's front decision (or the decision card's finding), else the room
+	 *  in view (the lifted one). bSpoken: the reply is voiced (the talk). */
+	struct FBpTurnSurface TurnSurface(bool bSpoken);
+	/** G2: a turn's focus events, acted on one per event in order (TalkFocusStepS apart): a page opens that console page (on the
+	 *  wall in wall mode), a wing, room or feature moves the table there, a decision opens it on the stand-up (or the room's
+	 *  deck) where Glim points at it. AskedAt: when the turn was asked; anything the person did since (a move of the table, a
+	 *  console tap) wins, and the rest are dropped. */
+	void TalkActOnFocus(const TArray<struct FBpTurnFocus>& Focuses, double AskedAt);
+	/** G2: the person's own last act (a move of the table by hand, a console tap), FPlatformTime seconds: Glim never yanks the view
+	 *  from under it. */
+	double OwnActAt = -1.0;
+	void NoteOwnAct() { OwnActAt = FPlatformTime::Seconds(); }
+	static constexpr float TalkFocusStepS = 1.2f;
 	/** The conversation sheet's CLOSE: a talk in flight is cancelled, and the talk's words leave at once. */
 	void TalkDismiss();
 	/** BpTalk.Preview: a still of the conversation in a state (listening, thinking, answering) for captures; no microphone is
@@ -2138,8 +2158,13 @@ private:
 	void TalkBegin();
 	void TalkSend();
 	void TalkTurn(const FString& Heard);
-	void TalkSpeak(const FString& Reply);
-	void TalkSample();
+	void TalkSpeak(const FString& Reply, const FString& ShownIn = FString());
+	void TalkSample(const FString& ForceId = FString());
+	/** G2: the focus events still to act on (TalkActOnFocus), when their turn was asked, and the step's timer. */
+	TArray<TPair<FString, FString>> TalkFocusQueue;
+	double TalkFocusAskedAt = 0.0;
+	FTimerHandle TalkFocusTimer;
+	void TalkFocusStep();
 	void TalkSays(const FString& Line, float Seconds = 0.f);
 	void TalkIdle();
 	/** The app went away (background, deactivated, the headset off, or the XR focus lost) during a hold or a recording: the

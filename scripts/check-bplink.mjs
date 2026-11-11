@@ -31,6 +31,9 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { schemaAjv } from '../packages/schema/roots.mjs';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
+import { QUICK_REPLY_MAX, PAGE_TARGETS } from '../packages/core/src/companion/contract.ts';
+import { SURFACE_KEYS, PLACE_MAX, readSurface } from '../packages/core/src/companion/surface.ts';
+import { LABEL_MAX, SAY_MAX } from '../packages/core/src/companion/replies.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'packages/core/data');
@@ -725,6 +728,48 @@ async function main() {
           /NewRequest\(\)/.test(fn('PostListen')) && /NewRequest\(\)/.test(fn('PostSay')) && listenLit.includes('"/api/companion/listen"')
           && guardAt >= 0 && consentAt > guardAt && sendAt > consentAt && (lit.match(/"x-bp-speech-consent"/g) ?? []).length === 1,
           `guard ${guardAt}, header ${consentAt}, send ${sendAt}`);
+      }
+      // ---- Glim's turn from the headset (G2, companion-link.md section 2): the surface beside the words, the page ids a focus
+      // may name, the quick replies' bounds. Read from the C++ (strings kept where the assertion is about a literal) against
+      // core's own constants, and the body BpLink would build run through the server's readSurface.
+      {
+        const lit = stripCxx(cppText, true);
+        const fnLit = (name) => { const at = lit.indexOf(`FBpLinkModule::${name}(`); const span = at < 0 ? null : braceSpan(lit, at); return span ? lit.slice(span[0], span[1]) : ''; };
+        const post = fnLit('PostCompanionTurn');
+        const keys = (body) => [...body.matchAll(/Set\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]);
+        const surfBlock = (() => { const a = post.indexOf('const TSharedRef<FJsonObject> Where'); const b = post.indexOf('Json->SetObjectField(TEXT("surface")'); return a >= 0 && b > a ? post.slice(a, b) : ''; })();
+        const surfKeys = [...new Set(keys(surfBlock))];
+        const topKeys = [...new Set(keys(post.replace(surfBlock, '')))];
+        check(`glim: PostCompanionTurn sends { ${topKeys} } with surface { ${surfKeys} }: the surface's keys are core's SURFACE_KEYS (${SURFACE_KEYS}) and the body's are TurnRequest's`,
+          surfBlock.length > 0 && JSON.stringify([...surfKeys].sort()) === JSON.stringify([...SURFACE_KEYS].sort())
+          && topKeys.every((k) => ['conversationId', 'product', 'text', 'surface'].includes(k)) && topKeys.includes('surface'), `surface ${surfKeys} / body ${topKeys}`);
+        const body = Object.fromEntries(surfKeys.map((k) => [k, k === 'kind' ? 'vr' : k === 'spoken' ? true : k === 'target' ? 'kettle-room.1:a_b' : k === 'product' ? 'kettle' : 'Billing; the decision in view: a title']));
+        const ok = readSurface(body), bad = readSurface({ ...body, mood: 'x' });
+        check('glim: the surface BpLink builds passes the server\'s readSurface, and the same with one more key is refused (the route\'s 400)', 'surface' in ok && 'error' in bad, JSON.stringify(ok).slice(0, 120));
+        check('glim: no "(Spoken aloud at the VR table" prefix is left in apps/vr/Source (the surface replaced it)',
+          !fs.readdirSync(path.join(ROOT, 'apps/vr/Source/bp')).some((f) => /\.cpp$/.test(f) && stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp', f), 'utf8'), true).includes('Spoken aloud at the VR table')));
+        const hText = fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Public/BpLink.h'), 'utf8');
+        const num = (name) => { const m = new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(stripCxx(hText)); return m ? Number(m[1]) : null; };
+        check(`glim: BpLink's bounds are core's: ${num('CompanionRepliesMax')} replies (QUICK_REPLY_MAX ${QUICK_REPLY_MAX}), label ${num('CompanionReplyLabelMax')} (LABEL_MAX ${LABEL_MAX}), say ${num('CompanionReplySayMax')} (SAY_MAX ${SAY_MAX}), place ${num('CompanionPlaceMax')} (PLACE_MAX ${PLACE_MAX})`,
+          num('CompanionRepliesMax') === QUICK_REPLY_MAX && num('CompanionReplyLabelMax') === LABEL_MAX && num('CompanionReplySayMax') === SAY_MAX && num('CompanionPlaceMax') === PLACE_MAX);
+        const read = (() => { const at = lit.indexOf('void ReadTurnEvents('); const span = at < 0 ? null : braceSpan(lit, at); return span ? lit.slice(span[0], span[1]) : ''; })();
+        check('glim: ReadTurnEvents reads every focus (kind, id, say), every card, and the end\'s replies capped at CompanionRepliesMax',
+          /Out\.Focuses\.Add\(/.test(read) && /Out\.Cards\.Add\(/.test(read) && /TEXT\("replies"\)/.test(read) && /Out\.Replies\.Num\(\)\s*>=\s*FBpLinkModule::CompanionRepliesMax\)\s*break;/.test(read)
+          && /TEXT\("say"\)/.test(read) && /CompanionReplyLabelMax/.test(read) && /CompanionReplySayMax/.test(read));
+        const pages = (() => { const b = fnLit('CompanionPageTargets'); return [...b.matchAll(/TEXT\("([\w-]+)"\)/g)].map((m) => m[1]); })();
+        check(`glim: the page ids the table opens (${pages}) are core's PAGE_TARGETS, in order`, JSON.stringify(pages) === JSON.stringify([...PAGE_TARGETS]), `${pages} vs ${PAGE_TARGETS}`);
+        const talk = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpTalk.cpp'), 'utf8'), true);
+        const focusStep = (() => { const at = talk.indexOf('void ABpTable::TalkFocusStep('); const span = at < 0 ? null : braceSpan(talk, at); return span ? talk.slice(span[0], span[1]) : ''; })();
+        check('glim: every turn the headset makes sends a surface (the talk spoken, the ASK page and PLAN MY DAY not), and a page focus is checked against CompanionPageTargets',
+          /PostCompanionTurn\(\s*Heard\s*,\s*Surface\s*,/.test(talk) && /TurnSurface\(true\)/.test(talk)
+          && /PostCompanionTurn\(\s*Text\s*,\s*TurnSurface\(false\)/.test(stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpAsk.cpp'), 'utf8')))
+          && /PostCompanionTurn\(\s*Text\s*,\s*Surface\s*,/.test(stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpStandup.cpp'), 'utf8')))
+          && /CompanionPageTargets\(\)\.Contains\(Id\)/.test(focusStep) && /OwnActAt\s*>\s*TalkFocusAskedAt/.test(focusStep));
+        // permanent control: a surface that grows a key, and a replies cap that is lost, are refused
+        const mut = cppText.replace('Where->SetBoolField(TEXT("spoken"), Surface.bSpoken);', 'Where->SetBoolField(TEXT("spoken"), Surface.bSpoken); Where->SetStringField(TEXT("mood"), Text);');
+        const mutPost = (() => { const l = stripCxx(mut, true); const at = l.indexOf('FBpLinkModule::PostCompanionTurn('); const span = at < 0 ? null : braceSpan(l, at); return span ? l.slice(span[0], span[1]) : ''; })();
+        const mutSurf = (() => { const a = mutPost.indexOf('const TSharedRef<FJsonObject> Where'); const b = mutPost.indexOf('Json->SetObjectField(TEXT("surface")'); return a >= 0 && b > a ? mutPost.slice(a, b) : ''; })();
+        check('glim: the rule refuses a surface with a key the contract lacks', mut !== cppText && JSON.stringify([...new Set(keys(mutSurf))].sort()) !== JSON.stringify([...SURFACE_KEYS].sort()));
       }
       // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/table-bound.server.ts since S3,
       // 2026-11-10; decider.server.ts re-exports it), read as text.
