@@ -22,6 +22,16 @@
 // lines; names shorten by whole words); the stage track's words all under it; the plan's note whole (else its first sentence);
 // each fact once (the budget's number on the chart only). The floor is 20 layout px of cap: 46 arc minutes at the new size.
 //
+// Wave W3 (the owner, 2026-11-11: "the wall growth to 53, look of 'what it touches', and UI ability to comprehend up to 60
+// words"): the wall is 53 degrees wide (24.1 layout px a degree), so the board reads by three text sizes only: the title (and
+// the hero's figure, the bars' figures) at CapL, Glim's line, the hero's label and the stage's labels at CapM, the muted
+// headings, the notes and the map's names at CapS, the floor (47 arc minutes of cap, 34 of x-height, over W2's 46 and 32).
+// Each block wraps inside its tile to the lines it was laid out for, never under the floor, never with an ellipsis; a block
+// that had to lose words says so in FOut. What it touches is a node map: the feature lit at the top, its room under it on an
+// amber stem, what it depends on (the structure's depends_on: the feature's, so their lines start at the feature) under the
+// room, joined by a thin bracket that runs around the room and ends in an arrowhead at each dependency's edge; a layout for
+// each count from 0 to 4. BpBoard.Audit lays out every sample decision on both boards headlessly and logs what each showed.
+//
 // Cost: drawn into the surface's own render target, only when what it shows changes (the callers' keys); no tick, no
 // material, no texture beyond the screens the callers already hold (an "after" screen is one more, released with the "before").
 #pragma once
@@ -47,8 +57,11 @@ namespace BpBoard
 	constexpr float TitleY0 = 98.f, TitleY1 = 150.f;
 	constexpr float Y0 = 170.f, Y1 = 568.f;
 	constexpr float ColX1 = 580.f, StageX0 = 600.f;
-	/** Wave W2: the left column's tiles (the hero, Glim's line; what it touches under them to Y1). */
-	constexpr float HeroY1 = 310.f, GlimY1 = 400.f;
+	/** Wave W2: the left column's tiles (the hero, Glim's line; what it touches under them to Y1). Wave W3: what it touches
+	 *  takes 168 px for its three rows (the feature, the room, the dependencies) and the bracket's channel between them. */
+	constexpr float HeroY1 = 294.f, GlimY1 = 378.f;
+	/** Wave W3, the board's three text sizes (layout px of cap height): the largest, the middle, the smallest (the floor). */
+	constexpr float CapL = 28.f, CapM = 23.f, CapS = 19.f;
 
 	/** A finding's screen of one phase (BpVocab::Shot::Phase), PNG only (what the headset decodes), or null. */
 	const FBpShot* FindShot(const FString& Proposal, const TCHAR* Phase);
@@ -83,6 +96,14 @@ namespace BpBoard
 		FBox2f Stage = FBox2f(FVector2f(StageX0, Y0), FVector2f(X1, Y1));
 		/** What the board showed, for the log: the hero, Glim's line, the touches and the stage's figures. */
 		FString Said;
+		/** Wave W3: the lit feature's node on the map (layout px), for Glim's beam when the stage has no subject. */
+		FVector2f TouchAim = FVector2f(-1.f, -1.f);
+		/** Wave W3, the board's own audit: its words, the smallest cap it set (layout px), each block that did not fit its box (or
+		 *  a node that met another), and each block that lost words to fit. */
+		int32 Words = 0;
+		float MinCap = 0.f;
+		TArray<FString> Overflow;
+		TArray<FString> Shortened;
 	};
 
 	using FPut = TFunctionRef<void(const FBox2f& Box, const TSharedRef<SWidget>& Widget)>;

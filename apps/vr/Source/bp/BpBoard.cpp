@@ -27,10 +27,10 @@ namespace
 	/** The tiles' plate (the design's #0b1e35 over the sheet) and edge. */
 	const FLinearColor TileFill = BpSheet::PaperLo.CopyWithNewOpacity(0.55f);
 	const FLinearColor TileEdge = BpSheet::Ink.CopyWithNewOpacity(0.32f);
-	/** Wave W2, the floor: the wall is 48.8 degrees wide now (bp.Projector.WidthCm 236 at 260 cm), 26.2 layout px a degree, so 20
-	 *  layout px of cap is 46 arc minutes (an x-height of 0.7 of it, 32 arc minutes), above the projector README's 40 arc minute
-	 *  body (the old wall's smallest, 24 px at 29.4 px a degree, was 49). The board's other sizes. */
-	constexpr float CapFloor = 20.f, CapLine = 24.f, CapTitle = 32.f, CapFigure = 30.f;
+	/** Wave W3, the floor: the wall is 53.1 degrees wide now (bp.Projector.WidthCm 260 at 260 cm), 24.1 layout px a degree, so
+	 *  19 layout px of cap (BpBoard::CapS) is 47 arc minutes (an x-height of 0.72 of it, 34), over W2's floor (20 px at 26.2 px
+	 *  a degree: 46 and 33) and the projector README's 40 arc minute body. */
+	constexpr float CapFloor = BpBoard::CapS;
 
 	FSlateFontInfo Font(const TCHAR* Style, float CapPx)
 	{
@@ -122,7 +122,7 @@ namespace
 			S = S.Left(Open).TrimEnd();
 			if (BpSheet::TextWidth(S, NameFont) <= MaxW) return S;
 		}
-		static const TCHAR* const Joiners[] = { TEXT("&"), TEXT("and"), TEXT("to"), TEXT("of"), TEXT("for"), TEXT("the"), TEXT("a"), TEXT("in"), TEXT("on"), TEXT("with"), TEXT("·"), TEXT("-") };
+		static const TCHAR* const Joiners[] = { TEXT("&"), TEXT("and"), TEXT("to"), TEXT("of"), TEXT("for"), TEXT("the"), TEXT("a"), TEXT("in"), TEXT("on"), TEXT("with"), TEXT("from"), TEXT("under"), TEXT("by"), TEXT("at"), TEXT("into"), TEXT("over"), TEXT("·"), TEXT("-") };
 		const auto Dangles = [](const FString& Word) { for (const TCHAR* J : Joiners) if (Word.Equals(J, ESearchCase::IgnoreCase)) return true; return false; };
 		TArray<FString> W;
 		S.ParseIntoArrayWS(W);
@@ -157,7 +157,7 @@ namespace
 		if (!bFit && Lines.Num() > 0)
 		{
 			// The last kept line ends on a word that carries meaning.
-			static const TCHAR* const Joiners[] = { TEXT("&"), TEXT("and"), TEXT("to"), TEXT("of"), TEXT("for"), TEXT("the"), TEXT("a"), TEXT("in"), TEXT("on"), TEXT("with"), TEXT("·"), TEXT("-") };
+			static const TCHAR* const Joiners[] = { TEXT("&"), TEXT("and"), TEXT("to"), TEXT("of"), TEXT("for"), TEXT("the"), TEXT("a"), TEXT("in"), TEXT("on"), TEXT("with"), TEXT("from"), TEXT("under"), TEXT("by"), TEXT("at"), TEXT("into"), TEXT("over"), TEXT("·"), TEXT("-") };
 			TArray<FString> Last;
 			Lines.Last().ParseIntoArrayWS(Last);
 			for (bool bCut = true; bCut && Last.Num() > 1;)
@@ -333,7 +333,8 @@ namespace
 		return F;
 	}
 
-	/** A node of the touches map: a pill with a name, in one of three looks. */
+	/** A node of the touches map: a compact rounded label with a name, in one of three looks (wave W3: a label's corners, not a
+	 *  pill's). */
 	enum class ENode : uint8 { Feature, Room, Other };
 	TSharedRef<SWidget> Node(const FString& Name, ENode Look, const FSlateFontInfo& NodeFont)
 	{
@@ -341,8 +342,35 @@ namespace
 		const FLinearColor Edge = Look == ENode::Feature ? BpSheet::Amber : Look == ENode::Room ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.55f);
 		const FLinearColor Ink = Look == ENode::Feature ? BpSheet::PaperLo : Look == ENode::Room ? BpSheet::Accent : BpSheet::Ink;
 		return SNew(SOverlay)
-			+ SOverlay::Slot()[SNew(SBorder).BorderImage(Rounded(16.f)).BorderBackgroundColor(Edge).Padding(2.f)[SNew(SBorder).BorderImage(Rounded(14.f)).BorderBackgroundColor(Fill).Padding(0.f)]]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.f, 0.f))[SNew(STextBlock).Text(FText::FromString(Name)).Font(NodeFont).ColorAndOpacity(FSlateColor(Ink))];
+			+ SOverlay::Slot()[SNew(SBorder).BorderImage(Rounded(9.f)).BorderBackgroundColor(Edge).Padding(2.f)[SNew(SBorder).BorderImage(Rounded(7.f)).BorderBackgroundColor(Fill).Padding(0.f)]]
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f))[SNew(STextBlock).Text(FText::FromString(Name)).Font(NodeFont).Clipping(EWidgetClipping::Inherit).ColorAndOpacity(FSlateColor(Ink))];
+	}
+
+	/** Words (a token with a letter in it) in a text. */
+	int32 WordsIn(const FString& Text)
+	{
+		TArray<FString> Tokens;
+		Text.ParseIntoArrayWS(Tokens);
+		int32 N = 0;
+		for (const FString& Token : Tokens) for (const TCHAR C : Token) if (FChar::IsAlpha(C)) { ++N; break; }
+		return N;
+	}
+
+	/** A segment crosses a box (Liang-Barsky). */
+	bool SegmentHits(const FVector2f& A, const FVector2f& B, const FBox2f& Box)
+	{
+		float T0 = 0.f, T1 = 1.f;
+		const FVector2f D = B - A;
+		const float P[4] = { -D.X, D.X, -D.Y, D.Y };
+		const float Q[4] = { A.X - Box.Min.X, Box.Max.X - A.X, A.Y - Box.Min.Y, Box.Max.Y - A.Y };
+		for (int32 I = 0; I < 4; ++I)
+		{
+			if (FMath::IsNearlyZero(P[I])) { if (Q[I] < 0.f) return false; continue; }
+			const float T = Q[I] / P[I];
+			if (P[I] < 0.f) T0 = FMath::Max(T0, T); else T1 = FMath::Min(T1, T);
+			if (T0 > T1) return false;
+		}
+		return true;
 	}
 }
 
@@ -382,46 +410,82 @@ namespace BpBoard
 
 	void Draw(const FIn& In, FPut Put, FStopControl StopControl, FOut& Out)
 	{
-		const FSlateFontInfo SmallBold = Font(TEXT("Bold"), CapFloor), Small = Font(TEXT("Regular"), CapFloor);
-		const FSlateFontInfo FigureFont = Font(TEXT("Bold"), CapFigure);
-		// Wave W2: the board's own words are counted (a token with a letter in it; figures and arrows are not words), for the log.
+		// Wave W3: three sizes only (BpBoard.h): CapL the title, CapM Glim's line, the hero's label and the stage's labels, CapS
+		// (the floor) the muted headings, the notes and the map's names. The figures (the hero's, the bars') are figures.
+		const auto FontAt = [](bool bBold, float Cap) { return Font(bBold ? TEXT("Bold") : TEXT("Regular"), Cap); };
+		const FSlateFontInfo SBold = FontAt(true, CapS), SReg = FontAt(false, CapS), MBold = FontAt(true, CapM), MReg = FontAt(false, CapM), LBold = FontAt(true, CapL);
+		const FLinearColor Muted = BpSheet::Ink.CopyWithNewOpacity(0.62f);
+		// Wave W2: the board's own words are counted (a token with a letter in it; figures and arrows are not words). Wave W3:
+		// and every block is measured against its box, and every block that lost words is named (FOut, BpBoard.Audit).
 		int32 WordCount = 0;
-		const auto Count = [&WordCount](const FString& Text)
+		float MinCap = 1000.f;
+		TArray<FString> Over, Short;
+		const auto Count = [&WordCount](const FString& Text) { WordCount += WordsIn(Text); };
+		const auto Check = [&](const TCHAR* What, const FString& Text, const FSlateFontInfo& WordFont, float Cap, const FBox2f& Box, float LineH)
 		{
-			TArray<FString> Tokens;
-			Text.ParseIntoArrayWS(Tokens);
-			for (const FString& Token : Tokens) for (const TCHAR C : Token) if (FChar::IsAlpha(C)) { ++WordCount; break; }
+			MinCap = FMath::Min(MinCap, Cap);
+			TArray<FString> Lines;
+			Text.ParseIntoArrayLines(Lines, false);
+			float W = 0.f;
+			for (const FString& Line : Lines) W = FMath::Max(W, BpSheet::TextWidth(Line, WordFont));
+			// The ink: the lines' pitch between the first cap and the last, and the last line's cap and descender.
+			const float Ink = FMath::Max(0, Lines.Num() - 1) * Pitch(Cap) * LineH + Cap * 1.29f;
+			if (W > Box.GetSize().X + 0.5f || Ink > Box.GetSize().Y + 1.f)
+				Over.Add(FString::Printf(TEXT("%s \"%s\" %.0fx%.0f in %.0fx%.0f"), What, *Text.Replace(TEXT("\n"), TEXT(" / ")), W, Ink, Box.GetSize().X, Box.GetSize().Y));
 		};
-		const auto Words = [&Put, &Count](const FBox2f& Box, const FString& Text, const FSlateFontInfo& WordFont, const FLinearColor& Ink, EVerticalAlignment V = VAlign_Center, float LineH = 1.f)
+		const auto Words = [&](const TCHAR* What, const FBox2f& Box, const FString& Text, float Cap, bool bBold, const FLinearColor& Ink, EVerticalAlignment V = VAlign_Center, float LineH = 1.f)
 		{
+			if (Text.IsEmpty()) return;
+			const FSlateFontInfo WordFont = FontAt(bBold, Cap);
 			Count(Text);
-			Put(Box, SNew(SBox).VAlign(V)[SNew(STextBlock).Text(FText::FromString(Text)).Font(WordFont).LineHeightPercentage(LineH).ColorAndOpacity(FSlateColor(Ink))]);
+			Check(What, Text, WordFont, Cap, Box, LineH);
+			Put(Box, SNew(SBox).VAlign(V)[SNew(STextBlock).Text(FText::FromString(Text)).Font(WordFont).LineHeightPercentage(LineH).Clipping(EWidgetClipping::Inherit).ColorAndOpacity(FSlateColor(Ink))]);
+		};
+		const auto Shorten = [&](const TCHAR* What, const FString& Name, const FSlateFontInfo& NameFont, float MaxW)
+		{
+			const FString S = ShortenWords(Name, NameFont, MaxW);
+			if (S != Name) Short.Add(FString::Printf(TEXT("%s \"%s\" -> \"%s\""), What, *Name, *S));
+			return S;
+		};
+		const auto Wrap = [&](const TCHAR* What, const FString& Text, const FSlateFontInfo& WrapFont, float MaxW, int32 MaxLines, bool* bAllOut = nullptr)
+		{
+			bool bAll = false;
+			const FString S = WrapWhole(Text, WrapFont, MaxW, MaxLines, &bAll);
+			if (!bAll && !bAllOut) Short.Add(FString::Printf(TEXT("%s \"%s\" -> \"%s\""), What, *Text, *S.Replace(TEXT("\n"), TEXT(" "))));
+			if (bAllOut) *bAllOut = bAll;
+			return S;
+		};
+		// A chip is as wide as its words (ChipWidth): its words are counted and its cap kept.
+		const auto ChipAt = [&](const FBox2f& Box, const FString& Word, const FSlateFontInfo& ChipFont, float Cap, const FLinearColor& Tone, bool bSolid)
+		{
+			Count(Word);
+			MinCap = FMath::Min(MinCap, Cap);
+			Put(Box, BpSheet::Chip(Word, ChipFont, Box.GetSize().Y, Tone, bSolid));
 		};
 		const auto Tile = [&Put](const FBox2f& Box) { Put(Box, SNew(BpSheet::SPlate).Fill(TileFill).Edge(TileEdge).EdgePx(2.f)); };
 		const FFacts F = Gather(In.Proposal);
 		const FBpProposal* P = F.P;
+		Out.Case = P ? CaseOf(In.Proposal) : ECase::State;
 		TArray<FString> Said;
 
-		// ---- The title row: the chip, the title on one line (32 down to 22), else two lines at the floor; never cut -------------
+		// ---- The title row: the chip, the title on one line at CapL, else at CapM, else two lines at CapS; never cut ---------
 		{
 			float X = X0;
 			if (!In.Chip.IsEmpty())
 			{
-				const FSlateFontInfo ChipFont = Font(TEXT("Bold"), CapLine);
-				const float W = BpSheet::ChipWidth(In.Chip, ChipFont), CY = (TitleY0 + TitleY1) * 0.5f;
-				Count(In.Chip);
-				Put(FBox2f(FVector2f(X, CY - 20.f), FVector2f(X + W, CY + 20.f)), BpSheet::Chip(In.Chip, ChipFont, 40.f, BpSheet::Amber, true));
+				const float W = BpSheet::ChipWidth(In.Chip, MBold), CY = (TitleY0 + TitleY1) * 0.5f;
+				ChipAt(FBox2f(FVector2f(X, CY - 20.f), FVector2f(X + W, CY + 20.f)), In.Chip, MBold, CapM, BpSheet::Amber, true);
 				X += W + 20.f;
 			}
 			const float Avail = X1 - X;
-			float Cap = CapTitle;
-			while (Cap > 22.f && BpSheet::TextWidth(In.Title, Font(TEXT("Bold"), Cap)) > Avail) Cap -= 2.f;
 			const FBox2f TitleBox(FVector2f(X, TitleY0), FVector2f(X1, TitleY1));
-			if (BpSheet::TextWidth(In.Title, Font(TEXT("Bold"), Cap)) <= Avail) Words(TitleBox, In.Title, Font(TEXT("Bold"), Cap), BpSheet::InkHi);
+			float Cap = CapL;
+			if (BpSheet::TextWidth(In.Title, LBold) <= Avail) Words(TEXT("title"), TitleBox, In.Title, CapL, true, BpSheet::InkHi);
+			else if (BpSheet::TextWidth(In.Title, MBold) <= Avail) { Cap = CapM; Words(TEXT("title"), TitleBox, In.Title, CapM, true, BpSheet::InkHi); }
 			else
 			{
-				Cap = CapFloor;
-				Words(TitleBox, WrapWhole(In.Title, Font(TEXT("Bold"), Cap), Avail, 2), Font(TEXT("Bold"), Cap), BpSheet::InkHi, VAlign_Center, 0.78f);
+				Cap = CapS;
+				Words(TEXT("title"), TitleBox, Wrap(TEXT("title"), In.Title, SBold, Avail, 2), CapS, true, BpSheet::InkHi, VAlign_Center, 0.78f);
 			}
 			Said.Add(FString::Printf(TEXT("title at %.0f"), Cap));
 		}
@@ -435,26 +499,51 @@ namespace BpBoard
 		Tile(Touch);
 		const auto SaysMore = [&In](const FString& S) { FString A = S, B = In.Title; A.RemoveFromEnd(TEXT(".")); B.RemoveFromEnd(TEXT(".")); return !S.IsEmpty() && !A.Equals(B, ESearchCase::IgnoreCase); };
 		const FString Proposes = SaysMore(F.Summary) ? F.Summary : F.Impact;
-		// Glim's line: the lens's reading; when the hero already says its figure, what the finding proposes instead.
+		// Glim's line: the lens's reading; when another tile already says what it says (the hero its figure, the chart the
+		// budget, the track the stage), what the finding proposes instead. Each fact once.
 		FString Glim = F.Reading;
 		// The hero: the metric's today -> after; else the reading's first figure; else the open findings this one closes; else the
-		// risk. Its muted line is a verdict without a figure (the chart carries the budget's number once).
-		FString Today, After, Label, Muted;
-		bool bHeroFindings = false;
+		// risk. Wave W3: no muted verdict under it (the chart says the budget, once).
+		FString Today, After, Label;
+		bool bHeroFindings = false, bHeroRisk = false;
+		// A sentence another tile already says: the hero's figures, the chart's budget (and target), the track's stage.
+		const auto Repeats = [&](const FString& S)
+		{
+			if (S.IsEmpty() || !SaysMore(S)) return true;
+			if (!bHeroFindings && !bHeroRisk && !Today.IsEmpty() && HasFigure(S, Today)) return true;
+			if (!bHeroFindings && !bHeroRisk && !After.IsEmpty() && After != Today && HasFigure(S, After)) return true;
+			if (F.bMetric && F.bBudget && S.Contains(TEXT(" budget"))) return true;
+			if (Out.Case == ECase::State && F.Feature && !F.Feature->stage.IsEmpty() && S.Contains(BpWords::Humanise(F.Feature->stage), ESearchCase::IgnoreCase)) return true;
+			return false;
+		};
 		if (P && F.bMetric)
 		{
 			Today = Fmt(F.Today);
 			After = Fmt(F.After);
 			Label = (F.Unit.IsEmpty() ? F.Label : F.Label + TEXT(" · ") + F.Unit).ToUpper();
-			// The lens's reading stays Glim's line; when it says this figure and the budget already, the muted verdict is not said
-			// again (the budget's number is the chart's).
-			const bool bReadingSaysIt = HasFigure(F.Reading, Today) && F.Reading.Contains(TEXT(" budget"));
-			if (F.bBudget && !bReadingSaysIt) Muted = F.Today > F.Budget ? (F.After <= F.Budget ? TEXT("Over budget today; under it after") : TEXT("Over budget today and after")) : TEXT("Under budget today");
 		}
 		else if (P && FirstFigure(F.Reading, Today, Label))
 		{
+			// Wave W3: a long reading's words split at their first joint: the hero's label takes the part with the figure, Glim's
+			// line the rest ("38 customer requests in 30 days and nobody can use it yet": CUSTOMER REQUESTS IN 30 DAYS; "Nobody
+			// can use it yet.").
+			FString Rest;
+			if (BpSheet::TextWidth(Label.ToUpper(), MBold) > Hero.GetSize().X - 48.f)
+			{
+				for (const TCHAR* Joint : { TEXT(", and "), TEXT(" and "), TEXT(", "), TEXT("; "), TEXT(" while ") })
+				{
+					FString A, B;
+					if (Label.Split(Joint, &A, &B) && !A.IsEmpty() && !B.IsEmpty())
+					{
+						Label = A;
+						Rest = B.Left(1).ToUpper() + B.Mid(1);
+						if (!Rest.EndsWith(TEXT("."))) Rest += TEXT(".");
+						break;
+					}
+				}
+			}
 			Label = Label.ToUpper();
-			Glim = Proposes;
+			Glim = !Rest.IsEmpty() ? Rest : Proposes;
 		}
 		else if (P && F.Open > 0)
 		{
@@ -467,12 +556,23 @@ namespace BpBoard
 		{
 			Today = Fmt(P->risk);
 			Label = FString::Printf(TEXT("RISK · %s LENS"), *BpWords::Lens(P->lens).ToUpper());
+			bHeroRisk = true;
+		}
+		// Glim's line says what no other tile says: the reading, else what the finding proposes (its summary, its impact), else
+		// (a metric against a budget) the verdict in words, the chart keeping the budget's figure.
+		if (P && Repeats(Glim))
+		{
+			FString Pick;
+			for (const FString& Each : { F.Reading, F.Summary, F.Impact }) if (Pick.IsEmpty() && !Repeats(Each)) Pick = Each;
+			if (Pick.IsEmpty() && F.bMetric && F.bBudget)
+				Pick = F.Today > F.Budget ? (F.After <= F.Budget ? TEXT("Over budget today; under it once approved.") : TEXT("Over budget today, and still over once approved.")) : TEXT("Within budget today; approving cuts it further.");
+			if (!Pick.IsEmpty()) Glim = Pick;
 		}
 		if (Glim.IsEmpty() && P) Glim = Proposes;
 		if (!P) Glim = In.Fallback;
 		{
 			const float In0 = Hero.Min.X + 24.f, In1 = Hero.Max.X - 24.f;
-			float Cap = Muted.IsEmpty() ? 76.f : 60.f;
+			float Cap = 72.f;
 			if (!Today.IsEmpty())
 			{
 				// The largest cap the figures fit at, down to 44.
@@ -490,121 +590,232 @@ namespace BpBoard
 					Row->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(Cap * 0.25f, 0.f)[Arrow(Cap * 0.8f, BpSheet::Ink.CopyWithNewOpacity(0.8f))];
 					Row->AddSlot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(After)).Font(NumFont).ColorAndOpacity(FSlateColor(BpSheet::Accent))];
 				}
-				const float Mid = Hero.Min.Y + 12.f + Cap * 0.5f;
+				const float Mid = Hero.Min.Y + 10.f + Cap * 0.5f;
 				Put(FBox2f(FVector2f(In0, Mid - Cap * 0.8f), FVector2f(In1, Mid + Cap * 0.8f)), SNew(SBox).VAlign(VAlign_Center)[Row]);
 			}
-			const float LabelY = Hero.Min.Y + 12.f + Cap + 8.f;
-			Words(FBox2f(FVector2f(In0, LabelY), FVector2f(In1, LabelY + 34.f)), ShortenWords(Label, SmallBold, In1 - In0), SmallBold, BpSheet::InkHi);
-			if (!Muted.IsEmpty()) Words(FBox2f(FVector2f(In0, LabelY + 30.f), FVector2f(In1, LabelY + 64.f)), ShortenWords(Muted, Small, In1 - In0), Small, BpSheet::Ink.CopyWithNewOpacity(0.7f));
-			Said.Add(FString::Printf(TEXT("hero \"%s%s%s\" at %.0f \"%s\"%s"), *Today, After.IsEmpty() ? TEXT("") : TEXT(" -> "), *After, Cap, *Label, Muted.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(" \"%s\""), *Muted)));
+			const float LabelY = Hero.Min.Y + 10.f + Cap + 6.f;
+			Words(TEXT("hero's label"), FBox2f(FVector2f(In0, LabelY), FVector2f(In1, LabelY + 32.f)), Shorten(TEXT("hero's label"), Label, MBold, In1 - In0), CapM, true, BpSheet::InkHi);
+			Said.Add(FString::Printf(TEXT("hero \"%s%s%s\" at %.0f \"%s\""), *Today, After.IsEmpty() ? TEXT("") : TEXT(" -> "), *After, Cap, *Label));
 		}
 		{
-			// Glim's line beside the lit lamp: two lines at 22, else two at the floor, else its first sentence; whole words only.
-			const float DiscD = 48.f;
-			const FVector2f C(GlimBox.Min.X + 22.f + DiscD * 0.5f, GlimBox.GetCenter().Y);
+			// Glim's line beside the lit lamp: two lines at CapM, else its first sentence; whole words only, never smaller.
+			const float DiscD = 44.f;
+			const FVector2f C(GlimBox.Min.X + 20.f + DiscD * 0.5f, GlimBox.GetCenter().Y);
 			Put(FBox2f(C - FVector2f(DiscD * 0.5f + 6.f), C + FVector2f(DiscD * 0.5f + 6.f)), SNew(BpSheet::SRing).Color(BpSheet::Amber.CopyWithNewOpacity(0.45f)).Thick(5.f));
 			Put(FBox2f(C - FVector2f(DiscD * 0.5f), C + FVector2f(DiscD * 0.5f)), Disc(LampWhite, DiscD));
-			const float TX0 = C.X + DiscD * 0.5f + 22.f, TX1 = GlimBox.Max.X - 16.f;
+			const float TX0 = C.X + DiscD * 0.5f + 20.f, TX1 = GlimBox.Max.X - 16.f;
+			// Wave W3: the first form that fits whole, never a sentence cut short: the line, without its asides in brackets, its
+			// first sentence; then another sentence no tile says that fits; only then cut, at a clause's joint.
+			const auto Forms = [&F](const FString& S)
+			{
+				TArray<FString> Out;
+				const auto Plain = [](FString T)
+				{
+					for (int32 Open = T.Find(TEXT(" (")); Open != INDEX_NONE; Open = T.Find(TEXT(" (")))
+					{
+						const int32 Close = T.Find(TEXT(")"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Open);
+						if (Close == INDEX_NONE) break;
+						T = T.Left(Open) + T.Mid(Close + 1);
+					}
+					return T;
+				};
+				for (const FString& Each : { S, Plain(S), FirstSentence(S), Plain(FirstSentence(S)) }) if (!Each.IsEmpty()) Out.AddUnique(Each);
+				// The feature's name is the map's lit node (and the title's): "it" says it again in one word, and comes first.
+				if (!F.FeatureName.IsEmpty())
+				{
+					TArray<FString> Its;
+					for (const FString& Each : Out)
+					{
+						if (!Each.Contains(F.FeatureName)) continue;
+						FString It = Each.Replace(*F.FeatureName, TEXT("it"));
+						Its.AddUnique(It.Left(1).ToUpper() + It.Mid(1));
+					}
+					for (const FString& Each : Out) Its.AddUnique(Each);
+					return Its;
+				}
+				return Out;
+			};
 			bool bAll = false;
-			FSlateFontInfo GF = Font(TEXT("Regular"), 22.f);
-			const float LineH = 0.85f;
-			FString Fit = WrapWhole(Glim, GF, TX1 - TX0, 2, &bAll);
-			if (!bAll) { GF = Small; Fit = WrapWhole(Glim, GF, TX1 - TX0, 2, &bAll); }
-			if (!bAll) { Glim = FirstSentence(Glim); Fit = WrapWhole(Glim, GF, TX1 - TX0, 2, &bAll); }
-			Words(FBox2f(FVector2f(TX0, GlimBox.Min.Y + 2.f), FVector2f(TX1, GlimBox.Max.Y - 2.f)), Fit, GF, BpSheet::InkHi, VAlign_Center, LineH);
+			FString Fit;
+			TArray<FString> Tries = Forms(Glim);
+			if (P) for (const FString& Other : { F.Reading, F.Summary, F.Impact }) if (Other != Glim && !Repeats(Other)) Tries.Append(Forms(Other));
+			for (const FString& Try : Tries)
+			{
+				if (bAll) break;
+				Fit = WrapWhole(Try, MReg, TX1 - TX0, 2, &bAll);
+				// Only a form that lost words is a shortening ("it" for the feature's name is the same sentence).
+				if (bAll && Try != Glim && Forms(Glim)[0] != Try) Short.Add(FString::Printf(TEXT("Glim's line \"%s\" -> \"%s\""), *Glim, *Try));
+			}
+			if (!bAll)
+			{
+				// Still too long: it ends at its last clause's joint, a sentence again, rather than on a stray word.
+				Fit = WrapWhole(Glim, MReg, TX1 - TX0, 2);
+				FString Flat = Fit.Replace(TEXT("\n"), TEXT(" "));
+				int32 Cut = INDEX_NONE;
+				for (const TCHAR* Joint : { TEXT(", "), TEXT("; "), TEXT(": ") }) Cut = FMath::Max(Cut, Flat.Find(Joint, ESearchCase::CaseSensitive, ESearchDir::FromEnd));
+				if (Cut > Flat.Len() / 3) Fit = WrapWhole(Flat.Left(Cut) + TEXT("."), MReg, TX1 - TX0, 2);
+				else if (!Fit.IsEmpty() && FChar::IsAlnum(Fit[Fit.Len() - 1])) Fit += TEXT(".");
+				Short.Add(FString::Printf(TEXT("Glim's line \"%s\" cut to \"%s\""), *Glim, *Fit.Replace(TEXT("\n"), TEXT(" "))));
+			}
+			Words(TEXT("Glim's line"), FBox2f(FVector2f(TX0, GlimBox.Min.Y + 4.f), FVector2f(TX1, GlimBox.Max.Y - 4.f)), Fit, CapM, false, BpSheet::InkHi, VAlign_Center, 0.82f);
 			Said.Add(FString::Printf(TEXT("Glim \"%s\"%s"), *Fit.Replace(TEXT("\n"), TEXT(" ")), bAll ? TEXT("") : TEXT(" (shortened)")));
 		}
 		{
-			// What it touches, the design's small map: the feature lit at the top, its room in the middle, what it depends on around
-			// them (the row under the room first, then beside the room, then beside the feature), thin lines from the room. Names
-			// shorten by whole words to their place; a name that cannot keep its first word is left off (the log says so).
-			// The feature and the room in bold, the neighbours in the regular face (the design's 700 and 600).
-			const FSlateFontInfo NodeFont = SmallBold, OtherFont = Small;
-			const float NodeH = 34.f, Pad = 14.f, Gap = 16.f;
-			Words(FBox2f(FVector2f(Touch.Min.X + 18.f, Touch.Min.Y + 2.f), FVector2f(Touch.Max.X - 18.f, Touch.Min.Y + 36.f)), TEXT("WHAT IT TOUCHES"), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.6f));
-			// Beside the feature on the left only clear of these words.
-			const float LabelX1 = Touch.Min.X + 18.f + BpSheet::TextWidth(TEXT("WHAT IT TOUCHES"), SmallBold) + 12.f;
-			const float RowA = Touch.Min.Y + 38.f, RowB = RowA + NodeH + 7.f, RowC = RowB + NodeH + 7.f;
-			const float CX = Touch.GetCenter().X, L0 = Touch.Min.X + Pad, R1 = Touch.Max.X - Pad;
-			const auto Natural = [&](const FString& Name, const FSlateFontInfo& NameFont) { return BpSheet::TextWidth(Name, NameFont) + 24.f; };
-			const auto Centred = [&](float X, float Y, float W) { return FBox2f(FVector2f(X - W * 0.5f, Y), FVector2f(X + W * 0.5f, Y + NodeH)); };
-			TArray<TTuple<FBox2f, FString, ENode>> Nodes;
-			const FString FeatName = ShortenWords(F.FeatureName, NodeFont, R1 - L0 - 24.f);
-			const FBox2f FeatBox = Centred(CX, RowA, FeatName.IsEmpty() ? 0.f : Natural(FeatName, NodeFont));
-			if (!FeatName.IsEmpty()) Nodes.Add(MakeTuple(FeatBox, FeatName, ENode::Feature));
-			const FString RoomName = ShortenWords(F.RoomName.ToUpper(), NodeFont, R1 - L0 - 24.f);
-			const FBox2f RoomBox = Centred(CX, RowB, RoomName.IsEmpty() ? 0.f : Natural(RoomName, NodeFont));
-			if (!RoomName.IsEmpty()) Nodes.Add(MakeTuple(RoomBox, RoomName, ENode::Room));
-			// The places a neighbour may take, in order: under the room (left half, right half), beside the room, beside the feature.
-			struct FPlace { float XA, XB, Y; bool bTaken; };
-			TArray<FPlace> Places = {
-				{ L0, CX - Gap * 0.5f, RowC, false }, { CX + Gap * 0.5f, R1, RowC, false },
-				{ L0, RoomBox.Min.X - Gap, RowB, false }, { RoomBox.Max.X + Gap, R1, RowB, false },
-				{ FMath::Max(L0, LabelX1), FeatBox.Min.X - Gap, RowA, false }, { FeatBox.Max.X + Gap, R1, RowA, false } };
-			TArray<FString> Left;
-			for (const FString& Each : F.Neighbours)
+			// What it touches (wave W3, the design's node map drawn from the data): the feature lit at the top, its room under it on
+			// an amber stem, and what the feature depends on (the structure's depends_on: the data's direction, so each line is the
+			// feature's and ends in an arrowhead at the dependency) around and under the room. A layout for each count: one under
+			// the room; two beside each other under it, fed from the tile's two sides; three, the third under the pair; four, two
+			// rows of two. A side's line leaves the feature, runs down the tile's edge and turns into its dependencies; a line to one
+			// under the room runs outside the room and along the channel under it. Names shorten by whole words to their places.
+			const float NH = 30.f;
+			const FString TouchWord = TEXT("WHAT IT TOUCHES");
+			const FBox2f LabelBox(FVector2f(Touch.Min.X + 18.f, Touch.Min.Y + 3.f), FVector2f(Touch.Min.X + 22.f + BpSheet::TextWidth(TouchWord, SBold), Touch.Min.Y + 28.f));
+			Words(TEXT("map's heading"), LabelBox, TouchWord, CapS, true, Muted);
+			const int32 Deps = FMath::Min(F.Neighbours.Num(), 4);
+			const float Lower = Deps == 0 ? 40.f : Deps == 1 ? 18.f : 0.f;
+			const float AY = Touch.Min.Y + 32.f + Lower, BY = AY + NH + 8.f, ChanY = BY + NH + 6.f, CY = ChanY + 6.f, DY = CY + NH + 6.f;
+			const float GL = Touch.Min.X + 14.f, GR = Touch.Max.X - 14.f, CX = Touch.GetCenter().X;
+			const auto Natural = [&](const FString& Name, const FSlateFontInfo& NameFont) { return BpSheet::TextWidth(Name, NameFont) * 1.03f + 24.f; };
+			const auto Room = [](float SlotW) { return (SlotW - 24.f) / 1.03f; };
+			const auto At = [&](float X, float Y, float W) { return FBox2f(FVector2f(X - W * 0.5f, Y), FVector2f(X + W * 0.5f, Y + NH)); };
+			struct FNode { FBox2f Box; FString Name; ENode Look; };
+			TArray<FNode> Nodes;
+			const FString FeatName = Shorten(TEXT("map's feature"), F.FeatureName, SBold, Room(GR - GL));
+			const FBox2f FeatBox = At(CX, AY, FeatName.IsEmpty() ? 0.f : Natural(FeatName, SBold));
+			if (!FeatName.IsEmpty()) Nodes.Add({ FeatBox, FeatName, ENode::Feature });
+			const FString RoomName = Shorten(TEXT("map's room"), F.RoomName.ToUpper(), SBold, Room(GR - GL));
+			const FBox2f RoomBox = At(CX, BY, RoomName.IsEmpty() ? 0.f : Natural(RoomName, SBold));
+			if (!RoomName.IsEmpty()) Nodes.Add({ RoomBox, RoomName, ENode::Room });
+			// The line under the room keeps clear of the feature and the room.
+			const float BusL = CX - FMath::Max(FeatBox.GetSize().X, RoomBox.GetSize().X) * 0.5f - 12.f;
+			enum class EFeed : uint8 { Left, Right, Down };
+			struct FSlot { float XA, XB, Y; EFeed Feed; };
+			const FSlot LeftC{ GL + 12.f, CX - 6.f, CY, EFeed::Left }, RightC{ CX + 6.f, GR - 12.f, CY, EFeed::Right };
+			const FSlot LeftD{ GL + 12.f, CX - 6.f, DY, EFeed::Left }, RightD{ CX + 6.f, GR - 12.f, DY, EFeed::Right };
+			const FSlot UnderC{ GL + 12.f, GR - 12.f, CY, EFeed::Down }, UnderD{ GL + 12.f, GR - 12.f, DY, EFeed::Down };
+			const int32 N = FMath::Min(F.Neighbours.Num(), 4);
+			TArray<FSlot> Slots;
+			// Two: a step down the arc, each with the whole width (the left one's row, then the right one's).
+			FSlot WideLeftC = LeftC, WideRightD = RightD;
+			WideLeftC.XB = GR - 12.f;
+			WideRightD.XA = GL + 12.f;
+			if (N == 1) Slots = { UnderC };
+			else if (N == 2) Slots = { WideLeftC, WideRightD };
+			else if (N == 3) Slots = { LeftC, RightC, UnderD };
+			else if (N == 4) Slots = { LeftC, RightC, LeftD, RightD };
+			// A row of two shares its width by what each name needs: the shorter keeps its own, the longer the rest.
+			for (int32 I = 0; I + 1 < Slots.Num(); I += 2)
 			{
-				bool bPlaced = false;
-				for (FPlace& Place : Places)
-				{
-					if (Place.bTaken || Place.XB - Place.XA < 80.f) continue;
-					const FString Name = ShortenWords(Each, OtherFont, Place.XB - Place.XA - 24.f);
-					if (Name.IsEmpty()) continue;
-					// Under the room a node sits in the middle of its half; beside, against the middle (near what it links to).
-					const float W = Natural(Name, OtherFont);
-					const bool bUnder = Place.Y == RowC;
-					const float NX = bUnder ? (Place.XA + Place.XB) * 0.5f : Place.XA < CX ? Place.XB - W * 0.5f : Place.XA + W * 0.5f;
-					Nodes.Add(MakeTuple(Centred(NX, Place.Y, W), Name, ENode::Other));
-					Place.bTaken = bPlaced = true;
-					break;
-				}
-				if (!bPlaced) Left.Add(Each);
+				if (Slots[I].Feed != EFeed::Left || Slots[I + 1].Feed != EFeed::Right || Slots[I].Y != Slots[I + 1].Y) continue;
+				const float Avail = (GR - 12.f) - (GL + 12.f) - 12.f;
+				const float NA = Natural(F.Neighbours[I], SReg), NB = Natural(F.Neighbours[I + 1], SReg);
+				float WA = NA, WB = NB;
+				if (NA + NB > Avail) { if (NA <= Avail * 0.5f) WB = Avail - NA; else if (NB <= Avail * 0.5f) WA = Avail - NB; else WA = WB = Avail * 0.5f; }
+				Slots[I].XB = Slots[I].XA + WA;
+				Slots[I + 1].XA = Slots[I + 1].XB - WB;
 			}
-			// The links under the nodes: the feature to its room (amber), the room (else the feature) to each neighbour.
-			const FVector2f Hub = !RoomName.IsEmpty() ? RoomBox.GetCenter() : FeatBox.GetCenter();
 			TArray<TArray<FVector2f>> Thin;
-			for (const auto& Each : Nodes) if (Each.Get<2>() == ENode::Other) Thin.Add({ Hub - Touch.Min, Each.Get<0>().GetCenter() - Touch.Min });
-			Put(Touch, SNew(SLines).Color(BpSheet::Ink.CopyWithNewOpacity(0.45f)).Thick(2.f).Lines(Thin));
-			if (!FeatName.IsEmpty() && !RoomName.IsEmpty())
-				{
-					TArray<TArray<FVector2f>> Stem;
-					Stem.Add({ FeatBox.GetCenter() - Touch.Min, RoomBox.GetCenter() - Touch.Min });
-					Put(Touch, SNew(SLines).Color(BpSheet::Amber).Thick(4.f).Lines(Stem));
-				}
-			for (const auto& Each : Nodes)
+			TArray<TPair<FVector2f, FVector2f>> Segments;
+			const float StubY = AY + NH * 0.5f;
+			const auto Path = [&](TArray<FVector2f> Points)
 			{
-				Count(Each.Get<1>());
-				Put(Each.Get<0>(), Node(Each.Get<1>(), Each.Get<2>(), Each.Get<2>() == ENode::Other ? OtherFont : NodeFont));
+				for (int32 I = 0; I + 1 < Points.Num(); ++I) Segments.Add(TPair<FVector2f, FVector2f>(Points[I], Points[I + 1]));
+				for (FVector2f& Point : Points) Point -= Touch.Min;
+				Thin.Add(Points);
+			};
+			int32 Placed = 0;
+			for (int32 I = 0; I < N; ++I)
+			{
+				const FSlot& S = Slots[I];
+				const FString& Name = F.Neighbours[I];
+				const FString Fit = Shorten(TEXT("map's dependency"), Name, SReg, Room(S.XB - S.XA));
+				if (Fit.IsEmpty()) { Short.Add(FString::Printf(TEXT("map's dependency \"%s\" left off (no place)"), *Name)); continue; }
+				const float W = Natural(Fit, SReg);
+				// One under a row of two drops through the gap between them, and stands centred on that drop.
+				float DropX = (S.XA + S.XB) * 0.5f;
+				if (S.Feed == EFeed::Down && S.Y == DY && Nodes.Num() >= 2 && Nodes.Last().Look == ENode::Other && Nodes.Last(1).Look == ENode::Other)
+					DropX = (Nodes.Last(1).Box.Max.X + Nodes.Last().Box.Min.X) * 0.5f;
+				const float X0N = S.Feed == EFeed::Left ? S.XA : S.Feed == EFeed::Right ? S.XB - W : FMath::Clamp(DropX - W * 0.5f, S.XA, S.XB - W);
+				const FBox2f Box(FVector2f(X0N, S.Y), FVector2f(X0N + W, S.Y + NH));
+				Nodes.Add({ Box, Fit, ENode::Other });
+				++Placed;
+				const float MidY = Box.GetCenter().Y;
+				if (S.Feed == EFeed::Left)
+				{
+					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Min.X, StubY), Tip(Box.Min.X, MidY);
+					Path({ From, FVector2f(GL, StubY), FVector2f(GL, MidY), Tip });
+					Path({ Tip + FVector2f(-9.f, -6.f), Tip, Tip + FVector2f(-9.f, 6.f) });
+				}
+				else if (S.Feed == EFeed::Right)
+				{
+					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Max.X, StubY), Tip(Box.Max.X, MidY);
+					Path({ From, FVector2f(GR, StubY), FVector2f(GR, MidY), Tip });
+					Path({ Tip + FVector2f(9.f, -6.f), Tip, Tip + FVector2f(9.f, 6.f) });
+				}
+				else
+				{
+					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Min.X, StubY), Tip(FMath::Clamp(DropX, Box.Min.X + 10.f, Box.Max.X - 10.f), Box.Min.Y);
+					Path({ From, FVector2f(BusL, StubY), FVector2f(BusL, ChanY), FVector2f(Tip.X, ChanY), Tip });
+					Path({ Tip + FVector2f(-6.f, -9.f), Tip, Tip + FVector2f(6.f, -9.f) });
+				}
 			}
-			Said.Add(FString::Printf(TEXT("touches %s in %s, depends on [%s]%s"), *F.FeatureName, F.RoomName.IsEmpty() ? TEXT("-") : *F.RoomName, *FString::Join(F.Neighbours, TEXT(", ")),
-				Left.Num() > 0 ? *FString::Printf(TEXT(" (no place for [%s])"), *FString::Join(Left, TEXT(", "))) : TEXT("")));
+			// The arrowheads' own short strokes are no crossings.
+			Segments.RemoveAll([](const TPair<FVector2f, FVector2f>& S) { return FVector2f::Distance(S.Key, S.Value) < 12.f; });
+			Put(Touch, SNew(SLines).Color(BpSheet::Ink.CopyWithNewOpacity(0.55f)).Thick(2.f).Lines(Thin));
+			if (!FeatName.IsEmpty() && !RoomName.IsEmpty())
+			{
+				TArray<TArray<FVector2f>> Stem;
+				Stem.Add({ FVector2f(CX, FeatBox.Max.Y) - Touch.Min, FVector2f(CX, RoomBox.Min.Y) - Touch.Min });
+				Put(Touch, SNew(SLines).Color(BpSheet::Amber).Thick(4.f).Lines(Stem));
+			}
+			for (const FNode& Each : Nodes)
+			{
+				Count(Each.Name);
+				MinCap = FMath::Min(MinCap, CapS);
+				Put(Each.Box, Node(Each.Name, Each.Look, Each.Look == ENode::Other ? SReg : SBold));
+			}
+			// The map's own check: no two nodes meet, none meets the heading, none leaves the tile, and no line crosses a node it
+			// does not end at.
+			for (int32 A = 0; A < Nodes.Num(); ++A)
+			{
+				const FBox2f BoxA = Nodes[A].Box;
+				if (BoxA.Min.X < Touch.Min.X + 4.f || BoxA.Max.X > Touch.Max.X - 4.f || BoxA.Max.Y > Touch.Max.Y - 2.f) Over.Add(FString::Printf(TEXT("map's node \"%s\" leaves its tile"), *Nodes[A].Name));
+				if (BoxA.Intersect(LabelBox)) Over.Add(FString::Printf(TEXT("map's node \"%s\" meets the heading"), *Nodes[A].Name));
+				for (int32 B = A + 1; B < Nodes.Num(); ++B) if (BoxA.ExpandBy(2.f).Intersect(Nodes[B].Box)) Over.Add(FString::Printf(TEXT("map's nodes \"%s\" and \"%s\" meet"), *Nodes[A].Name, *Nodes[B].Name));
+				const FBox2f Inner = BoxA.ExpandBy(-2.f);
+				for (const TPair<FVector2f, FVector2f>& S : Segments)
+				{
+					if (Inner.Min.X < Inner.Max.X && Inner.Min.Y < Inner.Max.Y && SegmentHits(S.Key, S.Value, Inner)) Over.Add(FString::Printf(TEXT("map's line (%.0f,%.0f)-(%.0f,%.0f) crosses \"%s\""), S.Key.X, S.Key.Y, S.Value.X, S.Value.Y, *Nodes[A].Name));
+				}
+			}
+			if (!FeatName.IsEmpty()) Out.TouchAim = FeatBox.GetCenter();
+			Said.Add(FString::Printf(TEXT("touches %s in %s, depends on [%s] (%d placed%s)"), *F.FeatureName, F.RoomName.IsEmpty() ? TEXT("-") : *F.RoomName, *FString::Join(F.Neighbours, TEXT(", ")),
+				Placed, F.Neighbours.Num() > 4 ? *FString::Printf(TEXT(", %d more not drawn"), F.Neighbours.Num() - 4) : TEXT("")));
 		}
 
 		// ---- The stage --------------------------------------------------------------------------------------------------------
 		const FBox2f Stage(FVector2f(StageX0, Y0), FVector2f(X1, Y1));
 		Out.Stage = Stage;
-		Out.Case = P ? CaseOf(In.Proposal) : ECase::State;
-		const FString LensRisk = P ? FString::Printf(TEXT("%s · RISK %s"), *BpWords::Lens(P->lens).ToUpper(), *Fmt(P->risk)) : FString();
-		const float LensRiskW = LensRisk.IsEmpty() ? 0.f : BpSheet::ChipWidth(LensRisk, SmallBold);
-		if (!LensRisk.IsEmpty()) Count(LensRisk);
+		// The lens and the risk, once (not when the hero is the risk).
+		const FString LensRisk = P && !bHeroRisk ? FString::Printf(TEXT("%s · RISK %s"), *BpWords::Lens(P->lens).ToUpper(), *Fmt(P->risk)) : FString();
+		const float LensRiskW = LensRisk.IsEmpty() ? 0.f : BpSheet::ChipWidth(LensRisk, MBold);
 		const auto TextureOf = [](const TSharedPtr<FSlateBrush>& Brush) { return Brush.IsValid() ? Cast<UTexture2D>(Brush->GetResourceObject()) : nullptr; };
 		const auto Reading = [&](const FBox2f& Box, const TCHAR* What)
 		{
 			Put(Box, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.4f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.35f)).EdgePx(2.f));
-			Put(Box, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(What)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
+			Put(Box, SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(What)).Font(MBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.55f)))]);
 		};
 		const auto CornerChip = [&](const FBox2f& Img, bool bTop)
 		{
 			if (LensRisk.IsEmpty()) return;
 			const float Y = bTop ? Img.Min.Y + 12.f : Img.Max.Y - 50.f;
-			Put(FBox2f(FVector2f(Img.Max.X - 12.f - LensRiskW, Y), FVector2f(Img.Max.X - 12.f, Y + 38.f)), BpSheet::Chip(LensRisk, SmallBold, 38.f, BpSheet::Accent, true));
+			ChipAt(FBox2f(FVector2f(Img.Max.X - 12.f - LensRiskW, Y), FVector2f(Img.Max.X - 12.f, Y + 38.f)), LensRisk, MBold, CapM, BpSheet::Accent, true);
 		};
 		const auto Caption = [&](const FBox2f& Img, const FString& Word, const FLinearColor& Ink, bool bLeft)
 		{
-			Count(Word);
-			const float W = BpSheet::ChipWidth(Word, SmallBold);
+			const float W = BpSheet::ChipWidth(Word, MBold);
 			const float CX = bLeft ? Img.Min.X + 12.f : Img.Max.X - 12.f - W;
-			Put(FBox2f(FVector2f(CX, Img.Max.Y - 50.f), FVector2f(CX + W, Img.Max.Y - 12.f)), BpSheet::Chip(Word, SmallBold, 38.f, Ink, true));
+			ChipAt(FBox2f(FVector2f(CX, Img.Max.Y - 50.f), FVector2f(CX + W, Img.Max.Y - 12.f)), Word, MBold, CapM, Ink, true);
 		};
 
 		if (Out.Case == ECase::Split)
@@ -667,11 +878,11 @@ namespace BpBoard
 		{
 			Tile(Stage);
 			const float SX0 = Stage.Min.X + 28.f, SX1 = Stage.Max.X - 28.f;
-			// The stage's heading row: what it shows at the left (when it says something), the lens and the risk at the right.
+			// The stage's heading row: a muted heading at the left (when there is one), the lens and the risk at the right.
 			const auto Heading = [&](const FString& Text)
 			{
-				if (!Text.IsEmpty()) Words(FBox2f(FVector2f(SX0, Stage.Min.Y + 12.f), FVector2f(SX1 - LensRiskW - 16.f, Stage.Min.Y + 50.f)), ShortenWords(Text, SmallBold, SX1 - SX0 - LensRiskW - 16.f), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.75f));
-				if (!LensRisk.IsEmpty()) Put(FBox2f(FVector2f(SX1 - LensRiskW, Stage.Min.Y + 12.f), FVector2f(SX1, Stage.Min.Y + 50.f)), BpSheet::Chip(LensRisk, SmallBold, 38.f, BpSheet::Accent, false));
+				if (!Text.IsEmpty()) Words(TEXT("stage's heading"), FBox2f(FVector2f(SX0, Stage.Min.Y + 14.f), FVector2f(SX1 - LensRiskW - 16.f, Stage.Min.Y + 48.f)), Shorten(TEXT("stage's heading"), Text, SBold, SX1 - SX0 - LensRiskW - 16.f), CapS, true, Muted);
+				if (!LensRisk.IsEmpty()) ChipAt(FBox2f(FVector2f(SX1 - LensRiskW, Stage.Min.Y + 12.f), FVector2f(SX1, Stage.Min.Y + 50.f)), LensRisk, MBold, CapM, BpSheet::Accent, false);
 			};
 			// The feature's stages as the data has them (deprecated only when it is the feature's), the current one lit.
 			TArray<const TCHAR*> Stages;
@@ -680,9 +891,10 @@ namespace BpBoard
 			if (Out.Case == ECase::Metric)
 			{
 				// The design's chart: the row's word at the left, its bar on one axis to the right; the budget and the target as
-				// dashed lines across both bars, their words over them; the part over the budget hatched.
-				Heading(F.Unit.IsEmpty() ? F.Label.ToUpper() : (F.Label + TEXT(" · ") + F.Unit).ToUpper());
-				const float LabW = FMath::Max(BpSheet::TextWidth(TEXT("TODAY"), SmallBold), BpSheet::TextWidth(TEXT("AFTER APPROVE"), SmallBold)) + 20.f;
+				// dashed lines across both bars, their words over them; the part over the budget hatched. Wave W3: no heading (the
+				// hero's label names the figure; once).
+				Heading(FString());
+				const float LabW = FMath::Max(BpSheet::TextWidth(TEXT("TODAY"), MBold), BpSheet::TextWidth(TEXT("AFTER APPROVE"), MBold)) + 20.f;
 				const float BX0 = SX0 + LabW, BX1 = SX1 - 90.f;
 				double Max = FMath::Max(F.Today, F.After);
 				if (F.bBudget) Max = FMath::Max(Max, F.Budget);
@@ -690,8 +902,8 @@ namespace BpBoard
 				Max = FMath::Max(Max * 1.08, 1e-6);
 				const auto XOf = [&](double V) { return BX0 + static_cast<float>(FMath::Clamp(V / Max, 0.0, 1.0)) * (BX1 - BX0); };
 				const float BarH = 48.f, T0 = Stage.Min.Y + 110.f, A0 = T0 + BarH + 40.f;
-				Words(FBox2f(FVector2f(SX0, T0), FVector2f(BX0 - 8.f, T0 + BarH)), TEXT("TODAY"), SmallBold, BpSheet::Amber);
-				Words(FBox2f(FVector2f(SX0, A0), FVector2f(BX0 - 8.f, A0 + BarH)), TEXT("AFTER APPROVE"), SmallBold, BpSheet::Accent);
+				Words(TEXT("bar's label"), FBox2f(FVector2f(SX0, T0), FVector2f(BX0 - 8.f, T0 + BarH)), TEXT("TODAY"), CapM, true, BpSheet::Amber);
+				Words(TEXT("bar's label"), FBox2f(FVector2f(SX0, A0), FVector2f(BX0 - 8.f, A0 + BarH)), TEXT("AFTER APPROVE"), CapM, true, BpSheet::Accent);
 				const float TodayX = XOf(F.Today), AfterX = XOf(F.After);
 				const bool bOver = F.bBudget && F.Today > F.Budget;
 				const float SolidX = bOver ? XOf(F.Budget) : TodayX;
@@ -706,16 +918,16 @@ namespace BpBoard
 						const float YA = FMath::Max(0.f, C - Size.X), YB = FMath::Min(Size.Y, C);
 						if (YB > YA) Hatch.Add({ FVector2f(C - YA, YA), FVector2f(C - YB, YB) });
 					}
-					const FBox2f Over(FVector2f(SolidX, T0), FVector2f(TodayX, T0 + BarH));
-					Put(Over, SNew(BpSheet::SPlate).Fill(BpSheet::Amber.CopyWithNewOpacity(0.35f)).Edge(BpSheet::Amber).EdgePx(2.f));
-					Put(Over, SNew(SLines).Color(BpSheet::Amber).Thick(4.f).Lines(Hatch));
+					const FBox2f OverBox(FVector2f(SolidX, T0), FVector2f(TodayX, T0 + BarH));
+					Put(OverBox, SNew(BpSheet::SPlate).Fill(BpSheet::Amber.CopyWithNewOpacity(0.35f)).Edge(BpSheet::Amber).EdgePx(2.f));
+					Put(OverBox, SNew(SLines).Color(BpSheet::Amber).Thick(4.f).Lines(Hatch));
 				}
 				Put(FBox2f(FVector2f(BX0, A0), FVector2f(FMath::Max(BX0 + 2.f, AfterX), A0 + BarH)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
 				// A bar's figure right of its end, and right of a dashed line that would cross it.
 				const auto FigureX = [&](float EndX, const FString& Figure)
 				{
 					float X = EndX + 12.f;
-					const float W = BpSheet::TextWidth(Figure, FigureFont);
+					const float W = BpSheet::TextWidth(Figure, LBold);
 					for (const double V : { F.bBudget ? F.Budget : -1.0, F.bTarget ? F.Target : -1.0 })
 					{
 						if (V < 0.0) continue;
@@ -725,28 +937,47 @@ namespace BpBoard
 					return X;
 				};
 				const float TodayFigX = FigureX(TodayX, Today), AfterFigX = FigureX(AfterX, After);
-				Put(FBox2f(FVector2f(TodayFigX, T0), FVector2f(SX1 + 20.f, T0 + BarH)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Today)).Font(FigureFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
-				Put(FBox2f(FVector2f(AfterFigX, A0), FVector2f(SX1 + 20.f, A0 + BarH)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(After)).Font(FigureFont).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
+				Put(FBox2f(FVector2f(TodayFigX, T0), FVector2f(SX1 + 20.f, T0 + BarH)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Today)).Font(LBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]);
+				Put(FBox2f(FVector2f(AfterFigX, A0), FVector2f(SX1 + 20.f, A0 + BarH)), SNew(SBox).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(After)).Font(LBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
 				// The dashed lines across both bars and their words over them (the words never cross: the second moves right).
 				const float RuleY0 = T0 - 12.f, RuleY1 = A0 + BarH + 12.f, LabY = T0 - 46.f;
-				float LastLabelX1 = -1.f;
+				// Wave W3: two words that would meet stand apart about their lines (the lower's ends at its line, the higher's
+				// starts at its), and over each other when even that cannot part them; never past the stage.
+				struct FRuleWord { float X, W, LX; FString Word; FLinearColor Ink; };
+				TArray<FRuleWord> RuleWords;
 				const auto Rule = [&](double V, const FString& Word, const FLinearColor& Ink)
 				{
 					const float X = XOf(V);
 					TArray<TArray<FVector2f>> Dashes;
 					for (float Y = 0.f; Y < RuleY1 - RuleY0; Y += 18.f) Dashes.Add({ FVector2f(2.f, Y), FVector2f(2.f, FMath::Min(Y + 10.f, RuleY1 - RuleY0)) });
 					Put(FBox2f(FVector2f(X - 2.f, RuleY0), FVector2f(X + 2.f, RuleY1)), SNew(SLines).Color(Ink).Thick(4.f).Lines(Dashes));
-					const float W = BpSheet::TextWidth(Word, SmallBold);
-					float LX = FMath::Clamp(X - W * 0.5f, SX0, SX1 - W);
-					if (LastLabelX1 >= 0.f && LX < LastLabelX1 + 16.f) LX = LastLabelX1 + 16.f;
-					Words(FBox2f(FVector2f(LX, LabY), FVector2f(LX + W + 4.f, LabY + 30.f)), Word, SmallBold, Ink);
-					LastLabelX1 = LX + W;
+					const float W = BpSheet::TextWidth(Word, MBold);
+					RuleWords.Add({ X, W, FMath::Clamp(X - W * 0.5f, SX0, SX1 - W), Word, Ink });
+				};
+				const auto PlaceRuleWords = [&]()
+				{
+					float Row1 = 0.f;
+					if (RuleWords.Num() == 2 && RuleWords[1].LX < RuleWords[0].LX + RuleWords[0].W + 16.f)
+					{
+						FRuleWord& A = RuleWords[0];
+						FRuleWord& B = RuleWords[1];
+						A.LX = FMath::Clamp(A.X - A.W - 6.f, SX0, SX1 - A.W);
+						B.LX = FMath::Clamp(B.X + 6.f, SX0, SX1 - B.W);
+						if (B.LX < A.LX + A.W + 16.f) { B.LX = FMath::Clamp(B.X - B.W * 0.5f, SX0, SX1 - B.W); Row1 = -34.f; }
+					}
+					for (int32 I = 0; I < RuleWords.Num(); ++I)
+					{
+						const FRuleWord& R = RuleWords[I];
+						const float Y = LabY + (I == 1 ? Row1 : 0.f);
+						Words(TEXT("rule's label"), FBox2f(FVector2f(R.LX, Y), FVector2f(R.LX + R.W + 4.f, Y + 32.f)), R.Word, CapM, true, R.Ink);
+					}
 				};
 				TArray<TTuple<double, FString, FLinearColor>> Rules;
 				if (F.bTarget) Rules.Add(MakeTuple(F.Target, FString::Printf(TEXT("TARGET %s"), *Fmt(F.Target)), TargetGreen));
 				if (F.bBudget) Rules.Add(MakeTuple(F.Budget, FString::Printf(TEXT("BUDGET %s"), *Fmt(F.Budget)), BpSheet::InkHi));
 				Rules.Sort([](const TTuple<double, FString, FLinearColor>& A, const TTuple<double, FString, FLinearColor>& B) { return A.Get<0>() < B.Get<0>(); });
 				for (const auto& R : Rules) Rule(R.Get<0>(), R.Get<1>(), R.Get<2>());
+				PlaceRuleWords();
 				Out.Aim = FVector2f(TodayX, T0 + BarH * 0.5f);
 				// The foot, once each: where it stands (its stage and its parts, a segment each) and how it is measured.
 				const float FootY = RuleY1 + 18.f;
@@ -754,7 +985,7 @@ namespace BpBoard
 				const float MidX = (SX0 + SX1) * 0.5f;
 				if (F.Feature && !F.Feature->stage.IsEmpty())
 				{
-					Words(FBox2f(FVector2f(SX0, FootY + 8.f), FVector2f(MidX - 12.f, FootY + 36.f)), TEXT("WHERE IT STANDS"), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.6f));
+					Words(TEXT("foot's heading"), FBox2f(FVector2f(SX0, FootY + 8.f), FVector2f(MidX - 12.f, FootY + 36.f)), TEXT("WHERE IT STANDS"), CapS, true, Muted);
 					int32 Done = 0;
 					for (const FBpFeaturePartsItem& Part : F.Feature->parts) Done += Part.done ? 1 : 0;
 					const int32 Parts = FMath::Min(F.Feature->parts.Num(), 12);
@@ -771,12 +1002,12 @@ namespace BpBoard
 						WY += 20.f;
 					}
 					const FString Where = F.Feature->parts.Num() > 0 ? FString::Printf(TEXT("%s · %d of %d parts done"), *BpWords::Humanise(F.Feature->stage), Done, F.Feature->parts.Num()) : BpWords::Humanise(F.Feature->stage);
-					Words(FBox2f(FVector2f(SX0, WY), FVector2f(MidX - 12.f, WY + 30.f)), ShortenWords(Where, Small, MidX - 12.f - SX0), Small, BpSheet::InkHi);
+					Words(TEXT("where it stands"), FBox2f(FVector2f(SX0, WY), FVector2f(MidX - 12.f, WY + 30.f)), Shorten(TEXT("where it stands"), Where, SReg, MidX - 12.f - SX0), CapS, false, BpSheet::InkHi);
 				}
 				if (!F.Method.IsEmpty())
 				{
-					Words(FBox2f(FVector2f(MidX + 12.f, FootY + 8.f), FVector2f(SX1, FootY + 36.f)), TEXT("HOW WE KNOW"), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.6f));
-					Words(FBox2f(FVector2f(MidX + 12.f, FootY + 40.f), FVector2f(SX1, FootY + 92.f)), ShortenWords(FString::Printf(TEXT("%s, again after it"), *BpWords::Humanise(F.Method)), Small, SX1 - MidX - 12.f), Small, BpSheet::InkHi, VAlign_Top);
+					Words(TEXT("foot's heading"), FBox2f(FVector2f(MidX + 12.f, FootY + 8.f), FVector2f(SX1, FootY + 36.f)), TEXT("HOW WE KNOW"), CapS, true, Muted);
+					Words(TEXT("how we know"), FBox2f(FVector2f(MidX + 12.f, FootY + 40.f), FVector2f(SX1, FootY + 92.f)), Wrap(TEXT("how we know"), FString::Printf(TEXT("%s, again after it"), *BpWords::Humanise(F.Method)), SReg, SX1 - MidX - 12.f, 2), CapS, false, BpSheet::InkHi, VAlign_Top, 0.88f);
 				}
 				Said.Add(FString::Printf(TEXT("stage metric %s: today %s, after %s%s%s, method %s"), *Label, *Today, *After, F.bBudget ? *FString::Printf(TEXT(", budget %s%s"), *Fmt(F.Budget), F.Today > F.Budget ? TEXT(" (over, hatched)") : TEXT("")) : TEXT(""),
 					F.bTarget ? *FString::Printf(TEXT(", target %s"), *Fmt(F.Target)) : TEXT(""), F.Method.IsEmpty() ? TEXT("-") : *F.Method));
@@ -785,11 +1016,27 @@ namespace BpBoard
 			{
 				Heading(TEXT("WHERE IT STANDS"));
 				// The track: one dot per stage, the ones before the feature's filled, its own the largest and lit, the next marked
-				// (what an approval moves it toward); every word under its dot, a two-word one on two lines when it would crowd.
+				// (what an approval moves it toward); every word under its dot at CapM (a two-word one on two lines when it would
+				// crowd), all at CapS when one would still meet its neighbour's.
 				const float TX0 = SX0 + 36.f, TX1 = SX1 - 36.f;
 				const float TrackY = Stage.Min.Y + 112.f, Step = Stages.Num() > 1 ? (TX1 - TX0) / (Stages.Num() - 1) : 0.f;
 				Put(FBox2f(FVector2f(TX0, TrackY - 2.f), FVector2f(TX0 + Step * (Stages.Num() - 1), TrackY + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.35f)));
 				if (Here > 0) Put(FBox2f(FVector2f(TX0, TrackY - 3.f), FVector2f(TX0 + Step * Here, TrackY + 3.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
+				const auto TrackWord = [&](int32 Index, const FSlateFontInfo& WordFont, float& OutW)
+				{
+					FString Word = BpWords::Humanise(Stages[Index]).ToUpper();
+					int32 Space = INDEX_NONE;
+					if (BpSheet::TextWidth(Word, WordFont) > Step * 0.6f && Word.FindChar(TEXT(' '), Space)) Word = Word.Left(Space) + TEXT("\n") + Word.Mid(Space + 1);
+					TArray<FString> Parts;
+					Word.ParseIntoArrayLines(Parts);
+					OutW = 0.f;
+					for (const FString& Part : Parts) OutW = FMath::Max(OutW, BpSheet::TextWidth(Part, WordFont));
+					return Word;
+				};
+				float TrackCap = CapM;
+				for (int32 Index = 0; Index < Stages.Num(); ++Index) { float W = 0.f; TrackWord(Index, MBold, W); if (W > Step - 14.f) TrackCap = CapS; }
+				const FSlateFontInfo TrackFont = TrackCap == CapM ? MBold : SBold;
+				float PrevX1 = -1.e6f;
 				for (int32 Index = 0; Index < Stages.Num(); ++Index)
 				{
 					const FVector2f C(TX0 + Step * Index, TrackY);
@@ -802,53 +1049,128 @@ namespace BpBoard
 						Put(FBox2f(C - FVector2f(D * 0.5f), C + FVector2f(D * 0.5f)), Disc(BpSheet::PaperLo, D));
 						Put(FBox2f(C - FVector2f(D * 0.5f), C + FVector2f(D * 0.5f)), SNew(BpSheet::SRing).Color(bNext ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.45f)).Thick(bNext ? 4.f : 3.f));
 					}
-					FString Word = BpWords::Humanise(Stages[Index]).ToUpper();
-					int32 Space = INDEX_NONE;
-					if (BpSheet::TextWidth(Word, SmallBold) > Step * 0.6f && Word.FindChar(TEXT(' '), Space)) Word = Word.Left(Space) + TEXT("\n") + Word.Mid(Space + 1);
 					float W = 0.f;
-					TArray<FString> Parts;
-					Word.ParseIntoArrayLines(Parts);
-					for (const FString& Part : Parts) W = FMath::Max(W, BpSheet::TextWidth(Part, SmallBold));
+					const FString Word = TrackWord(Index, TrackFont, W);
 					const float WX = FMath::Clamp(C.X - W * 0.5f, SX0, SX1 - W);
 					const FLinearColor Ink = bHere ? BpSheet::Amber : bNext ? BpSheet::Accent : bDone ? BpSheet::Ink : BpSheet::Ink.CopyWithNewOpacity(0.55f);
-					Put(FBox2f(FVector2f(WX, TrackY + 32.f), FVector2f(WX + W + 4.f, TrackY + 92.f)), SNew(SBox).VAlign(VAlign_Top)
-						[SNew(STextBlock).Text(FText::FromString(Word)).Font(SmallBold).Justification(ETextJustify::Center).LineHeightPercentage(0.8f).ColorAndOpacity(FSlateColor(Ink))]);
+					const FBox2f WordBox(FVector2f(WX, TrackY + 32.f), FVector2f(WX + W + 4.f, TrackY + 100.f));
+					Put(WordBox, SNew(SBox).VAlign(VAlign_Top)
+						[SNew(STextBlock).Text(FText::FromString(Word)).Font(TrackFont).Justification(ETextJustify::Center).LineHeightPercentage(0.8f).ColorAndOpacity(FSlateColor(Ink))]);
 					Count(Word);
+					Check(TEXT("track's word"), Word, TrackFont, TrackCap, WordBox, 0.8f);
+					if (WX < PrevX1 + 8.f) Over.Add(FString::Printf(TEXT("track's word \"%s\" meets the one before it"), *Word.Replace(TEXT("\n"), TEXT(" "))));
+					PrevX1 = WX + W;
 					if (bHere) Out.Aim = C;
 				}
-				float Y = TrackY + 100.f;
+				float Y = TrackY + 106.f;
 				// The open findings this one closes, when the hero does not say them already.
 				if (P && F.Open > 0 && !bHeroFindings)
 				{
 					// The family's face has no arrow: the figures and the default face's arrow in a row.
 					Count(TEXT("OPEN FINDINGS"));
+					MinCap = FMath::Min(MinCap, CapS);
 					Put(FBox2f(FVector2f(SX0, Y), FVector2f(SX1, Y + 30.f)), SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 14.f, 0.f)[SNew(STextBlock).Text(FText::FromString(TEXT("OPEN FINDINGS"))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.6f)))]
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::FromInt(F.Open))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.f, 0.f)[Arrow(CapFloor, BpSheet::Ink.CopyWithNewOpacity(0.8f))]
-						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::FromInt(F.Open - 1))).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
-					Y += 36.f;
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 14.f, 0.f)[SNew(STextBlock).Text(FText::FromString(TEXT("OPEN FINDINGS"))).Font(SBold).ColorAndOpacity(FSlateColor(Muted))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::FromInt(F.Open))).Font(MBold).ColorAndOpacity(FSlateColor(BpSheet::Amber))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.f, 0.f)[Arrow(CapM, BpSheet::Ink.CopyWithNewOpacity(0.8f))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(FString::FromInt(F.Open - 1))).Font(MBold).ColorAndOpacity(FSlateColor(BpSheet::Accent))]);
+					Y += 38.f;
 				}
-				// The plan's latest note: whole when it fits, else its first sentence.
+				// The plan's latest note at CapS (a note is the smallest size): whole when it fits, else its first sentence. Wave W3:
+				// the board reads at most 60 words, and the note, the last thing on it, has what is left after its heading's three;
+				// a note that cannot keep a whole sentence in that is left for the desk's sheet, never cut short.
 				const FBpFeatureNotesItem* Note = nullptr;
 				if (F.Feature) for (const FBpFeatureNotesItem& Each : F.Feature->notes) if (!Note || Each.date > Note->date) Note = &Each;
 				bool bWhole = false;
+				FString NoteFit;
+				const float NoteY0 = Y + 40.f, NoteY1 = Stage.Max.Y - 10.f;
 				if (Note && !Note->text.IsEmpty())
 				{
-					Put(FBox2f(FVector2f(SX0, Y), FVector2f(SX1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.25f)));
-					Words(FBox2f(FVector2f(SX0, Y + 8.f), FVector2f(SX1, Y + 36.f)), TEXT("THE PLAN'S NOTE"), SmallBold, BpSheet::Ink.CopyWithNewOpacity(0.6f));
-					const FSlateFontInfo NoteFont = Font(TEXT("Regular"), CapLine);
-					const int32 MaxLines = FMath::Max(1, FMath::FloorToInt((Stage.Max.Y - 10.f - (Y + 40.f)) / (Pitch(CapLine) * 0.88f)));
-					FString Fit = WrapWhole(FString::Printf(TEXT("\"%s\""), *Note->text), NoteFont, SX1 - SX0, MaxLines, &bWhole);
-					if (!bWhole) Fit = WrapWhole(FString::Printf(TEXT("\"%s\""), *FirstSentence(Note->text)), NoteFont, SX1 - SX0, MaxLines);
-					Words(FBox2f(FVector2f(SX0, Y + 40.f), FVector2f(SX1, Stage.Max.Y - 8.f)), Fit, NoteFont, BpSheet::InkHi, VAlign_Top, 0.88f);
+					// Lines that fit: the first line's ink and a pitch for each further one.
+					const int32 MaxLines = FMath::Max(1, 1 + FMath::FloorToInt((NoteY1 - NoteY0 - CapS * 1.29f) / (Pitch(CapS) * 0.88f)));
+					const int32 Budget = FMath::Max(0, 60 - WordCount - 3);
+					const FString Whole = FString::Printf(TEXT("\"%s\""), *Note->text);
+					NoteFit = Wrap(TEXT("plan's note"), Whole, SReg, SX1 - SX0, MaxLines, &bWhole);
+					bWhole = bWhole && WordsIn(Whole) <= Budget;
+					if (!bWhole)
+					{
+						bool bFirst = false;
+						const FString First = FirstSentence(Note->text);
+						NoteFit = WordsIn(First) <= Budget ? Wrap(TEXT("plan's note"), FString::Printf(TEXT("\"%s\""), *First), SReg, SX1 - SX0, MaxLines, &bFirst) : FString();
+						if (!bFirst) NoteFit.Reset();
+						Short.Add(NoteFit.IsEmpty() ? FString::Printf(TEXT("plan's note left off (%d words; %d left on the board)"), WordsIn(Whole), Budget)
+							: FString::Printf(TEXT("plan's note (%d words; %d left on the board) -> its first sentence"), WordsIn(Whole), Budget));
+					}
 				}
-				if (!P && !In.Fallback.IsEmpty()) Words(FBox2f(FVector2f(SX0, Stage.Min.Y + 70.f), FVector2f(SX1, Stage.Max.Y - 20.f)), WrapWhole(In.Fallback, Small, SX1 - SX0, 4), Small, BpSheet::InkHi, VAlign_Top);
-				Said.Add(FString::Printf(TEXT("stage state: %s lit%s, open findings %d -> %d%s"), Here == INDEX_NONE ? TEXT("no stage") : *BpWords::Humanise(Stages[Here]), Here != INDEX_NONE && Here + 1 < Stages.Num() ? *FString::Printf(TEXT(", next %s"), *BpWords::Humanise(Stages[Here + 1])) : TEXT(""),
-					F.Open, FMath::Max(0, F.Open - 1), Note ? (bWhole ? TEXT(", the plan's note whole") : TEXT(", the plan's note's first sentence")) : TEXT("")));
+				if (!NoteFit.IsEmpty())
+				{
+					Put(FBox2f(FVector2f(SX0, Y), FVector2f(SX1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.25f)));
+					Words(TEXT("note's heading"), FBox2f(FVector2f(SX0, Y + 8.f), FVector2f(SX1, Y + 36.f)), TEXT("THE PLAN'S NOTE"), CapS, true, Muted);
+					Words(TEXT("plan's note"), FBox2f(FVector2f(SX0, NoteY0), FVector2f(SX1, NoteY1)), NoteFit, CapS, false, BpSheet::InkHi, VAlign_Top, 0.88f);
+				}
+				if (!P && !In.Fallback.IsEmpty()) Words(TEXT("fallback"), FBox2f(FVector2f(SX0, Stage.Min.Y + 70.f), FVector2f(SX1, Stage.Max.Y - 20.f)), Wrap(TEXT("fallback"), In.Fallback, SReg, SX1 - SX0, 4), CapS, false, BpSheet::InkHi, VAlign_Top);
+				Said.Add(FString::Printf(TEXT("stage state: %s lit%s, open findings %d -> %d%s, track words at %.0f"), Here == INDEX_NONE ? TEXT("no stage") : *BpWords::Humanise(Stages[Here]), Here != INDEX_NONE && Here + 1 < Stages.Num() ? *FString::Printf(TEXT(", next %s"), *BpWords::Humanise(Stages[Here + 1])) : TEXT(""),
+					F.Open, FMath::Max(0, F.Open - 1), NoteFit.IsEmpty() ? (Note ? TEXT(", the plan's note left off") : TEXT("")) : bWhole ? TEXT(", the plan's note whole") : TEXT(", the plan's note's first sentence"), TrackCap));
 			}
 		}
-		Said.Add(FString::Printf(TEXT("%d words on the board"), WordCount));
+		// Glim's beam: the stage's subject, else the lit feature on the map.
+		if (Out.Aim.X < 0.f && Out.TouchAim.X >= 0.f) Out.Aim = Out.TouchAim;
+		Said.Add(FString::Printf(TEXT("%d words on the board, smallest cap %.0f px%s%s"), WordCount, MinCap < 999.f ? MinCap : 0.f,
+			Over.Num() > 0 ? *FString::Printf(TEXT(", %d overflow"), Over.Num()) : TEXT(""), Short.Num() > 0 ? *FString::Printf(TEXT(", %d shortened"), Short.Num()) : TEXT("")));
 		Out.Said = FString::Join(Said, TEXT("; "));
+		Out.Words = WordCount;
+		Out.MinCap = MinCap < 999.f ? MinCap : 0.f;
+		Out.Overflow = MoveTemp(Over);
+		Out.Shortened = MoveTemp(Short);
 	}
+
+	/** Wave W3: BpBoard.Audit lays out every decision of the scan on both boards (the stand-up's, with GLIM ASKS; a room's, without),
+	 *  with no widgets kept and no screens read, and logs what each showed. */
+	void Audit()
+	{
+		const FBpScanState& State = FBpLinkModule::Get().GetScanState();
+		const auto Cvar = [](const TCHAR* Name, float Default) { const IConsoleVariable* V = IConsoleManager::Get().FindConsoleVariable(Name); return V ? V->GetFloat() : Default; };
+		const float WidthCm = Cvar(TEXT("bp.Projector.WidthCm"), 260.f), DistanceCm = Cvar(TEXT("bp.Projector.DistanceCm"), 260.f);
+		const float Deg = 2.f * FMath::RadiansToDegrees(FMath::Atan2(WidthCm * 0.5f, FMath::Max(1.f, DistanceCm)));
+		// The board's layout is the wall's 1280 px.
+		const float PxPerDeg = (X1 + X0) / FMath::Max(1.f, Deg);
+		const auto Arcmin = [PxPerDeg](float Cap) { return Cap / PxPerDeg * 60.f; };
+		TArray<int32> Counts;
+		int32 Boards = 0, Overflowing = 0, UnderFloor = 0;
+		TArray<FString> ShortenedIds;
+		int32 Most = -1;
+		FString Wordiest;
+		for (const FBpProposal& P : State.Scan.proposals)
+		{
+			for (int32 Which = 0; Which < 2; ++Which)
+			{
+				FIn In;
+				In.Proposal = P.id;
+				In.Title = P.title;
+				if (Which == 0) In.Chip = TEXT("GLIM ASKS");
+				In.bReading = true;
+				FOut Out;
+				Draw(In, [](const FBox2f&, const TSharedRef<SWidget>&) {}, [](const FBox2f&, const FString&, bool, int32) {}, Out);
+				++Boards;
+				Counts.Add(Out.Words);
+				if (Out.Overflow.Num() > 0) ++Overflowing;
+				if (Out.MinCap < CapFloor - 0.01f) ++UnderFloor;
+				if (Out.Shortened.Num() > 0) ShortenedIds.AddUnique(P.id);
+				if (Out.Words > Most) { Most = Out.Words; Wordiest = FString::Printf(TEXT("%s (%s)"), *P.id, Which == 0 ? TEXT("stand-up") : TEXT("room")); }
+				UE_LOG(LogBpTable, Log, TEXT("BpBoard.Audit: %s %s, stage %s: %d words, smallest cap %.0f px (%.0f arcmin, x-height %.0f), overflow %d%s, shortened %d%s"),
+					*P.id, Which == 0 ? TEXT("stand-up") : TEXT("room"), CaseWord(Out.Case), Out.Words, Out.MinCap, Arcmin(Out.MinCap), Arcmin(Out.MinCap) * 0.72f,
+					Out.Overflow.Num(), Out.Overflow.Num() > 0 ? *FString::Printf(TEXT(" [%s]"), *FString::Join(Out.Overflow, TEXT("; "))) : TEXT(""),
+					Out.Shortened.Num(), Out.Shortened.Num() > 0 ? *FString::Printf(TEXT(" [%s]"), *FString::Join(Out.Shortened, TEXT("; "))) : TEXT(""));
+				UE_LOG(LogBpTable, Log, TEXT("BpBoard.Audit:   %s"), *Out.Said);
+			}
+		}
+		Counts.Sort();
+		const int32 N = Counts.Num();
+		UE_LOG(LogBpTable, Log, TEXT("BpBoard.Audit: %d boards (%d decisions x the stand-up's and a room's) on a %.1f degree wall (%.1f layout px a degree): words min %d, median %d, max %d (%s); over 60 words %d; overflowing %d; under the floor (%.0f px, %.0f arcmin cap) %d; shortened somewhere: %d decisions [%s]"),
+			Boards, State.Scan.proposals.Num(), Deg, PxPerDeg, N ? Counts[0] : 0, N ? Counts[N / 2] : 0, N ? Counts.Last() : 0, *Wordiest,
+			Counts.FilterByPredicate([](int32 C) { return C > 60; }).Num(), Overflowing, CapS, Arcmin(CapS), UnderFloor, ShortenedIds.Num(), *FString::Join(ShortenedIds, TEXT(", ")));
+	}
+
+	FAutoConsoleCommand GBoardAudit(TEXT("BpBoard.Audit"), TEXT("Wave W3: lays out every sample decision on the stand-up's and a room's board (no widgets kept) and logs per decision its words, its smallest text and any block that overflowed or was shortened, then the distribution."),
+		FConsoleCommandDelegate::CreateStatic(&Audit));
 }

@@ -849,8 +849,12 @@ void ABpTable::PlacePins()
 		BeadPlaces.Add(FTransform(FQuat::Identity, Foot + Group.TransformVector(FVector(0.0, 0.0, 0.1)), FVector(FVector2D(PinBeadCm * 1.3f / 100.f), 0.16f / 100.f) * Site));
 		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale * Site)));
 		if (!Pin.bTagged) continue;
-		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
-		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale * Site)));
+		// Wave W3: the tag (the top PinTagModelCm of the pin's model; its body is hidden) shrinks about its own centre while a
+		// sheet is on the wall, so it steps aside where it stands rather than sliding down its stem.
+		const double TagsShow = FMath::Clamp(static_cast<double>(WallTagsShow), 0.0, 1.0);
+		const double TagCentreCm = (PinModelCm - 0.5 * PinTagModelCm) * PinScale * Site;
+		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + TagCentreCm * (1.0 - TagsShow)));
+		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale * Site * TagsShow)));
 		// The hairline from the bead up to the tag's foot (the engine cube: 100 cm, pivot at its centre); the pin's own body
 		// is hidden (HiddenMaterial), so the hairline is the whole stem.
 		const FVector TagFoot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
@@ -866,6 +870,31 @@ void ABpTable::PlacePins()
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
 	if (StemPlaces.Num() > 0 && PinStems->GetInstanceCount() == StemPlaces.Num()) PinStems->BatchUpdateInstancesTransforms(0, StemPlaces, false, true);
 	if (HaloPlaces.Num() > 0 && PinHalos->GetInstanceCount() == HaloPlaces.Num()) PinHalos->BatchUpdateInstancesTransforms(0, HaloPlaces, false, true);
+}
+
+bool ABpTable::TickWallTags(float DeltaSeconds)
+{
+	// Wave W3 (the owner, 2026-11-11: "the wall growth to 53"): the 53 degree wall's foot stands where the far pins' tallest
+	// tags are from the seat, so while any sheet is on the far surface (a decision, YESTERDAY, MENU, SETTINGS, the conversation,
+	// a scan's result) the tags step aside, and come back when it closes. An ease over WallTagsS at the frame rate, then
+	// nothing: at rest this is one compare.
+	constexpr float WallTagsS = 0.25f;
+	const bool bAway = BpProjector::IsFar();
+	if (bAway != bWallTagsAway)
+	{
+		bWallTagsAway = bAway;
+		UE_LOG(LogBpTable, Log, TEXT("BpTable: the pin tags %s (%d tagged pins; %.2f s)"), bAway ? TEXT("step aside: a sheet is on the wall") : TEXT("come back: the wall closed"),
+			Pins ? Pins->GetInstanceCount() : 0, WallTagsS);
+	}
+	const float Want = bAway ? 0.f : 1.f;
+	if (WallTagsShow == Want) return false;
+	WallTagsShow = FMath::FInterpConstantTo(WallTagsShow, Want, DeltaSeconds, 1.f / WallTagsS);
+	// Smooth at both ends: the instances take an eased scale, the clock stays linear.
+	const float Linear = WallTagsShow;
+	WallTagsShow = Linear * Linear * (3.f - 2.f * Linear);
+	PlacePins();
+	WallTagsShow = Linear;
+	return WallTagsShow != Want;
 }
 
 void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
@@ -1808,6 +1837,8 @@ void ABpTable::SeatKeepouts(TArray<FBox2D>& Out) const
 	const FTransform& Table = GetActorTransform();
 	// Each tagged pin's tag: a card PinScale x 2.2 cm wide facing the seat, from its foot to the pin's top (PlacePins's place).
 	const double Site = SiteShow();
+	// Wave W3: the tags still keep their places out while they step aside behind a sheet on the wall (TickWallTags): the lamp
+	// and its caption do not move for the wall.
 	if (Site > 0.0)
 	{
 		for (const FPin& Pin : PinList)

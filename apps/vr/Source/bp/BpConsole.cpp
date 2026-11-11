@@ -1775,10 +1775,16 @@ void ABpPawn::PlaceConsole()
 				Px.X / (2.f * FMath::RadiansToDegrees(FMath::Atan2(SizeCm.X * 0.5f, Dist))), bPassthrough ? TEXT("; your room: brought nearer, no wall known") : TEXT(""));
 		}
 		PlaceNearBar(true);
-		if (bArrive) StartWallReveal();
+		if (bArrive)
+		{
+			StartWallReveal();
+			// Wave W3: the pin tags step aside as the sheet arrives (ABpTable::TickWallTags), not a resting tick later.
+			Table->SetActorTickInterval(0.f);
+		}
 		return;
 	}
 	if (WallRevealAt >= 0.0) EndWallReveal(TEXT("the sheet left the wall"));
+	if (bConsoleFar) Table->SetActorTickInterval(0.f);
 	bConsoleFar = false;
 	bConsoleStage = false;
 	if (ConsoleStage && ConsoleStage->IsVisible()) { ConsoleStage->SetVisibility(false); StageCull(false); }

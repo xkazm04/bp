@@ -1122,6 +1122,14 @@ private:
 	void ReceiveScanState(const struct FBpScanState& State);
 	void BuildPins(const struct FBpScanState& State);
 	void PlacePins();
+	/** Wave W3 (the owner, 2026-11-11: the wall to 53 degrees): while a sheet is on the far surface (BpProjector::IsFar) the
+	 *  plan's pin tags step aside, each shrinking to nothing about its own centre over WallTagsS (no translucency: the tag
+	 *  material stays opaque), and come back the same way when the wall closes; the pins' stems and beads stay. True while it
+	 *  moves (the tick runs at the frame rate then). */
+	bool TickWallTags(float DeltaSeconds);
+	/** How much of the tags shows (1 at rest, 0 behind the wall), and whether they are going (the wall is up). */
+	float WallTagsShow = 1.f;
+	bool bWallTagsAway = false;
 	void UpdateScan(float DeltaSeconds);
 	void WriteScanParams(float Strength);
 	void RefreshCard();
