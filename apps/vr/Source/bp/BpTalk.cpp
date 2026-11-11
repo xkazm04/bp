@@ -27,6 +27,7 @@
 #include "BpAudio.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpSheet.h"
 #include "BpStore.h"
 #include "Components/PointLightComponent.h"
 #include "Dom/JsonObject.h"
@@ -221,6 +222,15 @@ namespace
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkCancel(TEXT("BpTalk.Cancel"), TEXT("BpTalk.Cancel: what B or a pinch on the lamp does to a talk in flight."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithTalkTables(World, [](ABpTable& T) { T.TalkCancel(TEXT("console")); }); }));
+	FAutoConsoleCommandWithWorldAndArgs CmdTalkFocus(TEXT("BpTalk.Focus"), TEXT("BpTalk.Focus <page|room|wing|feature|decision> <id>: acts on one focus event as a turn's (wave U2: scripted tests of a page Glim opens)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() < 2) return;
+			FBpTurnFocus F;
+			F.TargetKind = Args[0];
+			F.TargetId = Args[1];
+			WithTalkTables(World, [&F](ABpTable& T) { T.TalkActOnFocus({ F }, FPlatformTime::Seconds()); });
+		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkStat(TEXT("BpTalk.Stat"), TEXT("BpTalk.Stat: the talk's state, whether the capture device is open, and the consent."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithTalkTables(World, [](ABpTable& T) { T.LogTalk(); }); }));
 }
@@ -375,6 +385,13 @@ bool ABpTable::TalkOnConsole() const
 	return Pawn && Pawn->ConsoleShowsTalk();
 }
 
+bool ABpTable::WallSheetOpen() const
+{
+	const ABpPawn* Pawn = TalkPawn(GetWorld());
+	// The panel is far only while a page, the stand-up or the conversation is up (closed, the bar is at the desk).
+	return Pawn && Pawn->IsConsoleFar();
+}
+
 void ABpTable::TalkCaptionEnded()
 {
 	if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->TalkChanged();
@@ -435,8 +452,10 @@ bool ABpTable::TalkReply(int32 N, const TCHAR* Route)
 	return true;
 }
 
-void ABpTable::TalkPreview(const FString& Step, const FString& Heard, const FString& Reply)
+void ABpTable::TalkPreview(const FString& Step, const FString& Heard, const FString& ReplyIn)
 {
+	// As a real turn's words are drawn (wave U2): plain, without markdown's marks.
+	const FString Reply = BpSheet::PlainWords(ReplyIn);
 	if (!Talk.IsValid()) Talk = MakeShared<FBpTalkState>();
 	FBpTalkState& S = *Talk;
 	++S.Serial;
@@ -905,7 +924,9 @@ void ABpTable::TalkTurn(const FString& Heard)
 		default:
 			break;
 		}
-		FString Reply = Turn.Text.TrimStartAndEnd().Replace(TEXT("\n"), TEXT(" "));
+		// Wave U2: plain words (a model's *emphasis*, bullets, headings and backticks go; the words stay) for the sheet, the
+		// caption and the wrist.
+		FString Reply = BpSheet::PlainWords(Turn.Text);
 		if (Reply.IsEmpty()) Reply = Turn.CardSummary.IsEmpty() ? FString(TEXT("Done.")) : FString::Printf(TEXT("I need your yes for this: %s"), *Turn.CardSummary);
 		// G2: a card filed from a spoken request waits on the wall (the stand-up's GLIM ASKS sheet); the sheet says where. The
 		// voice says Glim's own words only.

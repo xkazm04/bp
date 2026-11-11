@@ -27,6 +27,21 @@ namespace
 	/** A highlighted room's shell glows this much brighter (Show above 1 scales M_EdgeGlow's emissive). */
 	constexpr float HighlightShow = 1.6f;
 
+	/** Wave U2: where a room's raise spends its game-thread time (SetHighlightTimed; the decisions-land raise logs it). */
+	struct FRaiseProf
+	{
+		bool bOn = false;
+		double Ms[10] = {};
+	};
+	FRaiseProf GRaise;
+	struct FRaiseSpan
+	{
+		int32 Slot;
+		uint32 C0;
+		explicit FRaiseSpan(int32 InSlot) : Slot(InSlot), C0(FPlatformTime::Cycles()) {}
+		~FRaiseSpan() { if (GRaise.bOn) GRaise.Ms[Slot] += FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C0); }
+	};
+
 	/** Ease-in-out on a step's progress; 0 and 1 map to exactly 0 and 1, so a settled step is exactly at rest or lifted. */
 	float Ease(float Alpha)
 	{
@@ -602,6 +617,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	}
 	if (Pointed != HighlightRestRoom)
 	{
+		FRaiseSpan Span(0);
 		HighlightShell->ClearInstances();
 		HighlightRestRoom = Pointed;
 		if (Pointed != INDEX_NONE)
@@ -637,14 +653,20 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				// The room's own walls' footprint (the first full-face instance is the room's box, BuildVolumes adds it first).
 				const FVector Foot = RoomWalls.GetScale3D() * 100.0;
 				const double Floor0 = RoomWalls.GetLocation().Z - Foot.Z * 0.5 - HighlightLiftCm;
-				const auto Slab = [&](double Z0, double H, float Show, float Face)
+				const auto Slab = [&](double Z0, double H, float Show, float Face, double InsetCm)
 				{
-					Raised.Add(FTransform(FQuat::Identity, FVector(RoomWalls.GetLocation().X, RoomWalls.GetLocation().Y, Z0 + H * 0.5), FVector(Foot.X, Foot.Y, H) / 100.0));
-					Data.Append({ static_cast<float>(Foot.X), static_cast<float>(Foot.Y), static_cast<float>(H), Show, Face });
+					const double SX = FMath::Max(1.0, Foot.X - 2.0 * InsetCm), SY = FMath::Max(1.0, Foot.Y - 2.0 * InsetCm);
+					Raised.Add(FTransform(FQuat::Identity, FVector(RoomWalls.GetLocation().X, RoomWalls.GetLocation().Y, Z0 + H * 0.5), FVector(SX, SY, H) / 100.0));
+					Data.Append({ static_cast<float>(SX), static_cast<float>(SY), static_cast<float>(H), Show, Face });
 				};
-				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm, HighlightFloorCm, HighlightFloorShow, 1.f);
-				Slab(Floor0, HighlightLiftCm - HighlightFloorCm, HighlightPlinthShow, 0.5f);
-				AimCaptureHand(RoomWalls.GetLocation() - Foot * 0.5);
+				// Wave U2 (shimmer from the seat): the floor plate's top stood in the raised walls' foot and the plinth's foot on the
+				// paper, coplanar faces that fought at the seat's grazing angle; each now stands a hair clear (Gap) and inset.
+				constexpr double Gap = 0.15;
+				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm - Gap, HighlightFloorCm, HighlightFloorShow, 1.f, 0.25);
+				Slab(Floor0 + Gap, FMath::Max(0.1, HighlightLiftCm - HighlightFloorCm - 3.0 * Gap), HighlightPlinthShow, 0.5f, 0.6);
+				// The posed capture hand points at the pointed room (captures only); a decision's raise is nobody's point.
+				FRaiseSpan Aim(2);
+				if (!bLandingRaise) AimCaptureHand(RoomWalls.GetLocation() - Foot * 0.5);
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -653,11 +675,16 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				HighlightShell->SetCustomData(0, Raised.Num() - 1, Data, true);
 			}
 		}
-		LiftGlyphs(Pointed);
+		{
+			FRaiseSpan Lift(1);
+			LiftGlyphs(Pointed);
+		}
 		UE_LOG(LogBpTable, Log, TEXT("BpLevel: pointed room %s (%d raised)"), Pointed == INDEX_NONE ? TEXT("none") : *SheetPlan->rooms[Pointed].id, HighlightShell->GetInstanceCount());
 	}
 	HighlightShell->SetRelativeTransform(PointedGroupTransform());
 	ApplyColumnLook();
+	TOptional<FRaiseSpan> Walls;
+	Walls.Emplace(3);
 	bool bDirty = false;
 	for (int32 Index = 0; Index < RestRoom.Num() && Index < ShownRest.Num(); ++Index)
 	{
@@ -690,9 +717,47 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		const float Alpha = !bOn ? 0.f : AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow() * WingBuildShow(Wing));
 	}
-	ApplyGlyphs(WingEase);
-	ApplyRoomNames(WingEase);
+	Walls.Reset();
+	{
+		FRaiseSpan Span(4);
+		ApplyGlyphs(WingEase);
+	}
+	{
+		FRaiseSpan Span(5);
+		ApplyRoomNames(WingEase);
+	}
+	FRaiseSpan Span(6);
 	ApplyScanMarks();
+}
+
+FString ABpTable::SetHighlightTimed(const FString& Kind, const FString& Id)
+{
+	// SetHighlight's steps, each timed (wave U2: the decisions-land raise had a 2.5 to 5.5 ms frame on the PC).
+	GRaise = FRaiseProf();
+	GRaise.bOn = true;
+	const uint32 C0 = FPlatformTime::Cycles();
+	HighlightKind = Id.IsEmpty() ? FString() : Kind.ToLower();
+	HighlightId = Id;
+	UE_LOG(LogBpTable, Log, TEXT("BpLevel: highlight %s (timed)"), HighlightId.IsEmpty() ? TEXT("cleared") : *FString::Printf(TEXT("%s=%s"), *HighlightKind, *HighlightId));
+	for (float& Shown : ShownRooms) Shown = -1.f;
+	{
+		// The crumb names a room a hand points at; a decision's raise points nothing, so it keeps its words (0.7 ms a raise).
+		FRaiseSpan Span(8);
+		if (!bLandingRaise) UpdateBreadcrumb();
+	}
+	const uint32 C1 = FPlatformTime::Cycles();
+	ApplyLevelVisuals();
+	const double Visuals = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C1);
+	{
+		FRaiseSpan Span(9);
+		if (bCardShown) RefreshCard();
+	}
+	GRaise.bOn = false;
+	const double All = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C0);
+	const double* M = GRaise.Ms;
+	const double Rest = Visuals - (M[0] + M[3] + M[4] + M[5] + M[6]);
+	return FString::Printf(TEXT("%.2f ms: copy %.2f (glyph lift %.2f, capture hand %.2f), rest walls %.2f, glyphs %.2f, names %.2f, scan marks %.2f, crumb %.2f, card %.2f, the rest of the visuals (rooms, pins, plate, sheet) %.2f"),
+		All, M[0], M[1], M[2], M[3], M[4], M[5], M[6], M[8], M[9], Rest);
 }
 
 void ABpTable::ReapplyRestVolumes()

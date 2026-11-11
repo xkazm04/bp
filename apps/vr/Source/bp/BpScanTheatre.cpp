@@ -31,6 +31,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "RenderTimer.h"
 #include "TimerManager.h"
 
 namespace
@@ -107,6 +108,22 @@ namespace
 			if (!World) return;
 			for (TActorIterator<ABpTable> It(World); It; ++It) It->LogTheatreLines();
 		}));
+	FAutoConsoleCommandWithWorld CmdMissedTest(TEXT("BpScan.MissedTest"),
+		TEXT("BpScan.MissedTest: wave U2, for captures: a scan of everything that ended a moment ago before any read saw it running (a stand-in job, the store's findings as they are): its result sheet, as a fast server's scan gets it."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
+		{
+			if (!World) return;
+			FBpScanJob Job;
+			Job.id = TEXT("job-missed-test");
+			Job.kind = BpVocab::ScanJob::Kind::Measure;
+			Job.scope.kind = BpVocab::ScanScope::Kind::All;
+			Job.scope.label = TEXT("Everything");
+			Job.status = BpVocab::ScanJob::Status::Done;
+			const FDateTime Now = FDateTime::UtcNow();
+			Job.queued_at = Job.started_at = (Now - FTimespan::FromSeconds(9.0)).ToIso8601();
+			Job.ended_at = Now.ToIso8601();
+			for (TActorIterator<ABpTable> It(World); It; ++It) It->TheatreMissed(Job, FBpLinkModule::Get().GetScanState());
+		}));
 }
 
 int32 ABpTable::ScanSeverity(const FBpProposal& Proposal, const int32* Tier)
@@ -131,6 +148,7 @@ void ABpTable::TheatreBegin(bool bSample, const FString& Key, const FString& Len
 	if (CVarTheatre.GetValueOnGameThread() == 0 || !GetWorld()) return;
 	bTheatre = true;
 	bTheatreSample = bSample;
+	bTheatreMissed = false;
 	TheatreKey = Key;
 	TheatreLens = Lens;
 	TheatrePlace = PlaceWords;
@@ -337,6 +355,7 @@ void ABpTable::FinishTheatreResult(bool bCancelled, bool bFailed)
 	R.bSample = bTheatreSample;
 	R.bCancelled = bCancelled;
 	R.bFailed = bFailed;
+	R.bMissed = bTheatreMissed;
 	R.Lens = TheatreLens;
 	R.Place = TheatrePlace;
 	R.RoomsRead = bHasScanOutcome ? ScanOutcome.RoomsRead : 0;
@@ -378,6 +397,51 @@ void ABpTable::FinishTheatreResult(bool bCancelled, bool bFailed)
 	TheatreResult = R;
 }
 
+void ABpTable::TheatreMissed(const FBpScanJob& Job, const FBpScanState& State)
+{
+	if (CVarTheatre.GetValueOnGameThread() == 0 || !SheetPlan.IsValid()) return;
+	// Its run: the job's own, else the run its note names (as a running job's is found).
+	FString Run = Job.run_id;
+	if (Run.IsEmpty())
+	{
+		const FString Named = TEXT("bp-job:") + Job.id;
+		if (const FBpRun* R = State.Scan.runs.FindByPredicate([&Named](const FBpRun& Each) { return Each.note == Named || Each.note.StartsWith(Named + TEXT(" ")); })) Run = R->id;
+	}
+	int32 RoomsOf = 0;
+	{
+		TSet<int32> ScopeRooms;
+		const TSet<FString> Want(Job.scope.features);
+		const bool bAll = Job.scope.kind == BpVocab::ScanScope::Kind::All;
+		for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
+		{
+			if ((bAll || Want.Contains(SheetPlan->tiles[Index].id)) && TileRoom.IsValidIndex(Index) && SheetPlan->rooms.IsValidIndex(TileRoom[Index])) ScopeRooms.Add(TileRoom[Index]);
+		}
+		RoomsOf = ScopeRooms.Num();
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s ended (%s) before a read saw it running (run %s): its result anyway"), *Job.id, *Job.status, Run.IsEmpty() ? TEXT("unknown") : *Run);
+	// Nothing is followed or said at its start; the result comes from the finished job and its findings, a moment later as a
+	// watched scan's does (the store's last rows).
+	TheatreBegin(false, Job.id, Job.lens, Job.scope.label.IsEmpty() ? FString(TEXT("Everything")) : Job.scope.label, FString(), RoomsOf, false);
+	if (!bTheatre) return;
+	bTheatreMissed = true;
+	ScanRun = Run;
+	bTheatreLamp = false;
+	const bool bFailed = Job.status == BpVocab::ScanJob::Status::Failed;
+	// The result's time is the job's own (started to ended), not the moment the table learned of it.
+	FDateTime Started, Ended;
+	const double JobS = FDateTime::ParseIso8601(*(Job.started_at.IsEmpty() ? Job.queued_at : Job.started_at), Started) && FDateTime::ParseIso8601(*Job.ended_at, Ended)
+		? FMath::Max(0.0, (Ended - Started).GetTotalSeconds()) : -1.0;
+	GetWorldTimerManager().SetTimer(TheatreEndTimer, FTimerDelegate::CreateWeakLambda(this, [this, bFailed, Run, JobS]()
+	{
+		if (JobS >= 0.0 && GetWorld()) TheatreStartedAt = GetWorld()->GetTimeSeconds() - JobS;
+		bool bRunFailed = bFailed;
+		const FBpRun* R = Run.IsEmpty() ? nullptr : FBpLinkModule::Get().GetScanState().Scan.runs.FindByPredicate([&Run](const FBpRun& Each) { return Each.id == Run; });
+		if (!bFailed && R && (R->status == BpVocab::Run::Status::Failed || R->status == BpVocab::Run::Status::Aborted)) bRunFailed = true;
+		if (!Run.IsEmpty()) ScanRun = Run;
+		TheatreEnd(false, bRunFailed, false);
+	}), 2.f, false);
+}
+
 void ABpTable::TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet)
 {
 	if (!bTheatre) return;
@@ -411,6 +475,11 @@ void ABpTable::TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet)
 		Clip = FString::Printf(TEXT("scan-done-%s-%s"), *CountWord(R.RoomsRead), *CountWord(R.New));
 		// A count no clip was rendered for: the generic line (its words are the caption's).
 		if (bTheatreSample && !FPaths::FileExists(FPaths::ProjectContentDir() / ScanClipDir / (Clip + TEXT(".wav")))) Clip = TEXT("scan-done");
+	}
+	// Wave U2: a scan that ended before the table saw it run says so first (TheatreMissed).
+	if (bTheatreMissed)
+	{
+		Line = (bFailed ? FString(TEXT("It ended before I could watch: ")) : FString(TEXT("Done before I could watch: here's what it found. "))) + (Line.StartsWith(TEXT("Done. ")) ? Line.Mid(6) : Line);
 	}
 	UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: result %s: %s (%d features, %.1f s; stop-ship %d, before release %d, later %d)"), *TheatreKey, *Line, R.Features, R.Seconds, R.Severity[0], R.Severity[1], R.Severity[2]);
 	if (!TheatrePersonHasLamp()) SayLamp(Line, true);
@@ -534,11 +603,25 @@ bool ABpTable::TickScanTheatre(float DeltaSeconds)
 		constexpr double DecisionFlashS = 1.0;
 		const double T = (FPlatformTime::Seconds() - DecisionFlashAt) / (DecisionFlashS * FMath::Clamp(CVarLandSlow.GetValueOnGameThread(), 1.f, 40.f));
 		DecisionFlash = T >= 1.0 ? 0.f : 2.2f * static_cast<float>(FMath::Sin(UE_PI * FMath::Sqrt(FMath::Clamp(T, 0.0, 1.0))));
+		// Wave U2: the game thread's frames over the landing (the frame meter's game_ms is the last frame's GGameThreadTime).
+		const float GameMs = static_cast<float>(FPlatformTime::ToMilliseconds(GGameThreadTime));
+		DecisionGameMs.Add(GameMs);
 		if (T >= 1.0)
 		{
+			const float First = DecisionGameMs.Num() ? DecisionGameMs[0] : 0.f;
+			DecisionGameMs.Sort();
+			UE_LOG(LogBpTable, Log, TEXT("BpWow: the landing's frames: game_ms of the answer's frame %.2f, max %.2f, p50 %.2f over %d frames"), First, DecisionGameMs.Num() ? DecisionGameMs.Last() : 0.f,
+				DecisionGameMs.Num() ? DecisionGameMs[DecisionGameMs.Num() / 2] : 0.f, DecisionGameMs.Num());
+			DecisionGameMs.Reset();
 			DecisionFlashAt = -1.0;
 			// The room it raised settles back, unless something else is pointed now.
-			if (!DecisionFlashRoom.IsEmpty() && HighlightKind == TEXT("room") && HighlightId == DecisionFlashRoom) SetHighlight(FString(), FString());
+			if (!DecisionFlashRoom.IsEmpty() && HighlightKind == TEXT("room") && HighlightId == DecisionFlashRoom)
+			{
+				bLandingRaise = true;
+				const FString Took = SetHighlightTimed(FString(), FString());
+				bLandingRaise = false;
+				UE_LOG(LogBpTable, Log, TEXT("BpWow: the decided room settles: %s"), *Took);
+			}
 			DecisionFlashRoom.Reset();
 		}
 		AppliedColumnLook = -1.f;
@@ -608,7 +691,10 @@ bool ABpTable::LandDecision(const FString& FeatureId, const FString& Verdict)
 	if (HighlightId.IsEmpty() && !Room.IsEmpty())
 	{
 		DecisionFlashRoom = Room;
-		SetHighlight(TEXT("room"), Room);
+		bLandingRaise = true;
+		const FString Took = SetHighlightTimed(TEXT("room"), Room);
+		bLandingRaise = false;
+		UE_LOG(LogBpTable, Log, TEXT("BpWow: the decided room %s rises: %s"), *Room, *Took);
 	}
 	DecisionFlashAt = FPlatformTime::Seconds();
 	SetActorTickInterval(0.f);

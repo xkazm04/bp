@@ -197,6 +197,66 @@ namespace BpSheet
 		return FString::Join(Lines, TEXT("\n"));
 	}
 
+	/** Wave U2: a model's reply as plain words for the sheet, the caption and the wrist (the voice is cleaned on the server):
+	 *  markdown's headings, bullets and numbered list marks at a line's start, emphasis (*, **, _, __ at a word's edge),
+	 *  backticks and a link's [words](url) go; the words stay. Lines are joined with spaces. */
+	inline FString PlainWords(const FString& In)
+	{
+		TArray<FString> Lines, Kept;
+		In.Replace(TEXT("\r"), TEXT("")).ParseIntoArray(Lines, TEXT("\n"), true);
+		for (FString Line : Lines)
+		{
+			Line.TrimStartAndEndInline();
+			while (Line.StartsWith(TEXT("#"))) Line.RemoveAt(0);
+			Line.TrimStartInline();
+			if (Line.StartsWith(TEXT(">"))) { Line.RemoveAt(0); Line.TrimStartInline(); }
+			if (Line.Len() > 1 && (Line[0] == TEXT('-') || Line[0] == TEXT('*') || Line[0] == TEXT('+') || Line[0] == TEXT('•')) && Line[1] == TEXT(' ')) Line = Line.Mid(2);
+			{
+				int32 D = 0;
+				while (D < Line.Len() && FChar::IsDigit(Line[D])) ++D;
+				if (D > 0 && D < 3 && Line.Len() > D + 1 && (Line[D] == TEXT('.') || Line[D] == TEXT(')')) && Line[D + 1] == TEXT(' ')) Line = Line.Mid(D + 2);
+			}
+			if (!Line.IsEmpty()) Kept.Add(Line);
+		}
+		const FString Joined = FString::Join(Kept, TEXT(" "));
+		FString Out;
+		Out.Reserve(Joined.Len());
+		for (int32 I = 0; I < Joined.Len(); ++I)
+		{
+			const TCHAR C = Joined[I];
+			if (C == TEXT('`')) continue;
+			// A heading's marks inside a line (the lines joined): "## " after a space goes ("#12" stays).
+			if (C == TEXT('#') && (I == 0 || FChar::IsWhitespace(Joined[I - 1])))
+			{
+				int32 J = I;
+				while (J < Joined.Len() && Joined[J] == TEXT('#')) ++J;
+				if (J < Joined.Len() && FChar::IsWhitespace(Joined[J])) { I = J; continue; }
+			}
+			// A link's words: "[words](url)" keeps "words".
+			if (C == TEXT('['))
+			{
+				const int32 Close = Joined.Find(TEXT("]("), ESearchCase::CaseSensitive, ESearchDir::FromStart, I);
+				const int32 End = Close > I ? Joined.Find(TEXT(")"), ESearchCase::CaseSensitive, ESearchDir::FromStart, Close) : INDEX_NONE;
+				if (Close > I && End > Close) { Out += Joined.Mid(I + 1, Close - I - 1); I = End; continue; }
+			}
+			// Emphasis marks: a run of * or _ touching a word on one side and a space, the line's edge or punctuation on the other
+			// (a * between spaces, "3 * 4", and a snake_case word's _ stay).
+			if (C == TEXT('*') || C == TEXT('_'))
+			{
+				int32 J = I;
+				while (J < Joined.Len() && Joined[J] == C) ++J;
+				const TCHAR Before = I > 0 ? Joined[I - 1] : TEXT(' ');
+				const TCHAR After = J < Joined.Len() ? Joined[J] : TEXT(' ');
+				const bool bWordBefore = FChar::IsAlnum(Before), bWordAfter = FChar::IsAlnum(After);
+				const bool bEdge = C == TEXT('*') ? !(FChar::IsWhitespace(Before) && FChar::IsWhitespace(After)) : bWordBefore != bWordAfter;
+				if (bEdge) { I = J - 1; continue; }
+			}
+			Out.AppendChar(C);
+		}
+		while (Out.ReplaceInline(TEXT("  "), TEXT(" ")) > 0) {}
+		return Out.TrimStartAndEnd();
+	}
+
 	/** A plate: a flat fill and a square edge EdgePx thick drawn inside its bounds (the sheet's controls and rows), and an
 	 *  optional accent bar BarPx wide down its left edge (the row the table shows, the lit tab). */
 	class SPlate : public SLeafWidget

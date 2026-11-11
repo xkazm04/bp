@@ -121,6 +121,8 @@ namespace
 		TEXT("Wave U1: the wall's wipe, seconds (0.1 to 2; default 0.4). bp.ReducedMotion: a 0.15 s rise of light instead."), ECVF_Default);
 	TAutoConsoleVariable<float> CVarWallArriveHold(TEXT("bp.Wow.WallArriveHold"), -1.f,
 		TEXT("Wave U1, for captures: holds the next wipe at this share (0 to 1; -1 off, the default); set -1 again to let it finish."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWallLeaveS(TEXT("bp.Wow.WallLeaveS"), 0.3f,
+		TEXT("Wave U2: a sheet closing on the wall leaves as it came, the wipe in reverse back to Glim's side, seconds (0.1 to 2; default 0.3). bp.Wow.WallArrive 0 turns it off with the arrival; bp.ReducedMotion: its light falls in 0.15 s. bp.Wow.WallArriveHold holds it too."), ECVF_Default);
 
 	TAutoConsoleVariable<int32> CVarNearBarEdge(TEXT("bp.NearBar.Edge"), 1,
 		TEXT("Wave U1: with a far main screen (bp.Projector 1 or 2) the console's bar stands on the table's near edge, a small nameplate tilted to the eye, open sheet or not: 1 (default); 0 as before (at the slot's top edge, dropped 25 degrees while a sheet is far)."), ECVF_Default);
@@ -627,7 +629,9 @@ struct FBpConsolePages
 			return;
 		}
 		const FString Lens = BpWords::Lens(R.Lens);
-		Sub = FString::Printf(TEXT("%s · %s · %s%s"), *R.Place, *Lens, *Clock(R.Seconds), R.bSample ? TEXT(" · a sample: nothing was read or written") : TEXT(""));
+		// Wave U2: a scan that ended before the table could watch it says so first.
+		Sub = FString::Printf(TEXT("%s%s · %s · %s%s"), R.bMissed ? (R.bFailed ? TEXT("It ended before I could watch · ") : TEXT("Done before I could watch: here's what it found · ")) : TEXT(""),
+			*R.Place, *Lens, *Clock(R.Seconds), R.bSample ? TEXT(" · a sample: nothing was read or written") : TEXT(""));
 		{
 			// What it read and what it found, one row: the rooms and features (or where it stopped), then the new findings by
 			// severity as chips (a chip raises the first of its kind).
@@ -1675,6 +1679,8 @@ void ABpPawn::PlaceConsole()
 {
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
+	// Wave U2: a sheet leaving the wall stays where it is until it has gone (EndWallLeave places it then).
+	if (WallLeaveAt >= 0.0) return;
 	const bool bRoom = !Table->GetRoomModeId().IsEmpty();
 	// The panel: a page open, or the conversation with the lamp (night two V2) filling it.
 	const bool bPanel = bConsoleOpen || bConsoleTalk;
@@ -1897,6 +1903,7 @@ void ABpPawn::TickConsoleLive()
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
 	TickWallReveal();
+	TickWallLeave();
 	const bool bShow = CVarConsole.GetValueOnGameThread() != 0;
 	if (ConsolePanel->IsVisible() != bShow)
 	{
@@ -1962,6 +1969,9 @@ void ABpPawn::OpenConsole(const FString& Page)
 {
 	const FBpConsolePage* Found = FBpConsolePages::Find(Page.ToLower());
 	const FString Key = Found ? FString(Found->Key) : FString(TEXT("home"));
+	// Wave U2: a sheet opened while the last one leaves the wall stops the leaving; the panel is still there, so it is not
+	// projected in again.
+	if (WallLeaveAt >= 0.0) EndWallLeave(false);
 	const bool bWas = bConsoleOpen;
 	bConsoleOpen = true;
 	if (Key != ConsolePageKey || !bWas)
@@ -1994,9 +2004,79 @@ void ABpPawn::CloseConsole()
 	if (ConsolePageKey == TEXT("standup")) StandupClosed();
 	if (ABpTable* Table = WristTable.Get()) Table->NarrateCut(TEXT("the console closed"));
 	UE_LOG(LogBpTable, Log, TEXT("BpConsole: closed"));
+	// Wave U2: a sheet leaving the wall goes as it came, the arrival's wipe in reverse; the panel is placed and drawn as the bar
+	// once it has gone (EndWallLeave).
+	if (StartWallLeave())
+	{
+		DrawWrist();
+		return;
+	}
 	PlaceConsole();
 	RefreshConsole();
 	DrawWrist();
+}
+
+bool ABpPawn::StartWallLeave()
+{
+	// Only a sheet on the wall (not the stage, not the conversation that stays on it), the arrival's cvar on, its material there.
+	if (!ConsolePanel || !bConsoleFar || bConsoleStage || bConsoleTalk || CVarWallArrive.GetValueOnGameThread() == 0 || !ConsolePanel->IsVisible()) return false;
+	if (WallRevealAt >= 0.0) EndWallReveal(TEXT("the sheet closed while it arrived"));
+	if (!WallRevealMat) WallRevealMat = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_BpWallReveal.M_BpWallReveal"));
+	if (!WallRevealMat) return false;
+	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
+	bWallLeaveReduced = Reduced && Reduced->GetInt() != 0;
+	// The sheet's controls go with it: nothing on it can be pressed while it leaves.
+	ConsoleBoxes.Reset();
+	ConsolePanel->SetMaterial(0, WallRevealMat);
+	WallLeaveAt = FPlatformTime::Seconds();
+	WallRevealFrames = 0;
+	WallRevealMaxMs = 0.0;
+	TickWallLeave();
+	UE_LOG(LogBpTable, Log, TEXT("BpWow: the wall closes: %s"), bWallLeaveReduced ? TEXT("its light falls in 0.15 s (reduced motion)")
+		: *FString::Printf(TEXT("the wipe back to Glim's side in %.2f s"), FMath::Clamp(CVarWallLeaveS.GetValueOnGameThread(), 0.1f, 2.f)));
+	return true;
+}
+
+void ABpPawn::TickWallLeave()
+{
+	if (WallLeaveAt < 0.0 || !ConsolePanel) return;
+	const uint32 Cycles0 = FPlatformTime::Cycles();
+	const double Dur = bWallLeaveReduced ? 0.15 : FMath::Clamp(CVarWallLeaveS.GetValueOnGameThread(), 0.1f, 2.f);
+	const float Hold = CVarWallArriveHold.GetValueOnGameThread();
+	const double Elapsed = FPlatformTime::Seconds() - WallLeaveAt;
+	const float A = Hold >= 0.f ? FMath::Clamp(Hold, 0.f, 1.f) : static_cast<float>(FMath::Clamp(Elapsed / Dur, 0.0, 1.0));
+	if (A >= 1.f && Hold < 0.f)
+	{
+		EndWallLeave(true);
+		return;
+	}
+	// Ease in: it lets go slowly at the far edge and runs home to Glim's side (the arrival's ease out, reversed).
+	const float E = A * A * A;
+	if (UMaterialInstanceDynamic* Mid = ConsolePanel->GetMaterialInstance())
+	{
+		Mid->SetScalarParameterValue(TEXT("Reveal"), bWallLeaveReduced ? 1.f : 1.f - E);
+		Mid->SetScalarParameterValue(TEXT("Bright"), bWallLeaveReduced ? 1.f - A : 1.f);
+		Mid->SetScalarParameterValue(TEXT("Side"), 0.f);
+	}
+	BpProjector::SetArriveFlash(bWallLeaveReduced ? 0.f : FMath::Sin(UE_PI * A) * 0.6f);
+	++WallRevealFrames;
+	WallRevealMaxMs = FMath::Max(WallRevealMaxMs, FPlatformTime::ToMilliseconds64(FPlatformTime::Cycles() - Cycles0));
+}
+
+void ABpPawn::EndWallLeave(bool bWhole)
+{
+	if (WallLeaveAt < 0.0) return;
+	const double Took = FPlatformTime::Seconds() - WallLeaveAt;
+	WallLeaveAt = -1.0;
+	BpProjector::SetArriveFlash(0.f);
+	if (ConsolePanel) ConsolePanel->SetMaterial(0, nullptr);
+	UE_LOG(LogBpTable, Log, TEXT("BpWow: the wall closed (%s) in %.2f s, %d frames, its tick %.3f ms at most a frame"), bWhole ? TEXT("whole") : TEXT("a sheet opened again"), Took, WallRevealFrames, WallRevealMaxMs);
+	// Gone: the panel becomes the bar (an opening page instead places and draws it itself).
+	if (bWhole)
+	{
+		PlaceConsole();
+		RefreshConsole();
+	}
 }
 
 bool ABpPawn::ConsoleBack()
@@ -2085,6 +2165,8 @@ void ABpPawn::RefreshConsole()
 {
 	ABpTable* Table = WristTable.Get();
 	if (!ConsolePanel || !Table) return;
+	// Wave U2: the leaving sheet keeps its last drawing until it has gone (EndWallLeave draws the bar then).
+	if (WallLeaveAt >= 0.0) return;
 	// Wave EV: what came of yesterday, read once in a while for the bar and the tile (throttled inside; nothing per frame).
 	if (Table->HasPlan()) StandupPeekYesterday();
 	const FBpLinkModule& Link = FBpLinkModule::Get();

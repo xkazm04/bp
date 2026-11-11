@@ -15,6 +15,7 @@
 
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpSheet.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "EngineUtils.h"
@@ -408,7 +409,8 @@ void ABpTable::LampAskTurn(FString&& Text)
 		case FBpCompanionTurn::EOutcome::Ok:
 		{
 			// The newest sentence on the caption; the whole reply on the wrist.
-			FString Reply = Turn.Text.TrimStartAndEnd().Replace(TEXT("\n"), TEXT(" "));
+			// Wave U2: plain words (no markdown marks) on the caption and the wrist.
+			FString Reply = BpSheet::PlainWords(Turn.Text);
 			if (Reply.IsEmpty()) Reply = TEXT("(no words)");
 			FString Newest = Reply;
 			int32 At = INDEX_NONE;

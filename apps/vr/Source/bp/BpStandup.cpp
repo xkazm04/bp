@@ -961,7 +961,7 @@ void ABpPawn::StandupVerdict(const FString& Verdict, const TCHAR* Route)
 				if (FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Body), Json) && Json.IsValid()) { Json->TryGetStringField(TEXT("state"), State); Json->TryGetStringField(TEXT("result"), Result); }
 				A.State = FBpStandupAnswer::EState::Sent;
 				A.Words = bApprove ? FString::Printf(TEXT("Approved: the card is %s%s."), *State, Result.IsEmpty() ? TEXT("") : *(TEXT(" · ") + Result.Left(120)))
-					: FString(TEXT("Declined: the companion will not run it."));
+					: FString(TEXT("Declined: Glim will not run it."));
 				Advance();
 			}
 			else
@@ -1355,7 +1355,7 @@ void ABpPawn::StandupRevoke()
 		Pawn->ConsoleBarWords = Words;
 		Pawn->ConsoleBarWordsUntil = FPlatformTime::Seconds() + 6.0;
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: take back %s: %d %s"), *Id, Status, *Words);
-		if (ABpTable* Table = Pawn->WristTable.Get(); Table && Status == 200) Table->StandupSay(TEXT("Taken back. The companion asks you again."));
+		if (ABpTable* Table = Pawn->WristTable.Get(); Table && Status == 200) Table->StandupSay(TEXT("Taken back. Glim asks you again."));
 		Pawn->RefreshConsole();
 		Pawn->DrawWrist();
 	});
@@ -1858,7 +1858,7 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 			const FBpStandupAnswer* A = S.Answers.Find(Id);
 			int32 Nth = 0, Of = 0;
 			for (const FBpMorningCard& Each : S.Deck.cards) if (Each.kind == BpVocab::MorningCard::Kind::Decision) { ++Of; if (Card && Each.id == Card->id) Nth = Of; }
-			OutKicker = bCompanion ? FString(TEXT("THE COMPANION ASKS")) : FString::Printf(TEXT("DECISION %d OF %d%s"), Nth, Of, S.bSample ? TEXT(" · SAMPLE") : TEXT(""));
+			OutKicker = bCompanion ? FString(TEXT("GLIM ASKS")) : FString::Printf(TEXT("DECISION %d OF %d%s"), Nth, Of, S.bSample ? TEXT(" · SAMPLE") : TEXT(""));
 			OutTitle = bCompanion ? Sheet.Companion.Summary : Card->headline;
 			const bool bOpen = !A || A->State == FBpStandupAnswer::EState::Refused || A->State == FBpStandupAnswer::EState::Unsent;
 			if (!bOpen) { OutWords = A->Words; return true; }
@@ -1894,8 +1894,9 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 	if (const int32 Requests = IsStandupOpen() ? 0 : StandupPendingRequests(); Requests > 0)
 	{
 		// The companion's requests waiting on the PC (night two V2): the wrist says so and opens the stand-up on them.
-		OutKicker = TEXT("THE COMPANION ASKS");
-		OutTitle = FString::Printf(TEXT("%d %s from the companion %s for you"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests"), Requests == 1 ? TEXT("waits") : TEXT("wait"));
+		// Wave U2: the wrist names him as the wall does (GLIM ASKS).
+		OutKicker = TEXT("GLIM ASKS");
+		OutTitle = FString::Printf(TEXT("%d %s from Glim %s for you"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests"), Requests == 1 ? TEXT("waits") : TEXT("wait"));
 		OutWords = TEXT("The stand-up shows each one with APPROVE and DECLINE.");
 		OutButtons.Emplace(TEXT("STAND-UP"), TEXT("open:standup"));
 		return true;
@@ -1904,7 +1905,7 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 	{
 		OutKicker = TEXT("HANDED OVER");
 		OutTitle = FString::Printf(TEXT("Until %s on %s"), *LocalClock(Grant->ExpiresAt), *FBpLinkModule::Get().NameOf(Grant->Product));
-		OutWords = FString::Printf(TEXT("The companion answers tier %d and milder for you; never stop-ship findings."), FMath::Max(1, Grant->MinTier));
+		OutWords = FString::Printf(TEXT("Glim answers tier %d and milder for you; never stop-ship findings."), FMath::Max(1, Grant->MinTier));
 		OutButtons.Emplace(TEXT("TAKE BACK"), TEXT("standup:revoke"));
 		return true;
 	}
@@ -2300,8 +2301,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		// The decision as a sheet (night two V2: the product's money shot). The title and the one line of consequence lead; the
 		// finding's screen takes the sheet's right half, large enough to read as a screen; the answers are the largest controls on
 		// the sheet, APPROVE the primary; the answer taken lands as a stamp. A companion's card is the same family told apart: a
-		// cyan rule down its left (the system's colour), "GLIM ASKS" (G2; the wrist's card keeps "THE COMPANION ASKS", which
-		// BpWrist reads for its tone), a human sentence first and its raw ids set small.
+		// cyan rule down its left (the system's colour), "GLIM ASKS" (G2; the wrist's card says it too since wave U2, and
+		// BpWrist reads it for its tone), a human sentence first and its raw ids set small.
 		const bool bScreen = !bCompanion && (S.ShotBrush.IsValid() || S.bShotLoading);
 		// Wave N3-W2, the decision on the wall: three columns. The left the kicker, the title and what each answer does; the
 		// middle the screen and its loupe; the right what it touches (its place, what depends on it, who raised it and when, the
@@ -2743,7 +2744,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		const int32 Requests = CompanionSheets(S);
 		if (bOpen && Requests > 0)
 		{
-			Items.Insert(FItem{ FString::Printf(TEXT("%d %s and %d %s from the companion wait for you."), Of, Of == 1 ? TEXT("decision") : TEXT("decisions"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests")), BpSheet::Amber }, 0);
+			Items.Insert(FItem{ FString::Printf(TEXT("%d %s and %d %s from Glim wait for you."), Of, Of == 1 ? TEXT("decision") : TEXT("decisions"), Requests, Requests == 1 ? TEXT("request") : TEXT("requests")), BpSheet::Amber }, 0);
 		}
 		// Wave EV: the opening counts what came of the earlier approvals ("Yesterday you approved 3: 2 built, 1 failed").
 		if (bOpen)

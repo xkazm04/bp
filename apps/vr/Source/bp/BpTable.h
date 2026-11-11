@@ -1980,6 +1980,8 @@ public:
 	struct FScanResult
 	{
 		bool bSample = false, bCancelled = false, bFailed = false;
+		/** Wave U2: it ended before any read saw it running (TheatreMissed): the sheet says so first. */
+		bool bMissed = false;
 		FString Lens;
 		FString Place;
 		int32 RoomsRead = 0, RoomsTotal = 0, Features = 0;
@@ -2095,12 +2097,27 @@ private:
 	double DecisionFlashAt = -1.0;
 	/** The room LandDecision pointed (raised) for its flash when nothing else was pointed; cleared with the flash. */
 	FString DecisionFlashRoom;
+	/** Wave U2: the raise LandDecision makes (and its settle) is nobody's point: the posed capture hand is not moved for it. */
+	bool bLandingRaise = false;
+	/** The game thread's milliseconds of each frame over a landing's flash (logged as it ends). */
+	TArray<float> DecisionGameMs;
+	/** SetHighlight's steps, timed: the breakdown as words for the log (BpLevels.cpp). */
+	FString SetHighlightTimed(const FString& Kind, const FString& Id);
 	/** New findings land now (a scan runs or just ended, not reduced motion, not the first read). */
 	bool LandingsWanted() const;
 	/** The live result is read a moment after the job ends (the store's last rows). */
 	FTimerHandle TheatreEndTimer;
 	void TheatreReading(int32 Room, int32 At, int32 Of);
 	void TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet);
+	/** Wave U2: a linked scan that ended before any read saw it running: its result sheet anyway, a moment later, said as
+	 *  "Done before I could watch: here's what it found." (ReceiveScanState finds it; ScanJobsSeen holds every measure job
+	 *  seen, the first read only priming it). BpScan.MissedTest stands a finished job in for captures. */
+public:
+	void TheatreMissed(const struct FBpScanJob& Job, const struct FBpScanState& State);
+private:
+	TSet<FString> ScanJobsSeen;
+	bool bScanJobsPrimed = false;
+	bool bTheatreMissed = false;
 	void TheatreFly(int32 Room);
 	void TheatreVoice(const FString& Clip, const FString& Say);
 	void TheatrePump();
@@ -2253,6 +2270,8 @@ private:
 	void TalkCaptionEnded();
 	/** The console shows the conversation now (bp.TalkSheet and no sheet holding the panel). */
 	bool TalkOnConsole() const;
+	/** Wave U2: a sheet (a page, the stand-up, the conversation) is on the far wall: the lamp's caption box stays off it. */
+	bool WallSheetOpen() const;
 	/** The live plan's body (ApplyPlan's, minus the build-up's hold). */
 	void ApplyPlanNow(const FBpPlan& Plan);
 

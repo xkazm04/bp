@@ -444,6 +444,14 @@ private:
 	void StartWallReveal();
 	void TickWallReveal();
 	void EndWallReveal(const TCHAR* Why);
+	/** Wave U2, "the wall closes": a sheet closed on the wall leaves as it came, the wipe in reverse back to Glim's side in
+	 *  bp.Wow.WallLeaveS (its light falls in 0.15 s with bp.ReducedMotion); the panel is placed and drawn as the bar once it has
+	 *  gone. False when it closes at once (the cvar off, the stage, the conversation staying on the wall). */
+	double WallLeaveAt = -1.0;
+	bool bWallLeaveReduced = false;
+	bool StartWallLeave();
+	void TickWallLeave();
+	void EndWallLeave(bool bWhole);
 	void PlaceStage(const FTransform& Pose);
 	/** Wave PJ2: while the stage stands, the studio's primitives it fully covers (behind it) or that stand in front of its
 	 *  content above the table (a pendant shade over the right flank) are hidden; shown again when it goes. */

@@ -385,6 +385,25 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 
 	// The scan line: the first running measure job (a queued one has not started reading).
 	const FBpScanJob* Job = State.Jobs.FindByPredicate([](const FBpScanJob& J) { return J.kind == TEXT("measure") && J.status == TEXT("running"); });
+	// Wave U2: a scan that finished before any read saw it running (a fast server) never started the theatre and nothing said it
+	// ran. A measure job first seen already ended (after the first read, which only learns what is there), within two minutes,
+	// still gets its result sheet: "Done before I could watch: here's what it found."
+	{
+		const FBpScanJob* Missed = nullptr;
+		for (const FBpScanJob& J : State.Jobs)
+		{
+			if (J.kind != BpVocab::ScanJob::Kind::Measure) continue;
+			bool bKnown = false;
+			ScanJobsSeen.Add(J.id, &bKnown);
+			if (bKnown || !bScanJobsPrimed || J.id == ScanJob) continue;
+			if (J.status != BpVocab::ScanJob::Status::Done && J.status != BpVocab::ScanJob::Status::Failed) continue;
+			FDateTime Ended;
+			if (!FDateTime::ParseIso8601(*(J.ended_at.IsEmpty() ? J.queued_at : J.ended_at), Ended) || (FDateTime::UtcNow() - Ended).GetTotalSeconds() > 120.0) continue;
+			Missed = &J;
+		}
+		bScanJobsPrimed = true;
+		if (Missed && !Job && !bTheatre && !bScanSample && !bScanReplay) TheatreMissed(*Missed, State);
+	}
 	if (Job)
 	{
 		if (Job->id != ScanJob)
@@ -819,7 +838,10 @@ void ABpTable::PlacePins()
 		const FString* Reading = Tile.health.Find(ActiveLens);
 		// Wave C1: a landing pin is still over its tile, or not yet shown (BpScanTheatre.cpp).
 		float LandShow = 1.f;
-		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString()) + PinLandOffset(Pin, LandShow);
+		// Wave U2 (from the seat the pointed room's stems ran through its raised floor, the beads left under it): the pointed room's
+		// pins stand on its raised copy's floor, with its furniture (LiftGlyphs).
+		const float PointedLift = HighlightRestRoom != INDEX_NONE && Pin.Room == HighlightRestRoom && LiftRoomId.IsEmpty() ? HighlightLiftCm : 0.f;
+		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString()) + PinLandOffset(Pin, LandShow) + PointedLift;
 		const double Site = SiteAll * LandShow;
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));

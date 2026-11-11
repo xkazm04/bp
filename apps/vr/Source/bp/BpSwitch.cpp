@@ -969,7 +969,10 @@ void ABpTable::ApplyLampWidgets()
 		// The talk's lines read on the console's conversation sheet (night two V2), not in this box, while it shows them.
 		// bp.Captions 1 (SETTINGS › ACCESSIBILITY › CAPTIONS ALWAYS): every line the lamp says, on the site plan too.
 		const IConsoleVariable* Always = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Captions"));
-		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || (Always && Always->GetInt() != 0)) && !(bTalkCaption && TalkOnConsole()) && !bSheetCaption;
+		// Wave U2: while a page or the stand-up is open on the far wall the box is not drawn (from the seat it stood over the sheet's
+		// lower left, its PREV and status line): his words are spoken, and stay on the wrist's conversation. CAPTIONS ALWAYS keeps it.
+		const bool bAlways = Always && Always->GetInt() != 0;
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || bAlways) && !(bTalkCaption && TalkOnConsole()) && !bSheetCaption && (bAlways || !WallSheetOpen());
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
 		// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
 		// names and the pin tags under it.

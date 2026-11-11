@@ -999,7 +999,7 @@ void ABpPawn::DrawWrist()
 	{
 		Kicker = SuKicker;
 		if (Kicker.EndsWith(TEXT(" · SAMPLE"))) { Kicker = Kicker.LeftChop(9); bSampleChip = true; }
-		Tone = Kicker == TEXT("THE COMPANION ASKS") ? BpSheet::Accent : BpSheet::Amber;
+		Tone = Kicker == TEXT("GLIM ASKS") ? BpSheet::Accent : BpSheet::Amber;
 		// YESTERDAY (wave EV): the card in the colour of what the approval became.
 		if (Kicker.StartsWith(TEXT("YESTERDAY"))) Tone = SuWords.StartsWith(TEXT("Built")) ? BpSheet::Accent : SuWords.StartsWith(TEXT("Failed")) ? BpSheet::Red : BpSheet::Amber;
 		Title = SuTitle;
