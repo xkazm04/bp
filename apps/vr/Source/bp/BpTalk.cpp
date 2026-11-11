@@ -138,6 +138,27 @@ namespace
 		return Reply.Left(Cut);
 	}
 
+	/** Wave U5: what Glim is doing, in plain words, for one of his tools (a tool's id is never shown to the person). The table is
+	 *  the conversation sheet's while he thinks: one line per step, newest last, at most TalkStepsShown. */
+	constexpr int32 TalkStepsShown = 3;
+	FString StepWords(const FString& Tool)
+	{
+		struct FStep { const TCHAR* Tool; const TCHAR* Words; };
+		static const FStep Steps[] = {
+			{ TEXT("morning.brief"), TEXT("Reading this morning's decisions") },
+			{ TEXT("next.steps"), TEXT("Ranking what to do next") },
+			{ TEXT("inbox.list"), TEXT("Looking through the open findings") },
+			{ TEXT("plan.find"), TEXT("Reading the plan") },
+			{ TEXT("plan.brief"), TEXT("Reading the plan") },
+			{ TEXT("focus.show"), TEXT("Opening it for you") },
+			{ TEXT("help.find"), TEXT("Looking that up") },
+		};
+		for (const FStep& S : Steps) if (Tool == S.Tool) return S.Words;
+		if (Tool.StartsWith(TEXT("scan."))) return TEXT("Setting up a scan");
+		if (Tool.StartsWith(TEXT("wave."))) return TEXT("Putting the day together");
+		return TEXT("Working on it");
+	}
+
 	FString ErrorOf(const FString& Body)
 	{
 		TSharedPtr<FJsonObject> Json;
@@ -275,6 +296,22 @@ struct FBpTalkState
 	bool bSampleReplies = false;
 	/** G2: when the turn now out was asked (its focus events lose to anything the person did since). */
 	double AskedAt = 0.0;
+	/** Wave U5, the turn as it streams: what Glim is doing (plain words, newest last, at most TalkStepsShown), his words so far
+	 *  (plain), how many of its focus events the table already acted on, whether its pending card is already on the wall, and
+	 *  when the first step and the first words came (seconds after the ask; 0: not yet). */
+	TArray<FString> Steps;
+	FString LiveText;
+	int32 FocusesDone = 0;
+	bool bCardShown = false;
+	double FirstStepS = 0.0, FirstTextS = 0.0;
+	void ResetLive()
+	{
+		Steps.Reset();
+		LiveText.Reset();
+		FocusesDone = 0;
+		bCardShown = false;
+		FirstStepS = FirstTextS = 0.0;
+	}
 	/** The lamp's own point light (bp.TalkLightGain), and its intensity before the talk. */
 	TWeakObjectPtr<UPointLightComponent> Light;
 	float LightBase = -1.f;
@@ -420,6 +457,12 @@ bool ABpTable::TalkView(FTalkView& Out) const
 		Out.Reply = Rest;
 	}
 	else Out.Line = Line;
+	// Wave U5: while he thinks, what he is doing and his words so far (whole), as they stream.
+	if (Talk.IsValid() && Talk->Step == FBpTalkState::EStep::Thinking && !Out.Heard.IsEmpty())
+	{
+		Out.Steps = Talk->Steps;
+		Out.Reply = Talk->LiveText;
+	}
 	// G2: the quick replies, once the answer is in (never while listening, hearing or thinking).
 	if (Talk.IsValid() && (Talk->Step == FBpTalkState::EStep::Idle || Talk->Step == FBpTalkState::EStep::Speaking || Talk->Step == FBpTalkState::EStep::Sample) && !Out.Heard.IsEmpty())
 	{
@@ -476,7 +519,14 @@ void ABpTable::TalkPreview(const FString& Step, const FString& Heard, const FStr
 	else if (Step == TEXT("thinking"))
 	{
 		S.Step = FBpTalkState::EStep::Thinking;
-		TalkSays(You + TEXT("\nThinking… B or a pinch on me cancels"), 60.f);
+		// Wave U5: with a reply, the still of a streaming turn: two steps done and his words so far.
+		S.ResetLive();
+		if (!Reply.IsEmpty())
+		{
+			S.Steps = { StepWords(TEXT("morning.brief")), StepWords(TEXT("next.steps")) };
+			S.LiveText = Reply;
+		}
+		TalkSays(You + TEXT("\n") + (Reply.IsEmpty() ? FString(TEXT("Thinking… B or a pinch on me cancels")) : Reply.Left(150)), 60.f);
 	}
 	else
 	{
@@ -901,14 +951,62 @@ void ABpTable::TalkTurn(const FString& Heard)
 	// prefix is gone): the place, the target "this one" means, spoken.
 	const FBpTurnSurface Surface = TurnSurface(true);
 	TWeakObjectPtr<ABpTable> Self(this);
-	Link.PostCompanionTurn(Heard, Surface, [Self, Serial](const FBpCompanionTurn& Turn)
+	S.ResetLive();
+	// Wave U5: focus events act as they arrive, in order; ones that come while an earlier one's step is still queued join the
+	// queue (a newer turn's still replace an older one's: TalkActOnFocus).
+	const auto ActOnNewFocuses = [](ABpTable* T, const TArray<FBpTurnFocus>& All)
+	{
+		FBpTalkState& L = *T->Talk;
+		if (All.Num() <= L.FocusesDone) return;
+		const TArray<FBpTurnFocus> New(All.GetData() + L.FocusesDone, All.Num() - L.FocusesDone);
+		L.FocusesDone = All.Num();
+		if (T->TalkFocusQueue.Num() > 0) { for (const FBpTurnFocus& F : New) T->TalkFocusQueue.Emplace(F.TargetKind, F.TargetId); }
+		else T->TalkActOnFocus(New, L.AskedAt);
+	};
+	// Wave U5: the turn as it streams (an agent you can watch work): what he is doing, in plain words, and his words as they
+	// come, on the sheet and the caption; his voice still waits for the whole reply.
+	const auto OnProgress = [Self, Serial, ActOnNewFocuses](const FBpCompanionTurn& Sofar)
+	{
+		ABpTable* T = Self.Get();
+		if (!T || !T->Talk.IsValid() || T->Talk->Serial != Serial || T->Talk->Step != FBpTalkState::EStep::Thinking) return;
+		FBpTalkState& L = *T->Talk;
+		const double Since = FPlatformTime::Seconds() - L.ThinkFrom;
+		TArray<FString> Steps;
+		for (const FString& Tool : Sofar.Tools)
+		{
+			const FString Words = StepWords(Tool);
+			if (Steps.Num() == 0 || Steps.Last() != Words) Steps.Add(Words);
+		}
+		while (Steps.Num() > TalkStepsShown) Steps.RemoveAt(0);
+		const FString Text = BpSheet::PlainWords(Sofar.Text);
+		const bool bChanged = Steps != L.Steps || Text != L.LiveText;
+		if (Sofar.Tools.Num() > 0 && L.FirstStepS <= 0.0) { L.FirstStepS = Since; UE_LOG(LogBpTable, Log, TEXT("BpTalk: first step %.2f s after the ask: \"%s\""), Since, *Steps.Last()); }
+		if (!Text.IsEmpty() && L.FirstTextS <= 0.0) { L.FirstTextS = Since; UE_LOG(LogBpTable, Log, TEXT("BpTalk: first words %.2f s after the ask (%d chars)"), Since, Text.Len()); }
+		if (Steps != L.Steps && Steps.Num() > 0) UE_LOG(LogBpTable, Log, TEXT("BpTalk: step at %.2f s: \"%s\" (%s)"), Since, *Steps.Last(), *Sofar.Tools.Last());
+		L.Steps = MoveTemp(Steps);
+		L.LiveText = Text;
+		ActOnNewFocuses(T, Sofar.Focuses);
+		if (!Sofar.CardSummary.IsEmpty() && !L.bCardShown)
+		{
+			L.bCardShown = true;
+			if (ABpPawn* Pawn = TalkPawn(T->GetWorld())) Pawn->StandupShowCompanionCards();
+		}
+		if (!bChanged) return;
+		// The caption (and the wrist) follow: his words so far, else what he is doing.
+		const FString You = FString::Printf(TEXT("You: \"%s\""), *L.Heard.Left(80));
+		const FString Now = !L.LiveText.IsEmpty() ? (L.LiveText.Len() > 150 ? L.LiveText.Left(149).TrimEnd() + BpType::Ellipsis() : L.LiveText)
+			: L.Steps.Num() > 0 ? L.Steps.Last() + BpType::Ellipsis() : FString(TEXT("Thinking… B or a pinch on me cancels"));
+		T->TalkSays(You + TEXT("\n") + Now, 600.f);
+	};
+	Link.PostCompanionTurn(Heard, Surface, [Self, Serial, ActOnNewFocuses](const FBpCompanionTurn& Turn)
 	{
 		ABpTable* T = Self.Get();
 		if (!T || !T->Talk.IsValid()) return;
 		const double Took = FPlatformTime::Seconds() - T->Talk->ThinkFrom;
-		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn ended in %.1f s: outcome %d, %d chars%s%s, %d focus events, %d cards, %d quick replies"), Took, static_cast<int32>(Turn.Outcome), Turn.Text.Len(),
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn ended in %.1f s (first step %.2f s, first words %.2f s): outcome %d, %d chars%s%s, %d focus events (%d acted on as they came), %d cards, %d quick replies"), Took,
+			T->Talk->FirstStepS, T->Talk->FirstTextS, static_cast<int32>(Turn.Outcome), Turn.Text.Len(),
 			Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a pending card"), Turn.FocusKind.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", focus %s %s"), *Turn.FocusKind, *Turn.FocusId),
-			Turn.Focuses.Num(), Turn.Cards.Num(), Turn.Replies.Num());
+			Turn.Focuses.Num(), T->Talk->Serial == Serial ? T->Talk->FocusesDone : 0, Turn.Cards.Num(), Turn.Replies.Num());
 		if (T->Talk->Serial != Serial) { UE_LOG(LogBpTable, Log, TEXT("BpTalk: the turn's answer is dropped (cancelled)")); return; }
 		const FString You = FString::Printf(TEXT("You: \"%s\""), *T->Talk->Heard.Left(60));
 		switch (Turn.Outcome)
@@ -941,15 +1039,17 @@ void ABpTable::TalkTurn(const FString& Heard)
 		T->LampNotifyAsk();
 		T->Talk->Replies = Turn.Replies;
 		T->Talk->bSampleReplies = false;
-		// One action per focus event, in order (a page, a place, a decision); the person's own act since the ask wins.
-		T->TalkActOnFocus(Turn.Focuses, T->Talk->AskedAt);
-		// A write the companion wants waits for the wearer: its card on the wall, as the stand-up shows it.
-		if (!Turn.CardSummary.IsEmpty())
+		// One action per focus event, in order (a page, a place, a decision); the person's own act since the ask wins. Those the
+		// stream already acted on are not acted on again.
+		ActOnNewFocuses(T, Turn.Focuses);
+		// A write the companion wants waits for the wearer: its card on the wall, as the stand-up shows it (once per turn).
+		if (!Turn.CardSummary.IsEmpty() && !T->Talk->bCardShown)
 		{
+			T->Talk->bCardShown = true;
 			if (ABpPawn* Pawn = TalkPawn(T->GetWorld())) Pawn->StandupShowCompanionCards();
 		}
 		T->TalkSpeak(Reply, Shown);
-	});
+	}, OnProgress);
 }
 
 FBpTurnSurface ABpTable::TurnSurface(bool bSpoken)

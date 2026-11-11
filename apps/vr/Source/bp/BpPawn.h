@@ -523,7 +523,7 @@ private:
 	void DrawStandup(const TSharedRef<class SCanvas>& Canvas);
 	/** The conversation with the lamp on the console's panel (BpConsole.cpp, night two V2): the state, the heard words, the
 	 *  reply whole (or the lamp's own line), the level while listening. */
-	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies = TArray<FString>());
+	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies = TArray<FString>(), const TArray<FString>& Steps = TArray<FString>());
 	/** The pad on the open stand-up: false when it is not the stand-up's to take. */
 	bool StandupPad(const FString& Button);
 	/** The wrist's card for the stand-up (the decision on screen, or the hand-over), false when none. */

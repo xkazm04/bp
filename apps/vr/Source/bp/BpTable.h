@@ -1935,6 +1935,8 @@ public:
 		/** G2: the turn's quick replies (their labels), drawn as up to three large buttons under the reply; a press sends that
 		 *  reply's words as the next turn (TalkReply). Empty while a turn is in flight. */
 		TArray<FString> Replies;
+		/** Wave U5: while THINKING, what Glim is doing in plain words (newest last, at most three); his words so far are Reply. */
+		TArray<FString> Steps;
 	};
 	bool TalkView(FTalkView& Out) const;
 	/** G2, quick reply N (1..3; BpTalk.Reply, the sheet's buttons): its words go to Glim as the next turn, through the same path

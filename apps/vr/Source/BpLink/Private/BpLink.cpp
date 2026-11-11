@@ -2460,25 +2460,40 @@ void FBpLinkModule::FetchIslandsPlan(TFunction<void(bool, const FBpPlan&)> OnDon
 
 namespace
 {
-	/** One SSE body's `data:` lines as JSON objects, in order (`event:` lines are not needed: every event carries `type`). */
-	void ReadTurnEvents(const FString& Body, FBpCompanionTurn& Out, FString& OutConversation)
+	/** The turn's SSE body as read so far (wave U5: the body is read as it arrives, by this one parser, for the progress and
+	 *  for the end alike). Tail holds the bytes after the last newline: a line is parsed only once it is whole, and a newline
+	 *  byte never sits inside a UTF-8 character, so a body split anywhere reads as it does whole. */
+	struct FTurnRead
 	{
-		TArray<FString> Lines;
-		Body.ParseIntoArrayLines(Lines, false);
-		Out.Outcome = FBpCompanionTurn::EOutcome::Failed;
+		FTurnRead() { Out.Outcome = FBpCompanionTurn::EOutcome::Failed; }
+		FBpCompanionTurn Out;
+		FString Conversation;
 		bool bEnded = false;
 		// Text arrives as deltas; anything else between two of them (a tool call, a card) means a new block of the reply, and
 		// blocks are joined with a space so the caption and the voice do not read "empty.Kettle".
 		bool bBlockBreak = false;
-		for (const FString& Line : Lines)
+		TArray<uint8> Tail;
+	};
+
+	/** One SSE line: a `data:` line as a JSON object (`event:` lines are not needed: every event carries `type`). True when the
+	 *  turn as read changed. */
+	bool ReadTurnLine(const FString& Line, FTurnRead& Read)
+	{
+		FBpCompanionTurn& Out = Read.Out;
 		{
-			if (!Line.StartsWith(TEXT("data:"))) continue;
+			if (!Line.StartsWith(TEXT("data:"))) return false;
 			TSharedPtr<FJsonObject> Event;
-			if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line.Mid(5).TrimStart()), Event) || !Event.IsValid()) continue;
+			if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Line.Mid(5).TrimStart()), Event) || !Event.IsValid()) return false;
 			FString Type;
 			Event->TryGetStringField(TEXT("type"), Type);
+			bool& bBlockBreak = Read.bBlockBreak;
 			if (Type != TEXT("text") && Type != TEXT("start")) bBlockBreak = true;
-			if (Type == TEXT("start")) Event->TryGetStringField(TEXT("conversationId"), OutConversation);
+			if (Type == TEXT("start")) Event->TryGetStringField(TEXT("conversationId"), Read.Conversation);
+			else if (Type == TEXT("tool"))
+			{
+				FString Name;
+				if (Event->TryGetStringField(TEXT("name"), Name) && !Name.IsEmpty()) Out.Tools.Add(Name.Left(80));
+			}
 			else if (Type == TEXT("text"))
 			{
 				FString Delta;
@@ -2526,7 +2541,7 @@ namespace
 			}
 			else if (Type == TEXT("end"))
 			{
-				bEnded = true;
+				Read.bEnded = true;
 				FString Outcome;
 				Event->TryGetStringField(TEXT("outcome"), Outcome);
 				Out.Outcome = Outcome == TEXT("done") ? FBpCompanionTurn::EOutcome::Ok : FBpCompanionTurn::EOutcome::Failed;
@@ -2555,9 +2570,66 @@ namespace
 					}
 				}
 			}
+			return Type == TEXT("text") || Type == TEXT("tool") || Type == TEXT("card") || Type == TEXT("focus") || Type == TEXT("end");
 		}
-		if (!bEnded && Out.Failure.IsEmpty()) Out.Failure = TEXT("the turn stopped without an end event");
 	}
+
+	/** Bytes of the body, in order: every whole line among them is read now, the rest waits in Tail; bLast reads the rest too
+	 *  (the body's last line may have no newline) and marks a turn with no end event. True when the turn as read changed. */
+	bool FeedTurnBytes(FTurnRead& R, const uint8* Data, int32 Num, bool bLast)
+	{
+		if (Num > 0) R.Tail.Append(Data, Num);
+		int32 Cut = INDEX_NONE;
+		if (bLast) Cut = R.Tail.Num();
+		else if (!R.Tail.FindLast(static_cast<uint8>('\n'), Cut)) Cut = INDEX_NONE;
+		else ++Cut;
+		bool bChanged = false;
+		if (Cut > 0)
+		{
+			const FUTF8ToTCHAR Wide(reinterpret_cast<const ANSICHAR*>(R.Tail.GetData()), Cut);
+			const FString Chunk(Wide.Length(), Wide.Get());
+			R.Tail.RemoveAt(0, Cut, EAllowShrinking::No);
+			TArray<FString> Lines;
+			Chunk.ParseIntoArrayLines(Lines, false);
+			for (const FString& Line : Lines) bChanged |= ReadTurnLine(Line, R);
+		}
+		if (bLast && !R.bEnded && R.Out.Failure.IsEmpty()) R.Out.Failure = TEXT("the turn stopped without an end event");
+		return bChanged;
+	}
+
+	/** One whole SSE body (the self-test's reference read). */
+	void ReadTurnEvents(const FString& Body, FBpCompanionTurn& Out, FString& OutConversation)
+	{
+		FTurnRead R;
+		const FTCHARToUTF8 Bytes(*Body, Body.Len());
+		FeedTurnBytes(R, reinterpret_cast<const uint8*>(Bytes.Get()), Bytes.Length(), true);
+		Out = MoveTemp(R.Out);
+		OutConversation = MoveTemp(R.Conversation);
+	}
+
+	/** What the stream and the end share (wave U5): the bytes as they came (the HTTP thread appends under Lock; a refusal's body
+	 *  is read whole from them), how many the parser has had, and the parser (game thread only). */
+	struct FTurnStream
+	{
+		FCriticalSection Lock;
+		TArray<uint8> Raw;
+		int32 Fed = 0;
+		std::atomic<bool> bQueued{ false };
+		FTurnRead Read;
+		bool bDone = false;
+		int32 Deliveries = 0;
+		/** Hands the parser the bytes it has not had yet (game thread). */
+		bool FeedNew(bool bLast)
+		{
+			TArray<uint8> New;
+			{
+				FScopeLock Guard(&Lock);
+				New.Append(Raw.GetData() + Fed, Raw.Num() - Fed);
+				Fed = Raw.Num();
+			}
+			return FeedTurnBytes(Read, New.GetData(), New.Num(), bLast);
+		}
+	};
 }
 
 const TArray<FString>& FBpLinkModule::CompanionPageTargets()
@@ -2576,7 +2648,7 @@ bool FBpLinkModule::IsTurnTarget(const FString& Id)
 	return true;
 }
 
-void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone)
+void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone, TFunction<void(const FBpCompanionTurn&)> OnProgress)
 {
 	if (!HasPcLink() || GFromBundle)
 	{
@@ -2616,7 +2688,7 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface&
 	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 	Request->SetHeader(TEXT("Accept"), TEXT("text/event-stream"));
 	Request->SetContentAsString(Wire);
-	// A model turn with its tools can run minutes; the answer is read whole when it ends. The stream can stay silent longer
+	// A model turn with its tools can run minutes; its events are read as they come (below). The stream can stay silent longer
 	// than the engine's 30 s activity timeout (HttpActivityTimeout) while the model thinks: night two W2b found every turn cut
 	// at 30 s with no answer (status 0), so the request's own activity limit is the turn's.
 	// A plan-my-day turn on Opus measured over 240 s on Lynx (night two W2b): ten minutes, then it is given up.
@@ -2627,9 +2699,36 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface&
 	GTurnRequest = Request;
 	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u posted (conversation %s; surface vr, place \"%s\", target %s, spoken %d): %s"), Serial, CompanionConversation.IsEmpty() ? TEXT("new") : *CompanionConversation,
 		*Surface.Place.Left(CompanionPlaceMax), IsTurnTarget(Surface.Target) ? *Surface.Target : TEXT("-"), Surface.bSpoken ? 1 : 0, *Text);
-	Request->OnProcessRequestComplete().BindLambda([OnDone, Serial](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
+	// Wave U5: the body is read as it arrives (curl, on Windows and Android alike, hands each received block to the stream
+	// on its own thread; the response then keeps no content of its own). The HTTP thread only appends the bytes and, when a
+	// newline came, queues one read on the game thread; the read parses whole lines only, so the end reads the rest by the
+	// same parser and nothing is counted twice. A cancelled or superseded turn's progress is never delivered.
+	const TSharedRef<FTurnStream, ESPMode::ThreadSafe> Stream = MakeShared<FTurnStream, ESPMode::ThreadSafe>();
+	const double PostedAt = FPlatformTime::Seconds();
+	Request->SetResponseBodyReceiveStreamDelegateV2(FHttpRequestStreamDelegateV2::CreateLambda([Stream, OnProgress, Serial, PostedAt](void* Ptr, int64& InOutLength)
+	{
+		if (InOutLength <= 0) return;
+		const uint8* Bytes = static_cast<const uint8*>(Ptr);
+		{
+			FScopeLock Guard(&Stream->Lock);
+			Stream->Raw.Append(Bytes, static_cast<int32>(InOutLength));
+		}
+		bool bLine = false;
+		for (int64 I = 0; I < InOutLength && !bLine; ++I) bLine = Bytes[I] == static_cast<uint8>('\n');
+		if (!OnProgress || !bLine || Stream->bQueued.exchange(true)) return;
+		AsyncTask(ENamedThreads::GameThread, [Stream, OnProgress, Serial, PostedAt]()
+		{
+			Stream->bQueued = false;
+			if (Stream->bDone || Serial != GTurnSerial || Serial == GTurnCancelled) return;
+			if (!Stream->FeedNew(false)) return;
+			if (++Stream->Deliveries == 1) UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u: its first events read %.2f s after the post (streamed)"), Serial, FPlatformTime::Seconds() - PostedAt);
+			OnProgress(Stream->Read.Out);
+		});
+	}));
+	Request->OnProcessRequestComplete().BindLambda([OnDone, Serial, Stream, PostedAt](FHttpRequestPtr, FHttpResponsePtr Response, bool bConnected)
 	{
 		FBpLinkModule* Module = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"));
+		Stream->bDone = true;
 		FBpCompanionTurn Turn;
 		// Only the turn still current frees the companion and keeps its conversation: a cancelled one (CancelCompanionTurn), or
 		// one a newer turn followed after a re-link, writes nothing into the module, so it cannot land on the newer turn.
@@ -2653,23 +2752,32 @@ void FBpLinkModule::PostCompanionTurn(const FString& Text, const FBpTurnSurface&
 		}
 		else if (Status == 200)
 		{
-			FString Conversation;
-			ReadTurnEvents(Response->GetContentAsString(), Turn, Conversation);
+			// The rest of the body (what no progress read took yet, and a last line without its newline), by the same parser.
+			Stream->FeedNew(true);
+			Turn = Stream->Read.Out;
+			const FString& Conversation = Stream->Read.Conversation;
 			if (bCurrent && Module && !Conversation.IsEmpty()) Module->CompanionConversation = Conversation;
 		}
 		else if (Status != 0)
 		{
 			Turn.Outcome = FBpCompanionTurn::EOutcome::Failed;
 			Turn.Failure = FString::Printf(TEXT("the server answered %d"), Status);
-			// A refusal's sentence (the turn's 429 budget: { error: "<a sentence>", limit, retryAfterS }) is shown as it is.
-			Turn.Words = RefusalWords(Response->GetContentAsString());
+			// A refusal's sentence (the turn's 429 budget: { error: "<a sentence>", limit, retryAfterS }) is shown as it is; the
+			// body is the stream's bytes (the response keeps none once a stream reads it).
+			FString Body;
+			{
+				FScopeLock Guard(&Stream->Lock);
+				const FUTF8ToTCHAR Wide(reinterpret_cast<const ANSICHAR*>(Stream->Raw.GetData()), Stream->Raw.Num());
+				Body = FString(Wide.Length(), Wide.Get());
+			}
+			Turn.Words = RefusalWords(Body);
 		}
 		FString Events;
 		for (const FBpTurnFocus& F : Turn.Focuses) Events += FString::Printf(TEXT(" focus=%s:%s"), *F.TargetKind, *F.TargetId);
 		for (const FBpCompanionCard& C : Turn.Cards) Events += FString::Printf(TEXT(" card=%s/%s/%s"), *C.Tool, *C.State, *C.Id);
 		for (const FBpQuickReply& R : Turn.Replies) Events += FString::Printf(TEXT(" reply=\"%s\""), *R.Label);
-		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d): %d chars%s; cost %s;%s"), static_cast<int32>(Turn.Outcome), Status, Turn.Text.Len(), Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"),
-			Turn.CostUsd >= 0.0 ? *FString::Printf(TEXT("$%.4f"), Turn.CostUsd) : TEXT("-"), Events.IsEmpty() ? TEXT(" no events") : *Events);
+		UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn ended %d (status %d) %.2f s after the post: %d chars, %d tools%s; cost %s; %d progress reads;%s"), static_cast<int32>(Turn.Outcome), Status, FPlatformTime::Seconds() - PostedAt, Turn.Text.Len(), Turn.Tools.Num(),
+			Turn.CardSummary.IsEmpty() ? TEXT("") : TEXT(", a card"), Turn.CostUsd >= 0.0 ? *FString::Printf(TEXT("$%.4f"), Turn.CostUsd) : TEXT("-"), Stream->Deliveries, Events.IsEmpty() ? TEXT(" no events") : *Events);
 		if (OnDone) OnDone(Turn);
 	});
 	Request->ProcessRequest();
@@ -2686,6 +2794,56 @@ bool FBpLinkModule::CancelCompanionTurn(const TCHAR* Why)
 	UE_LOG(LogBpLink, Log, TEXT("BpLink: companion turn %u cancelled by %s%s: the companion is free for the next turn"), GTurnCancelled, Why, bLive ? TEXT(" (its request called off)") : TEXT(""));
 	if (bLive) Request->CancelRequest();
 	return true;
+}
+
+bool FBpLinkModule::SelfTestTurnParse()
+{
+	// A turn as the server sends it (CRLF and LF lines, an event: line, a multi-byte character, a tool, two text blocks, a focus,
+	// a card, an end with replies, and a last line with no newline), read whole once and then split at every byte.
+	const FString Body = FString(TEXT("event: start\r\ndata: {\"type\":\"start\",\"turnId\":\"t\",\"conversationId\":\"c-1\"}\r\n\r\n"))
+		+ TEXT("data: {\"type\":\"tool\",\"name\":\"morning.brief\",\"args\":{},\"callId\":\"a\"}\n\n")
+		+ TEXT("data: {\"type\":\"text\",\"delta\":\"Kettle is on track — two decisions wait.\"}\n\n")
+		+ TEXT("data: {\"type\":\"tool\",\"name\":\"next.steps\",\"args\":{},\"callId\":\"b\"}\n\n")
+		+ TEXT("data: {\"type\":\"focus\",\"focus\":{\"id\":\"f\",\"product\":\"kettle\",\"target\":{\"kind\":\"room\",\"id\":\"billing\"},\"say\":\"Here\"}}\n\n")
+		+ TEXT("data: {\"type\":\"card\",\"card\":{\"id\":\"k\",\"tool\":\"triage.set\",\"summary\":\"Snooze it\",\"product\":\"kettle\",\"state\":\"pending\",\"createdAt\":\"x\"}}\n\n")
+		+ TEXT("data: {\"type\":\"text\",\"delta\":\"Start with billing.\"}\n\n")
+		+ TEXT("data: {\"type\":\"end\",\"outcome\":\"done\",\"costUsd\":0.05,\"replies\":[{\"label\":\"Why?\",\"say\":\"Why billing?\"}]}");
+	FBpCompanionTurn Whole;
+	FString WholeConversation;
+	ReadTurnEvents(Body, Whole, WholeConversation);
+	const auto Same = [](const FBpCompanionTurn& A, const FBpCompanionTurn& B)
+	{
+		return A.Outcome == B.Outcome && A.Text == B.Text && A.Failure == B.Failure && A.CardSummary == B.CardSummary && A.Tools == B.Tools && A.Focuses.Num() == B.Focuses.Num()
+			&& A.Cards.Num() == B.Cards.Num() && A.Replies.Num() == B.Replies.Num() && A.CostUsd == B.CostUsd && A.FocusId == B.FocusId;
+	};
+	const bool bWholeRight = Whole.Outcome == FBpCompanionTurn::EOutcome::Ok && Whole.Tools.Num() == 2 && Whole.Focuses.Num() == 1 && Whole.Cards.Num() == 1 && Whole.Replies.Num() == 1
+		&& WholeConversation == TEXT("c-1") && Whole.Text == TEXT("Kettle is on track — two decisions wait. Start with billing.");
+	const FTCHARToUTF8 Utf8(*Body, Body.Len());
+	const uint8* Bytes = reinterpret_cast<const uint8*>(Utf8.Get());
+	const int32 Num = Utf8.Length();
+	int32 Bad = 0, FirstBad = -1, Reads = 0;
+	for (int32 At = 0; At <= Num; ++At)
+	{
+		// Two pieces split at At, and the same body fed byte by byte from At on (the worst stream): each reads as the whole.
+		FTurnRead Split;
+		FeedTurnBytes(Split, Bytes, At, false);
+		FeedTurnBytes(Split, Bytes + At, Num - At, true);
+		const bool bOk = Same(Split.Out, Whole) && Split.Conversation == WholeConversation;
+		if (!bOk && FirstBad < 0) FirstBad = At;
+		Bad += bOk ? 0 : 1;
+		++Reads;
+	}
+	{
+		FTurnRead Trickle;
+		for (int32 I = 0; I < Num; ++I) FeedTurnBytes(Trickle, Bytes + I, 1, false);
+		FeedTurnBytes(Trickle, nullptr, 0, true);
+		if (!Same(Trickle.Out, Whole)) { ++Bad; if (FirstBad < 0) FirstBad = Num + 1; }
+		++Reads;
+	}
+	const bool bPass = bWholeRight && Bad == 0;
+	UE_LOG(LogBpLink, Log, TEXT("BpLink: turn parse self-test %s: %d bytes, the whole read %s (%d tools, %d chars, %d focus, %d card, %d reply), %d split reads, %d differ%s"), bPass ? TEXT("PASS") : TEXT("FAIL"), Num,
+		bWholeRight ? TEXT("right") : TEXT("WRONG"), Whole.Tools.Num(), Whole.Text.Len(), Whole.Focuses.Num(), Whole.Cards.Num(), Whole.Replies.Num(), Reads, Bad, FirstBad >= 0 ? *FString::Printf(TEXT(" (first at byte %d)"), FirstBad) : TEXT(""));
+	return bPass;
 }
 
 // ---- The PC link (table link v2, night two W2a: docs/concepts/vr-light-table/table-link-v2.md) -----------------------------
@@ -2814,6 +2972,8 @@ namespace
 			if (Args.Num() > 0 && Args[0] == TEXT("cancel")) Module->CancelPair();
 			else Module->Pair();
 		}));
+	FAutoConsoleCommand GTurnParseTestCommand(TEXT("BpLink.TurnParseTest"), TEXT("BpLink.TurnParseTest: wave U5's pin: a sample turn body read whole and split at every byte reads the same (PASS or FAIL in the log)."),
+		FConsoleCommandDelegate::CreateLambda([]() { FBpLinkModule::SelfTestTurnParse(); }));
 	FAutoConsoleCommand GUnpairCommand(TEXT("BpLink.Unpair"), TEXT("BpLink.Unpair: forget this headset's token (the PC keeps the pairing until `npm run server -- pair revoke <id>`)."),
 		FConsoleCommandDelegate::CreateLambda([]() { if (FBpLinkModule* Module = LinkModule()) Module->Unpair(); }));
 	FAutoConsoleCommand GWhereCommand(TEXT("BpLink.Where"), TEXT("BpLink.Where: GET /lan/where over the cable and log the PC's Wi-Fi door; then the link as it stands."),

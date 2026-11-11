@@ -155,6 +155,8 @@ struct BPLINK_API FBpCompanionTurn
 	TArray<FBpCompanionCard> Cards;
 	/** The `done` end's quick replies, at most CompanionRepliesMax, each within its bounds. */
 	TArray<FBpQuickReply> Replies;
+	/** Every `tool` event's tool name, in the order they came (wave U5: what Glim is doing, put in plain words by the table). */
+	TArray<FString> Tools;
 	/** The end's costUsd (-1: none reported). */
 	double CostUsd = -1.0;
 };
@@ -594,10 +596,15 @@ public:
 
 	/** POST /api/companion/turn { conversationId?, product, text, surface: { kind: vr, place?, target?, product, spoken } }
 	 *  (companion-link.md section 2, G1's surface: where the person is goes beside the words, never inside them). The
-	 *  whole Server-Sent-Event body is read when the turn ends (the lamp shows the reply, not deltas; incremental reading is
-	 *  a later change). Refused without a PC link: nothing is sent, OnDone gets Unreached. One conversation per session, kept
-	 *  here. A 409 reads Busy (wait and retry, never queue). OnDone runs on the game thread. Never approves a card. */
-	void PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone);
+	 *  Server-Sent-Event body is read as it arrives (wave U5): OnProgress, when given, gets the turn as read so far (its tools,
+	 *  text, focus events and cards; no end yet) each time a complete event line adds to it, on the game thread, and never
+	 *  after the turn was cancelled or a newer one was posted. OnDone gets the whole turn, read by the same parser (no event
+	 *  counted twice, none lost). Refused without a PC link: nothing is sent, OnDone gets Unreached. One conversation per
+	 *  session, kept here. A 409 reads Busy (wait and retry, never queue). OnDone runs on the game thread. Never approves a card. */
+	void PostCompanionTurn(const FString& Text, const FBpTurnSurface& Surface, TFunction<void(const FBpCompanionTurn&)> OnDone, TFunction<void(const FBpCompanionTurn&)> OnProgress = nullptr);
+	/** Wave U5's pin of the streamed read: a sample turn body parsed whole and split at every byte (mid-line, mid-character)
+	 *  reads the same (BpLink.TurnParseTest). True when every split matched. */
+	static bool SelfTestTurnParse();
 	/** The turn still out is called off (the talk's B or pinch, the stand-up's cancel): its request is cancelled, the companion
 	 *  is free for the next turn at once, and the old turn's end writes nothing into the module (its OnDone gets Failed,
 	 *  "cancelled", which its asker's own serial drops). True when a turn was out. */

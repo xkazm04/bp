@@ -752,10 +752,38 @@ async function main() {
         const num = (name) => { const m = new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(stripCxx(hText)); return m ? Number(m[1]) : null; };
         check(`glim: BpLink's bounds are core's: ${num('CompanionRepliesMax')} replies (QUICK_REPLY_MAX ${QUICK_REPLY_MAX}), label ${num('CompanionReplyLabelMax')} (LABEL_MAX ${LABEL_MAX}), say ${num('CompanionReplySayMax')} (SAY_MAX ${SAY_MAX}), place ${num('CompanionPlaceMax')} (PLACE_MAX ${PLACE_MAX})`,
           num('CompanionRepliesMax') === QUICK_REPLY_MAX && num('CompanionReplyLabelMax') === LABEL_MAX && num('CompanionReplySayMax') === SAY_MAX && num('CompanionPlaceMax') === PLACE_MAX);
-        const read = (() => { const at = lit.indexOf('void ReadTurnEvents('); const span = at < 0 ? null : braceSpan(lit, at); return span ? lit.slice(span[0], span[1]) : ''; })();
-        check('glim: ReadTurnEvents reads every focus (kind, id, say), every card, and the end\'s replies capped at CompanionRepliesMax',
+        const span = (src, sig) => { const at = src.indexOf(sig); const s = at < 0 ? null : braceSpan(src, at); return s ? src.slice(s[0], s[1]) : ''; };
+        const read = span(lit, 'bool ReadTurnLine(');
+        check('glim: the turn\'s line reader (ReadTurnLine) reads every tool name, every focus (kind, id, say), every card, and the end\'s replies capped at CompanionRepliesMax',
           /Out\.Focuses\.Add\(/.test(read) && /Out\.Cards\.Add\(/.test(read) && /TEXT\("replies"\)/.test(read) && /Out\.Replies\.Num\(\)\s*>=\s*FBpLinkModule::CompanionRepliesMax\)\s*break;/.test(read)
-          && /TEXT\("say"\)/.test(read) && /CompanionReplyLabelMax/.test(read) && /CompanionReplySayMax/.test(read));
+          && /TEXT\("say"\)/.test(read) && /CompanionReplyLabelMax/.test(read) && /CompanionReplySayMax/.test(read) && /Out\.Tools\.Add\(/.test(read));
+        // Wave U5, the streamed read: one parser for the progress and the end, whole lines only (a body split mid-line reads as
+        // it does whole). The C++ self-test (BpLink.TurnParseTest: every byte split of a sample body, PASS in the log) runs the
+        // parser itself; these pin its shape, with mutants as controls.
+        const streamRules = (src) => {
+          const l = stripCxx(src, true);
+          const feed = span(l, 'bool FeedTurnBytes(');
+          const post = span(l, 'FBpLinkModule::PostCompanionTurn(');
+          const whole = span(l, 'void ReadTurnEvents(');
+          return {
+            'FeedTurnBytes parses only up to the last newline unless the body ended (the rest waits in Tail)': /if \(bLast\) Cut = R\.Tail\.Num\(\);/.test(feed) && /R\.Tail\.FindLast\(static_cast<uint8>\('\\n'\), Cut\)/.test(feed) && /R\.Tail\.RemoveAt\(0, Cut/.test(feed),
+            'FeedTurnBytes reads each whole line through ReadTurnLine': /ReadTurnLine\(Line, R\)/.test(feed),
+            'the whole-body read is FeedTurnBytes with bLast (the same parser)': /FeedTurnBytes\(R, [^;]*, true\)/.test(whole),
+            'PostCompanionTurn reads the body as it arrives (SetResponseBodyReceiveStreamDelegateV2) and never re-reads it whole (no GetContentAsString)': /SetResponseBodyReceiveStreamDelegateV2\(/.test(post) && !/GetContentAsString\(/.test(post),
+            'progress is handed to the game thread and dropped once the turn ended, was cancelled or was superseded': /AsyncTask\(ENamedThreads::GameThread/.test(post) && /if \(Stream->bDone \|\| Serial != GTurnSerial \|\| Serial == GTurnCancelled\) return;/.test(post),
+            'the end reads the rest by the same parser (FeedNew(true)) after marking the stream done': /Stream->bDone = true;[\s\S]*Stream->FeedNew\(true\);/.test(post),
+          };
+        };
+        const sr = streamRules(cppText);
+        for (const [name, ok] of Object.entries(sr)) check(`glim stream: ${name}`, ok);
+        const mutTail = streamRules(cppText.replace("if (bLast) Cut = R.Tail.Num();", 'Cut = R.Tail.Num();'));
+        const mutWhole = streamRules(cppText.replace('ReadTurnEvents(Response->GetContentAsString()', 'X').replace('Stream->FeedNew(true);', 'ReadTurnEvents(Response->GetContentAsString(), Turn, Conv);'));
+        check('glim stream: the rule refuses a parser that reads a line before its newline came, and an end that re-reads the body whole', Object.values(mutTail).some((v) => !v) && Object.values(mutWhole).some((v) => !v));
+        const talkSrc = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpTalk.cpp'), 'utf8'), true);
+        const stepTable = span(talkSrc, 'FString StepWords(');
+        check('glim stream: the talk passes its progress (PostCompanionTurn(Heard, Surface, ..., OnProgress)), and the step words table maps every tool family to words with no tool id in them',
+          /\},\s*OnProgress\);/.test(talkSrc) && /TEXT\("Working on it"\)/.test(stepTable)
+          && [...stepTable.matchAll(/\{ TEXT\("([\w.]+)"\), TEXT\("([^"]+)"\) \}/g)].every((m) => !/\w\.\w/.test(m[2])) && /TEXT\("scan\."\)/.test(stepTable) && /TEXT\("wave\."\)/.test(stepTable));
         const pages = (() => { const b = fnLit('CompanionPageTargets'); return [...b.matchAll(/TEXT\("([\w-]+)"\)/g)].map((m) => m[1]); })();
         check(`glim: the page ids the table opens (${pages}) are core's PAGE_TARGETS, in order`, JSON.stringify(pages) === JSON.stringify([...PAGE_TARGETS]), `${pages} vs ${PAGE_TARGETS}`);
         const talk = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpTalk.cpp'), 'utf8'), true);

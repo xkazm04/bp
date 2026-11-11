@@ -2210,7 +2210,7 @@ void ABpPawn::RefreshConsole()
 	// The conversation with the lamp (night two V2): while a talk's words are on show the panel is the conversation.
 	ABpTable::FTalkView Talk;
 	const bool bTalk = ConsoleShowsTalk() && Table->TalkView(Talk);
-	if (bTalk) Key += FString::Printf(TEXT("|talk|%s|%s|%s|%s|%d|%d|%s"), *Talk.Word, *Talk.Heard, *Talk.Reply, *Talk.Line, FMath::RoundToInt(Talk.Level * 8.f), Talk.bSample, *FString::Join(Talk.Replies, TEXT("/")));
+	if (bTalk) Key += FString::Printf(TEXT("|talk|%s|%s|%s|%s|%d|%d|%s|%s"), *Talk.Word, *Talk.Heard, *Talk.Reply, *Talk.Line, FMath::RoundToInt(Talk.Level * 8.f), Talk.bSample, *FString::Join(Talk.Replies, TEXT("/")), *FString::Join(Talk.Steps, TEXT("/")));
 	if (bTalk != bConsoleTalk)
 	{
 		bConsoleTalk = bTalk;
@@ -2315,7 +2315,7 @@ void ABpPawn::RefreshConsole()
 
 	if (bTalk)
 	{
-		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample, Talk.Replies);
+		DrawConversation(Canvas, Talk.Word, Talk.Heard, Talk.Reply, Talk.Line, Talk.Level, Talk.bSample, Talk.Replies, Talk.Steps);
 	}
 	else if (!bConsoleOpen)
 	{
@@ -3152,7 +3152,7 @@ void ABpPawn::ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const
 // console's text size. It clears itself bp.TalkLingerS after the voice ends, on CLOSE, or on B; a card the turn raised takes
 // its place as a decision sheet (StandupShowCompanionCards).
 
-void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies)
+void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies, const TArray<FString>& Steps)
 {
 	const auto Put = [&Canvas](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
@@ -3227,8 +3227,31 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 		Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 34.f)), SNew(STextBlock).Text(FText::FromString(bSample ? TEXT("GLIM · SAMPLE") : TEXT("GLIM"))).Font(SmallBold).ColorAndOpacity(FSlateColor(bSample ? BpSheet::Amber : BpSheet::Accent)));
 		Y += 40.f;
 	}
+	const bool bThinking = Word == TEXT("THINKING");
 	FString Body = !Reply.IsEmpty() ? Reply : Line;
-	if (Word == TEXT("THINKING")) Body = TEXT("Thinking");
+	if (bThinking && Reply.IsEmpty()) Body = Steps.Num() > 0 ? FString() : FString(TEXT("Thinking"));
+	// Wave U5, an agent you can watch work: while he thinks, what he is doing, one line per step, newest last (lit, with its
+	// ellipsis), the earlier ones quiet; his words, as they come, under them.
+	if (bThinking && Steps.Num() > 0)
+	{
+		const FSlateFontInfo StepFont = Font(TEXT("Regular"), CapLabel), NewFont = Font(TEXT("Bold"), CapLabel);
+		const float SP = Pitch(CapLabel);
+		for (int32 I = 0; I < Steps.Num(); ++I)
+		{
+			const bool bNewest = I == Steps.Num() - 1;
+			const float M = 14.f, MY = Y + (SP - M) * 0.5f;
+			Put(FBox2f(FVector2f(X0 + 2.f, MY), FVector2f(X0 + 2.f + M, MY + M)), SNew(BpSheet::SPlate).Fill(bNewest ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.08f)).Edge(bNewest ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(1.5f));
+			const FString Words = BpSheet::CutWords(bNewest ? Steps[I] + BpType::Ellipsis() : Steps[I], bNewest ? NewFont : StepFont, X1 - X0 - 32.f);
+			Put(FBox2f(FVector2f(X0 + 32.f, Y), FVector2f(X1, Y + SP + 4.f)), SNew(STextBlock).Text(FText::FromString(Words)).Font(bNewest ? NewFont : StepFont).ColorAndOpacity(FSlateColor(bNewest ? BpSheet::InkHi : BpSheet::Ink.CopyWithNewOpacity(0.6f))));
+			Y += SP + 6.f;
+		}
+		Y += 12.f;
+		if (!Body.IsEmpty())
+		{
+			Put(FBox2f(FVector2f(X0, Y), FVector2f(X1, Y + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.2f)));
+			Y += 16.f;
+		}
+	}
 	// A line of the lamp's own (no PC, a refusal): its first line is the headline, the rest under it.
 	if (Heard.IsEmpty() && Reply.IsEmpty())
 	{
@@ -3270,7 +3293,7 @@ void ABpPawn::DrawConversation(const TSharedRef<SCanvas>& Canvas, const FString&
 	if (Body.IsEmpty()) return;
 	// The reply whole, at the console's text size: 28 px while it fits, 24 px (the floor) when it is long.
 	const float Avail = LH - 30.f - Y - ReplyH;
-	const bool bQuiet = Word == TEXT("THINKING");
+	const bool bQuiet = bThinking && Reply.IsEmpty();
 	FSlateFontInfo BodyFont = Font(bQuiet ? TEXT("Bold") : TEXT("Regular"), bQuiet ? CapTitle : CapLabel);
 	float P = Pitch(bQuiet ? CapTitle : CapLabel);
 	FString Fit = BpSheet::Wrap(Body, BodyFont, X1 - X0, 0);
