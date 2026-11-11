@@ -13,9 +13,11 @@
 //            CLI reported. `--only id,id` limits it (and then merges into the fixture).
 // expect: tools (every one called), anyTools (at least one), noTools ("*" = none at all, or a list), cardTools (each called
 // and its result a filed card), anyCardTools (one of them filed a card), noCards (no GATED tool called), mustMention (each
-// regex, case-insensitive, matches the replies), mustNot (none matches), maxWordsSpoken (every turn's reply at most n words).
-// Every turn must also end `done`.
-// Run: node scripts/check-glim-golden.ts [--replay | --live [--only a,b]]   Exit 1 on any failure.
+// regex, case-insensitive, matches the replies), mustNot (none matches), maxWordsSpoken (every turn's reply at most n words),
+// focus (each regex matches a focus event's `kind:id`), asks (a question mark), noRepeatFlourish (no lamp flourish stem in
+// two turns). G3 (2026-11-11): `perTurn[i]` holds the same rules for turn i alone (multi-turn conversations: "refers back"
+// is a later turn's mustMention of the earlier topic). Every turn must also end `done`, and no quick reply may be generic.
+// Run: node scripts/check-glim-golden.ts [--replay | --live [--only a,b] [--budget 3]]   Exit 1 on any failure.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -27,14 +29,18 @@ const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 const LIVE = process.argv.includes('--live');
 const ONLY = (() => { const i = process.argv.indexOf('--only'); return i >= 0 ? new Set((process.argv[i + 1] ?? '').split(',').filter(Boolean)) : null; })();
+/** A live run stops after the scenario that takes its total past this (dollars, as the CLI reports them). */
+const BUDGET = (() => { const i = process.argv.indexOf('--budget'); const v = i >= 0 ? Number(process.argv[i + 1]) : 3; return Number.isFinite(v) && v > 0 ? v : 3; })();
 const SCEN_FILE = path.join(ROOT, 'scripts/fixtures/glim-golden.jsonl');
 const TX_FILE = path.join(ROOT, 'scripts/fixtures/glim-golden.transcripts.jsonl');
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any;
 type Surface = { kind: 'vr' | 'web'; spoken?: boolean; product?: string; place?: string; target?: string } | null;
-interface Expect { tools?: string[]; anyTools?: string[]; noTools?: '*' | string[]; cardTools?: string[]; anyCardTools?: string[]; noCards?: boolean; mustMention?: string[]; mustNot?: string[]; maxWordsSpoken?: number }
-interface Scenario { id: string; group: string; surface: Surface; turns: string[]; expect: Expect }
+interface Expect { tools?: string[]; anyTools?: string[]; noTools?: '*' | string[]; cardTools?: string[]; anyCardTools?: string[]; noCards?: boolean; mustMention?: string[]; mustNot?: string[]; maxWordsSpoken?: number; focus?: string[]; asks?: boolean; noRepeatFlourish?: boolean }
+/** `perTurn[i]`: the same rules, judged on turn i alone (null or absent: none). A multi-turn conversation (G3) says what each
+ *  turn must do there: "refers back to turn 1's topic" is a mustMention of that topic's name on the later turn. */
+interface Scenario { id: string; group: string; surface: Surface; turns: string[]; expect: Expect; perTurn?: (Expect | null)[] }
 interface Recorded { id: string; recordedAt: string; model: string; costUsd: number | null; turns: { lines: string[] }[] }
 
 const scenarios: Scenario[] = fs.readFileSync(SCEN_FILE, 'utf8').split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
@@ -51,10 +57,24 @@ const { LEG_MODELS } = await core('companion/contract.ts');
 // ------------------------------------------------------------------------------------------------ the rules
 const words = (s: string) => (s.match(/\S+/g) ?? []).length;
 interface Turned { events: Any[] }
+/** A suggested reply that leads nowhere (G3: replies must follow from what he just said and name their thing). */
+const GENERIC_REPLY = /^(tell me more|more|more please|anything else\??|what else\??|continue|go on|ok(ay)?|thanks|thank you|yes|no|next|sure|got it|help)[.!?]*$/i;
+/** The lamp's flourishes, by stem: in one conversation each may show in one turn only (noRepeatFlourish). */
+const FLOURISHES: readonly [string, RegExp][] = [['leaning in', /\blean(ing|s|ed)? in\b/i], ['squint', /\bsquint/i], ['flicker', /\bflicker/i], ['brighten', /\bbrighten/i], ['dim', /\bdimm(ing|ed)\b/i], ['glow', /\bglow/i], ['bulb', /\bbulb/i], ['watt', /\bwatt/i], ['plug', /\bplug\b/i], ['shade', /\b(lamp)?shade\b/i]];
+const replyText = (t: Turned) => t.events.filter((e) => e.type === 'text').map((e) => e.delta).join(' ').trim();
 function judge(s: Scenario, turns: Turned[]): { name: string; ok: boolean; detail: string }[] {
+  const out = judgeOn(s.expect, turns, '');
+  const ends = turns.map((t) => t.events.find((e) => e.type === 'end'));
+  out.unshift({ name: 'every turn ends done', ok: ends.every((e) => e?.outcome === 'done'), detail: ends.map((e) => `${e?.outcome}/${e?.failure ?? ''}`).join(' ') });
+  const generic = ends.flatMap((e) => (e?.replies ?? []) as { label: string; say: string }[]).filter((r) => GENERIC_REPLY.test(r.label.trim()) || GENERIC_REPLY.test(r.say.trim()));
+  out.push({ name: 'no generic quick reply', ok: generic.length === 0, detail: generic.map((r) => r.label).join(', ') });
+  (s.perTurn ?? []).forEach((x, i) => { if (x && turns[i]) out.push(...judgeOn(x, [turns[i]], `turn ${i + 1}: `)); });
+  return out;
+}
+function judgeOn(x: Expect, turns: Turned[], pre: string): { name: string; ok: boolean; detail: string }[] {
   const out: { name: string; ok: boolean; detail: string }[] = [];
-  const add = (name: string, ok: boolean, detail = '') => out.push({ name, ok, detail });
-  const replies = turns.map((t) => t.events.filter((e) => e.type === 'text').map((e) => e.delta).join(' ').trim());
+  const add = (name: string, ok: boolean, detail = '') => out.push({ name: pre + name, ok, detail });
+  const replies = turns.map(replyText);
   const all = replies.join('\n');
   const results = new Map<string, Any>();
   for (const t of turns) for (const e of t.events) if (e.type === 'tool_result') results.set(e.callId, e);
@@ -62,9 +82,8 @@ function judge(s: Scenario, turns: Turned[]): { name: string; ok: boolean; detai
   const called = new Set(calls.map((c) => c.name));
   const filed = new Set(calls.filter((c) => { const r = results.get(c.callId); return r?.ok && /"card"\s*:\s*"card_/.test(r.summary ?? ''); }).map((c) => c.name));
   const gated = calls.filter((c) => { const t = toolOf(c.name); return t && classOf(t) === 'GATED'; }).map((c) => c.name);
-  const ends = turns.map((t) => t.events.find((e) => e.type === 'end'));
-  add('every turn ends done', ends.every((e) => e?.outcome === 'done'), ends.map((e) => `${e?.outcome}/${e?.failure ?? ''}`).join(' '));
-  const x = s.expect, list = [...called].join(',') || 'none';
+  const focus = turns.flatMap((t) => t.events.filter((e) => e.type === 'focus').map((e) => `${e.focus.target.kind}:${e.focus.target.id}`));
+  const list = [...called].join(',') || 'none';
   for (const t of x.tools ?? []) add(`calls ${t}`, called.has(t), list);
   if (x.anyTools) add(`calls one of ${x.anyTools.join('|')}`, x.anyTools.some((t) => called.has(t)), list);
   if (x.noTools === '*') add('calls no tool', called.size === 0, list);
@@ -75,6 +94,12 @@ function judge(s: Scenario, turns: Turned[]): { name: string; ok: boolean; detai
   for (const m of x.mustMention ?? []) add(`mentions /${m}/`, new RegExp(m, 'i').test(all), all.slice(0, 120));
   for (const m of x.mustNot ?? []) add(`never says /${m}/`, !new RegExp(m, 'i').test(all), (all.match(new RegExp(m, 'i')) ?? [''])[0]);
   if (x.maxWordsSpoken) add(`at most ${x.maxWordsSpoken} words a turn`, replies.every((r) => words(r) <= x.maxWordsSpoken!), replies.map(words).join(','));
+  for (const f of x.focus ?? []) add(`shows /${f}/`, focus.some((t) => new RegExp(f, 'i').test(t)), focus.join(',') || 'no focus');
+  if (x.asks) add('asks a question', /\?/.test(all), all.slice(0, 120));
+  if (x.noRepeatFlourish) {
+    const twice = FLOURISHES.filter(([, re]) => replies.filter((r) => re.test(r)).length > 1).map(([n]) => n);
+    add('no flourish twice in the conversation', twice.length === 0, twice.join(','));
+  }
   return out;
 }
 
@@ -152,17 +177,27 @@ if (LIVE) {
       if (ok) nPass++;
       const first = turns.map((t) => t.events.filter((e) => e.type === 'text').map((e) => e.delta).join(' ')).join(' / ').trim().split(/\r?\n/)[0].slice(0, 140);
       const tools = turns.flatMap((t) => t.events.filter((e) => e.type === 'tool').map((e) => e.name)).join(',') || '-';
-      console.log(`\n${ok ? 'PASS' : 'FAIL'} ${s.id} (${s.group}, ${Math.round((Date.now() - t0) / 1000)} s, $${cost.toFixed(4)}) tools: ${tools}\n  "${first}"`);
+      console.log(`\n${ok ? 'PASS' : 'FAIL'} ${s.id} (${s.group}, ${s.turns.length} turn(s), ${Math.round((Date.now() - t0) / 1000)} s, $${cost.toFixed(4)}) tools: ${tools}\n  "${first}"`);
+      // every turn, in full: what was said, the tools, the focus, the replies offered (read them all: G3)
+      turns.forEach((t, i) => {
+        const d = t.events, end = d.find((e) => e.type === 'end');
+        console.log(`  [${i + 1}] you: ${s.turns[i]}\n      glim: ${d.filter((e) => e.type === 'text').map((e) => e.delta).join(' ').replace(/\s+/g, ' ').trim()}`);
+        const tl = d.filter((e) => e.type === 'tool').map((e) => e.name).join(','), fo = d.filter((e) => e.type === 'focus').map((e) => `${e.focus.target.kind}:${e.focus.target.id}`).join(',');
+        if (tl || fo) console.log(`      tools: ${tl || '-'}${fo ? `; focus ${fo}` : ''}`);
+        if (end?.replies?.length) console.log(`      replies: ${end.replies.map((r: Any) => `[${r.label}] "${r.say}"`).join('  ')}`);
+      });
       for (const x of v) console.log(`   ${x.ok ? 'ok  ' : 'FAIL'} ${x.name}${x.ok || !x.detail ? '' : `  (${x.detail})`}`);
-      rows.push(`| ${s.id} | ${v.map((x) => `${x.ok ? 'ok' : 'FAIL'} ${x.name}`).join('; ')} | ${first.replace(/\|/g, '/')} |`);
+      const excerpt = (t: Turned) => replyText(t).replace(/\s+/g, ' ').slice(0, 90).replace(/\|/g, '/');
+      rows.push(`| ${s.id} | ${s.turns.length} | ${v.filter((x) => x.ok).length}/${v.length}${ok ? '' : ': ' + v.filter((x) => !x.ok).map((x) => x.name).join('; ')} | ${turns.map((t, i) => `${i + 1}. ${excerpt(t)}`).join('<br>')} |`);
       fs.writeFileSync(TX_FILE, scenarios.filter((x) => rec.has(x.id)).map((x) => JSON.stringify(rec.get(x.id))).join('\n') + '\n', 'utf8');
+      if (total > BUDGET) { console.log(`\nbudget: $${total.toFixed(4)} spent, over --budget $${BUDGET}; stopping here`); break; }
     }
     await new Promise((r) => setTimeout(r, 15000)); // the last title legs settle
     const ledger = (() => { try { return fs.readFileSync(path.join(process.env.BP_HOME!, 'companion', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; } })();
     const sum = (k: string) => ledger.filter((r: Any) => r.kind === k).reduce((n: number, r: Any) => n + (r.costUsd ?? 0), 0);
     console.log(`\nledger: turns $${sum('turn').toFixed(4)} (${ledger.filter((r: Any) => r.kind === 'turn').length}), title legs $${sum('utility').toFixed(4)} (${ledger.filter((r: Any) => r.kind === 'utility').length}), sleep legs $${sum('sleep').toFixed(4)}`);
   } finally { CLI.setTransport(null); await srv.stop(); }
-  fs.writeFileSync(path.join(os.tmpdir(), 'glim-golden-table.md'), `| scenario | expectations | reply (first line) |\n|---|---|---|\n${rows.join('\n')}\n`, 'utf8');
+  fs.writeFileSync(path.join(os.tmpdir(), 'glim-golden-table.md'), `| scenario | turns | expectations met | each turn's reply (first words) |\n|---|---|---|---|\n${rows.join('\n')}\n`, 'utf8');
   console.log(`\nlive: ${nPass} of ${nRun} scenarios pass; total cost $${total.toFixed(4)} as the CLI reported it; transcripts -> ${path.relative(ROOT, TX_FILE)}; table -> ${path.join(os.tmpdir(), 'glim-golden-table.md')}`);
   verdict(`live: every scenario passes (${nPass} of ${nRun})`, nPass === nRun);
   H0.done({ exit: true });
@@ -208,6 +243,28 @@ if (LIVE) {
   verdict('focus.show: its kind enum carries page, and the page ids are named for the model', fs1.params_schema.properties.kind.enum.includes('page') && PAGE_TARGETS.every((p: string) => fs1.description.includes(p)));
   const hf = TOOLS.find((t: Any) => t.name === 'help.find');
   verdict('help.find: AUTO, a GET of /api/companion/help', hf && classOf(hf) === 'AUTO' && hf.route.method === 'GET' && hf.route.path === '/api/companion/help');
+  // next.steps (G3): the order is bp's, fixed; kinds spread; a product narrows; nothing is dropped silently
+  const N = await core('companion/next-steps.ts');
+  const ns = TOOLS.find((t: Any) => t.name === 'next.steps');
+  verdict('next.steps: AUTO, a GET of the morning route with view=next fixed', ns && classOf(ns) === 'AUTO' && ns.route.method === 'GET' && ns.route.path === '/api/companion/morning' && ns.route.fixed?.view === 'next');
+  const dc = (product: string, id: string, tier: number, title: string) => ({ id: `decision:${product}:${id}`, kind: 'decision', product, headline: title, tone: 'warn', lines: [{ text: `1 of 3 · P · Room ${id}` }, { text: 'x' }, { text: 'Cold start now 2400 ms' }], place: { product, target: { kind: 'feature', id: 'f-' + id } }, decision: { proposal: id, tier } });
+  const deck = {
+    since: '2026-11-10T08:00:00.000Z', until: '2026-11-11T00:00:00.000Z', products: [{ slug: 'a', name: 'Alpha' }, { slug: 'b', name: 'Beta' }],
+    cards: [
+      { id: 'outcomes:a', kind: 'outcomes', product: 'a', headline: 'h', tone: 'bad', lines: [], outcomes: [{ proposal: 'p1', title: 'No reason here', decided_at: '2026-11-10T09:00:00Z', decided_by: 'web', outcome: 'failed' }, { proposal: 'p2', title: 'Promo test', decided_at: '2026-11-10T09:00:00Z', decided_by: 'web', outcome: 'failed', reason: 'the total stays at 120.00', room: 'money' }, { proposal: 'p3', title: 'Fine', decided_at: '2026-11-10T09:00:00Z', decided_by: 'web', outcome: 'built' }] },
+      { id: 'built:a', kind: 'built', product: 'a', headline: 'h', tone: 'warn', lines: [{ text: N.FAILED_LINE + 'Promo test' }, { text: N.FAILED_LINE + 'Night build' }, { text: 'Built fine' }], place: { product: 'a', target: { kind: 'room', id: 'r1' } } },
+      { id: 'release:b:1', kind: 'release', product: 'b', headline: 'Beta 2.1.0 fell short: 1 of 2 items below what was expected.', tone: 'bad', lines: [{ text: 'Copy tokens: expected 7, measured 9.1', tone: 'bad' }], place: { product: 'b', target: { kind: 'feature', id: 'dunning' } } },
+      dc('a', 'k1', 0, 'Key committed'), dc('b', 'f1', 1, 'Freeze is slow'), dc('a', 'w2', 2, 'Widget loses the form'),
+    ],
+  };
+  const facts = { deck, gaps: [{ product: 'b', feature: 'guard', lens: 'security', reason: 'unmeasured', score: 12 }, { product: 'b', feature: 'guard', lens: 'design', reason: 'unmeasured', score: 12 }], triage: [{ product: 'a', id: 't1', title: 'Raise the text floor' }], names: new Map([['b', new Map([['guard', 'Agent guardrails']])]]) };
+  const top = N.nextSteps(facts);
+  verdict('next.steps: a stop-ship first, then a failure with its reason, then the short release (kinds spread)', top.steps.map((s: Any) => s.kind).join(',') === 'decide,failed,short' && top.steps[0].ref === 'k1' && top.steps[1].ref === 'p2' && /120\.00/.test(top.steps[1].why) && top.steps[1].show?.id === 'money' && /Beta 2\.1\.0, which fell short/.test(top.steps[2].title), JSON.stringify(top.steps.map((s: Any) => [s.kind, s.ref, s.title])));
+  verdict('next.steps: `more` counts what did not fit (no failure counted twice), basis names the order', top.more === 6 && top.basis.some((b: string) => b.startsWith('ranked: a stop-ship decision')), String(top.more));
+  const all = N.nextSteps(facts, { limit: 10 });
+  verdict('next.steps: the full order is bp\'s: decide0 > failed > short > decide1 > decide2 > scan > triage', all.steps.map((s: Any) => s.kind + (s.ref ? ':' + s.ref : '')).join(',') === 'decide:k1,failed:p2,failed:p1,failed,short,decide:f1,decide:w2,scan,triage' && /Agent guardrails/.test(all.steps[7].title) && /2 lenses/.test(all.steps[7].why), all.steps.map((s: Any) => s.kind + (s.ref ? ':' + s.ref : '')).join(','));
+  const onlyB = N.nextSteps(facts, { product: 'b', limit: 5 });
+  verdict('next.steps: a product narrows the steps; a decided card is not a step', onlyB.steps.every((s: Any) => s.product === 'b') && onlyB.steps.length === 3 && N.nextSteps({ ...facts, deck: { ...deck, cards: deck.cards.map((c: Any) => (c.decision?.proposal === 'k1' ? { ...c, decision: { ...c.decision, steered: { verdict: 'approve' } } } : c)) } }).steps.every((s: Any) => s.ref !== 'k1'));
   const af = T.afterResult('focus.show', JSON.stringify({ id: 'f_1', product: 'kettle-web', target: { kind: 'page', id: 'standup' } }));
   verdict('turn: a focus.show result becomes a focus event', af.length === 1 && af[0].type === 'focus' && af[0].focus.target.kind === 'page');
   verdict('turn: an unreadable or foreign result adds nothing', T.afterResult('focus.show', 'not json').length === 0 && T.afterResult('inbox.list', '{"items":[]}').length === 0 && T.afterResult(undefined, '{}').length === 0);

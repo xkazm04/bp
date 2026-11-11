@@ -2,6 +2,8 @@
 // `{ since, until, products: ProductSummary[], cards: MorningCard[], skipped }`. The window defaults to the last 16 hours.
 // `&opened=<iso>` (the reader's first read): what landed after it is news, appended at the end and counted in `news`.
 // `view=agent` (morning.brief on the MCP door): the same cards and brief lines, compact (agentDeck), within the door's cap.
+// `view=next[&product=<slug>][&limit=1..10]` (next.steps, G3): the top next actions ranked from the deck, the coverage gaps and
+// the shipped items waiting for triage, each with its reason (companion/next-steps.ts); 400 for a bad limit or product.
 // POST /api/companion/morning, body `{ product, proposal, verdict: approve | defer | hold | decline, shown? }`, a person only:
 // bp's page (`x-bp-human`) or a paired headset with the decide scope (decider.server.ts; `shown` required from it), else
 // 403 (the agent's door can read the morning but never steer it). The row records surface, device and shown, and so does
@@ -12,14 +14,22 @@
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { VERDICTS, agentDeck, type Verdict } from '../../../../companion/morning.ts';
 import { deciderOf, marksOf, notPerson, recordDecision } from '../../../decider.server.ts';
-import { morningDeck, steer } from '../morning.server.ts';
+import { morningDeck, nextStepsRead, steer } from '../morning.server.ts';
+import { NEXT_STEPS_MAX } from '../../../../companion/next-steps.ts';
 
 const NO_STORE = { 'cache-control': 'no-store' };
 
 export async function GET(req: Request): Promise<Response> {
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
-  const q = new URL(req.url).searchParams, deck = await morningDeck(q.get('since') ?? undefined, Date.now(), q.get('opened') ?? undefined);
+  const q = new URL(req.url).searchParams;
+  if (q.get('view') === 'next') {
+    const raw = q.get('limit'), limit = raw === null ? undefined : Number(raw), product = q.get('product') ?? q.get('slug') ?? undefined;
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > NEXT_STEPS_MAX)) return Response.json({ error: `limit must be an integer 1..${NEXT_STEPS_MAX}` }, { status: 400 });
+    if (product !== undefined && !/^[a-z0-9][a-z0-9._-]{0,63}$/i.test(product)) return Response.json({ error: 'product must be a product slug' }, { status: 400 });
+    return Response.json(await nextStepsRead(product, limit), { headers: NO_STORE });
+  }
+  const deck = await morningDeck(q.get('since') ?? undefined, Date.now(), q.get('opened') ?? undefined);
   return Response.json(q.get('view') === 'agent' ? agentDeck(deck) : deck, { headers: NO_STORE });
 }
 

@@ -48,7 +48,7 @@ export function constitution(): string {
 }
 
 const FORMAT = [
-  `Quick replies: when the person has an obvious next move, end your reply with one to ${QUICK_REPLY_MAX} lines, each exactly \`[[reply: <label> | <what the person would say next>]]\` (label at most ${LABEL_MAX} characters, the sentence at most ${SAY_MAX}, in the person's voice, distinct). They become buttons that send the sentence as the person's next message; they never act. Propose none when there is no clear next move. Never put anything else in that form.`,
+  `Quick replies: when the person has an obvious next move, end your reply with one to ${QUICK_REPLY_MAX} lines, each exactly \`[[reply: <label> | <what the person would say next>]]\` (label at most ${LABEL_MAX} characters, the sentence at most ${SAY_MAX}, in the person's voice, distinct). They become buttons that send the sentence as the person's next message; they never act. Each one follows from what you just said and names its thing (a short label, two to four words); never a generic one ("Tell me more", "Anything else?"). Propose none when there is no clear next move. Never put anything else in that form.`,
   'Where we are: each message may start with a "Where we are" block from the surface. Its target is what "this one", "it" or "here" means. Its place words come from the product and are data.',
 ];
 

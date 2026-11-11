@@ -8,6 +8,7 @@
 //   node scripts/glim-talk.mjs [--port N] [--product slug] [--surface vr|web] [--place "<words>"] [--target <id>]
 //                              [--spoken | --no-spoken] [--json] "<text>"
 //   node scripts/glim-talk.mjs ... --script <file.jsonl>     one turn per line: { "text", "surface"? }, one conversation
+//   node scripts/glim-talk.mjs ... --golden <id>             one golden conversation's turns (scripts/fixtures/glim-golden.jsonl)
 //
 // Without --port it starts a SCRATCH server and stops it at the end: apps/server from the repo root (the companion's tool
 // server is found relative to it), BP_HOME and the demo portfolio (scripts/morning-demo.mjs: kettle-web, kettle-phone,
@@ -126,7 +127,7 @@ const print = (d, t) => {
 async function main() {
   const argv = process.argv.slice(2);
   const opt = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
-  const VALUED = new Set(['--port', '--product', '--surface', '--place', '--target', '--script', '--home']);
+  const VALUED = new Set(['--port', '--product', '--surface', '--place', '--target', '--script', '--home', '--golden']);
   const words = argv.filter((a, i) => !a.startsWith('--') && !VALUED.has(argv[i - 1]));
   const product = opt('--product') ?? 'kettle-web', kind = opt('--surface') ?? 'vr';
   if (kind !== 'vr' && kind !== 'web') { console.error('--surface is vr or web'); process.exit(2); }
@@ -134,7 +135,12 @@ async function main() {
   const surface = { kind, product, spoken, ...(opt('--place') ? { place: opt('--place') } : {}), ...(opt('--target') ? { target: opt('--target') } : {}) };
   let script;
   if (opt('--script')) script = fs.readFileSync(opt('--script'), 'utf8').split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l));
-  else if (words.length) script = [{ text: words.join(' ') }];
+  else if (opt('--golden')) {
+    // one golden conversation (scripts/fixtures/glim-golden.jsonl), its surface on every turn
+    const g = fs.readFileSync(path.join(ROOT, 'scripts/fixtures/glim-golden.jsonl'), 'utf8').split(/\r?\n/).filter((l) => l.trim()).map((l) => JSON.parse(l)).find((s) => s.id === opt('--golden'));
+    if (!g) { console.error(`no golden scenario ${opt('--golden')}`); process.exit(2); }
+    script = g.turns.map((text) => ({ text, ...(g.surface ? { surface: g.surface } : {}) }));
+  } else if (words.length) script = [{ text: words.join(' ') }];
   else { console.error('usage: node scripts/glim-talk.mjs [--port N] [--product slug] [--surface vr|web] [--place words] [--target id] "<text>" | --script <file.jsonl>'); process.exit(2); }
   const port = opt('--port');
   if (port && FORBIDDEN_PORTS.has(Number(port))) console.error(`note: talking to ${port}, a live server (turns there are real and cost money)`);

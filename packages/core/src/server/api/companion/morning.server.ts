@@ -24,7 +24,8 @@ import { landings, triageBy } from '../../release.server.ts';
 import { readTrail } from '../../brief.server.ts';
 import { listRules } from '../../rules.server.ts';
 import { gate, isLive } from '../../../scan/rules.ts';
-import { snapshots } from './views.server.ts';
+import { gaps, inbox, snapshots } from './views.server.ts';
+import { nextSteps, type NextSteps } from '../../../companion/next-steps.ts';
 
 if (typeof window !== 'undefined') throw new Error('morning.server.ts is server-only');
 
@@ -109,6 +110,17 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
   const logs = read.map(({ p }) => path.relative(p.root, mdFile(p)).split(path.sep).join('/'));
   if (close) close.lines = closeLines(steer.sort((a, b) => (a.at < b.at ? -1 : 1)), from, logs.length ? `${logs[0]} in each product` : 'none', decidedElsewhere(facts, steer, from, deck.until));
   return { ...deck, skipped };
+}
+
+/** The next steps (companion/next-steps.ts, the `next.steps` tool): the deck, the coverage gaps and the shipped items waiting
+ *  for triage, read once, with the plan's feature names for the gaps. `product` narrows the steps, never the reads (the deck
+ *  ranks decisions across products). */
+export async function nextStepsRead(product: string | undefined, limit: number | undefined, now = Date.now()): Promise<NextSteps> {
+  const deck = await morningDeck(undefined, now);
+  const g = gaps(product, 200, now).gaps, triage = inbox(500, now).items.filter((x) => x.kind === 'triage').map((x) => ({ product: x.product, id: x.id, title: x.title }));
+  const names = new Map<string, Map<string, string>>();
+  for (const { p } of snapshots(product).read) names.set(p.slug, new Map([...whereOf(p).where].map(([f, w]) => [f, w.name])));
+  return nextSteps({ deck, gaps: g, triage, names }, { ...(product ? { product } : {}), ...(limit !== undefined ? { limit } : {}) });
 }
 
 export type SteerResult = { status: 200; row: SteerRow } | { status: 400 | 403 | 404 | 409 | 503; error: string };
