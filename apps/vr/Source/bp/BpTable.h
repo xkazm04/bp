@@ -2201,6 +2201,9 @@ private:
 	double TalkFocusAskedAt = 0.0;
 	FTimerHandle TalkFocusTimer;
 	void TalkFocusStep();
+	/** Wave U4: the focus steps still to come dropped and their timer cleared (a cancel, CLOSE, a product switch): a queue
+	 *  never outlives its conversation. */
+	void TalkFocusClear(const TCHAR* Why);
 	void TalkSays(const FString& Line, float Seconds = 0.f);
 	void TalkIdle();
 	/** The app went away (background, deactivated, the headset off, or the XR focus lost) during a hold or a recording: the

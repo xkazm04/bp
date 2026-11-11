@@ -139,6 +139,9 @@ private:
 		/** BpHands.Tap: released where it closed, whatever the id; BpHands.Pull and Push: moved, whatever the id. */
 		bool bTap = false;
 		bool bMove = false;
+		/** Wave U4, BpHands.Slide: the control the ray drifts to while pinched; the pinch opens there (a release off the control
+		 *  it closed on, which must tap nothing). */
+		FString SlideTo;
 		/** BpHands.Point: how long the hand points (no pinch) before it lowers. BpHands.Lasso: the features, and the path its
 		 *  ray follows across the map while pinched (world points), one a frame. */
 		float HoldForS = 0.f;

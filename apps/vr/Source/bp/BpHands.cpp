@@ -152,6 +152,19 @@ namespace
 			UBpHands::PendingCommands().Add(TEXT("Tap ") + Args[0]);
 		}));
 
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsSlide(
+		TEXT("BpHands.Slide"),
+		TEXT("BpHands.Slide <from id> <to id>: the synthetic hand pinches on the first control, its ray drifts to the second while pinched, and the pinch opens there (wave U4: a release off the control it closed on taps nothing)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() < 2)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Slide <from id> <to id>"));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Slide ") + Args[0] + TEXT(" ") + Args[1]);
+		}));
+
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPull(
 		TEXT("BpHands.Pull"),
 		TEXT("BpHands.Pull <id>: the synthetic hand pinches on the id and pulls the pinch toward the eye whatever the id is (BpHands.Pinch only taps a control): a pinch that closed on the console or the wrist and moved must change no level."),
@@ -517,6 +530,13 @@ void UBpHands::PinchEnded(FSlot& S)
 			return;
 		}
 	}
+	// Wave U4: a pinch that closed on a panel (the wrist, the console) or opens on one taps only the control it closed on. On
+	// the wall a degree of drift is about 4.5 cm, the gap between APPROVE, LATER and HOLD: released on a neighbour, nothing.
+	if (!S.bFired && (IsPanel(S.HoverKind) || IsPanel(S.TargetKind)) && (S.HoverKind != S.TargetKind || S.HoverId != S.TargetId))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: a pinch that closed on %s (%s) opened on %s (%s): no tap"), *S.TargetKind, *S.TargetId, *S.HoverKind, *S.HoverId);
+		return;
+	}
 	// The wrist's tabs and rows, a key plan room (WP3): taps.
 	if (!S.bFired && S.HoverKind == TEXT("wrist"))
 	{
@@ -841,6 +861,16 @@ bool UBpHands::StartCommand(const FString& Command)
 		Gesture.HoldForS = Seconds.IsEmpty() ? 2.f : FCString::Atof(*Seconds);
 		Gesture.Step = FGesture::EStep::Wait;
 	}
+	else if (Verb == TEXT("Slide"))
+	{
+		// "Slide <from> <to>": a tap that opens off the control it closed on.
+		FString From, To;
+		if (!Arg.Split(TEXT(" "), &From, &To)) return false;
+		Gesture.Id = From;
+		Gesture.SlideTo = To;
+		Gesture.bTap = true;
+		Gesture.Step = FGesture::EStep::Wait;
+	}
 	else if (Verb == TEXT("Lasso"))
 	{
 		Arg.ParseIntoArrayWS(Gesture.Features);
@@ -964,6 +994,19 @@ void UBpHands::RunCommands(float DeltaTime)
 		Gesture.Aim = Gesture.Path[Gesture.PathAt];
 		return;
 	case EStep::Pinch:
+		if (!Gesture.SlideTo.IsEmpty())
+		{
+			// BpHands.Slide: the ray moves to the other control while pinched, and the pinch opens there (the hand stays put).
+			const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+			FVector To = Gesture.Aim;
+			const bool bAimed = Gesture.SlideTo.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.SlideTo, To)
+				: Gesture.SlideTo.StartsWith(TEXT("console:")) ? Pawn && Pawn->ConsoleAim(Gesture.SlideTo, To) : T && T->AimAt(Gesture.SlideTo, To);
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: slide %s -> %s%s"), *Gesture.Id, *Gesture.SlideTo, bAimed ? TEXT("") : TEXT(" (unknown id: released where it closed)"));
+			if (bAimed) Gesture.Aim = To;
+			Gesture.SlideTo.Reset();
+			Gesture.Step = EStep::Release;
+			return;
+		}
 		// On a crumb the pinch is a tap: released where it closed. BpHands.Tap always taps; BpHands.Pull and Push always move.
 		Gesture.Step = Gesture.bTap || (IsTap(Gesture.Id) && !Gesture.bMove) ? EStep::Release : EStep::Pull;
 		return;

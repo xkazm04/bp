@@ -222,14 +222,18 @@ namespace
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkCancel(TEXT("BpTalk.Cancel"), TEXT("BpTalk.Cancel: what B or a pinch on the lamp does to a talk in flight."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithTalkTables(World, [](ABpTable& T) { T.TalkCancel(TEXT("console")); }); }));
-	FAutoConsoleCommandWithWorldAndArgs CmdTalkFocus(TEXT("BpTalk.Focus"), TEXT("BpTalk.Focus <page|room|wing|feature|decision> <id>: acts on one focus event as a turn's (wave U2: scripted tests of a page Glim opens)."),
+	FAutoConsoleCommandWithWorldAndArgs CmdTalkFocus(TEXT("BpTalk.Focus"), TEXT("BpTalk.Focus <page|room|wing|feature|decision> <id> [<kind> <id>]...: acts on a turn's focus events, one per step (wave U2: scripted tests of a page Glim opens; U4: several, to test a queue that must not outlive its conversation)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
-			if (Args.Num() < 2) return;
-			FBpTurnFocus F;
-			F.TargetKind = Args[0];
-			F.TargetId = Args[1];
-			WithTalkTables(World, [&F](ABpTable& T) { T.TalkActOnFocus({ F }, FPlatformTime::Seconds()); });
+			TArray<FBpTurnFocus> Focuses;
+			for (int32 I = 0; I + 1 < Args.Num(); I += 2)
+			{
+				FBpTurnFocus& F = Focuses.AddDefaulted_GetRef();
+				F.TargetKind = Args[I];
+				F.TargetId = Args[I + 1];
+			}
+			if (Focuses.Num() == 0) return;
+			WithTalkTables(World, [&Focuses](ABpTable& T) { T.TalkActOnFocus(Focuses, FPlatformTime::Seconds()); });
 		}));
 	FAutoConsoleCommandWithWorldAndArgs CmdTalkStat(TEXT("BpTalk.Stat"), TEXT("BpTalk.Stat: the talk's state, whether the capture device is open, and the consent."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World) { WithTalkTables(World, [](ABpTable& T) { T.LogTalk(); }); }));
@@ -486,6 +490,7 @@ void ABpTable::TalkPreview(const FString& Step, const FString& Heard, const FStr
 void ABpTable::TalkDismiss()
 {
 	if (Talk.IsValid() && Talk->Step != FBpTalkState::EStep::Idle) TalkCancel(TEXT("the conversation's CLOSE"));
+	TalkFocusClear(TEXT("the conversation's CLOSE"));
 	// The words leave on the next tick (the caption's clock ends them, the lamp turns back and goes home as after any line).
 	if (bTalkCaption && LampCaptionClock > 0.05f) LampCaptionClock = 0.05f;
 	SetActorTickInterval(0.f);
@@ -970,6 +975,13 @@ FBpTurnSurface ABpTable::TurnSurface(bool bSpoken)
 void ABpTable::TalkActOnFocus(const TArray<FBpTurnFocus>& Focuses, double AskedAt)
 {
 	if (Focuses.Num() == 0) return;
+	// Wave U4: the tour owns the table while it runs; Glim's focus events are dropped (his words still stand).
+	if (IsTourRunning())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus: %d event(s) dropped: the tour runs (it owns the table)"), Focuses.Num());
+		TalkFocusClear(TEXT("the tour"));
+		return;
+	}
 	// A newer turn's events replace what an older one had still to do.
 	TalkFocusQueue.Reset();
 	for (const FBpTurnFocus& F : Focuses) TalkFocusQueue.Emplace(F.TargetKind, F.TargetId);
@@ -981,6 +993,11 @@ void ABpTable::TalkActOnFocus(const TArray<FBpTurnFocus>& Focuses, double AskedA
 void ABpTable::TalkFocusStep()
 {
 	if (TalkFocusQueue.Num() == 0) return;
+	if (IsTourRunning())
+	{
+		TalkFocusClear(TEXT("the tour (it began after the ask)"));
+		return;
+	}
 	if (OwnActAt > TalkFocusAskedAt)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus: %d event(s) dropped: the person acted %.1f s after the ask (their act wins)"), TalkFocusQueue.Num(), OwnActAt - TalkFocusAskedAt);
@@ -1041,6 +1058,14 @@ void ABpTable::TalkFocusStep()
 	}
 }
 
+void ABpTable::TalkFocusClear(const TCHAR* Why)
+{
+	if (UWorld* World = GetWorld()) World->GetTimerManager().ClearTimer(TalkFocusTimer);
+	if (TalkFocusQueue.Num() == 0) return;
+	UE_LOG(LogBpTable, Log, TEXT("BpTalk: focus: %d step(s) still to come dropped by %s"), TalkFocusQueue.Num(), Why);
+	TalkFocusQueue.Reset();
+}
+
 void ABpTable::TalkSpeak(const FString& Reply, const FString& ShownIn)
 {
 	FBpTalkState& S = *Talk;
@@ -1094,6 +1119,8 @@ void ABpTable::TalkSpeak(const FString& Reply, const FString& ShownIn)
 
 bool ABpTable::TalkCancel(const TCHAR* Why)
 {
+	// Wave U4: what the conversation still had to show goes with it, whatever step it is at.
+	TalkFocusClear(Why);
 	if (!Talk.IsValid() || Talk->Step == FBpTalkState::EStep::Idle) return false;
 	FBpTalkState& S = *Talk;
 	const FBpTalkState::EStep Was = S.Step;

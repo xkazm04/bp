@@ -2543,7 +2543,9 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		if (bScreen && S.ShotBrush.IsValid())
 		{
 			Put(Img.ExpandBy(5.f), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo).Edge(BpSheet::Ink.CopyWithNewOpacity(0.8f)).EdgePx(2.f));
-			Put(Img, SNew(SImage).Image(S.ShotBrush.Get()));
+			// Wave U4: the widget holds its brush. CLOSE releases the shot (ShotBrush.Reset) while a wall's leave wipe keeps this
+			// sheet on the panel for 0.3 s with RefreshConsole held, so a raw pointer here painted a freed brush.
+			Put(Img, SNew(SImage).Image_Lambda([Brush = S.ShotBrush]() { return Brush.Get(); }));
 		}
 		else if (bScreen)
 		{

@@ -483,16 +483,31 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 	FTransform FarPose;
 	FVector2D Size;
 	const float MarginDeg = FMath::Clamp(CVarFootClearDeg.GetValueOnGameThread(), 0.f, 15.f);
-	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size))
-	{
-		GLampArmLow = false;
-		return Want;
-	}
-	const float SlackCm = FMath::Clamp(CVarFootEyeSlackCm.GetValueOnGameThread(), 0.f, 40.f);
-	const bool bMayRaise = BpProjector::PointMaxDeg() > 0.f && !SwitchReduced();
 	static FString KeptKey;
 	static FVector Kept = FVector::ZeroVector;
 	static bool bKeptLow = false;
+	static FVector KeptWant = FVector::ZeroVector;
+	static bool bEaseLogged = false;
+	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size))
+	{
+		// Wave U4: the wall closed (SetFar(false) forgets the sheet at once) while LampProj still eases him home over 0.6 s: he
+		// leaves from the stand he kept, not from Want, which jumped him to the far rim's end in one frame.
+		if (MarginDeg > 0.f && Lamp.IsValid() && LampProj > 0.f && !KeptKey.IsEmpty() && KeptWant.Equals(Want, 0.5))
+		{
+			if (!bEaseLogged)
+			{
+				bEaseLogged = true;
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: the far sheet closed: Glim eases home from his kept stand (%.0f, %.0f), not from the rim's end (%.0f, %.0f)"), Kept.X, Kept.Y, Want.X, Want.Y);
+			}
+			GLampArmLow = bKeptLow;
+			return Kept;
+		}
+		GLampArmLow = false;
+		return Want;
+	}
+	bEaseLogged = false;
+	const float SlackCm = FMath::Clamp(CVarFootEyeSlackCm.GetValueOnGameThread(), 0.f, 40.f);
+	const bool bMayRaise = BpProjector::PointMaxDeg() > 0.f && !SwitchReduced();
 	const FString Key = FString::Printf(TEXT("%s|%s|%s|%.1f|%.0f|%d|%.1f"), *FarPose.GetLocation().ToString(), *FarPose.Rotator().ToString(), *Size.ToString(), MarginDeg, SlackCm, bMayRaise,
 		BpProjector::PointMaxDeg()) + Want.ToString() + EyeLocal().ToString() + FString::SanitizeFloat(NodVarDeg());
 	if (Key == KeptKey)
@@ -500,6 +515,21 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 		GLampArmLow = bKeptLow;
 		return Kept;
 	}
+	// Wave U4: every layout's stand is kept (a few sheet sizes and settings at most), so going back to one never searches again.
+	struct FKeptStand { FVector At; bool bLow; };
+	static TMap<FString, FKeptStand> Stands;
+	if (const FKeptStand* Known = Stands.Find(Key))
+	{
+		KeptKey = Key;
+		Kept = Known->At;
+		KeptWant = Want;
+		bKeptLow = Known->bLow;
+		GLampArmLow = bKeptLow;
+		return Kept;
+	}
+	// Wave U4: the search's cost, once per sheet layout (the review's estimate: ~456k corner casts at worst).
+	const double SearchT0 = FPlatformTime::Seconds();
+	int64 Casts = 0;
 	const FTransform& Table = GetActorTransform();
 	const double RestYaw = (Table.GetRotation().Inverse() * LampRest.GetRotation()).Rotator().Yaw;
 	// The mesh component's pose relative to the actor (the parts are in the mesh's space).
@@ -573,6 +603,7 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 	const auto PartClear = [&](const FTransform& Pose, const FBox& Box, const FVector& Eye)
 	{
 		const FVector E = FarPose.InverseTransformPositionNoScale(Eye);
+		++Casts;
 		FBox2D Cast(ForceInit);
 		for (int32 C = 0; C < 8; ++C)
 		{
@@ -595,21 +626,31 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 		const double A = FMath::DegreesToRadians(Step * 15.0);
 		Turns.Add(FVector(FMath::Cos(A), FMath::Sin(A), 0.0) * 100.0);
 	}
-	const auto StandClear = [&](const FVector& P, bool bRaise, double (&OutParts)[3])
+	// Wave U4 (the search measured 7.3 ms on the PC at 26,400 casts): a stand is given up as soon as its least clearance can no
+	// longer matter, i.e. below the rule AND no better than the best low stand so far (Floor; +inf for the raised test, which
+	// only asks "does it clear the rule"). A stand that is kept is still measured over every pose, so the result is the same.
+	const auto StandClear = [&](const FVector& P, bool bRaise, double (&OutParts)[3], double Floor)
 	{
 		for (double& Each : OutParts) Each = TNumericLimits<double>::Max();
+		bool bGiveUp = false;
 		const auto Take = [&](const FTransform& Pose)
 		{
+			if (bGiveUp) return;
 			for (const FVector& Eye : Eyes)
 			{
 				for (int32 Part = 0; Part < 3; ++Part) OutParts[Part] = FMath::Min(OutParts[Part], PartClear(Pose, LampParts[Part].Box, Eye));
 			}
+			const double Least = FMath::Min3(OutParts[0], OutParts[1], OutParts[2]);
+			bGiveUp = Least < MarginDeg && Least <= Floor;
 		};
 		for (const FVector& Aim : Aims) Take(PoseAt(P, Aim, bRaise));
 		for (const FVector& Turn : Turns) Take(PoseAt(P, P + Turn, false));
-		TArray<FTransform> Manner;
-		MannerPoses(P, bRaise, Manner);
-		for (const FTransform& Pose : Manner) Take(Pose);
+		if (!bGiveUp)
+		{
+			TArray<FTransform> Manner;
+			MannerPoses(P, bRaise, Manner);
+			for (const FTransform& Pose : Manner) Take(Pose);
+		}
 		return FMath::Min3(OutParts[0], OutParts[1], OutParts[2]);
 	};
 	// Along the table's left side from Want toward the seat: the first place that clears by MarginDeg, with the arm raised if
@@ -620,21 +661,52 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 	bool bClear = false, bLow = true;
 	const double NearX = -(TableDepthCm * 0.5) + 8.0;
 	int32 Steps = 0;
-	for (double X = Want.X; X >= NearX; X -= 2.0)
+	// One place: true when it clears (raised if it can, else low); a place that does not is still the low fallback's candidate.
+	const auto Try = [&](double X)
 	{
 		const FVector P(X, Want.Y, Want.Z);
 		double Parts[3];
 		++Steps;
-		if (bMayRaise && StandClear(P, true, Parts) >= MarginDeg)
+		if (bMayRaise && StandClear(P, true, Parts, TNumericLimits<double>::Max()) >= MarginDeg)
 		{
 			Best = P; bLow = false; bClear = true;
 			FMemory::Memcpy(BestParts, Parts, sizeof(Parts));
 			BestClear = FMath::Min3(Parts[0], Parts[1], Parts[2]);
-			break;
+			return true;
 		}
-		const double Low = StandClear(P, false, Parts);
+		const double Low = StandClear(P, false, Parts, BestClear);
 		if (Low > BestClear) { BestClear = Low; Best = P; bLow = true; FMemory::Memcpy(BestParts, Parts, sizeof(Parts)); }
-		if (Low >= MarginDeg) { bClear = true; break; }
+		if (Low >= MarginDeg) { bClear = true; return true; }
+		return false;
+	};
+	// Wave U4: 6 cm steps first, then the 2 cm places between the last that failed and the first that cleared (the same stand
+	// as a 2 cm walk wherever clearing does not come and go within 6 cm). Nothing clears: the full 2 cm walk for the fallback.
+	double Failed = TNumericLimits<double>::Max();
+	for (double X = Want.X; X >= NearX && !bClear; X -= 6.0)
+	{
+		if (Try(X)) break;
+		Failed = X;
+	}
+	if (bClear && Failed != TNumericLimits<double>::Max())
+	{
+		const FVector Coarse = Best;
+		const bool bCoarseLow = bLow;
+		double CoarseParts[3];
+		FMemory::Memcpy(CoarseParts, BestParts, sizeof(BestParts));
+		const double CoarseClear = BestClear;
+		bClear = false;
+		BestClear = -TNumericLimits<double>::Max();
+		for (double X = Failed - 2.0; X > Coarse.X + 0.5 && !bClear; X -= 2.0) Try(X);
+		if (!bClear)
+		{
+			Best = Coarse; bLow = bCoarseLow; bClear = true; BestClear = CoarseClear;
+			FMemory::Memcpy(BestParts, CoarseParts, sizeof(BestParts));
+		}
+	}
+	else if (!bClear)
+	{
+		BestClear = -TNumericLimits<double>::Max();
+		for (double X = Want.X; X >= NearX; X -= 2.0) if (Try(X)) break;
 	}
 	// The same stand's clearance from the seated eye alone (what the captures show).
 	double SeatParts[3] = { TNumericLimits<double>::Max(), TNumericLimits<double>::Max(), TNumericLimits<double>::Max() };
@@ -648,8 +720,12 @@ FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
 	}
 	KeptKey = Key;
 	Kept = Best;
+	KeptWant = Want;
 	bKeptLow = bLow && bMayRaise;
 	GLampArmLow = bKeptLow;
+	if (Stands.Num() >= 32) Stands.Reset();
+	Stands.Add(Key, FKeptStand{ Best, bKeptLow });
+	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's stand search took %.2f ms (%lld part casts of 8 corners, %d places)"), (FPlatformTime::Seconds() - SearchT0) * 1000.0, Casts, Steps);
 	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim stands at table (%.0f, %.0f) %s the far sheet (%.0f x %.0f cm) with his arm %s; projected clearance from the seated eye: body %.1f, arm %.1f, hand %.1f deg; least over %d eyes (slack %.0f cm), %d aims and %d turns: body %.1f, arm %.1f, hand %.1f deg (rule %.1f; %d places tried from the far rim's end)"),
 		Best.X, Best.Y, bClear ? TEXT("clear of") : TEXT("as clear as he can be of"), Size.X, Size.Y, bLow ? (bMayRaise ? TEXT("LOW (he points with his beam only)") : TEXT("low (no raise asked)")) : TEXT("RAISED"),
 		SeatParts[0], SeatParts[1], SeatParts[2], Eyes.Num(), SlackCm, Aims.Num(), Turns.Num(), BestParts[0], BestParts[1], BestParts[2], MarginDeg, Steps);

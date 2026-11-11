@@ -2653,6 +2653,8 @@ void ABpTable::OnProductChanged(const FString& Slug)
 	CardDecided.Reset();
 	DeckBriefAsked.Reset();
 	BriefFor.Reset();
+	// Wave U4: Glim's focus steps were about the old product's pages and places.
+	TalkFocusClear(TEXT("the product switch"));
 	// The scan theatre (BpScanTheatre.cpp) follows nothing on the new product: ended quietly (no result for the old one), its
 	// timers cleared, the lamp home and out of the scanning light, and the pins' memory of the old findings dropped (else
 	// every finding of the new product would land, and a real scan's end, keyed on the job just reset, would never come).

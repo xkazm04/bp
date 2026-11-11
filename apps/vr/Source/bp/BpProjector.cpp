@@ -172,7 +172,21 @@ namespace
 		int32 W = 0, H = 0;
 	};
 	TMap<TWeakObjectPtr<UTexture2D>, FThumb> GThumbs;
-	TMap<FString, FBox2f> GRegions;
+	/** A loupe's crop (or "none", an empty box) for one screen or pair. Wave U4: keyed by each texture's object index and serial
+	 *  (never its address, which a re-decoded screen can reuse) and pruned with the thumbs when a texture leaves. */
+	struct FRegion
+	{
+		FBox2f Uv;
+		TWeakObjectPtr<UTexture2D> Before, After;
+		bool bPair = false;
+	};
+	TMap<FString, FRegion> GRegions;
+	FString TextureKey(const UTexture2D* Texture)
+	{
+		if (!Texture) return TEXT("-");
+		const int32 Index = GUObjectArray.ObjectToIndex(Texture);
+		return FString::Printf(TEXT("%d.%d"), Index, GUObjectArray.AllocateSerialNumber(Index));
+	}
 	constexpr int32 ThumbW = 160;
 }
 
@@ -312,6 +326,14 @@ namespace BpProjector
 	void KeepThumb(UTexture2D* Texture, TArray<uint8>&& Thumb, int32 TW, int32 TH)
 	{
 		for (auto It = GThumbs.CreateIterator(); It; ++It) if (!It.Key().IsValid()) It.RemoveCurrent();
+		int32 Pruned = 0;
+		for (auto It = GRegions.CreateIterator(); It; ++It)
+		{
+			// A crop goes with either of its screens; and a screen kept anew gets its crops found again.
+			const FRegion& R = It.Value();
+			if (!R.Before.IsValid() || (R.bPair && !R.After.IsValid()) || (Texture && (R.Before.Get() == Texture || R.After.Get() == Texture))) { It.RemoveCurrent(); ++Pruned; }
+		}
+		if (Pruned > 0) UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe: %d kept crop(s) pruned with their screens (%d left)"), Pruned, GRegions.Num());
 		if (!Texture || Thumb.Num() != TW * TH || TW <= 0) return;
 		FThumb& Kept = GThumbs.FindOrAdd(Texture);
 		Kept.Grey = MoveTemp(Thumb);
@@ -324,8 +346,16 @@ namespace BpProjector
 		const FThumb* A = Before ? GThumbs.Find(TWeakObjectPtr<UTexture2D>(const_cast<UTexture2D*>(Before))) : nullptr;
 		const FThumb* B = After ? GThumbs.Find(TWeakObjectPtr<UTexture2D>(const_cast<UTexture2D*>(After))) : nullptr;
 		if (!A || (After && !B)) return false;
-		const FString Key = FString::Printf(TEXT("%p|%p|%.3f|%.3f"), Before, After, Aspect, WidthFrac);
-		if (const FBox2f* Cached = GRegions.Find(Key)) { OutUv = *Cached; return Cached->GetArea() > 0.f; }
+		const FString Key = FString::Printf(TEXT("%s|%s|%.3f|%.3f"), *TextureKey(Before), *TextureKey(After), Aspect, WidthFrac);
+		if (const FRegion* Cached = GRegions.Find(Key)) { OutUv = Cached->Uv; return Cached->Uv.GetArea() > 0.f; }
+		const auto Keep = [&](const FBox2f& Uv)
+		{
+			FRegion& R = GRegions.Add(Key);
+			R.Uv = Uv;
+			R.Before = const_cast<UTexture2D*>(Before);
+			R.After = const_cast<UTexture2D*>(After);
+			R.bPair = After != nullptr;
+		};
 		const int32 W = A->W, H = A->H;
 		// The score: where the pair differs (After sampled on Before's grid), or one screen's horizontal edges (its words).
 		TArray<int32> Score;
@@ -463,11 +493,11 @@ namespace BpProjector
 			// No region of words worth a loupe: none (the screen takes the space).
 			UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe: none (%s: the best window held %d text rows, %d large shapes kept out), thumbs %dx%d"),
 				B ? TEXT("the pair's change") : TEXT("the screen's words"), FMath::Max(0, BestRows), LargeShapes, W, H);
-			GRegions.Add(Key, FBox2f(FVector2f(0.f), FVector2f(0.f)));
+			Keep(FBox2f(FVector2f(0.f), FVector2f(0.f)));
 			return false;
 		}
 		OutUv = FBox2f(FVector2f(static_cast<float>(BX) / W, static_cast<float>(BY) / H), FVector2f(static_cast<float>(BX + WW) / W, static_cast<float>(BY + WH) / H));
-		GRegions.Add(Key, OutUv);
+		Keep(OutUv);
 		UE_LOG(LogBpTable, Log, TEXT("BpProjector: loupe %s: uv (%.3f, %.3f) to (%.3f, %.3f), %d text rows, %d of %d cells hot in it (%d in the screen), %d large shapes kept out, thumbs %dx%d"),
 			B ? TEXT("the pair's change") : TEXT("the screen's densest words"), OutUv.Min.X, OutUv.Min.Y, OutUv.Max.X, OutUv.Max.Y, BestRows, Best, WW * WH, Hot, LargeShapes, W, H);
 		return true;
