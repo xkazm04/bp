@@ -923,7 +923,8 @@ void ABpTable::TickGlimBeam()
 	FVector2D Size = FVector2D::ZeroVector;
 	UWorld* World = GetWorld();
 	const float Amount = BpProjector::BeamAmount();
-	const bool bRoom = !RoomModeId.IsEmpty() || (World && BpSurround::RoomAmount(World) > 0.f);
+	// Wave U3: room mode keeps the beam while its deck's decision is on the wall (Glim presents it there).
+	const bool bRoom = (!RoomModeId.IsEmpty() && !bDeckWallPoint) || (World && BpSurround::RoomAmount(World) > 0.f);
 	FVector LensWorld;
 	const bool bWant = World && Lamp.IsValid() && LampProj > 0.f && Amount > 0.f && !LookReduced() && !bRoom && BpProjector::Mode() == 1 && BpProjector::FarSheet(WallPose, Size) && LampHead(LensWorld);
 	if (!bWant)
@@ -1054,7 +1055,8 @@ bool ABpTable::TickLampManner(float DeltaSeconds)
 	// Wave PJ1: a sheet on the far surface: Glim turns his lens to it (0.6 s, the README's head turn; reduced motion: at once),
 	// and back to the table when it closes. Facing the person while he listens or speaks still wins (PlaceLamp's order).
 	const float WasProj = LampProj;
-	const float WantProj = BpProjector::IsFar() && RoomModeId.IsEmpty() ? 1.f : 0.f;
+	// Wave U3: and in a room while its deck's decision is on the wall (ApplyDeckWallAims), as the stand-up's.
+	const float WantProj = BpProjector::IsFar() && (RoomModeId.IsEmpty() || bDeckWallPoint) ? 1.f : 0.f;
 	if (LampProj != WantProj) LampProj = bReduced ? WantProj : FMath::FInterpConstantTo(LampProj, WantProj, DeltaSeconds, 1.f / 0.6f);
 	if ((WasProj <= 0.f) != (LampProj <= 0.f)) UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim turns %s"), LampProj > 0.f ? TEXT("to the far sheet") : TEXT("back to the table"));
 	// Wave N3-W2: the point he turns and raises his arm to sweeps to a new one at about 60 cm a second on the wall (from the loupe

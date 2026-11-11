@@ -1615,6 +1615,19 @@ private:
 	/** The queue again after the store changed (the room's findings, the waves), keeping the current screen. */
 	void RefreshDeck();
 	TSharedRef<SWidget> DeckWidget(int32 Screen, int32 Page) const;
+	/** Wave U3: a room's decision on the wall in the wall's family (the stand-up's decision on the wall: three columns, the
+	 *  title and what each answer does, the screen with its loupe, what it touches), driven by the deck's own data and acts. */
+	TSharedRef<SWidget> DeckWallDecision(int32 Screen) const;
+	/** Wave U3: the front decision's points on the wall's layout for Glim (its loupe's region, else its title), set as it is
+	 *  drawn; -1 none. */
+	mutable FVector2f DeckWallLoupeAim = FVector2f(-1.f, -1.f);
+	mutable FVector2f DeckWallTitleAim = FVector2f(-1.f, -1.f);
+	/** Wave U3: Glim presents the deck's front decision on the wall (BpProjector's far aims are the deck's), or lets go. */
+	void ApplyDeckWallAims();
+	bool bDeckWallPoint = false;
+	FString DeckWallAimKey;
+	/** Wave U3: the deck's screens drawn at the wall's density on the wall and the desk's at the desk (true when it changed). */
+	bool SyncDeckDrawSize();
 	void ApplyDeckPoses();
 	/** A screen's place (actor space): Slot 0 the front, 1 and 2 behind it, 3 gone behind; Side -1 or 1 slid off. */
 	FTransform DeckPose(float Slot, float Side) const;
@@ -1961,6 +1974,12 @@ public:
 	 *  desk (bp.Projector 0 or 2) and outside room mode. */
 	bool DeckOnWall(FTransform& OutFront) const;
 	bool IsDeckOnWall() const { FTransform Unused; return DeckOnWall(Unused); }
+	/** Wave U3: the same, with the wall's size (cm) and the draw size its screens take there (the console's own on the wall,
+	 *  BpProjector::DrawSizeFor), so a screen on the wall is drawn at the wall's density, not the desk's 21 px a cm. */
+	bool DeckWall(FTransform& OutFront, FVector2D& OutSizeCm, FIntPoint& OutDraw) const;
+	/** Wave U3: the deck's front decision on the wall has Glim present it and point at APPROVE, as the stand-up's decision on the
+	 *  wall does (BpProjector's far aims), while the console is closed. Room mode keeps him still otherwise. */
+	bool IsDeckWallPointing() const { return bDeckWallPoint; }
 	/** The decision waiting for a yes or no: the deck's front screen when it is a decision (room mode), else the decision
 	 *  card's finding. Its finding id, its title, and where it waits ("deck" or "card"); false when none waits. */
 	bool WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const;

@@ -153,7 +153,7 @@ void ABpTable::LampToStation(int32 Station, const FVector& TargetLocal, const TC
 	// clear-of-the-sheet stand (LampFootClearOfSheet) does not apply; there he faces the person after an answer (the nod) and
 	// his arm, out of his side, crosses the sheet's left column from the seat. While a sheet is far he keeps that clear stand
 	// and points with his beam: no station ride (the raised room still shows where); one he is at already ends.
-	if (BpProjector::IsFar() && RoomModeId.IsEmpty())
+	if (BpProjector::IsFar() && (RoomModeId.IsEmpty() || bDeckWallPoint))
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpLamp: no ride to station %d (%s): a sheet is on the far wall, Glim keeps his stand clear of it"), Station, Why);
 		if (bLampAtStation || LampTravelT >= 0.f) LampGoHome(TEXT("a sheet is far"));
