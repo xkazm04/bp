@@ -71,6 +71,12 @@ Measured on the device afterwards (04:12):
   tick's own work is 1.58 ms and the whole game thread 3.37 ms of the 13.9 ms frame. The meter now starts `tick_ms` after
   the wait and logs it as `wait_ms` (see the correction in 2026-11-04-quest-perf-prep.md).
 
+Talking to Glim with no PC (the jury's path), on the device at 04:48: a hold (`BpTalk.Hold 1.5`) plays the sample
+exchange on the wall's conversation sheet (YOU SAID, GLIM · SAMPLE, the voiced reply, YOU COULD SAY with two reply
+buttons); `BpTalk.Reply 1` ran the next sample line and its action. Typed text (`BpTalk.Say`) with no PC says "Connect to
+your PC to talk to me" instead (a dev path). Consent was set back to unset after the test. Wording: the sample's voiced
+line says "open it on the deck"; with the wall, "on the wall" may read better (a new clip).
+
 ## How long Glim takes to answer (PC, 04:40, a scratch server, the CLI engine, spoken surface)
 
 A three-turn conversation ("How is the project doing?", "What should I do next?", "Show me the first one."), $0.49:
