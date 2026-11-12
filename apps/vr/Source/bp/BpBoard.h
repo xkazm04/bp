@@ -32,6 +32,14 @@
 // room, joined by a thin bracket that runs around the room and ends in an arrowhead at each dependency's edge; a layout for
 // each count from 0 to 4. BpBoard.Audit lays out every sample decision on both boards headlessly and logs what each showed.
 //
+// Wave W3b (the Director's review of W3: "the map must read as a map"): the hero's label beside its figures when it fits there
+// and Glim's tile one line tall when his line is, so the map takes about half the left column; the room is an outlined caption
+// (on the heading's row, under the feature in a fan), never a node in a line's path; the feature is the largest node; its
+// dependencies spread across the tile (1: down at the right on a diagonal, 2: a V under the feature, 3 and 4: a fan, the feature
+// at the left and the dependencies in a column at the right), each joined by one straight line from the feature's edge to its
+// own, arrowhead at the dependency; node names at CapM. The map's check refuses a node outside the tile's margin, two nodes
+// that meet, a line that crosses a node, the heading, the room or another line, and a line shorter than its arrowhead.
+//
 // Cost: drawn into the surface's own render target, only when what it shows changes (the callers' keys); no tick, no
 // material, no texture beyond the screens the callers already hold (an "after" screen is one more, released with the "before").
 #pragma once
@@ -58,8 +66,10 @@ namespace BpBoard
 	constexpr float Y0 = 170.f, Y1 = 568.f;
 	constexpr float ColX1 = 580.f, StageX0 = 600.f;
 	/** Wave W2: the left column's tiles (the hero, Glim's line; what it touches under them to Y1). Wave W3: what it touches
-	 *  takes 168 px for its three rows (the feature, the room, the dependencies) and the bracket's channel between them. */
-	constexpr float HeroY1 = 294.f, GlimY1 = 378.f;
+	 *  takes 168 px for its three rows (the feature, the room, the dependencies) and the bracket's channel between them. Wave
+	 *  W3b: the hero as tall as its figures and label (92 with the label beside the figures, 116 under them), Glim's tile as tall
+	 *  as its line (60 for one, 76 for two), and what it touches the rest (190 to 230 px, 48 to 58 % of the column). */
+	constexpr float GlimOneH = 60.f, GlimTwoH = 76.f;
 	/** Wave W3, the board's three text sizes (layout px of cap height): the largest, the middle, the smallest (the floor). */
 	constexpr float CapL = 28.f, CapM = 23.f, CapS = 19.f;
 

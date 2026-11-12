@@ -172,6 +172,27 @@ namespace
 		return FString::Join(Lines, TEXT("\n"));
 	}
 
+	/** Wave W3b: a name in two lines of about even width (the split between whole words whose wider line is the narrowest), or
+	 *  one line when it fits MaxW; empty when neither fits. */
+	FString TwoEven(const FString& Text, const FSlateFontInfo& EvenFont, float MaxW)
+	{
+		if (BpSheet::TextWidth(Text, EvenFont) <= MaxW) return Text;
+		TArray<FString> W;
+		Text.ParseIntoArrayWS(W);
+		FString Best;
+		float BestW = MaxW + 1.f;
+		for (int32 Cut = 1; Cut < W.Num(); ++Cut)
+		{
+			// No line ends on a joiner.
+			if (W[Cut - 1] == TEXT("&") || W[Cut - 1] == TEXT("·") || W[Cut - 1] == TEXT("-")) continue;
+			const FString A = FString::Join(TArrayView<const FString>(W.GetData(), Cut), TEXT(" "));
+			const FString B = FString::Join(TArrayView<const FString>(W.GetData() + Cut, W.Num() - Cut), TEXT(" "));
+			const float Wide = FMath::Max(BpSheet::TextWidth(A, EvenFont), BpSheet::TextWidth(B, EvenFont));
+			if (Wide < BestW) { BestW = Wide; Best = A + TEXT("\n") + B; }
+		}
+		return BestW <= MaxW ? Best : FString();
+	}
+
 	/** Wave W2: Figure stands in Text as a figure of its own ("1" is not in "11 px"). */
 	bool HasFigure(const FString& Text, const FString& Figure)
 	{
@@ -333,17 +354,17 @@ namespace
 		return F;
 	}
 
-	/** A node of the touches map: a compact rounded label with a name, in one of three looks (wave W3: a label's corners, not a
-	 *  pill's). */
-	enum class ENode : uint8 { Feature, Room, Other };
+	/** A node of the touches map: a compact rounded label with a name (wave W3b: in one line or two), the feature's or another's
+	 *  (wave W3: a label's corners, not a pill's). */
+	enum class ENode : uint8 { Feature, Other };
 	TSharedRef<SWidget> Node(const FString& Name, ENode Look, const FSlateFontInfo& NodeFont)
 	{
 		const FLinearColor Fill = Look == ENode::Feature ? BpSheet::Amber : BpSheet::PaperLo;
-		const FLinearColor Edge = Look == ENode::Feature ? BpSheet::Amber : Look == ENode::Room ? BpSheet::Accent : BpSheet::Ink.CopyWithNewOpacity(0.55f);
-		const FLinearColor Ink = Look == ENode::Feature ? BpSheet::PaperLo : Look == ENode::Room ? BpSheet::Accent : BpSheet::Ink;
+		const FLinearColor Edge = Look == ENode::Feature ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.55f);
+		const FLinearColor Ink = Look == ENode::Feature ? BpSheet::PaperLo : BpSheet::Ink;
 		return SNew(SOverlay)
 			+ SOverlay::Slot()[SNew(SBorder).BorderImage(Rounded(9.f)).BorderBackgroundColor(Edge).Padding(2.f)[SNew(SBorder).BorderImage(Rounded(7.f)).BorderBackgroundColor(Fill).Padding(0.f)]]
-			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f))[SNew(STextBlock).Text(FText::FromString(Name)).Font(NodeFont).Clipping(EWidgetClipping::Inherit).ColorAndOpacity(FSlateColor(Ink))];
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f))[SNew(STextBlock).Text(FText::FromString(Name)).Font(NodeFont).Justification(ETextJustify::Center).LineHeightPercentage(Name.Contains(TEXT("\n")) ? 0.82f : 1.f).Clipping(EWidgetClipping::Inherit).ColorAndOpacity(FSlateColor(Ink))];
 	}
 
 	/** Words (a token with a letter in it) in a text. */
@@ -491,12 +512,10 @@ namespace BpBoard
 		}
 
 		// ---- The left column: the hero, Glim's line, what it touches ----------------------------------------------------------
-		const FBox2f Hero(FVector2f(X0, Y0), FVector2f(ColX1, HeroY1));
-		const FBox2f GlimBox(FVector2f(X0, HeroY1 + 8.f), FVector2f(ColX1, GlimY1));
-		const FBox2f Touch(FVector2f(X0, GlimY1 + 8.f), FVector2f(ColX1, Y1));
-		Tile(Hero);
-		Tile(GlimBox);
-		Tile(Touch);
+		// Wave W3b: the hero as tall as its figures and label, Glim's tile as tall as its line (one line or two), and what it
+		// touches the rest of the column (190 to 230 of its 398 px, from 182).
+		FBox2f Hero(FVector2f(X0, Y0), FVector2f(ColX1, Y0 + 116.f));
+		FBox2f GlimBox = Hero, Touch = Hero;
 		const auto SaysMore = [&In](const FString& S) { FString A = S, B = In.Title; A.RemoveFromEnd(TEXT(".")); B.RemoveFromEnd(TEXT(".")); return !S.IsEmpty() && !A.Equals(B, ESearchCase::IgnoreCase); };
 		const FString Proposes = SaysMore(F.Summary) ? F.Summary : F.Impact;
 		// Glim's line: the lens's reading; when another tile already says what it says (the hero its figure, the chart the
@@ -571,8 +590,11 @@ namespace BpBoard
 		if (Glim.IsEmpty() && P) Glim = Proposes;
 		if (!P) Glim = In.Fallback;
 		{
+			// Wave W3b: the label beside the figures (in two lines at most) when it fits there, the tile then only as tall as the
+			// figures (92 px); else under them, the figures at most 64 px of cap (116 px).
 			const float In0 = Hero.Min.X + 24.f, In1 = Hero.Max.X - 24.f;
 			float Cap = 72.f;
+			FString Beside;
 			if (!Today.IsEmpty())
 			{
 				// The largest cap the figures fit at, down to 44.
@@ -582,6 +604,17 @@ namespace BpBoard
 					return BpSheet::TextWidth(Today, NumFont) + (After.IsEmpty() ? 0.f : BpSheet::TextWidth(After, NumFont) + C * 1.6f);
 				};
 				while (Cap > 44.f && Width(Cap) > In1 - In0) Cap -= 4.f;
+				// Beside: the largest cap from there down to 56 that leaves the label room in one line or two even ones.
+				for (float Try = Cap; Try >= 56.f && Beside.IsEmpty(); Try -= 4.f)
+				{
+					const float Avail = In1 - (In0 + Width(Try) + 28.f);
+					if (Avail > 110.f) Beside = TwoEven(Label, MBold, Avail);
+					if (!Beside.IsEmpty()) Cap = Try;
+				}
+				if (Beside.IsEmpty()) { while (Cap > 64.f) Cap -= 4.f; while (Cap > 44.f && Width(Cap) > In1 - In0) Cap -= 4.f; }
+				const float LX = In0 + Width(Cap) + 28.f;
+				Hero.Max.Y = Hero.Min.Y + (Beside.IsEmpty() ? 10.f + Cap + 6.f + 32.f + 4.f : FMath::Max(Cap + 20.f, Beside.Contains(TEXT("\n")) ? 80.f : 52.f));
+				Tile(Hero);
 				const FSlateFontInfo NumFont = Font(TEXT("Bold"), Cap);
 				TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Today)).Font(NumFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))];
@@ -590,20 +623,31 @@ namespace BpBoard
 					Row->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(Cap * 0.25f, 0.f)[Arrow(Cap * 0.8f, BpSheet::Ink.CopyWithNewOpacity(0.8f))];
 					Row->AddSlot().AutoWidth().VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(After)).Font(NumFont).ColorAndOpacity(FSlateColor(BpSheet::Accent))];
 				}
-				const float Mid = Hero.Min.Y + 10.f + Cap * 0.5f;
+				// The figures' line box sits about a twelfth of the cap above their ink: the ink centred in the tile when beside.
+				const float Mid = Beside.IsEmpty() ? Hero.Min.Y + 10.f + Cap * 0.5f : Hero.GetCenter().Y - Cap * 0.08f;
 				Put(FBox2f(FVector2f(In0, Mid - Cap * 0.8f), FVector2f(In1, Mid + Cap * 0.8f)), SNew(SBox).VAlign(VAlign_Center)[Row]);
+				if (!Beside.IsEmpty())
+				{
+					const float InkMid = Hero.GetCenter().Y;
+					const float Half = FMath::Max(Cap * 0.5f + 4.f, Beside.Contains(TEXT("\n")) ? 35.f : 20.f);
+					Words(TEXT("hero's label"), FBox2f(FVector2f(LX, InkMid - Half), FVector2f(In1, InkMid + Half)), Beside, CapM, true, BpSheet::InkHi, VAlign_Center, 0.82f);
+				}
 			}
-			const float LabelY = Hero.Min.Y + 10.f + Cap + 6.f;
-			Words(TEXT("hero's label"), FBox2f(FVector2f(In0, LabelY), FVector2f(In1, LabelY + 32.f)), Shorten(TEXT("hero's label"), Label, MBold, In1 - In0), CapM, true, BpSheet::InkHi);
+			else Tile(Hero);
+			if (Beside.IsEmpty())
+			{
+				const float LabelY = Hero.Min.Y + 10.f + Cap + 6.f;
+				Words(TEXT("hero's label"), FBox2f(FVector2f(In0, LabelY), FVector2f(In1, LabelY + 32.f)), Shorten(TEXT("hero's label"), Label, MBold, In1 - In0), CapM, true, BpSheet::InkHi);
+			}
+			GlimBox = FBox2f(FVector2f(X0, Hero.Max.Y + 8.f), FVector2f(ColX1, Hero.Max.Y + 8.f + GlimTwoH));
+			Touch = FBox2f(FVector2f(X0, GlimBox.Max.Y + 8.f), FVector2f(ColX1, Y1));
 			Said.Add(FString::Printf(TEXT("hero \"%s%s%s\" at %.0f \"%s\""), *Today, After.IsEmpty() ? TEXT("") : TEXT(" -> "), *After, Cap, *Label));
 		}
 		{
 			// Glim's line beside the lit lamp: two lines at CapM, else its first sentence; whole words only, never smaller.
 			const float DiscD = 44.f;
-			const FVector2f C(GlimBox.Min.X + 20.f + DiscD * 0.5f, GlimBox.GetCenter().Y);
-			Put(FBox2f(C - FVector2f(DiscD * 0.5f + 6.f), C + FVector2f(DiscD * 0.5f + 6.f)), SNew(BpSheet::SRing).Color(BpSheet::Amber.CopyWithNewOpacity(0.45f)).Thick(5.f));
-			Put(FBox2f(C - FVector2f(DiscD * 0.5f), C + FVector2f(DiscD * 0.5f)), Disc(LampWhite, DiscD));
-			const float TX0 = C.X + DiscD * 0.5f + 20.f, TX1 = GlimBox.Max.X - 16.f;
+			const float DiscX = GlimBox.Min.X + 20.f + DiscD * 0.5f;
+			const float TX0 = DiscX + DiscD * 0.5f + 20.f, TX1 = GlimBox.Max.X - 16.f;
 			// Wave W3: the first form that fits whole, never a sentence cut short: the line, without its asides in brackets, its
 			// first sentence; then another sentence no tile says that fits; only then cut, at a clause's joint.
 			const auto Forms = [&F](const FString& S)
@@ -657,140 +701,196 @@ namespace BpBoard
 				else if (!Fit.IsEmpty() && FChar::IsAlnum(Fit[Fit.Len() - 1])) Fit += TEXT(".");
 				Short.Add(FString::Printf(TEXT("Glim's line \"%s\" cut to \"%s\""), *Glim, *Fit.Replace(TEXT("\n"), TEXT(" "))));
 			}
+			// Wave W3b: the tile as tall as the line (one line most often), what it touches taking the rest.
+			if (!Fit.Contains(TEXT("\n")))
+			{
+				GlimBox.Max.Y = GlimBox.Min.Y + GlimOneH;
+				Touch.Min.Y = GlimBox.Max.Y + 8.f;
+			}
+			Tile(GlimBox);
+			const FVector2f C(DiscX, GlimBox.GetCenter().Y);
+			Put(FBox2f(C - FVector2f(DiscD * 0.5f + 6.f), C + FVector2f(DiscD * 0.5f + 6.f)), SNew(BpSheet::SRing).Color(BpSheet::Amber.CopyWithNewOpacity(0.45f)).Thick(5.f));
+			Put(FBox2f(C - FVector2f(DiscD * 0.5f), C + FVector2f(DiscD * 0.5f)), Disc(LampWhite, DiscD));
 			Words(TEXT("Glim's line"), FBox2f(FVector2f(TX0, GlimBox.Min.Y + 4.f), FVector2f(TX1, GlimBox.Max.Y - 4.f)), Fit, CapM, false, BpSheet::InkHi, VAlign_Center, 0.82f);
 			Said.Add(FString::Printf(TEXT("Glim \"%s\"%s"), *Fit.Replace(TEXT("\n"), TEXT(" ")), bAll ? TEXT("") : TEXT(" (shortened)")));
 		}
+		Tile(Touch);
 		{
-			// What it touches (wave W3, the design's node map drawn from the data): the feature lit at the top, its room under it on
-			// an amber stem, and what the feature depends on (the structure's depends_on: the data's direction, so each line is the
-			// feature's and ends in an arrowhead at the dependency) around and under the room. A layout for each count: one under
-			// the room; two beside each other under it, fed from the tile's two sides; three, the third under the pair; four, two
-			// rows of two. A side's line leaves the feature, runs down the tile's edge and turns into its dependencies; a line to one
-			// under the room runs outside the room and along the channel under it. Names shorten by whole words to their places.
-			const float NH = 30.f;
+			// What it touches (wave W3b, the design's tile): the feature, the largest node, filled amber; what it depends on (the
+			// structure's depends_on, the data's direction: each line starts at the feature and ends in an arrowhead at the
+			// dependency), each joined by one straight line from the feature's edge to its own; the room an outlined caption, never
+			// in a line's path. 0: the feature alone in the middle, "Stands alone" under it; 1: the feature at the top left, the
+			// dependency down at the right (a diagonal); 2: a V under the feature; 3 and 4: a fan, the feature at the left (two
+			// lines of name when it is long) with the room under it, the dependencies in a column at the right, every line from one
+			// point on the feature's right edge. The room sits on the heading's row up to two, under the feature in a fan. Names
+			// shorten by whole words to their places.
+			const float GL = Touch.Min.X + 14.f, GR = Touch.Max.X - 14.f, CX = Touch.GetCenter().X, Span = GR - GL;
+			const float NH = 38.f;
+			const int32 N = FMath::Min(F.Neighbours.Num(), 4);
+			const bool bFan = N >= 3;
 			const FString TouchWord = TEXT("WHAT IT TOUCHES");
-			const FBox2f LabelBox(FVector2f(Touch.Min.X + 18.f, Touch.Min.Y + 3.f), FVector2f(Touch.Min.X + 22.f + BpSheet::TextWidth(TouchWord, SBold), Touch.Min.Y + 28.f));
+			const FBox2f LabelBox(FVector2f(Touch.Min.X + 18.f, Touch.Min.Y + 4.f), FVector2f(Touch.Min.X + 22.f + BpSheet::TextWidth(TouchWord, SBold), Touch.Min.Y + 32.f));
 			Words(TEXT("map's heading"), LabelBox, TouchWord, CapS, true, Muted);
-			const int32 Deps = FMath::Min(F.Neighbours.Num(), 4);
-			const float Lower = Deps == 0 ? 40.f : Deps == 1 ? 18.f : 0.f;
-			const float AY = Touch.Min.Y + 32.f + Lower, BY = AY + NH + 8.f, ChanY = BY + NH + 6.f, CY = ChanY + 6.f, DY = CY + NH + 6.f;
-			const float GL = Touch.Min.X + 14.f, GR = Touch.Max.X - 14.f, CX = Touch.GetCenter().X;
-			const auto Natural = [&](const FString& Name, const FSlateFontInfo& NameFont) { return BpSheet::TextWidth(Name, NameFont) * 1.03f + 24.f; };
+			const auto Natural = [&](const FString& Name, const FSlateFontInfo& NameFont)
+			{
+				TArray<FString> Lines;
+				Name.ParseIntoArrayLines(Lines);
+				float W = 0.f;
+				for (const FString& Line : Lines) W = FMath::Max(W, BpSheet::TextWidth(Line, NameFont));
+				return W * 1.03f + 24.f;
+			};
 			const auto Room = [](float SlotW) { return (SlotW - 24.f) / 1.03f; };
-			const auto At = [&](float X, float Y, float W) { return FBox2f(FVector2f(X - W * 0.5f, Y), FVector2f(X + W * 0.5f, Y + NH)); };
 			struct FNode { FBox2f Box; FString Name; ENode Look; };
 			TArray<FNode> Nodes;
-			const FString FeatName = Shorten(TEXT("map's feature"), F.FeatureName, SBold, Room(GR - GL));
-			const FBox2f FeatBox = At(CX, AY, FeatName.IsEmpty() ? 0.f : Natural(FeatName, SBold));
-			if (!FeatName.IsEmpty()) Nodes.Add({ FeatBox, FeatName, ENode::Feature });
-			const FString RoomName = Shorten(TEXT("map's room"), F.RoomName.ToUpper(), SBold, Room(GR - GL));
-			const FBox2f RoomBox = At(CX, BY, RoomName.IsEmpty() ? 0.f : Natural(RoomName, SBold));
-			if (!RoomName.IsEmpty()) Nodes.Add({ RoomBox, RoomName, ENode::Room });
-			// The line under the room keeps clear of the feature and the room.
-			const float BusL = CX - FMath::Max(FeatBox.GetSize().X, RoomBox.GetSize().X) * 0.5f - 12.f;
-			enum class EFeed : uint8 { Left, Right, Down };
-			struct FSlot { float XA, XB, Y; EFeed Feed; };
-			const FSlot LeftC{ GL + 12.f, CX - 6.f, CY, EFeed::Left }, RightC{ CX + 6.f, GR - 12.f, CY, EFeed::Right };
-			const FSlot LeftD{ GL + 12.f, CX - 6.f, DY, EFeed::Left }, RightD{ CX + 6.f, GR - 12.f, DY, EFeed::Right };
-			const FSlot UnderC{ GL + 12.f, GR - 12.f, CY, EFeed::Down }, UnderD{ GL + 12.f, GR - 12.f, DY, EFeed::Down };
-			const int32 N = FMath::Min(F.Neighbours.Num(), 4);
-			TArray<FSlot> Slots;
-			// Two: a step down the arc, each with the whole width (the left one's row, then the right one's).
-			FSlot WideLeftC = LeftC, WideRightD = RightD;
-			WideLeftC.XB = GR - 12.f;
-			WideRightD.XA = GL + 12.f;
-			if (N == 1) Slots = { UnderC };
-			else if (N == 2) Slots = { WideLeftC, WideRightD };
-			else if (N == 3) Slots = { LeftC, RightC, UnderD };
-			else if (N == 4) Slots = { LeftC, RightC, LeftD, RightD };
-			// A row of two shares its width by what each name needs: the shorter keeps its own, the longer the rest.
-			for (int32 I = 0; I + 1 < Slots.Num(); I += 2)
+			// The feature's name: one line; beside one dependency or in a fan, two even ones when one would take more than its side.
+			const float FeatMax = bFan ? Span * 0.5f : N == 1 ? Span * 0.6f : Span;
+			FString FeatName = F.FeatureName;
+			if (!FeatName.IsEmpty() && Natural(FeatName, MBold) > FeatMax)
 			{
-				if (Slots[I].Feed != EFeed::Left || Slots[I + 1].Feed != EFeed::Right || Slots[I].Y != Slots[I + 1].Y) continue;
-				const float Avail = (GR - 12.f) - (GL + 12.f) - 12.f;
-				const float NA = Natural(F.Neighbours[I], SReg), NB = Natural(F.Neighbours[I + 1], SReg);
-				float WA = NA, WB = NB;
-				if (NA + NB > Avail) { if (NA <= Avail * 0.5f) WB = Avail - NA; else if (NB <= Avail * 0.5f) WA = Avail - NB; else WA = WB = Avail * 0.5f; }
-				Slots[I].XB = Slots[I].XA + WA;
-				Slots[I + 1].XA = Slots[I + 1].XB - WB;
+				const FString Two = bFan || N == 1 ? TwoEven(FeatName, MBold, Room(FeatMax)) : FString();
+				FeatName = !Two.IsEmpty() ? Two : Shorten(TEXT("map's feature"), FeatName, MBold, Room(FeatMax));
 			}
-			TArray<TArray<FVector2f>> Thin;
-			TArray<TPair<FVector2f, FVector2f>> Segments;
-			const float StubY = AY + NH * 0.5f;
-			const auto Path = [&](TArray<FVector2f> Points)
+			const bool bTwoLines = FeatName.Contains(TEXT("\n"));
+			const float FH = bTwoLines ? 74.f : 44.f;
+			const float FeatW = FeatName.IsEmpty() ? 0.f : Natural(FeatName, MBold);
+			// The room's caption: on the heading's row, or (a fan) under the feature at the tile's foot (placed once the lines are).
+			FString RoomWord;
+			FBox2f RoomBox(FVector2f(GR, LabelBox.Min.Y), FVector2f(GR, LabelBox.Min.Y));
+			const float RoomH = 32.f, RoomTop = Touch.Max.Y - 8.f - RoomH;
+			const auto PlaceRoom = [&](float RoomMax)
 			{
-				for (int32 I = 0; I + 1 < Points.Num(); ++I) Segments.Add(TPair<FVector2f, FVector2f>(Points[I], Points[I + 1]));
-				for (FVector2f& Point : Points) Point -= Touch.Min;
-				Thin.Add(Points);
+				if (F.RoomName.IsEmpty()) return;
+				// In capitals when they fit, else as the plan writes it, else shortened by whole words.
+				RoomWord = BpSheet::TextWidth(F.RoomName.ToUpper(), SBold) <= RoomMax - 30.f ? F.RoomName.ToUpper() : Shorten(TEXT("map's room"), F.RoomName, SBold, RoomMax - 30.f);
+				if (RoomWord.IsEmpty()) return;
+				const float W = BpSheet::ChipWidth(RoomWord, SBold);
+				RoomBox = bFan ? FBox2f(FVector2f(GL, RoomTop), FVector2f(GL + W, RoomTop + RoomH)) : FBox2f(FVector2f(GR - W, Touch.Min.Y + 3.f), FVector2f(GR, Touch.Min.Y + 3.f + RoomH));
+				ChipAt(RoomBox, RoomWord, SBold, CapS, BpSheet::Accent, false);
 			};
+			if (!bFan) PlaceRoom(GR - LabelBox.Max.X - 12.f);
+			const float A0 = Touch.Min.Y + 42.f, A1 = Touch.Max.Y - 10.f;
+			FBox2f FeatBox;
+			if (bFan)
+			{
+				// At the left, in the middle of what the heading and the room leave.
+				const float Top = LabelBox.Max.Y + 8.f, Bottom = F.RoomName.IsEmpty() ? A1 : RoomTop - 10.f;
+				const float FY = FMath::Max(Top, (Top + Bottom) * 0.5f - FH * 0.5f);
+				FeatBox = FBox2f(FVector2f(GL, FY), FVector2f(GL + FeatW, FY + FH));
+			}
+			else
+			{
+				const float FX = N == 1 ? GL + Span * 0.3f : CX;
+				const float FY = N == 0 ? (A0 + A1) * 0.5f - FH * 0.5f - 18.f : A0;
+				const float FL = FMath::Max(GL, FX - FeatW * 0.5f);
+				FeatBox = FBox2f(FVector2f(FL, FY), FVector2f(FL + FeatW, FY + FH));
+			}
+			if (!FeatName.IsEmpty()) Nodes.Add({ FeatBox, FeatName, ENode::Feature });
+			if (N == 0 && !FeatName.IsEmpty())
+			{
+				const FString Alone = TEXT("Stands alone");
+				const float W = BpSheet::TextWidth(Alone, MReg) + 4.f;
+				Words(TEXT("map's note"), FBox2f(FVector2f(CX - W * 0.5f, FeatBox.Max.Y + 8.f), FVector2f(CX + W * 0.5f, FeatBox.Max.Y + 40.f)), Alone, CapM, false, Muted);
+			}
+			// The dependencies' places: a slot [XA, XB] on a row, the node at its left (-1), centre (0) or right (+1).
+			struct FSlot { float XA, XB, Y; int32 Align; };
+			TArray<FSlot> Slots;
+			if (N == 1) Slots = { { GL + Span * 0.4f, GR, A1 - NH, 0 } };
+			else if (N == 2) Slots = { { GL, CX - 8.f, A1 - NH, 0 }, { CX + 8.f, GR, A1 - NH, 0 } };
+			else if (bFan)
+			{
+				// A column spread over the tile's height (gaps of at most 20 px), its names' left edges in line, as far right as the
+				// widest lets it (the lines as long as the tile allows).
+				const float FanX = FMath::Max(GL + FeatW + 48.f, LabelBox.Max.X + 20.f);
+				float Widest = 0.f;
+				for (int32 I = 0; I < N; ++I) Widest = FMath::Max(Widest, Natural(ShortenWords(F.Neighbours[I], MReg, Room(GR - FanX)), MReg));
+				const float XA = FMath::Max(FanX, GR - Widest - 2.f), T = Touch.Min.Y + 8.f, B = Touch.Max.Y - 8.f;
+				const float Gap = FMath::Min(20.f, (B - T - N * NH) / (N - 1));
+				const float Y = (T + B) * 0.5f - (N * NH + (N - 1) * Gap) * 0.5f;
+				for (int32 I = 0; I < N; ++I) Slots.Add({ XA, GR, Y + I * (NH + Gap), -1 });
+			}
+			const FVector2f FC = FeatName.IsEmpty() ? FVector2f(CX, A0) : FeatBox.GetCenter();
+			// Where the line from the feature's centre toward a point leaves the feature's box.
+			const auto Leave = [&](const FVector2f& T)
+			{
+				const FVector2f D = T - FC, Half = FeatBox.GetExtent();
+				float S = 1.f;
+				if (FMath::Abs(D.X) > 0.01f) S = FMath::Min(S, Half.X / FMath::Abs(D.X));
+				if (FMath::Abs(D.Y) > 0.01f) S = FMath::Min(S, Half.Y / FMath::Abs(D.Y));
+				return FC + D * S;
+			};
+			TArray<TArray<FVector2f>> Thin;
+			TArray<TPair<FVector2f, FVector2f>> Links;
+			TArray<FString> LinkTo;
 			int32 Placed = 0;
-			for (int32 I = 0; I < N; ++I)
+			for (int32 I = 0; I < Slots.Num(); ++I)
 			{
 				const FSlot& S = Slots[I];
 				const FString& Name = F.Neighbours[I];
-				const FString Fit = Shorten(TEXT("map's dependency"), Name, SReg, Room(S.XB - S.XA));
+				const FString Fit = Shorten(TEXT("map's dependency"), Name, MReg, Room(S.XB - S.XA));
 				if (Fit.IsEmpty()) { Short.Add(FString::Printf(TEXT("map's dependency \"%s\" left off (no place)"), *Name)); continue; }
-				const float W = Natural(Fit, SReg);
-				// One under a row of two drops through the gap between them, and stands centred on that drop.
-				float DropX = (S.XA + S.XB) * 0.5f;
-				if (S.Feed == EFeed::Down && S.Y == DY && Nodes.Num() >= 2 && Nodes.Last().Look == ENode::Other && Nodes.Last(1).Look == ENode::Other)
-					DropX = (Nodes.Last(1).Box.Max.X + Nodes.Last().Box.Min.X) * 0.5f;
-				const float X0N = S.Feed == EFeed::Left ? S.XA : S.Feed == EFeed::Right ? S.XB - W : FMath::Clamp(DropX - W * 0.5f, S.XA, S.XB - W);
-				const FBox2f Box(FVector2f(X0N, S.Y), FVector2f(X0N + W, S.Y + NH));
+				const float W = Natural(Fit, MReg);
+				const float BX = S.Align < 0 ? S.XA : S.Align > 0 ? S.XB - W : (S.XA + S.XB - W) * 0.5f;
+				const FBox2f Box(FVector2f(BX, S.Y), FVector2f(BX + W, S.Y + NH));
 				Nodes.Add({ Box, Fit, ENode::Other });
 				++Placed;
-				const float MidY = Box.GetCenter().Y;
-				if (S.Feed == EFeed::Left)
-				{
-					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Min.X, StubY), Tip(Box.Min.X, MidY);
-					Path({ From, FVector2f(GL, StubY), FVector2f(GL, MidY), Tip });
-					Path({ Tip + FVector2f(-9.f, -6.f), Tip, Tip + FVector2f(-9.f, 6.f) });
-				}
-				else if (S.Feed == EFeed::Right)
-				{
-					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Max.X, StubY), Tip(Box.Max.X, MidY);
-					Path({ From, FVector2f(GR, StubY), FVector2f(GR, MidY), Tip });
-					Path({ Tip + FVector2f(9.f, -6.f), Tip, Tip + FVector2f(9.f, 6.f) });
-				}
-				else
-				{
-					const FVector2f From(FeatName.IsEmpty() ? CX : FeatBox.Min.X, StubY), Tip(FMath::Clamp(DropX, Box.Min.X + 10.f, Box.Max.X - 10.f), Box.Min.Y);
-					Path({ From, FVector2f(BusL, StubY), FVector2f(BusL, ChanY), FVector2f(Tip.X, ChanY), Tip });
-					Path({ Tip + FVector2f(-6.f, -9.f), Tip, Tip + FVector2f(6.f, -9.f) });
-				}
+				// The line: from the feature's edge (a fan's from one point on its right edge) to the node's near edge.
+				const FVector2f End = bFan ? FVector2f(Box.Min.X, Box.GetCenter().Y) : FVector2f(Box.GetCenter().X, Box.Min.Y);
+				const FVector2f Start = bFan ? FVector2f(FeatBox.Max.X, FC.Y) : Leave(End);
+				const FVector2f Dir = (End - Start).GetSafeNormal();
+				const FVector2f From = Start + Dir * 4.f, Tip = End - Dir * 3.f;
+				const FVector2f Side(-Dir.Y, Dir.X);
+				Thin.Add({ From - Touch.Min, Tip - Touch.Min });
+				Thin.Add({ Tip - Dir * 12.f + Side * 7.f - Touch.Min, Tip - Touch.Min, Tip - Dir * 12.f - Side * 7.f - Touch.Min });
+				Links.Add(TPair<FVector2f, FVector2f>(From, Tip));
+				LinkTo.Add(Fit);
 			}
-			// The arrowheads' own short strokes are no crossings.
-			Segments.RemoveAll([](const TPair<FVector2f, FVector2f>& S) { return FVector2f::Distance(S.Key, S.Value) < 12.f; });
-			Put(Touch, SNew(SLines).Color(BpSheet::Ink.CopyWithNewOpacity(0.55f)).Thick(2.f).Lines(Thin));
-			if (!FeatName.IsEmpty() && !RoomName.IsEmpty())
+			if (bFan)
 			{
-				TArray<TArray<FVector2f>> Stem;
-				Stem.Add({ FVector2f(CX, FeatBox.Max.Y) - Touch.Min, FVector2f(CX, RoomBox.Min.Y) - Touch.Min });
-				Put(Touch, SNew(SLines).Color(BpSheet::Amber).Thick(4.f).Lines(Stem));
+				// The room under the feature, clear of the column and of the lowest line (where it comes down to the room's top).
+				float RoomMax = (Slots.Num() > 0 ? Slots[0].XA : GR) - GL - 24.f;
+				for (const TPair<FVector2f, FVector2f>& L : Links)
+					if (L.Value.Y > RoomTop - 6.f && L.Value.Y > L.Key.Y) RoomMax = FMath::Min(RoomMax, L.Key.X + (RoomTop - 6.f - L.Key.Y) / (L.Value.Y - L.Key.Y) * (L.Value.X - L.Key.X) - 10.f - GL);
+				PlaceRoom(RoomMax);
 			}
+			Put(Touch, SNew(SLines).Color(BpSheet::Ink.CopyWithNewOpacity(0.75f)).Thick(3.f).Lines(Thin));
 			for (const FNode& Each : Nodes)
 			{
 				Count(Each.Name);
-				MinCap = FMath::Min(MinCap, CapS);
-				Put(Each.Box, Node(Each.Name, Each.Look, Each.Look == ENode::Other ? SReg : SBold));
+				MinCap = FMath::Min(MinCap, CapM);
+				Put(Each.Box, Node(Each.Name, Each.Look, Each.Look == ENode::Feature ? MBold : MReg));
 			}
-			// The map's own check: no two nodes meet, none meets the heading, none leaves the tile, and no line crosses a node it
-			// does not end at.
+			// The map's own check: every node inside the tile with a margin and clear of the heading and the room; no two nodes
+			// meet; no line crosses a node, the heading, the room or another line, and none is shorter than its arrowhead's run.
+			const FBox2f Inside(FVector2f(Touch.Min.X + 8.f, Touch.Min.Y + 6.f), FVector2f(Touch.Max.X - 8.f, Touch.Max.Y - 6.f));
 			for (int32 A = 0; A < Nodes.Num(); ++A)
 			{
 				const FBox2f BoxA = Nodes[A].Box;
-				if (BoxA.Min.X < Touch.Min.X + 4.f || BoxA.Max.X > Touch.Max.X - 4.f || BoxA.Max.Y > Touch.Max.Y - 2.f) Over.Add(FString::Printf(TEXT("map's node \"%s\" leaves its tile"), *Nodes[A].Name));
-				if (BoxA.Intersect(LabelBox)) Over.Add(FString::Printf(TEXT("map's node \"%s\" meets the heading"), *Nodes[A].Name));
-				for (int32 B = A + 1; B < Nodes.Num(); ++B) if (BoxA.ExpandBy(2.f).Intersect(Nodes[B].Box)) Over.Add(FString::Printf(TEXT("map's nodes \"%s\" and \"%s\" meet"), *Nodes[A].Name, *Nodes[B].Name));
-				const FBox2f Inner = BoxA.ExpandBy(-2.f);
-				for (const TPair<FVector2f, FVector2f>& S : Segments)
-				{
-					if (Inner.Min.X < Inner.Max.X && Inner.Min.Y < Inner.Max.Y && SegmentHits(S.Key, S.Value, Inner)) Over.Add(FString::Printf(TEXT("map's line (%.0f,%.0f)-(%.0f,%.0f) crosses \"%s\""), S.Key.X, S.Key.Y, S.Value.X, S.Value.Y, *Nodes[A].Name));
-				}
+				if (BoxA.Min.X < Inside.Min.X || BoxA.Max.X > Inside.Max.X || BoxA.Min.Y < Inside.Min.Y || BoxA.Max.Y > Inside.Max.Y) Over.Add(FString::Printf(TEXT("map's node \"%s\" leaves its tile"), *Nodes[A].Name));
+				if (BoxA.Intersect(LabelBox.ExpandBy(4.f))) Over.Add(FString::Printf(TEXT("map's node \"%s\" meets the heading"), *Nodes[A].Name));
+				if (BoxA.Intersect(RoomBox.ExpandBy(4.f))) Over.Add(FString::Printf(TEXT("map's node \"%s\" meets the room"), *Nodes[A].Name));
+				for (int32 B = A + 1; B < Nodes.Num(); ++B) if (BoxA.ExpandBy(4.f).Intersect(Nodes[B].Box)) Over.Add(FString::Printf(TEXT("map's nodes \"%s\" and \"%s\" meet"), *Nodes[A].Name, *Nodes[B].Name));
+			}
+			TArray<FBox2f> Blocks;
+			for (const FNode& Each : Nodes) Blocks.Add(Each.Box.ExpandBy(-1.f));
+			Blocks.Add(LabelBox);
+			if (RoomBox.GetSize().X > 0.f) Blocks.Add(RoomBox);
+			const auto Cross = [](const FVector2f& P1, const FVector2f& P2, const FVector2f& Q1, const FVector2f& Q2)
+			{
+				const auto Turn = [](const FVector2f& A, const FVector2f& B, const FVector2f& C) { return FVector2f::CrossProduct(B - A, C - A); };
+				const float D1 = Turn(Q1, Q2, P1), D2 = Turn(Q1, Q2, P2), D3 = Turn(P1, P2, Q1), D4 = Turn(P1, P2, Q2);
+				return ((D1 > 0.f && D2 < 0.f) || (D1 < 0.f && D2 > 0.f)) && ((D3 > 0.f && D4 < 0.f) || (D3 < 0.f && D4 > 0.f));
+			};
+			for (int32 L = 0; L < Links.Num(); ++L)
+			{
+				const FVector2f& P1 = Links[L].Key;
+				const FVector2f& P2 = Links[L].Value;
+				if (FVector2f::Distance(P1, P2) < 24.f) Over.Add(FString::Printf(TEXT("map's line to \"%s\" is %.0f px, under its arrowhead's run"), *LinkTo[L], FVector2f::Distance(P1, P2)));
+				for (const FBox2f& Block : Blocks) if (SegmentHits(P1, P2, Block)) Over.Add(FString::Printf(TEXT("map's line to \"%s\" crosses a block at (%.0f,%.0f)"), *LinkTo[L], Block.Min.X, Block.Min.Y));
+				for (int32 K = L + 1; K < Links.Num(); ++K) if (Cross(P1, P2, Links[K].Key, Links[K].Value)) Over.Add(FString::Printf(TEXT("map's lines to \"%s\" and \"%s\" cross"), *LinkTo[L], *LinkTo[K]));
 			}
 			if (!FeatName.IsEmpty()) Out.TouchAim = FeatBox.GetCenter();
-			Said.Add(FString::Printf(TEXT("touches %s in %s, depends on [%s] (%d placed%s)"), *F.FeatureName, F.RoomName.IsEmpty() ? TEXT("-") : *F.RoomName, *FString::Join(F.Neighbours, TEXT(", ")),
-				Placed, F.Neighbours.Num() > 4 ? *FString::Printf(TEXT(", %d more not drawn"), F.Neighbours.Num() - 4) : TEXT("")));
+			Said.Add(FString::Printf(TEXT("touches %s in %s, depends on [%s] (%d placed%s), map %.0f px tall%s"), *F.FeatureName, F.RoomName.IsEmpty() ? TEXT("-") : *F.RoomName, *FString::Join(F.Neighbours, TEXT(", ")),
+				Placed, F.Neighbours.Num() > 4 ? *FString::Printf(TEXT(", %d more not drawn"), F.Neighbours.Num() - 4) : TEXT(""), Touch.GetSize().Y, bFan ? TEXT(" (a fan)") : TEXT("")));
 		}
 
 		// ---- The stage --------------------------------------------------------------------------------------------------------
