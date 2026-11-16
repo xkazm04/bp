@@ -11,15 +11,17 @@
 //               and `gh auth status` before a release job starts. BP_GH_BIN overrides the binary (a .mjs runs on this
 //               Node: the checks' fake).
 //   git         `git tag --list v* --sort=-v:refname` in the product root, for the version suggestion; `git show` of one
-//               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route.
+//               item commit (message + stat, numstat, the patch cut at 2000 lines) for the commits route; the base
+//               branch's log (and, for item commits no message names, their patch-ids) for what already landed.
 // Server-only: route handlers import it.
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { CommitDiff, TriageBody, TriageResult } from '../scan/types';
+import type { CommitDiff, ScanSnapshot, TriageBody, TriageResult } from '../scan/types';
 import { MAX_TRIAGE } from '../scan/types';
+import { LOG_CAP, LOG_FORMAT, ancestryAsks, baseOf, landedOf, parseLog, parsePatchIds, patchCandidates, type LogCommit, type Landings } from '../scan/landed';
 
 if (typeof window !== 'undefined') throw new Error('release.server.ts is server-only');
 
@@ -30,13 +32,14 @@ export const FALLBACK_BY = 'user:blueprint';
 
 interface Out { code: number; stdout: string; stderr: string; missing?: boolean }
 /** execFile, never rejecting: the exit code (-1 when it could not start or timed out) and both streams. */
-function run(file: string, args: string[], opts: { cwd?: string; timeout: number }): Promise<Out> {
+function run(file: string, args: string[], opts: { cwd?: string; timeout: number; input?: string }): Promise<Out> {
   return new Promise((resolve) => {
-    execFile(file, args, { cwd: opts.cwd, timeout: opts.timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
+    const child = execFile(file, args, { cwd: opts.cwd, timeout: opts.timeout, windowsHide: true, maxBuffer: 32 * 1024 * 1024, encoding: 'utf8' }, (err, stdout, stderr) => {
       const e = err as (NodeJS.ErrnoException & { code?: number | string }) | null;
       const code = !e ? 0 : typeof e.code === 'number' ? e.code : -1;
       resolve({ code, stdout: String(stdout ?? ''), stderr: String(stderr ?? '') || (e && typeof e.code !== 'number' ? e.message : ''), missing: e?.code === 'ENOENT' });
     });
+    if (opts.input !== undefined) { child.stdin?.on('error', () => { /* the child left early: its exit code says so */ }); child.stdin?.end(opts.input); }
   });
 }
 
@@ -172,10 +175,20 @@ export async function storeCall<T>(dbFile: string, args: string[]): Promise<Stor
   return { ok: false, kind: r.code === 2 ? 'bad' : r.code === 1 ? 'refused' : 'error', error: why.replace(/^store: /, '') };
 }
 
+/**
+ * A free-text value for a store.mjs flag. store.mjs's parseArgs reads a next argv entry that starts with `--` as a flag
+ * of its own (and has no `--key=value` form), so a note like `--- see PR 12` would turn `--note` into `true` and the
+ * person's text into a stray flag. One leading space keeps such a value a value (subprocess-lifecycle/spawn-contract:
+ * a value is never promoted to an option); any other text passes unchanged.
+ */
+export function valueArg(v: string): string {
+  return v.startsWith('--') ? ' ' + v : v;
+}
+
 /** A person's triage, through store.mjs `triage` (it owns which statuses may move and settles the packs). */
 export function triage(dbFile: string, body: TriageBody, by: string): Promise<StoreAnswer<TriageResult>> {
   const args = ['triage', '--ids', body.ids.join(','), '--decision', body.decision, '--by', by];
-  if (body.note !== undefined && body.note.trim()) args.push('--note', body.note);
+  if (body.note !== undefined && body.note.trim()) args.push('--note', valueArg(body.note));
   return storeCall<TriageResult>(dbFile, args);
 }
 
@@ -184,18 +197,24 @@ function ghCmd(args: string[]): { file: string; args: string[] } {
   const bin = process.env.BP_GH_BIN || 'gh';
   return /\.(mjs|cjs|js)$/i.test(bin) ? { file: process.execPath, args: [bin, ...args] } : { file: bin, args };
 }
-const G = globalThis as typeof globalThis & { __bpGhBy?: Promise<string> };
-/** Who triages from this blueprint: `user:<gh login>`, asked once per server process; `user:blueprint` when gh is missing or signed out. */
+/** How long a `user:blueprint` answer is kept before gh is asked again: a `gh auth login` after the server started reaches the next decision. */
+export const FALLBACK_RETRY_MS = 60000;
+const G = globalThis as typeof globalThis & { __bpGhBy?: Promise<string>; __bpGhByAt?: number };
+/** Who triages from this blueprint: `user:<gh login>`, asked once per server process; `user:blueprint` when gh is missing or signed out, asked again after FALLBACK_RETRY_MS. */
 export function triageBy(): Promise<string> {
+  if (G.__bpGhByAt !== undefined && Date.now() - G.__bpGhByAt >= FALLBACK_RETRY_MS) G.__bpGhBy = undefined;
   return (G.__bpGhBy ??= (async () => {
+    G.__bpGhByAt = undefined;
     const c = ghCmd(['api', 'user', '--jq', '.login']);
     const r = await run(c.file, c.args, { timeout: GH_MS });
     const login = r.code === 0 ? r.stdout.trim() : '';
-    return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login) ? 'user:' + login : FALLBACK_BY;
+    if (/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(login)) return 'user:' + login;
+    G.__bpGhByAt = Date.now();
+    return FALLBACK_BY;
   })());
 }
 /** Forget the cached login (the checks switch fakes). */
-export const resetTriageBy = (): void => { G.__bpGhBy = undefined; };
+export const resetTriageBy = (): void => { G.__bpGhBy = undefined; G.__bpGhByAt = undefined; };
 
 /** Whether `gh auth status` exits 0 (a release job pushes and opens a PR with the user's own gh login). */
 export async function ghAuthed(): Promise<boolean> {
@@ -253,6 +272,87 @@ export async function commitDiff(root: string, sha: string): Promise<DiffAnswer>
 export async function versionTags(root: string): Promise<string[]> {
   const r = await run('git', ['tag', '--list', 'v*', '--sort=-v:refname'], { cwd: root, timeout: GIT_MS });
   return r.code === 0 ? r.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+}
+
+/** One root's last answer: the base it was read at, its log and trailer landings, and the patch-id pass over them. */
+interface LandedCache { head: string; since: string; commits: LogCommit[]; base?: Map<string, string>; patchKey?: string; value?: Landings }
+const LANDED = ((globalThis as typeof globalThis & { __bpLanded?: Map<string, LandedCache> }).__bpLanded ??= new Map<string, LandedCache>());
+
+/**
+ * What already landed on the product's base branch (scan/landed.ts): `git rev-parse <base_ref>` on every ask, and the
+ * rest only when that sha (or the item commits to patch-id) moved. The log runs from the oldest pack's base_sha, at
+ * most LOG_CAP commits. Item commits no message names are matched by `git patch-id --stable` against the base commits;
+ * a failed patch-id pass leaves the trailer landings standing. No git, not a repository, or no such ref -> `unknown`.
+ * With the store's measurements, the answer carries `ancestry`: for each reading that records its commit and could judge
+ * a landed item, whether that commit contains the landing (`git merge-base --is-ancestor`, cached for good per pair).
+ */
+export async function landings(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'> & Partial<Pick<ScanSnapshot, 'measurements'>>): Promise<Landings> {
+  const l = await landingsOf(root, scan);
+  if (l.state !== 'known' || !scan.measurements?.length) return l;
+  const asks = ancestryAsks(l.items, scan);
+  if (!asks.length) return l;
+  const ancestry: Record<string, Record<string, boolean>> = {};
+  for (const { landing, measured } of asks) {
+    const k = root + '\0' + landing + '\0' + measured;
+    let v: boolean | null | undefined = ANCESTRY.get(k);
+    if (v === undefined) {
+      const r = await run('git', ['merge-base', '--is-ancestor', landing, measured], { cwd: root, timeout: GIT_MS });
+      v = r.code === 0 ? true : r.code === 1 ? false : null; // 128: git does not have one of them; never "contains"
+      if (v !== null) ANCESTRY.set(k, v); // an unknown commit may arrive with a fetch: asked again
+    }
+    if (v !== null) (ancestry[measured] ??= {})[landing] = v;
+  }
+  return { ...l, ancestry };
+}
+/** root + landing + measured -> contains . Ancestry never changes, so it is never dropped. */
+const ANCESTRY = ((globalThis as typeof globalThis & { __bpAncestry?: Map<string, boolean> }).__bpAncestry ??= new Map<string, boolean>());
+
+async function landingsOf(root: string, scan: Pick<ScanSnapshot, 'packs' | 'proposals'>): Promise<Landings> {
+  const git = (args: string[], input?: string) => run('git', ['-c', 'core.quotepath=off', '--no-pager', ...args], { cwd: root, timeout: GIT_MS, ...(input === undefined ? {} : { input }) });
+  const { ref, since } = baseOf(scan.packs);
+  const h = await git(['rev-parse', '--verify', '--quiet', ref + '^{commit}']);
+  if (h.code !== 0) {
+    const why = h.missing ? 'git is not installed' : /not a git repository/i.test(h.stderr) ? 'not a git repository' : h.code === 1 ? `no ${ref} in this repository` : h.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `git exit ${h.code}`;
+    return { state: 'unknown', why };
+  }
+  const head = h.stdout.trim();
+  let c = LANDED.get(root);
+  if (!c || c.head !== head || c.since !== (since ?? '')) {
+    const from = since && (await git(['rev-parse', '--verify', '--quiet', since + '^{commit}'])).code === 0 ? since : '';
+    const range = from ? [from + '..' + head] : [head];
+    const log = await git(['log', '--no-color', '--max-count=' + LOG_CAP, '--format=' + LOG_FORMAT, ...range]);
+    if (log.code !== 0) return { state: 'unknown', why: log.stderr.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)[0] ?? `git log exit ${log.code}` };
+    c = { head, since: since ?? '', commits: parseLog(log.stdout) };
+    LANDED.set(root, c);
+  }
+  const byTrailer = landedOf(c.commits);
+  const want = patchCandidates(scan.proposals, byTrailer), patchKey = want.map((x) => x.id + ':' + x.sha).join();
+  if (c.value && c.patchKey === patchKey) return c.value;
+  let items = byTrailer;
+  if (want.length && c.commits.length) {
+    const ids = await patchIdsOf(git, want.map((x) => x.sha));
+    const base = (c.base ??= await patchIdsOf(git, c.commits.map((x) => x.sha)));
+    const mine = new Map<string, string>();
+    for (const x of want) { const pid = ids.get(x.sha) ?? [...ids].find(([s]) => s.startsWith(x.sha))?.[1]; if (pid) mine.set(x.id, pid); }
+    if (mine.size && base.size) items = landedOf(c.commits, { items: mine, base });
+  }
+  c.patchKey = patchKey;
+  c.value = { state: 'known', ref, head, items };
+  return c.value;
+}
+
+const NL = '\n';
+/** commit sha -> `git patch-id --stable`, for the commits of `shas` this repository has (a merge or an empty commit has none). */
+async function patchIdsOf(git: (args: string[], input?: string) => Promise<Out>, shas: readonly string[]): Promise<Map<string, string>> {
+  if (!shas.length) return new Map();
+  const have = await git(['cat-file', '--batch-check'], shas.join(NL) + NL);
+  if (have.code !== 0) return new Map();
+  const found = have.stdout.split(/\r?\n/).map((l) => /^([0-9a-f]{40}) commit /i.exec(l)?.[1]).filter((x): x is string => !!x);
+  if (!found.length) return new Map();
+  const diff = await git(['diff-tree', '-p', '--no-color', '--no-ext-diff', '--no-textconv', '--stdin'], found.join(NL) + NL);
+  if (diff.code !== 0 || !diff.stdout) return new Map();
+  const pid = await git(['patch-id', '--stable'], diff.stdout);
+  return pid.code === 0 ? parsePatchIds(pid.stdout) : new Map();
 }
 
 /** Where a manifest version is looked for, in order: the root, src-tauri, app, desktop, then each `apps/<x>` (and its src-tauri). */

@@ -8,7 +8,7 @@ import { FRAME_MS, runStats, type RunStats, type Verdict } from '../scan/compare
 export interface PerfFigures extends RunStats {
   lo: number;
   hi: number;
-  /** One flag per run (in `runs` order, ascending): more than half the noise above the median. */
+  /** One flag per run (in `runs` order, ascending): more than half the noise away, on either side of the median. */
   outlier: boolean[];
   /** The noise is the one-frame floor, not the spread. */
   frame: boolean;

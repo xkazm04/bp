@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEEP_LINK_KEYS, deepLinkHash, ledgerLink, withoutDeepLink } from '../apps/web/src/engine/deep-link.ts';
+import { DEEP_LINK_KEYS, deepLinkDock, deepLinkHash, ledgerLink, rulesLink, withoutDeepLink } from '../apps/web/src/engine/deep-link.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 let failed = 0, passed = 0;
@@ -19,7 +19,10 @@ check('no tab, or an unknown one: the ledger at its default tab', eq(deepLinkHas
 check('no page, or a page bp does not know: no deep link', eq(deepLinkHash('?product=pof'), {}) && eq(deepLinkHash('?product=pof&page=plan&tab=release'), {}) && eq(deepLinkHash(''), {}) && eq(deepLinkHash('?tab=release'), {}));
 check('the query keeps product and every other parameter, in order', withoutDeepLink('?product=pof&page=ledger&scale=2&tab=release&intro=0') === '?product=pof&scale=2&intro=0', withoutDeepLink('?product=pof&page=ledger&scale=2&tab=release&intro=0'));
 check('nothing left: an empty query', withoutDeepLink('?page=ledger&tab=release') === '');
-check('the keys are page and tab', eq([...DEEP_LINK_KEYS], ['page', 'tab']));
+check('the keys are page, tab, dock and rule', eq([...DEEP_LINK_KEYS], ['page', 'tab', 'dock', 'rule']));
+check('dock=orders opens the standing rules, on a rule when it names one; anything else opens nothing', eq(deepLinkDock('?product=pof&dock=orders&rule=O-3'), { dock: 'orders', rule: 'O-3' }) && eq(deepLinkDock('?dock=orders&rule=G-12'), { dock: 'orders', rule: 'G-12' })
+  && eq(deepLinkDock('?dock=orders&rule=../x'), { dock: 'orders' }) && eq(deepLinkDock('?dock=steer'), {}) && eq(deepLinkDock('?product=pof'), {}));
+check('a rules link round-trips, and its keys are dropped with the others', eq(deepLinkDock(rulesLink('pof', 'O-1').slice(1)), { dock: 'orders', rule: 'O-1' }) && withoutDeepLink(rulesLink('pof', 'O-1').slice(1)) === '?product=pof');
 check('ledgerLink builds the Release card link', ledgerLink('pof') === '/?product=pof&page=ledger&tab=release' && ledgerLink('a b', 'matrix') === '/?product=a+b&page=ledger&tab=matrix', ledgerLink('pof'));
 check('a link round-trips', eq(deepLinkHash(ledgerLink('pof').slice(1)), { page: 'ledger', lv: 'release' }));
 

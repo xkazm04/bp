@@ -7,6 +7,18 @@
 //   5. while machine.md records BpLink built and run in Unreal (the Kettle line), apps/vr/README.md, apps/vr/WP3.1.md,
 //      plan.md and lynx-plan.md (the live plan, 2026-10-23) do not say it is unbuilt or unrun, unless that block also
 //      carries a correction citing reading 14.
+//   6. README.md names every page route the app ships (DERIVED from the page.tsx files under apps/web/src/app, route
+//      groups dropped), and its Live products section names /projects as the way to add a repo, with
+//      bp.products.local.json still named as the manual alternative.
+//   7. docs/blueprint-ui.md's ledger section reads as the page (each claim read against the code): the Waves bullet says a
+//      failed list shows it could not be read with its retry (WavesBar.tsx's words), not "a failing list reads as no
+//      waves"; the top bar bullet gives the product line in LedgerPage.tsx's words and lists Every lens and Trust; the
+//      In packs keys bullet names a key of every KEYMAP.packs binding, E as measure the selection, one scan per lens.
+//      (DW-69, DW-67, DW-68; the found-it and code-side lines are guards, the rest red until the guide is corrected.)
+//   8. the outcome watch's words match train/watch.ts: History's Watch outcomes tooltip states the condition (checkpoints
+//      are queued when the Release tab is opened; one whose window passed before that is missed); the guide's watch rows and
+//      watch.ts's header say day 30 has an open window while days 1 and 7 can be missed; the POST row lists the 409 for a
+//      release carrying no item; the Release tab bullet names Watch outcomes. (DW-157, DW-153, DW-154)
 // Source is read with comments stripped, so a comment that talks about the rule cannot satisfy it.
 import fs from 'node:fs';
 import { blankComments } from './lib/source.ts';
@@ -212,5 +224,106 @@ ok('vr docs: self-proof, every STALE phrase matches its own sentence',
   STALE.length !== STALE_SENTENCES.length
     ? `${STALE.length} STALE entries but ${STALE_SENTENCES.length} sentences`
     : `matched nothing: ${unmatched.map(String).join(', ')}`);
+// ------------------------------------------------------------------------ the README names every shipped page
+// The route list is derived from the tree, never written here: every page.tsx under apps/web/src/app is a page a reader
+// can open, at its directory path with route groups "(x)" dropped. A route counts as named when README.md carries it as a
+// whole path, not as the prefix of a longer one (/projects is not named by /projects/[slug]/onboarding).
+const APP = 'apps/web/src/app';
+const pages: string[] = [];
+const walkPages = (dir: string): void => {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = `${dir}/${e.name}`;
+    if (e.isDirectory()) { if (e.name !== 'api' && !e.name.startsWith('_')) walkPages(p); } else if (e.name === 'page.tsx') pages.push(p);
+  }
+};
+walkPages(APP);
+const routeOf = (file: string): string => '/' + file.slice(APP.length + 1).split('/').slice(0, -1).filter((s) => !/^\(.*\)$/.test(s)).join('/');
+const routes = pages.map(routeOf).sort();
+const reEsc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const namesRoute = (text: string, route: string) => new RegExp(`(?<![\\w/.\\]-])${reEsc(route)}(?![\\w/\\[-])`).test(text);
+const readme = fs.readFileSync('README.md', 'utf8');
+ok('readme routes: the page.tsx scan found the app\'s pages (/ and /variants among them)', routes.length >= 3 && routes.includes('/') && routes.includes('/variants'), routes.join(', '));
+ok('readme routes: self-proof, a longer route does not name its prefix and the whole path does',
+  !namesRoute('see `/projects/[slug]/onboarding`', '/projects') && namesRoute('open `/projects`, then `/projects/[slug]/onboarding`', '/projects')
+  && namesRoute('`/v/[variant]`', '/v/[variant]'));
+const unnamed = routes.filter((r) => !namesRoute(readme, r));
+ok('readme routes: README.md names every page route under apps/web/src/app', unnamed.length === 0, `not named: ${unnamed.join(', ')}`);
+const liveSec = (/^## Live products[ \t]*\r?$([\s\S]*?)(?=^## )/m.exec(readme) || ['', ''])[1];
+ok('readme routes: the Live products section is found', liveSec.length > 0);
+ok('readme routes: Live products names /projects as the way to add a repo', namesRoute(liveSec, '/projects'), 'the section only says to list the repo in bp.products.local.json');
+ok('readme routes: Live products still names bp.products.local.json as the manual alternative', /bp\.products\.local\.json/.test(liveSec));
+// ------------------------------------------------------------------------ the ledger section of the UI guide reads as the page
+// Each claim is read against the code, never written here: the wave strip's failed-read words and its retry label from
+// WavesBar.tsx, the top bar's product wording and its controls from LedgerPage.tsx, the In packs keys from KEYMAP.packs.
+const UI_DOC = fs.readFileSync('docs/blueprint-ui.md', 'utf8');
+/** A top-level bullet of the guide that opens with `- **<name>**`, up to the next top-level bullet or heading. */
+const bulletOf = (text: string, name: string): string => {
+  const at = text.search(new RegExp(`^- \\*\\*${reEsc(name)}\\*\\*`, 'm'));
+  if (at < 0) return '';
+  const rest = text.slice(at + 2), end = rest.search(/^(?:- |#)/m);
+  return text.slice(at, end < 0 ? undefined : at + 2 + end);
+};
+const flat = (s: string) => s.replace(/\s+/g, ' ');
+//   DW-69 the waves strip: a failed list says it could not be read and offers a retry; only a missing store reads as none
+const WAVES_BAR = blankComments(fs.readFileSync('apps/web/src/components/ledger/waves/WavesBar.tsx', 'utf8'));
+const waveErr = /data-wave="error">([^:{<]+?)\s*:/.exec(WAVES_BAR)?.[1]?.trim() ?? '';
+const waveRetry = /className="wv-retry"[^>]*>([^<{]+)</.exec(WAVES_BAR)?.[1]?.trim() ?? '';
+const wavesDoc = flat(bulletOf(UI_DOC, 'Waves'));
+ok('ui guide waves: WavesBar.tsx shows a failed read in words with a retry button (the words are read from it)', /could not be read/.test(waveErr) && waveRetry.length > 0, `error ${JSON.stringify(waveErr)}, retry ${JSON.stringify(waveRetry)}`);
+ok('ui guide waves: the Waves bullet is found', wavesDoc.length > 0);
+ok('ui guide waves: the guide no longer says a failing list reads as no waves', !/failing list reads as no waves/i.test(flat(UI_DOC)), 'docs/blueprint-ui.md still says "a failing list reads as no waves"');
+ok(`ui guide waves: the Waves bullet says a failed list shows that it could not be read, with ${waveRetry || 'its retry'}`,
+  /could not be read/i.test(wavesDoc) && !!waveRetry && wavesDoc.includes(waveRetry), 'the bullet names neither the failed-read state nor its retry');
+//   DW-67 the top bar: the product line in the page's words, and every control the bar renders
+const PAGE = blankComments(fs.readFileSync('apps/web/src/components/ledger/LedgerPage.tsx', 'utf8'));
+const prod = /className="lg-prod">[^<]*?\{live \? '([^']+)' : '([^']+)'\}/.exec(PAGE);
+const topDoc = flat(bulletOf(UI_DOC, 'The top bar'));
+ok('ui guide top bar: LedgerPage.tsx\'s product line is read (live wording | sample wording)', !!prod, 'no `live ? \'...\' : \'...\'` in the lg-prod span');
+ok('ui guide top bar: the bullet is found', topDoc.length > 0);
+ok(`ui guide top bar: the bullet gives the product line in the page's words (${prod ? prod[1] + ' | ' + prod[2] : '?'})`,
+  !!prod && topDoc.includes(prod[1]) && topDoc.includes(prod[2]) && (prod[1] === 'live lens scan' || !topDoc.includes('live lens scan')),
+  prod ? `the bullet says ${JSON.stringify((/`<product> · ([^`]*?)·/.exec(topDoc) ?? ['', '?'])[1].trim())}` : '');
+const barControls: [string, RegExp][] = [['Every lens', /<AllLenses\b/], ['Trust', /<TrustPanel\b/]];
+ok('ui guide top bar: LedgerPage renders Every lens and Trust in its top bar', barControls.every(([, re]) => re.test(PAGE)));
+const unlisted = barControls.filter(([name, re]) => re.test(PAGE) && !new RegExp(`\\b${reEsc(name)}\\b`).test(topDoc)).map(([n]) => n);
+ok('ui guide top bar: the bullet lists every control the bar renders (Every lens and Trust among them)', unlisted.length === 0, `not listed: ${unlisted.join(', ')}`);
+//   DW-68 the In packs keys: every key KEYMAP.packs binds is named in the guide's In packs bullet, E as the measure
+const { KEYMAP } = await import('../apps/web/src/components/ledger/train/keymap.ts');
+const packsDoc = flat((/^ {2}- \*In packs\*:([\s\S]*?)(?=^ {2}- \*|^- )/m.exec(UI_DOC) ?? ['', ''])[1]);
+/** How the guide spells a key: letters upper case and whole, arrows as glyphs, 1-3 as a range. */
+const keyNamed = (k: string, text: string): boolean => {
+  const word: Record<string, string> = { ' ': 'Space', Escape: 'Esc', ArrowDown: '↓', ArrowUp: '↑' };
+  if (/^[1-9]$/.test(k)) return /\b1-3\b/.test(text) || new RegExp(`(?<![\\w-])${k}(?![\\w-])`).test(text);
+  const w = word[k] ?? (k.length === 1 ? k.toUpperCase() : k);
+  return /^\w+$/.test(w) ? new RegExp(`(?<![\\w/])${reEsc(w)}(?![\\w/])`).test(text) : text.includes(w);
+};
+ok('ui guide keys: the In packs bullet is found', packsDoc.length > 0);
+const missingKeys = KEYMAP.packs.filter((b) => !b.keys.some((k) => keyNamed(k, packsDoc))).map((b) => `${b.keys.join('/')} (${b.action})`);
+ok('ui guide keys: the In packs bullet names a key of every binding in KEYMAP.packs', missingKeys.length === 0, `not named: ${missingKeys.join(', ')}`);
+const measure = KEYMAP.packs.find((b) => b.action === 'measure');
+ok('ui guide keys: the In packs bullet says what E does: measures the selection, one scan per lens',
+  !!measure && measure.keys.some((k) => keyNamed(k, packsDoc)) && /\bmeasur/i.test(packsDoc) && /one (?:selection )?scan per lens/i.test(packsDoc),
+  measure ? `the bullet: ${JSON.stringify(packsDoc.trim())}` : 'KEYMAP.packs binds no measure key');
+// ------------------------------------------------------------------------ the outcome watch: what is promised is what happens
+// Read against packages/core/src/train/watch.ts (checkpointPlan: the last checkpoint has no next window, so it is queued late
+// and never missed; newWatch: 409 for a release with no item) and server/watch.server.ts (only a read queues a checkpoint).
+const WATCH_SRC = fs.readFileSync('packages/core/src/train/watch.ts', 'utf8');
+ok('watch: the code still refuses a release with no item (409) and leaves the last checkpoint with no next window',
+  /status: 409, error: `release \$\{relId\} carries no item to watch`/.test(WATCH_SRC) && /if \(next && Date\.parse\(next\.due\) <= nowMs/.test(WATCH_SRC));
+const HIST = blankComments(fs.readFileSync('apps/web/src/components/ledger/train/release/History.tsx', 'utf8'));
+const watchBtn = /data-role="tr-rel-watch"[\s\S]*?<\/button>/.exec(HIST)?.[0] ?? '';
+ok('watch tooltip: the Watch outcomes button is found', /Watch outcomes/.test(watchBtn));
+ok('watch tooltip: it states the condition: checkpoints are queued when the Release tab is opened', /open(ed|s)?\b.*Release tab|Release tab.*open/i.test(flat(watchBtn)), flat(watchBtn).slice(0, 300));
+ok('watch tooltip: it says a checkpoint whose window passed before that is missed', /\bmissed\b/i.test(watchBtn), flat(watchBtn).slice(0, 300));
+const rowOf = (verb: string) => flat(UI_DOC.split(/\r?\n/).find((l) => l.startsWith('| `' + verb + ' /api/products/<slug>/releases/watch`')) ?? '');
+const getRow = rowOf('GET'), postRow = rowOf('POST');
+ok('watch rows: both rows of the guide are found', getRow.length > 0 && postRow.length > 0);
+ok('watch rows: the GET row says day 30 has an open window, queued late rather than missed', /day 30/i.test(getRow) && /open window/i.test(getRow) && /queued/i.test(getRow), getRow.slice(-400));
+ok('watch rows: the GET row says days 1 and 7 can be missed', /days? 1 and (?:day )?7\b[^|]*\bmissed\b/i.test(getRow), getRow.slice(-400));
+ok('watch rows: the POST row lists the 409 for a release carrying no item', /\*\*409\*\*[^|]*\bno item\b/i.test(postRow), postRow.slice(-300));
+const watchHead = WATCH_SRC.split(/\r?\n/).filter((l) => l.startsWith('//')).map((l) => l.replace(/^\/\/\s*/, '')).join(' ');
+ok('watch header: it no longer says every passed checkpoint is "never queued late"', !/missed, never queued late/.test(watchHead), watchHead.slice(0, 300));
+ok('watch header: it says day 30 has an open window while days 1 and 7 can be missed', /day 30[^.]*open window/i.test(watchHead) && /days? 1 and (?:day )?7\b[^.]*\bmissed\b/i.test(watchHead), watchHead.slice(0, 300));
+ok('ui guide release tab: the bullet names the Watch outcomes control', /Watch outcomes/.test(bulletOf(UI_DOC, 'The Release tab')), 'the bullet never names it');
 if (failed) { console.log(`\n${failed} check(s) failed`); process.exit(1); }
 console.log('\nclaims ok');

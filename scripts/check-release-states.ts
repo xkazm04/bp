@@ -15,7 +15,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const HOOKS = './lib/src-hooks.mjs';
 ((await import(HOOKS)) as { registerSrcHooks: (root: string) => void }).registerSrcHooks(ROOT);
 const M = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/components/ledger/train/release/releaseState.ts')).href);
-const { RELEASE_STATE, STEPS, STEP_WORD, ACTION, JOB_TONE, standOf, standLine, safeUrl, failedStep } = M;
+const { RELEASE_STATE, STEPS, STEP_WORD, ACTION, JOB_TONE, standOf, standLine, safeUrl, failedStep, openRelease } = M;
 
 let passed = 0, failed = 0;
 const check = (name: string, ok: boolean, detail = ''): void => {
@@ -41,7 +41,7 @@ check('steps: failed is -1, every other status indexes STEPS', RELEASE_STATE.fai
 check('every step has its word', STEPS.every((s: string) => typeof STEP_WORD[s] === 'string' && STEP_WORD[s].length > 0));
 check('only a draft is unlocked', STATUSES.every((s) => RELEASE_STATE[s].locked === (s !== 'draft')));
 check('each status offers its actions: draft build / pr-open pr+sampleMerge+finishAsk / merged finish / failed retry',
-  RELEASE_STATE.draft.actions.join() === 'build' && RELEASE_STATE['pr-open'].actions.join() === 'pr,sampleMerge,finishAsk' && RELEASE_STATE.merged.actions.join() === 'finish' && RELEASE_STATE.failed.actions.join() === 'retry');
+  RELEASE_STATE.draft.actions.join() === 'build,tag' && RELEASE_STATE['pr-open'].actions.join() === 'pr,sampleMerge,finishAsk' && RELEASE_STATE.merged.actions.join() === 'finish' && RELEASE_STATE.failed.actions.join() === 'retry,tag');
 check('building and tagged offer nothing, by design', RELEASE_STATE.building.actions.length === 0 && RELEASE_STATE.tagged.actions.length === 0);
 check('every offered action (bar the PR link) has a button label', STATUSES.every((s) => RELEASE_STATE[s].actions.every((a: string) => a === 'pr' || typeof ACTION[a]?.label('1.2.3') === 'string' && ACTION[a].label('1.2.3').length > 0)));
 check('draft hint counts its items (singular and plural)', RELEASE_STATE.draft.hint('1', 1).includes('1 item:') && RELEASE_STATE.draft.hint('1', 3).includes('3 items:'));
@@ -92,6 +92,19 @@ check('JOB_TONE: failed is red, cancelled amber, done mint', JOB_TONE.failed ===
 // --- safeUrl: http(s) only
 for (const u of ['https://github.com/a/b/pull/1', 'http://x.test/', 'HTTPS://X.TEST/']) check(`safeUrl keeps ${u}`, safeUrl(u) === u);
 for (const u of ['javascript:alert(1)', 'data:text/html,x', 'ftp://x/', '//evil.test/', ' https://x/', 'file:///etc/passwd', '', undefined]) check(`safeUrl refuses ${JSON.stringify(u)}`, safeUrl(u) === null);
+
+// --- openRelease: the one rule for "the open release" (the Release tab and the decision bar's package pill)
+const rel = (id: string, status: string): any => ({ id, status });
+check('openRelease: a failed newest release is the open one', openRelease([rel('rel-1', 'tagged'), rel('rel-2', 'failed')])?.id === 'rel-2');
+check('openRelease: the newest untagged release, none when every one is tagged',
+  openRelease([rel('rel-1', 'draft'), rel('rel-2', 'tagged')])?.id === 'rel-1' && openRelease([rel('rel-1', 'tagged')]) === undefined && openRelease([]) === undefined);
+{
+  // the decision bar reads the same rule rather than a status set of its own (it once left `failed` out)
+  const fs = await import('node:fs');
+  const bar = fs.readFileSync(path.join(ROOT, 'apps/web/src/components/ledger/train/DecisionBar.tsx'), 'utf8');
+  check('DecisionBar finds the open release through openRelease, with no status set of its own',
+    /\bopenRelease\(T\.releases\)/.test(bar) && !/new Set\(\[\s*'draft'/.test(bar), 'DecisionBar.tsx');
+}
 
 console.log(`\ncheck-release-states: ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

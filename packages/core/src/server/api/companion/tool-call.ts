@@ -39,6 +39,8 @@ export function toolRequest(t: ToolSpec, args: unknown): ToolRequest | { error: 
   if (t.route.method === 'GET') {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(a)) if (v !== undefined && v !== null) q.set(k, typeof v === 'string' ? v : JSON.stringify(v));
+    // a GET's fixed fields are query parameters that are not the model's to choose (morning.brief's view=agent)
+    for (const [k, v] of Object.entries(t.route.fixed ?? {})) q.set(k, typeof v === 'string' ? v : JSON.stringify(v));
     const qs = q.toString();
     return { method: 'GET', path: qs ? `${path}?${qs}` : path };
   }

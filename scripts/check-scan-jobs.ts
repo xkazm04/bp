@@ -5,6 +5,7 @@
 //     and of a running job (its process is gone); the queue cap (429); a missing CLI;
 //   - the prompt goes on stdin, never in argv; an unsafe lens id or feature is refused before anything spawns;
 //   - attachRun by note (`bp-job:<id>` and `bp-job:<id> <more>`, never a bare prefix), and subscribe;
+//   - the Kettle chat's first turn names a map that is a tracked file (DW-187);
 //   - the lens-draft parser (a valid block, an invalid one, none; project and temporary modes, a taken look) and the
 //     onboarding chat route over the fake (`/lens-scan onboard --draft-only [--temporary]` on the first turn);
 //   - the routes: scans (202 / unknown-lens / no-scan-method / bad-scope; a selection of 1..200 features), dispatch
@@ -23,6 +24,9 @@
 //     there), the job env carries BP_JOB_ID and PERSONAS_RUN_LABEL=bp-job:<id>; a decision (proposals, dispatch, lens
 //     execute) is signed user:<gh login> through a fake gh; BP_WRITES=off answers 403 on the decision and triage routes,
 //     the structure route says writes: false, and the release routes still work.
+//   - unattended runs do not inherit API keys (DW-105): the env the fake CLI records for a measure job, an execute job and the
+//     lens-draft chat has no *_API_KEY and none of the parent session's markers; PATH and BP_JOB_ID stay; BP_JOB_KEEP_ENV=A,B
+//     keeps exactly the variables it names; no spawn site hands the CLI ...process.env.
 // Checks that need WP1's full checkLensManifest (project mode, taken looks) print SKIP while it is the S0 stub.
 // Triage and release-create need lens-scan's store.mjs: lensScanDirs() is pinned (set / unset order) and a missing install is a
 // FAILURE wherever the operator names one (BP_LENS_SCAN_DIR), BP_REQUIRE_LENS_SCAN=1 or CI says so, or the registry the manifest
@@ -44,7 +48,7 @@ const FAKE = path.join(ROOT, 'scripts/fixtures/fake-claude.mjs');
 process.env.BP_CLAUDE_BIN = FAKE;
 
 const J = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/jobs.server.ts')).href) as typeof import('../packages/core/src/server/jobs.server.ts');
-const { parseDraftReply } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
+const { parseDraftReply, draftMapPath, onboardPrompt } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-draft.ts')).href) as typeof import('../packages/core/src/scan/lens-draft.ts');
 const LS = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/lens-setup.ts')).href) as typeof import('../packages/core/src/scan/lens-setup.ts');
 const { logBlocks, spans } = await import(pathToFileURL(path.join(ROOT, 'apps/web/src/lib/scan/log-md.ts')).href) as typeof import('../apps/web/src/lib/scan/log-md.ts');
 const { scopeFeatures } = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/scan/scope.ts')).href) as typeof import('../packages/core/src/scan/scope.ts');
@@ -239,6 +243,12 @@ try {
   check('scopeFeatures: features list', scopeFeatures({ scope: { features: ['a', 'c'] } }, fs3).map((f) => f.id).join() === 'a,c');
   check('scopeFeatures: a list matching nothing falls back to all; proposals scope = all', scopeFeatures({ scope: { features: ['zz'] } }, fs3).length === 3 && scopeFeatures({ scope: { proposals: ['p1'] } }, fs3).length === 3);
 
+  // ------------------------------------------------------------------ the Kettle chat's map (DW-187)
+  // Kettle's chat runs in the bp repo (lens-draft/route.ts), so the path its first turn names resolves from the repo root
+  const kettleMap = draftMapPath(true);
+  const trackedMap = spawnSync('git', ['ls-files', '--', kettleMap], { cwd: ROOT, encoding: 'utf8' }).stdout.trim();
+  check('draftMapPath(true) names the sample map, a tracked file that exists from the repo root', /kettle\.app-structure\.json$/.test(kettleMap) && trackedMap === kettleMap && fs.existsSync(path.join(ROOT, kettleMap)), `${kettleMap}; git ls-files: ${JSON.stringify(trackedMap)}`);
+  check('onboardPrompt on Kettle names that path; a live product\'s prompt does not, and its map stays the store\'s', onboardPrompt('hi', 'project', true).includes(kettleMap) && !onboardPrompt('hi', 'project', false).includes(kettleMap) && draftMapPath(false) === '.ai/lens-scan/app-structure.json', onboardPrompt('hi', 'project', true));
   // ------------------------------------------------------------------ draft parser
   const block = (o: unknown) => 'Here it is.\n\n```lens-manifest\n' + JSON.stringify(o, null, 2) + '\n```\n\nSay if it fits.';
   const TMP = { mode: 'temporary' } as const;
@@ -301,6 +311,23 @@ try {
     + "if (process.argv[2] === 'api') console.log('octocat');\nprocess.exit(0);\n");
   process.env.BP_GH_BIN = ghFake;
   delete (globalThis as { __bpGhBy?: unknown }).__bpGhBy;
+  {
+    // a gh login after the server started reaches the next decision: the user:blueprint fallback is asked again after its window
+    const RS0 = await import(pathToFileURL(path.join(ROOT, 'packages/core/src/server/release.server.ts')).href) as typeof import('../packages/core/src/server/release.server.ts');
+    RS0.resetTriageBy();
+    process.env.FAKE_GH_OUT = '1';
+    const out = await RS0.triageBy();
+    delete process.env.FAKE_GH_OUT;
+    const soon = await RS0.triageBy();
+    const now0 = Date.now;
+    Date.now = () => now0() + RS0.FALLBACK_RETRY_MS;
+    let late = '';
+    try { late = await RS0.triageBy(); } finally { Date.now = now0; }
+    const kept = await RS0.triageBy();
+    check('triageBy: signed out -> user:blueprint, kept inside its window, then a late gh login is asked again (no resetTriageBy) and kept',
+      out === 'user:blueprint' && soon === 'user:blueprint' && late === 'user:octocat' && kept === 'user:octocat', [out, soon, late, kept].join());
+    RS0.resetTriageBy();
+  }
   const scans = await route('products/[slug]/scans/route.ts');
   const room = { kind: 'room', id: 'r1', label: 'Room', features: ['a'] };
   const s202 = await call(scans.POST, '/api/products/prod/scans', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
@@ -317,6 +344,105 @@ try {
   check('POST scans refusals: unknown, disabled, no method, foreign feature, all+features, bad kind, unknown product',
     codes.map((c) => c.status + ':' + (c.body.error ?? '')).join() === '400:unknown-lens,400:unknown-lens,400:no-scan-method,400:bad-scope,400:bad-scope,400:bad-scope,404:unknown product nope',
     codes.map((c) => c.status + ':' + c.body.error).join());
+  // ------------------------------------------------------------------ the shots route: one shot served, every way out of shots/ refused 403
+  {
+    const shotsR = await route('products/[slug]/shots/[...path]/route.ts');
+    const shotsDir = path.join(store, 'shots'), outside = path.join(store, 'outside');
+    fs.mkdirSync(path.join(shotsDir, 'r0'), { recursive: true }); fs.mkdirSync(outside, { recursive: true });
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+    fs.writeFileSync(path.join(shotsDir, 'r0', 'a-light-md.png'), png);
+    fs.writeFileSync(path.join(store, 'secret.png'), png); fs.writeFileSync(path.join(outside, 'x.png'), png);
+    // the segments as Next hands them over: decoded, so an encoded `..%2F..` arrives as one segment holding a separator
+    const shot = async (segs: string[]) => {
+      const res = await shotsR.GET(new Request('http://localhost:3000/api/products/prod/shots/' + segs.map(encodeURIComponent).join('/'), { headers: H }), { params: Promise.resolve({ slug: 'prod', path: segs }) });
+      return { status: res.status, type: res.headers.get('content-type') ?? '', bytes: res.status === 200 ? Buffer.from(await res.arrayBuffer()) : null };
+    };
+    const okShot = await shot(['shots', 'r0', 'a-light-md.png']);
+    check('GET shots/<run>/<file>.png -> 200 image/png with the file\'s bytes', okShot.status === 200 && okShot.type === 'image/png' && !!okShot.bytes?.equals(png), okShot.status + ' ' + okShot.type);
+    const outs = await Promise.all([['..', 'secret.png'], ['../../secret.png'], ['a', '..', '..', 'secret.png'], ['shots', 'r0', '..', '..', 'secret.png'],
+      [path.join(store, 'secret.png')], ['/etc/passwd'], ['C:', 'Windows', 'win.ini']].map(shot));
+    check('GET shots with `..`, an encoded `..%2F..`, a nested a/../../x, an absolute or drive segment -> 403 each', outs.every((o) => o.status === 403), outs.map((o) => o.status).join());
+    // a link inside shots/ to a directory outside it: a junction needs no privilege on Windows (elsewhere the type is ignored)
+    let linked = '';
+    try { fs.symlinkSync(outside, path.join(shotsDir, 'esc'), 'junction'); } catch (e) { linked = (e as Error).message; }
+    if (linked) { skipped++; console.log('SKIP shots symlink leg: the OS refused to create a link inside shots/ (' + linked + ')'); }
+    else {
+      const esc = await shot(['esc', 'x.png']);
+      check('GET shots through a link that points out of shots/ -> 403 (the realpath check)', esc.status === 403, String(esc.status));
+    }
+  }
+  // ------------------------------------------------------------------ every lens in one job: `lens: 'all'` (its own validation, scans/route.ts:50-59)
+  {
+    const everything = { kind: 'all', label: 'Everything', features: [] };
+    // a product whose map has no enabled lens with a scan method: a plain project lens, and a disabled one that has a method
+    const bare = repo('bare'), bs = path.join(bare, '.ai', 'lens-scan');
+    fs.mkdirSync(bs, { recursive: true });
+    fs.writeFileSync(path.join(bs, 'app-structure.json'), JSON.stringify({ $schema: 'app-structure/3', version: 3, project: { slug: 'bare', name: 'Bare' }, features: [{ slug: 'a', name: 'A' }],
+      lenses: [lensE('com.x.plain', 'project'), lensE('com.x.off', 'project', { method: 'judgement', instructions: 'x' }, { enabled: false })] }));
+    const regFile = path.join(dir, 'bp.products.local.json'), reg0 = fs.readFileSync(regFile, 'utf8');
+    fs.writeFileSync(regFile, JSON.stringify({ products: [...JSON.parse(reg0).products, { slug: 'bare', name: 'Bare', root: bare }] }));
+    try {
+      const n0 = J.list('prod').length;
+      const allBad = await Promise.all([
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything, phase: 'execute' }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: { ...everything, features: ['zz'] } }),
+        call(scans.POST, '/x', 'POST', { slug: 'bare' }, { lens: 'all', scope: everything }),
+        call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room, phase: 'measure' }),
+      ]);
+      check('POST scans lens all refusals: an execute phase, an unknown scope slug, a map with no scannable lens, a phase on a single-lens body',
+        allBad.map((c) => c.status + ':' + c.body.error).join() === '400:bad-phase,400:bad-scope,400:no-scan-method,400:bad-phase', allBad.map((c) => c.status + ':' + c.body.error).join());
+      check('POST scans lens all refusals queue nothing', J.list('prod').length === n0 && J.list('bare').length === 0, `${J.list('prod').length - n0} prod, ${J.list('bare').length} bare`);
+      const a202 = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: everything });
+      check('POST scans lens all -> 202, one measure job over every lens', a202.status === 202 && a202.body.kind === 'measure' && a202.body.lens === 'all' && a202.body.scope?.kind === 'all'
+        && J.list('prod').length === n0 + 1, JSON.stringify(a202).slice(0, 300));
+      check('lens all: the prompt is `/lens-scan measure --lens all`', await until(() => /^stdin \/lens-scan measure --lens all$/m.test(job('prod', a202.body.id)?.log_tail ?? '')), job('prod', a202.body.id)?.log_tail);
+      await until(() => !['queued', 'running'].includes(job('prod', a202.body.id)?.status ?? ''));
+      // DW-221: the every-lens form answers to the owner's standing orders as the single-lens form does (docs/standard/rules-1.md section 6)
+      {
+        const every = { kind: 'all', label: 'Every lens', features: [] };
+        const ruleFile = path.join(store, 'work', 'bp-rules.json'), ruleLog = path.join(store, 'work', 'bp-rules-log.jsonl'), hadWork = fs.existsSync(path.join(store, 'work'));
+        const order = (id: string, kind: string, extra: object = {}) => ({ id, kind, text: kind, by: 'user:owner', at: '2026-10-20T10:00:00.000Z', scope: { kind: 'room', id: 'r1', label: 'Room', features: ['a'] }, ...extra });
+        const setRules = (...rules: object[]) => { fs.mkdirSync(path.dirname(ruleFile), { recursive: true }); fs.writeFileSync(ruleFile, JSON.stringify({ version: 1, rules })); };
+        // a job the base still queues must end before the next call, so one case cannot read as another's refusal
+        const settle = () => until(() => !J.list('prod').some((x) => x.status === 'queued' || x.status === 'running'));
+        const everyLens = async (phase?: string) => {
+          const n = J.list('prod').length, c = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'all', scope: every, ...(phase ? { phase } : {}) });
+          const queued = J.list('prod').length - n;
+          await settle();
+          return { ...c, queued };
+        };
+        const words = (c: { status: number; body: unknown; queued: number }) => `${c.status}, ${c.queued} queued: ${JSON.stringify(c.body).slice(0, 200)}`;
+        const refusedByOrder = (c: { status: number; body: any; queued: number }, id: string) => c.status === 403 && typeof c.body.error === 'string' && c.body.error.includes(id) && c.body.order?.id === id && Array.isArray(c.body.held) && c.queued === 0; // eslint-disable-line @typescript-eslint/no-explicit-any
+        try {
+          const free = await everyLens('propose');
+          check('every-lens control: with no rules the propose phase answers 202 and queues its job', free.status === 202 && free.body.kind === 'propose' && free.queued === 1, words(free));
+          setRules(order('O-1', 'hold'));
+          const single = await call(scans.POST, '/x', 'POST', { slug: 'prod' }, { lens: 'development', scope: room });
+          check('every-lens control: under a live hold the single-lens form refuses, with { error, order, held }', single.status === 403 && single.body.order?.id === 'O-1', JSON.stringify(single).slice(0, 300));
+          const held = await everyLens('measure');
+          check('every-lens under a live hold (phase measure): 403 citing the order, no job queued (DW-221)', refusedByOrder(held, 'O-1'), words(held));
+          const heldP = await everyLens('propose');
+          check('every-lens under a live hold (phase propose): 403 citing the order, no job queued (DW-221)', refusedByOrder(heldP, 'O-1'), words(heldP));
+          const dflt = await everyLens();
+          check('every-lens under a live hold (no phase named): 403 citing the order, no job queued (DW-221)', refusedByOrder(dflt, 'O-1'), words(dflt));
+          check('every-lens refusal has the shape of the single-lens one (DW-221)', Object.keys(held.body).sort().join() === Object.keys(single.body).sort().join(), Object.keys(held.body).sort().join() + ' / ' + Object.keys(single.body).sort().join());
+          setRules(order('O-2', 'only', { lenses: ['development'] }));
+          const only = await everyLens('measure');
+          check("every-lens under an `only` naming some lenses: 403 citing it, no job queued; lens 'all' is in no order's list (DW-221)", refusedByOrder(only, 'O-2'), words(only));
+          setRules(order('O-3', 'cap', { maxEffort: 'low' }));
+          const capped = await everyLens('measure');
+          check('every-lens control: a cap never refuses a scan: 202 and its job', capped.status === 202 && capped.queued === 1, words(capped));
+          setRules(order('O-4', 'hold', { revokedAt: '2026-10-20T11:00:00.000Z' }));
+          const lifted = await everyLens('measure');
+          check('every-lens control: a revoked hold refuses nothing: 202 and its job', lifted.status === 202 && lifted.queued === 1, words(lifted));
+        } finally {
+          fs.rmSync(ruleFile, { force: true }); fs.rmSync(ruleLog, { force: true });
+          if (!hadWork) fs.rmSync(path.join(store, 'work'), { recursive: true, force: true });
+          await settle();
+        }
+      }
+    } finally { fs.writeFileSync(regFile, reg0); }
+  }
   // ------------------------------------------------------------------ lens setup: what a repo lacks, the prepare job and its route
   {
     const ov = '---\nx: 1\n---\n# overlay\n## Probes\n- `a blockingMs`: node p.mjs --feature a\nb jankFrames: node p.mjs --feature b\nc bogusMetric: node p.mjs\n```\nd memoryMb: node p.mjs in a fence\n```\n### note\ne startupMs: under a sub-heading of Probes\n## Gates\nf memoryMb: after the section\n';
@@ -552,6 +678,50 @@ try {
   fs.writeFileSync(mapFile, '{ broken');
   check('a map that does not parse -> 409, left as it is', (await call(lenses.POST, '/x', 'POST', { slug: 'prod' }, { manifest: MANIFEST })).status === 409 && fs.readFileSync(mapFile, 'utf8') === '{ broken');
 
+  // ------------------------------------------------------------------ unattended runs do not inherit API keys (DW-105)
+  {
+    const envFile = path.join(dir, 'fake-env.jsonl');
+    const SECRET: Record<string, string> = { ANTHROPIC_API_KEY: 'qa-fake', OPENAI_API_KEY: 'qa-fake', Some_Vendor_Api_Key: 'qa-fake' };
+    const MARKERS = ['CLAUDECODE', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_CHILD_SESSION', 'CLAUDE_CODE_MESSAGING_SOCKET', 'CLAUDE_CODE_MESSAGING_TOKEN', 'CLAUDE_CODE_ENTRYPOINT'];
+    const planted: Record<string, string> = { ...SECRET, ...Object.fromEntries(MARKERS.map((m) => [m, 'qa-fake'])), BP_FAKE_ENV_FILE: envFile, CLAUDE_CODE_OAUTH_TOKEN: 'qa-fake' };
+    const saved = Object.fromEntries(Object.keys({ ...planted, BP_JOB_KEEP_ENV: '' }).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, planted);
+    type Seen = { job: string | null; names: string[] };
+    const seenAll = (): Seen[] => (fs.existsSync(envFile) ? fs.readFileSync(envFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as Seen) : []);
+    const seenOf = async (id: string) => { await until(() => seenAll().some((x) => x.job === id) && job('envp', id)?.status !== 'running' && job('envp', id)?.status !== 'queued'); return seenAll().find((x) => x.job === id); };
+    const hasKey = (s: Seen | undefined, n: string) => !!s?.names.some((k) => k.toUpperCase() === n.toUpperCase());
+    const keys = (s: Seen | undefined) => s?.names.filter((k) => k.toUpperCase().endsWith('_API_KEY')) ?? ['no run seen'];
+    try {
+      const envRoot = repo('envp');
+      for (const [what, q] of [['measure', J.enqueueMeasure('envp', envRoot, 'x', ALL)], ['execute', J.enqueueExecute('envp', envRoot, ['p1'])]] as const) {
+        const s = q.ok ? await seenOf(q.job.id) : undefined;
+        check(what + ' job: the fake CLI ran and recorded its env', !!s, JSON.stringify(q).slice(0, 200));
+        check(what + ' job env: no *_API_KEY', keys(s).length === 0, keys(s).join());
+        check(what + ' job env: none of the parent session\'s markers', !MARKERS.some((m) => hasKey(s, m)), MARKERS.filter((m) => hasKey(s, m)).join());
+        check(what + ' job env: PATH and BP_JOB_ID kept', hasKey(s, 'PATH') && hasKey(s, 'BP_JOB_ID'));
+        check(what + ' job env: a login token is not a key: CLAUDE_CODE_OAUTH_TOKEN kept (as the companion\'s childEnv keeps it)', hasKey(s, 'CLAUDE_CODE_OAUTH_TOKEN'));
+      }
+      // the allow-list: exactly the named variables come through
+      process.env.BP_JOB_KEEP_ENV = 'ANTHROPIC_API_KEY, Some_Vendor_Api_Key';
+      const kept = J.enqueueMeasure('envp', envRoot, 'x', ALL);
+      const ks = kept.ok ? await seenOf(kept.job.id) : undefined;
+      check('BP_JOB_KEEP_ENV keeps the variables it names', hasKey(ks, 'ANTHROPIC_API_KEY') && hasKey(ks, 'Some_Vendor_Api_Key'), keys(ks).join());
+      check('BP_JOB_KEEP_ENV keeps only those', !hasKey(ks, 'OPENAI_API_KEY'), keys(ks).join());
+      delete process.env.BP_JOB_KEEP_ENV;
+      // the chat that writes a lens: no job id, so its one record is the newest without one
+      const n0 = seenAll().filter((x) => x.job === null).length;
+      const dr = await route('lens-draft/route.ts');
+      const reply = await call(dr.POST, '/x', 'POST', {}, { product: 'kettle', message: 'a lens for the money migration' });
+      const chats = seenAll().filter((x) => x.job === null), chat = chats.length > n0 ? chats[chats.length - 1] : undefined;
+      check('lens-draft: the fake CLI ran and recorded its env', reply.status === 200 && !!chat, String(reply.status));
+      check('lens-draft env: no *_API_KEY', keys(chat).length === 0, keys(chat).join());
+      check('lens-draft env: none of the parent session\'s markers, PATH kept', !MARKERS.some((m) => hasKey(chat, m)) && hasKey(chat, 'PATH'), MARKERS.filter((m) => hasKey(chat, m)).join());
+      // the adopt job's skill is not installed here, so its spawn site is read: none may hand the CLI the whole env
+      const jobsSrc = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/jobs.server.ts'), 'utf8');
+      check('jobs.server.ts: no spawnCli call hands over ...process.env (measure, execute, adopt)', !/spawnCli\([^\n]*\.\.\.process\.env/.test(jobsSrc));
+    } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+  }
+
   // the onboarding chat over the fake (json mode): first turn carries the contract, later turns resume
   const draft = await route('lens-draft/route.ts');
   const t1 = await call(draft.POST, '/x', 'POST', {}, { product: 'kettle', message: 'a lens for the money migration' });
@@ -712,6 +882,18 @@ try {
         && status('proposals', 'a3') === 'failed' && status('proposals', 'a1') === 'done' && status('packs', 'k-dev-1') === 'open', JSON.stringify(t4.body) + (p4.ok ? '' : ' ' + p4.error));
       const t5 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
       check('triage reopen of an untriaged item -> 409, skipped with its status', t5.status === 409 && t5.body.skipped[0]?.status === 'done' && t5.body.triaged.length === 0, JSON.stringify(t5.body));
+      // DW-106: an agent's call is signed as the agent. The header is the one bp-mcp.mjs sends; a malformed one is refused, never signed as the person
+      const asAgent = async (conv: string, body: unknown) => {
+        const res = await tri.POST(new Request('http://localhost:3000/x', { method: 'POST', headers: { ...H, 'x-bp-conversation': conv }, body: JSON.stringify(body) }), { params: Promise.resolve({ slug: 'rel' }) });
+        return { status: res.status, body: await res.json() as any }; // eslint-disable-line @typescript-eslint/no-explicit-any
+      };
+      const ag = await asAgent('conv-7', { ids: ['a1'], decision: 'accept' });
+      check('triage with x-bp-conversation: signed companion:<id>, not the person', ag.status === 200 && ag.body.by === 'companion:conv-7', JSON.stringify(ag.body));
+      const un = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' });
+      check('GUARD triage with no header: signed user:<gh login>, as before', un.status === 200 && un.body.by === 'user:octocat', JSON.stringify(un.body));
+      const bads = await Promise.all(['has space', 'x'.repeat(81), 'semi;colon'].map((c) => asAgent(c, { ids: ['a1'], decision: 'accept' })));
+      check('triage with a malformed x-bp-conversation: 400, and nothing moved', bads.every((b) => b.status === 400) && status('proposals', 'a1') === 'done', bads.map((b) => b.status + ' ' + (b.body.by ?? b.body.error)).join(' | ') + ' a1 ' + status('proposals', 'a1'));
+      if (status('proposals', 'a1') !== 'done') await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'reopen' }); // the base: later checks start from a1 done
       const t6 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a1'], decision: 'accept' });
       const t7 = await call(tri.POST, '/x', 'POST', { slug: 'rel' }, { ids: ['a3'], decision: 'descope', note: 'not worth it' });
       check('triage after the undo: a1 accepted, a3 descoped, the pack triaged again', t6.status === 200 && t7.status === 200 && status('packs', 'k-dev-1') === 'triaged', JSON.stringify([t6.body, t7.body]));
@@ -1058,6 +1240,28 @@ try {
       const none = await call(prods.GET, '/api/products', 'GET', {});
       check('a registry with no products key is an empty list, not an error (200 [])', none.status === 200 && Array.isArray(none.body) && none.body.length === 0, JSON.stringify(none));
     } finally { console.warn = warn; fs.writeFileSync(pf, keep); }
+  }
+
+  // ------------------------------------------------------------------ one product's write verbs: PATCH renames or re-roots, DELETE unregisters
+  {
+    const pf = path.join(dir, 'bp.products.local.json'), keep = fs.readFileSync(pf, 'utf8');
+    const one = await route('products/[slug]/route.ts');
+    const reg = () => (JSON.parse(fs.readFileSync(pf, 'utf8')).products as { slug: string; name: string; root: string }[]);
+    try {
+      const root2 = fs.mkdtempSync(path.join(dir, 're-root-'));
+      const p1 = await call(one.PATCH, '/api/products/prod', 'PATCH', { slug: 'prod' }, { name: '  Renamed ', root: root2 });
+      const e1 = reg().find((p) => p.slug === 'prod');
+      check('PATCH /api/products/prod renames and re-roots -> 200, the registry file holds the new name and root',
+        p1.status === 200 && p1.body.slug === 'prod' && p1.body.name === 'Renamed' && p1.body.root === root2 && e1?.name === 'Renamed' && e1?.root === root2, JSON.stringify({ p1, e1 }));
+      const p404 = await call(one.PATCH, '/api/products/nope', 'PATCH', { slug: 'nope' }, { name: 'X' });
+      const text = await one.PATCH(new Request('http://localhost:3000/api/products/prod', { method: 'PATCH', headers: { host: 'localhost:3000', 'content-type': 'text/plain' }, body: 'name=x' }), { params: Promise.resolve({ slug: 'prod' }) });
+      check('PATCH an unknown slug -> 404, a non-JSON body -> 415, and neither writes', p404.status === 404 && text.status === 415 && reg().find((p) => p.slug === 'prod')?.name === 'Renamed',
+        `${p404.status}:${p404.body.error} / ${text.status}`);
+      const d1 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      const gone = !reg().some((p) => p.slug === 'prod');
+      const d2 = await call(one.DELETE, '/api/products/prod', 'DELETE', { slug: 'prod' });
+      check('DELETE /api/products/prod -> 200 and gone from the file; DELETE again -> 404', d1.status === 200 && d1.body.slug === 'prod' && gone && d2.status === 404, JSON.stringify({ d1, d2 }));
+    } finally { fs.writeFileSync(pf, keep); }
   }
 
   // ------------------------------------------------------------------ the standard accepts the entry

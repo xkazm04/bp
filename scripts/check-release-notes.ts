@@ -15,6 +15,8 @@
 //   6. the literal "Shipped flagged" appears once under apps/web/src and packages/core/src, in notes.ts;
 //   7. notes.ts keeps the train's import rule (value imports only ./rules.ts and ../scan/*.ts, no React, <= 400 lines)
 //      and check-train-quality passes over it.
+//   8. the opening line matches the items: 0 of 1, 1 of 2 and 2 of 3 changes measured with no "each" claim; every item
+//      measured says each measured before and after, as before (DW-155).
 //   GUARD g1: a preview with no conflict has no rework section and keeps the gates placeholder.
 // Run: node scripts/check-release-notes.ts  (Node's type stripping; no build step). Exit 1 on any failure. ~6 s.
 import fs from 'node:fs';
@@ -71,6 +73,18 @@ if (typeof N.releaseNotes === 'function') {
   check('g1', 'GUARD: no conflict -> no rework section, gates placeholder kept (releaseState)', !pre.includes('### Back to rework') && pre.includes('lists them here'), pre);
 }
 
+// ------------------------------------------------------------------ 8: the opening line matches the items below it (DW-155)
+{
+  const notes = (items: typeof three) => S.notesPreview('Acme', '1.2.0', items, []);
+  const head = (t: string) => t.split('\n')[2] ?? '';
+  const none = notes([three[2]]), mixed = notes([three[1], three[2]]), all = notes([three[0], three[1]]), most = notes(three);
+  check('8', 'one unmeasured item: no "each measured before and after" claim', !/each measured before and after/.test(none), none);
+  check('8', 'one unmeasured item: says 0 of 1 change(s) measured', /0 of 1 change/.test(head(none)) && /measured/.test(head(none)), head(none));
+  check('8', 'one of two measured: says 1 of 2 changes measured, and makes no "each" claim', /1 of 2 changes measured/.test(head(mixed)) && !/each measured/.test(mixed), head(mixed));
+  check('8', 'two of three measured: says 2 of 3 changes measured', /2 of 3 changes measured/.test(head(most)) && !/each measured/.test(most), head(most));
+  check('8', 'every item measured: says each measured before and after, as today', /^2 changes from the lens release train, each measured before and after\.$/.test(head(all)), head(all));
+}
+
 // ------------------------------------------------------------------ 1-4: a Kettle ScanSim build, with and without a conflict
 const structure = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8')) as { features: { slug: string }[]; lenses: { id: string; manifest: LensManifest }[]; facets: Record<string, Record<string, { values?: Record<string, unknown> }>> };
 const mapValue = (f: string, l: string, k: string): number | undefined => { const v = structure.facets[f]?.[l]?.values?.[k]; return typeof v === 'number' ? v : undefined; };
@@ -86,7 +100,7 @@ async function build(conflict: boolean): Promise<{ preview: string; stored: stri
   sim.triage({ ids: [id('des1-waiver')], decision: 'accept', note: 'Ships with the gate fixed by hand.' });
   sim.triage({ ids: [id('perf1-timetable')], decision: 'accept' });
   const c = sim.createRelease('0.1.0');
-  const snapEv = () => { const s = sim.snapshot(), by = S.readingsBy(s.measurements); return { s, items: s.proposals.filter((p) => p.release_id === c.release.id).map((p) => S.evidenceOf(p, by, lenses)) }; };
+  const snapEv = () => { const s = sim.snapshot(); return { s, items: s.proposals.filter((p) => p.release_id === c.release.id).map((p) => S.evidenceOf(p, s.measurements, lenses)) }; };
   const preview = S.notesPreview('Kettle', '0.1.0', snapEv().items, []);
   sim.setTrainToggles({ ghOff: false, conflict, gateFails: false });
   const job = sim.buildRelease(c.release.id);

@@ -4,6 +4,7 @@
 // The voice was cast on 2026-10-27: "Vintage Tin", an ElevenLabs Voice Design voice, read by eleven_v3 at Robust stability
 // with a fixed seed, then a light robot effect applied on the page (VOICE_FX). The owner picked it over steadier setups
 // for being playful; a fixed seed keeps a repeated line the same, and the effect is identical on every line.
+// VOICE_DESIGN records how the voice was made; scripts/voice-rebuild.ts rebuilds it from that (docs/voice/glim.md).
 
 /** The ElevenLabs voice and the request settings every line is synthesized with. Changing any of them changes the cache key. */
 export const VOICE = {
@@ -12,6 +13,31 @@ export const VOICE = {
   settings: { stability: 1.0, similarity_boost: 0.8 },
   seed: 4242,
   format: 'mp3_44100_128',
+} as const;
+
+/** How the voice was made, so it can be rebuilt where `VOICE.voiceId` does not resolve (another ElevenLabs account, a lost
+ *  library voice, a new designer generation). Kept out of VOICE on purpose: VOICE is the cache key, this is provenance.
+ *  The clips in `docs/voice/glim/` are the approved sound, rendered with exactly VOICE and no effect; the rebuild and
+ *  acceptance procedure is docs/voice/glim.md. */
+export const VOICE_DESIGN = {
+  name: 'Vintage Tin',
+  designedOn: '2026-10-27',
+  /** POST /v1/text-to-voice/design; the design call returns 3 previews, preview 0 was saved via POST /v1/text-to-voice. */
+  modelId: 'eleven_ttv_v3',
+  description:
+    'A retro 1950s tin-can male robot, nasal buzzy metallic resonance, choppy staccato syllables, charming and slightly clunky, studio quality.',
+  text: "Hello, I'm Glim, your blueprint companion. I scanned your three projects and found two decisions waiting for your call.",
+  guidanceScale: 6,
+  seed: 7,
+  preview: 0,
+  /** Reference clips, relative to the repo root. `design` is the designer's own preview read of `text`, not a VOICE read. */
+  reference: [
+    { file: 'docs/voice/glim/design.mp3', text: null },
+    { file: 'docs/voice/glim/morning.mp3', text: 'Good morning. The nightly scan finished across all four projects. Coverage is up six percent.' },
+    { file: 'docs/voice/glim/decision.mp3', text: 'Heads up: the ledger and the canvas engine number versions differently. I drafted both fixes. Which one wins?' },
+    { file: 'docs/voice/glim/warning.mp3', text: 'Careful. That push would skip the quality gate, and two checks are still red. Want to see them first?' },
+    { file: 'docs/voice/glim/wrap.mp3', text: "Wave three is composed and every check is green. Nice work. I'll keep watch and ping you if anything moves." },
+  ],
 } as const;
 
 /** The longest line spoken, in characters (about 20 s of speech); a longer reply is cut at a sentence end before it. */

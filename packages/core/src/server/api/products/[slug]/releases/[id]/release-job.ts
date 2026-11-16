@@ -1,6 +1,6 @@
-// The build and finish routes' shared handler: start a release job (packages/core/src/server/jobs.server.ts enqueueRelease) for
+// The build, finish and tag routes' shared handler: start a release job (packages/core/src/server/jobs.server.ts enqueueRelease) for
 // `rel-<version>`, after the route's localhost guards. 202 + the ScanJob; 400 for a bad release id; 404 for an unknown product, store or release; 409 when
-// the release is in no state for that step (scan/release-steps.ts STEP_FROM: build from draft or failed, finish from pr-open or merged) or already has a job
+// the release is in no state for that step (scan/release-steps.ts STEP_FROM: build and tag from draft or failed, finish from pr-open or merged) or already has a job
 // queued or running; 412 `{ error: 'gh not authenticated' }` when `gh auth status` fails; 429 when 16 jobs are queued.
 // A dry build (`{"dry":true}`, the Release tab's pre-flight) runs the same guards from local state only - the store row,
 // the job registry, the queue - and answers 200 `{ ready: true, gh: 'unchecked' }` with nothing queued: it never spawns gh

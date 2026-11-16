@@ -1,12 +1,15 @@
 // The one way the UI starts, dispatches and cancels scan work. A live product goes to its localhost
 // routes (the server spawns the Claude Code CLI); the Kettle sample goes to the scan sim. Callers never
 // branch on which.
-import type { ReleaseReady, ScanSim } from '@bp/core/model/scan-sim';
-import { takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
+import type { SavedFocus } from '@bp/core/scan/focus';
+import type { BuildForecast, ReleaseReady, ScanSim, WaveForecast } from '@bp/core/model/scan-sim';
+import { measureScopes, takenLooks, type ScanJob, type ScanScope } from '@bp/core/scan/jobs';
 import type { LensEntry, LensManifest } from '@bp/core/standard/types';
-import { deleteJob, deleteWaveReq, executeLens, getCommitDiff, getReleaseSuggestion, getWaves, patchWaveReq, postDispatch, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postScan, postTriage, postWave, postWaveDispatch, type LensExecuteResult } from './client.ts';
-import type { CommitDiff, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
+import type { Watch } from '@bp/core/train/watch';
+import { decideProposal, deleteFocusReq, deleteJob, deleteWaveReq, executeLens, getCommitDiff, getFocuses, getLandings, getWatches, postWatch, getReleaseSuggestion, getWaves, patchWaveReq, postAllLenses, postDirectedScan, postDispatch, postDispatchDry, postFocus, postPrepare, postProjectLens, postRelease, postReleaseBuild, postReleaseBuildDry, postReleaseFinish, postReleaseTag, postScan, postTriage, postVeto, postWave, postWaveDispatch, postWaveDispatchDry, type LensExecuteResult } from './client.ts';
+import type { CommitDiff, DecisionBody, Proposal, ReleaseCreated, TriageBody, TriageDecision, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
+import type { Landings } from '@bp/core/scan/landed';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { addTempLens, readTempLenses } from './temp-lens.ts';
 
@@ -29,10 +32,64 @@ export async function startScan(ctx: ScanCtx, lens: string, scope: ScanScope): P
   throw nowhere();
 }
 
+/** Start a directed scan: one lens, a scope and the note saying what to look for (scan/focus.ts). Rejects as startScan does; 400 bad-focus. */
+export async function startDirectedScan(ctx: ScanCtx, lens: string, scope: ScanScope, focus: string): Promise<ScanJob> {
+  if (ctx.slug) return postDirectedScan(ctx.slug, lens, scope, focus);
+  if (ctx.sim) return ctx.sim.startScan(lens, scope, focus);
+  throw nowhere();
+}
+/** The product's saved focuses, newest first. */
+export async function listFocuses(ctx: ScanCtx): Promise<SavedFocus[]> {
+  if (ctx.slug) return getFocuses(ctx.slug);
+  if (ctx.sim) return ctx.sim.listFocuses();
+  throw nowhere();
+}
+/** Keep a focus for reuse (the same lens and note answers the existing one). */
+export async function saveFocus(ctx: ScanCtx, lens: string, note: string): Promise<SavedFocus> {
+  if (ctx.slug) return postFocus(ctx.slug, lens, note);
+  if (ctx.sim) return ctx.sim.saveFocus(lens, note);
+  throw nowhere();
+}
+export async function deleteFocus(ctx: ScanCtx, id: string): Promise<{ id: string }> {
+  if (ctx.slug) return deleteFocusReq(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.deleteFocus(id);
+  throw nowhere();
+}
+
+/** ONE measure or propose job over every enabled lens (`--lens all`, one MAX_RUNNING slot). A live product only: the Kettle
+ *  sim has no every-lens job, and the ledger offers it on a live product only. */
+export async function startAllLenses(ctx: ScanCtx, phase: 'measure' | 'propose'): Promise<ScanJob> {
+  if (ctx.slug) return postAllLenses(ctx.slug, phase);
+  throw Object.assign(new Error('every-lens jobs run on a live product (the sample scans one lens at a time)'), { status: 400 });
+}
+
+/** A person's veto of a machine decision inside its window: the row goes back to proposed (live products only). */
+export async function vetoDecision(ctx: ScanCtx, id: string, reason: string): Promise<Proposal> {
+  if (ctx.slug) return postVeto(ctx.slug, id, reason);
+  throw Object.assign(new Error('the sample has no machine decisions to veto'), { status: 400 });
+}
+
+/** Approve one proposed finding for later (no job) or decline it, signed: the updated row. 409 (the current row as
+ *  `proposal`) when it is no longer proposed; 403 while decisions are off. */
+export async function decideFinding(ctx: ScanCtx, id: string, body: DecisionBody): Promise<Proposal> {
+  if (ctx.slug) return decideProposal(ctx.slug, id, body);
+  if (ctx.sim) return ctx.sim.decide(id, body);
+  throw nowhere();
+}
+
 /** Approve the proposed ones among `ids` and start one execute run over all of them. */
 export async function dispatch(ctx: ScanCtx, ids: string[]): Promise<DispatchResult> {
   if (ctx.slug) return postDispatch(ctx.slug, ids);
   if (ctx.sim) return ctx.sim.dispatch(ids);
+  throw nowhere();
+}
+
+export type { BuildForecast, WaveForecast };
+/** What `dispatch(ctx, ids)` would do, with nothing written (the Dispatch label's forecast): approve, take, skipped (held by an
+ *  order, in a job, not open) and jobs. Rejects as dispatch would (403 all held, 409 none can go, 429 queue full: `body` = the forecast). */
+export async function forecastDispatch(ctx: ScanCtx, ids: string[]): Promise<BuildForecast> {
+  if (ctx.slug) return postDispatchDry(ctx.slug, ids);
+  if (ctx.sim) return ctx.sim.forecastDispatch(ids);
   throw nowhere();
 }
 
@@ -88,11 +145,43 @@ export async function triageItems(ctx: ScanCtx, ids: string[], decision: TriageD
   if (ctx.sim) return ctx.sim.triage(body);
   throw nowhere();
 }
-/** The suggested next version, with what it came from and why. */
-export async function suggestRelease(ctx: ScanCtx): Promise<VersionSuggestion> {
-  if (ctx.slug) return getReleaseSuggestion(ctx.slug);
-  if (ctx.sim) return ctx.sim.suggestRelease();
+/** The suggested next version, with what it came from and why: bumped by the chosen items (`ids`), else by every
+ *  accepted item with no release. */
+export async function suggestRelease(ctx: ScanCtx, ids?: readonly string[]): Promise<VersionSuggestion> {
+  if (ctx.slug) return getReleaseSuggestion(ctx.slug, ids);
+  if (ctx.sim) return ctx.sim.suggestRelease(ids);
   throw nowhere();
+}
+/** What already landed on the base branch: read from git live (unknown with why when it cannot be read), the sample's
+ *  merges on Kettle. */
+export async function readLandings(ctx: ScanCtx): Promise<Landings> {
+  if (ctx.slug) return getLandings(ctx.slug);
+  if (ctx.sim) return ctx.sim.landings();
+  throw nowhere();
+}
+/** The outcome watches (train/watch.ts): live, after the server queued the checkpoints that are due; the sample's on
+ *  Kettle. A read the Release tab makes; not a decision (BP_WRITES=off leaves it on). */
+export async function readWatches(ctx: ScanCtx): Promise<Watch[]> {
+  if (ctx.slug) return getWatches(ctx.slug);
+  if (ctx.sim) return ctx.sim.watches();
+  throw nowhere();
+}
+/** Turn release `id`'s outcome watch on (at or after Finish or Tag) or off. */
+export async function watchRelease(ctx: ScanCtx, id: string, on: boolean): Promise<Watch> {
+  if (ctx.slug) return postWatch(ctx.slug, id, on);
+  if (ctx.sim) return ctx.sim.setWatch(id, on);
+  throw nowhere();
+}
+/** Measure where items stand now (the ledger's M): one `selection` scan per lens over that lens's items' features
+ *  (jobs.ts measureScopes), started together. Resolves with the jobs that started and, per lens, a refusal (its Error);
+ *  rejects 400 when there is nothing to measure. A scan, not a decision: BP_WRITES=off leaves it on (scan/writes.ts). */
+export async function measureItems(ctx: ScanCtx, items: readonly { lens: string; feature: string }[]): Promise<{ jobs: ScanJob[]; refused: { lens: string; error: unknown }[] }> {
+  const scopes = measureScopes(items);
+  if (!scopes.length) throw refused(400, 'nothing to measure: select items first');
+  const rs = await Promise.allSettled(scopes.map((s) => startSelectionScan(ctx, s.lens, s.features)));
+  const jobs: ScanJob[] = [], out: { lens: string; error: unknown }[] = [];
+  rs.forEach((r, i) => { if (r.status === 'fulfilled') jobs.push(r.value); else out.push({ lens: scopes[i].lens, error: r.reason }); });
+  return { jobs, refused: out };
 }
 /** A draft release of accepted items (default: every accepted item with no release). */
 export async function createRelease(ctx: ScanCtx, version: string, ids?: string[]): Promise<ReleaseCreated> {
@@ -107,17 +196,24 @@ export async function buildRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
   throw nowhere();
 }
 export type { ReleaseReady };
-/** The build's pre-flight: every refusal the build would give, with nothing started (live: the route's dry run, which
- *  never spawns gh; Kettle: the sim's, which reads its gh toggle). Rejects as buildRelease does. */
-export async function preflightRelease(ctx: ScanCtx, id: string): Promise<ReleaseReady> {
-  if (ctx.slug) return postReleaseBuildDry(ctx.slug, id);
-  if (ctx.sim) return ctx.sim.preflightRelease(id);
+/** The build's (or the tag's) pre-flight: every refusal that step would give, with nothing started (live: the route's dry
+ *  run, which never spawns gh; Kettle: the sim's, which reads its gh toggle). Rejects as buildRelease does. */
+export async function preflightRelease(ctx: ScanCtx, id: string, step: 'build' | 'tag' = 'build'): Promise<ReleaseReady> {
+  if (ctx.slug) return postReleaseBuildDry(ctx.slug, id, step);
+  if (ctx.sim) return ctx.sim.preflightRelease(id, step);
   throw nowhere();
 }
 /** Start the job that finishes a release after its PR merged (tag, GitHub release). Rejects 412 as build. */
 export async function finishRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
   if (ctx.slug) return postReleaseFinish(ctx.slug, id);
   if (ctx.sim) return ctx.sim.finishRelease(id);
+  throw nowhere();
+}
+/** Start the job that tags a draft whose every item already landed on the base branch (lens-scan `--landed`: gates on its
+ *  HEAD, notes, tag, GitHub release, items released; nothing cherry-picked). Rejects 412 as build. */
+export async function tagRelease(ctx: ScanCtx, id: string): Promise<ScanJob> {
+  if (ctx.slug) return postReleaseTag(ctx.slug, id);
+  if (ctx.sim) return ctx.sim.tagRelease(id);
   throw nowhere();
 }
 /** One item commit's stat and patch. */
@@ -167,5 +263,12 @@ export async function deleteWave(ctx: ScanCtx, id: string): Promise<{ id: string
 export async function dispatchWave(ctx: ScanCtx, id: string, packages?: string[]): Promise<WaveDispatchResult> {
   if (ctx.slug) return postWaveDispatch(ctx.slug, id, packages);
   if (ctx.sim) return ctx.sim.dispatchWave(id, packages);
+  throw nowhere();
+}
+/** What `dispatchWave` would do, per package, with nothing approved, queued or saved (the wave buttons' forecast). Rejects
+ *  as dispatchWave would (404, 400, 403, 409, 429 with the forecast as `body`). */
+export async function forecastWave(ctx: ScanCtx, id: string, packages?: string[]): Promise<WaveForecast> {
+  if (ctx.slug) return postWaveDispatchDry(ctx.slug, id, packages);
+  if (ctx.sim) return ctx.sim.forecastWave(id, packages);
   throw nowhere();
 }

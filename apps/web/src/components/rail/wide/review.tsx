@@ -2,15 +2,29 @@
 // A · Review: the open proposals (live product) or questions (Kettle) as compact rows on the left; the selected one
 // read in full on the right, with the metric move as a large before -> after figure, the body's sections open, and a
 // sticky action bar. Deciding selects the next row. Hovering a row marks its feature on the plan.
-import { useEffect, useMemo, useState } from 'react';
-import { fmtWait, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
+// v5 (scan-finding/1): a live detail carries what the scan stored (FindingFacts: the score and its breakdown, impact_why, the
+// predicted verdict and its precedent, a built change's proof); machine decisions still inside their veto window are listed
+// after the open items ("Decided by the machine · veto open") and their detail offers the person's Veto (VetoDetail).
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { dayHhmmUTC, fmtWait, hhmmUTC, metricHistory, pname, sheetOf, type SimDecision } from '@bp/core/model';
 import { priorRecord, recordWords } from '@bp/core/scan/record';
+import { evidenceOpts } from '@bp/core/scan/track';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
 import { STAGE_WORDS } from '../../TrackRecord';
 import { LiveEmpty, OriginChip, TierChip, URG, bodySections, declineDrafts, fmtN, metricMove, oncePerProposal, proposalSummary } from '../../Queue';
-import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVariant, useWritesOn } from '../../hooks';
+import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useScanCtx, useVariant, useWritesOn } from '../../hooks';
+import { nextVetoLapse, vetoable } from '@bp/core/scan/trust';
+import { vetoDecision } from '@/lib/scan/actions';
 import { Group, Row, Sec, Workbench, useListRef, useWalk } from './shell';
+import { BriefFacts, useBrief } from '../../Brief';
+import { RuleChip, RuleNote, useRuleMark } from './rule-mark';
+import { useLandings } from '@/lib/scan/landings';
 
+
+/** The list key prefix of a machine decision row (v5): `veto:<proposal id>`. */
+const VETO = 'veto:';
+/** How long "Decline the repeats" stays armed after its first click. */
+const REARM_MS = 5000;
 
 /** The metric move as parts for the big figure; null when the proposal names no metric. */
 function moveParts(p: Proposal, unit: string | undefined, label: string | undefined, scan: ScanSnapshot | undefined) {
@@ -32,6 +46,12 @@ export function Review() {
   const proposals = live?.product.scan?.proposals;
   const [lens, setLens] = useState<string | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
+  // "Decline the repeats" asks twice: a live decision is final (no route reopens it). The first click takes the ids it
+  // names, and the second declines only those (a scan delta in between adds nothing unseen); the arm lapses after
+  // REARM_MS and drops when the lens filter or the reader changes
+  const [armRepeats, setArmRepeats] = useState<string[] | null>(null), writes = useWritesOn();
+  useEffect(() => { if (!armRepeats) return; const t = setTimeout(() => setArmRepeats(null), REARM_MS); return () => clearTimeout(t); }, [armRepeats]);
+  useEffect(() => setArmRepeats(null), [lens, s.who]);
   const listRef = useListRef();
 
   // a decline draft lives until its proposal is decided (as in the classic list)
@@ -58,11 +78,21 @@ export function Review() {
   const ids = useMemo(() => items.map((d) => d.id), [items]);
   // a live row's proposal, for its tier and origin chips (Kettle's questions have none)
   const propOf = useMemo(() => new Map((proposals ?? []).map((p) => [p.id, p])), [proposals]);
-  // the open proposals whose idea (same feature + lens, or an attempt they follow) was declined before: a row mark
-  const scan = live?.product.scan;
-  const declinedBefore = useMemo(() => new Set(scan ? scan.proposals.filter((p) => p.status === 'proposed' && priorRecord(scan, p).same.some((e) => e.stage === 'declined')).map((p) => p.id) : []), [scan]);
-  const cur = items.find((d) => d.id === selId) ?? items[0] ?? null;
-  const onKey = useWalk(ids, cur?.id ?? null, setSelId as (id: string | null) => void, listRef);
+  // v5: machine decisions a person may still veto (decided_by machine:*, inside veto_until), listed after the open items
+  // the list re-reads when the first listed window closes (lapse), not only when the proposals change: a lapsed row would
+  // keep a Veto button that can only answer 409
+  const [lapse, bumpLapse] = useReducer((x: number) => x + 1, 0);
+  const vetos = useMemo(() => { const now = new Date().toISOString(); return sim.live ? (proposals ?? []).filter((p) => vetoable(p, now)) : []; }, [proposals, sim.live, lapse]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const ms = nextVetoLapse(vetos, Date.now());
+    if (ms === null) return;
+    const t = setTimeout(bumpLapse, ms + 1);
+    return () => clearTimeout(t);
+  }, [vetos]);
+  const curVeto = selId?.startsWith(VETO) ? vetos.find((p) => VETO + p.id === selId) ?? null : null;
+  const walkIds = useMemo(() => [...ids, ...vetos.map((p) => VETO + p.id)], [ids, vetos]);
+  const cur = curVeto ? null : items.find((d) => d.id === selId) ?? items[0] ?? null;
+  const onKey = useWalk(walkIds, curVeto ? VETO + curVeto.id : cur?.id ?? (vetos[0] ? VETO + vetos[0].id : null), setSelId as (id: string | null) => void, listRef);
 
   if (!sim.has) return <div className="wb-empty"><b>No swarm data</b>The swarm file did not load, so there is nothing to review.</div>;
 
@@ -91,14 +121,26 @@ export function Review() {
       <Row key={d.id} id={d.id} on={on} onPick={() => setSelId(d.id)} cls={'u-' + d.urg}
         onEnter={() => !E.S.dec && E.setHlDec(d.id)} onLeave={() => E.setHlDec(null)}>
         <i className="urg" aria-hidden="true" />
-        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && declinedBefore.has(p.id) && <span className="db" title="This idea was declined before: see Before you decide">declined before</span>}</span>
+        <span className="rk"><span>{URG[d.urg]}</span><span className="lz">{short(d.lens)}</span>{d.isNew && <span className="nw">New</span>}{p && <TierChip p={p} />}{p && <OriginChip p={p} link={false} />}{p && d.recNote && <span className="db" title={'The decision brief: ' + d.recNote}>declined before</span>}{p && <RowRule p={p} />}</span>
         <span className="rt">{d.q}</span>
         <span className="rm"><span>{f?.name ?? d.f}</span><span>{fmtWait(sim.waitMin(d))}</span></span>
       </Row>
     );
   };
   const mine = s.who ? items.filter((d) => d.decider === s.who) : null; // live too: the map names deciders (live-feed.ts liveDecider)
-  const list = !items.length ? (sim.live ? <LiveEmpty /> : <div className="wb-empty"><b>Nothing waiting</b>Every agent has what it needs. The swarm is working.</div>)
+  const vetoGroup = vetos.length ? (
+    <Group head="Decided by the machine · veto open" n={vetos.length} label="Machine decisions you can still veto">
+      {vetos.map((p) => (
+        <Row key={p.id} id={VETO + p.id} on={curVeto?.id === p.id} onPick={() => setSelId(VETO + p.id)} cls="u-low">
+          <i className="urg" aria-hidden="true" />
+          <span className="rk"><span>{p.status === 'approved' ? 'Approved' : 'Declined'}</span><span className="lz">{short(p.lens)}</span><span className="nw" title={'Veto until ' + p.veto_until}>machine</span></span>
+          <span className="rt">{p.title}</span>
+          <span className="rm"><span>{M.P.F[p.feature]?.name ?? p.feature}</span><span>veto until {hhmmUTC(p.veto_until)}</span></span>
+        </Row>
+      ))}
+    </Group>
+  ) : null;
+  const main = !items.length ? (sim.live ? (vetos.length ? null : <LiveEmpty />) : <div className="wb-empty"><b>Nothing waiting</b>Every agent has what it needs. The swarm is working.</div>)
     : mine ? (
       <>
         <Group head={'Waiting for ' + first} n={mine.length} label={'Questions waiting for ' + first}>{mine.length ? mine.map(row) : <li className="wb-none">Nothing waits for {first}.</li>}</Group>
@@ -107,12 +149,31 @@ export function Review() {
     ) : (
       <Group head={sim.live ? 'Proposals' : 'Questions'} n={items.length} label={sim.live ? 'Open proposals, most urgent first' : 'Open questions, most urgent first'}>{items.map(row)}</Group>
     );
+  const list = <>{main}{vetoGroup}</>;
 
   const batches = sim.batchGroups();
+  // live: the listed open proposals (under the lens filter) the decision brief found repeating a standing decline
+  // (live-feed.ts recommends Decline on them)
+  const repeats = sim.live && writes ? items.filter((d) => d.recNote) : [];
+  // what the second click would decline: the armed ids still listed as repeats (none left = not armed, never "decline 0")
+  const stillArmed = armRepeats ? repeats.filter((d) => armRepeats.includes(d.id)) : [], armed = stillArmed.length ? stillArmed : null;
+  const declineRepeats = () => {
+    if (!armed) { setArmRepeats(repeats.map((d) => d.id)); return; }
+    setArmRepeats(null); setSelId(null); E.setHlDec(null);
+    for (const d of armed) E.decide(d.id, 1, d.recNote);
+  };
   const strip = (
     <>
       <div className="wb-count"><b>{all.length}</b><span>{sim.live ? 'open proposals' : 'open questions'}</span></div>
       <div className="wb-count t-amber"><b>{urgent}</b><span>urgent</span></div>
+      {repeats.length > 0 && (
+        <div className="wb-filter wb-repeats" role="group" aria-label="Decline the repeats">
+          <button type="button" aria-pressed={!!armed} onClick={declineRepeats}
+            title={'Each repeats an idea you declined: ' + (armed ?? repeats).map((d) => d.base).join(', ') + '. Each is declined with a note naming the decision it repeats. Final: no route reopens a decision.'}>
+            <i aria-hidden="true" />{armed ? `Click again: decline ${armed.length}, each naming its decline` : `Decline ${repeats.length} repeat${repeats.length === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      )}
       {batches.length > 0 && (
         <div className="wb-filter" role="group" aria-label="Batch-decide like questions">
           {batches.map((g) => (
@@ -137,12 +198,16 @@ export function Review() {
 
   return (
     <Workbench cls="wb-review" strip={strip} list={list} listLabel={sim.live ? 'Proposals to review' : 'Questions to answer'} listRef={listRef} onKey={onKey}
-      detailKey={cur?.id ?? 'none'} detailLabel="Selected item"
-      detail={cur ? (sim.live ? <LiveDetail d={cur} decide={decide} /> : <SimDetail d={cur} decide={decide} />) : <div className="wb-empty"><b>Nothing selected</b>Pick an item on the left.</div>} />
+      detailKey={curVeto ? VETO + curVeto.id : cur?.id ?? 'none'} detailLabel="Selected item"
+      detail={curVeto ? <VetoDetail p={curVeto} onDone={() => setSelId(null)} />
+        : cur ? (sim.live ? <LiveDetail d={cur} decide={decide} /> : <SimDetail d={cur} decide={decide} />) : <div className="wb-empty"><b>Nothing selected</b>Pick an item on the left.</div>} />
   );
 }
 
 /** The kicker over a detail title: urgency, lens, id, newness. */
+/** A row's standing-rule chip (a component: the hook needs a component per row). */
+function RowRule({ p }: { p: Proposal }) { return <RuleChip m={useRuleMark(p)} />; }
+
 function Kicker({ d, extra }: { d: SimDecision; extra?: string }) {
   const E = useEngine(), M = E.M, ld = M.P.LENS[d.lens];
   return (
@@ -169,6 +234,9 @@ function PlaceActions({ d }: { d: SimDecision }) {
 function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi: number, note?: string) => void }) {
   const E = useEngine(), M = E.M, sim = M.sim, live = useLive(), scan = live?.product.scan, writes = useWritesOn();
   const p = scan?.proposals.find((x) => x.id === d.base);
+  const landed = useLandings(useScanCtx(), scan, scan?.proposals);
+  const brief = useBrief(d);
+  const mark = useRuleMark(p); // the owner's standing rules over this finding (rule-mark.tsx)
   const f = M.P.F[d.f];
   const [declining, setDeclining] = useState(() => declineDrafts.has(d.base)), [note, setNote] = useState(() => declineDrafts.get(d.base) ?? '');
   useAnswerNote(d.id);   // Approve previews its expected move on the plan; this clears it when the detail goes
@@ -181,8 +249,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
   const ev = last ? [last.evidence, last.method && 'measured by ' + last.method, last.measured_at && 'on ' + last.measured_at.slice(0, 10), h.length > 1 ? h.length + ' readings' : ''].filter(Boolean) : [];
   const meta = p ? [p.parent_id && 'follows ' + p.parent_id, p.after_value !== undefined && 'after the change: ' + fmtN(p.after_value), 'proposed ' + p.created_at.slice(0, 10)].filter(Boolean) : [];
   const cancel = () => { declineDrafts.delete(d.base); setNote(''); setDeclining(false); };
-  // what earlier decisions on this feature + lens (and the attempts this one follows) came to; live only
-  const rec = useMemo(() => (scan && p ? priorRecord(scan, p) : null), [scan, p]);
+  // what earlier decisions on this feature + lens (and the attempts this one follows) came to, landed items judged from
+  // their landing (git's answer; none until it comes); live only
+  const rec = useMemo(() => (scan && p ? priorRecord(scan, p, evidenceOpts(landed, M.P.lenses)) : null), [scan, p, landed, M.P.lenses]);
   const rw = rec && p ? recordWords(rec, M.P.LENS[p.lens]?.name ?? p.lens, (st) => STAGE_WORDS[st]) : null;
   return (
     <>
@@ -191,7 +260,9 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
         {p && (p.tier !== undefined || p.origin === 'ado') && <div className="wb-tier"><TierChip p={p} /><OriginChip p={p} /></div>}
         <h3 className="wb-title">{d.q}</h3>
         {sum && <p className="wb-lede">{sum}</p>}
+        <RuleNote m={mark} />
         <div className="wb-where">{f?.name ?? d.f} · {M.P.D[f?.domain ?? '']?.name ?? f?.domain} · waiting <b>{fmtWait(sim.waitMin(d))}</b>{M.P.scale > 1 ? ' · ' + M.P.buildings[d.b].short : ''}</div>
+        {brief && <BriefFacts b={brief} d={d} />}
         {mv && (
           <div className="wb-move" aria-label={`${mv.name}: ${mv.before ?? 'not measured'}${mv.after ? ' to ' + mv.after : ''} ${mv.unit}`}>
             <span className="nm">{mv.name}{mv.name !== mv.key && <small>{mv.key}</small>}</span>
@@ -226,6 +297,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
             {p.risk !== undefined && <span className={p.risk >= 7 ? 'hi' : ''} title="Risk, 1 to 10"><small>Risk</small>{p.risk} / 10</span>}
           </div>
         )}
+        {p ? <FindingFacts p={p} /> : null}
         {p ? (
           <>
             {ss.length ? ss.map((x, i) => (
@@ -238,7 +310,7 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
       </div>
       <div className="wb-act">
         {declining ? (
-          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim() || undefined); }}>
+          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); declineDrafts.set(d.base, note.trim()); decide(d, 1, note.trim()); }}>
             <input type="text" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why not? (optional)" aria-label="Decline note (optional)" maxLength={500} autoFocus
               onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); if (e.key === 'Escape') { e.preventDefault(); cancel(); } }} />
             <button type="submit" className="bt">Decline</button>
@@ -246,12 +318,89 @@ function LiveDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi
           </form>
         ) : (
           <>
-            {writes ? <button type="button" className="bt go" title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>✓ Approve</button> : null}
-            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>Decline…</button> : null}
+            {writes && d.recNote ? <button type="button" className="bt go" title={'Decline, noting: ' + d.recNote} onClick={() => decide(d, 1, d.recNote)}>✓ Decline · a repeat</button> : null}
+            {writes ? <button type="button" className={'bt' + (d.recNote ? '' : ' go')} title="Approve: the scan executes it in its next execute phase" onClick={() => decide(d, 0)} {...optHover(E, d.id, 0)}>{d.recNote ? 'Approve anyway' : '✓ Approve'}</button> : null}
+            {writes ? <button type="button" className="bt" title="Decline, with an optional note" onClick={() => setDeclining(true)}>{d.recNote ? 'My own note…' : 'Decline…'}</button>
+              : <span className="wb-help">Decisions are read-only here (BP_WRITES=off).</span>}
             <span className="sp" />
             <PlaceActions d={d} />
           </>
         )}
+      </div>
+    </>
+  );
+}
+
+/** v5 (scan-finding/1): what the scan stored about a finding, said as it stored it - the score and its breakdown (never
+ *  recomputed here), why the impact, the predicted verdict and its precedent, and a built change's proof (before -> after
+ *  under one method, the verdict, and whether a red control proved the gate bites). Nothing for a pre-v5 row. */
+function FindingFacts({ p }: { p: Proposal }) {
+  const sp = p.score_parts, pr = p.proof, fmt = (x: number | undefined) => (x === undefined ? '—' : fmtN(x));
+  if (p.score === undefined && p.impact === undefined && !p.predicted_verdict && !pr) return null;
+  return (
+    <>
+      <Sec head="Score" aside={p.score !== undefined ? (sp?.formula ?? 'scan-score/1') : 'unscored'}>
+        <div className="wb-chips">
+          <span title="Stored by the scan, never recomputed"><small>Score</small>{p.score !== undefined ? p.score.toFixed(1) : 'unscored'}</span>
+          {p.impact !== undefined && <span title="Impact 1-10"><small>Impact</small>{p.impact}{sp?.impact !== undefined && sp.impact !== p.impact ? ' (' + sp.impact + ')' : ''}</span>}
+          {p.confidence && <span title={'Confidence weight ' + fmt(sp?.confidence_w)}><small>Confidence</small>{p.confidence}{sp?.confidence_w !== undefined ? ' ×' + fmtN(sp.confidence_w) : ''}</span>}
+          {p.effort !== undefined && <span title={'Effort divisor ' + fmt(sp?.effort_div)}><small>Effort</small>{p.effort}{sp?.effort_div !== undefined ? ' ÷' + fmtN(sp.effort_div) : ''}</span>}
+          {sp?.risk_factor !== undefined && <span title="Risk of the change, as a factor"><small>Risk factor</small>×{fmtN(sp.risk_factor)}</span>}
+          {p.band === 'reserve' && <span title="Verified and scored, over the run's cap: filed, not ranked"><small>Band</small>reserve</span>}
+          {p.mvp && <span title={p.mvp_rule === 'override' ? 'MVP by override' : 'The top score of its lens in its run'}><small>MVP</small>{p.mvp_rule ?? 'yes'}</span>}
+        </div>
+        {p.impact_why ? <p>{p.impact_why}</p> : null}
+        {p.mvp_why ? <p className="wb-help">MVP: {p.mvp_why}</p> : null}
+      </Sec>
+      {p.predicted_verdict && (
+        <Sec head="Predicted" aside={p.predicted_by}>
+          <p><b>{p.predicted_verdict}</b>{p.predicted_at ? ' · recorded ' + dayHhmmUTC(p.predicted_at) + ', before anyone decided' : ''}</p>
+          {p.predicted_why ? <p className="wb-help">{p.predicted_why}</p> : null}
+        </Sec>
+      )}
+      {pr && (
+        <Sec head="Proof" aside={pr.verdict}>
+          <p>{pr.metric ?? 'metric'}: <b>{fmt(pr.before)}</b> → <b>{fmt(pr.after)}</b>{pr.unit ? ' ' + pr.unit : ''}{pr.method ? ' · ' + pr.method : ''}</p>
+          <p className={pr.control === 'red' ? 'wb-help' : 'none'}>{pr.control === 'red' ? 'Control red: the gate was shown to bite.' : 'No red control: the measurement is not proven to discriminate.'}{pr.base_sha || pr.head_sha ? ' · ' + (pr.base_sha ?? '?').slice(0, 7) + '..' + (pr.head_sha ?? '?').slice(0, 7) : ''}</p>
+        </Sec>
+      )}
+    </>
+  );
+}
+
+/** A machine decision inside its veto window: what the machine decided and why, and the person's Veto (seam B2: the store's
+ *  CAS puts it back to proposed with the note `veto: <reason>`; lens-scan's trust verb counts it as a reversal). A reason is
+ *  required. Hidden while BP_WRITES=off (the route answers 403 then). */
+function VetoDetail({ p, onDone }: { p: Proposal; onDone: () => void }) {
+  const E = useEngine(), M = E.M, ctx = useScanCtx(), writes = useWritesOn();
+  const [reason, setReason] = useState(''), [busy, setBusy] = useState(false);
+  const f = M.P.F[p.feature], ld = M.P.LENS[p.lens];
+  const send = () => {
+    const r = reason.trim();
+    if (!r || busy) return;
+    setBusy(true);
+    vetoDecision(ctx, p.id, r).then(
+      () => { E.toast('Vetoed', p.id + ' is back to proposed: ' + r); onDone(); },
+      (e: Error & { status?: number }) => { setBusy(false); E.toast(e.status === 409 ? 'Not vetoable any more' : 'Veto failed', e.status === 409 ? 'the window passed, or someone decided first' : e.message, undefined, undefined, 'warn'); },
+    );
+  };
+  return (
+    <>
+      <div className="wb-scroll">
+        <div className="wb-kick u-low"><span className="urg">Machine</span><span className="lz" title={ld?.name ?? p.lens}><i aria-hidden="true" />{ld?.short ?? p.lens} · {ld?.name ?? p.lens}</span><span>{p.id}</span></div>
+        <h3 className="wb-title">{p.title}</h3>
+        <div className="wb-where">{f?.name ?? p.feature} · {p.status} by <b>{p.decided_by}</b>{p.decided_at ? ' at ' + dayHhmmUTC(p.decided_at) : ''} · veto until <b>{dayHhmmUTC(p.veto_until)}</b></div>
+        <FindingFacts p={p} />
+        {p.decision_note ? <Sec head="The machine's note"><p>{p.decision_note}</p></Sec> : null}
+      </div>
+      <div className="wb-act">
+        {writes ? (
+          <form className="wb-decl" onSubmit={(e) => { e.preventDefault(); send(); }}>
+            <input type="text" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why veto? (required)" aria-label="Veto reason (required)" maxLength={500}
+              onKeyDown={(e) => { e.stopPropagation(); e.nativeEvent.stopImmediatePropagation(); }} />
+            <button type="submit" className="bt go" data-veto={p.id} disabled={!reason.trim() || busy} title="Put it back to proposed: a person decides it, and the slice's trust drops">{busy ? 'Vetoing…' : 'Veto'}</button>
+          </form>
+        ) : <span className="wb-help">Decisions are read-only here (BP_WRITES=off).</span>}
       </div>
     </>
   );
@@ -264,6 +413,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
   const f = M.P.F[d.f], bn = sim.blocksNow(d);
   const note = V.ui?.queueNote?.(d, view, M) ?? null, hn = useAnswerNote(d.id);
   const affects = d.affects.filter((id) => id !== d.f && M.P.F[id]).slice(0, 8);
+  const brief = useBrief(d);
   return (
     <>
       <div className="wb-scroll">
@@ -276,6 +426,7 @@ function SimDetail({ d, decide }: { d: SimDecision; decide: (d: SimDecision, oi:
           <div className="wb-fig"><b className="wd">{pname(M.P, d.decider)}</b><span>decides</span></div>
           <div className="wb-fig"><b className="wd">{pname(M.P, d.by)}</b><span>asked</span></div>
         </div>
+        {brief && <BriefFacts b={brief} d={d} />}
         {note && <div className="wb-note">{note}</div>}
         <Sec head="Answers" aside={d.opts.length + ' options · 1–' + d.opts.length + ' on the plan'}>
           <ol className="wb-opts">

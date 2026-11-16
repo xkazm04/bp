@@ -1,0 +1,25 @@
+{
+  "id": "2026-11-03-release-ledger",
+  "area": [
+    "apps/web/src/components/ledger",
+    "packages/core/src/train",
+    "packages/core/src/scan"
+  ],
+  "head": "63b2922f2dd502793b71438df525fbb6a155bcd2",
+  "created": "2026-11-03T17:46:56.711Z",
+  "rounds": {
+    "1": {
+      "started": "2026-11-03T17:48:18.854Z",
+      "seats": {},
+      "finished": "2026-11-03T18:08:07.127Z",
+      "stray_changes": 0
+    },
+    "2": {
+      "started": "2026-11-03T18:08:30.531Z",
+      "seats": {},
+      "finished": "2026-11-03T18:13:59.742Z",
+      "stray_changes": 0
+    }
+  },
+  "seats": "codex:gpt-6.1-sol@xhigh,claude:claude-opus-5-5@xhigh"
+}

@@ -26,6 +26,12 @@ function refuse(req: Request, status: number, v: Verdict): string | null {
 function hostVerdict(req: Request): Verdict {
   const host = req.headers.get('host') ?? '';
   if (!LOOPBACK_HOST.test(hostOnly(host))) return no('foreign-host', `only served on localhost (Host: ${host || 'none'})`);
+  // A proxy hop (Next's rewrite to BP_COMPANION_URL sets changeOrigin) puts the page's real Host here: a rebound name
+  // (rebind.example:3010 resolving to 127.0.0.1) arrives as Host 127.0.0.1:3100 with that name forwarded (S4, 2026-11-10).
+  // Every forwarded host must be a loopback name; the port is not judged (bp runs on whatever port it was given, and a
+  // rebinding page cannot make its own name loopback).
+  const xfh = req.headers.get('x-forwarded-host');
+  if (xfh !== null && !xfh.split(',').every((h) => LOOPBACK_HOST.test(hostOnly(h.trim())))) return no('foreign-host', `only served on localhost (X-Forwarded-Host: ${xfh})`);
   const xff = req.headers.get('x-forwarded-for');
   if (xff && !xff.split(',').every(isLoopbackAddr)) return no('foreign-hop', `only served on this machine (X-Forwarded-For: ${xff})`);
   return null;
@@ -68,4 +74,11 @@ function writeVerdict(req: Request): Verdict {
 export function jsonOnly(req: Request): string | null {
   const t = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
   return refuse(req, 415, t === 'application/json' ? null : no('not-json', `body must be application/json (Content-Type: ${t || 'none'})`));
+}
+
+/** A WAV body must say so, for the same reason as jsonOnly: audio/wav is not a CORS-safelisted type, so a cross-site page
+ *  cannot send one without a preflight bp never grants. audio/wave and audio/x-wav are the same format's other names. */
+export function wavOnly(req: Request): string | null {
+  const t = (req.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
+  return refuse(req, 415, t === 'audio/wav' || t === 'audio/wave' || t === 'audio/x-wav' ? null : no('not-wav', `body must be audio/wav (Content-Type: ${t || 'none'})`));
 }

@@ -4,6 +4,8 @@
 #include "BpPawn.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Core/IsdkConditionalBool.h"
 #include "Core/IsdkConditionalGroupAll.h"
 #include "DataSources/IsdkIHandPointerPose.h"
@@ -24,9 +26,70 @@ DEFINE_LOG_CATEGORY(LogBpHands);
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAim(
+		TEXT("bp.Aim"),
+		1,
+		TEXT("The aim cursor: a thin ray from the pinch point and a small reticle where it meets the paper or a target, bright and snapped on what a pinch would act on, dim on nothing. 0 off, 1 on for headset hands and controllers, 2 also for the synthetic hand (flat captures)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimRayCm(
+		TEXT("bp.AimRayCm"),
+		140.f,
+		TEXT("The aim ray's length when it meets nothing (cm, 20 to 400); meeting a surface it ends there."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimReticleCm(
+		TEXT("bp.AimReticleCm"),
+		1.2f,
+		TEXT("The aim reticle's size (cm across, 0.3 to 6); 1.4x on a target, 0.85x on nothing."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimRayWidthCm(
+		TEXT("bp.AimRayWidthCm"),
+		0.12f,
+		TEXT("The aim ray's thickness (cm, 0.03 to 1)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimAssistDeg(
+		TEXT("bp.AimAssistDeg"),
+		2.f,
+		TEXT("The aim assist: a ray that meets nothing takes the nearest pinchable paper target within this cone (degrees, 0 off, up to 10)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarAimDotDeg(
+		TEXT("bp.AimDotDeg"),
+		0.35f,
+		TEXT("Wave N3-W1, the laser pointer: the dot where the ray meets a panel (the console, the near bar, the far sheet, the wrist, Glim), facing the eye at this angular size whatever its distance (degrees, 0.1 to 2; 1.3x on a control that will act). On the paper the reticle is never smaller than it either."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarAimFade(
+		TEXT("bp.AimFade"),
+		0.55f,
+		TEXT("Wave N3-W1: a ray longer than 60 cm narrows and dims over its far part from this fraction of its length (0.2 to 1; 1 keeps it whole), and stops short of the dot, so it never draws a hard line across the far sheet's words."),
+		ECVF_Default);
+
+	/** BpHands.AimStat: the next frame's aim, logged per aiming hand. */
+	bool GAimStat = false;
+	FAutoConsoleCommand CmdHandsAimStat(
+		TEXT("BpHands.AimStat"),
+		TEXT("BpHands.AimStat: logs each aiming hand's ray (what it meets, its length, the dot's size and colour) on the next frame."),
+		FConsoleCommandDelegate::CreateLambda([]() { GAimStat = true; }));
+
+	TAutoConsoleVariable<float> CVarAimSynthOffset(
+		TEXT("bp.AimSynthOffsetCm"),
+		0.f,
+		TEXT("Flat checks only: the synthetic hand stands this far right of and below the eye's line to its target, so its ray is seen from the side (a capture of the aim ray; 0 keeps the eye's line)."),
+		ECVF_Default);
+
+	/** The cursor's colours (emissive; the material clamps on the headset). */
+	const FLinearColor AimOnTarget(FLinearColor(1.f, 0.62f, 0.14f) * 2.2f);
+	const FLinearColor AimOnPaper(FLinearColor(0.72f, 0.92f, 1.f) * 1.05f);
+	const FLinearColor AimOnNothing(FLinearColor(0.72f, 0.92f, 1.f) * 0.5f);
+
+	/** What a pinch acts on, small enough for the reticle to snap to its centre (a wing or a room keeps the ray's own point). */
+	bool ReticleSnaps(const FString& Kind)
+	{
+		return Kind == TEXT("crumb") || Kind == TEXT("deck") || Kind == TEXT("card") || Kind == TEXT("feature") || Kind == TEXT("minimap") || Kind == TEXT("lamp");
+	}
+
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPinch(
 		TEXT("BpHands.Pinch"),
-		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:decline|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck control or a feature it taps: released where it closed), through the same judging as real hands."),
+		TEXT("BpHands.Pinch <wing id|room id|crumb id|deck:next|deck:prev|deck:approve|deck:approveall|deck:decline|card:decline|card:approve|feature:<id>>: the synthetic hand points at it, pinches and pulls the pinch toward the eye (on a crumb, a deck or card control or a feature it taps: released where it closed), through the same judging as real hands."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
 		{
 			if (Args.Num() == 0)
@@ -76,6 +139,45 @@ namespace
 			UBpHands::PendingCommands().Add(TEXT("Lasso ") + FString::Join(Args, TEXT(" ")));
 		}));
 
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsTap(
+		TEXT("BpHands.Tap"),
+		TEXT("BpHands.Tap <wing id|room id|console:<act>|wrist:<act>|...>: the synthetic hand points at it, pinches and releases where it closed, with no pull (night two W1: a tap on a wing enters it, on a room lifts it, on the lifted room steps inside)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Tap <id>"));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Tap ") + Args[0]);
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsSlide(
+		TEXT("BpHands.Slide"),
+		TEXT("BpHands.Slide <from id> <to id>: the synthetic hand pinches on the first control, its ray drifts to the second while pinched, and the pinch opens there (wave U4: a release off the control it closed on taps nothing)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() < 2)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Slide <from id> <to id>"));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Slide ") + Args[0] + TEXT(" ") + Args[1]);
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs CmdHandsPull(
+		TEXT("BpHands.Pull"),
+		TEXT("BpHands.Pull <id>: the synthetic hand pinches on the id and pulls the pinch toward the eye whatever the id is (BpHands.Pinch only taps a control): a pinch that closed on the console or the wrist and moved must change no level."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld*)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpHands, Warning, TEXT("BpHands: usage BpHands.Pull <id>"));
+				return;
+			}
+			UBpHands::PendingCommands().Add(TEXT("Pull ") + Args[0]);
+		}));
+
 	FAutoConsoleCommandWithWorldAndArgs CmdHandsPush(
 		TEXT("BpHands.Push"),
 		TEXT("BpHands.Push [id]: the synthetic hand pinches (on the id, or on what is lifted now) and pushes the pinch away from the eye."),
@@ -93,13 +195,21 @@ namespace
 	 *  key plan room, the wrist's tabs and rows (ABpTable's hands' rule). */
 	bool IsTap(const FString& Id)
 	{
-		return IsCrumb(Id) || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:"));
+		return IsCrumb(Id) || Id == TEXT("lamp") || Id.StartsWith(TEXT("deck:")) || Id.StartsWith(TEXT("card:")) || Id.StartsWith(TEXT("feature:")) || Id.StartsWith(TEXT("minimap:")) || Id.StartsWith(TEXT("wrist:")) || Id.StartsWith(TEXT("console:"));
+	}
+
+	/** A panel near the eye (the wrist, the console): a pinch that closes on it is a tap or nothing, never a pull or a push. */
+	bool IsPanel(const FString& Kind)
+	{
+		return Kind == TEXT("wrist") || Kind == TEXT("console");
 	}
 
 	/** What a hold acts on (ABpTable's hands' rule): the lamp's head, a feature's glyph, a key plan room. */
 	bool IsHoldable(const FString& Kind)
 	{
-		return Kind == TEXT("lamp") || Kind == TEXT("feature") || Kind == TEXT("minimap");
+		// The lamp's own hold is push to talk now (BpTalk.cpp, a pinch held on it); its old 0.8 s point ("the next room") is
+		// the console's ROOMS › NEXT ROOM (night two W3).
+		return Kind == TEXT("feature") || Kind == TEXT("minimap");
 	}
 
 	bool IsLive(EBpTracking State)
@@ -247,6 +357,7 @@ void UBpHands::ReadHeadset(float DeltaTime, FSample (&Out)[2])
 void UBpHands::Step(int32 Slot, const FSample& Sample, float DeltaTime)
 {
 	FSlot& S = Slots[Slot];
+	S.bAiming = false;
 	if (!Sample.bValid)
 	{
 		if (S.State == EBpTracking::Tracked || S.State == EBpTracking::Reacquiring)
@@ -282,7 +393,16 @@ void UBpHands::Step(int32 Slot, const FSample& Sample, float DeltaTime)
 		// The wrist panel first (it is nearest the eye; spark vr-room-layers WP3's room list), then the table.
 		const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
 		if (Pawn && Pawn->WristHit(Sample.RayOrigin, Sample.RayDir, S.HoverId)) S.HoverKind = TEXT("wrist");
-		else Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId);
+		// Then the console in the deck's slot (night two W1): it stands in front of the table.
+		else if (Pawn && Pawn->ConsoleHit(Sample.RayOrigin, Sample.RayDir, S.HoverId)) S.HoverKind = TEXT("console");
+		else if (!Table->HitTest(Sample.RayOrigin, Sample.RayDir, S.HoverKind, S.HoverId) && (Slot != Synthetic || CVarAim.GetValueOnGameThread() >= 2))
+		{
+			// A ray that just misses (a seam, a thin room): the nearest pinchable paper target within a small cone.
+			Table->AssistHit(Sample.RayOrigin, Sample.RayDir, FMath::Clamp(CVarAimAssistDeg.GetValueOnGameThread(), 0.f, 10.f), S.HoverKind, S.HoverId);
+		}
+		S.AimFrom = Sample.RayOrigin;
+		S.AimDir = Sample.RayDir.GetSafeNormal();
+		S.bAiming = !S.AimDir.IsNearlyZero();
 	}
 	else
 	{
@@ -359,6 +479,17 @@ void UBpHands::Judge(int32 Slot, const FSample& Sample)
 	}
 	if (S.bFired) return;
 	const float AlongCm = FVector::DotProduct(Sample.PinchPoint - S.Onset, S.PullDir);
+	// A pinch that closed on the wrist or the console never becomes a pull or a push (night two W1: one that started on the
+	// wrist and moved 6 cm used to run Push, which went Back()). Moved that far it is no tap either: it is spent.
+	if (IsPanel(S.TargetKind))
+	{
+		if (FMath::Abs(AlongCm) >= FMath::Min(PullEnterCm, PushBackCm))
+		{
+			S.bFired = true;
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: a pinch that closed on the %s (%s) moved %.1f cm: no pull, no push, no tap; level=%s"), *S.TargetKind, *S.TargetId, AlongCm, *LevelName());
+		}
+		return;
+	}
 	if (AlongCm >= PullEnterCm) Pull(S);
 	else if (AlongCm <= -PushBackCm) Push(S);
 }
@@ -367,6 +498,7 @@ void UBpHands::PinchStarted(FSlot& S, const FSample& Sample)
 {
 	S.bPinch = true;
 	S.bFired = false;
+	if (ABpTable* T = FindTable()) T->NoteHand(TEXT("pinch"));
 	S.Onset = Sample.PinchPoint;
 	S.PullDir = TowardEye(S.Onset);
 	S.TargetKind = S.HoverKind;
@@ -386,6 +518,8 @@ void UBpHands::PinchEnded(FSlot& S)
 {
 	S.bPinch = false;
 	ABpTable* T = FindTable();
+	// The tour (BpTour.cpp) counts the person as active, and a tap on the deck or the card as a decision.
+	if (T && !S.bFired) T->NoteHand((S.HoverKind == TEXT("deck") || S.HoverKind == TEXT("card")) ? TEXT("tap") : TEXT("pinch"));
 	// A pinch that drew a lasso closes it; one that never moved far enough is a tap (WP3).
 	if (S.bLasso)
 	{
@@ -396,6 +530,13 @@ void UBpHands::PinchEnded(FSlot& S)
 			return;
 		}
 	}
+	// Wave U4: a pinch that closed on a panel (the wrist, the console) or opens on one taps only the control it closed on. On
+	// the wall a degree of drift is about 4.5 cm, the gap between APPROVE, LATER and HOLD: released on a neighbour, nothing.
+	if (!S.bFired && (IsPanel(S.HoverKind) || IsPanel(S.TargetKind)) && (S.HoverKind != S.TargetKind || S.HoverId != S.TargetId))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: a pinch that closed on %s (%s) opened on %s (%s): no tap"), *S.TargetKind, *S.TargetId, *S.HoverKind, *S.HoverId);
+		return;
+	}
 	// The wrist's tabs and rows, a key plan room (WP3): taps.
 	if (!S.bFired && S.HoverKind == TEXT("wrist"))
 	{
@@ -403,10 +544,60 @@ void UBpHands::PinchEnded(FSlot& S)
 		if (ABpPawn* Pawn = Cast<ABpPawn>(GetOwner())) Pawn->WristTap(S.HoverId);
 		return;
 	}
+	// The console's controls (night two W1): taps, as the wrist's.
+	if (!S.bFired && S.HoverKind == TEXT("console"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		if (ABpPawn* Pawn = Cast<ABpPawn>(GetOwner())) Pawn->ConsoleTap(S.HoverId);
+		return;
+	}
+	// A tap on a wing or a room, released where it closed (night two W1, the owner: "operating in blueprint without
+	// dependency of the pins and drag movement"): the transitions a pull makes.
+	if (!S.bFired && T && (S.HoverKind == TEXT("wing") || S.HoverKind == TEXT("room")) && S.HoverKind == S.TargetKind && S.HoverId == S.TargetId)
+	{
+		T->NoteHand(TEXT("tap"));
+		if (S.HoverKind == TEXT("wing"))
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: tap -> enter wing=%s"), *S.HoverId);
+			T->EnterWing(S.HoverId);
+		}
+		else if (T->GetBpLevel() == EBpLevel::L2 && T->GetRoomId() == S.HoverId)
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on the lifted room -> room mode room=%s"), *S.HoverId);
+			T->EnterRoomMode(S.HoverId);
+		}
+		else
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: tap -> enter room=%s"), *S.HoverId);
+			T->EnterRoom(S.HoverId);
+		}
+		return;
+	}
 	if (!S.bFired && T && S.HoverKind == TEXT("minimap"))
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
 		T->SwitchRoom(S.HoverId.Mid(8), TEXT("keyplan"));
+		return;
+	}
+	// A pinch released on the lamp's head: the lamp's next-step ask, or what its answer offers (BpAsk.cpp).
+	if (!S.bFired && T && S.HoverKind == TEXT("lamp"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on lamp"));
+		// The pinch also opened a talk hold (UpdateHold). A tap lets go of it first, so the short hold returns the talk to idle
+		// and the lamp acts, instead of LampPinched cancelling the microphone it just opened ("Stopped.").
+		if (bTalkHeld)
+		{
+			bTalkHeld = false;
+			T->TalkHold(*TalkSource, false);
+		}
+		T->LampPinched();
+		return;
+	}
+	// Released on the decision card's buttons (ROADMAP F8): a tap; Decline on a repeat declines it in the store.
+	if (!S.bFired && T && S.HoverKind == TEXT("card"))
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: tap on %s"), *S.HoverId);
+		T->CardTap(S.HoverId);
 		return;
 	}
 	// Released on the screen deck or on a feature of the room's map (spark vr-room-layers WP2): a tap.
@@ -438,6 +629,7 @@ void UBpHands::Pull(FSlot& S)
 	S.bFired = true;
 	ABpTable* T = FindTable();
 	if (!T) return;
+	T->NoteHand(TEXT("pull"));
 	if (S.TargetKind == TEXT("wing"))
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-pull -> enter wing=%s"), *S.TargetId);
@@ -465,6 +657,7 @@ void UBpHands::Push(FSlot& S)
 	S.bFired = true;
 	ABpTable* T = FindTable();
 	if (!T) return;
+	T->NoteHand(TEXT("push"));
 	if (!T->GetRoomModeId().IsEmpty())
 	{
 		UE_LOG(LogBpHands, Log, TEXT("BpHands: pinch-push -> exit room mode"));
@@ -487,9 +680,15 @@ void UBpHands::UpdateHighlight()
 	// A pinching hand shows what it pinched; otherwise the right hand, then the left, then the synthetic one shows what it
 	// points at. Only a live hand speaks, so BpLevel.Highlight keeps working with no hands at all.
 	const FSlot* Speaking = Speaker();
+	ABpPawn* Owner = Cast<ABpPawn>(GetOwner());
 	if (!Speaking)
 	{
-		if (bHighlightOwned && FindTable()) Table->SetHighlight(FString(), FString());
+		// The hands let go of the highlight: the pad's focus cursor comes back if it has one (else it is cleared).
+		if (bHighlightOwned && FindTable())
+		{
+			if (Owner) Owner->RestoreFocusHighlight();
+			else Table->SetHighlight(FString(), FString());
+		}
 		bHighlightOwned = false;
 		ShownKind.Reset();
 		ShownId.Reset();
@@ -500,7 +699,8 @@ void UBpHands::UpdateHighlight()
 	if (bHighlightOwned && Kind == ShownKind && Id == ShownId) return;
 	if (!bHighlightOwned && Id.IsEmpty()) return;
 	if (!FindTable() || !Table->HasPlan()) return;
-	Table->SetHighlight(Kind, Id);
+	if (Id.IsEmpty() && Owner) Owner->RestoreFocusHighlight();
+	else Table->SetHighlight(Kind, Id);
 	ShownKind = Kind;
 	ShownId = Id;
 	bHighlightOwned = !Id.IsEmpty();
@@ -525,6 +725,30 @@ void UBpHands::UpdateHold(float DeltaTime)
 	// The speaking hand, pointing without a pinch, at something a hold acts on.
 	ABpTable* T = FindTable();
 	const FSlot* Speaking = Speaker();
+	// Push to talk by hand: a pinch that closed on the lamp's head, or on the wrist's TALK, held. Down at once (the microphone
+	// opens when the wearer already allowed it); past ABpTable::TalkMinHoldS the pinch is spent, so its release taps nothing.
+	{
+		const bool bOnLamp = Speaking && Speaking->bPinch && Speaking->TargetKind == TEXT("lamp");
+		const bool bOnTalk = Speaking && Speaking->bPinch && Speaking->HoverKind == TEXT("wrist") && Speaking->HoverId == TEXT("wrist:talk");
+		const bool bHeld = T && (bOnLamp || bOnTalk);
+		if (bHeld && !bTalkHeld)
+		{
+			bTalkHeld = true;
+			TalkHeldS = 0.f;
+			TalkSource = bOnLamp ? TEXT("lamp") : TEXT("wrist");
+			T->TalkHold(*TalkSource, true);
+		}
+		else if (bHeld)
+		{
+			TalkHeldS += DeltaTime;
+			if (TalkHeldS >= ABpTable::TalkMinHoldS) const_cast<FSlot*>(Speaking)->bFired = true;
+		}
+		else if (bTalkHeld)
+		{
+			bTalkHeld = false;
+			if (T) T->TalkHold(*TalkSource, false);
+		}
+	}
 	FString Kind, Id;
 	if (T && Speaking && !Speaking->bPinch && Speaking->State == EBpTracking::Tracked && IsHoldable(Speaking->HoverKind))
 	{
@@ -545,6 +769,7 @@ void UBpHands::UpdateHold(float DeltaTime)
 	}
 	if (Id.IsEmpty() || bHoldFired) return;
 	HeldS += DeltaTime;
+	T->NoteHand(TEXT("hold"));
 	if (Kind == TEXT("lamp")) T->SetLampHold(FMath::Min(1.f, HeldS / ABpTable::HoldS));
 	if (HeldS < ABpTable::HoldS) return;
 	bHoldFired = true;
@@ -626,6 +851,8 @@ bool UBpHands::StartCommand(const FString& Command)
 	if (!Command.Split(TEXT(" "), &Verb, &Arg)) return false;
 	Gesture = FGesture{ FGesture::EStep::Idle, Arg, Gesture.Hand };
 	Gesture.bPush = Verb == TEXT("Push");
+	Gesture.bTap = Verb == TEXT("Tap");
+	Gesture.bMove = Verb == TEXT("Pull") || Gesture.bPush;
 	if (Verb == TEXT("Point"))
 	{
 		// "Point <id> [seconds]"
@@ -634,13 +861,23 @@ bool UBpHands::StartCommand(const FString& Command)
 		Gesture.HoldForS = Seconds.IsEmpty() ? 2.f : FCString::Atof(*Seconds);
 		Gesture.Step = FGesture::EStep::Wait;
 	}
+	else if (Verb == TEXT("Slide"))
+	{
+		// "Slide <from> <to>": a tap that opens off the control it closed on.
+		FString From, To;
+		if (!Arg.Split(TEXT(" "), &From, &To)) return false;
+		Gesture.Id = From;
+		Gesture.SlideTo = To;
+		Gesture.bTap = true;
+		Gesture.Step = FGesture::EStep::Wait;
+	}
 	else if (Verb == TEXT("Lasso"))
 	{
 		Arg.ParseIntoArrayWS(Gesture.Features);
 		Gesture.Id = TEXT("map");
 		Gesture.Step = FGesture::EStep::Wait;
 	}
-	else if (Verb == TEXT("Pinch") || Gesture.bPush) Gesture.Step = FGesture::EStep::Wait;
+	else if (Verb == TEXT("Pinch") || Verb == TEXT("Tap") || Verb == TEXT("Pull") || Gesture.bPush) Gesture.Step = FGesture::EStep::Wait;
 	else if (Arg == TEXT("lost")) Gesture.Step = FGesture::EStep::SimulateLost;
 	else Gesture.Step = FGesture::EStep::SimulateBack;
 	if (!ABpPawn::IsHeadsetOn()) ActivateSynthetic();
@@ -696,7 +933,27 @@ void UBpHands::RunCommands(float DeltaTime)
 		else
 		{
 			const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
-			const bool bAimed = Gesture.Id.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim) : T->AimAt(Gesture.Id, Gesture.Aim);
+			// "paper:<x cm>_<y cm>" (or a comma, but -ExecCmds splits there): bare paper, BpHands.Point's way of aiming at nothing
+			// for the aim cursor's checks.
+			bool bAimed = false;
+			if (Gesture.Id.StartsWith(TEXT("paper:")))
+			{
+				FString XText, YText;
+				if (Gesture.Id.Mid(6).Replace(TEXT("_"), TEXT(",")).Split(TEXT(","), &XText, &YText))
+				{
+					Gesture.Aim = T->PaperToWorld(FVector2D(FCString::Atod(*XText), FCString::Atod(*YText)));
+					bAimed = true;
+				}
+			}
+			else if (Gesture.Id == TEXT("air"))
+			{
+				// Wave N3-W1: nothing at all (up and to the left, over the studio): the pointer's short ray, no dot.
+				Gesture.Aim = Eye() + T->GetActorForwardVector() * 120.0 - T->GetActorRightVector() * 90.0 + FVector(0.0, 0.0, 110.0);
+				bAimed = true;
+			}
+			else if (Gesture.Id.StartsWith(TEXT("wrist:"))) bAimed = Pawn && Pawn->WristAim(Gesture.Id, Gesture.Aim);
+			else if (Gesture.Id.StartsWith(TEXT("console:"))) bAimed = Pawn && Pawn->ConsoleAim(Gesture.Id, Gesture.Aim);
+			else bAimed = T->AimAt(Gesture.Id, Gesture.Aim);
 			if (!bAimed)
 			{
 				UE_LOG(LogBpHands, Log, TEXT("BpHands: refused pinch on unknown id %s"), *Gesture.Id);
@@ -705,7 +962,14 @@ void UBpHands::RunCommands(float DeltaTime)
 			}
 		}
 		// The hand stands on the line from the eye to the target, so its ray meets the target as drawn now.
-		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, static_cast<double>(SyntheticReach));
+		// Wave N3-W1: never further than an arm's reach (45 cm) from the eye, so a far target (the wall's sheet) is pointed at
+		// from where a hand is.
+		Gesture.Hand = FMath::Lerp(Eye(), Gesture.Aim, FMath::Min(static_cast<double>(SyntheticReach), 45.0 / FMath::Max(1.0, FVector::Dist(Eye(), Gesture.Aim))));
+		if (const float Aside = CVarAimSynthOffset.GetValueOnGameThread(); Aside != 0.f)
+		{
+			// Seen from the side: a ray on the eye's own line is a point to the eye.
+			Gesture.Hand += T->GetActorRightVector() * Aside - FVector(0.0, 0.0, Aside);
+		}
 		Gesture.PullDir = TowardEye(Gesture.Hand) * (Gesture.bPush ? -1.0 : 1.0);
 		Gesture.Step = EStep::Point;
 		Gesture.Frames = 0;
@@ -730,8 +994,21 @@ void UBpHands::RunCommands(float DeltaTime)
 		Gesture.Aim = Gesture.Path[Gesture.PathAt];
 		return;
 	case EStep::Pinch:
-		// On a crumb the pinch is a tap: released where it closed.
-		Gesture.Step = IsTap(Gesture.Id) ? EStep::Release : EStep::Pull;
+		if (!Gesture.SlideTo.IsEmpty())
+		{
+			// BpHands.Slide: the ray moves to the other control while pinched, and the pinch opens there (the hand stays put).
+			const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+			FVector To = Gesture.Aim;
+			const bool bAimed = Gesture.SlideTo.StartsWith(TEXT("wrist:")) ? Pawn && Pawn->WristAim(Gesture.SlideTo, To)
+				: Gesture.SlideTo.StartsWith(TEXT("console:")) ? Pawn && Pawn->ConsoleAim(Gesture.SlideTo, To) : T && T->AimAt(Gesture.SlideTo, To);
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: slide %s -> %s%s"), *Gesture.Id, *Gesture.SlideTo, bAimed ? TEXT("") : TEXT(" (unknown id: released where it closed)"));
+			if (bAimed) Gesture.Aim = To;
+			Gesture.SlideTo.Reset();
+			Gesture.Step = EStep::Release;
+			return;
+		}
+		// On a crumb the pinch is a tap: released where it closed. BpHands.Tap always taps; BpHands.Pull and Push always move.
+		Gesture.Step = Gesture.bTap || (IsTap(Gesture.Id) && !Gesture.bMove) ? EStep::Release : EStep::Pull;
 		return;
 	case EStep::Pull:
 		Gesture.PulledCm += SyntheticStepCm;
@@ -797,5 +1074,198 @@ void UBpHands::TickComponent(float DeltaTime, ELevelTick TickType, FActorCompone
 	UpdateHighlight();
 	UpdateHold(DeltaTime);
 	UpdateFades(DeltaTime);
+	UpdateAim();
 	RunCommands(DeltaTime);
+}
+
+void UBpHands::UpdateAim()
+{
+	struct FMark { FTransform Place; FLinearColor Color; };
+	TArray<FMark, TInlineAllocator<12>> Marks;
+	const int32 Mode = CVarAim.GetValueOnGameThread();
+	ABpTable* T = Mode > 0 ? FindTable() : nullptr;
+	const ABpPawn* Pawn = Cast<ABpPawn>(GetOwner());
+	const float ReticleCm = FMath::Clamp(CVarAimReticleCm.GetValueOnGameThread(), 0.3f, 6.f);
+	const float RayLen = FMath::Clamp(CVarAimRayCm.GetValueOnGameThread(), 20.f, 400.f);
+	const float RayW = FMath::Clamp(CVarAimRayWidthCm.GetValueOnGameThread(), 0.03f, 1.f);
+	FString WristHover, ConsoleHover;
+	// Night two V6: a pinch that closed on the control the ray is still on, not yet released nor spent: it draws pressed.
+	bool bWristDown = false, bConsoleDown = false;
+	const float DotDeg = FMath::Clamp(CVarAimDotDeg.GetValueOnGameThread(), 0.1f, 2.f);
+	const float FadeAt = FMath::Clamp(CVarAimFade.GetValueOnGameThread(), 0.2f, 1.f);
+	const FVector EyeAt = Eye();
+	/** The dot's size (cm across) for the constant angular size at a point. */
+	const auto DotCm = [&](const FVector& At, float Deg) { return 2.0 * FVector::Dist(EyeAt, At) * FMath::Tan(FMath::DegreesToRadians(Deg * 0.5)); };
+	// Wave N3-W1: with both hands tracked the dominant one leads (the one without the wrist panel, bp.WristHand); the wrist's
+	// own hand shows its ray only while it is raised toward something.
+	static const IConsoleVariable* WristHandVar = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.WristHand"));
+	const int32 WristSide = WristHandVar && WristHandVar->GetInt() != 0 ? Right : Left;
+	const bool bBothAim = Slots[Left].bAiming && Slots[Right].bAiming;
+	// The ray from Start to End: one bar, or (long, wave N3-W1) a bar then three narrowing, dimming steps that stop short of
+	// the end, so its far part never draws a hard line across the words it lands on. Opaque and unlit: one instanced draw.
+	const auto AddRay = [&](const FVector& From, const FVector& End, const FVector& Up, const FLinearColor& Color, float Width)
+	{
+		const FVector Along = End - From;
+		const double Len = Along.Size();
+		if (Len < 0.5) return;
+		const FVector Dir = Along / Len;
+		const FQuat Rot = FRotationMatrix::MakeFromXZ(Dir, FMath::Abs(FVector::DotProduct(Dir, Up)) < 0.99 ? Up : FVector::RightVector).ToQuat();
+		const auto Bar = [&](double T0, double T1, float W, float Dim)
+		{
+			const FVector A = From + Along * T0, B = From + Along * T1;
+			Marks.Add({ FTransform(Rot, (A + B) * 0.5, FVector((T1 - T0) * Len / 100.0, W / 100.0, W / 100.0)), Color * Dim });
+		};
+		if (Len < 60.0 || FadeAt >= 1.f)
+		{
+			Bar(0.0, 1.0, Width, 0.55f);
+			return;
+		}
+		const double F = FadeAt, Step = (0.97 - F) / 3.0;
+		Bar(0.0, F, Width, 0.55f);
+		Bar(F, F + Step, Width * 0.7f, 0.46f);
+		Bar(F + Step, F + 2.0 * Step, Width * 0.45f, 0.36f);
+		Bar(F + 2.0 * Step, 0.97, Width * 0.25f, 0.26f);
+	};
+	// Wave U1, "Glim alive": the first ray that meets the site plan this frame, for Glim's glance (ABpTable::NoteRayPoint).
+	bool bGlance = false;
+	FVector GlanceAt = FVector::ZeroVector;
+	for (int32 Slot = 0; T && Pawn && Slot < SlotCount; ++Slot)
+	{
+		const FSlot& S = Slots[Slot];
+		if (!S.bAiming || (Slot == Synthetic && (Mode < 2 || !bSyntheticActive))) continue;
+		const bool bHeldHere = S.bPinch && !S.bFired && S.TargetKind == S.HoverKind && S.TargetId == S.HoverId;
+		const bool bQuiet = Slot == WristSide && bBothAim && S.HoverId.IsEmpty();
+		// Wave N3-W1, the laser pointer: a panel (the wrist, the console at the desk, its near bar, the far sheet) lights the
+		// control under the ray as before, and the ray now runs to it with a dot where it meets it: on the wall 2.6 m away the
+		// person sees where they aim.
+		if (S.HoverKind == TEXT("wrist") || S.HoverKind == TEXT("console"))
+		{
+			const bool bWrist = S.HoverKind == TEXT("wrist");
+			(bWrist ? WristHover : ConsoleHover) = S.HoverId;
+			(bWrist ? bWristDown : bConsoleDown) = bHeldHere;
+			FVector Hit;
+			if (bQuiet || !Pawn->PanelHitPoint(S.HoverKind, S.AimFrom, S.AimDir, Hit)) continue;
+			const bool bControl = !S.HoverId.IsEmpty() && S.HoverId != TEXT("console:panel");
+			const FLinearColor Color = bControl ? AimOnTarget : AimOnPaper;
+			AddRay(S.AimFrom + S.AimDir * 3.0, Hit, T->GetActorUpVector(), Color, RayW);
+			const FVector Normal = (EyeAt - Hit).GetSafeNormal();
+			const double Size = DotCm(Hit, DotDeg * (bControl ? 1.3f : 1.f)) / 100.0;
+			const FQuat Facing = FRotationMatrix::MakeFromZ(Normal).ToQuat() * FQuat(FVector::UpVector, FMath::DegreesToRadians(45.0));
+			// Lifted toward the eye off the panel (more on the far sheet, whose depth is coarser at 2.6 m).
+			Marks.Add({ FTransform(Facing, Hit + Normal * (FVector::Dist(EyeAt, Hit) > 150.0 ? 1.0 : 0.3), FVector(Size, Size, 0.0006)), Color });
+			if (GAimStat)
+			{
+				UE_LOG(LogBpHands, Log, TEXT("BpHands: aim hand=%s meets %s %s at %.0f cm (the eye %.0f cm), dot %.2f cm (%.2f deg) %s"), SlotName(Slot), *S.HoverKind, *S.HoverId,
+					FVector::Dist(S.AimFrom, Hit), FVector::Dist(EyeAt, Hit), Size * 100.0, DotDeg * (bControl ? 1.3f : 1.f), bControl ? TEXT("amber") : TEXT("cyan"));
+			}
+			continue;
+		}
+		if (bQuiet) continue;
+		const bool bHover = !S.HoverId.IsEmpty();
+		bool bPoint = false, bFlat = false;
+		FVector Point = FVector::ZeroVector;
+		if (bHover && ReticleSnaps(S.HoverKind))
+		{
+			// A control or a glyph: the reticle snaps to its centre, which is where the pinch counts.
+			bPoint = T->AimAt(S.HoverId, Point);
+			bFlat = bPoint && S.HoverKind != TEXT("deck") && S.HoverKind != TEXT("card") && S.HoverKind != TEXT("lamp");
+		}
+		if (!bPoint && bHover && T->GetAimHit(Point)) { bPoint = true; bFlat = true; }
+		if (!bPoint)
+		{
+			// Nothing to pinch: where the ray meets the paper, dim; none at all (a ray pointing off the table) leaves the ray.
+			FVector2D Paper;
+			if (T->PaperAt(S.AimFrom, S.AimDir, Paper) && FVector::DotProduct(T->PaperToWorld(Paper) - S.AimFrom, S.AimDir) <= RayLen)
+			{
+				Point = T->PaperToWorld(Paper);
+				bPoint = bFlat = true;
+			}
+		}
+		const FLinearColor Color = bHover ? AimOnTarget : bPoint ? AimOnPaper : AimOnNothing;
+		const FVector TableUp = T->GetActorUpVector();
+		{
+			const FVector End = bPoint ? Point : S.AimFrom + S.AimDir * RayLen;
+			const FVector Start = S.AimFrom + S.AimDir * 3.0;
+			// A ray that meets something narrows toward it (wave N3-W1); one that meets nothing keeps its short, whole length.
+			if (FVector::DotProduct(End - Start, S.AimDir) > 0.5)
+			{
+				if (bPoint) AddRay(Start, End, TableUp, Color, RayW);
+				else Marks.Add({ FTransform(FRotationMatrix::MakeFromXZ(S.AimDir, FMath::Abs(FVector::DotProduct(S.AimDir, TableUp)) < 0.99 ? TableUp : FVector::RightVector).ToQuat(), (Start + End) * 0.5, FVector((End - Start).Size() / 100.0, RayW / 100.0, RayW / 100.0)), Color * 0.55f });
+			}
+		}
+		if (GAimStat)
+		{
+			UE_LOG(LogBpHands, Log, TEXT("BpHands: aim hand=%s meets %s at %.0f cm (%s)"), SlotName(Slot), bHover ? *FString::Printf(TEXT("%s %s"), *S.HoverKind, *S.HoverId) : bPoint ? TEXT("the paper") : TEXT("nothing"),
+				bPoint ? FVector::Dist(S.AimFrom, Point) : RayLen, bHover ? TEXT("amber") : TEXT("cyan"));
+		}
+		if (bPoint && !bGlance && S.HoverKind != TEXT("lamp")) { bGlance = true; GlanceAt = Point; }
+		if (bPoint)
+		{
+			// Never smaller than the dot's angular size (wave N3-W1).
+			const double Size = FMath::Max(ReticleCm * (bHover ? 1.4 : 0.85), DotCm(Point, DotDeg * (bHover ? 1.3f : 1.f))) / 100.0;
+			// Lying on the paper (lifted a hair, so it never z-fights the glass), else square to the hand.
+			const FVector Normal = bFlat ? TableUp : -S.AimDir;
+			const FVector At = Point + Normal * 0.25;
+			const FQuat Facing = FRotationMatrix::MakeFromZ(Normal).ToQuat() * FQuat(FVector::UpVector, FMath::DegreesToRadians(45.0));
+			Marks.Add({ FTransform(Facing, At, FVector(Size, Size, 0.0006)), Color });
+		}
+	}
+	if (T) T->NoteRayPoint(bGlance, GlanceAt);
+	if (GAimStat)
+	{
+		UE_LOG(LogBpHands, Log, TEXT("BpHands: aim marks %d (rays, steps and dots in one instanced draw)"), Marks.Num());
+		GAimStat = false;
+	}
+	if (ABpPawn* Owner = Cast<ABpPawn>(GetOwner()))
+	{
+		Owner->SetWristHover(Mode > 0 ? WristHover : FString(), bWristDown);
+		Owner->SetConsoleHover(Mode > 0 ? ConsoleHover : FString(), bConsoleDown);
+	}
+	if (Marks.Num() == 0)
+	{
+		// Nothing aims: no draw, no work beyond this frame's reading, until a hand aims again.
+		if (AimMarks && AimShown > 0)
+		{
+			AimMarks->ClearInstances();
+			AimMarks->SetVisibility(false);
+		}
+		AimShown = 0;
+		return;
+	}
+	if (!AimMarks)
+	{
+		UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+		UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_AimMark.M_AimMark"));
+		if (!Cube || !Material)
+		{
+			UE_LOG(LogBpHands, Warning, TEXT("BpHands: aim cursor assets are missing (cube %d, M_AimMark %d); no cursor"), Cube != nullptr, Material != nullptr);
+			return;
+		}
+		AimMarks = NewObject<UInstancedStaticMeshComponent>(GetOwner(), TEXT("AimMarks"));
+		AimMarks->SetupAttachment(GetOwner()->GetRootComponent());
+		AimMarks->SetMobility(EComponentMobility::Movable);
+		AimMarks->SetUsingAbsoluteLocation(true);
+		AimMarks->SetUsingAbsoluteRotation(true);
+		AimMarks->SetUsingAbsoluteScale(true);
+		AimMarks->SetStaticMesh(Cube);
+		AimMarks->SetMaterial(0, Material);
+		AimMarks->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		AimMarks->SetCastShadow(false);
+		AimMarks->NumCustomDataFloats = 3;
+		AimMarks->RegisterComponent();
+		AimMarks->SetWorldTransform(FTransform::Identity);
+	}
+	if (!AimMarks->IsVisible()) AimMarks->SetVisibility(true);
+	while (AimMarks->GetInstanceCount() > Marks.Num()) AimMarks->RemoveInstance(AimMarks->GetInstanceCount() - 1);
+	for (int32 Index = 0; Index < Marks.Num(); ++Index)
+	{
+		const FMark& Mark = Marks[Index];
+		if (Index >= AimMarks->GetInstanceCount()) AimMarks->AddInstance(Mark.Place, true);
+		else AimMarks->UpdateInstanceTransform(Index, Mark.Place, true, false, true);
+		AimMarks->SetCustomDataValue(Index, 0, Mark.Color.R, false);
+		AimMarks->SetCustomDataValue(Index, 1, Mark.Color.G, false);
+		AimMarks->SetCustomDataValue(Index, 2, Mark.Color.B, false);
+	}
+	// The instance data manager already carries these changes to the renderer: no proxy rebuilt every aiming frame.
+	AimShown = Marks.Num();
 }

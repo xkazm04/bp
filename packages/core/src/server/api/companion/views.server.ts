@@ -8,24 +8,27 @@
 // Gaps: per enabled lens of the product's map and per feature, `unmeasured` (no current reading) or `stale` (the newest one
 // is older than FRESH_MS); per coverage row, `unknown` or `deviation` (its `lens` is the row's standard). A feature's tier is
 // the most severe of its open findings' tiers (proposed or approved) and its priority (P0..P3 -> 0..3); none -> untiered.
-import fs from 'node:fs';
-import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { Gap, InboxItem } from '../../../companion/contract.ts';
 import type { ProductEntry, ScanSnapshot } from '../../../scan/types.ts';
 import { lastRead } from '../../../scan/derive.ts';
 import { FRESH_MS } from '../../../scan/live-plan.ts';
-import { PRODUCTS_FILE, hasStore, readRegistry, storeDir, storeFile } from '../../products.server.ts';
+import { PRODUCTS_FILE, hasStore, readRegistry, storeFile } from '../../products.server.ts';
 import { readSnapshot } from '../../store.server.ts';
+import { lensOn, readProductMap } from '../../map.server.ts';
+import { isObj } from '../../../scan/guards.ts';
 import { gapScore, rankGaps, rankInbox, rankValue, type Ranked } from './rank.ts';
+import { worthOf } from '../../../scan/score.ts';
 import { readRecommendations } from './door.server.ts';
+import { decidedRows, listRules, trustedLenses } from '../../rules.server.ts';
+import { gate, grantFor, isLive } from '../../../scan/rules.ts';
 
 if (typeof window !== 'undefined') throw new Error('views.server.ts is server-only');
 
 export interface Skipped { product: string; why: string }
 
 /** Every registered product's snapshot, or why it was skipped. `only` narrows to one slug. */
-function snapshots(only?: string): { read: { p: ProductEntry; scan: ScanSnapshot }[]; skipped: Skipped[] } {
+export function snapshots(only?: string): { read: { p: ProductEntry; scan: ScanSnapshot }[]; skipped: Skipped[] } {
   const { products, problem } = readRegistry(), read: { p: ProductEntry; scan: ScanSnapshot }[] = [], skipped: Skipped[] = [];
   if (problem) skipped.push({ product: PRODUCTS_FILE, why: problem.error });
   for (const p of products) {
@@ -48,15 +51,21 @@ const ageOf = (iso: string, now: number): number => { const t = Date.parse(iso);
 export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; skipped: Skipped[] } {
   const { read, skipped } = snapshots(), recs = readRecommendations(), out: Ranked[] = [];
   for (const { p, scan } of read) {
-    const ev = rankValue(scan.proposals);
+    const ev = rankValue(scan.proposals), rules = listRules(p.root).filter((r) => isLive(r, now));
+    let rows: ReturnType<typeof decidedRows> | null = null; // read only when a cautious grant asks; unreadable = no trust
+    const record = () => (rows ??= (() => { try { return decidedRows(p); } catch { return []; } })());
     for (const x of scan.proposals) {
       const kind = x.status === 'proposed' ? 'proposal' : x.status === 'done' || x.status === 'failed' ? 'triage' : null;
       if (!kind) continue;
       const rec = recs[`${p.slug}:${x.id}`];
+      // the owner's standing rules mark what no door will build (an order) and what an agent may approve alone (a grant)
+      const held = kind === 'proposal' && rules.length ? gate(rules, { kind: 'build', tool: 'inbox.list', items: [{ id: x.id, feature: x.feature, lens: x.lens }] }, now).held[0]?.order.id : undefined;
+      const grant = kind === 'proposal' && rules.length && !held ? grantFor(rules, 'decision.answer', [{ feature: x.feature, lens: x.lens, ...(x.tier !== undefined ? { tier: x.tier } : {}) }], now, (r) => trustedLenses(r, record()))?.id : undefined;
       out.push({
         product: p.slug, id: x.id, kind, title: x.title, ...(x.tier !== undefined ? { tier: x.tier } : {}),
-        ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), value: ev.get(x.id) ?? 0,
-        ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why } } : {}),
+        ageMs: ageOf(kind === 'proposal' ? x.created_at : x.updated_at, now), worth: worthOf(x, ev),
+        ...(rec ? { recommendation: { verdict: rec.verdict, why: rec.why, ...(rec.brief ? { brief: rec.brief.lines } : {}) } } : {}),
+        ...(held ? { heldBy: held } : {}), ...(grant ? { grant } : {}),
       });
     }
   }
@@ -64,13 +73,14 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
 }
 
 interface MapFacts { features: { slug: string; priority?: string }[]; lenses: string[] }
-function mapOf(p: ProductEntry): MapFacts | null {
-  try {
-    const j = JSON.parse(fs.readFileSync(path.join(storeDir(p), 'app-structure.json'), 'utf8')) as { features?: unknown; lenses?: unknown };
-    const features = (Array.isArray(j.features) ? j.features : []).filter((f): f is { slug: string; priority?: string } => !!f && typeof (f as { slug?: unknown }).slug === 'string');
-    const lenses = (Array.isArray(j.lenses) ? j.lenses : []).filter((l) => l && typeof l.id === 'string' && l.enabled !== false).map((l) => l.id as string);
-    return { features, lenses };
-  } catch { return null; }
+/** The map's features and enabled lens ids (map.server.ts: the shared reader and its one enabled rule), or why it has none. */
+function mapOf(p: ProductEntry): MapFacts | { error: string } {
+  const m = readProductMap(p);
+  if (!m.ok) return { error: m.error };
+  const features = (Array.isArray(m.doc.features) ? m.doc.features : []).filter((f): f is { slug: string; priority?: string } => !!f && typeof (f as { slug?: unknown }).slug === 'string');
+  // every entry with an id counts here, a manifest or not (the gaps read no manifest); on or off by the one rule
+  const lenses = (Array.isArray(m.doc.lenses) ? m.doc.lenses : []).filter((l): l is { id: string } => isObj(l) && typeof l.id === 'string' && lensOn(l)).map((l) => l.id);
+  return { features, lenses };
 }
 
 /** A feature's tier: the most severe of its open findings' tiers and its priority's number; undefined when it has neither. */
@@ -85,8 +95,8 @@ export function featureTiers(scan: Pick<ScanSnapshot, 'proposals'>, features: re
 export function gaps(product: string | undefined, limit: number, now = Date.now()): { gaps: Gap[]; skipped: Skipped[] } {
   const { read, skipped } = snapshots(product), out: Gap[] = [];
   for (const { p, scan } of read) {
-    const map = mapOf(p);
-    if (!map) skipped.push({ product: p.slug, why: 'no readable app-structure.json: unmeasured and stale not computed' });
+    const read = mapOf(p), map = 'error' in read ? null : read;
+    if ('error' in read) skipped.push({ product: p.slug, why: read.error }); // the reader's own words: unmeasured and stale not computed
     const tiers = featureTiers(scan, map?.features ?? []);
     const add = (feature: string, lens: string, reason: Gap['reason']) => out.push({ product: p.slug, feature, lens, reason, score: gapScore(reason, tiers.get(feature)) });
     if (map) {

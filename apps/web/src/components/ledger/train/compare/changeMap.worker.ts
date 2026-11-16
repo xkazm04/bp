@@ -2,7 +2,7 @@
 // runs packages/core/src/train/pixels.ts diffPixels over them, so the main thread does no pixel work. A source is a URL (fetched
 // and decoded here) or an ImageBitmap the page decoded itself: Chrome cannot decode an SVG inside a worker, so a URL
 // that fails to decode answers `decode: true` and useChangeMap.ts sends bitmaps instead.
-import { diffPixels, type PixGrid } from '@bp/core/train/pixels';
+import { diffPixels, withSizes, type PixGrid } from '@bp/core/train/pixels';
 
 export interface MapRequest { id: number; before: string | ImageBitmap; after: string | ImageBitmap }
 export type MapReply = { id: number; grid: PixGrid } | { id: number; error: string; decode?: true };
@@ -32,7 +32,7 @@ self.onmessage = async (e: MessageEvent<MapRequest>) => {
   try {
     const [a, b] = await Promise.all([bitmap(e.data.before), bitmap(e.data.after)]);
     const k = Math.min(1, MAX_W / Math.max(1, a.width)), w = Math.max(1, Math.round(a.width * k)), h = Math.max(1, Math.round(a.height * k));
-    const reply: MapReply = { id, grid: diffPixels(pixels(a, w, h), pixels(b, w, h), w, h) };
+    const reply: MapReply = { id, grid: withSizes(diffPixels(pixels(a, w, h), pixels(b, w, h), w, h), [a.width, a.height], [b.width, b.height]) };
     a.close(); b.close();
     postMessage(reply);
   } catch (err) {

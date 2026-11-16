@@ -48,7 +48,7 @@ export const FOCUS_TABLE: Record<FocusKind, (id: string) => { steps: FocusStep[]
 export function planFocus(cmd: FocusCommand, here: string, seen: ReadonlySet<string>): FocusPlan {
   if (seen.has(cmd.id)) return { kind: 'skip' };
   if (cmd.product !== here) return { kind: 'elsewhere', product: cmd.product, text: (cmd.say || cmd.target.kind + ' ' + cmd.target.id) + ' - in ' + cmd.product };
-  const row = FOCUS_TABLE[cmd.target.kind];
+  const row = cmd.target.kind === 'page' ? undefined : FOCUS_TABLE[cmd.target.kind]; // a console page is the table's (G1): the page skips it
   return row ? { kind: 'run', ...row(cmd.target.id) } : { kind: 'skip' };
 }
 

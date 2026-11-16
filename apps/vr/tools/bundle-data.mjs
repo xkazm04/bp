@@ -2,18 +2,30 @@
 // Save one product's server answers into the VR build (docs/concepts/vr-light-table/standalone-plan.md): the headset with no
 // PC reads them through BpLink's bundle path (FBpLinkClient::ReadBundle) instead of asking apps/server.
 //
-//   node apps/vr/tools/bundle-data.mjs [--product <slug>] [--url http://127.0.0.1:3100]
+//   node apps/vr/tools/bundle-data.mjs [--product <slug>] [--url http://127.0.0.1:3100] [--briefs]
 //
 // Without --url it starts apps/server itself (`--port 0` in an empty cwd, as run-bplink does) and stops it afterwards. It
 // writes apps/vr/Content/BpData/<slug>/: structure.json, plan.json (the islands layout the table draws), scans.json,
 // scan.json, waves.json (the scan side: pins, the scan line, the wrist's waves) and bundle.json (when and from where).
-// Each file is the route's body exactly as the server answered. Config/DefaultGame.ini stages the BpData directory into
+// Kettle also gets sample-focuses.json, the sim's GET /focuses answer: the two sample focuses the bundle's Scan tab lists, whose
+// scan is the table's local sample and never a request (BpSampleScan.cpp). A live product's bundle gets none: its saved
+// focuses are real, and a real focus must not be offered as a sample. --only <file> writes that one part and leaves the rest
+// of the bundle, bundle.json included, as it is. Kettle also gets shots/finding-<id>.png, the generated "before" screens
+// scan.json's Shot rows name (path = the bare file name), copied from apps/web/public/sample-shots/.
+// Kettle also gets morning.json (night two W2b): the sample stand-up's deck, built by bundle-morning.ts from this bundle's own
+// scan with a labelled synthetic night (three decisions with before screens); --only morning.json rebuilds just that.
+// --briefs (ROADMAP F2) adds briefs.json: { <proposal id>: <the brief route's body> } for every open proposal in scan.json,
+// so the offline table's decision card draws the same brief lines (BpLink FetchBrief reads it). Opt-in: the committed Kettle
+// bundle rides in the competition APK, and whether the brief does is the owner's call (ROADMAP section 6); without the flag
+// an existing briefs.json is left as it is.
+// Each file is the route's body as the server answered, with brand names reworded (bundle-words.mjs, compliance.md P4). Config/DefaultGame.ini stages the BpData directory into
 // the pak as UFS files. Only Kettle (the sample) is committed; a live product's bundle stays local (.gitignore).
 // Exit 0 written, 1 a route failed, 2 refused.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { neutralize } from './bundle-words.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const VR = path.resolve(HERE, '..');
@@ -30,7 +42,12 @@ const PARTS = [
   ['scans.json', '/scans'],
   ['scan.json', '/scan'],
   ['waves.json', '/waves'],
+  ...(slug === 'kettle' ? [['sample-focuses.json', '/focuses']] : []),
 ];
+const only = opt('--only');
+// morning.json (night two W2b) is not a route's answer: bundle-morning.ts builds it from the parts above (Kettle only).
+const MORNING = slug === 'kettle' ? 'morning.json' : null;
+if (only && !PARTS.some(([file]) => file === only) && only !== MORNING) { console.log(`REFUSED: ${only} is not a part of ${slug}'s bundle (${PARTS.map(([f]) => f).join(', ')})`); process.exit(2); }
 
 let server = null, url = opt('--url');
 if (!url) {
@@ -54,15 +71,56 @@ function stop() { if (server && server.exitCode === null) spawnSync('taskkill.ex
 const dir = path.join(VR, 'Content', 'BpData', slug);
 fs.mkdirSync(dir, { recursive: true });
 let failed = 0, rev = null;
-for (const [file, route] of PARTS) {
+for (const [file, route] of PARTS.filter(([f]) => !only || f === only)) {
   const res = await fetch(`${url}/api/products/${slug}${route}`).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
-  const body = await res.text();
+  // Neutral words (bundle-words.mjs): the bundle rides in the competition APK, which may name no brand.
+  const body = neutralize(await res.text());
   if (!res.ok) { failed++; console.log(`FAIL  ${route}: ${res.status} ${body.slice(0, 200)}`); continue; }
   fs.writeFileSync(path.join(dir, file), body);
   if (file === 'structure.json') rev = JSON.parse(body).rev ?? null;
   console.log(`ok    ${route} -> ${path.relative(REPO, path.join(dir, file)).replace(/\\/g, '/')} (${(body.length / 1024).toFixed(1)} KB)`);
 }
+// Kettle's finding screens: every Shot row of scan.json whose path is a bare file name (finding-<id>.png, made by
+// scripts/fixtures/kettle-finding-shots.mjs) is copied from apps/web/public/sample-shots/ into <bundle>/shots/<file>, the
+// same <file> the PC serves at /api/products/kettle/shots/<file>; files no row names are removed. The SVG sample shots of the
+// release train (sample-shots/...) stay out: the table draws no compare panel. Staged with BpData (DefaultGame.ini).
+if (slug === 'kettle' && !failed && (!only || only === 'scan.json')) {
+  const rows = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).shots ?? []).filter((s) => /^[\w.-]+\.png$/.test(s.path ?? ''));
+  const shotsDir = path.join(dir, 'shots'), want = new Set(rows.map((s) => s.path));
+  fs.mkdirSync(shotsDir, { recursive: true });
+  for (const f of fs.readdirSync(shotsDir)) if (!want.has(f)) fs.rmSync(path.join(shotsDir, f));
+  let bytes = 0;
+  for (const f of want) {
+    const src = path.join(REPO, 'apps/web/public/sample-shots', f);
+    if (!fs.existsSync(src)) { failed++; console.log(`FAIL  shot ${f}: not in apps/web/public/sample-shots`); continue; }
+    fs.copyFileSync(src, path.join(shotsDir, f));
+    bytes += fs.statSync(src).size;
+  }
+  console.log(`ok    ${want.size} finding shots -> ${path.relative(REPO, shotsDir).replace(/\\/g, '/')}/ (${(bytes / 1024).toFixed(1)} KB)`);
+}
+// The sample stand-up (night two W2b): morning.json, the deck GET /api/companion/morning would answer, built by core's buildDeck
+// over a scratch copy of this bundle's scan with a labelled synthetic night (apps/vr/tools/bundle-morning.ts): three decisions
+// that have a before screen, what agents built. The headset runs its stand-up on it with no PC, saying it is a sample.
+if (MORNING && !failed && (!only || only === MORNING || only === 'scan.json')) {
+  const res = spawnSync(process.execPath, ['--import', pathToFileURL(path.join(REPO, 'packages/core/register.mjs')).href, path.join(HERE, 'bundle-morning.ts'), '--dir', dir], { encoding: 'utf8' });
+  process.stdout.write(res.stdout ?? '');
+  if (res.status !== 0) { failed++; console.log(`FAIL  morning.json: ${(res.stderr || res.stdout || '').trim().slice(-400)}`); }
+}
+if (args.includes('--briefs') && !failed && !only) {
+  const open = (JSON.parse(fs.readFileSync(path.join(dir, 'scan.json'), 'utf8')).proposals ?? []).filter((p) => p.status === 'proposed').map((p) => p.id);
+  const briefs = {};
+  for (const id of open) {
+    const res = await fetch(`${url}/api/products/${slug}/proposals/${encodeURIComponent(id)}/brief`).catch((e) => ({ ok: false, status: 0, text: async () => e.message }));
+    const body = await res.text();
+    if (!res.ok) { failed++; console.log(`FAIL  brief ${id}: ${res.status} ${body.slice(0, 200)}`); continue; }
+    briefs[id] = JSON.parse(body);
+  }
+  const text = neutralize(JSON.stringify(briefs));
+  fs.writeFileSync(path.join(dir, 'briefs.json'), text);
+  const repeats = Object.values(briefs).filter((b) => b.advice?.say === 'withdraw').length;
+  console.log(`ok    ${open.length} briefs -> ${path.relative(REPO, path.join(dir, 'briefs.json')).replace(/\\/g, '/')} (${(text.length / 1024).toFixed(1)} KB, ${repeats} repeat${repeats === 1 ? '' : 's'})`);
+}
 stop();
-fs.writeFileSync(path.join(dir, 'bundle.json'), JSON.stringify({ product: slug, savedAt: new Date().toISOString(), rev, from: server ? 'apps/server (started by bundle-data.mjs)' : url }, null, 2) + '\n');
+if (!only) fs.writeFileSync(path.join(dir, 'bundle.json'), JSON.stringify({ product: slug, savedAt: new Date().toISOString(), rev, from: server ? 'apps/server (started by bundle-data.mjs)' : url }, null, 2) + '\n');
 console.log(failed ? `\n${failed} route(s) failed; the bundle is incomplete` : `\nbundled ${slug} (rev ${rev}); rebuild the app to stage it`);
 process.exit(failed ? 1 : 0);

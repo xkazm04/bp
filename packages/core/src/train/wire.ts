@@ -2,9 +2,12 @@
 // through these, and `JSON.parse` lives nowhere else in the train's code. A validator answers the typed value or what
 // was wrong with it (`<field>: <what>`); the fetch helpers in client.ts turn a failure into an Error. A value carries
 // only the fields its type names (an unknown extra field stays out) and omits an absent one, never null.
-import type { CommitDiff, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
+import type { Band, CommitDiff, Confidence, FindingCategory, MvpRule, PredictedVerdict, Proof, ProofVerdict, Proposal, ProposalKind, ProposalOrigin, ProposalSize, ProposalStatus, Release, ReleaseCreated, ReleaseStatus, RiskClass, ScoreParts, Tier, TriageResult, VersionSuggestion } from '../scan/types.ts';
 import type { Wave, WaveDispatchResult, WaveEffort, WaveModel, WavePackage } from '../scan/waves.ts';
 import type { JobKind, JobStatus, ReleaseStep, ScanJob, ScanScope, ScanScopeKind } from '../scan/jobs.ts';
+import type { SavedFocus } from '../scan/focus.ts';
+import type { Landing, Landings } from '../scan/landed.ts';
+import type { Checkpoint, Watch, WatchItem } from './watch.ts';
 import { isObj } from '../scan/guards.ts';
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -91,11 +94,19 @@ const PROPOSAL_KIND: Members<ProposalKind> = { fix: true, 'baseline-upgrade': tr
 const PROPOSAL_ORIGIN: Members<ProposalOrigin> = { scan: true, ado: true, sweep: true };
 const RISK_CLASS: Members<RiskClass> = { secret: true, authz: true, money: true, data: true, llm: true, perf: true, reliability: true, ux: true, debt: true };
 const PROPOSAL_SIZE: Members<ProposalSize> = { XS: true, S: true, M: true, L: true, XL: true };
+// v5 (scan-finding/1)
+const CONFIDENCE: Members<Confidence> = { low: true, medium: true, high: true };
+const BAND: Members<Band> = { ranked: true, reserve: true };
+const MVP_RULE: Members<MvpRule> = { 'top-score': true, override: true };
+const CATEGORY: Members<FindingCategory> = { technical: true, product: true };
+const VERDICT: Members<PredictedVerdict> = { accept: true, reject: true, defer: true };
+const PROOF_VERDICT: Members<ProofVerdict> = { better: true, 'not-better': true, inconclusive: true };
+const CONTROL: Members<NonNullable<Proof['control']>> = { red: true, absent: true };
 const RELEASE_STATUS: Members<ReleaseStatus> = { draft: true, building: true, 'pr-open': true, merged: true, tagged: true, failed: true };
 const TRIAGED: Members<TriageResult['decision']> = { accepted: true, rework: true, descoped: true, reopened: true };
-const JOB_KIND: Members<JobKind> = { measure: true, execute: true, release: true, prepare: true };
+const JOB_KIND: Members<JobKind> = { measure: true, execute: true, release: true, prepare: true, propose: true, adopt: true };
 const JOB_STATUS: Members<JobStatus> = { queued: true, running: true, done: true, failed: true, cancelled: true };
-const RELEASE_STEP: Members<ReleaseStep> = { build: true, finish: true };
+const RELEASE_STEP: Members<ReleaseStep> = { build: true, finish: true, tag: true };
 const SCOPE_KIND: Members<ScanScopeKind> = { feature: true, bay: true, room: true, wing: true, all: true, selection: true };
 
 // ------------------------------------------------------------------------------------------- shapes
@@ -124,7 +135,35 @@ function proposal(x: unknown, at: string): Proposal {
   if (origin !== 'scan') put(p, 'origin', origin); // 'scan' is the absent value: kept out, like the store's serializer
   put(p, 'tier', optTier(o, 'tier', at));
   put(p, 'risk_class', optMember(RISK_CLASS, o, 'risk_class', at));
+  // v5 (scan-finding/1): absent stays absent; 'ranked' and mvp false are the absent values, kept out as the store's serializer does
+  for (const k of ['impact_why', 'mvp_why', 'predicted_why', 'predicted_by', 'predicted_at', 'veto_until'] as const) put(p, k, optStr(o, k, at));
+  for (const k of ['impact', 'effort', 'score'] as const) put(p, k, optNum(o, k, at));
+  put(p, 'confidence', optMember(CONFIDENCE, o, 'confidence', at));
+  const band = optMember(BAND, o, 'band', at);
+  if (band === 'reserve') p.band = band;
+  // lens-scan's store.mjs answers the column as stored (INTEGER 0/1); the stream sends true or nothing: both are one flag
+  if (o.mvp === 1 || o.mvp === true) p.mvp = true;
+  else if (o.mvp !== undefined && o.mvp !== 0 && o.mvp !== false) fail(join(at, 'mvp'), `expected true, false, 0 or 1 (got ${JSON.stringify(o.mvp)})`);
+  put(p, 'mvp_rule', optMember(MVP_RULE, o, 'mvp_rule', at));
+  put(p, 'category', optMember(CATEGORY, o, 'category', at));
+  put(p, 'predicted_verdict', optMember(VERDICT, o, 'predicted_verdict', at));
+  put(p, 'score_parts', o.score_parts === undefined ? undefined : scoreParts(o.score_parts, join(at, 'score_parts')));
+  put(p, 'proof', o.proof === undefined ? undefined : proof(o.proof, join(at, 'proof')));
   return p;
+}
+function scoreParts(x: unknown, at: string): ScoreParts {
+  const o = obj(x, at), s: ScoreParts = {};
+  for (const k of ['impact', 'confidence_w', 'effort_div', 'risk_factor'] as const) put(s, k, optNum(o, k, at));
+  put(s, 'formula', optStr(o, 'formula', at));
+  return s;
+}
+function proof(x: unknown, at: string): Proof {
+  const o = obj(x, at), r: Proof = {};
+  for (const k of ['metric', 'method', 'unit', 'base_sha', 'head_sha'] as const) put(r, k, optStr(o, k, at));
+  for (const k of ['before', 'after'] as const) put(r, k, optNum(o, k, at));
+  put(r, 'verdict', optMember(PROOF_VERDICT, o, 'verdict', at));
+  put(r, 'control', optMember(CONTROL, o, 'control', at));
+  return r;
 }
 
 function release(o: Obj, at: string): Release {
@@ -177,6 +216,59 @@ export function parseVersionSuggestion(x: unknown): Parsed<VersionSuggestion> {
   });
 }
 
+/** `GET releases/landed`: what git says already landed on the base branch, or why it cannot say. */
+const LANDING_BY: Members<Landing['by']> = { trailer: true, 'patch-id': true };
+export function parseLandings(x: unknown): Parsed<Landings> {
+  return door(() => {
+    const o = obj(x, '');
+    if (o.state === 'unknown') return { state: 'unknown', why: str(o, 'why', '') };
+    if (o.state !== 'known') fail('state', `expected known or unknown (got ${JSON.stringify(o.state)})`);
+    const raw = obj(o.items, 'items'), items = Object.create(null) as Record<string, Landing>; // ids are keys: no prototype to write through
+    for (const id of Object.keys(raw)) {
+      const at = 'items.' + id, l = obj(raw[id], at);
+      items[id] = { sha: str(l, 'sha', at), at: str(l, 'at', at), by: member(LANDING_BY, l, 'by', at) };
+    }
+    const out: Landings = { state: 'known', ref: str(o, 'ref', ''), head: str(o, 'head', ''), items };
+    if (o.ancestry !== undefined) {
+      // measured sha -> landing sha -> contains: shas are keys, so no prototype to write through either
+      const a = obj(o.ancestry, 'ancestry'), ancestry = Object.create(null) as Record<string, Record<string, boolean>>;
+      for (const m of Object.keys(a)) {
+        const at = 'ancestry.' + m, r = obj(a[m], at), row = Object.create(null) as Record<string, boolean>;
+        for (const l of Object.keys(r)) row[l] = bool(r, l, at);
+        ancestry[m] = row;
+      }
+      out.ancestry = ancestry;
+    }
+    return out;
+  });
+}
+
+/** `GET releases/watch` `{ watches }` and `POST releases/watch` `{ watch }`: the outcome watches (train/watch.ts). */
+const BETTER: Members<NonNullable<WatchItem['better']>> = { up: true, down: true };
+function watchItem(x: unknown, at: string): WatchItem {
+  const o = obj(x, at);
+  const it: WatchItem = { id: str(o, 'id', at), title: str(o, 'title', at), feature: str(o, 'feature', at), lens: str(o, 'lens', at) };
+  put(it, 'metric', optStr(o, 'metric', at)); put(it, 'unit', optStr(o, 'unit', at));
+  put(it, 'baseline', optNum(o, 'baseline', at)); put(it, 'target', optNum(o, 'target', at)); put(it, 'better', optMember(BETTER, o, 'better', at));
+  if (o.landing !== undefined) { const l = obj(o.landing, join(at, 'landing')), lt = join(at, 'landing'); it.landing = { at: str(l, 'at', lt) }; put(it.landing, 'sha', optStr(l, 'sha', lt)); }
+  put(it, 'unresolved', optStr(o, 'unresolved', at));
+  return it;
+}
+function checkpoint(x: unknown, at: string): Checkpoint {
+  const o = obj(x, at), c: Checkpoint = { day: num(o, 'day', at), due: str(o, 'due', at) };
+  put(c, 'jobs', optList(o, 'jobs', at, aString));
+  if (o.missed !== undefined) { if (o.missed !== true) fail(join(at, 'missed'), 'expected true'); c.missed = true; }
+  return c;
+}
+function watch(x: unknown, at: string): Watch {
+  const o = obj(x, at);
+  const w: Watch = { release: str(o, 'release', at), version: str(o, 'version', at), enabled_at: str(o, 'enabled_at', at), by: str(o, 'by', at), items: list(o, 'items', at, watchItem), checkpoints: list(o, 'checkpoints', at, checkpoint) };
+  put(w, 'off_at', optStr(o, 'off_at', at));
+  return w;
+}
+export function parseWatches(x: unknown): Parsed<Watch[]> { return door(() => list(obj(x, ''), 'watches', '', watch)); }
+export function parseWatch(x: unknown): Parsed<Watch> { return door(() => watch(obj(x, '').watch, 'watch')); }
+
 /** `POST releases` (201): the draft with its items, what was added and what was left out. */
 export function parseReleaseCreated(x: unknown): Parsed<ReleaseCreated> {
   return door(() => {
@@ -203,7 +295,7 @@ export function parseCommitDiff(x: unknown): Parsed<CommitDiff> {
 function scanJob(x: unknown, at: string): ScanJob {
   const o = obj(x, at);
   const j: ScanJob = { id: str(o, 'id', at), kind: member(JOB_KIND, o, 'kind', at), status: member(JOB_STATUS, o, 'status', at), queued_at: str(o, 'queued_at', at) };
-  for (const k of ['lens', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, at));
+  for (const k of ['lens', 'focus', 'release', 'version', 'started_at', 'ended_at', 'run_id', 'error', 'log_tail'] as const) put(j, k, optStr(o, k, at));
   put(j, 'scope', o.scope === undefined ? undefined : scope(o.scope, join(at, 'scope')));
   put(j, 'proposals', optList(o, 'proposals', at, aString));
   put(j, 'step', optMember(RELEASE_STEP, o, 'step', at));
@@ -245,3 +337,13 @@ export function parseWaveDispatch(x: unknown): Parsed<WaveDispatchResult> {
     return { wave: wave(o.wave, 'wave'), jobs: list(o, 'jobs', '', scanJob), approved: list(o, 'approved', '', aString), skipped: list(o, 'skipped', '', skipped) };
   });
 }
+
+// ------------------------------------------------------------------------------------------- saved focuses
+function savedFocus(x: unknown, at: string): SavedFocus {
+  const o = obj(x, at);
+  return { id: str(o, 'id', at), lens: str(o, 'lens', at), note: str(o, 'note', at), created_at: str(o, 'created_at', at) };
+}
+/** GET focuses: `{ focuses }`, newest first. */
+export const parseFocuses = (x: unknown): Parsed<SavedFocus[]> => door(() => list(obj(x, ''), 'focuses', '', savedFocus));
+/** POST focuses: `{ focus }`. */
+export const parseFocusBody = (x: unknown): Parsed<SavedFocus> => door(() => savedFocus(obj(x, '').focus, 'focus'));

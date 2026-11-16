@@ -3,9 +3,20 @@
 - `schema/`: the JSON Schemas (draft 2020-12), normative for structure: `app-structure-3`,
   `app-structure-event-3`, `lens-manifest-1`, `plan-1`, `structure-envelope-1` (`{ structure, events, rev }`) and
   `scan-wire-1` (the six SSE payloads `snapshot | delta | map | ping | error | jobs`, plus `waves`: ScanSnapshot, ScanJob,
-  Proposal, Wave and what they hold), with their fixtures. The spec is
+  Proposal, Wave and what they hold), and `decision-brief-1` (the decision brief every card and agent reads, from
+  `packages/core/src/scan/brief.ts`: `FBpDecisionBrief` on the VR side), `shared-focus-1` (the shared focus: `FocusPlace`,
+  `SharedView`, the POST body and its `{ moved, view }` answer, from `packages/core/src/session/focus.ts`) and
+  `morning-deck-1` (the Morning Watch deck, its agent view and the steering row, from
+  `packages/core/src/companion/morning.ts`; a card's brief references decision-brief-1, a card's place shared-focus-1),
+  with their fixtures. The last three are the bp-Personas contract (`docs/standard/contract-1.md`, `contract.json`). The spec is
   `docs/standard/app-structure-v3.md`; `scripts/validate-structure.mjs` validates against these files.
-- `generate.mjs`: one model of the schemas, four outputs.
+- `roots.mjs`: the one table of roots, a row per schema file: its generated root, the structs read on their own, and
+  for each a hand-written pair (`hand: { file, name }`) or an `unpaired` reason. `generate.mjs`, `parity.mjs` and
+  check:schema's self-proof derive from it, and `schemaAjv()` is the one ajv every validator uses.
+- `generate.mjs`: one model of the schemas, four outputs. A root in `roots.mjs` may name the structs under it a
+  client reads on their own (`FocusPlace`, `SharedView`, `SharedPlace`, `FocusAnswer`; `MorningDeck`, `AgentDeck`,
+  `SteerRow`): `BpSchema::FromJson` works for each of them as for a root, and `ue-standin/check.cpp` must instantiate it.
+  `--since <ref>` reads a schema that is new since the ref as an empty root, so everything it brings is reported added.
   - `generated/ts/app-structure.ts`: TypeScript interfaces, a parity artifact (see the decision below).
   - `generated/ue/BpSchema.h`: Unreal `USTRUCT`s for the VR client's `BpLink` module, field names as
     the JSON keys so `FJsonObjectConverter::JsonObjectToUStruct` fills them. Enums are `FString`;

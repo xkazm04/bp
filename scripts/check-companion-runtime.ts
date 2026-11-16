@@ -183,6 +183,22 @@ const wall = await collect(T.runTurn({ conversationId: 'c-wall', text: 'slow' })
 delete process.env.BP_COMPANION_WALL_MS;
 check('wall: past the wall the turn ends failed/unknown and frees the lock', wall.at(-1)?.outcome === 'failed' && wall.at(-1)?.failure === 'unknown' && !LOCKS.isHeld('c-wall'), j(wall.at(-1)));
 
+// -------------------------------------------------------------------------------------- door
+// 2026-11-10: a server started outside the repo root wrote a missing bp-mcp.mjs into --mcp-config; the CLI's init said the bp
+// server "failed", then claude 2.1 stalled after one thinking block and the turn ran to the 10-minute wall.
+check('door: the init line\'s bp server status is decoded', j(CLI.decodeLine(j({ type: 'system', subtype: 'init', session_id: SID, mcp_servers: [{ name: 'bp', status: 'failed' }] }), new Set())) === j([{ kind: 'session', id: SID }, { kind: 'door', status: 'failed' }]));
+const doorT0 = Date.now();
+turnPlan = [{ lines: [j({ type: 'system', subtype: 'init', session_id: SID, tools: [], mcp_servers: [{ name: 'bp', status: 'failed' }] })], hang: true }];
+const door = await collect(T.runTurn({ conversationId: 'c-door', text: 'plan my day' }));
+check('door: a bp MCP server that did not connect ends the turn failed/unknown at once, not at the wall', door.at(-1)?.outcome === 'failed' && door.at(-1)?.failure === 'unknown' && Date.now() - doorT0 < 5000 && !LOCKS.isHeld('c-door'), `${Date.now() - doorT0} ms ${j(door.at(-1))}`);
+const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-companion-cwd-'));
+const cwd0 = process.cwd();
+process.chdir(elsewhere);
+let script = '';
+try { script = JSON.parse(fs.readFileSync(T.writeMcpConfig('c-elsewhere', 'http://127.0.0.1:4555'), 'utf8')).mcpServers.bp.args[0]; } finally { process.chdir(cwd0); }
+check('door: a server started outside the repo root still points the CLI at the repo\'s bp-mcp.mjs', script === path.join(ROOT, 'apps/mcp/bp-mcp.mjs') && fs.existsSync(script), script);
+fs.rmSync(elsewhere, { recursive: true, force: true });
+
 // ------------------------------------------------------------------------------------ 4 reseed
 const reseedCase = async (name: string, fail: Script, cls: string) => {
   const id = `c-reseed-${cls}`;
@@ -225,7 +241,7 @@ check('cost: and its ledger row carries costUsd null', turnRows().at(-1)?.costUs
 // ------------------------------------------------------------------------------------ 6 ledger
 check('ledger: exactly one row per turn', turnRows().length === rowsBefore + 1);
 const allTurns = turnRows();
-const turnsRun = 2 /* decode + resume */ + 2 /* busy cancel + after */ + 1 /* leave */ + 1 /* wall */ + 4 + 2 /* auth */ + 1 /* new gone */ + 1 /* no cost */;
+const turnsRun = 2 /* decode + resume */ + 2 /* busy cancel + after */ + 1 /* leave */ + 1 /* wall */ + 1 /* door */ + 4 + 2 /* auth */ + 1 /* new gone */ + 1 /* no cost */;
 check(`ledger: ${turnsRun} turns so far, ${turnsRun} turn rows (a reseeded turn is one row)`, allTurns.length === turnsRun, `${allTurns.length}`);
 const row = allTurns[0];
 check('ledger: a turn row is { at, kind, model, conversationId, ms, costUsd, outcome }', typeof row.at === 'string' && row.kind === 'turn' && row.model === LEG_MODELS.turn && row.conversationId === conv && typeof row.ms === 'number' && row.costUsd === 0.0123 && row.outcome === 'done');

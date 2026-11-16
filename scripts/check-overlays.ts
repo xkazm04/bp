@@ -26,6 +26,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { blankBlock, readBlanked, readStripped, stripBlock } from './lib/source.ts';
 import fs from 'node:fs';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 // One fixed seam: the server render hands the Kettle scan sim's jobs to useScanJobs (its server snapshot is empty, which a
@@ -48,9 +49,7 @@ const O = await imp('components/Overlays.tsx');
 const { Phone, phoneFind } = await imp('components/Phone.tsx');
 const { Legend } = await imp('components/Legend.tsx');
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-overlays');
 
 const V = getVariant('subtle');
 const M = buildModel(1, () => 0, null), P = M.P;
@@ -439,5 +438,61 @@ expect(focusCalls("'.fb'") > 0, "Dock.tsx: opening a flyout never focuses its bo
   }
 }
 
-if (failures.length) { console.error(`check-overlays: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-overlays: ${held} expectations held`);
+// Onboarding build-up glyph buttons (DW-45): the outline variant's index close (✕), zoom out (−), zoom in (+) and the card
+// close the engine injects (✕) are named by a glyph and a title only, which is not an accessible name a screen reader or
+// voice control can rely on. Each must carry an aria-label that names its action and the key its title gives. The chrome is
+// server-rendered from b-outline/index.tsx (its engine starts in an effect, which a server render never runs); the card is
+// HTML the engine writes from a template, so engine.ts is read as source with comments stripped.
+{
+  const BV = (await imp('buildup/b-outline/index.tsx')).default;
+  let html = '', threw: string | null = null;
+  try { html = renderToString(React.createElement(BV, { source: { subscribe: () => () => {} }, reducedMotion: true, theme: 'dark' })); } catch (e) { threw = (e as Error).message; }
+  expect(threw === null && html.includes('data-r="zFit"'), `GUARD the build-up outline chrome did not server-render (${threw ?? 'no zoom bar'})`);
+  const attr = (tag: string, a: string) => (new RegExp(`\\s${a}="([^"]*)"`).exec(tag) || [])[1];
+  const keyOf = (title: string | undefined) => (/\(([^)]+)\)\s*$/.exec(title ?? '') || [])[1];
+  const named = (where: string, tag: string, action: RegExp) => {
+    const title = attr(tag, 'title'), key = keyOf(title), label = attr(tag, 'aria-label');
+    expect(!!tag && !!key, `GUARD ${where}: the button or its "(key)" title was not found - the scan stopped matching (${tag.slice(0, 120) || 'no tag'})`);
+    expect(!!label && action.test(label) && !!key && label.includes(key), `${where}: aria-label ${label === undefined ? 'missing' : JSON.stringify(label)}, expected one naming ${action.source} and its key ${key ?? '?'} (title ${JSON.stringify(title)})`);
+  };
+  const tagOf = (r: string) => (new RegExp(`<button[^>]*data-r="${r}"[^>]*>`).exec(html) || [''])[0];
+  named('build-up index close (data-r=idxClose, ✕)', tagOf('idxClose'), /\bclose\b/i);
+  named('build-up zoom out (data-r=zOut, −)', tagOf('zOut'), /\bzoom out\b/i);
+  named('build-up zoom in (data-r=zIn, +)', tagOf('zIn'), /\bzoom in\b/i);
+  const eng = readStripped(path.join(SRC, 'buildup/b-outline/engine.ts'));
+  const at = eng.indexOf('data-c="x"'), from = at < 0 ? -1 : eng.lastIndexOf('<button', at);
+  named('build-up card close (engine.ts data-c=x, ✕)', from < 0 ? '' : eng.slice(from, eng.indexOf('>', at) + 1), /\bclose\b/i);
+}
+
+// Plan decision card, read-only (DW-44): a live product whose server runs BP_WRITES=off hides the answers, so the card says
+// why in the review rail's own words (review.tsx) and its footer does not promise what answering would free. With writes on,
+// and on the Kettle sample (no live product), the answers and the footer are as before. The question is one that holds an
+// agent (sim.agents[].wait), so the footer would say "Answering frees" when answers are offered.
+{
+  const { LiveCtx } = await imp('components/hooks.ts');
+  const READ_ONLY = 'Decisions are read-only here (BP_WRITES=off).';
+  const dq = Object.values(M.sim.DEC as Record<string, Any>).find((d) => d.open && M.sim.agents.some((a: Any) => a.wait === d.id));
+  const liveSim = Object.create(M.sim);
+  Object.defineProperty(liveSim, 'live', { value: true });
+  const cardOf = (live: boolean, writes: boolean | null) => {
+    const shared: { E?: Any } = {};
+    render(() => null, {}, () => ({ parts: [] }), shared);
+    shared.E.M = live ? { ...M, sim: liveSim } : M;
+    shared.E.featureRect = () => null;
+    const el = () => (writes === null ? React.createElement(O.DecisionCard)
+      : React.createElement(LiveCtx.Provider, { value: { product: { slug: 'p', writes } } }, React.createElement(O.DecisionCard)));
+    const r = render(el, { dec: dq?.id ?? null }, () => ({ parts: [] }), shared);
+    return { threw: r.threw, html: r.html, t: text(r.html), ops: (r.html.match(/<button[^>]*class="op[ "]/g) || []).length };
+  };
+  expect(!!dq, 'GUARD the Kettle sample has no open question that holds an agent (the read-only card section has nothing to render)');
+  if (dq) {
+    const on = cardOf(true, true), kettle = cardOf(false, null), off = cardOf(true, false);
+    expect(on.threw === null && on.ops === dq.opts.length && on.t.includes('Answering frees') && !on.t.includes(READ_ONLY), `GUARD the live card with writes on lost its ${dq.opts.length} answers or its "Answering frees" footer (${on.threw ?? on.ops + ' answers'})`);
+    expect(kettle.threw === null && kettle.ops === dq.opts.length && kettle.t.includes('Answering frees') && !kettle.t.includes(READ_ONLY), `GUARD the Kettle card lost its ${dq.opts.length} answers or its "Answering frees" footer (${kettle.threw ?? kettle.ops + ' answers'})`);
+    expect(off.threw === null && off.ops === 0, `the live card with BP_WRITES=off offers ${off.ops} answer button(s) (${off.threw ?? 'rendered'})`);
+    expect(off.threw === null && off.t.includes(READ_ONLY), `the live card with BP_WRITES=off does not say "${READ_ONLY}" in place of its answers`);
+    expect(off.threw === null && !off.t.includes('Answering frees'), 'the live card with BP_WRITES=off still says "Answering frees ..." with no answer to give');
+  }
+}
+
+done();

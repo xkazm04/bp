@@ -32,7 +32,8 @@ const cacheFile = (text: string): string => {
   return path.join(companionHome(), 'voice', h + '.mp3');
 };
 
-export type VoiceResult = { ok: true; audio: Buffer; cached: boolean } | { ok: false; status: number; error: string };
+/** `cost`: what the service reported a fresh synthesis cost (`character-cost`, in credits); absent on a cache hit. */
+export type VoiceResult = { ok: true; audio: Buffer; cached: boolean; cost?: { credits?: number } } | { ok: false; status: number; error: string };
 
 /** The line as MP3: from the cache, else synthesized and cached. A failed synthesis is never cached. */
 export async function synthesize(text: string, signal?: AbortSignal): Promise<VoiceResult> {
@@ -57,5 +58,6 @@ export async function synthesize(text: string, signal?: AbortSignal): Promise<Vo
   }
   const audio = Buffer.from(await res.arrayBuffer());
   try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, audio); } catch { /* speaking matters more than caching */ }
-  return { ok: true, audio, cached: false };
+  const credits = Number(res.headers.get('character-cost'));
+  return { ok: true, audio, cached: false, cost: res.headers.has('character-cost') && Number.isFinite(credits) ? { credits } : {} };
 }

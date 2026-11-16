@@ -65,6 +65,9 @@ public:
 
 	UBpHands();
 
+	/** The controllers lead now (no hand seen, a controller is): the legend shows the pad's column (BpLegend.cpp). */
+	bool UsesControllers() const { return Input == EInput::Controllers; }
+
 	/** BpHands.* console commands, run one after another by the first UBpHands that ticks. */
 	static TArray<FString>& PendingCommands();
 
@@ -115,6 +118,10 @@ private:
 		bool bLasso = false;
 		float Fade = 1.f;
 		bool bTriggerDown = false;
+		/** The aim cursor (UpdateAim): the hand's ray this frame, whether it may show (a tracked hand that aims). */
+		bool bAiming = false;
+		FVector AimFrom = FVector::ZeroVector;
+		FVector AimDir = FVector::ForwardVector;
 	};
 
 	/** The synthetic hand's gesture in progress. */
@@ -129,6 +136,12 @@ private:
 		float PulledCm = 0.f;
 		/** BpHands.Push: the same gesture away from the eye. */
 		bool bPush = false;
+		/** BpHands.Tap: released where it closed, whatever the id; BpHands.Pull and Push: moved, whatever the id. */
+		bool bTap = false;
+		bool bMove = false;
+		/** Wave U4, BpHands.Slide: the control the ray drifts to while pinched; the pinch opens there (a release off the control
+		 *  it closed on, which must tap nothing). */
+		FString SlideTo;
 		/** BpHands.Point: how long the hand points (no pinch) before it lowers. BpHands.Lasso: the features, and the path its
 		 *  ray follows across the map while pinched (world points), one a frame. */
 		float HoldForS = 0.f;
@@ -159,6 +172,8 @@ private:
 	void UpdateHold(float DeltaTime);
 	const FSlot* Speaker() const;
 	void UpdateFades(float DeltaTime);
+	/** The aim cursor (bp.Aim): one mesh, a thin ray and a small reticle per aiming hand; costs nothing while no hand aims. */
+	void UpdateAim();
 	void RunCommands(float DeltaTime);
 	bool StartCommand(const FString& Command);
 	void ActivateSynthetic();
@@ -179,6 +194,10 @@ private:
 	FString HoldId;
 	float HeldS = 0.f;
 	bool bHoldFired = false;
+	/** Push to talk by hand (BpTalk.cpp): a pinch held on the lamp or on the wrist's TALK; how long, and the source. */
+	bool bTalkHeld = false;
+	float TalkHeldS = 0.f;
+	FString TalkSource;
 
 	TWeakObjectPtr<ABpTable> Table;
 
@@ -192,4 +211,8 @@ private:
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> HandMidsLeft;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UMaterialInstanceDynamic>> HandMidsRight;
+	/** The rays and reticles (UpdateAim), built when a hand first aims. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UInstancedStaticMeshComponent> AimMarks;
+	int32 AimShown = 0;
 };

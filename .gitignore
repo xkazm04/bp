@@ -21,6 +21,8 @@ bp.products.local.json
 /.claude/skills/adopt-bp
 /.claude/skills/perfect
 /.claude/skills/tiger
+/.claude/skills/lens-scan
+/.claude/skills/explorer
 /.claude/rules/ai-registry-access.md
 /.claude/rules/ai-registry-software-engineering.md
 /.ai/skill-runs.local.jsonl
@@ -33,6 +35,7 @@ next-env.d.ts
 
 # /perfect loop vault (working memory, not version-controlled)
 .perfect/
+.explorer/
 .personas/
 
 # secrets: API keys live in .env (LEONARDO_API_KEY); only an example file may be tracked
@@ -67,6 +70,12 @@ apps/vr/Content/Bp/Art/MetaHumanHands/
 # BpLink's bundled snapshots (apps/vr/tools/bundle-data.mjs): only the Kettle sample is committed; a live product's stays local
 apps/vr/Content/BpData/*
 !apps/vr/Content/BpData/kettle/
+# The lamp's tour voice (apps/vr/tools/tour-voice.ts): product-free clips every build ships
+!apps/vr/Content/BpData/voice/
+# The background music bed (apps/vr/tools/music-bed.ts): one product-free looping track every build ships
+!apps/vr/Content/BpData/music/
+# Licences that must travel with shipped third-party assets (the font's SIL OFL)
+!apps/vr/Content/BpData/licenses/
 *.sln
 *.suo
 *.VC.db

@@ -441,6 +441,8 @@ export interface ScanSnapshot {
   packs: Pack[];
   /** Oldest first; empty on a v1 store. */
   releases: Release[];
+  /** v5, oldest first; empty on a v4 store, absent from a pre-v5 sender. */
+  trust_events?: TrustEvent[];
 }
 
 export interface Run {
@@ -527,6 +529,54 @@ export interface Proposal {
   risk_class?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
   ranked_by?: string;
   ranked_at?: string;
+  /** v5 (scan-finding/1): severity of a defect or value of an opportunity. */
+  impact?: number;
+  impact_why?: string;
+  confidence?: 'low' | 'medium' | 'high';
+  /** v5: build effort. */
+  effort?: number;
+  /** v5: scan-score/1, stored by the skill and never recomputed by a reader; omitted = unscored. */
+  score?: number;
+  score_parts?: ScoreParts;
+  /** v5: omitted = ranked (the store default); reserve = verified and scored, over the run's cap. */
+  band?: 'ranked' | 'reserve';
+  /** v5: true on the top finding of its lens in its run; omitted = false (only true is sent). */
+  mvp?: boolean;
+  mvp_rule?: 'top-score' | 'override';
+  mvp_why?: string;
+  category?: 'technical' | 'product';
+  /** v5: the model's verdict, recorded before any person decided. */
+  predicted_verdict?: 'accept' | 'reject' | 'defer';
+  predicted_why?: string;
+  /** v5: <skill>@<version>:<model>. */
+  predicted_by?: string;
+  predicted_at?: string;
+  /** v5: a machine decision (decided_by machine:lens-scan) may be vetoed by a person until then. */
+  veto_until?: string;
+  proof?: Proof;
+}
+
+/** v5: the score's breakdown, shipped with the number. */
+export interface ScoreParts {
+  impact?: number;
+  confidence_w?: number;
+  effort_div?: number;
+  risk_factor?: number;
+  /** scan-score/1. */
+  formula?: string;
+}
+
+/** v5: a built change's before/after under one method, with its control. */
+export interface Proof {
+  metric?: string;
+  method?: string;
+  unit?: string;
+  before?: number;
+  after?: number;
+  verdict?: 'better' | 'not-better' | 'inconclusive';
+  control?: 'red' | 'absent';
+  base_sha?: string;
+  head_sha?: string;
 }
 
 export interface Activity {
@@ -600,6 +650,19 @@ export interface Release {
   updated_at: string;
 }
 
+/** v5: one row of the append-only autonomy ledger. slice = <category>|<lens>|<risk_class>|<size>, - for an absent part; levels 0 propose .. 3 auto-merge. */
+export interface TrustEvent {
+  id: number;
+  at: string;
+  slice: string;
+  from_level: number;
+  to_level: number;
+  reason: string;
+  agreement?: number;
+  n?: number;
+  item_id?: string;
+}
+
 export interface MapEvent {
   /** The new fingerprint, as in the structure envelope. */
   rev: string;
@@ -614,26 +677,32 @@ export interface ErrorEvent {
   message: string;
 }
 
-/** A lens scan, an execute run, a release run (cut or finish) or a prepare run the blueprint started. */
+/** A lens scan, an execute run, a release run (cut, finish or tag), a prepare run or an onboarding (adopt) the blueprint started. */
 export interface ScanJob {
   id: string;
-  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. */
-  kind: 'measure' | 'execute' | 'release' | 'prepare';
-  /** The lens a measure job scans, or a prepare job makes measurable. */
+  /** prepare: adjust the product repo so lens-scan can measure a lens it would refuse. propose: backlog items from the latest measurements. adopt: onboard the product with the adopt-bp skill. */
+  kind: 'measure' | 'execute' | 'release' | 'prepare' | 'propose' | 'adopt';
+  /** The lens a measure or propose job covers (all = every enabled lens, one job), or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
+  /** A directed scan's note: what this lens is to look for. Absent on a plain scan. */
+  focus?: string;
   /** The proposals an execute job builds. */
   proposals?: string[];
   /** A release job's release id (rel-<version>). */
   release?: string;
   version?: string;
-  /** build cuts the release, finish tags it after the merge. */
-  step?: 'build' | 'finish';
+  /** build cuts the release, finish tags it after the merge, tag tags a draft whose items already landed on the default branch. */
+  step?: 'build' | 'finish' | 'tag';
   /** The Claude Code CLI's own aliases: each always means the latest model of its family. */
   model?: 'sonnet' | 'opus';
   effort?: 'low' | 'medium' | 'high' | 'xhigh';
   wave?: string;
   package?: string;
+  /** An adopt job that resumes an earlier onboarding that stopped. */
+  resume?: boolean;
+  /** An adopt job: the build-up phase it last started; for a failed job, the phase it failed in. Omitted until the first phase starts. */
+  adopt_phase?: 'check' | 'context-map' | 'seed' | 'product-tree' | 'events' | 'measure' | 'judge' | 'register';
   status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
   queued_at: string;
   started_at?: string;
@@ -689,4 +758,438 @@ export interface WavePackage {
 export interface WaveJobsItem {
   package: string;
   job: string;
+}
+
+/** GET /api/products/{slug}/proposals/{id}/brief and GET /api/companion/brief (the plan.brief tool): the context of one decision, computed once in core (packages/core/src/scan/brief.ts) for every reader - the web decision card, the VR decision card (BpLink), Personas' card and agents. Four facts, each with the ids that back it: blast radius from the plan, precedent from decided rows (the owner's declines quoted), reversibility, cost from finished builds. Thin evidence is said in the words, never filled in. `lines` is the brief in plain words under a fixed budget (at most 5 lines of at most 120 characters): a small card shows exactly these. Absent values are omitted, never null. */
+export interface DecisionBrief {
+  v: 1;
+  subject: BriefSubject;
+  blast: BriefBlast;
+  precedent: BriefPrecedent;
+  /** The declines that match the idea (not merely its lens), latest first, one per standard, with the owner's note. */
+  declines: BriefDecided[];
+  reversible: BriefReversible;
+  cost: BriefCost;
+  advice: BriefAdvice;
+  facts: BriefFact[];
+  /** facts[].text: the one rendering every small surface shares. */
+  lines: string[];
+}
+
+/** What is decided: an open proposal (id set) or an agent's draft (a feature and its words). */
+export interface BriefSubject {
+  id?: string;
+  feature: string;
+  title: string;
+  lens?: string;
+  standard?: string;
+  tier?: number;
+  risk_class?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
+  size?: 'XS' | 'S' | 'M' | 'L' | 'XL';
+}
+
+/** The feature on the plan and the features whose depends_on name it. feature, room and wing are omitted when the feature is not on the plan. */
+export interface BriefBlast {
+  feature?: BriefRef;
+  room?: BriefRef;
+  wing?: BriefRef;
+  stage?: string;
+  dependents: BriefRef[];
+  /** The rooms the dependents sit in. */
+  rooms: number;
+  /** Other open proposals on the same feature. */
+  openHere: string[];
+}
+
+export interface BriefRef {
+  slug: string;
+  /** The map's short code (BKG-01), when it has one. */
+  id?: string;
+  name: string;
+}
+
+export interface BriefPrecedent {
+  rows: BriefDecided[];
+  /** Matched rows not declined and not descoped. */
+  approved: number;
+  declined: number;
+  /** Matched approvals descoped at judging: never counted as approvals. Omitted when none. */
+  descoped?: number;
+  /** Matched approvals whose build failed (counted in approved). Omitted when none. */
+  failed?: number;
+  /** What the matched approvals came to on main; present only when one is on main with an expected value. */
+  outcome?: BriefTally;
+  basis: string;
+}
+
+export interface BriefDecided {
+  id: string;
+  title: string;
+  feature: string;
+  lens: string;
+  verdict: 'approved' | 'declined';
+  /** The day it was decided, YYYY-MM-DD. */
+  at: string;
+  by?: string;
+  /** The decline note (or the triage note): the owner's own words. */
+  note?: string;
+  standard?: string;
+  match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
+  /** What an approval came to: held, short of expected, not measured since, or a target out of the metric's declared bounds (unresolved) on main (a track stage, read with the product's landings), descoped at judging, or a failed build. Omitted while it is still open and on a decline. A descoped row keeps verdict approved (the backlog decision) and is not counted in precedent.approved. */
+  outcome?: 'held' | 'short' | 'unmeasured' | 'out-of-bounds' | 'descoped' | 'failed';
+}
+
+/** The approvals on main that have an expected value, by outcome; byJudgement counts the held and short ones read by judgement (a model's read, noisy). */
+export interface BriefTally {
+  held: number;
+  short: number;
+  unmeasured: number;
+  noTarget: number;
+  /** Unresolved: the expected value lies outside the metric's declared bounds. */
+  outOfBounds: number;
+  byJudgement: BriefTallyByJudgement;
+  shortIds: string[];
+}
+
+export interface BriefTallyByJudgement {
+  held: number;
+  short: number;
+}
+
+export interface BriefReversible {
+  /** An approval builds on a pack branch and ships only through triage and a release. */
+  approve: 'until-triage';
+  /** No route reopens a decided proposal. */
+  decline: 'final';
+  afterRelease: 'revert' | 'care' | 'unknown';
+  riskClass?: 'secret' | 'authz' | 'money' | 'data' | 'llm' | 'perf' | 'reliability' | 'ux' | 'debt';
+}
+
+export interface BriefCost {
+  builds: number;
+  /** Median minutes per item of the finished execute runs. */
+  minutes?: number;
+  model?: string;
+  basis: 'lens' | 'any lens' | 'none';
+  runs: string[];
+}
+
+export interface BriefAdvice {
+  say: 'withdraw' | 'ask' | 'proceed';
+  why: string;
+}
+
+export interface BriefFact {
+  key: 'blast' | 'declined' | 'precedent' | 'undo' | 'cost';
+  text: string;
+  /** What the fact's number opens: dependents, decided rows, or execute runs. */
+  ids: string[];
+}
+
+/** The shared focus ("Follow me"): the place the owner is looking at, which any surface publishes and any other follows, with no leader (packages/core/src/session/focus.ts is the source; docs/standard/contract-1.md says the rules). GET /api/session/focus answers `view`; POST /api/session/focus takes `post` and answers `answer`; the companion stream's `event: shared` carries `view` too. Ids only, never a selection. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (shared-focus-2). */
+export interface SharedFocus {
+  /** A place, as a publish carries it and the view's shared place holds it. */
+  place?: FocusPlace;
+  /** GET /api/session/focus, `event: shared`, and POST's answer.view. */
+  view?: SharedView;
+  /** view.shared when someone has published (it is null before): the shared place with who put it there. */
+  shared?: SharedPlace;
+  /** The body of POST /api/session/focus: one move on the caller's own reader record. */
+  post?: FocusPost;
+  /** POST /api/session/focus's 200 or 201 answer. */
+  answer?: FocusAnswer;
+}
+
+/** Where: a product, and optionally one target in it. Absent target: the product as a whole (the site). */
+export interface FocusPlace {
+  /** A registered product's slug (the registry's own rule), or `kettle` for the sample. */
+  product: string;
+  target?: FocusTarget;
+  level?: 'L0' | 'L1' | 'L2' | 'L3' | 'L4';
+  /** The publishing page's own hash ('#at=bkg-06&lens=perf'); a follower on the same product may use it. Never ''. */
+  hash?: string;
+  /** One plain line said with the place. A Morning decision card sends its title, a newline, then its brief's short line (a lower third shows both). */
+  say?: string;
+}
+
+export interface FocusTarget {
+  /** The same kinds the place baton and the companion's focus.show send. */
+  kind: 'feature' | 'room' | 'wing' | 'site';
+  id: string;
+}
+
+/** What a client sees: the shared place (null before anyone published) and every reader. */
+export interface SharedView {
+  /** Grows by one each time the shared place moves; an echo or a presence change keeps it. */
+  rev: number;
+  /** A sharedPlace, or null before anyone published. */
+  shared: Record<string, unknown>;
+  readers: ViewReader[];
+  /** The last shared places, oldest first (added 2026-10-30, roadmap C2, optional: absent before the first publish). */
+  history?: HistoryEntry[];
+  /** The index in history of the place shared now: back goes to historyAt - 1. */
+  historyAt?: number;
+}
+
+export interface ViewReader {
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  id: string;
+  surface: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  label: string;
+  /** '*' (whoever moves) or one reader id; absent: not following. */
+  follows?: string;
+  seenAt: string;
+  /** Seen in the last 45 s (LIVE_MS); clients say hello every 15 s while open. */
+  live: boolean;
+}
+
+export interface HistoryEntry {
+  place: FocusPlace;
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  label: string;
+  /** The publish that made it the shared place. */
+  at: string;
+}
+
+export interface SharedPlace {
+  place: FocusPlace;
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  surface: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  /** What other surfaces call the publisher: 'Web', 'Phone', 'VR table', 'Glim'. */
+  label: string;
+  /** ISO time of the publish that made this the shared place (an echo keeps it). */
+  at: string;
+}
+
+/** One move. hello, publish and follow name the caller (surface, label); publish carries a place, follow carries `of`. */
+export interface FocusPost {
+  /** hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400). */
+  op: 'hello' | 'publish' | 'follow' | 'unfollow' | 'forget' | 'back' | 'forward';
+  /** A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`). */
+  reader: string;
+  surface?: 'web' | 'phone' | 'vr' | 'companion' | 'personas' | 'standin' | 'morning';
+  label?: string;
+  place?: FocusPlace;
+  /** follow: '*' or a reader id (never the caller's own). */
+  of?: string;
+}
+
+export interface FocusAnswer {
+  /** The shared place moved (201, a new rev); false for an echo or a presence-only move (200). */
+  moved: boolean;
+  view: SharedView;
+}
+
+/** The Morning Watch: one standup across every live product, as cards read in order (packages/core/src/companion/morning.ts is the source; docs/standard/contract-1.md says the rules). GET /api/companion/morning answers `deck`; with `view=agent` (the morning.brief tool) it answers `agent`; POST /api/companion/morning takes `post` (the human path only) and answers the steering row `steer`. Each decision card carries its brief, built from decision-brief-1's facts. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (morning-deck-2). Absent values are omitted, never null. */
+export interface MorningWatch {
+  deck?: MorningDeck;
+  agent?: AgentDeck;
+  steer?: SteerRow;
+  post?: SteerPost;
+}
+
+/** GET /api/companion/morning: the window [since, until], one summary per product, the cards in reading order. */
+export interface MorningDeck {
+  since: string;
+  until: string;
+  products: ProductSummary[];
+  cards: MorningCard[];
+  agents?: TrailTally;
+  /** Products that could not be read, never dropped silently. */
+  skipped?: SkippedProduct[];
+  news?: DeckNews;
+}
+
+export interface ProductSummary {
+  slug: string;
+  name: string;
+  built: number;
+  failed: number;
+  releases: number;
+  confirmed: number;
+  /** Release items whose reading fell short of what was expected. */
+  short: number;
+  waiting: number;
+}
+
+export interface MorningCard {
+  /** Stable across reads of the same morning ('decision:<product>:<proposal>'), so a reader keeps its card. */
+  id: string;
+  /** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. */
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close' | 'outcomes';
+  product?: string;
+  productName?: string;
+  headline: string;
+  lines: CardLine[];
+  tone: 'good' | 'warn' | 'bad' | 'calm';
+  /** Where the card takes every follower as it is read. */
+  place?: FocusPlace;
+  decision?: CardDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
+  /** kind outcomes only: what earlier approvals became, newest decision first (added 2026-11-10, optional). */
+  outcomes?: Outcome[];
+}
+
+export interface CardLine {
+  text: string;
+  tone?: 'good' | 'warn' | 'bad' | 'calm';
+}
+
+export interface CardDecision {
+  proposal: string;
+  tier?: number;
+  /** A verdict given this morning (the card keeps its slot), or a hold from an earlier one. */
+  steered?: SteerRow;
+  brief?: CardBrief;
+}
+
+/** One row of a product's steering log (<root>/.ai/lens-scan/work/steering-log.jsonl), and POST's answer. */
+export interface SteerRow {
+  at: string;
+  product: string;
+  proposal: string;
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
+  title: string;
+  /** Who decided, as bp signs a decision (user:<login>). */
+  by: string;
+  /** defer: when the decision comes back to the deck. */
+  until?: string;
+  /** approve: the store moved but the log could not be written. */
+  warning?: string;
+  /** decline: what the store's row now reads ('Repeats <id>, declined <day>: ...'). */
+  note?: string;
+}
+
+/** A decision card's brief (cardBrief in morning.ts over briefFor): the same facts and lines as decision-brief-1, plus the recommendation and a one-line form for small surfaces. */
+export interface CardBrief {
+  facts: BriefFact[];
+  lines: string[];
+  advice: BriefAdvice;
+  decline?: CardDecline;
+  /** Only when the same idea was declined before (advice withdraw). */
+  recommend?: 'decline';
+  /** With recommend: what a Decline writes to the store. */
+  note?: string;
+  /** One line: the repeat or the likeness with its quote, else the brief's first line. */
+  short: string;
+}
+
+/** The decline a decision card repeats (recommend: decline) or only resembles (advice ask): decision-brief-1's briefDecided, the fields a card shows. */
+export interface CardDecline {
+  id: string;
+  title: string;
+  feature: string;
+  /** YYYY-MM-DD. */
+  at: string;
+  by?: string;
+  /** The owner's own words. */
+  note?: string;
+  match: 'same idea' | 'same standard' | 'similar words' | 'same lens';
+}
+
+/** One approval and what it became (companion/outcomes.ts joinOutcomes; added 2026-11-10). Absent values are omitted, never null or empty. */
+export interface Outcome {
+  /** The proposal id the person approved. */
+  proposal: string;
+  /** Its title as the store has it now. */
+  title: string;
+  /** The room id on the plan, when the proposal's feature maps to one (as decision cards resolve it). */
+  room?: string;
+  /** ISO: the decision log's `at` (an event time). */
+  decided_at: string;
+  /** The decision log's surface. */
+  decided_by: 'web' | 'vr';
+  /** built: the store says done, accepted, rework or released; failed: failed; building: executing, or a queued or running execute job names it; waiting: approved, no job yet. */
+  outcome: 'built' | 'failed' | 'building' | 'waiting';
+  /** failed only: the failure record's stage and reason in one sentence. */
+  reason?: string;
+  /** built only: the short commit sha, when the store has one. */
+  commit?: string;
+  /** The wave id, when a wave holds it. */
+  wave?: string;
+  /** The proposal's before screen: a Shot.path (png, jpg or webp only). */
+  before?: string;
+  /** The proposal's after screen: a Shot.path (png, jpg or webp only). */
+  after?: string;
+}
+
+/** What agents did with the owner's decisions in the window (companion/trail.ts). */
+export interface TrailTally {
+  reads: number;
+  heard: number;
+  withdrew: number;
+  recommended: number;
+  conversations: number;
+}
+
+export interface SkippedProduct {
+  product: string;
+  why: string;
+}
+
+/** What landed after the reader opened the deck (GET ...&opened=<iso>): findings raised and items built, shown at the end, never in the part already read (added 2026-10-30, roadmap C1, optional). */
+export interface DeckNews {
+  /** The `opened` instant the news is counted from. */
+  since: string;
+  count: number;
+}
+
+/** GET /api/companion/morning?view=agent (morning.brief): the same cards and brief lines, compact enough for the MCP door's result cap. */
+export interface AgentDeck {
+  since: string;
+  until: string;
+  products: ProductSummary[];
+  agents?: TrailTally;
+  cards: AgentCard[];
+  news?: DeckNews;
+}
+
+export interface AgentCard {
+  id: string;
+  /** outcomes (added 2026-11-10, ES1): what the owner's earlier approvals became; at most one per product, after open and agents, before built. */
+  kind: 'open' | 'agents' | 'built' | 'release' | 'quiet' | 'decision' | 'close' | 'outcomes';
+  product?: string;
+  headline: string;
+  lines: string[];
+  place?: AgentPlace;
+  decision?: AgentDecision;
+  /** Landed after the reader opened the deck: appended before the close card, never into the read part (added 2026-10-30, optional). */
+  news?: true;
+}
+
+export interface AgentPlace {
+  product: string;
+  target?: FocusTarget;
+}
+
+export interface AgentDecision {
+  proposal: string;
+  tier?: number;
+  steered?: AgentSteered;
+  brief?: AgentBrief;
+}
+
+export interface AgentSteered {
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
+  at: string;
+}
+
+export interface AgentBrief {
+  lines: string[];
+  /** The brief's advice.say. */
+  advice: 'withdraw' | 'ask' | 'proceed';
+  recommend?: 'decline';
+  note?: string;
+}
+
+export interface SteerPost {
+  product: string;
+  proposal: string;
+  /** decline is taken only on a repeat of a declined idea (the card brief's recommendation); the server refuses it on any other card (409). */
+  verdict: 'approve' | 'defer' | 'hold' | 'decline';
 }

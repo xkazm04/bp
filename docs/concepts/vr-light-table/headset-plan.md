@@ -85,6 +85,10 @@ route selects its runtime per process, or through its own app's switch.
 
 **Port 8000 stays untouched.** apps/server runs on its own port, as in every round.
 
+**Result (2026-10-29, [`runs/2026-10-29-lynx-quest3s.md`](runs/2026-10-29-lynx-quest3s.md)):**
+- Rung 1 fails. Link's x64 kernel drivers cannot install on ARM64 (`DIFxAPI.dll` is missing).
+- Rung 2 passes. Steam Link with SteamVR runs the table at 90 Hz, hands tracked, about 26 ms a frame.
+
 ## Code to change before or during the session
 
 All of these can be built and checked in the Simulator before the headset arrives. Items 1–3 block a fair reading.

@@ -75,6 +75,18 @@ export function TroubleKey() {
   );
 }
 
+/** A room under a scan at the overview: a lit wall, the rail filling from the bottom-left, and a scanned room's tick. */
+export function RoomScanKey() {
+  return (
+    <svg width={28} height={19} viewBox="0 0 28 19" aria-hidden="true">
+      <rect x="1" y="1" width="26" height="17" fill="none" stroke="var(--accent)" strokeWidth="1.5" />
+      <rect x="3.5" y="13.5" width="12" height="2.5" fill="var(--accent)" />
+      <path d="M12 7l3 3 6-6" fill="none" stroke="var(--accent)" strokeWidth="1.6" />
+    </svg>
+  );
+}
+export const ROOM_SCAN_WORDS = 'Scan by room: a lit wall and rail with n/m while reading; a tick and m/m once scanned';
+
 function samples(fs: readonly Feature[], key: (f: Feature) => string, n = 6): { f: Feature; label: string }[] {
   const seen = new Map<string, Feature>();
   for (const f of fs) { const k = key(f); if (k && !seen.has(k)) seen.set(k, f); if (seen.size >= n) break; }
@@ -102,6 +114,7 @@ export function Legend({ view }: { view: ViewId }) {
         <div><Mark k="fail" /><span>Failed</span></div>
         <div><Mark k="pin" /><span>A question (RFI)</span></div>
         <div><Mark k="ord" /><span>Standing order</span></div>
+        <div><RoomScanKey /><span>{ROOM_SCAN_WORDS}</span></div>
         <div className="lg-cap">Tile colour is always the stage. {E.M.P.lenses.length ? <>Each lens adds its own marks; in General all {E.M.P.lenses.length} enabled lenses show at once.</> : <>No lenses are enabled, so no lens marks are drawn.</>} Lenses come from the map; <code>?lenses=-security,+com.kettle.cost</code> switches them off or on for this session.</div>
       </div>
     );

@@ -9,9 +9,12 @@ import { SPEND_CAP, pname, sheetOf } from '@bp/core/model';
 import type { DockTab } from '@/engine/state';
 import { MorningButton, oncePerProposal } from './Queue';
 import { FindPanel, useRunningScans } from './rail/panels';
-import { shallowEqual, useBp, useEngine } from './hooks';
+import { shallowEqual, useBp, useEngine, useLive } from './hooks';
+import { useRules } from '@/lib/rules/client';
+import { isLive, isOrder } from '@bp/core/scan/rules';
 import { WideBody, isWide } from './rail/wide';
 import { setFlyoutWidth } from '@/engine/chrome';
+import { toggleTableCard } from './crossing/CrossingHost';
 import './rail.css';
 
 /** A number that counts to its new value (instant under reduced motion). */
@@ -52,6 +55,7 @@ const G = {
   steer: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="1.7" /><circle cx="12" cy="12" r="2" fill="currentColor" /><path d="M12 4.5v5.5M5.5 15.8l4.8-2.8M18.5 15.8l-4.8-2.8" stroke="currentColor" strokeWidth="1.7" /></svg>,
   plan: <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" fill="none" stroke="currentColor" strokeWidth="1.7" /><path d="M3.5 14.5h17M13 14.5v5M8 4.5v10" stroke="currentColor" strokeWidth="1.4" /></svg>,
   find: <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" strokeWidth="1.8" /><path d="M15 15l5 5" stroke="currentColor" strokeWidth="2" /></svg>,
+  table: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15.5L7 9h10l4 6.5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /><path d="M5 15.5v3M19 15.5v3M9 12.2h6" stroke="currentColor" strokeWidth="1.5" /><circle cx="12" cy="5" r="1.6" fill="currentColor" /></svg>,
   view: <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.5" /><circle cx="9" cy="7" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="15.5" cy="12" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /><circle cx="7" cy="17" r="2.1" fill="var(--card)" stroke="currentColor" strokeWidth="1.6" /></svg>,
 };
 
@@ -75,6 +79,10 @@ function useItems(): Item[] {
   }, shallowEqual);
   // the Agents figure: working agents plus running scans that are not already agents on the plan (useRunningScans)
   const scans = useRunningScans();
+  // a live product's standing rules (lib/rules/client.ts): the rail counts them and the plan wears their places
+  const live = useLive(), rv = useRules(live?.slug ?? null);
+  useEffect(() => { E.setLiveRules(live ? rv.rules : []); }, [E, live, rv.rules]);
+  const now = Date.now(), on = rv.rules.filter((r) => isLive(r, now)), rules = { n: on.length, g: on.filter((r) => !isOrder(r.kind)).length };
   const out: Item[] = [];
   out.push({ k: 'find', label: 'Find', title: 'Find a feature', glyph: G.find, n: null, tone: 'ink' });
   if (sim.has) {
@@ -84,7 +92,8 @@ function useItems(): Item[] {
       glyph: G.asks, n: s.asks, n2: s.hi, n2title: s.hi + ' urgent', tone: s.asks ? 'amber' : 'ink', sub: s.who ? 'for ' + first : undefined,
     });
     out.push({ k: 'swarm', label: 'Agents', title: 'Agents · ' + s.working + ' working of ' + s.agents + (scans ? ' · ' + scans + ' scan' + (scans === 1 ? '' : 's') + ' running' : ''), glyph: G.swarm, n: s.working + scans, n2: s.blocked + s.failed, n2title: s.blocked + ' blocked, ' + s.failed + ' failed', tone: 'mint' });
-    if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
+    if (sim.live && live) out.push({ k: 'orders', label: 'Rules', title: 'Standing rules · ' + rules.n + ' live', glyph: G.orders, n: rules.n, tone: 'ink', sub: rules.g ? rules.g + ' grant' + (rules.g === 1 ? '' : 's') : undefined });
+    else if (s.orders || !sim.live) out.push({ k: 'orders', label: 'Orders', title: 'Standing orders · ' + s.br + ' of ' + s.orders + ' breached', glyph: G.orders, n: s.br, tone: s.br ? 'red' : 'ink', sub: 'of ' + s.orders });
     if (!sim.live) out.push({ k: 'steer', label: 'Steer', title: 'Steer the swarm · spend ' + s.pct + '% of the cap', glyph: G.steer, n: s.pct + '%', tone: s.pct >= 100 ? 'red' : s.pct >= 80 ? 'amber' : 'ink' });
   }
   const sh = sheetOf(M.P, s.view);
@@ -194,6 +203,9 @@ export function Dock() {
         initial={false} animate={s.hidden ? { x: 96, opacity: 0 } : { x: 0, opacity: 1 }} transition={reduce ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
         style={{ pointerEvents: s.hidden ? 'none' : 'auto' }} inert={s.hidden || undefined}>
         {items.map((x, i) => <RailItem key={x.k} it={x} idx={i} on={open === x.k} />)}
+        <button type="button" className="ri t-ink ri-table" aria-label="Take it to the table: arm this place for the headset, or play the crossing" title="Take it to the table: arm this place for the headset, or play the crossing" onClick={toggleTableCard}>
+          <span className="g">{G.table}</span><span className="n">VR</span><span className="lb">Table</span>
+        </button>
         <span className="sp" />
         <button id="dhide" type="button" aria-label="Hide rail" title="Hide / show rail ( \ )" onClick={() => E.toggleDock(false)}>⟩</button>
       </motion.nav>

@@ -8,9 +8,12 @@
 //
 // State: <root>/.ai/lens-scan/work/nightly/state.json (ids tried and why they stopped), nightly.log.
 // Worktrees: <root>/../gp-nightly (integration, branch spark/nightly-<date>) and gp-nightly-<n> (one per worker).
+// The worker worktrees are scratch and are removed when the run ends (their branches stay). The integration worktree stays: it
+// holds the night's result for review; once that branch is merged into --base, `scripts/worktree-sweep.ps1 -Apply` in the product
+// checkout removes it.
 import { DatabaseSync } from 'node:sqlite';
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, lstatSync, readdirSync, rmdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
@@ -96,6 +99,20 @@ function ensureWorktree(wt, branch, from) {
   // node_modules is not tracked: the frontend gate reads the main checkout's through a junction
   const nm = join(ROOT, 'frontend/node_modules');
   if (existsSync(nm) && !existsSync(join(wt, 'frontend/node_modules'))) run('cmd', ['/c', 'mklink', '/J', join(wt, 'frontend/node_modules').replace(/\//g, '\\'), nm.replace(/\//g, '\\')]);
+}
+
+/** Remove a worktree this run made. Its junctions (the frontend node_modules link) are unlinked first: `git worktree remove` walks
+ *  into a junction and empties the main checkout's folder. The branch is kept, so no commit is lost. */
+function removeWorktree(wt) {
+  if (!existsSync(wt)) return;
+  const nm = join(wt, 'frontend/node_modules');
+  try { if (lstatSync(nm).isSymbolicLink()) rmdirSync(nm); } catch { /* none */ }
+  const left = [];
+  const walk = (d, depth) => { if (depth > 3) return; for (const e of readdirSync(d, { withFileTypes: true })) { const f = join(d, e.name); if (e.name === '.git') continue; try { if (lstatSync(f).isSymbolicLink()) left.push(f); else if (e.isDirectory()) walk(f, depth + 1); } catch { /* vanished */ } } };
+  try { walk(wt, 0); } catch { /* unreadable */ }
+  if (left.length) { log(`worktree ${wt} kept: a link remains at ${left[0]}`); return; }
+  const r = run('git', ['-C', ROOT, 'worktree', 'remove', '--force', wt]);
+  log(r.status ? `worktree ${wt} not removed: ${r.stderr.trim().slice(-200)}` : `worktree ${wt} removed`);
 }
 
 const PROMPT = (batch) => `You are fixing a batch of backlog items from the lens-scan store of this repository, nightly and unattended. Nobody can answer questions: decide, and skip an item you cannot do safely.
@@ -193,6 +210,7 @@ async function main() {
   ensureWorktree(INT, BRANCH, BASE);
   if (opt('polish-only', false) === true) { log(`  ${await polish()}`); return; }
   await Promise.all(Array.from({ length: WORKERS }, (_, i) => worker(i + 1)));
+  for (let n = 1; n <= WORKERS; n++) removeWorktree(resolve(join(INT, '..', `gp-nightly-${n}`)));
   await exclusive(async () => { log(`  ${await consolidate()}`); });
   if (opt('polish', true) !== 'false') await exclusive(async () => { log(`  ${await polish()}`); });
   log(`nightly end after ${started} batches; branch ${BRANCH} at ${gitIn(INT, 'rev-parse', '--short', 'HEAD').stdout.trim()}`);

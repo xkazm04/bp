@@ -58,12 +58,12 @@ export function kettleStream(sim: ScanSim, req: Request): Response {
         try { ctrl.enqueue(enc.encode(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`)); lastSent = Date.now(); } catch { stop(); }
       };
       const s = sim.snapshot();
-      for (const t of SCAN_TABLES) for (const r of s[t]) sent.add(r);
+      for (const t of SCAN_TABLES) for (const r of s[t] ?? []) sent.add(r);
       send('snapshot', s);
       if (jobs.length) send('jobs', jobs);
       unsubscribe = sim.subscribe(() => {
         const now = sim.snapshot(), d = emptyScan() as Record<keyof ScanSnapshot, object[]>;
-        for (const t of SCAN_TABLES) d[t] = (now[t] as object[]).filter((r) => !sent.has(r));
+        for (const t of SCAN_TABLES) d[t] = ((now[t] ?? []) as object[]).filter((r) => !sent.has(r));
         if (!isEmptyScan(d as ScanSnapshot)) { for (const t of SCAN_TABLES) for (const r of d[t]) sent.add(r); send('delta', d); }
         const j = sim.jobs();
         if (j !== jobs) { jobs = j; send('jobs', j); }

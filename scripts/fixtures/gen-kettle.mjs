@@ -53,8 +53,8 @@ const D = [
     ['Sign-in', [
       ['Email & password sign-in', 'Members and staff sign in with email and password.', 'live', 'P0', 'C', 'M1', 'api,web-admin,web-member,mobile'],
       ['Magic-link login', 'Passwordless sign-in through a one-time email link.', 'live', 'P1', 'C', 'M1', 'api,web-member,mobile'],
-      ['Google sign-in', 'Sign in with a Google account.', 'live', 'P2', 'C', 'M1', 'api,web-member,mobile'],
-      ['Apple sign-in', 'Sign in with Apple, required for the iOS app store.', 'flagged', 'P1', 'C', 'M2', 'api,mobile'],
+      ['Social sign-in', 'Sign in with a social account.', 'live', 'P2', 'C', 'M1', 'api,web-member,mobile'],
+      ['Platform sign-in', 'Platform sign-in, required by the mobile app store.', 'flagged', 'P1', 'C', 'M2', 'api,mobile'],
       ['Two-factor auth for staff', 'Staff accounts protect payouts and member data with a second factor.', 'in-review', 'P0', 'I', 'M2', 'api,web-admin'],
       ['Sessions & device list', 'See and revoke signed-in devices.', 'in-dev', 'P2', 'C', null, 'api,web-member,web-admin'],
     ]],
@@ -141,9 +141,9 @@ const D = [
   ]],
   ['MEM', 'Member Experience', 'What members see and touch.', [
     ['Member app', [
-      ['Member mobile app', 'iOS and Android app: book, pay, check in.', 'live', 'P0', 'C', 'M1', 'mobile'],
+      ['Member mobile app', 'Mobile app: book, pay, check in.', 'live', 'P0', 'C', 'M1', 'mobile'],
       ['Push notifications', 'Booking confirmations, waitlist promotions, reminders.', 'live', 'P1', 'C', 'M1', 'mobile,workers,integrations'],
-      ['Wallet pass', 'Membership card in Apple and Google Wallet.', 'specified', 'P3', 'C', null, 'api,mobile'],
+      ['Wallet pass', "Membership card in the phone's wallet.", 'specified', 'P3', 'C', null, 'api,mobile'],
       ['Member profile', 'Profile, emergency contact, health notes.', 'live', 'P1', 'C', 'M1', 'api,web-member,mobile'],
       ['Digital waiver signing', 'Sign the liability waiver before the first class.', 'live', 'P0', 'C', 'M1', 'api,web-member,mobile'],
       ['Progress & milestones', 'Streaks, class counts and celebrations.', 'flagged', 'P2', 'C', null, 'mobile,api'],
@@ -292,8 +292,8 @@ const F = (name) => { const f = byName.get(name); if (!f) throw new Error('no fe
 // ---------- dependencies (feature depends on these) ----------
 const deps = {
   'Magic-link login': ['Transactional email'],
-  'Google sign-in': ['Email & password sign-in'],
-  'Apple sign-in': ['Email & password sign-in'],
+  'Social sign-in': ['Email & password sign-in'],
+  'Platform sign-in': ['Email & password sign-in'],
   'Two-factor auth for staff': ['Email & password sign-in', 'SMS reminders'],
   'Sessions & device list': ['Email & password sign-in'],
   'Staff roles & permissions': ['Email & password sign-in', 'Multi-tenant data isolation'],
@@ -704,9 +704,9 @@ const product = {
   tagline: 'Booking, memberships and payments for independent fitness studios.',
   asOf: TODAY.toISOString().replace('.000', ''),
   stack: {
-    'web-admin': 'Studio admin web app (Next.js, TypeScript)',
-    'web-member': 'Member booking site and embeddable widget (Next.js)',
-    mobile: 'Member & instructor app (React Native, iOS + Android)',
+    'web-admin': 'Studio admin web app (TypeScript)',
+    'web-member': 'Member booking site and embeddable widget',
+    mobile: 'Member & instructor app (cross-platform mobile)',
     api: 'API server (Node.js, TypeScript, tRPC + REST)',
     workers: 'Background workers (job queue on Redis)',
     db: 'PostgreSQL, multi-tenant schema',

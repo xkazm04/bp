@@ -12,7 +12,6 @@ import type { LensField } from '@bp/core/standard/types';
 import { atTarget, isOutlier, perfFigures, reasonOf, shortUnit, signed, toneOf, type PerfFigures } from '@bp/core/train/perf';
 import { VerdictChip } from '../ui/Marks.tsx';
 import { num } from '../ui/tables';
-import { latestOf } from './MetricStrip';
 import { PerfRange } from './PerfRange';
 import './PerfTable.css';
 
@@ -26,7 +25,7 @@ export const runsOf = (c: Comparison): number[] => c.before.filter((m) => m.lens
 export const hasRuns = (c: Comparison): boolean => runsOf(c).length > 1;
 
 export function perfItem(c: Comparison, fname: string, lens: LensDef | undefined): PerfItem {
-  const p = c.p, values = runsOf(c), b = latestOf(c.before, p.lens, p.metric), a = latestOf(c.after, p.lens, p.metric);
+  const p = c.p, values = runsOf(c), b = c.latest.before, a = c.latest.after;
   const field = p.metric ? lens?.F[p.metric] : undefined, unit = b?.unit ?? a?.unit ?? field?.unit ?? '';
   const seen = new Map<string, Context>();
   for (const m of c.before) {

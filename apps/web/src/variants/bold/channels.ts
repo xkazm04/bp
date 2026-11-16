@@ -9,12 +9,12 @@ import { isLiveSt } from '@bp/core/model';
 import type { ChannelAggregate, LensChannel, MarkArgs, Rect, TileGeom, Theme } from '../types';
 import { ACCENT } from './palette';
 import { reviewDiamond } from '../base/expression';
-import { clamp, count } from '../base/util';
+import { clamp } from '../base/util';
+import { clauseWords, kUsd } from './schedule';
 
 const TAU = Math.PI * 2;
 const NODASH: number[] = [], DASH63 = [6, 3], DOT = [1.5, 3];
-/** Money in short form: $950, $3.2k, $12k (tiles, aggregates, decor rails). */
-export const kUsd = (n: number) => (n >= 1000 ? '$' + (Math.round(n / 100) / 10).toString().replace(/\.0$/, '') + 'k' : '$' + n);
+export { kUsd };
 
 // ------------------------------------------------------------------------------------ fonts (cached)
 const fontCache = new Map<string, string>();
@@ -132,9 +132,7 @@ const business: LensChannel = {
     };
   },
   aggregate(fs): ChannelAggregate {
-    const rq = fs.reduce((s, f) => s + (bl(f).business.customerRequests30d || 0), 0);
-    const mrr = fs.reduce((s, f) => s + (bl(f).business.revenueLink === 'direct' ? bl(f).business.mrrImpactUsd || 0 : 0), 0);
-    return { parts: [rq + ' customer asks', kUsd(mrr) + '/mo direct revenue', count(fs, (f) => bl(f).business.value >= 4) + ' high value'] };
+    return { parts: clauseWords('business', fs) };
   },
 };
 
@@ -186,7 +184,7 @@ const design: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => bl(f).design.status === 'polished' || bl(f).design.status === 'implemented') + ' built to design', count(fs, (f) => bl(f).design.status === 'none' && f.stage !== 'idea') + ' without design', count(fs, (f) => bl(f).design.a11y === 'fail') + ' fail accessibility'] };
+    return { parts: clauseWords('design', fs) };
   },
 };
 
@@ -228,8 +226,7 @@ const development: LensChannel = {
     };
   },
   aggregate(fs) {
-    const prs = fs.reduce((s, f) => s + (bl(f).development.openPRs || 0), 0);
-    return { parts: [count(fs, (f) => bl(f).development.humanReviewed === false) + ' unreviewed', Math.round(fs.reduce((s, f) => s + bl(f).development.aiAuthoredPct, 0) / Math.max(1, fs.length)) + '% agent-written', prs + ' open PRs', count(fs, (f) => (bl(f).development.unitCoveragePct ?? Infinity) < 50) + ' thin coverage'] };
+    return { parts: clauseWords('development', fs) };
   },
 };
 
@@ -275,7 +272,7 @@ const operations: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => bl(f).operations.environment === 'production') + ' in production', count(fs, (f) => bl(f).operations.environment === 'production' && !bl(f).operations.alerting) + ' without alerting', fs.reduce((s, f) => s + (bl(f).operations.incidents30d || 0), 0) + ' incidents · 30 d'] };
+    return { parts: clauseWords('operations', fs) };
   },
 };
 
@@ -343,7 +340,7 @@ const security: LensChannel = {
     };
   },
   aggregate(fs) {
-    return { parts: [count(fs, (f) => bl(f).security.dataClass === 'payment') + ' card data', count(fs, (f) => bl(f).security.dataClass === 'personal') + ' personal data', count(fs, sensitiveUnreviewed) + ' unreviewed', fs.reduce((s, f) => s + bl(f).security.openFindings, 0) + ' findings'] };
+    return { parts: clauseWords('security', fs) };
   },
 };
 
@@ -388,12 +385,12 @@ const quality: LensChannel = {
     };
   },
   aggregate(fs) {
-    const t = fs.reduce((s, f) => s + bl(f).quality.e2eTests, 0), p = fs.reduce((s, f) => s + bl(f).quality.e2ePassing, 0);
-    return { parts: [p + '/' + t + ' e2e passing', fs.reduce((s, f) => s + bl(f).quality.openBugs.p1, 0) + ' open P1', count(fs, (f) => bl(f).quality.status === 'untested' && isLiveSt(f.stage)) + ' live untested'] };
+    return { parts: clauseWords('quality', fs) };
   },
 };
 
-/** Every built-in channel counts and speaks for measured facets only (base `measured`: content and aggregate). */
+/** Every built-in channel counts and speaks for measured facets only (base `measured`: content and aggregate); each
+ *  aggregate is its lens's clause words from schedule.ts, the table the bay rails and the Plan-tab schedule read too. */
 export const CHANNELS: Record<BuiltinLens, LensChannel> = {
   business: measured('business', business), design: measured('design', design), development: measured('development', development),
   operations: measured('operations', operations), security: measured('security', security), quality: measured('quality', quality),

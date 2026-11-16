@@ -6,50 +6,58 @@
 // id that may not reach a command line (waves.server.ts takeForBuild over scan/admit.ts, the rule every build entry reads).
 // 202 `{ jobs, approved, skipped }`; 409 `{ error, skipped }` when nothing could
 // go; 400 `{ error: 'unknown-lens' }` for a lens the map lacks or has disabled; 404 for an unknown product, a missing
-// map or a missing store; 429 `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand,
+// map or a missing store, 409 for a map that does not parse; 429 `{ error, jobs, approved, skipped }` when the queue cap stopped it (the approvals stand,
 // `jobs` holds the ones queued before the cap); 503 when the store stayed locked; 403 while BP_WRITES=off. Localhost only.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct, hasStore, storeFile } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, JSON body and its shape, BP_WRITES, the map): the route door (route-door.server.ts); the lens and the store are checked here, in that order.
+import { door } from '@bp/core/server/route-door.server';
+import { hasStore, storeFile } from '@bp/core/server/products.server';
 import type { ScanJob } from '@bp/core/scan/jobs';
 import { buildChunks } from '@bp/core/scan/admit';
 import { busyProposals, enqueueExecute } from '@bp/core/server/jobs.server';
-import { readLensesAndFeatures } from '@bp/core/server/lens-write.server';
+import { lensOn } from '@bp/core/server/map.server';
 import { snapshotOf } from '@bp/core/server/store.server';
-import { writesOff } from '@bp/core/scan/writes';
 import { triageBy } from '@bp/core/server/release.server';
 import { takeForBuild } from '@bp/core/server/waves.server';
+import { gateBuild, refusedBy } from '@bp/core/server/rules.server';
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const readOnly = writesOff();
-  if (readOnly) return Response.json({ error: readOnly }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug, id: lens } = await params;
-  try { await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  const map = readLensesAndFeatures(p);
-  if (!map) return Response.json({ error: `no readable structure for ${slug}` }, { status: 404 });
-  if (!map.lenses.some((e) => e.id === lens && e.enabled)) return Response.json({ error: 'unknown-lens' }, { status: 400 });
-  if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
+const execute = door('products/[slug]/lenses/[id]/execute', {
+  POST: {
+    body: true,
+    writes: true,
+    map: 'required',
+    live: async ({ slug, product: p, params: { id: lens }, map }) => {
+      if (!map.lenses.some((e) => e.id === lens && lensOn(e))) return Response.json({ error: 'unknown-lens' }, { status: 400 });
+      if (!hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
 
-  const file = storeFile(p);
-  let ids: string[];
-  try { ids = snapshotOf(file).proposals.filter((x) => x.lens === lens).map((x) => x.id); } catch (e) {
-    return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 });
-  }
-  const { approved, go, skipped, error } = takeForBuild(file, ids, busyProposals(slug), await triageBy());
-  if (error) return Response.json({ error: `execute failed: ${error}`, approved, skipped }, { status: 503 });
-  if (!go.length) return Response.json({ error: 'nothing to execute', skipped }, { status: 409 });
+      const file = storeFile(p);
+      let ids: string[], open: string[];
+      try {
+        const xs = snapshotOf(file).proposals.filter((x) => x.lens === lens);
+        ids = xs.map((x) => x.id); open = xs.filter((x) => x.status === 'proposed' || x.status === 'approved').map((x) => x.id);
+      } catch (e) {
+        return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 });
+      }
+      // the owner's standing orders (rules.server.ts): what an order holds is left out, and cited
+      let g: ReturnType<typeof gateBuild>;
+      try { g = gateBuild(p, 'lens.execute', open); } catch (e) { return Response.json({ error: `execute failed: ${(e as Error).message}`, approved: [], skipped: [] }, { status: 503 }); }
+      const held = new Set(g.held.map((h) => h.id));
+      if (g.refused) return refusedBy(g);
+      const { approved, go, skipped, error } = takeForBuild(file, ids.filter((x) => !held.has(x)), busyProposals(slug), await triageBy());
+      skipped.push(...g.held.map((h) => ({ id: h.id, status: 'held:' + h.order.id })));
+      if (error) return Response.json({ error: `execute failed: ${error}`, approved, skipped }, { status: 503 });
+      if (!go.length) return Response.json({ error: 'nothing to execute', skipped }, { status: 409 });
 
-  const jobs: ScanJob[] = [], chunks = buildChunks(go);
-  for (const chunk of chunks) {
-    const r = enqueueExecute(slug, p.root, chunk);
-    if (!r.ok) return Response.json({ error: `${r.error}; ${jobs.length} of ${chunks.length} execute jobs queued`, jobs, approved, skipped }, { status: r.status });
-    jobs.push(r.job);
-  }
-  return Response.json({ jobs, approved, skipped }, { status: 202 });
+      const jobs: ScanJob[] = [], chunks = buildChunks(go);
+      for (const chunk of chunks) {
+        const r = enqueueExecute(slug, p.root, chunk);
+        if (!r.ok) return Response.json({ error: `${r.error}; ${jobs.length} of ${chunks.length} execute jobs queued`, jobs, approved, skipped }, { status: r.status });
+        jobs.push(r.job);
+      }
+      return Response.json({ jobs, approved, skipped, ...(g.words ? { held: g.held, note: g.words } : {}) }, { status: 202 });
+    },
+  },
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string; id: string }> }): Promise<Response> {
+  return execute.POST(req, ctx);
 }

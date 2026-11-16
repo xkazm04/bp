@@ -1,4 +1,4 @@
--- lens-scan store v4. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
+-- lens-scan store v5. One file per product repo: <root>/.ai/lens-scan/scan.db (gitignored).
 -- Written by the /lens-scan skill (ai-registry skills/lens-scan/scripts/store.mjs, the owner of this DDL);
 -- read by the blueprint, which writes only proposal decisions. This file is copied name for name between
 -- ai-registry skills/lens-scan/references/store.sql and bp docs/standard/lens-scan-store.sql.
@@ -27,6 +27,19 @@
 -- (the kind CHECK changed; one transaction, every row copied, origin 'scan'), a v2 file through v3, a v1 file
 -- straight to v4.
 --
+-- v5 (scan-finding/1, the shared finding contract - SKILL.md ## Finding contract): proposals gains, last and in this
+-- order, impact (1-10: severity of a defect / value of an opportunity), impact_why, confidence (low|medium|high),
+-- effort (1-10; from size XS=1 S=2 M=4 L=7 XL=10 when only a size is known), score (scan-score/1, stored by the skill,
+-- never recomputed by a reader), score_parts (JSON breakdown), band ('ranked' | 'reserve': verified but over the
+-- run's cap), mvp (1 on the top finding of its lens in its run), mvp_rule ('top-score' | 'override'), mvp_why,
+-- category ('technical' | 'product'), predicted_verdict ('accept' | 'reject' | 'defer', recorded before any person
+-- decides), predicted_why, predicted_by ('<skill>@<version>:<model>'), predicted_at, veto_until (set when a machine
+-- decided under L1: a person may reverse it until then), proof (JSON: metric, method, unit, before, after, verdict,
+-- control, base_sha, head_sha). A machine decision is decided_by / triaged_by 'machine:lens-scan'. trust_events is the
+-- append-only autonomy ledger: a slice's current level is its latest event's to_level, or the category start level
+-- (technical 2, product 0) when it has none. store.mjs migrates a v4 file by ALTER ADD COLUMN (one transaction);
+-- older files go through v4 first.
+--
 -- proposals.status, what each one means:
 --   proposed   the skill proposed it; nobody has decided
 --   approved   a person (review UI or `decide --by`) approved it; waiting to be built
@@ -40,7 +53,7 @@
 --   released   (v2) shipped: its release was merged and tagged
 --   a reopen (v3) is no status of its own: the item goes back to its triaged_from
 PRAGMA journal_mode = WAL;
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 CREATE TABLE IF NOT EXISTS runs (
   id            TEXT PRIMARY KEY,
@@ -153,10 +166,44 @@ CREATE TABLE IF NOT EXISTS proposals (
   tier           INTEGER CHECK (tier BETWEEN 0 AND 3),  -- 0 stop-ship .. 3 backlog; NULL = untriaged
   risk_class     TEXT CHECK (risk_class IN ('secret', 'authz', 'money', 'data', 'llm', 'perf', 'reliability', 'ux', 'debt')),
   ranked_by      TEXT,                           -- <kind>:<name>
-  ranked_at      TEXT
+  ranked_at      TEXT,
+  -- v5: scan-finding/1
+  impact            INTEGER CHECK (impact BETWEEN 1 AND 10),
+  impact_why        TEXT,
+  confidence        TEXT CHECK (confidence IN ('low', 'medium', 'high')),
+  effort            INTEGER CHECK (effort BETWEEN 1 AND 10),
+  score             REAL,                        -- scan-score/1; NULL when impact or effort is unknown
+  score_parts       TEXT,                        -- JSON {impact, confidence_w, effort_div, risk_factor, formula}
+  band              TEXT NOT NULL DEFAULT 'ranked' CHECK (band IN ('ranked', 'reserve')),
+  mvp               INTEGER NOT NULL DEFAULT 0 CHECK (mvp IN (0, 1)),
+  mvp_rule          TEXT CHECK (mvp_rule IN ('top-score', 'override')),
+  mvp_why           TEXT,
+  category          TEXT CHECK (category IN ('technical', 'product')),
+  predicted_verdict TEXT CHECK (predicted_verdict IN ('accept', 'reject', 'defer')),
+  predicted_why     TEXT,
+  predicted_by      TEXT,
+  predicted_at      TEXT,
+  veto_until        TEXT,
+  proof             TEXT                         -- JSON {metric, method, unit, before, after, verdict, control, base_sha, head_sha}
 );
 CREATE UNIQUE INDEX IF NOT EXISTS proposals_external_ref ON proposals (external_ref) WHERE external_ref IS NOT NULL;
 CREATE INDEX IF NOT EXISTS proposals_tier ON proposals (tier);
+CREATE INDEX IF NOT EXISTS proposals_score ON proposals (lens, band, score);
+
+-- v5. Append-only autonomy ledger (scan-finding/1). slice = '<category>|<lens>|<risk_class>|<size>', '-' for an
+-- absent part. level 0 propose, 1 auto-triage, 2 auto-build with proof, 3 auto-merge.
+CREATE TABLE IF NOT EXISTS trust_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  at         TEXT NOT NULL,
+  slice      TEXT NOT NULL,
+  from_level INTEGER NOT NULL CHECK (from_level BETWEEN 0 AND 3),
+  to_level   INTEGER NOT NULL CHECK (to_level BETWEEN 0 AND 3),
+  reason     TEXT NOT NULL,                      -- 'promote: agreement' | 'demote: reversal <id>' | 'demote: not-better <id>' | 'overlay: <key>'
+  agreement  REAL,                               -- 0..1 over the window, when computed
+  n          INTEGER,                            -- human-decided items in the window
+  item_id    TEXT REFERENCES proposals(id)       -- the item that caused a demotion
+);
+CREATE INDEX IF NOT EXISTS trust_events_slice ON trust_events (slice, id);
 CREATE INDEX IF NOT EXISTS proposals_updated ON proposals (updated_at);
 CREATE INDEX IF NOT EXISTS proposals_pack ON proposals (pack_id);
 CREATE INDEX IF NOT EXISTS proposals_release ON proposals (release_id);

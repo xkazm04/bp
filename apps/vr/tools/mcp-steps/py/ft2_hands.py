@@ -4,9 +4,11 @@
 # tip lands on the same table point) and get the pair's meshes; the wrist point moves to the pair's watch face.
 # HANDS = "hands-capture" puts FB's MakeHuman pair back (the fallback).
 # Run outside PIE: node apps/vr/tools/mcp-call.mjs python <this file> --log apps/vr/tools/mcp-steps/ft2-hands.jsonl
+import os
 import unreal
 
-HANDS = "metahuman"  # or "hands-capture"; keep in step with studio_level.py's HANDS
+# The MakeHuman pair unless BP_HANDS=metahuman opts in (studio_level.py's rule: the Quest APK never carries MetaHuman)
+HANDS = "metahuman" if os.environ.get("BP_HANDS") == "metahuman" else "hands-capture"
 MESHES = {  # studio_level.py's HANDS_MESHES
     "metahuman": ("/Game/Bp/Art/MetaHumanHands/hands_metahuman/StaticMeshes/hand_l",
                   "/Game/Bp/Art/MetaHumanHands/hands_metahuman/StaticMeshes/hand_r"),

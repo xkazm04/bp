@@ -66,7 +66,8 @@ with sync_playwright() as p:
     if MODE != 'quick':
         for theme in ('dark', 'light'):
             pg = b.new_page()
-            SC = "document.querySelector('.ev6') && document.querySelector('.ev6').scrollIntoView({block: 'start'}); document.getElementById('dscroll').scrollBy(0, -90)"
+            # the desktop sheet scrolls in .pg-scroll; a lens tab leads with its .evp.cur panel, General with its first section
+            SC = "(() => { const e = document.querySelector('#pg-panel .evp.cur') || document.querySelector('#pg-panel section'); if (e) e.scrollIntoView({block: 'start'}); document.querySelector('.pg-scroll')?.scrollBy(0, -90); return !!e; })()"
             st = [('js', SC, f'sheet-{theme}-general'), ('floor', 'general')]
             for k, l in LENS.items(): st += [('key', k), ('js', SC, f'sheet-{theme}-{l}'), ('floor', l)]
             run(pg, f'sheet-{theme}', f'{BASE}/v/bold?intro=0&theme={theme}#open=failed-payment-dunning', 1920, 1080, st)

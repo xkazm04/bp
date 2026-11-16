@@ -5,7 +5,7 @@
 //
 //   node apps/vr/tools/run-bplink.mjs [--mode editor|game|staged] [--exe <staged bp.exe>] [--no-server | --bundle] [--xr-sim] [--vr]
 //                                     [--game-mode <class path>] [--exec <cmd,cmd>] [--ue-args "<a> <b>"] [--hold <s>] [--timeout <s>] [--out <dir>]
-//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]]
+//                                     [--product <slug>] [--runtime link|steamvr|alvr|vd [--runtime-json <path>]] [--url <base>] [--link auto]
 //
 // editor  UnrealEditor-Cmd.exe bp.uproject (headless: -nullrhi, unless --xr-sim, which renders off screen instead)
 // game    UnrealEditor-Cmd.exe bp.uproject -game (uncooked)
@@ -23,6 +23,9 @@
 //               (link: Meta Horizon Link's; steamvr and alvr: SteamVR's; vd: Virtual Desktop's VDXR), so the system-wide
 //               HKLM runtime (the Simulator's on Lynx) is never read or written. --runtime-json overrides the known path.
 //               The run lasts until the app is closed (--hold defaults to 4 h); the LogHMD line names the runtime it got.
+// --window      game and staged: render the flat view in a 1600x900 window instead of -nullrhi (a capture, a look at the
+//               lamp's tour; record-demo.mjs --window grabs it)
+// --sound       keep the engine's audio (runs are -nosound otherwise): the tour's voice, heard on the PC
 // --vr          game and staged: -vr, so the app opens an XR session (with --xr-sim, the Simulator's; its window and the
 //               hands only come alive with one). Without it a -game run never calls xrCreateSession.
 // --exec        console commands at startup (-ExecCmds), comma-separated, e.g. "stat scenerendering,stat dumpave -num=600 -ms=0"
@@ -30,6 +33,8 @@
 //               apps/vr/Saved/Profiling/CSV)
 // --hold        keep running this many seconds after the outcome line instead of 5 (a stat dump over many frames);
 //               LogStats lines are printed too
+// --url         start nothing; BpLink reads this base URL (a server, or a mock in front of one, started by the caller:
+//               spark onboarding-vr WP-V1's onboarding mock)
 // --product     the product BpLink reads (-BpLinkProduct=<slug>; default kettle). The server's empty cwd gets a copy of the
 //               repo's bp.products.local.json, which is where products.server.ts looks for live products.
 //
@@ -91,7 +96,9 @@ const killTree = (pid) => spawnSync('taskkill.exe', ['/PID', String(pid), '/T', 
 
 // apps/server, or a port nothing listens on
 let server = null, serverOut = '', port = 0;
-if (flag('--no-server') || flag('--bundle')) {
+if (opt('--url')) {
+  port = Number(new URL(opt('--url')).port) || 80;
+} else if (flag('--no-server') || flag('--bundle')) {
   port = await new Promise((r) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => r(p)); }); });
 } else {
   const cwd = path.join(out, 'server-cwd'); fs.mkdirSync(cwd, { recursive: true });
@@ -111,20 +118,23 @@ const stopServer = async () => {
   if (server) fs.writeFileSync(path.join(out, 'server.log'), serverOut);
 };
 if (!port) { await stopServer(); refuse(`apps/server did not print its port within 20 s (${path.join(out, 'server.log')})`); }
-const url = `http://127.0.0.1:${port}`;
+const url = opt('--url') ? opt('--url').replace(/\/+$/, '') : `http://127.0.0.1:${port}`;
 
-const render = runtime ? [] : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
+const render = runtime || flag('--window') ? (flag('--window') ? ['-windowed', '-ResX=1600', '-ResY=900'] : []) : flag('--xr-sim') ? ['-RenderOffScreen'] : ['-nullrhi'];
 const exec = opt('--exec');
 const holdS = Number(opt('--hold', runtime ? '14400' : '5'));
 const vr = flag('--vr') || runtime ? ['-vr'] : [];
-const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', '-nosound', '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
+// --link auto: no -BpLinkUrl, so BpLink chooses its route (the cable, then the saved Wi-Fi door, else the bundle) as a headset
+// does, with the cable moved to this run's server (-BpLinkCable=<url>, not saved). Night two W2a's table link v2 checks.
+const autoLink = opt('--link') === 'auto' && !flag('--bundle');
+const argv = [...pre, ...render, ...vr, '-unattended', '-nosplash', ...(flag('--sound') ? [] : ['-nosound']), '-stdout', '-FullStdOutLogOutput', '-NoLogTimes', autoLink ? `-BpLinkCable=${url}` : `-BpLinkUrl=${flag('--bundle') ? 'bundle' : url}`,
   ...(opt('--product') ? [`-BpLinkProduct=${opt('--product')}`] : []),
   ...(exec ? [`-ExecCmds=${exec}`] : []), ...(opt('--ue-args', '').split(' ').filter(Boolean))];
 const env = { ...process.env };
 if (flag('--xr-sim')) env.XR_RUNTIME_JSON = SIM_JSON;
 if (runtimeJson) env.XR_RUNTIME_JSON = runtimeJson;
 const runLog = path.join(out, `run-${mode}${flag('--xr-sim') ? '-xrsim' : runtime ? `-${runtime}` : ''}.log`);
-console.log(`server  ${flag('--bundle') ? 'none (the bundled snapshot)' : flag('--no-server') ? `none (closed port ${port})` : url}`);
+console.log(`server  ${opt('--url') ? `${url} (the caller's)` : flag('--bundle') ? 'none (the bundled snapshot)' : flag('--no-server') ? `none (closed port ${port})` : url}`);
 console.log(`start   "${exe}" ${argv.map((a) => `"${a}"`).join(' ')}${env.XR_RUNTIME_JSON && env.XR_RUNTIME_JSON !== process.env.XR_RUNTIME_JSON ? `   XR_RUNTIME_JSON=${env.XR_RUNTIME_JSON}` : ''}`);
 
 const OUTCOME = /BpLink: \w[\w-]* (wings|rooms)=|BpLink: GET .* failed|BpLink: the .* did not parse/;

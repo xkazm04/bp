@@ -1,0 +1,444 @@
+// Checks the S8 LAN door (apps/server/src/lan-door.ts; docs/concepts/desk-to-table/plan.md D1). Three parts:
+//   admission  privatePeer admits exactly 10/8, 172.16/12, 192.168/16 and 100.64/10 (IPv4-mapped too) and nothing else;
+//              VERBS reaches none of the routes the door must never open (cards/<id>, human-token, dispatch, build, finish)
+//   sequence   in-process: the real loopback mount and the real door on ephemeral loopback ports, with the door's peer read
+//              from a header this harness sets (the door's peerOf option; the server never passes one). It drives the whole
+//              ceremony and the place scope: pair, approve, claim once, claim again (410), the baton claimed, published and
+//              returned through the door, a second device's forged x-bp-device and x-bp-human dropped, scope refusals, a
+//              revoke, a corrupt registry (fails closed), expiry, the window closing the port and `pair open` reopening it;
+//              the brief as a read (F7), and the `decide` scope (F8, D12): granted only when the owner's approve names it,
+//              and then only the repeat's decline and the card's approve (the free decide and the deck's steering stay
+//              unreachable); the slug is the registry's own rule, {0,62} (E6, D3).
+//              Every refusal is collected, and they must all be byte-identical bare 403s; past admission each waits
+//              REFUSAL_DELAY_MS, and the token never reaches paired.json or the ledger.
+//   opt-in     the real `apps/server/src/main.ts` as a child: without --lan no door line, no /lan route, no $BP_HOME/lan;
+//              with --lan (bound to 127.0.0.1, which is not a private range) the door listens and refuses its own machine
+//              with the bare 403, and `pair list` reaches the owner routes; --lan-port without --lan is refused.
+// Run: node --import @bp/core/register scripts/check-lan-door.ts   Exit 1 on any failure.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import { spawn } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { listener, loadRoutes, type Route } from '../apps/server/src/mount.ts';
+import { LanDoor, privatePeer, verbOf, readRegistry, registryFile, REFUSAL_DELAY_MS, SCOPES, VERBS, MAX_PEER_INFLIGHT, MAX_CONNECTIONS } from '../apps/server/src/lan-door.ts';
+import { wavOf } from '../packages/core/src/server/companion/voice-link.server.ts';
+import { humanToken } from '../packages/core/src/server/api/companion/door.server.ts';
+import { SLUG_RE } from '../packages/core/src/scan/readiness.ts';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+let failed = 0, passed = 0;
+const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
+
+// ------------------------------------------------------------------------------------------------ admission
+for (const a of ['10.0.0.1', '10.255.255.255', '172.16.0.1', '172.31.255.255', '192.168.0.1', '192.168.1.20', '100.64.0.1', '100.127.255.255', '::ffff:192.168.1.2', '::FFFF:10.1.2.3'])
+  check(`admitted: ${a}`, privatePeer(a));
+for (const a of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '8.8.8.8', '172.15.255.255', '172.32.0.1', '100.63.255.255', '100.128.0.1', '192.169.0.1', '11.0.0.1', '169.254.1.1', '0.0.0.0', 'fe80::1', 'fd7a:115c:a1e0::1', '192.168.1.256', 'localhost', '', undefined])
+  check(`refused: ${a === undefined ? 'undefined' : JSON.stringify(a)}`, !privatePeer(a));
+const all = [...SCOPES];
+// table link v2 (owner, 2026-11-09): POST cards/<id>, POST morning and DELETE scans/<job> are now verbs (decide, decide,
+// scan); scripts/check-table-link.ts holds them. Everything below stays out of reach.
+for (const [m, p] of [['GET', '/api/companion/cards/c1'], ['GET', '/api/companion/human-token'], ['POST', '/api/products/kettle/dispatch'],
+  ['POST', '/api/products/kettle/releases/r1/build'], ['POST', '/api/products/kettle/releases/r1/finish'], ['POST', '/api/products/kettle/waves/w1/dispatch'],
+  ['GET', '/lan/pair'], ['POST', '/lan/pair/approve'], ['GET', '/athena'], ['GET', '/api/companion/stream'], ['POST', '/api/products/kettle/focuses'], ['GET', '/lan/where'], ['DELETE', '/api/products/kettle/scans'],
+  ['POST', '/api/products/kettle/proposals/kf-001'], ['GET', '/api/companion/morning?view=agent'], ['POST', '/api/products/kettle/proposals/kf-001/decline/x'], ['POST', '/api/products/kettle/proposals/kf-001/approve/x'],
+  ['GET', '/api/products/kettle/proposals/kf-001/approve']] as const)
+  check(`no scope reaches ${m} ${p}`, verbOf(all, m, p) === null);
+check('standup includes read', verbOf(['standup'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['read'], 'POST', '/api/companion/turn') === null);
+// The voice link (night two W3): listen and say ride the standup scope, as the turn does; read alone may not.
+check('standup allows POST listen and say (voice link); read alone refuses both', ['/api/companion/listen', '/api/companion/say'].every((p) => verbOf(['standup'], 'POST', p) !== null && verbOf(['read'], 'POST', p) === null && verbOf(['standup'], 'GET', p) === null));
+// night two W2b: the table's layout over Wi-Fi. /plan takes exactly ?layout=islands (and no query), under read; nothing wider
+check('read: /plan takes ?layout=islands, the table\'s layout, exactly that query and nothing wider', verbOf(['read'], 'GET', '/api/products/kettle/plan?layout=islands') !== null
+  && verbOf(['read'], 'GET', '/api/products/kettle/plan') !== null && verbOf(['place', 'focus', 'decide', 'scan'], 'GET', '/api/products/kettle/plan?layout=islands') === null
+  && ['layout=grid', 'layout=islands&x=1', 'x=1&layout=islands', 'layout=islands&layout=islands', 'layout=ISLANDS', 'layout=islands%20'].every((q) => verbOf(all, 'GET', `/api/products/kettle/plan?${q}`) === null)
+  && verbOf(all, 'GET', '/api/products/kettle/structure?layout=islands') === null && verbOf(all, 'GET', '/api/products/kettle/scan?layout=islands') === null);
+check('place is only the three baton verbs', verbOf(['place'], 'GET', '/api/session/place?claim=1') !== null && verbOf(['place'], 'GET', '/api/session/place') === null
+  && verbOf(['place'], 'GET', '/api/products/kettle/structure') === null);
+// F7, F8 and D12 (docs/concepts/one-morning-brief/ROADMAP.md): the brief is a read; decide is two verbs, the repeat's
+// decline and the card's approve
+check("read: a proposal's brief (F7)", verbOf(['read'], 'GET', '/api/products/kettle/proposals/kf-001/brief') !== null && verbOf(['standup'], 'GET', '/api/products/kettle-web/proposals/brief-o2/brief') !== null);
+check("decide is only the repeat's decline and the card's approve: POST .../proposals/<id>/decline|approve, nothing else", verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') !== null
+  && verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') !== null && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null
+  && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/brief-o2/decline') === null && verbOf(['decide'], 'GET', '/api/products/kettle/structure') === null
+  && verbOf(['decide'], 'GET', '/api/products/kettle/proposals/kf-001/brief') === null && verbOf(['decide'], 'POST', '/api/products/kettle/proposals/kf-001') === null);
+check('no other scope reaches the decline', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/brief-o2/decline') === null);
+check('decide reaches the set approve (D15): POST .../proposals/approve, POST only, and no other scope', verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve') !== null
+  && verbOf(['decide'], 'GET', '/api/products/kettle-web/proposals/approve') === null && verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/approve') === null
+  && verbOf(['decide'], 'POST', '/api/products/kettle-web/proposals/approve/x') === null);
+check('scan is POST .../scans alone, and no other scope reaches it', verbOf(['scan'], 'POST', '/api/products/kettle-web/scans') !== null && verbOf(['read', 'standup', 'place', 'focus', 'decide'], 'POST', '/api/products/kettle-web/scans') === null
+  && verbOf(['scan'], 'GET', '/api/products/kettle-web/scans') === null && verbOf(['scan'], 'POST', '/api/products/kettle-web/dispatch') === null);
+check('read: the saved focuses, GET only', verbOf(['read'], 'GET', '/api/products/kettle-web/focuses') !== null && verbOf(['read'], 'POST', '/api/products/kettle-web/focuses') === null && verbOf(['scan'], 'GET', '/api/products/kettle-web/focuses') === null);
+check('no other scope reaches the approve (D12)', verbOf(['read', 'standup', 'place', 'focus'], 'POST', '/api/products/kettle-web/proposals/find-kettle-web-1/approve') === null);
+// E6 (D3): the door's slug is the registry's ^[a-z0-9][a-z0-9-]{0,62}$ (registry.server.ts SLUG_RE): 63 characters pass, 64 do not
+const slug63 = 'a'.repeat(63), slug64 = 'a'.repeat(64);
+check("the slug: 63 characters, the registry's longest, pass (E6)", verbOf(all, 'GET', `/api/products/${slug63}/plan`) !== null && verbOf(['decide'], 'POST', `/api/products/${slug63}/proposals/x/approve`) !== null);
+check('the slug: 64 characters, which no product can have, are refused (E6)', verbOf(all, 'GET', `/api/products/${slug64}/plan`) === null && verbOf(['decide'], 'POST', `/api/products/${slug64}/proposals/x/approve`) === null);
+check("the slug: the same rule as the registry's SLUG_RE", SLUG_RE.test(slug63) && !SLUG_RE.test(slug64));
+for (const t of ['/api/products/kettle/../structure', '/api/products/kettle/%73tructure', '/api/products//structure', '/api/products/kettle/structure?x=1', '/api/session/place?claim=1&x=1', 'api/products/kettle/plan'])
+  check(`the grammar refuses ${t}`, verbOf(all, 'GET', t) === null);
+
+// ------------------------------------------------------------------------------------------------ the sequence
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-door-'));
+process.env.BP_HOME = tmp;
+process.chdir(tmp); // no products file: Kettle answers from the built-in sample
+const HOME = path.join(tmp, 'lan');
+const API = path.resolve(path.dirname(fileURLToPath(import.meta.resolve('@bp/core/server/api/products/route'))), '..');
+const routes = await loadRoutes(API);
+const loop = http.createServer(listener(routes));
+await new Promise<void>((r) => loop.listen(0, '127.0.0.1', () => r()));
+const LOOP = (loop.address() as { port: number }).port;
+let T = Date.parse('2026-10-29T09:00:00Z');
+const logs: string[] = [];
+const PEER = 'x-check-peer';
+const door = new LanDoor({
+  routes, loopbackPort: LOOP, host: '127.0.0.1', port: 0, home: HOME, now: () => T, log: (s) => logs.push(s), timeouts: { headersMs: 500, requestMs: 1000, checkMs: 100 },
+  peerOf: (req) => { const p = req.headers[PEER]; return typeof p === 'string' ? p : req.socket.remoteAddress; },
+});
+routes.push(...door.adminRoutes());
+await door.start();
+check('start with nothing paired: a pairing window, and the door listens', door.listening && door.status().window !== null, JSON.stringify(door.status()));
+
+interface Res { status: number; body: string; json: Record<string, unknown>; ms: number; sig: string }
+function send(port: number, method: string, target: string, headers: Record<string, string>, body?: unknown): Promise<Res> {
+  const text = body === undefined ? undefined : JSON.stringify(body);
+  const t0 = performance.now();
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method, path: target, headers: { ...headers, ...(text !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(text)) } : {}) } }, (res) => {
+      const parts: Buffer[] = [];
+      res.on('data', (b: Buffer) => parts.push(b));
+      res.on('end', () => {
+        const b = Buffer.concat(parts).toString('utf8');
+        let json: Record<string, unknown> = {};
+        try { json = JSON.parse(b) as Record<string, unknown>; } catch { /* not JSON */ }
+        const h = res.headers;
+        resolve({ status: res.statusCode ?? 0, body: b, json, ms: performance.now() - t0, sig: JSON.stringify([res.statusCode, b, h['content-type'] ?? null, h['content-length'], h['cache-control'], h.connection]) });
+      });
+    });
+    req.on('error', reject);
+    if (text !== undefined) req.write(text);
+    req.end();
+  });
+}
+const refusals: { name: string; r: Res }[] = [];
+/** A request to the door from `peer`. */
+const lan = (peer: string, method: string, target: string, opts: { token?: string; body?: unknown; headers?: Record<string, string> } = {}) =>
+  send(door.port as number, method, target, { [PEER]: peer, ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}), ...(opts.headers ?? {}) }, opts.body);
+const admin = (method: string, target: string, body?: unknown, headers: Record<string, string> = {}) => send(LOOP, method, target, headers, body);
+/** A refusal: recorded for the identity check, and it must be a 403. */
+const refused = (name: string, r: Res, delayed = true) => {
+  refusals.push({ name, r });
+  check(`refused, 403: ${name}`, r.status === 403, `${r.status} ${r.body.slice(0, 120)}`);
+  // past admission every refusal waits the fixed delay; at admission it is immediate, which also proves the request
+  // never got as far as the token (a loopback peer with no token would otherwise pass as a delayed `no-token`)
+  if (delayed) check(`refused after the fixed delay: ${name}`, r.ms >= REFUSAL_DELAY_MS - 5, `${r.ms.toFixed(0)} ms`);
+  else check(`refused at admission, at once: ${name}`, r.ms < REFUSAL_DELAY_MS - 50, `${r.ms.toFixed(0)} ms`);
+};
+const nonce = () => randomBytes(18).toString('base64url'); // 24 chars, 144 bits
+const QUEST = '192.168.1.50', OTHER = '10.0.0.7';
+
+// admission over the wire: refused at once, before any delay
+refused('a public peer', await lan('8.8.8.8', 'POST', '/pair', { body: { nonce: nonce(), device: 'quest3s' } }), false);
+refused('a loopback peer (loopback callers use the loopback port)', await lan('127.0.0.1', 'GET', '/api/products/kettle/structure'), false);
+refused('a link-local peer', await lan('169.254.3.4', 'GET', '/api/products/kettle/structure'), false);
+
+// S3 finding 5: the Host must name the door exactly (DNS rebinding: a page's name for this address is refused)
+refused('a foreign Host (a DNS-rebound page)', await lan(QUEST, 'POST', '/pair', { body: { nonce: nonce(), device: 'quest3s' }, headers: { host: `evil.example:${door.port}` } }));
+refused('a loopback name in the Host', await lan(QUEST, 'GET', '/pair/me', { headers: { host: `localhost:${door.port}` } }));
+refused('the right address on another port', await lan(QUEST, 'GET', '/pair/me', { headers: { host: '127.0.0.1:1' } }));
+
+// the ceremony
+refused('a short nonce', await lan(QUEST, 'POST', '/pair', { body: { nonce: 'short', device: 'quest3s' } }));
+refused('a device name the door would not echo', await lan(QUEST, 'POST', '/pair', { body: { nonce: nonce(), device: 'quest 3s<script>' } }));
+refused('a scope that does not exist', await lan(QUEST, 'POST', '/pair', { body: { nonce: nonce(), device: 'quest3s', scopes: ['admin'] } }));
+const NA = nonce();
+let r = await lan(QUEST, 'POST', '/pair', { body: { nonce: NA, device: 'quest3s', scopes: ['place', 'read'] } });
+const codeA = String(r.json.code);
+check('a pairing request: 201 and a 6-character code', r.status === 201 && /^[A-HJ-NP-Z2-9]{6}$/.test(codeA), r.body);
+check('the request answers nothing but its own code and expiry', Object.keys(r.json).sort().join() === 'code,expiresAt,state', r.body);
+r = await lan(QUEST, 'POST', '/pair', { body: { nonce: NA, device: 'quest3s' } });
+check('a retried request gets the same record back (no reset)', r.json.code === codeA, r.body);
+refused('the same nonce from another peer', await lan(OTHER, 'POST', '/pair', { body: { nonce: NA, device: 'quest3s' } }));
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NA } });
+check('a claim before approval: 202 pending', r.status === 202 && r.json.state === 'pending', r.body);
+check('the owner surface refuses a foreign Host (DNS rebinding)', (await admin('POST', '/lan/pair/approve', { code: codeA }, { host: 'evil.example' })).status === 403);
+check('the owner surface refuses a cross-site page', (await admin('POST', '/lan/pair/approve', { code: codeA }, { origin: 'http://evil.example' })).status === 403);
+check('approving a code nobody showed: 404', (await admin('POST', '/lan/pair/approve', { code: 'ZZZZZZ' })).status === 404);
+r = await admin('POST', '/lan/pair/approve', { code: codeA.toLowerCase(), scopes: ['place', 'read'] });
+check('the owner approves the code: 200, the scopes the owner chose', r.status === 200 && JSON.stringify(r.json.scopes) === '["place","read"]' && r.json.peer === QUEST, r.body);
+refused('a claim from another peer (the claimant is the requester)', await lan(OTHER, 'POST', '/pair/claim', { body: { nonce: NA } }));
+refused('a claim with a nonce never seen', await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: nonce() } }));
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NA } });
+const tokenA = String(r.json.token), deviceA = String(r.json.device);
+check('the claim: 200, a token once, the device id the door will use', r.status === 200 && /^[A-Za-z0-9_-]{43}$/.test(tokenA) && /^quest3s:[0-9a-f]{8}$/.test(deviceA), r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NA } });
+check('a second claim: 410 claimed, no token (the theft alarm)', r.status === 410 && r.json.state === 'claimed' && !('token' in r.json), r.body);
+const reg = fs.readFileSync(registryFile(HOME), 'utf8');
+check('paired.json keeps the fingerprint, never the token', !reg.includes(tokenA) && reg.includes(createHash('sha256').update(tokenA).digest('hex')));
+check('paired.json keeps the device, the scopes and the expiry (30 days by default)', (() => {
+  const p = readRegistry(HOME)[0];
+  return !!p && p.device === 'quest3s' && p.scopes.join() === 'place,read' && Date.parse(p.expiresAt) - T === 30 * 86_400_000;
+})(), reg);
+
+// the read scope, through the door into the loopback mount
+r = await lan(QUEST, 'GET', '/api/products/kettle/structure', { token: tokenA });
+check('read: the structure, through the door, as the loopback mount answers it', r.status === 200 && !!r.json.structure, `${r.status} ${r.body.slice(0, 120)}`);
+{
+  // night two W2b: ?layout=islands reaches the route through the door (the table draws the same islands on Wi-Fi as on the cable)
+  const islands = await lan(QUEST, 'GET', '/api/products/kettle/plan?layout=islands', { token: tokenA });
+  const plain = await lan(QUEST, 'GET', '/api/products/kettle/plan', { token: tokenA });
+  const direct = await admin('GET', '/api/products/kettle/plan?layout=islands');
+  check('read: /plan?layout=islands through the door is the loopback mount\'s islands body, not the default layout', islands.status === 200 && plain.status === 200
+    && islands.body === direct.body && islands.body !== plain.body, `${islands.status}/${plain.status}/${direct.status}`);
+}
+refused('no token', await lan(QUEST, 'GET', '/api/products/kettle/structure'));
+refused('an unknown token', await lan(QUEST, 'GET', '/api/products/kettle/structure', { token: randomBytes(32).toString('base64url') }));
+refused('a token not in Bearer form', await lan(QUEST, 'GET', '/api/products/kettle/structure', { headers: { authorization: tokenA } }));
+refused('a scope not granted (standup: cards)', await lan(QUEST, 'GET', '/api/companion/cards', { token: tokenA }));
+refused('human-token, never through the door', await lan(QUEST, 'GET', '/api/companion/human-token', { token: tokenA }));
+refused('dispatch, never through the door', await lan(QUEST, 'POST', '/api/products/kettle/dispatch', { token: tokenA, body: {} }));
+refused('the owner routes, never through the door', await lan(QUEST, 'POST', '/lan/pair/approve', { token: tokenA, body: { code: codeA } }));
+refused('a dot segment', await lan(QUEST, 'GET', '/api/products/kettle/x/../structure', { token: tokenA }));
+refused('HEAD, a verb not on the list', await lan(QUEST, 'HEAD', '/api/products/kettle/structure', { token: tokenA }));
+
+// the place scope: the page arms, the headset claims, publishes and returns through the door
+const web = { product: 'kettle', hash: '#at=scheduling.appointments', level: 'L3', target: { kind: 'room', id: 'scheduling' }, from: 'web', at: '2026-10-29T09:00:00Z' };
+const vr = (hash: string) => ({ ...web, hash, from: 'vr' });
+r = await admin('POST', '/api/session/place', { place: web }, { 'x-bp-human': humanToken() });
+check('the page arms the baton on the loopback mount', r.status === 201 && r.json.state === 'armed', r.body);
+r = await lan(QUEST, 'GET', '/api/session/place?claim=1', { token: tokenA, headers: { 'x-bp-device': 'forged' } });
+check('place: the headset claims; the door named the device from the token, not the header', r.status === 200 && r.json.state === 'claimed' && r.json.device === deviceA, r.body);
+r = await lan(QUEST, 'POST', '/api/session/place', { token: tokenA, body: { place: vr('#at=scheduling.timetable') } });
+check('place: the headset publishes its place: live', r.status === 200 && r.json.state === 'live', r.body);
+
+// a second device, paired for place only
+const NB = nonce();
+const codeB = String((await lan(OTHER, 'POST', '/pair', { body: { nonce: NB, device: 'quest-b', scopes: ['place'] } })).json.code);
+check('a second device asks while the window is open', /^[A-HJ-NP-Z2-9]{6}$/.test(codeB));
+check('the owner narrows its lifetime to 1 day', (await admin('POST', '/lan/pair/approve', { code: codeB, days: 1 })).status === 200);
+r = await lan(OTHER, 'POST', '/pair/claim', { body: { nonce: NB } });
+const tokenB = String(r.json.token), deviceB = String(r.json.device);
+check('the second device claims its own token', r.status === 200 && deviceB.startsWith('quest-b:') && deviceB !== deviceA, r.body);
+refused('the place scope alone does not read the plan', await lan(OTHER, 'GET', '/api/products/kettle/plan', { token: tokenB }));
+r = await lan(OTHER, 'POST', '/api/session/place', { token: tokenB, body: { place: vr('#at=hijack') }, headers: { 'x-bp-device': deviceA } });
+check("a forged x-bp-device is dropped: the second device cannot write the first one's baton (the route's 403)", r.status === 403, r.body);
+r = await lan(OTHER, 'POST', '/api/session/place/return', { token: tokenB, body: {}, headers: { 'x-bp-device': deviceA } });
+check('...nor return it', r.status === 403, r.body);
+r = await lan(OTHER, 'POST', '/api/session/place', { token: tokenB, body: { place: web, takeBack: true }, headers: { 'x-bp-human': humanToken() } });
+check("a forwarded x-bp-human is dropped: a device cannot arm or take back as the page", r.status === 403, r.body);
+r = await admin('GET', '/api/session/place');
+check('the baton is still the first device\'s, at its own place', r.json.device === deviceA && (r.json.place as { hash?: string })?.hash === '#at=scheduling.timetable', r.body);
+r = await lan(QUEST, 'POST', '/api/session/place/return', { token: tokenA, body: {} });
+check('place: the headset returns the baton', r.status === 200 && r.json.state === 'returned', r.body);
+
+// revoke, a corrupt registry, expiry
+const idA = deviceA.split(':')[1];
+check('pair revoke on the owner surface: 200', (await admin('POST', '/lan/pair/revoke', { id: idA })).status === 200);
+refused('a revoked token, at its next request', await lan(QUEST, 'GET', '/api/products/kettle/structure', { token: tokenA }));
+check('the revoked pairing is gone from paired.json; the other stays', readRegistry(HOME).map((p) => p.device).join() === 'quest-b');
+const good = fs.readFileSync(registryFile(HOME), 'utf8');
+fs.writeFileSync(registryFile(HOME), '{ not json');
+refused('a corrupt registry admits nobody (fails closed, re-read per request)', await lan(OTHER, 'GET', '/api/session/place?claim=1', { token: tokenB }));
+fs.writeFileSync(registryFile(HOME), good);
+check('the registry restored: the device is admitted again', (await lan(OTHER, 'GET', '/api/session/place?claim=1', { token: tokenB })).status === 404);
+
+// decide (F8): its own ceremony. A device may ask for it; a plain approve drops it; only an approve that names it grants it.
+const NC = nonce();
+const codeC = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NC, device: 'quest-c', scopes: ['read', 'decide'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeC });
+check('decide: a plain approve of a device that asked for it drops it (named-only)', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NC } });
+const tokenC = String(r.json.token), idC = String(r.json.device).split(':')[1];
+check('decide: ...so its token carries read only', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+refused('decide: the decline without the scope', await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenC, body: {} }));
+refused('decide: the approve without the scope (D12)', await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { token: tokenC, body: {} }));
+r = await lan(QUEST, 'GET', '/api/products/kettle/proposals/kf-001/brief', { token: tokenC });
+check('read: the brief route through the door reaches the mount (F7)', r.status !== 403 && r.body !== '', `${r.status} ${r.body.slice(0, 120)}`);
+const NE = nonce();
+const codeE = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NE, device: 'quest-e', scopes: ['read', 'decide'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeE, scopes: ['read', 'decide'] });
+check('decide: the owner names it at approve, and it is granted', r.status === 200 && JSON.stringify(r.json.scopes) === '["read","decide"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NE } });
+const tokenE = String(r.json.token), deviceE = String(r.json.device);
+check('decide: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('decide'), r.body);
+r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/decline', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
+check("decide: the decline reaches the route as the paired device (Kettle is no live store: the route's 404, not the door's 403 nor a 400 for a missing device)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
+r = await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001/approve', { token: tokenE, body: {}, headers: { 'x-bp-device': 'forged', 'x-bp-human': humanToken() } });
+check("decide: the approve reaches the route as the paired device (D12; Kettle is no live store: the route's 404)", r.status === 404 && /no live product kettle/.test(r.body), `${r.status} ${r.body}`);
+refused("decide: never the free decide (the plan's POST .../proposals/<id>)", await lan(QUEST, 'POST', '/api/products/kettle/proposals/kf-001', { token: tokenE, body: { decision: 'decline', note: 'x' } }));
+// table link v2 (owner, 2026-11-09): the deck's steering is now a person's decision from the table; without `shown` the
+// route answers its own 400, which proves the door let it through and the route took the pairing as a person
+r = await lan(QUEST, 'POST', '/api/companion/morning', { token: tokenE, body: { product: 'kettle', proposal: 'kf-001', verdict: 'decline' } });
+check("decide: the deck's steering reaches the route as a person (table link v2): its own 400 for a missing shown", r.status === 400 && /must say what it showed/.test(r.body), `${r.status} ${r.body}`);
+// scan (directed-scans): decide's ceremony, over POST .../scans. A plain approve drops it; only an approve that names it grants it.
+const NF = nonce();
+const codeF = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NF, device: 'quest-f', scopes: ['read', 'scan'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeF });
+check('scan: a plain approve of a device that asked for it drops it (named-only)', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NF } });
+const tokenF = String(r.json.token), idF = String(r.json.device).split(':')[1];
+check('scan: ...so its token carries read only', r.status === 200 && JSON.stringify(r.json.scopes) === '["read"]', r.body);
+refused('scan: POST .../scans without the scope', await lan(QUEST, 'POST', '/api/products/kettle/scans', { token: tokenF, body: { lens: 'design', scope: { kind: 'all', label: 'Everything', features: [] }, focus: 'Best practice penetration test' } }));
+r = await lan(QUEST, 'GET', '/api/products/kettle/focuses', { token: tokenF });
+check('read: the saved focuses reach the mount (Kettle with no sim hosted: its 405, not the door\'s 403)', r.status === 405, `${r.status} ${r.body.slice(0, 120)}`);
+const NG = nonce();
+const codeG = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NG, device: 'quest-g', scopes: ['read', 'scan'] } })).json.code);
+r = await admin('POST', '/lan/pair/approve', { code: codeG, scopes: ['read', 'scan'] });
+check('scan: the owner names it at approve, and it is granted', r.status === 200 && JSON.stringify(r.json.scopes) === '["read","scan"]', r.body);
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NG } });
+const tokenG = String(r.json.token), idG = String(r.json.device).split(':')[1];
+check('scan: the claim carries it', r.status === 200 && (r.json.scopes as string[]).includes('scan'), r.body);
+r = await lan(QUEST, 'POST', '/api/products/kettle/scans', { token: tokenG, body: { lens: 'design', scope: { kind: 'all', label: 'Everything', features: [] }, focus: 'Best practice penetration test' } });
+check('scan: POST .../scans reaches the route (Kettle with no sim hosted: its 405, not the door\'s 403)', r.status === 405, `${r.status} ${r.body.slice(0, 120)}`);
+// S3 finding 2 (2026-11-10): what the door copies from the device. The whole allow-list: Content-Type and Accept on every
+// verb, and x-bp-speech-consent and Content-Length on POST /api/companion/listen alone
+check('the forwarded headers, as a whole: content-type and accept everywhere; consent and length on listen only',
+  VERBS.every((v) => (v.path.test('/api/companion/listen') && v.method === 'POST') ? JSON.stringify(v.forward) === JSON.stringify(['x-bp-speech-consent', 'content-length']) : v.forward === undefined)
+  && JSON.stringify(verbOf(['standup'], 'POST', '/api/companion/listen')?.forward) === JSON.stringify(['content-type', 'accept', 'x-bp-speech-consent', 'content-length'])
+  && JSON.stringify(verbOf(['standup'], 'POST', '/api/companion/say')?.forward) === JSON.stringify(['content-type', 'accept']));
+const NV = nonce();
+const codeV = String((await lan(QUEST, 'POST', '/pair', { body: { nonce: NV, device: 'quest-v', scopes: ['standup'] } })).json.code);
+await admin('POST', '/lan/pair/approve', { code: codeV, scopes: ['standup'] });
+r = await lan(QUEST, 'POST', '/pair/claim', { body: { nonce: NV } });
+const tokenV = String(r.json.token), idV = String(r.json.device).split(':')[1];
+const silent = wavOf(new Int16Array(1600), 16000);
+const listen = (extra: Record<string, string>) => new Promise<Res>((resolve, reject) => {
+  const t0 = performance.now();
+  const q = http.request({ host: '127.0.0.1', port: door.port as number, method: 'POST', path: '/api/companion/listen', headers: { [PEER]: QUEST, authorization: `Bearer ${tokenV}`, 'content-type': 'audio/wav', 'content-length': String(silent.length), ...extra } }, (res) => {
+    const parts: Buffer[] = [];
+    res.on('data', (b: Buffer) => parts.push(b));
+    res.on('end', () => { const b = Buffer.concat(parts).toString('utf8'); let json: Record<string, unknown> = {}; try { json = JSON.parse(b) as Record<string, unknown>; } catch { /* not JSON */ } resolve({ status: res.statusCode ?? 0, body: b, json, ms: performance.now() - t0, sig: '' }); });
+  });
+  q.on('error', reject);
+  q.end(silent);
+});
+const speechWas = process.env.BP_CLOUD_SPEECH;
+delete process.env.BP_CLOUD_SPEECH;
+r = await listen({ 'x-bp-speech-consent': 'cloud' });
+check('listen through the door with the consent header reaches the route (a silent capture: 200 heard silence)', r.status === 200 && r.json.heard === 'silence', `${r.status} ${r.body}`);
+r = await listen({});
+check('listen through the door without the consent header: 403 no-consent', r.status === 403 && r.json.error === 'no-consent', `${r.status} ${r.body}`);
+if (speechWas !== undefined) process.env.BP_CLOUD_SPEECH = speechWas;
+{
+  // the say route swapped for an echo of what reached it: only the allow-list and the door's own headers arrive
+  const echo: Route = { path: '/api/companion/say', file: 'echo', methods: ['POST'], handlers: { POST: (q) => Response.json([...q.headers.keys()].sort()) }, match: (p) => (p === '/api/companion/say' ? {} : null) };
+  routes.unshift(echo);
+  r = await lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' }, headers: { 'x-bp-speech-consent': 'cloud', cookie: 'a=b', origin: 'http://evil.example', 'x-bp-human': humanToken(), 'x-bp-device': 'forged', 'x-forwarded-for': '8.8.8.8', 'x-bp-decider-seal': 'f'.repeat(64), accept: 'audio/wav' } });
+  routes.splice(routes.indexOf(echo), 1);
+  check('say through the door: only content-type, accept and the door\'s own host, x-forwarded-for and x-bp-device reach the route', r.status === 200 && JSON.stringify(r.json) === JSON.stringify(['accept', 'content-type', 'host', 'x-bp-device', 'x-forwarded-for']), r.body);
+}
+// S3 finding 7: the door's timeouts bound the REQUEST, never the answer; one peer holds at most MAX_PEER_INFLIGHT requests
+{
+  const slow: Route = { path: '/api/companion/say', file: 'slow', methods: ['POST'], handlers: { POST: async () => { await new Promise((res) => setTimeout(res, 1600)); return Response.json({ late: true }); } }, match: (p) => (p === '/api/companion/say' ? {} : null) };
+  routes.unshift(slow);
+  const t0 = performance.now();
+  r = await lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } });
+  check('an answer that takes longer than the request timeout (1.6 s against 1 s here; a 600 s turn on the server) still arrives whole', r.status === 200 && r.json.late === true && performance.now() - t0 >= 1500, `${r.status} ${r.body}`);
+  const burst = await Promise.all(Array.from({ length: MAX_PEER_INFLIGHT + 1 }, () => lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } })));
+  const late = burst.filter((x) => x.status === 200), cut = burst.filter((x) => x.status === 403);
+  check(`one peer holds at most ${MAX_PEER_INFLIGHT} requests in flight: the next is the bare 403 at once`, late.length === MAX_PEER_INFLIGHT && cut.length === 1 && cut[0].body === '' && cut[0].ms < REFUSAL_DELAY_MS, burst.map((x) => x.status).join());
+  routes.splice(routes.indexOf(slow), 1);
+  // a request whose body never finishes is cut by the request timeout (it holds no socket for long)
+  const stalled = await new Promise<string>((resolve) => {
+    const q = http.request({ host: '127.0.0.1', port: door.port as number, method: 'POST', path: '/api/companion/say', headers: { [PEER]: QUEST, authorization: `Bearer ${tokenV}`, 'content-type': 'application/json', 'content-length': '100' } }, (res) => { res.resume(); res.on('end', () => resolve(`answered ${res.statusCode}`)); });
+    q.on('error', () => resolve('closed'));
+    q.write('{"text":');
+    setTimeout(() => { resolve('still open'); q.destroy(); }, 4000);
+  });
+  check('a request whose body stalls is cut within the request timeout', stalled !== 'still open', stalled);
+  check('the door sets maxConnections', MAX_CONNECTIONS === 32);
+}
+for (const id of [idC, deviceE.split(':')[1], idF, idG, idV]) await admin('POST', '/lan/pair/revoke', { id });
+check('decide: both pairings revoked again', readRegistry(HOME).map((p) => p.device).join() === 'quest-b');
+
+// the ceremony's other ends: deny, the pending cap, the window
+const ND = nonce();
+const codeD = String((await lan(OTHER, 'POST', '/pair', { body: { nonce: ND, device: 'tablet' } })).json.code);
+check('pair deny: 200', (await admin('POST', '/lan/pair/deny', { code: codeD })).status === 200);
+refused('a denied request cannot claim', await lan(OTHER, 'POST', '/pair/claim', { body: { nonce: ND } }));
+refused('a denied request cannot be re-registered into pending', await lan(OTHER, 'POST', '/pair', { body: { nonce: ND, device: 'tablet' } }));
+// S3 finding 5 (2026-11-10): one open request per peer. A new request from the same address replaces its earlier one (the
+// same device asking again), so one LAN host cannot fill every pending slot and lock the real headset out
+const twice = '10.0.0.40';
+const first = String((await lan(twice, 'POST', '/pair', { body: { nonce: nonce(), device: 'again' } })).json.code);
+const second = String((await lan(twice, 'POST', '/pair', { body: { nonce: nonce(), device: 'again' } })).json.code);
+check('a second request from the same peer replaces its first: the first code approves nothing (404)', (await admin('POST', '/lan/pair/approve', { code: first })).status === 404);
+check('...and the pending list holds that peer once', door.status().pending.filter((x) => x.peer === twice).length === 1);
+check('pair list shows no pending code (the code is on the device only)', !JSON.stringify(door.status()).includes(second) && !('code' in (door.status().pending[0] ?? {})));
+check('...the second is denied by its code', (await admin('POST', '/lan/pair/deny', { code: second })).status === 200);
+const spam: string[] = [];
+for (let i = 0; i < 4; i++) spam.push(String((await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: `spam${i}` } })).json.code));
+check('four requests from one peer hold one pending slot', door.status().pending.filter((x) => x.peer === OTHER && x.state === 'pending').length === 1);
+for (let i = 1; i < 4; i++) spam.push(String((await lan(`10.0.0.${20 + i}`, 'POST', '/pair', { body: { nonce: nonce(), device: `spam${i}` } })).json.code));
+check('four open requests from four peers: four distinct codes, so a code names exactly one request', new Set(spam.slice(3)).size === 4 && spam.slice(3).every((c) => /^[A-HJ-NP-Z2-9]{6}$/.test(c)), spam.join());
+refused('a fifth open request (the pending cap)', await lan('10.0.0.30', 'POST', '/pair', { body: { nonce: nonce(), device: 'spam9' } }));
+check('the server log never carries a pairing code', ![codeA, codeB, codeC, codeD, codeE, codeF, codeG, codeV, first, second, ...spam].some((c) => logs.join('\n').includes(c)) && logs.some((l) => /code is on that device's screen/.test(l)));
+T += 3 * 60_000;
+refused('a pairing request after the window closed', await lan(OTHER, 'POST', '/pair', { body: { nonce: nonce(), device: 'late' } }));
+check('a live pairing keeps the door open after the window', (await door.converge(), door.listening));
+T += 86_400_000;
+refused('an expired token', await lan(OTHER, 'GET', '/api/session/place?claim=1', { token: tokenB }));
+await door.converge();
+check('nothing live and no window: the door closes its port', !door.listening);
+r = await admin('POST', '/lan/pair/open', {});
+check('pair open: a new window, and the door listens again', r.status === 200 && door.listening && typeof r.json.window === 'string', r.body);
+
+// every refusal is the same bare 403, and the token is nowhere on disk
+const sigs = new Set(refusals.map((x) => x.r.sig));
+check(`every refusal (${refusals.length}) is byte-identical: a bare 403`, sigs.size === 1 && refusals.length > 25, [...sigs].join(' | '));
+check('the bare 403 has no body and no content type', refusals[0].r.body === '' && JSON.parse(refusals[0].r.sig)[2] === null, refusals[0].r.sig);
+const ledger = fs.readFileSync(path.join(HOME, 'ledger.jsonl'), 'utf8');
+check('the ledger names each refusal\'s cause, where the caller cannot read it', ['"peer"', '"no-token"', '"unknown-token"', '"scope"', '"expired"', '"claim-unknown"'].every((c) => ledger.includes(c)));
+check('the ledger records grant, claim, the theft alarm, deny and revoke', ['"approve"', '"claim"', '"claim-again"', '"deny"', '"revoke"'].every((e) => ledger.includes(`"event":${e}`)));
+check('no token is in the ledger, the log or the registry', ![tokenA, tokenB].some((t) => ledger.includes(t) || logs.join('\n').includes(t) || fs.readFileSync(registryFile(HOME), 'utf8').includes(t)));
+await door.stop();
+await new Promise<void>((res) => { loop.close(() => res()); loop.closeAllConnections(); });
+
+// ------------------------------------------------------------------------------------------------ opt-in, the real server
+const MAIN = path.join(ROOT, 'apps/server/src/main.ts');
+const REGISTER = pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href;
+async function run(args: string[], home: string, until: RegExp | null, ms = 30_000): Promise<{ out: string; code: number | null; kill: () => void; match: RegExpExecArray | null }> {
+  const child = spawn(process.execPath, ['--import', REGISTER, MAIN, ...args], { cwd: home, env: { ...process.env, BP_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  return new Promise((resolve) => {
+    // `out` reads the output so far at each use (lines printed after the match, such as the owner routes, count too)
+    const done = (match: RegExpExecArray | null) => { clearTimeout(timer); resolve({ get out() { return out; }, code: child.exitCode, kill: () => child.kill(), match }); };
+    const timer = setTimeout(() => { child.kill(); done(null); }, ms);
+    const on = (d: Buffer) => { out += d; const m = until?.exec(out); if (m) done(m); };
+    child.stdout.on('data', on);
+    child.stderr.on('data', on);
+    child.on('exit', () => setTimeout(() => done(until?.exec(out) ?? null), 50));
+  });
+}
+const plainHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-plain-'));
+let p = await run(['--port', '0'], plainHome, /bp server listening on http:\/\/127\.0\.0\.1:(\d+)/);
+await new Promise((res) => setTimeout(res, 300)); // anything the door would print comes right after the listening line
+check('without --lan: the server starts as before', !!p.match, p.out.slice(-300));
+check('without --lan: no door line, no /lan route', !/lan door|\/lan\//.test(p.out), p.out.split('\n').filter((l) => /lan/.test(l)).join(' | '));
+check('without --lan: nothing under $BP_HOME/lan', !fs.existsSync(path.join(plainHome, 'lan')));
+p.kill();
+const lanHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-on-'));
+p = await run(['--port', '0', '--lan', '--lan-host', '127.0.0.1', '--lan-port', '0'], lanHome, /lan door: listening on http:\/\/127\.0\.0\.1:(\d+)/);
+await new Promise((res) => setTimeout(res, 300)); // the owner routes are mounted once the door has started (S4 finding 8), just after its listening line
+check('with --lan: a pairing window and the door listening', !!p.match && /pairing window open/.test(p.out), p.out.slice(-400));
+check('with --lan: the owner routes join the loopback mount', /route GET \/lan\/pair\b/.test(p.out) && /route POST \/lan\/pair\/approve/.test(p.out));
+if (p.match) {
+  const own = await send(Number(p.match[1]), 'GET', '/api/products/kettle/structure', {});
+  check('the door refuses this machine (loopback is not a private range): the bare 403, at admission', own.sig === refusals[0].r.sig && own.ms < REFUSAL_DELAY_MS - 50, `${own.sig} ${own.ms.toFixed(0)} ms`);
+  const loopPort = /bp server listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(p.out)?.[1];
+  const cli = await run(['pair', 'list', '--port', String(loopPort)], lanHome, null);
+  check('npm run server -- pair list reaches the owner routes', cli.code === 0 && /pairing window open until/.test(cli.out) && /nothing pending, nothing paired/.test(cli.out), cli.out);
+}
+p.kill();
+p = await run(['--port', '0', '--lan-port', '3101'], plainHome, null);
+check('--lan-port without --lan is refused, not ignored', p.code === 1 && /need --lan/.test(p.out), p.out);
+// a door that cannot start ($BP_HOME/lan is a file, so its mkdir fails) ends the server with one bp server: line, no stack
+const blockedHome = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-lan-blocked-'));
+fs.writeFileSync(path.join(blockedHome, 'lan'), 'not a directory');
+p = await run(['--port', '0', '--lan', '--lan-host', '127.0.0.1', '--lan-port', '0'], blockedHome, null);
+check('a LAN door that cannot start ends with exit 1 and one bp server: line, no stack',
+  p.code === 1 && /^bp server: cannot open the LAN door: .+$/m.test(p.out) && !/^\s+at /m.test(p.out) && !/Unhandled|unhandledRejection/i.test(p.out), p.out.slice(-600));
+
+console.log(`lan door: ${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

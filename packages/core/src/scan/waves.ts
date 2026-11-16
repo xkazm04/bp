@@ -1,6 +1,6 @@
 // Ledger waves: findings grouped into named packages, each built by its own execute job with its own model and effort,
 // prepared as a draft and dispatched as a whole later. Client-safe types and rules; the live file is waves.server.ts,
-// the Kettle stand-in is lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
+// the Kettle stand-in is packages/core/src/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import { SAFE_ID, type ScanJob } from './jobs.ts';
 import { WAVE_EFFORTS as SCHEMA_WAVE_EFFORTS, WAVE_MODELS as SCHEMA_WAVE_MODELS, WAVE_NAME_MAX_LENGTH, WAVE_PACKAGES_MAX_ITEMS } from '../standard/schema-vocab.ts';
 
@@ -102,7 +102,7 @@ export function waveOfId(waves: readonly Wave[]): Map<string, { wave: string; pa
 export interface WaveDispatchResult { wave: Wave; jobs: ScanJob[]; approved: string[]; skipped: { id: string; status: string }[] }
 
 // ------------------------------------------------------------------------------------------- the rules both stores share
-// The live file (waves.server.ts) and the Kettle sim (lib/model/scan-sim.ts) keep the waves in different places and apply
+// The live file (waves.server.ts) and the Kettle sim (packages/core/src/model/scan-sim.ts) keep the waves in different places and apply
 // the same rules through these pure steps, so a refusal reads the same on both.
 
 /** A refused wave step: the route's status and text (`taken`: the findings already in another draft wave). */

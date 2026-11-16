@@ -4,21 +4,9 @@
 // in UI px (u) so the engine's text rows (id/evidence at the top, name, stamp at the foot, all inset 7u)
 // stay clear of the reshaped edges at every zoom.
 import type { Feature } from '@bp/core/data';
-import { bl as builtin, type BuiltinLens } from '../base/legacy';
+import { bl as builtin } from '../base/legacy';
 import type { Theme, TileGeom } from '../types';
 import { clamp } from '../base/util';
-
-
-// --------------------------------------------------------------------------- dominance hand-off
-// The engine gives `shape` the dominance d but gives `marks` only presence and expansion. Shape is
-// always called just before the same tile's marks, so the dominant lens leaves d here for its own
-// marks to pick up (and clear). Edge marks follow d, exactly like the outline they decorate.
-const stash = { f: '', l: '' as BuiltinLens | '', d: 0 };
-function put(l: BuiltinLens, f: Feature, d: number) { stash.f = f.id; stash.l = l; stash.d = d; }
-export function takeD(l: BuiltinLens, f: Feature): number {
-  if (stash.f === f.id && stash.l === l) { stash.f = ''; return stash.d; }
-  return 0;
-}
 
 /** Outline box: the engine strokes plain tiles at a half-pixel inset; match it so d = 0 is identical. */
 function box(t: TileGeom) { return { X: t.x + 0.5, Y: t.y + 0.5, W: t.w - 1, H: t.h - 1 }; }
@@ -33,7 +21,6 @@ export function ticketGeom(t: TileGeom, f: Feature, d: number) {
   return { X, Y, W, H, depth, c, cy: Y + H / 2 };
 }
 export function shapeTicket(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('business', f, d);
   const g = ticketGeom(t, f, d), { X, Y, W, H, depth, c, cy } = g;
   p.moveTo(X, Y); p.lineTo(X + W, Y);
   if (depth > 0.25) {
@@ -63,7 +50,6 @@ export function cutGeom(t: TileGeom, f: Feature, d: number) {
   return { X, Y, W, H, tr: k[0], br: k[1], bl: k[2] };
 }
 export function shapeCut(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('security', f, d);
   const { X, Y, W, H, tr, br, bl } = cutGeom(t, f, d);
   p.moveTo(X, Y); p.lineTo(X + W - tr, Y); p.lineTo(X + W, Y + tr);
   p.lineTo(X + W, Y + H - br); p.lineTo(X + W - br, Y + H);
@@ -89,7 +75,6 @@ export function pillGeom(t: TileGeom, d: number) {
   return { X, Y, W, H, r: d * Math.min(H * 0.5, W * 0.25, 22 * t.u) };
 }
 export function shapePill(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('operations', f, d);
   const { X, Y, W, H, r } = pillGeom(t, d);
   p.moveTo(X + r, Y); p.lineTo(X + W - r, Y); p.arcTo(X + W, Y, X + W, Y + r, r);
   p.lineTo(X + W, Y + H - r); p.arcTo(X + W, Y + H, X + W - r, Y + H, r);
@@ -123,7 +108,6 @@ export function bracketGeom(t: TileGeom, d: number) {
   return { X, Y, W, H, b: d * Math.min(W * 0.04, 6.5 * u), s: Math.min(H * 0.3, 26 * u) };
 }
 export function shapeBracket(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('development', f, d);
   const { X, Y, W, H, b, s } = bracketGeom(t, d);
   p.moveTo(X, Y); p.lineTo(X + W, Y);
   p.lineTo(X + W, Y + s); p.lineTo(X + W - b, Y + s); p.lineTo(X + W - b, Y + H - s); p.lineTo(X + W, Y + H - s);
@@ -157,7 +141,6 @@ export function combGeom(t: TileGeom, f: Feature, d: number) {
   return { X, Y, W, H, top, n, pitch, depth, nh, pass: q.e2eTests ? Math.round((n * q.e2ePassing) / q.e2eTests) : 0 };
 }
 export function shapeComb(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('quality', f, d);
   const { X, Y, W, H, top, n, pitch, depth, nh } = combGeom(t, f, d);
   p.moveTo(X, Y); p.lineTo(X + W, Y); p.lineTo(X + W, Y + H); p.lineTo(X, Y + H);
   if (depth > 0.2) {
@@ -197,7 +180,6 @@ export function boardGeom(t: TileGeom, d: number) {
   return { X, Y, W, H, m: d * Math.min(H * 0.08, 4.6 * t.u) };
 }
 export function shapeBoard(p: Path2D, t: TileGeom, f: Feature, d: number) {
-  put('design', f, d);
   const { X, Y, W, H, m } = boardGeom(t, d);
   p.rect(X + m, Y + m, W - 2 * m, H - 2 * m);
 }

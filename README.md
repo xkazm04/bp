@@ -1,5 +1,7 @@
 # bp: the product blueprint
 
+![Developer's Blueprint: your codebase, drawn like a building](docs/img/banner.jpg)
+
 A canvas that draws a whole software product as an architect's drawing set: domains as wings,
 capabilities as rooms, and features as fixtures. Stage and health are readable at any zoom, and each
 person reads the plan through their own lens. On top of the plan, a simulated swarm of AI agents
@@ -32,22 +34,30 @@ repo root (`next dev apps/web -H 127.0.0.1`, loopback only), so the server's wor
 |---|---|
 | `/` | The blueprint, with the adopted *subtle* lens expression |
 | `/variants` | The three lens expressions (subtle, shaped, bold) for comparison |
+| `/v/[variant]` | One lens expression on its own (`/v/subtle`, `/v/shaped`, `/v/bold`) |
+| `/projects` | The repositories bp can draw: add one and onboard it, rename or move it, follow its onboarding, remove it |
+| `/projects/[slug]/onboarding` | The project being onboarded: its plan drawn as the run learns it |
+| `/headsets` | The VR headsets paired with this PC: pair one by typing the code it shows, choose what it may do, revoke it; the permissions and decisions made at the table |
+| `/crossing` | The crossing from the web blueprint to the VR light table, as a web prototype (sample data) |
+| `/buildup` | The onboarding build-up lab (the outline becomes the building), driven by the onboarding event contract |
 | `?theme=light` | The light theme (a toggle in the header too) |
 | `?scale=4` | Four product lines, 528 features: the scale test |
 | `?lenses=-security,+com.kettle.cost` | Switch lenses off or on for the session |
 | `?product=<slug>` | A live product: a repo listed in `bp.products.local.json`, read from its lens-scan store |
 | `?product=<slug>&page=ledger&tab=release` | That product's findings ledger at the Release tab (`tab=triage` / `matrix` for the others); the link Personas' Release card opens. bp reads it once into its hash state and drops it from the query |
+| `?product=<slug>&dock=orders&rule=O-1` | That product's standing rules (the Orders panel, on rule `O-1` when named): what a read-only reader of `bp-rules.json` (Personas' rail, `docs/concepts/rules-personas-adoption.md`) opens to set, lift or replay a rule. Read once, then dropped from the query |
 
 ## Live products
 
 A real product repo can be opened next to the Kettle sample. The `/lens-scan` skill (ai-registry) measures
-the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `scan.db`, `shots/`). List the
-repo in `bp.products.local.json` (shape: `bp.products.example.json`) and open `/?product=<slug>`: the scan
+the repo per lens and writes `<repo>/.ai/lens-scan/` (`app-structure.json`, `scan.db`, `shots/`). Add the repo on
+`/projects`, which checks the folder, registers it and starts its onboarding (or, by hand, list the repo in
+`bp.products.local.json`, shape: `bp.products.example.json`), and open `/?product=<slug>`: the scan
 drives the swarm layer live, its proposals wait in the queue for Approve or Decline, and lens panels show
 metric history. `node scripts/scan-demo.mjs [--live]` seeds a demo product (`kettle-live`) without a real
 scan, every reading projected from the Kettle map and its lens manifests, with Kettle's sample release train (three packs, built items to triage, a draft release); `node scripts/smoke-live.mjs [base]` seeds it and walks every product route against a running server. Details: `docs/blueprint-ui.md` (Live products) and `docs/standard/app-structure-v3.md` §15.
 
-Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · Enter opens · Esc goes back.
+Keys: `/` search · `1`–`9` lenses (1 = General) · `+` `−` zoom · arrows walk rooms · `N` / `Shift+N` step through the features in trouble under the lens · `A` pins a baseline date to compare with · Enter opens · Esc goes back.
 
 ## Running under Personas
 
@@ -58,10 +68,11 @@ With the Personas desktop app as the one point of control (spark one-control), t
 |---|---|
 | `BP_RUNNER=personas` | Every scan, execute and release job runs through the Personas fleet shim instead of a `claude` of its own, so it waits in the Personas fleet's one queue (its cap and budgets) and shows in its Fleet Monitor as origin `lens_scan`, labelled `bp-job:<id>`. The Personas app must be running (the shim reads its local handshake). The onboarding chat still runs `claude` itself. An explicit `BP_CLAUDE_BIN` still wins. |
 | `PERSONAS_RUN_SHIM` | Where the shim is. Default: `<bp root>/../personas/scripts/fleet/personas-run.mjs` (the sibling checkout). A job fails with "Personas fleet shim not found" when neither exists. |
+| `BP_JOB_KEEP_ENV=A,B` | Scan, build, release and lens-draft runs get the server's environment without any `*_API_KEY` (they run on your Claude plan, as the companion does). Name a variable here when a product's probes need it. |
 | `BP_WRITES=off` | Read-only decisions: the approve / decline, dispatch, lens execute and triage controls are hidden and their routes answer 403 naming the flag. Scans, lens edits and the whole Release tab stay live (bp composes releases). Nothing is deleted; the default is writes on. |
 
 Every decision bp writes (approve, decline, the approvals a dispatch or lens execute makes, triage, a release) is signed
-`user:<gh login>` (`gh api user --jq .login`, once per server process; `user:blueprint` when gh is missing or signed out).
+`user:<gh login>` (a companion's own triage call is signed `companion:<conversation>`) (`gh api user --jq .login`, once per server process; `user:blueprint` when gh is missing or signed out).
 ## The companion's API
 
 bp's companion acts only through one tool door: `apps/mcp/bp-mcp.mjs`, a stdio MCP server (`node apps/mcp/bp-mcp.mjs`,
@@ -84,11 +95,57 @@ contracts in their headers and in `docs/blueprint-ui.md`):
 The companion's state lives under `$BP_HOME/companion` (default `<repo>/.bp/companion`, git-ignored). `node
 scripts/check-companion-door.ts` walks the door end to end.
 
+## VR: the Light Table
+
+bp's third channel, after the web canvas and the phone view: the same product, lenses, scans and waves, drawn at a
+backlit drafting table in a dark studio for a Meta Quest. Wings lie on the glass left to right, rooms rise off the paper
+as glass extrusions, a scan line sweeps and amber pins rise over findings, the left wrist carries the wave's packages,
+and the agent, a drafting lamp, floats the one decision it needs beside it: approve or decline.
+
+| The target: concept art | Where it stands: the table in Unreal 5.8 |
+|---|---|
+| ![Light Table concept art](docs/concepts/vr-light-table/target-light-table.jpg) | ![The light table rendered in UE 5.8, Kettle's real data](docs/concepts/vr-light-table/captures/fid-t-hero.jpg) |
+| *A generated concept image. Its labels are image-model text and mean nothing.* | *An in-engine capture: Kettle's five wings, its findings as pins, a real decision card and the wave's packages on the wrist.* |
+
+**Status:** a UE 5.8.4 project with Meta XR v207 and the Interaction SDK, built on Lynx (Windows on ARM64). Hands-first
+levels (pinch and pull to dive, push to go back), room mode with a deck of decision screens, the wrist panel and the lamp
+run against `apps/server` or a bundled snapshot. The Quest APK builds (package `com.developersblueprint.vr`), aimed at the
+Meta VR Start Developer Competition (entries close 2026-11-18). The web app's *Take it to the table* crossing and its place
+baton are on master; the VR half of the crossing is next.
+
+### Architecture
+
+![The VR Light Table's architecture: packages/core and packages/schema, the PC's apps/web, apps/server and the companion, and the headset's BpLink, bundle and bp game module](docs/img/vr-architecture.png)
+
+*Drawn in HTML and CSS (`docs/img/src/vr-architecture.html`); `python docs/img/src/render.py` re-renders the PNG.*
+
+- **One logic, three channels.** Every rule (health, layout, the derived plan) lives in TypeScript in `packages/core`.
+  The Unreal app is a thin renderer and interaction client: it reads the plan (5 wings, 13 rooms, 29 bays, 133 tiles for
+  Kettle) and never computes a health or layout rule.
+- **The contract is generated.** `packages/schema` emits the Unreal `USTRUCT` headers from the same JSON Schemas as the
+  TypeScript types, so `FJsonObjectConverter` fills them with no hand-written parsing; `check:schema` keeps them fresh,
+  `check:bplink` guards the routes BpLink calls and `check:vr-words` keeps the table's words equal to the web's.
+- **Online or alone.** BpLink reads `apps/server` (`/structure`, `/plan`, the scan side, `/stream`), or, on a headset
+  with no PC, the Kettle snapshot `apps/vr/tools/bundle-data.mjs` stages into the build. On the bundle, writes are
+  refused with a log line. A paired LAN door for the live table is designed (standalone plan, S8).
+- **The `bp` game module** (`apps/vr/Source/bp`): `BpTable` (frame, paper, edge-glow volumes from `FBpPlan`),
+  `BpLevels` (site → wing → room lifts), `BpRoom` / `BpDeck` / `BpSwitch` (seated room mode and its screens),
+  `BpMarks` (pins, scan line, decision card), `BpWrist` (packages), `BpHands` (pinch-pull-push, tracking loss as a
+  state), `BpHeadset` (seated calibration, text card in arcmin, the 90 Hz frame meter).
+- **Content is made by agents.** The level and assets are built through UE 5.8's editor MCP (`apps/vr/tools/mcp-*.mjs`,
+  every call logged in `tools/mcp-steps/`), with art sources and evidence shots in `apps/vr/ArtSource/`.
+
+Start with [`docs/concepts/vr-light-table/README.md`](docs/concepts/vr-light-table/README.md) (decisions and the
+document index), [`apps/vr/README.md`](apps/vr/README.md) (how to run it on Lynx),
+[`standalone-plan.md`](docs/concepts/vr-light-table/standalone-plan.md) (the Quest APK) and
+[`docs/concepts/desk-to-table/plan.md`](docs/concepts/desk-to-table/plan.md) (the crossing from the desk to the table).
+
 ## What is where
 
 ```
 apps/web/                      the Next.js app (npm workspace @bp/web); run from the repo root: npm run dev
-apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant]
+apps/web/src/app/              routes: / (blueprint), /variants, /v/[variant], /projects, /projects/[slug]/onboarding, /headsets,
+                               /crossing, /buildup
 apps/web/src/engine/           canvas engine: camera, frame loop, levels of detail, cached plan raster, lens mix
 apps/web/src/components/       React UI around the canvas (header, dock, queue, feature sheet, legend, phone view)
 apps/web/src/variants/         lens expressions: subtle (adopted), shaped, bold
@@ -105,7 +162,11 @@ packages/core/src/server/      the Node-only half: store, products registry, job
 packages/core/data/            fixtures: kettle.app-structure.json + kettle.events.jsonl (the product, v3),
                                swarm.json (the simulated swarm), kettle.json (the original sample)
 packages/schema/               app-structure v3 JSON Schemas + generators: TypeScript types and Unreal USTRUCTs
-apps/vr/                       the Unreal 5.8 VR client (a placeholder until P3; see its README)
+apps/mcp/                      the companion's one tool door (stdio MCP server over bp's HTTP API)
+apps/vr/                       the Unreal 5.8 VR Light Table: bp.uproject, Source/BpLink (the server link),
+                               Source/bp (the table), Content/, ArtSource/, tools/ (setup, run, MCP, packaging)
+docs/concepts/vr-light-table/  the VR concept, plans, machine readings and captures
+docs/concepts/desk-to-table/   the crossing from the web app into the table
 docs/blueprint-ui.md           the UI contract: levels, 12 px text floor, performance rules, lenses as data
 docs/standard/                 app-structure v3: spec, analysis, lens manifests, Personas brief
 docs/research/users.md         the user analysis: eight people, eleven moments of use

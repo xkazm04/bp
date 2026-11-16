@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://app-structure.example/schema/shared-focus-1.schema.json",
+  "title": "Shared focus v1",
+  "description": "The shared focus (\"Follow me\"): the place the owner is looking at, which any surface publishes and any other follows, with no leader (packages/core/src/session/focus.ts is the source; docs/standard/contract-1.md says the rules). GET /api/session/focus answers `view`; POST /api/session/focus takes `post` and answers `answer`; the companion stream's `event: shared` carries `view` too. Ids only, never a selection. This root is never itself on the wire: each property names one payload. Additive only: a field added later is optional, and a breaking change is a new suffix (shared-focus-2).",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "place": { "$ref": "#/$defs/focusPlace", "description": "A place, as a publish carries it and the view's shared place holds it." },
+    "view": { "$ref": "#/$defs/sharedView", "description": "GET /api/session/focus, `event: shared`, and POST's answer.view." },
+    "shared": { "$ref": "#/$defs/sharedPlace", "description": "view.shared when someone has published (it is null before): the shared place with who put it there." },
+    "post": { "$ref": "#/$defs/focusPost", "description": "The body of POST /api/session/focus: one move on the caller's own reader record." },
+    "answer": { "$ref": "#/$defs/focusAnswer", "description": "POST /api/session/focus's 200 or 201 answer." }
+  },
+  "$defs": {
+    "productSlug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,62}$", "description": "A registered product's slug (the registry's own rule), or `kettle` for the sample." },
+    "readerId": { "type": "string", "pattern": "^[\\w.:-]{1,80}$", "description": "A reader's own id: letters, digits, . _ : - (a LAN device speaks as `vr:<device>`)." },
+    "surface": { "type": "string", "enum": ["web", "phone", "vr", "companion", "personas", "standin", "morning"] },
+    "placeKind": { "type": "string", "enum": ["feature", "room", "wing", "site"], "description": "The same kinds the place baton and the companion's focus.show send." },
+    "focusOp": { "type": "string", "enum": ["hello", "publish", "follow", "unfollow", "forget", "back", "forward"], "description": "hello: I am here (every 15 s while open); publish: I am looking here; follow / unfollow; forget: I am closing; back / forward: publish the previous / next place of the record's history (added 2026-10-30, roadmap C2: a server older than that answers 400)." },
+    "placeLevel": { "type": "string", "enum": ["L0", "L1", "L2", "L3", "L4"] },
+    "focusTarget": {
+      "type": "object",
+      "required": ["kind", "id"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "$ref": "#/$defs/placeKind" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
+    "focusPlace": {
+      "description": "Where: a product, and optionally one target in it. Absent target: the product as a whole (the site).",
+      "type": "object",
+      "required": ["product"],
+      "additionalProperties": false,
+      "properties": {
+        "product": { "$ref": "#/$defs/productSlug" },
+        "target": { "$ref": "#/$defs/focusTarget" },
+        "level": { "$ref": "#/$defs/placeLevel" },
+        "hash": { "type": "string", "maxLength": 400, "description": "The publishing page's own hash ('#at=bkg-06&lens=perf'); a follower on the same product may use it. Never ''." },
+        "say": { "type": "string", "maxLength": 280, "description": "One plain line said with the place. A Morning decision card sends its title, a newline, then its brief's short line (a lower third shows both)." }
+      }
+    },
+    "sharedPlace": {
+      "type": "object",
+      "required": ["place", "reader", "surface", "label", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "place": { "$ref": "#/$defs/focusPlace" },
+        "reader": { "$ref": "#/$defs/readerId" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "label": { "type": "string", "description": "What other surfaces call the publisher: 'Web', 'Phone', 'VR table', 'Glim'." },
+        "at": { "type": "string", "description": "ISO time of the publish that made this the shared place (an echo keeps it)." }
+      }
+    },
+    "viewReader": {
+      "type": "object",
+      "required": ["id", "surface", "label", "seenAt", "live"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/readerId" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "label": { "type": "string" },
+        "follows": { "type": "string", "description": "'*' (whoever moves) or one reader id; absent: not following." },
+        "seenAt": { "type": "string" },
+        "live": { "type": "boolean", "description": "Seen in the last 45 s (LIVE_MS); clients say hello every 15 s while open." }
+      }
+    },
+    "sharedView": {
+      "description": "What a client sees: the shared place (null before anyone published) and every reader.",
+      "type": "object",
+      "required": ["rev", "shared", "readers"],
+      "additionalProperties": false,
+      "properties": {
+        "rev": { "type": "integer", "minimum": 0, "description": "Grows by one each time the shared place moves; an echo or a presence change keeps it." },
+        "shared": { "anyOf": [{ "$ref": "#/$defs/sharedPlace" }, { "type": "null" }], "description": "A sharedPlace, or null before anyone published." },
+        "readers": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/viewReader" } },
+        "history": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/historyEntry" }, "description": "The last shared places, oldest first (added 2026-10-30, roadmap C2, optional: absent before the first publish)." },
+        "historyAt": { "type": "integer", "minimum": 0, "maximum": 9, "description": "The index in history of the place shared now: back goes to historyAt - 1." }
+      }
+    },
+    "historyEntry": {
+      "type": "object",
+      "required": ["place", "reader", "label", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "place": { "$ref": "#/$defs/focusPlace" },
+        "reader": { "$ref": "#/$defs/readerId" },
+        "label": { "type": "string" },
+        "at": { "type": "string", "description": "The publish that made it the shared place." }
+      }
+    },
+    "focusPost": {
+      "description": "One move. hello, publish and follow name the caller (surface, label); publish carries a place, follow carries `of`.",
+      "type": "object",
+      "required": ["op", "reader"],
+      "additionalProperties": false,
+      "properties": {
+        "op": { "$ref": "#/$defs/focusOp" },
+        "reader": { "$ref": "#/$defs/readerId" },
+        "surface": { "$ref": "#/$defs/surface" },
+        "label": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "place": { "$ref": "#/$defs/focusPlace" },
+        "of": { "type": "string", "description": "follow: '*' or a reader id (never the caller's own)." }
+      }
+    },
+    "focusAnswer": {
+      "type": "object",
+      "required": ["moved", "view"],
+      "additionalProperties": false,
+      "properties": {
+        "moved": { "type": "boolean", "description": "The shared place moved (201, a new rev); false for an echo or a presence-only move (200)." },
+        "view": { "$ref": "#/$defs/sharedView" }
+      }
+    }
+  }
+}

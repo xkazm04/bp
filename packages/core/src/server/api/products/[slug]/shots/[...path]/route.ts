@@ -3,10 +3,12 @@
 // (`shots/<run>/<feature>-<theme>-<size>.png`); its leading `shots/` may be kept or dropped in the URL.
 // Anything that would resolve outside `<store>/shots` is refused with 403: `..`, `.`, empty, absolute or
 // drive segments, separators smuggled in an encoded segment (`..%2F..`), NUL, and symlinks pointing out.
+// Kettle (the built-in sample, while no product shadows it): the same rules over apps/web/public/sample-shots
+// (products.server.ts kettleShotsDir), e.g. `finding-<proposalId>.png` (docs/concepts/vr-light-table/table-link-v2.md 7).
 import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import path from 'node:path';
-import { findProduct, storeDir } from '@bp/core/server/products.server';
+import { findProduct, kettleShotsDir, storeDir } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
 
 const TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
@@ -30,10 +32,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   const denied = localHost(req);
   if (denied) return Response.json({ error: denied }, { status: 403 });
   const { slug, path: segs } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
+  const p = findProduct(slug), kettle = p ? null : kettleShotsDir(slug);
+  if (!p && !kettle) return unknownProduct(slug);
   if (!segs?.length || segs.some((s) => !s || s === '.' || s === '..' || BAD_SEGMENT.test(s) || path.isAbsolute(s))) return forbidden();
-  const root = path.join(storeDir(p), 'shots');
+  const root = p ? path.join(storeDir(p), 'shots') : kettle!;
   // A full Shot.path (`shots/...`) is accepted too: try it as given, then without the leading `shots`.
   const tries = [segs]; if (segs[0] === 'shots' && segs.length > 1) tries.push(segs.slice(1));
   let file: string | null = null;

@@ -10,12 +10,19 @@
 
 class UBpHands;
 class UWidgetComponent;
+class UProceduralMeshComponent;
+class UMaterialInstanceDynamic;
 struct FBpScanState;
+struct FBpOnboardingState;
+struct FBpFocusList;
 class UCameraComponent;
 class UIsdkControllerRigComponent;
 class UIsdkHandRigComponent;
 class UMotionControllerComponent;
 class USkeletalMeshComponent;
+
+/** Whether the headset is on the head, as far as the runtime has said (XR_EXT_user_presence, or nothing). */
+enum class EBpHeadPresence : uint8 { Unknown, Off, On };
 
 UCLASS()
 class BP_API ABpPawn : public APawn
@@ -53,12 +60,16 @@ public:
 	static const FName CaptureHandsTag;
 	static const FName CaptureWristTag;
 
+	/** Your room switched (BpSurround.cpp, bp.Room): the console's YOUR ROOM / STUDIO redraws, whoever switched it. */
+	void OnRoomChanged() { RefreshConsole(); }
+
 	/** The wrist panel (spark vr-fidelity-40 FC1, element 11): the concept's "Packages", the latest wave's packages with
 	 *  their progress rings, read from GET .../waves and the findings' statuses (BpLink's scan state). With no posed hand
 	 *  it hangs above the left rest hand, at WristPanel*Cm from the eye, turned to face it; SetWristParent moves it onto a
 	 *  hand (the posed capture pair, or a tracked wrist). Its size on the arm and its pixel density: */
 	static constexpr float WristPanelWidthCm = 13.f;  // FO: 13 x 10.5 (from 11 x 9.5), room for readable sub-lines (element 11)
 	static constexpr float WristPanelHeightCm = 10.5f;
+	float WristTintShown = -1.f;
 	static constexpr float WristPanelPxPerCm = 50.f;
 	static constexpr float WristPanelForwardCm = 26.f;
 	static constexpr float WristPanelSideCm = -23.f;
@@ -86,20 +97,140 @@ public:
 	/** The panel's up leans with the target pose's view (ABpGameMode::TargetPitchDeg), so it reads square to the eye. */
 	void SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative);
 
-	/** The wrist's list of rooms (spark vr-room-layers WP3): in room mode the panel has two tabs, PACKAGES (the wave, as
-	 *  before) and ROOMS, the product's rooms by urgency (ABpTable::RoomsByUrgency) WristRoomsPerPage a page, the room shown
-	 *  marked; a tap on a row switches to that room. The hands find its tabs, rows and pager by ray (WristHit: an id
-	 *  "wrist:tab:rooms", "wrist:tab:packages", "wrist:room:<id>", "wrist:page:next" or "wrist:page:prev"), and the
-	 *  synthetic hand aims at them (WristAim). */
+	/** Night two W1 (the owner: "the wrist panel is overpopulated with options, we need to migrate into the main frame and
+	 *  keep wrist for quick decisions"): the wrist keeps MENU (the console), SEAT, TOUR, the armed scan's START and CANCEL,
+	 *  a refusal's DISMISS, the lamp's offer, the decision waiting on the deck or the card with APPROVE and DECLINE, and the
+	 *  scan band; the old tabs (PROJECTS, PACKAGES, ASK, ROOMS, SCAN) are the console's pages. Its controls' ids are
+	 *  "wrist:<act>" (PanelAct's acts, and wrist:menu); the old "wrist:tab:<name>" opens the console on that page. The hands
+	 *  find them by ray (WristHit) and the synthetic hand aims at them (WristAim). The saved focuses' arming survives: a
+	 *  first pinch on a focus (the console's SCAN page, or the lamp's "Scan this") arms it, START on the wrist or a second
+	 *  pinch on the row starts the directed scan (ABpTable::StartDirected), anything else disarms. */
 	static constexpr int32 WristRoomsPerPage = 5;
 	bool WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
 	/** The panel's centre in the world (BpView.Pose wrist aims at it). */
 	FVector GetWristWorld() const;
 	bool WristAim(const FString& Id, FVector& OutWorld) const;
 	void WristTap(const FString& Id);
-	/** The wrist panel's text classes where it stands (BpView.TextCard): the rooms tab's names and counts, a package's
-	 *  name and its sub-line. */
+	/** Opens the Scan tab with that focus armed for the place the table shows, as a first pinch on its row would (the lamp's
+	 *  "Scan this"): a second pinch starts it. */
+	void WristArmFocus(const FString& FocusId);
+	/** The control a hand's ray is on (UBpHands, the aim cursor): it lights, since no cursor is drawn over the panel. */
+	void SetWristHover(const FString& Id, bool bDown = false);
+	/** The wrist panel's text classes where it stands (BpView.TextCard): its buttons, the decision's kicker and title, the
+	 *  scan band. */
 	void WristTextClasses(TArray<BpType::FClassSample>& Out) const;
+
+	// ---- The console (BpConsole.cpp; night two W1, the owner: "create main menu and operate there") ---------------------
+	/** The main menu, in the deck's slot on the table (ABpTable::ConsoleSlotPose), in the sheet's language. At rest a slim
+	 *  bar ConsoleWidthCm x ConsoleBarHeightCm: MENU, the product, one status phrase and BACK when there is somewhere to go
+	 *  back to; on the site plan it stands along the slot's top edge (the plan below stays clear), in room mode just under
+	 *  the deck (ConsoleBarGapCm below its lower edge, clear of its screens). Opened, the full panel ConsoleWidthCm x
+	 *  ConsoleHeightCm in the slot: HOME's tiles, then each page a titled list of ConsoleRowsPerPage rows a page with a
+	 *  pager and BACK top left; in room mode the deck is held hidden while it is open. One opaque world widget laid out at
+	 *  ConsoleLayoutPxPerCm and drawn at ConsolePxPerCm, redrawn only when what it shows changes. Its controls' ids are
+	 *  "console:<act>": the console's own (menu, close, home, back, page:next, page:prev, open:<page>, bar:back) and the
+	 *  shared acts of PanelAct. */
+	static constexpr float ConsoleWidthCm = 40.f;
+	static constexpr float ConsoleHeightCm = 22.5f;
+	static constexpr float ConsoleBarHeightCm = 2.75f;
+	static constexpr float ConsoleBarGapCm = 0.5f;
+	static constexpr float ConsoleLayoutPxPerCm = 32.f;
+	static constexpr float ConsolePxPerCm = 21.f;
+	static constexpr int32 ConsoleRowsPerPage = 5;
+	bool ConsoleHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	bool ConsoleAim(const FString& Id, FVector& OutWorld) const;
+	/** Wave N3-W1, the laser pointer: where a ray that ConsoleHit or WristHit took meets that panel, in the world (the near
+	 *  console, the near bar, the far sheet on the wall or the stage, the wrist). Kind is the hands' hover kind. */
+	bool PanelHitPoint(const FString& Kind, const FVector& WorldOrigin, const FVector& WorldDir, FVector& OutWorld) const;
+	/** The far sheet is up (the wall or the stage): the pointer's ray runs to it. */
+	bool IsConsoleFar() const { return bConsoleFar; }
+	void ConsoleTap(const FString& Id);
+	void SetConsoleHover(const FString& Id, bool bDown = false);
+	/** Opens the console on a page ("home" when empty or unknown); CloseConsole puts it back to its bar. */
+	void OpenConsole(const FString& Page);
+	void CloseConsole();
+	bool IsConsoleOpen() const { return bConsoleOpen; }
+	/** The controllers lead (UBpHands' input), as the legend reads it (BpLegend.cpp). */
+	bool UsesControllers() const;
+	/** The open page's key ("home" on the MENU's tiles; meaningful while IsConsoleOpen). */
+	const FString& GetConsolePage() const { return ConsolePageKey; }
+	/** The tour's mark (BpTour.cpp, wave T1): the control a step asks for ("console:menu", "console:bar:back") wears the amber
+	 *  edge the pad's selection wears, until the step ends (empty clears it). One redraw when it changes. */
+	void SetConsoleMark(const FString& Id);
+	/** For checks: "bar" or "<page> p<n>/<pages> sel=<id>". */
+	FString GetConsoleLine() const;
+	/** BpConsole.Stat: the console's line, its draws, and whether its widget (and the wrist's) ticks now. */
+	void LogConsoleStat() const;
+	/** BpConsole.Rows: the open page's rows, logged (night two W2a: a headless check of the PC LINK and SCAN pages). */
+	void LogConsoleRows();
+	/** The console's text classes where it stands (BpView.TextCard). */
+	void ConsoleTextClasses(TArray<BpType::FClassSample>& Out) const;
+	// ---- The stand-up (BpStandup.cpp; night two W2b, "Morning at the desk") -----------------------------------------------
+	/** The console's STAND-UP page is the morning ritual: the deck's cards one at a time (GET /api/companion/morning, or the
+	 *  build's sample with no PC), each decision answered with `shown`, the plan following each card, then the day's plan and
+	 *  the hand-over. Its acts are "standup:<act>" (PanelAct routes them): next, prev, approve, defer, hold, decline, plan,
+	 *  handover, grant, cancel, revoke, skip, retry, done. */
+	bool IsStandupOpen() const;
+	void StandupAct(const FString& Act);
+	/** For checks: "<sheet> <n>/<m> <kind> <card id>[ armed=<verdict>][ <answer>]", or "closed". */
+	FString GetStandupLine() const;
+	/** The room the stand-up's card raised on the plan (empty: none). */
+	FString GetStandupRoom() const;
+	/** The live grant this headset knows (handed over), or null. */
+	const struct FBpPolicy* LiveGrant() const;
+	/** The tour's last step (BpTour.cpp): the stand-up opens on its first decision card; the tour asks whether one was answered. */
+	bool OpenStandupForTour();
+	/** The scan result's DECIDE THEM (wave P1): the stand-up opens at the first decision that is one of these proposals (most
+	 *  severe first); when the morning's deck has none of them it closes, says so and opens the room's deck at the first. */
+	void OpenStandupForFindings(const TArray<FString>& Proposals);
+	bool StandupAnsweredSince(double Since) const;
+	/** The open stand-up's decisions still unanswered (-1 while its morning loads or when it is closed): the tour's stand-up
+	 *  step says "nothing waits" at 0 rather than ask for an answer nobody can give. */
+	int32 StandupDecisionsLeft() const;
+	FString StandupLastVerdictWords() const;
+	/** A spoken request raised a pending companion card (BpTalk.cpp): the STAND-UP page opens on it, as the stand-up's plan
+	 *  shows one (GET /api/companion/cards; answered with `shown`). */
+	void StandupShowCompanionCards();
+	/** The pending companion cards read from the PC and merged into the stand-up's sheets before the close card (opening, every
+	 *  re-read of the morning, a spoken request); bJumpToNewest shows the newest one. */
+	void StandupReadCards(bool bJumpToNewest);
+	/** The companion's requests waiting (the open stand-up's unanswered ones, else the last read), for HOME's tile and the wrist. */
+	int32 StandupPendingRequests() const;
+	/** A read of the pending cards only (HOME opening, linked): the count above, nothing shown. */
+	void StandupPeekRequests();
+	/** Wave EV: what came of earlier approvals, read before the page opens (at most every ten minutes), for the MENU's STAND-UP
+	 *  tile and the bar ("2 built since yesterday"); empty once today's stand-up has been held, or when nothing came of them. */
+	void StandupPeekYesterday();
+	FString StandupYesterdayWords() const;
+	/** Wave EV: an ask to read a new project is out to the PC (PROJECTS' ADD A PROJECT): the folder's name for the bar and the
+	 *  wrist ("ASKED YOUR PC · <name>"). BpConsole.cpp. */
+	bool OnboardAskWaiting(FString& OutName) const;
+	/** The talk's state moved (BpTalk.cpp): the console's bar and the wrist redraw if what they show changed. */
+	void TalkChanged();
+	/** The console may show the conversation (bp.TalkSheet on, and no stand-up or consent sheet open): the lamp's own caption
+	 *  box then stays quiet for the talk's lines. */
+	bool ConsoleShowsTalk() const;
+	/** G2: a page or a decision Glim opened by a focus event takes the sheet from the conversation (his words stay on his caption)
+	 *  until the console closes or the person talks again. */
+	void TalkYield();
+	void TalkUnyield() { bTalkYield = false; }
+	/** G2: the stand-up's open decision sheet (a deck decision): its proposal id and title; empty when none is shown. */
+	FString StandupDecisionShown(FString& OutTitle) const;
+
+	/** The acts the console and the wrist share (the wrist's tabs' behaviour, kept): room:<id>, project:<slug>, focus:<id>,
+	 *  scan:start, scan:cancel, scan:dismiss, ask:next|here|scan|act, seat, tour, voice:minus|plus, music:minus|plus,
+	 *  approve, decline, toggle:face|hand|motion. */
+	void PanelAct(const FString& Act);
+
+	// ---- The pad (BpPad.cpp): controllers add to the hands, never replace them ------------------------------------------
+	/** One press of a controller button or stick step: A, B, X, Y, Menu, Up, Down, Left, Right, Home. The keys polled each
+	 *  frame and the console command BpPad.Press run this same handler; a press is queued while the table eases. */
+	void PadPress(const FString& Button);
+	/** The focus cursor: the wing or room the pad stands on at the table's level, drawn with the table's highlight. The hands
+	 *  own the highlight while one aims at something; when it stops, this puts the focus back (empty: cleared). */
+	void RestoreFocusHighlight();
+	/** For checks: "<kind>=<id>" or "". */
+	FString GetFocusLine() const { return PadFocusId.IsEmpty() ? FString() : PadFocusKind + TEXT("=") + PadFocusId; }
 
 	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
 	/** Seated calibration (BpView.Seat, the wrist's SEAT, and once at start with a headset): reads the eye where it is and
@@ -109,7 +240,14 @@ public:
 	 *  logged). Without a headset it seats the flat view's eye the same way, for checks. EyeAboveFloorCm over 0 seats as if
 	 *  the eye stood that high (BpView.Seat's argument). Logs `BpView: seat ...`. */
 	bool Seat(float EyeAboveFloorCm = -1.f);
+	/** BpView.Bench: puts the view of a headset lying still at the seated target view (measurements with nobody wearing it). */
+	bool Bench(float PitchDeg, float YawDeg);
 	static constexpr float SeatTopMinCm = 55.f;
+	/** A runtime whose floor is wrong (Steam Link on a Quest 3S, Lynx 2026-10-29: a seated eye read 67.5 cm over it) puts a
+	 *  headset eye under SeatEyeMinCm. The seat then corrects the floor once, raising the pawn (the tracking origin) so the
+	 *  eye stands SeatedEyeCm over it, as a runtime's recenter does, and seats the table to that eye. */
+	static constexpr float SeatEyeMinCm = 95.f;
+	static constexpr float SeatedEyeCm = 120.f;
 	/** The start's seat waits for the head to be tracked: it tries every SeatRetryS, at most SeatTries times. */
 	static constexpr float SeatRetryS = 0.5f;
 	static constexpr int32 SeatTries = 20;
@@ -173,11 +311,47 @@ private:
 	void MakeWristPanel();
 	void ReceiveScanState(const FBpScanState& State);
 	FString WristKey;
+	FString WristHover;
+	/** Night two V6: a pinch closed on the hovered wrist control and not yet released: it draws pressed. */
+	bool bWristHoverDown = false;
 	FDelegateHandle ScanHandle;
-	/** The rooms tab: shown, its page, the room the table shows (empty on the site plan: no tabs), and each control's box in
-	 *  the panel's pixels as last laid out. */
-	bool bWristRooms = false;
-	int32 WristPage = 0;
+	/** The room the table shows (empty on the site plan), and each control's box in the panel's pixels as last laid out. */
+	FDelegateHandle WristOnboardingHandle;
+	FDelegateHandle WristProductHandle;
+	void OnWristOnboarding(const FBpOnboardingState& State);
+	/** The saved focuses (P5; the console's SCAN page): the focus armed (its id, and the place and words it would run with),
+	 *  when it was armed, what the last start said, and whether that was a refusal or failure (a card on the wrist until
+	 *  dismissed) rather than news. */
+	FDelegateHandle WristAskHandle;
+	FString WristArmedFocus;
+	FString WristArmedTarget;
+	FString WristArmedLabel;
+	double WristArmedAt = 0.0;
+	FString WristScanWords;
+	bool bWristScanRefused = false;
+	bool bWristScanStarting = false;
+	FDelegateHandle WristBandHandle;
+	FDelegateHandle WristFocusHandle;
+	void OnWristFocuses(const FBpFocusList& List);
+	void WristDisarm();
+	/** The pinch that armed a row, bouncing, must not also confirm it: a second pinch sooner than this does nothing. */
+	static constexpr double WristConfirmGuardS = 0.4;
+	void OnWristProduct(const FString& Slug);
+	/** The PC link (night two W2a): the wrist's one word and the console's PC LINK page follow it. */
+	FDelegateHandle WristLinkHandle;
+	void OnWristLink(const struct FBpLinkStatus& Status);
+	/** What the armed row's second press runs: `focus:<id>` (a directed scan), `scan:this` (a plain scan of the place) or
+	 *  `scan:every` (every lens); WristArmedFocus holds the focus id, or `@this` / `@every`. Empty when nothing is armed. */
+	FString ArmedAct() const;
+	/** The SCAN page's last word on a cancel (its job's words), and the clock that redraws the page each second while a job
+	 *  runs on it (a timer, only while the page is open). */
+	FString ConsoleScanWords;
+	FTimerHandle ConsoleClockTimer;
+	void TickConsoleClock();
+	/** The bar's SHOW ON PC: the table's place to the web (BpLink ShowOnPc); its answer in words, shown on the bar a while. */
+	void ShowOnPc();
+	FString ConsoleBarWords;
+	double ConsoleBarWordsUntil = 0.0;
 	FString WristRoomMode;
 	struct FWristBox
 	{
@@ -188,13 +362,261 @@ private:
 	TWeakObjectPtr<class ABpTable> WristTable;
 	FDelegateHandle RoomHandle;
 	void OnWristRoomChanged(const FString& RoomId);
-	/** The panel again from the scan state BpLink holds (ReceiveScanState's work, both tabs). */
+	/** The panel again from the scan state BpLink holds (ReceiveScanState's work); the console's too. */
 	void RefreshWrist();
+	/** The wave the packages show (BpWrist.cpp: the deck's draft, else the last dispatched, else the newest draft), whether it
+	 *  is a draft, and per package its name, meta line, tiers and built share. */
+	struct FPackageRow { FString Name; FString Meta; FString Tiers; float Fraction; int32 Count; };
+	const struct FBpWave* PackagesState(TArray<FPackageRow>& OutRows, bool& bOutDraft, FString& OutKey) const;
+	/** The wrist's own drawing (BpWrist.cpp): the quick decisions. */
+	void DrawWrist();
+	/** Faces the eye (bp.WristFace 1), on the hand bp.WristHand names, hidden while that hand is not tracked. */
+	void TickWristFace(float DeltaSeconds);
+	bool bWristFaceInit = false;
+	FQuat WristFaceQuat = FQuat::Identity;
+	int32 WristHandShown = -1;
+	FString WristDecisionKey;
+
+	// ---- The console's state (BpConsole.cpp) ------------------------------------------------------------------------------
+	friend struct FBpConsolePages;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> ConsolePanel;
+	bool bConsoleOpen = false;
+	/** The conversation with the lamp fills the console's panel (night two V2) while a talk is on show and no page holds it. */
+	bool bConsoleTalk = false;
+	FString ConsolePageKey;
+	int32 ConsolePageAt = 0;
+	bool bTalkYield = false;
+	FString ConsoleSel;
+	bool bConsolePadSel = false;
+	FString ConsoleHover;
+	FString ConsoleMark;
+	/** Night two V6: the hovered console control held by a pinch (bConsoleHoverDown), or the pad's selection held by A
+	 *  (bPadADown): it draws pressed until the release. */
+	bool bConsoleHoverDown = false;
+	bool bPadADown = false;
+	FString ConsoleKey;
+	FString ConsolePlaceKey;
+	int32 ConsoleDraws = 0;
+	bool bConsoleTourShown = false;
+	bool bConsolePlanShown = false;
+	struct FConsoleBox
+	{
+		FString Id;
+		FBox2f Box;
+	};
+	TArray<FConsoleBox> ConsoleBoxes;
+	/** The layout's size in its own pixels (the bar's or the panel's). */
+	FVector2f ConsoleLayout = FVector2f::ZeroVector;
+	/** Wave PJ1: the draw's pixels per layout pixel (the desk's 21/32; the far sheet's from its angular size), whether the open
+	 *  sheet stands on the far surface (BpProjector.h), its size there (cm), and the mode it was placed for. */
+	float ConsoleDrawPerLayout = ConsolePxPerCm / ConsoleLayoutPxPerCm;
+	bool bConsoleFar = false;
+	FVector2D ConsoleFarSizeCm = FVector2D::ZeroVector;
+	int32 ConsoleProjShown = -1;
+	/** The far sheet's point of interest this draw (layout px; negative: none): the loupe's region on its screen. */
+	FVector2f LoupeAimLayout = FVector2f(-1.f, -1.f);
+	/** Wave N3-W2: a decision's title on the far sheet this draw (layout px; negative: none), Glim's point when it has no loupe. */
+	FVector2f TitleAimLayout = FVector2f(-1.f, -1.f);
+	/** Wave PJ2, THE LIGHT STAGE (bp.Projector 2): the curved sheet (section 0) and the far rim's line of light (section 1), on
+	 *  the table like the panel; the panel then draws the whole stage into its render target and is not drawn itself. */
+	UPROPERTY(Transient)
+	TObjectPtr<UProceduralMeshComponent> ConsoleStage;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> ConsoleStageMat;
+	bool bConsoleStage = false;
+	/** The stage's whole surface in the sheet's layout px, and the shape its mesh was built for. */
+	FVector2f ConsoleStageLayout = FVector2f::ZeroVector;
+	FString ConsoleStageMeshKey;
+	/** Wave PJ2: the slim bar stays at the desk while the sheet is far (modes 1 and 2): a second, small widget. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> ConsoleNearBar;
+	TArray<FConsoleBox> NearBarBoxes;
+	/** Wave U1, "the wall arrives" (bp.Wow.WallArrive): a sheet opening on the wall is projected in, wiped across from Glim's side
+	 *  in bp.Wow.WallArriveS behind a thin edge of his warm light (a 0.15 s rise of light with bp.ReducedMotion), on
+	 *  M_BpWallReveal (u1_wall_reveal.py); the widget's own opaque material is put back when it is whole. At rest: one compare. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInterface> WallRevealMat;
+	double WallRevealAt = -1.0;
+	bool bWallRevealReduced = false;
+	int32 WallRevealFrames = 0;
+	double WallRevealMaxMs = 0.0;
+	void StartWallReveal();
+	void TickWallReveal();
+	void EndWallReveal(const TCHAR* Why);
+	/** Wave U2, "the wall closes": a sheet closed on the wall leaves as it came, the wipe in reverse back to Glim's side in
+	 *  bp.Wow.WallLeaveS (its light falls in 0.15 s with bp.ReducedMotion); the panel is placed and drawn as the bar once it has
+	 *  gone. False when it closes at once (the cvar off, the stage, the conversation staying on the wall). */
+	double WallLeaveAt = -1.0;
+	bool bWallLeaveReduced = false;
+	bool StartWallLeave();
+	void TickWallLeave();
+	void EndWallLeave(bool bWhole);
+	void PlaceStage(const FTransform& Pose);
+	/** Wave PJ2: while the stage stands, the studio's primitives it fully covers (behind it) or that stand in front of its
+	 *  content above the table (a pendant shade over the right flank) are hidden; shown again when it goes. */
+	void StageCull(bool bOn);
+	TArray<TWeakObjectPtr<class UPrimitiveComponent>> StageHidden;
+	void PlaceNearBar(bool bShow);
+	bool NearBarHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	/** The stage's flank (BpStandup.cpp): left, what waits; right, the active sheet's context. Empty: the flank stays dark.
+	 *  A line led by "!" is the one in hand (amber), by "*" a bold one. */
+	void StageFlank(bool bLeft, FString& OutTitle, TArray<FString>& OutLines) const;
+	void MakeConsole();
+	void RefreshConsole();
+	void PlaceConsole();
+	/** Each frame, cheaply: the table's level and room mode (the bar's place and BACK), the deck's hold. */
+	void TickConsoleLive();
+	/** The pad's arrow on the open console: the nearest control in that direction. */
+	void ConsoleMove(int32 DX, int32 DY);
+	bool ConsoleBack();
+	FString ConsoleStatus() const;
+
+	// ---- The stand-up's state (BpStandup.cpp): made when the page opens, released when it closes ---------------------------
+	TSharedPtr<struct FBpStandupState> Standup;
+	/** The finding's screen on the decision card: one texture at a time, released when the card leaves or the page closes. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupShot;
+	/** The screen released last, kept one release longer: a widget that still paints it this frame never holds a freed texture
+	 *  (the deck's card crashed on exactly that, 2026-11-10). */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupShotKept;
+	/** Wave W1, Glim's board: the finding's "after" screen beside its "before" (the board's split), released with it. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupAfterShot;
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StandupAfterKept;
+	/** The YESTERDAY sheet's screens (wave EV): the outcome's before and after at once, each decoded halved (640x360 from a
+	 *  1280x720 shot, 900 KB each); released when the outcome or the sheet leaves, the last pair kept one release longer. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> StandupOutcomeShots;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> StandupOutcomeKept;
+	/** The grant this headset made or read (GET policies), kept past the page: the bar and the wrist say "Handed over until". */
+	TSharedPtr<struct FBpPolicy> StandupGrant;
+	FTimerHandle StandupTimer;
+	FTimerHandle StandupGrantTimer;
+	void StandupOpened();
+	void StandupClosed();
+	void StandupLoad();
+	void StandupBuildSheets();
+	void StandupShowSheet();
+	void StandupLoadShot();
+	/** YESTERDAY (wave EV): the outcome shown raised on the plan, and its two screens loaded and released. */
+	void StandupShowOutcome();
+	void StandupLoadOutcomeShots();
+	void StandupReleaseOutcomeShots();
+public:
+	/** Night two V7: the finding's "before" screen, one path for the stand-up's decision sheet and a room's decision card
+	 *  (BpDeck.cpp): the Shot row of the scan the table holds for the proposal (the product on the table only), and its PNG
+	 *  fetched, decoded off the game thread, halved to at most 800 px wide and made a transient texture. Done runs on the game
+	 *  thread with the texture (null when it could not be read) and whether it is a sample screen. BpStandup.cpp. */
+	static const struct FBpShot* FindBeforeShot(const FString& Proposal);
+	static void FetchBeforeShot(const FString& Product, const FString& Path, TFunction<void(class UTexture2D* Texture, bool bSample)> Done);
+	/** Wave W1: the stand-up shows a finding's decision on the wall as Glim's board (BpBoard.h); the console's sub-line gives
+	 *  its band to the board's title row then. */
+	bool StandupOnBoard() const;
+private:
+	void StandupReleaseShot();
+	void StandupVerdict(const FString& Verdict, const TCHAR* Route);
+	void StandupPlanDay();
+	void StandupGrantNow();
+	void StandupRevoke();
+	void StandupReadPolicies();
+	void StandupTickSince();
+	void StandupSaveAnswers() const;
+	FString StandupShown() const;
+	FString StandupKey() const;
+	/** The page's body on the console (the card as a sheet), its controls added to ConsoleBoxes. */
+	void DrawStandup(const TSharedRef<class SCanvas>& Canvas);
+	/** The conversation with the lamp on the console's panel (BpConsole.cpp, night two V2): the state, the heard words, the
+	 *  reply whole (or the lamp's own line), the level while listening. */
+	void DrawConversation(const TSharedRef<class SCanvas>& Canvas, const FString& Word, const FString& Heard, const FString& Reply, const FString& Line, float Level, bool bSample, const TArray<FString>& Replies = TArray<FString>(), const TArray<FString>& Steps = TArray<FString>());
+	/** The pad on the open stand-up: false when it is not the stand-up's to take. */
+	bool StandupPad(const FString& Button);
+	/** The wrist's card for the stand-up (the decision on screen, or the hand-over), false when none. */
+	bool StandupWristCard(FString& OutKicker, FString& OutTitle, FString& OutWords, TArray<TPair<FString, FString>>& OutButtons) const;
+	FString StandupBarStatus() const;
+
+	// ---- The pad's state (BpPad.cpp) --------------------------------------------------------------------------------------
+	FString PadFocusKind;
+	FString PadFocusId;
+	TArray<FString> PadQueue;
+	struct FPadStick
+	{
+		int32 DX = 0;
+		int32 DY = 0;
+		double NextAt = 0.0;
+	};
+	FPadStick PadSticks[2];
+	TMap<FName, bool> PadKeysDown;
+	void TickPad(float DeltaSeconds);
+	void RunPad(const FString& Button);
+	void PadStep(int32 Delta);
+	void PadSelect();
+	void SeedFocus(const FString& Prefer = FString());
+	uint8 PadLevelShown = 0;
+	/** The pad has been used this session (the focus is drawn from then on), the wing the focus last stood in, and the place
+	 *  TickPad last saw (the focus is re-seeded when it moves). */
+	bool bPadActive = false;
+	FString PadLastWing;
+	uint8 PadSeenLevel = 255;
+	FString PadSeenWing;
+	FString PadSeenRoom;
+	FString PadRoomModeShown;
+
+	// ---- The music bed (BpAudio.cpp) -------------------------------------------------------------------------------------
+	UPROPERTY(Transient)
+	TObjectPtr<class UAudioComponent> Music;
+	UPROPERTY(Transient)
+	TObjectPtr<class USoundWaveProcedural> MusicWave;
+	TSharedPtr<TArray<uint8>, ESPMode::ThreadSafe> MusicData;
+	int32 MusicRate = 32000;
+	int32 MusicOffset = 0;
+	int32 MusicBytes = 0;
+	int64 MusicAt = 0;
+	int32 MusicLoops = 0;
+	float MusicLevelShown = -1.f;
+	bool bMusicLoading = false;
+	bool bMusicMissing = false;
+	bool bMusicDucked = false;
+	bool bMusicPaused = false;
+	void TickMusic();
+	void FeedMusic();
 
 	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
 	FTimerHandle SeatTimer;
 	int32 SeatTried = 0;
 	void SeatAtStart();
+public:
+	/** The headset put on or taken off (FCoreDelegates; BpView.FakeHead fakes them). The seat waits for the head: a launch with
+	 *  the headset on the desk must not seat to a false eye. The first time it is really put on, a seat made before that (with
+	 *  the head only assumed) is undone and made again; later doffing and donning never re-seat (the wrist's SEAT is there). */
+	void OnHeadOn();
+	/** The runtime recentered (the wearer held the Meta button): the table is seated again to the way the head now faces.
+	 *  The change is pending when the event comes, so the seat runs a beat later (RecenterTimer). */
+	void OnRecenter();
+	FTimerHandle RecenterTimer;
+	FDelegateHandle RecenterHandle;
+	void OnHeadOff();
+	/** BpView.FakeHead unknown: a runtime that says nothing about the head (the guard's check). */
+	void ForgetHead();
+private:
+	FDelegateHandle HeadOnHandle;
+	FDelegateHandle HeadOffHandle;
+	EBpHeadPresence HeadPresence = EBpHeadPresence::Unknown;
+	bool bHeadEverOn = false;
+	/** A seat was made while the head was only assumed (no presence signal) and took a floor correction: redone on the first put-on. */
+	bool bSeatProvisional = false;
+	/** The floor correction a seat has taken, undone with the seat it belongs to. */
+	double SeatFloorFixCm = 0.0;
+	/** The wrist panel's transform on the left grip (bp.Wrist*; BpWrist.cpp), live: applied when a value changes. */
+	void ApplyWristPose();
+	FString WristPoseApplied;
+	UPROPERTY(Transient)
+	TObjectPtr<USceneComponent> WristSimGrip;
+	/** The wrist's pose cvars and the voice level, followed each frame (the panel re-attached, its label redrawn). */
+	void TickWristLive();
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> FrameMeter;
 	struct FFrameSample

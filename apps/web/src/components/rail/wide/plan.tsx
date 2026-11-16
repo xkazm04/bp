@@ -16,7 +16,7 @@ const HW: Record<string, string> = { good: 'Good', watch: 'Watch', bad: 'Bad', u
 
 export function Plan() {
   const E = useEngine(), M = E.M;
-  const s = useBp((s) => ({ view: s.view, place: s.place, ga: s.ga, blast: s.blast, key: s.key, t: s.t, simV: s.simV }), shallowEqual);
+  const s = useBp((s) => ({ view: s.view, place: s.place, ga: s.ga, blast: s.blast, key: s.key, t: s.t, simV: s.simV, troubleV: s.troubleV }), shallowEqual);
   const [mode, setMode] = useState<'trouble' | 'all'>('trouble');
   const [sel, setSel] = useState<string | null>(null);
   const listRef = useListRef();
@@ -34,7 +34,7 @@ export function Plan() {
       if (fs.length) out.push({ id: r.id, head: (M.P.scale > 1 ? w.bld.b.short + ' · ' : '') + w.def.name + ' · ' + (r.name), fs: mode === 'all' ? fs : fs.slice().sort((a, b) => rank(a) - rank(b)) });
     }
     return out;
-  }, [room, M, mode, s.key]);
+  }, [room, M, mode, s.key, s.troubleV]); // troubleV: a reading turned a feature good or bad in place
   const ids = useMemo(() => [null as string | null, ...groups.flatMap((g) => g.fs.map((f) => f.id))], [groups]);
   const cur = sel && ids.includes(sel) ? sel : null;
   const onKey = useWalk(ids, cur, setSel, listRef);
@@ -152,12 +152,9 @@ function FeatureDetail({ f }: { f: Feat }) {
 
 function Overview() {
   const E = useEngine(), M = E.M, V = useVariant();
-  const s = useBp((s) => ({ view: s.view, key: s.key }), shallowEqual);
-  const kc = useMemo(() => {
-    const kc: Record<string, { bad: number; watch: number }> = {};
-    for (const f of M.P.features) for (const t of f.trouble) { const c = (kc[t.lens] ??= { bad: 0, watch: 0 }); c[t.h]++; }
-    return kc;
-  }, [M.P]);
+  // troubleV moves when a reading re-judges health, so the counts below re-render (the engine's index rebuilt them)
+  const s = useBp((s) => ({ view: s.view, key: s.key, troubleV: s.troubleV }), shallowEqual);
+  const kc = E.trouble.counts();
   const L = V.ui?.Legend ?? Legend, sh = sheetOf(M.P, s.view);
   return (
     <>

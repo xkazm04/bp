@@ -34,18 +34,26 @@ enum class EBpRoomEntry : uint8
 /** Room mode changed: the room the table now shows, empty when it went back to the site plan. Fired when the change is
  *  asked for, before the fade (WP2's screen deck and WP3's switching listen here). */
 DECLARE_MULTICAST_DELEGATE_OneParam(FBpRoomModeChanged, const FString& /* RoomId */);
+/** A scan's status or result changed (a room read, a scan begun, finished or gone): the wrist's Scan tab reads it again. */
+DECLARE_MULTICAST_DELEGATE(FBpScanBandChanged);
+DECLARE_MULTICAST_DELEGATE(FBpLampAskChanged);
 
 class UCanvas;
 class UCanvasRenderTarget2D;
 class UInstancedStaticMeshComponent;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UProceduralMeshComponent;
 class UStaticMesh;
 class UStaticMeshComponent;
 class UTexture2D;
 class UWidgetComponent;
 class SWidget;
+struct FBpDecisionBrief;
 struct FBpPlan;
+struct FBpProductEntry;
+struct FBpOnboardingState;
+enum class EBpOnboardingMilestone : uint8;
 
 UCLASS()
 class BP_API ABpTable : public AActor
@@ -77,10 +85,15 @@ public:
 	static constexpr float PaperDepthCm = 76.f;
 	/** The paper sits this far below the frame's top. */
 	static constexpr float GlassRecessCm = 0.8f;
-	/** The sheet render target; it covers the whole paper, so the paper samples it at its own UVs. Its aspect is the
-	 *  paper's, so a pixel is square (0.41 mm). */
-	static constexpr int32 SheetWidthPx = 4096;
-	static constexpr int32 SheetHeightPx = static_cast<int32>(SheetWidthPx * PaperDepthCm / PaperWidthCm + 0.5f);
+	/** The sheet render targets (the site plan's and room mode's); each covers the whole paper, so the paper samples it at
+	 *  its own UVs. Its aspect is the paper's, so a pixel is square. The width is bp.SheetPx, read when the table begins play:
+	 *  SheetBaseWidthPx (0.41 mm a pixel) by default, 8192 for a sharper PC sheet. Every stroke width
+	 *  in the sheets' pens is in base pixels, scaled by SheetPxScale, so the drawing is the same in cm at any width. */
+	static constexpr int32 SheetBaseWidthPx = 4096;
+	static int32 SheetWidthPx();
+	static int32 SheetHeightPx();
+	static double SheetPxPerCm() { return SheetWidthPx() / static_cast<double>(PaperWidthCm); }
+	static float SheetPxScale() { return SheetWidthPx() / static_cast<float>(SheetBaseWidthPx); }
 	/** The paper texture's tile (ArtSource/mat-blueprint-paper/manifest.json: 0.5 m, 16 cells, every 4th line stronger). */
 	static constexpr float PaperTileCm = 50.f;
 	/** The paper's grid, from its far-left corner: a fine line every GridFineCm and a stronger one every GridMajorEvery
@@ -514,6 +527,13 @@ public:
 	 *  or "crumb" (OutId "home", "wing:<id>" or "room:<id>"). False when the ray meets none. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
 	bool HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutKind, FString& OutId) const;
+	/** The world point of HitTest's last surface hit on a plane (a wing, a room, the paper); false when it hit a widget (the
+	 *  deck, the card, the lamp) or nothing. The aim cursor's reticle. */
+	bool GetAimHit(FVector& OutWorld) const;
+	/** The aim assist (bp.AimAssistDeg): a ray that missed, bent to the nearest pinchable paper target (a wing, a lifted room,
+	 *  a crumb, a key plan room, a feature) whose footprint lies within RadiusDeg of it. Writes HitTest's kind and id, and the
+	 *  target is confirmed by HitTest along the bent ray, so a pinch acts on exactly what the highlight shows. */
+	bool AssistHit(const FVector& WorldOrigin, const FVector& WorldDir, float RadiusDeg, FString& OutKind, FString& OutId) const;
 	/** For checks (level_check.py): a plan point on the paper (cm from its far-left corner) at the fitted scale, and the
 	 *  product the table reads (BpLink's slug). */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
@@ -527,8 +547,52 @@ public:
 	/** The decision card: shows the open finding it asks about (the lifted room's first, else the first in store order),
 	 *  or hides. */
 	void ShowCard(bool bShow);
+	/** The card asks about this open finding (BpCard.Ask <id>), ahead of the room rule; empty goes back to the rule. */
+	void AskCard(const FString& ProposalId);
+	/** A hand's tap on the card (HitTest's "card:decline", "card:approve"). Decline on a repeat (the brief's advice
+	 *  withdraw; ROADMAP F8, owner 2026-10-30) declines it in the store through BpLink DeclineRepeat; Approve (D12, owner
+	 *  2026-10-31: "Pinching approve in VR should approve the target decisions") approves the shown finding through BpLink
+	 *  ApproveDecision. On the server's 200 the card moves on to the next open finding; a refusal leaves it shown. Decline
+	 *  on any other card writes nothing (the desk's free Decline, with the owner's own note). */
+	void CardTap(const FString& Id);
+	/** The card's buttons, for the hands: a world ray on the shown card (OutId "card:<button>" or "card:panel"), and the
+	 *  world point at a button's centre (BpHands.Pinch card:decline). */
+	bool CardHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const;
+	bool CardAim(const FString& Id, FVector& OutWorld) const;
+	/** For checks: "<finding id>[ repeat]" for the finding the card shows, "" when it shows none. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Card")
+	FString GetCardLine() const;
 	/** POST a lens scan of a wing, room or feature (by its plan id) the way the web does; the scan line follows it. */
 	void StartScan(const FString& Id, const FString& Lens);
+	/** A directed scan's place, as the table shows it now: the room shown or lifted, else the lifted wing, else "site". */
+	FString DirectedTarget() const;
+	/** That place in words ("Everything" for the site, else the plan's name); empty when the plan does not have it. */
+	FString DirectedLabel(const FString& Target) const;
+	/** Night two V7: what a scan of that target covers, as a person says it: "everything", "this room", "this wing". */
+	FString DirectedScope(const FString& Target) const;
+	/** POST a directed scan of a saved focus (its lens and note) over Target ("site", a wing, room, bay or feature id; empty:
+	 *  DirectedTarget()), through the same scope-building StartScan has. A focus the table has not read is fetched first. OnDone
+	 *  says whether the job is queued and, either way, words for the wrist (the refusal or failure, never a silent nothing). */
+	void StartDirected(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** A plain scan of Target with Lens (empty: the lens the table shows), the console's SCAN THIS after its second press (owner,
+	 *  2026-11-09: on a live product too). From the bundle it is the sample walk of a sample focus on that lens. OnDone in words. */
+	void StartPlain(const FString& Target, const FString& Lens, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** The every-lens scan of everything (POST scans { lens: all, scope: all }), the console's EVERY LENS after its second press.
+	 *  Refused from the bundle (the sample walks one lens). */
+	void StartEveryLens(TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** Stops the bundle's sample walk (the SCAN page's CANCEL on it). */
+	void CancelSampleScan() { EndSampleScan(); }
+	/** Where the table rests, as a place another surface can show (the room shown or lifted, the wing lifted, else the site), and
+	 *  its name in Where. PublishRestingPlace sends it as the shared focus; the console's SHOW ON PC as the place baton. */
+	struct FBpFollowPlace RestingPlace(FString& Where) const;
+	/** The sample scan (BpSampleScan.cpp; only from the bundle): walks Target ("site", a wing, room, bay or feature id; empty:
+	 *  DirectedTarget()) feature by feature on a timer, through the same marks as a real scan. It writes nothing and POSTs nothing.
+	 *  Refused, logged, with a server: a server-linked table can never run one. BpScan.Sample is its console door. */
+	bool StartSampleScan(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	/** What the wrist's Scan tab says about the scan on the table now or just run (Head its first line, Body its second); empty
+	 *  when none has run in this session. A sample says it is a sample; findings are counted only for a real scan's run. */
+	void ScanBand(FString& Head, FString& Body) const;
+	FBpScanBandChanged& OnScanBandChanged() { return ScanBandChanged; }
 
 	/** Brightens one wing, room or crumb (HitTest's kinds and ids); an empty Id clears it. */
 	UFUNCTION(BlueprintCallable, Category = "Bp|Levels")
@@ -536,6 +600,8 @@ public:
 	/** BpLevel.* console commands sent before the plan arrived; ApplyPlan runs them in order. */
 	static TArray<FString>& PendingLevelCommands();
 	bool HasPlan() const { return SheetPlan.IsValid(); }
+	/** The plan's features (tiles), 0 with no plan: an every-feature scan's "of m". */
+	int32 PlanTileCount() const;
 
 	// ---- Room mode (BpRoom.cpp): the API WP2's screen deck and WP3's switching call, and BpRoom.* ---------------------------
 	/** The paper dives into this room's map (from L1 or L2 the levels come home first). Another room while one is shown:
@@ -558,14 +624,24 @@ public:
 	/** The next page of the current screen, else the next screen (the queue's end holds; WP3 offers the next room there). */
 	void DeckNext();
 	void DeckPrev();
+	/** Wave W2: the pad's up and down on a room's split board on the wall move its split one stop (Up toward TODAY, Down toward
+	 *  PROPOSED); false when the front shows no split (the pad steps the queue then). */
+	bool DeckPadStop(int32 Delta);
 	/** The screen at a 1-based place in the queue ("3 / 9"), its first page. */
 	bool DeckShow(int32 Place);
 	/** The current decision into the product's draft wave (BpLink AddToDraft: compose or PATCH, never dispatch); advances. */
 	void DeckApprove();
+	/** D15: at the queue's end, the room's open decisions (DeckOpenIds) approved in the store with one write (BpLink
+	 *  ApproveDecisions), then into the draft wave in one write; the ones the server skips stay in the queue. */
+	void DeckApproveAll();
+	/** The decisions left in the room's queue that APPROVE ALL stands for (a repeat of a declined idea is not among them). */
+	TArray<FString> DeckOpenIds() const;
 	/** The current decision off this session's queue (memory only); the next one comes forward. */
 	void DeckDecline();
 	/** A feature's first screen to the front: its most urgent decision, else its sheet. */
 	bool DeckFocus(const FString& FeatureId);
+	/** That finding's decision screen in front (else the feature's first); false when the room's queue has neither. */
+	bool DeckFocusProposal(const FString& ProposalId, const FString& FeatureId);
 	/** A hand's tap (HitTest's "deck:<control>" or "feature:<id>"). */
 	void DeckTap(const FString& Id);
 	/** The front screen's resting centre in the world (BpView.Pose deck aims at it). */
@@ -611,6 +687,38 @@ public:
 	void AskLamp(const FString& FeatureId);
 	/** The lamp's head in the world (its hit sphere's centre); false when the level has no lamp. */
 	bool LampHead(FVector& OutWorld) const;
+	/** The lamp's asks (BpAsk.cpp): what to do next; the next step in the room in view; scan the place in view. Each answers at
+	 *  once from the store, and the first two also ask the companion with a PC link. Its answer's one action waits on LampAct. */
+	void AskNextStep(const TCHAR* Route);
+	void AskPlanHere(const TCHAR* Route);
+	void AskScanThis(const TCHAR* Route);
+	/** Does what the last answer offers (open the finding on the deck, or arm the scan); false when it offers nothing. */
+	bool LampAct(const TCHAR* Route);
+	/** A pinch on the lamp's head: the offer, else "What should I do next?". */
+	void LampPinched();
+	/** Wave U1, "Glim alive" (bp.Wow.GlimGlance): where a hand's ray meets the site plan now (world; bValid false: nowhere).
+	 *  Called by the hands each frame they aim; Glim at rest at home glances toward it (a slow, partial head turn), at most one
+	 *  new point every bp.Wow.GlimGlanceEveryS, and turns back once nothing has pointed for a while. One compare at rest. */
+	void NoteRayPoint(bool bValid, const FVector& WorldPoint);
+	/** What the last answer said (its title and why, or the companion's reply), and what its action would do; empty when none. */
+	FString GetLampAnswer() const { return LampAnswer; }
+	FString LampOfferLabel() const;
+	bool IsLampAsking() const { return bLampTurnOut; }
+	FBpLampAskChanged& OnLampAskChanged() { return LampAskChanged; }
+	/** The lamp's stations and rides (BpLampTravel.cpp): goes to the station nearest a point in the table's space and turns to
+	 *  it (bp.LampTravel 0: only turns). Home is its site or room place. */
+	void PresentLamp(const FVector& TargetLocal, const TCHAR* Why);
+	void LampToStation(int32 Station, const FVector& TargetLocal, const TCHAR* Why = TEXT("console"));
+	void LampGoHome(const TCHAR* Why);
+	/** The paper's height in the table's space (where a presented target lies). */
+	double GetPaperZ() const;
+	/** The stations in the table's space, for BpView.Fov. */
+	void LampStationsLocal(TArray<FVector>& Out) const;
+	/** The lamp agent and what moves with it (its halo, its lights), for your room's rule (BpSurround.cpp). */
+	void LampActors(TArray<AActor*>& Out) const;
+	/** HitTest's last plane point (table space), for GetAimHit. */
+	mutable FVector AimHitLocal = FVector::ZeroVector;
+	mutable bool bAimHitLocal = false;
 	/** The lasso (a pinch dragged across the room's map): LassoBegin at the pinch, a paper point per frame, LassoEnd at the
 	 *  release, which closes the loop and puts the open findings of the glyphs inside into the draft wave (BpLink
 	 *  AddToDraft, never a dispatch); LassoEnd is false when the stroke never got LassoStartCm long (the pinch was a tap). */
@@ -637,6 +745,37 @@ public:
 	/** The caption's centre in the world (BpView.Pose lamp aims at it). */
 	FVector GetCaptionWorld() const;
 
+	// ---- The tour (BpTour.cpp; standalone-plan.md S6, the competition's "first five minutes") ------------------------------
+	/** The lamp teaches the table by asking for each gesture and waiting for it: lift a wing, lift its most urgent room, step
+	 *  inside, ask about a feature, take a decision, step back out. A step the person leaves alone for TourIdleS is shown
+	 *  once by the lamp doing it; a write (Approve, Decline) is never done for them. It never takes a move away from the
+	 *  hands: their gestures always act, and the tour reads where they went. It plays once at a cold start when the table
+	 *  reads the bundled snapshot (bp.Tour -1, the default; 1 any source, 0 never), and again from BpTour.Start or the wrist. */
+	void StartTour();
+	void StopTour(const TCHAR* Why);
+	bool IsTourRunning() const { return TourStep >= 0; }
+	/** Wave T1 (the tour's second edition): the core tour runs once at a first launch (FBpStore [/Script/bp.BpTour]: Version,
+	 *  Core done|dismissed@<version>, At <step>@<version> while it runs, Seen <chapter ids>), resumes where a quit left it,
+	 *  and the chapters (BpTourBook.h) run from the console's TOUR page. Resume: the core tour from its step id. */
+	void StartTour(const FString& FromStep);
+	void StartChapter(const FString& ChapterId);
+	/** For the bar and the TOUR page: the running tour's name ("THE FIRST TOUR" or the chapter's title), "n of m", and the chapter
+	 *  id ("" for the core tour). */
+	FString TourTitle() const;
+	FString TourProgress() const;
+	const FString& TourChapterId() const { return TourChapter; }
+	/** The chapter ids seen (finished, or stopped past half way), from the store. */
+	static TSet<FString> TourSeen();
+	static FString TourSection();
+	/** For checks: "<step> <waiting|shown>" while it runs, "" otherwise. */
+	UFUNCTION(BlueprintCallable, Category = "Bp|Tour")
+	FString GetTourLine() const;
+	/** The hands report each gesture they fired (pull, push, tap, hold): the tour counts the person as active. */
+	void NoteHand(const TCHAR* Kind);
+	static constexpr float TourIdleS = 14.f;
+	static constexpr float TourWelcomeS = 7.f;
+	static constexpr float TourStartDelayS = 2.5f;
+
 	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
 	/** Moves the table and what stands on it (the lamp and its group) to a new transform in one step. Nothing is rebuilt,
 	 *  so the pins, the card, the deck and the map keep their places on it; lowered, its legs pass under the floor.
@@ -655,6 +794,47 @@ public:
 	static constexpr float TextCardWidthCm = 46.f;
 	static constexpr float TextCardHeightCm = 46.f;
 	static constexpr float TextCardPxPerCm = 21.f;
+
+	// ---- The shared focus, followed (BpFollow.cpp; the "one place" morning) ----------------------------------------------
+	/** Goes where another surface says the owner is looking (BpLink's OnFollow), the way the table's own routes go: a room
+	 *  (or a bay's room, or a feature's) in room mode, a wing by its lift, the site plan home. The view never moves. Each
+	 *  target id is looked up as a room, a bay, a wing, then a feature (a demo product's room is a Kettle bay); an id that
+	 *  is none of them keeps the table where it is and only the caption changes. */
+	void Follow(const struct FBpFollowPlace& Place);
+	/** A follow's pace (an ease, never a jump): from the site plan the room's column rises over LevelEaseS, holds
+	 *  FollowLiftHoldS and the paper cross-fades to the room's map over FollowFadeS (about a second in all); from another
+	 *  room's map each half of the fade takes FollowSwitchFadeS. */
+	static constexpr float FollowFadeS = 0.5f;
+	static constexpr float FollowLiftHoldS = 0.15f;
+	static constexpr float FollowSwitchFadeS = 0.35f;
+	/** The quiet caption ("Following Web", then the place): a small glass plate FollowCaptionWidthCm x FollowCaptionHeightCm
+	 *  standing on the frame's near rim, a little right of centre (FollowCaptionXCm, FollowCaptionYCm, its centre
+	 *  FollowCaptionAboveTopCm over the top; the table's axes), square to the target view so it reads level: under the
+	 *  breadcrumb and off the paper, where a drafting table keeps its name plate. Its two lines' caps are FollowCaptionCapCm
+	 *  and FollowCaptionPlaceCapCm (both over the 12 px floor from the target eye), drawn at FollowCaptionPxPerCm, faded in
+	 *  over FollowCaptionFadeS. */
+	static constexpr float FollowCaptionWidthCm = 24.f;
+	static constexpr float FollowCaptionHeightCm = 4.8f;
+	static constexpr float FollowCaptionXCm = -46.f;
+	static constexpr float FollowCaptionYCm = 16.f;
+	static constexpr float FollowCaptionAboveTopCm = 2.5f;
+	static constexpr float FollowCaptionCapCm = 1.0f;
+	static constexpr float FollowCaptionPlaceCapCm = 0.9f;
+	static constexpr float FollowCaptionPxPerCm = 24.f;
+	static constexpr float FollowCaptionFadeS = 0.4f;
+	/** The caption's lines as shown (empty while nothing was followed). */
+	FString GetFollowLine() const { return FollowLine; }
+
+	// ---- The shared focus, published (BpFollow.cpp): the owner moves the table, the web flies there ------------------------
+	/** Every move of the table's place by the owner (a room or wing entered, back, home: by hand, wrist, lamp, deck or
+	 *  console) ends in the navigation primitives (EnterWing, EnterRoom, Back, EnterRoomMode, ExitRoomMode), which call
+	 *  NotePlaceMoved. Once the table has rested PublishSettleS on one place, it goes to BpLink.PublishPlace: a room
+	 *  (room mode, or a room lifted at L2) at L2, a wing at L1, the site at L0, with the room's or wing's name to say.
+	 *  Never while a followed place is being applied (Follow), and a follow cancels a move still settling. */
+	static constexpr float PublishSettleS = 0.4f;
+	/** BpLink.Goto <room id|wing id|site>: the table goes there the way a person sends it (a room by the wrist's switch, a
+	 *  wing by its lift, the site home), so the move is published. False for an id the plan does not hold. */
+	bool Goto(const FString& Id);
 
 protected:
 	virtual void OnConstruction(const FTransform& Transform) override;
@@ -698,6 +878,40 @@ private:
 	/** The pointed room's rest extrusions, raised (HighlightRiseCm) while a room highlight is set at rest (FK). */
 	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
 	TObjectPtr<UInstancedStaticMeshComponent> HighlightShell;
+	/** A scan on the rooms: lit walls, rails and ticks in one edge-glow batch, empty and hidden while no scan runs. */
+	UPROPERTY(VisibleAnywhere, Category = "Bp|Table")
+	TObjectPtr<UInstancedStaticMeshComponent> ScanMarks;
+	FTimerHandle ScanMarkTimer;
+	TSet<int32> ScanMarkRooms;
+	FString ScanMarksKey;
+	/** Jobs this table saw queued or running, and when each was first seen finished (platform seconds): a job's marks linger
+	 *  from then, on this clock, not the server's. */
+	TSet<FString> ScanMarkLive;
+	TMap<FString, double> ScanMarkEnded;
+	/** What a scan says on the title block while it runs and for its linger, and nothing otherwise (a real or a sample scan,
+	 *  BpScanMarks.cpp and BpSampleScan.cpp; set on a discrete change only). Title takes the block's first row, Sub its second. */
+	FString ScanStatusTitle;
+	FString ScanStatusSub;
+	void SetScanStatus(const FString& Title, const FString& Sub);
+	/** The scan the wrist's band tells of; bHasScanOutcome until the product changes. RunId is a real scan's run (its findings'
+	 *  run_id in the store); empty for a sample and for a job the store has no run for yet. */
+	struct FScanOutcome
+	{
+		bool bSample = false;
+		bool bRunning = false;
+		FString Lens;
+		FString Focus;
+		int32 RoomsRead = 0;
+		int32 RoomsTotal = 0;
+		FString RunId;
+		/** How many scanners are reading now, and each one's lens and rooms read of its own ("Design 2/5 · Security 0/3"). */
+		int32 Readers = 0;
+		FString Readings;
+	};
+	FScanOutcome ScanOutcome;
+	bool bHasScanOutcome = false;
+	void SetScanOutcome(const FScanOutcome& Outcome);
+	FBpScanBandChanged ScanBandChanged;
 	/** The pointed room's furniture, lifted with its copy (FP): one batch per glyph batch, empty unless a room is pointed. */
 	UPROPERTY()
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> GlyphLift;
@@ -778,6 +992,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UTextureRenderTarget2D> HandDepth;
 	FTimerHandle HandCaptureTimer;
+	/** The rate the capture timer runs at now, and whether the last look found a hand by the paper (TickHandCapture). */
+	float HandCaptureHz = 0.f;
+	bool bHandWasNear = false;
 	/** The decision card. */
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> Card;
@@ -786,6 +1003,18 @@ private:
 	TArray<TObjectPtr<UWidgetComponent>> RoomLabels;
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidgetComponent>> BayLabels;
+	/** Night two V5 ("the lifted thing is the loudest thing on the paper"): one nameplate for what is lifted, the lifted
+	 *  room's name at L2, the lifted wing's letter and name at L1, in full, white on a deep blue plate, hung square to the
+	 *  seated eye under the near edge of what it names, where it has the width and covers nothing lifted. It rides the
+	 *  lift and fades with it (ApplyLiftPlate, from ApplyLevelVisuals); its content is rebuilt only when what it names changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> LiftPlate;
+	FString LiftPlateKey;
+	/** Night two V7: the plate last logged as slid into the comfortable view. */
+	FString LiftPlateClampKey;
+	void ApplyLiftPlate(const FTransform& WingT, const FTransform& RoomT, float WingEase, float RoomEase);
+	/** The site plan's room names' glow last written (they step back while a wing is lifted: ApplyRoomNames). */
+	float AppliedRoomNameGlow = -1.f;
 
 	/** Draws the sheet; bound to the render target's update, which runs once per plan rev. */
 	UFUNCTION()
@@ -838,6 +1067,17 @@ private:
 	double TextFloorCm(const FVector2D& PaperCm) const;
 	/** The same floor for a text on a card tilted TiltDeg up from the paper about its baseline (FAB's room names). */
 	double TiltedTextFloorCm(const FVector2D& PaperCm, double TiltDeg) const;
+	/** Night two V3: the angle (arcminutes) a cap of CapCm standing at PaperCm on a card tilted TiltDeg subtends from the
+	 *  seated eye (the target pose), and the smallest cap that subtends Arcmin there. */
+	double SeatArcmin(const FVector2D& PaperCm, double TiltDeg, double CapCm) const;
+	double SeatCapCm(const FVector2D& PaperCm, double TiltDeg, double Arcmin) const;
+	/** The room names' arcminutes (wanted, least) BuildRoomNames last used, and the glyphs' rest brightness ApplyGlyphs last
+	 *  wrote: the tick rebuilds or rewrites when the cvars move. */
+	FVector2f AppliedRoomNameArcmin = FVector2f(-1.f, -1.f);
+	/** The frame's body (frame_atlas) and trim (frame_aluminium) base colours LoadArt sets; BpLampLook tones them on the tier. */
+	static FLinearColor FrameBodyColor();
+	static FLinearColor FrameTrimColorValue();
+	float AppliedGlyphRest = -1.f;
 	/** How deep a wall of HeightCm standing at paper v hides the paper behind it, seen from the target eye (cm, along v). */
 	double CoverCm(double V, double HeightCm) const;
 	void PlaceForHeight(float HeightCm);
@@ -846,14 +1086,50 @@ private:
 	void SetTitle(const FString& Line1, const FString& Line2);
 	// The marks (BpMarks.cpp): pins, the scan line and the decision card, from the scan side BpLink polls.
 	void LoadMarks();
+	/** The place a scope names, as the web names it (blueprint-ui.md, Scope ids): false when Id is no wing, room, bay or feature. */
+	bool BuildScanScope(const FString& Id, FString& Kind, FString& ScopeId, FString& Label, TArray<FString>& Features) const;
+	void StartDirectedRead(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone);
+	// A scan on the rooms (BpScanMarks.cpp).
+	void InitScanMarks();
+	/** Rebuilt on a scan-state change and when a finished job's marks are due to go; never per frame. */
+	void RefreshScanMarks();
+	void ClearScanMarks();
+	/** One room's marks (the plan's L0 marks at the table: done of total in the scan's scope, finished or not, the lens). */
+	struct FScanRoomMark
+	{
+		int32 Done = 0;
+		int32 Total = 0;
+		bool bScanned = false;
+		/** The walk has reached it: it holds the feature being read, or has a reading. An unreached room draws nothing. */
+		bool bLit = false;
+		FString Lens;
+	};
+	/** Puts these marks on the rooms: the one batch, dressed in the newest lens's accent; nothing when they are what is shown. */
+	void DrawScanMarks(const TMap<int32, FScanRoomMark>& Marks);
+	/** The marks' visibility and fade, with the levels (ApplyRestVolumes). */
+	void ApplyScanMarks();
+	/** A marked room's own rest walls dim, so the accent owns the outline: the factor for this room (1 when unmarked). */
+	float ScanRestShow(int32 Room) const;
+	void ReapplyRestVolumes();
 	/** FAC (r9 rank 4): the hands' shadow on the paper, which is emissive and so takes no light's shadow. An orthographic
 	 *  depth capture of the hands alone from just under the paper (HandDepth: per paper texel, the height of the lowest hand
 	 *  surface over it) feeds M_BlueprintPaper's occlusion term. The posed capture hands are still, so they are captured
 	 *  once; with a headset (tracked hands on the pawn) every frame. */
 	void StartHandShadow();
+	/** The Quest tier's capture loop: captures only while a visible hand is by the paper, once more as it leaves. */
+	void TickHandCapture();
+	bool IsHandNearPaper() const;
 	void ReceiveScanState(const struct FBpScanState& State);
 	void BuildPins(const struct FBpScanState& State);
 	void PlacePins();
+	/** Wave W3 (the owner, 2026-11-11: the wall to 53 degrees): while a sheet is on the far surface (BpProjector::IsFar) the
+	 *  plan's pin tags step aside, each shrinking to nothing about its own centre over WallTagsS (no translucency: the tag
+	 *  material stays opaque), and come back the same way when the wall closes; the pins' stems and beads stay. True while it
+	 *  moves (the tick runs at the frame rate then). */
+	bool TickWallTags(float DeltaSeconds);
+	/** How much of the tags shows (1 at rest, 0 behind the wall), and whether they are going (the wall is up). */
+	float WallTagsShow = 1.f;
+	bool bWallTagsAway = false;
 	void UpdateScan(float DeltaSeconds);
 	void WriteScanParams(float Strength);
 	void RefreshCard();
@@ -1060,7 +1336,25 @@ private:
 		bool bTagged = true;
 		int32 Cell = INDEX_NONE;
 		float RaiseCm = 0.f;
+		/** Wave C1, a finding landing (BpScanTheatre.cpp): seconds into PinLandClock when this pin starts to drop onto its
+		 *  tile (-1: it stands where it is). */
+		float LandDelay = -1.f;
+		/** Wave P1: the tag stands for a stop-ship finding (ScanSeverity 0, its own or one merged into it): its rule and second
+		 *  line in the stop-ship red, landing or at rest. */
+		bool bStopShip = false;
+		/** Wave P1, a landing's count: the findings on this pin's own feature that arrived in this build, and the features whose
+		 *  findings its tag counts (its own, then those merged into it): the tag's +N ticks up as each of them lands. */
+		int32 NewHere = 0;
+		TArray<int32> CountTiles;
 	};
+	/** Wave P1: a tag's second line for a count of findings (longest first; BuildPins and a landing's tick). */
+	static TArray<FString> PinLine2(const FPin& Pin, int32 Findings);
+	/** The findings a tag counts now: during a landing, those whose pins have not touched down are not counted yet. */
+	int32 ShownFindings(const FPin& Pin) const;
+	/** The tags' counts last drawn during a landing (a change redraws the atlas once). */
+	FString PinCountsKey;
+	/** During a landing: the tags' counts now, the atlas redrawn when one ticked. */
+	void TickPinCounts();
 	TArray<FPin> PinList;
 	/** The far edge (paper v, cm) of the wing labels the sheet last drew: the risen tags clear it (FE). */
 	double WingLabelTopV = -1.0e9;  // unset; the floating labels (FM) put the row past the paper (v < 0)
@@ -1089,6 +1383,19 @@ private:
 	/** The replay of a past run (a live product): its rows' features and whether each row is a measured one, the row the
 	 *  line is on, and the time on it (negative while resting between passes). */
 	bool bScanReplay = false;
+	/** The sample scan running (or lingering on its result): the bundle's local walk (BpSampleScan.cpp), never a server's job.
+	 *  Which of the plan's tiles it walks and in what order, how far it has got, and the lens and focus it says. */
+	bool bScanSample = false;
+	bool bSampleDone = false;
+	TArray<int32> SampleTiles;
+	int32 SampleAt = 0;
+	FString SampleLens;
+	FString SampleFocus;
+	FTimerHandle SampleTimer;
+	void StepSampleScan();
+	void EndSampleScan();
+	/** The rooms the sample has reached, as the marks read them. */
+	void SampleMarks(TMap<int32, FScanRoomMark>& OutMarks) const;
 	TArray<FString> ReplayFeatures;
 	TArray<bool> ReplayMeasured;
 	int32 ReplayAt = 0;
@@ -1100,8 +1407,36 @@ private:
 	bool StartReplay(const FString& Scope, const TArray<FString>& Features);
 	/** The scanned place: the union of these features' tiles (ScanPlanBox) and its wing (ScanWing, "*" across wings). */
 	void SetScanPlace(const TArray<FString>& Features, bool bAll);
+	/** The lamp goes to the place being scanned (a station near it). */
+	void PresentScanPlace(const TCHAR* Why);
 	bool bCardShown = false;
 	FString CardProposal;
+	/** BpCard.Ask <proposal id>: the open finding the card asks about, ahead of the room rule (empty: the rule). */
+	FString CardAskId;
+	/** The card's decision brief (BpLink FetchBrief -> the generated FBpDecisionBrief), as the card draws it: the finding it
+	 *  is for, its lines (at most 5 of 120), which line is the quoted decline (INDEX_NONE: none), whether it repeats a
+	 *  declined idea (advice withdraw: Decline is the recommended answer) and the note that Decline carries
+	 *  ("Repeats <id>, declined <at>: ..."; core's repeatNote). A likeness (advice ask) is drawn but recommends nothing. */
+	FString BriefFor;
+	bool bBriefRead = false;
+	TArray<FString> BriefLines;
+	int32 BriefDeclinedLine = INDEX_NONE;
+	bool bBriefRepeat = false;
+	FString BriefRepeatNote;
+	void RequestCardBrief(const FString& ProposalId);
+	/** The finding the card shows now (CardProposal is its redraw key), and its buttons' boxes in the card's draw px, from
+	 *  the last paint (the first: Decline on a repeat, else Approve). */
+	FString CardShownId;
+	TSharedPtr<SWidget> CardButtons[2];
+	bool bCardFirstIsDecline = false;
+	/** Decided in the store from this table (the card or the deck: a repeat declined, or a decision approved) and answered
+	 *  200: skipped by both until the store's read shows them decided (ReceiveScanState drops them then). */
+	TSet<FString> CardDecided;
+	/** Decision screens whose brief was asked for (FetchBrief; the answer lays the screen out again). */
+	TSet<FString> DeckBriefAsked;
+	/** The deck's decision screen's brief from BpLink's cache, and whether it makes the screen a repeat. */
+	const FBpDecisionBrief* DeckBrief(const FString& ProposalId) const;
+	bool DeckRepeat(int32 ScreenIndex) const;
 
 	// ---- Room mode state (BpRoom.cpp) ---------------------------------------------------------------------------------
 	/** The room asked for (empty: the site plan), the room whose map is drawn, and the fade between them (0 the site plan,
@@ -1243,9 +1578,34 @@ private:
 	/** A swap happened since the room came in (until then a rebuilt queue shows its first screen). */
 	bool bDeckTouched = false;
 	FString DeckRoom;
-	/** Declined this session (memory only), and approved ones whose draft write the waves have not read back yet. */
+	/** Declined this session (memory only: no repeat), and approved ones whose draft write the waves have not read back yet. */
 	TSet<FString> DeckDeclined;
 	TSet<FString> DeckInDraft;
+	/** Night two V7: the front decision's "before" screen on its card's right half, as the stand-up's decision sheet draws it,
+	 *  fetched by the stand-up's own path (ABpPawn::FetchBeforeShot). One texture at a time, released when the room closes. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> DeckShot;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> DeckShotKept;
+	FString DeckShotFor;
+	TSharedPtr<struct FSlateBrush> DeckShotBrush;
+	bool bDeckShotLoading = false;
+	bool bDeckShotSample = false;
+	uint32 DeckShotGen = 0;
+	/** Wave W1, Glim's board on the wall: the front decision's "after" screen (the split's), read only while the wall is in use and
+	 *  released with the "before"; where the split stands (BpBoard::EStop) and whether the front shows the split's stops now. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> DeckAfterShot;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> DeckAfterKept;
+	TSharedPtr<struct FSlateBrush> DeckAfterBrush;
+	bool bDeckAfterLoading = false;
+	int32 DeckWallStop = 1;
+	mutable bool bDeckWallSplit = false;
+	/** Wave W1: the split moved to a stop (a pinch on TODAY, SPLIT or PROPOSED), the front drawn again. */
+	void DeckSetStop(int32 Stop);
+	void DeckLoadShot();
+	void DeckReleaseShot();
 	/** The four screens: the front, the two behind it, and the one leaving in a swap. */
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UWidgetComponent>> DeckCards;
@@ -1278,6 +1638,19 @@ private:
 	/** The queue again after the store changed (the room's findings, the waves), keeping the current screen. */
 	void RefreshDeck();
 	TSharedRef<SWidget> DeckWidget(int32 Screen, int32 Page) const;
+	/** Wave U3: a room's decision on the wall in the wall's family (the stand-up's decision on the wall: three columns, the
+	 *  title and what each answer does, the screen with its loupe, what it touches), driven by the deck's own data and acts. */
+	TSharedRef<SWidget> DeckWallDecision(int32 Screen) const;
+	/** Wave U3: the front decision's points on the wall's layout for Glim (its loupe's region, else its title), set as it is
+	 *  drawn; -1 none. */
+	mutable FVector2f DeckWallLoupeAim = FVector2f(-1.f, -1.f);
+	mutable FVector2f DeckWallTitleAim = FVector2f(-1.f, -1.f);
+	/** Wave U3: Glim presents the deck's front decision on the wall (BpProjector's far aims are the deck's), or lets go. */
+	void ApplyDeckWallAims();
+	bool bDeckWallPoint = false;
+	FString DeckWallAimKey;
+	/** Wave U3: the deck's screens drawn at the wall's density on the wall and the desk's at the desk (true when it changed). */
+	bool SyncDeckDrawSize();
 	void ApplyDeckPoses();
 	/** A screen's place (actor space): Slot 0 the front, 1 and 2 behind it, 3 gone behind; Side -1 or 1 slid off. */
 	FTransform DeckPose(float Slot, float Side) const;
@@ -1330,14 +1703,563 @@ private:
 	TObjectPtr<UWidgetComponent> LampCaption;
 	UPROPERTY(Transient)
 	TObjectPtr<UWidgetComponent> LampRing;
+	/** The controls legend (BpLegend.cpp, wave Q1, the owner on the Quest 3S 2026-11-10: "which control element does what was
+	 *  not clear, hinting graphics/legend on left or right side from the table could help"): a small standing plate beyond the
+	 *  table's right end at its near corner, turned to the seat; one opaque unlit quad, drawn only when its content changes. */
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> Legend;
+	/** What the legend shows now (mode, lit line, order, text size, on): a change redraws it, nothing else does. */
+	FString LegendKey;
+	int32 LegendDraws = 0;
+	void InitLegend();
+	/** At the table's tick rate (4 Hz at rest): builds the key, redraws and places the plate only when it changed. */
+	void TickLegend();
+	/** The legend's line lit for the tour's step ("" when none): the HANDS line, or the CONTROLLERS one. */
+	FString LegendLitLine(bool bControllers) const;
 	FString LampLine;
 	float LampCaptionClock = 0.f;
 	float LampHoldFill = 0.f;
 	float ShownHoldFill = -1.f;
 	FString PendingSwitch;
 	float PendingSwitchClock = 0.f;
-	void SayLamp(const FString& Line);
+	/** The lamp says Line on its caption for LampCaptionS; a notice (an onboarding milestone) shows outside room mode too. */
+	void SayLamp(const FString& Line, bool bNotice = false);
 	void ApplyLampWidgets();
+	/** The lamp's rides (BpLampTravel.cpp): the path in table cm and its running length, the ride's clock (-1 none), its duration,
+	 *  whether it is a reduced-motion cut, the from and to height and yaw, where it stands at a station and which, and what it faces. */
+	TArray<FVector2D> LampPath;
+	TArray<double> LampPathLen;
+	float LampTravelT = -1.f;
+	float LampRideS = 1.f;
+	float LampSettleT = -1.f;
+	static constexpr float LampSettleS = 0.25f;
+	static constexpr float LampCutS = 0.2f;
+	/** How long a station holds with no caption to send it home (a scan). */
+	static constexpr float LampStationIdleS = 8.f;
+	bool bLampRideCut = false;
+	bool bLampToHome = false;
+	bool bLampAtStation = false;
+	bool bLampHidden = false;
+	int32 LampStation = INDEX_NONE;
+	double LampRideFromZ = 0.0, LampRideToZ = 0.0, LampRideFromYaw = 0.0, LampRideToYaw = 0.0;
+	double LampStationYaw = 0.0;
+	FVector LampRideTo = FVector::ZeroVector, LampRideHome = FVector::ZeroVector, LampStationAtLocal = FVector::ZeroVector, LampFaceTarget = FVector::ZeroVector;
+	FVector LampLeanAxis = FVector::ZeroVector;
+	float LampLeanNow = 0.f;
+	/** The caption's table-space Y: left by default, the mirror side when the lamp stands on the right of the site plan. */
+	double LampCaptionY = CaptionYCm;
+	/** Night two V5, the lamp steps aside (bp.Lamp.HomeClear 1, BpLampLook.cpp): at home, when from the seated eye its body
+	 *  would cover a pin tag, a wing name, the lifted wing or room or the lift's plate, it moves along the table's left and
+	 *  far edges to the nearest place where it covers none of them and its head stays in the comfortable view (BpView.Fov's
+	 *  30 degrees, or no further out than home). LampStepCm is where it stands now (table cm from home), LampStepWant where it
+	 *  heads; it glides (a cut under bp.ReducedMotion). The caption follows it, and rises clear of the tags (CaptionLiftCm). */
+	FVector2D LampStepCm = FVector2D::ZeroVector;
+	FVector2D LampStepWant = FVector2D::ZeroVector;
+	double LampStepCheckAt = -1.0;
+	/** Night two V7, one rule for every place the lamp stands: at a station too its body never sits behind the console's slot
+	 *  from the seated eye (the bar at rest, the whole sheet while a page is open). When it would, it stands beside the slot
+	 *  along the table's width (left for a thing on the left half, right for the right half), its head inside BpView.Fov's 30
+	 *  degrees, its arm still on the thing; it glides there (a cut under bp.ReducedMotion) and its caption goes with it.
+	 *  LampAsideCm is the table-Y offset from the station now, LampAsideWant where it heads (BpLampLook.cpp). */
+	double LampAsideCm = 0.0, LampAsideWant = 0.0;
+	double StationAside(const FVector& StationLocal, double TargetY) const;
+	/** The console's slot as the seat sees it (the pawn's ConsolePanel: the bar, or the open sheet), in SeatAngles' terms. */
+	bool ConsoleSeatBox(FBox2D& Out) const;
+	float CaptionLiftCm = 0.f;
+	static constexpr float CaptionMaxLiftCm = 14.f;
+	static constexpr float CaptionMaxStationLiftCm = 28.f;
+	/** Wave P1: how far the caption slides along the table's width off an open sheet a lift cannot clear (UpdateCaptionLift). */
+	float CaptionSlideCm = 0.f;
+	static constexpr float CaptionMaxSlideCm = 30.f;
+	/** Wave P1: the caption laid out narrower beside an open sheet the view leaves no room beside (1: its width). */
+	float CaptionNarrow = 1.f;
+	static constexpr float CaptionNarrowScale = 0.62f;
+	/** What UpdateCaptionLift last searched over (the plate, the lamp, the slot, the keep-outs): unchanged, it does not search. */
+	uint32 CaptionLiftHash = 0;
+	/** The lamp caption's plate for LampLine at CaptionNarrow (SayLamp, and UpdateCaptionLift when the width changes). */
+	void LayoutLampCaption();
+	bool TickLampStep(float DeltaSeconds);
+	/** The lamp caption's centre (table space) as ApplyLampWidgets places it, and its lift judged against SeatKeepouts. */
+	FVector CaptionAt() const;
+	void UpdateCaptionLift();
+	/** What must be read, as boxes of azimuth (X, right +) and elevation (Y, up +) in degrees from the target eye: each tagged
+	 *  pin's tag, each wing name shown, the lifted wing's rooms or the lifted room, and the lift's plate (BpMarks.cpp). */
+	void SeatKeepouts(TArray<FBox2D>& Out) const;
+	/** A box of table-space points seen from the target eye as azimuth and elevation (degrees). */
+	FBox2D SeatAngles(const FBox& LocalBox) const;
+	FTimerHandle LampHomeTimer;
+	FVector LampHomeAt(double& OutYaw) const;
+	FVector LampStationAt(int32 Station, const FVector& HomeAt) const;
+	int32 PickLampStation(const FVector& TargetLocal) const;
+	void StartLampRide(const FVector& To, double ToYaw, const FString& What);
+	void ArriveLamp();
+	void SetLampHidden(bool bHide);
+	bool TickLampTravel(float DeltaSeconds);
+	/** Where a ride has the lamp now (table space), its yaw and the lean; false when no ride or settle runs. */
+	bool LampRidePose(FVector& OutAt, double& OutYaw, FVector& OutLeanAxis, float& OutLeanDeg) const;
+	/** The lamp's asks' answer (BpAsk.cpp): what it offers, which room, feature and finding, the words on the wrist and the hint. */
+	enum class ELampOffer : uint8 { None, OpenFinding, ScanHere };
+	ELampOffer LampOffer = ELampOffer::None;
+	FString LampOfferRoom;
+	FString LampOfferFeature;
+	FString LampOfferProposal;
+	FString LampAnswer;
+	FString LampHint;
+	bool bLampTurnOut = false;
+	/** The finding to bring to the deck once the room LampAct switched to has its queue. */
+	FString PendingDeckProposal;
+	FString PendingDeckFeature;
+	FBpLampAskChanged LampAskChanged;
+	void LampNotifyAsk();
+	void SetLampOffer(ELampOffer Offer, const FString& Room, const FString& Feature, const FString& Proposal);
+	void ClearLampOffer();
+	FString LampCaptionFit(const FString& Text) const;
+	void LampSayAnswer(const FString& Subject, const FString& Why, const FString& Hint, const FString& ShortWhy = FString());
+	FVector LampTargetForFeature(const FString& FeatureId) const;
+	FVector LampTargetForRoom(const FString& InRoomId) const;
+	FString LampRoomOf(const FString& FeatureId) const;
+	void LampAskTurn(FString&& Text);
+	/** The tour's state (BpTour.cpp): the step (-1 not running), when it began and when the person last acted (world
+	 *  seconds), whether the lamp already showed this step, the line it keeps on the caption, what it points at, and the
+	 *  asks and decisions counted since the step began. TickTour runs from TickSwitch at the actor's tick rate. */
+	int32 TourStep = -1;
+	double TourStepAt = 0.0;
+	double TourHandAt = 0.0;
+	double TourPlanAt = -1.0;
+	bool bTourShown = false;
+	bool bTourPlayed = false;
+	FString TourLine;
+	FString TourProduct;
+	FString TourWing;
+	FString TourRoom;
+	FString TourFeature;
+	int32 TourAsks = 0;
+	int32 TourTaps = 0;
+	/** Wave T1: the running list (the core's steps or a chapter's), the chapter's id ("" the core), the step's id, the talk
+	 *  holds counted at the step's start, the beat after MENU opened, a step that yields to something more urgent, and where
+	 *  the table and console were when a chapter began (put back when it ends) and what the lamp itself changed. */
+	TArray<FString> TourSteps;
+	FString TourChapter;
+	FString TourStepId;
+	FString TourLineId;
+	bool bTourBackFromRoom = false;
+	EBpLevel TourBackFromLevel = EBpLevel::L0;
+	int32 TourHoldsAt = 0;
+	double TourBeatAt = -1.0;
+	double TourTickAt = 0.0;
+	FString TourYieldWhy;
+	/** The first tour's step a chapter interrupted (fix 5): it goes on there TourResumeBeatS after that chapter finishes
+	 *  (TourResumeAt, world seconds; -1 not yet). A chapter stopped by the person leaves it to the next cold start (At). */
+	FString TourResumeFrom;
+	double TourResumeAt = -1.0;
+	/** The owed put-back (PutBack, PutRoom, PutText in the tour's store section) was read this launch. */
+	bool bTourStoreRead = false;
+	/** A chapter's put-back owed through a quit (fix 2): Key's value before the chapter, written when it becomes owed. */
+	void TourOwe(const TCHAR* Key, const FString& Value);
+	/** The owed put-back, applied (the cold start after a quit mid-chapter, the end of play) and cleared; false when none. */
+	bool TourSettleOwed(const TCHAR* Why);
+	/** The sample scan is being cancelled by the tour's own put-back: it ends quietly (EndSampleScan). */
+	bool bSampleTourQuiet = false;
+	struct FTourPlace
+	{
+		EBpLevel Level = EBpLevel::L0;
+		FString Wing, Room, RoomMode, Page;
+		bool bConsoleOpen = false;
+		int32 BpRoom = 0;
+		float TextSize = 1.f;
+		bool bLampRoom = false, bLampText = false, bLampScan = false;
+	} TourFrom;
+	void EnterTourId(const FString& Id);
+	void TourNext(const TCHAR* How);
+	void TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed);
+	void TourPutBack();
+	FString TourColdStart();
+	FString TourYields() const;
+	void TourMark(const FString& ConsoleId);
+	FString TourCaption(const FString& LineId) const;
+	void TourLookAtConsole(const FString& ConsoleId);
+	/** When the tour's stand-up step opened the stand-up (FPlatformTime seconds): an answer after it ends the step. */
+	double TourStandupFrom = 0.0;
+	void TickTour();
+	/** The voice's level is BpAudio's (bp.VoiceLevel, BpAudio.h): SpeakTour plays a clip at BpAudio::VoiceGain(), limited
+	 *  sample by sample above 0.8 full scale, so the top of the range never clips the speaker. */
+public:
+	/** Hear the level now: the line playing again, or "Like this." when none plays. */
+	void PreviewVoice();
+	/** A tour line is sounding (the music ducks under it, BpAudio.cpp). */
+	bool IsVoicePlaying() const;
+	/** The music ducks: a voice line sounds, or the wearer is talking to the lamp (BpTalk.cpp). */
+	bool IsMusicDucked() const { return IsVoicePlaying() || IsTalkListening(); }
+
+	// ---- Talk to the lamp (BpTalk.cpp; night two W3, docs/concepts/vr-light-table/voice-link.md) -------------------------
+	/** Push to talk from a source (x, lamp, wrist, console): down opens the microphone (once the wearer has said ALLOW on the
+	 *  consent sheet), up sends it. A hold under TalkMinHoldS is ignored, and up then returns true (a tap: the source does its
+	 *  old tap). Nothing is recorded on the bundle: there a hold plays the scripted sample exchange. */
+	bool TalkHold(const TCHAR* Source, bool bDown);
+	static constexpr float TalkMinHoldS = 0.4f;
+	/** Holds that counted (TalkMinHoldS or longer), since the app started: the tour's talk steps complete on one. */
+	int32 TalkHoldsCounted = 0;
+	/** The tour shows talking for an idle wearer: the labelled sample exchange (no microphone, nothing sent). */
+	void TalkShowSample();
+	/** B, or a pinch on the lamp: cancels a turn being thought about, the listening, or the lamp's spoken reply. True when
+	 *  something was cancelled. */
+	bool TalkCancel(const TCHAR* Why);
+	/** BpTalk.Say: the turn from text (no microphone). BpTalk.File: a WAV sent as if recorded. */
+	void TalkFromText(const FString& Text, const TCHAR* Route);
+	void TalkFromWav(const TArray<uint8>& Wav, const TCHAR* Route);
+	bool IsTalkListening() const;
+	/** Anything of a talk in flight (listening, hearing, thinking, speaking): its one word for the wrist and the bar. */
+	FString TalkStateWord() const;
+	FString TalkStateLine() const;
+	/** The consent (Saved/BpTable.json, FBpStore [/Script/bp.BpTalk] Consent): 0 not asked, 1 ALLOW, 2 NOT NOW. */
+	static int32 TalkConsent();
+	static void SetTalkConsent(int32 Value);
+	/** A voice line from bytes (a WAV) at the lamp's head, at the tour's level; false when it is not a 16-bit PCM WAV. */
+	bool PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip);
+	void StopVoice();
+
+	// ---- Every step narrated (BpNarrate.cpp, wave N3-W3) ---------------------------------------------------------------------
+	/** One short line from Glim for a step (BpTourBook::NarrateLines, a bundled clip in voice/narrate/): never while a tour runs
+	 *  (the tour narrates), while the person talks to him or a talk reply plays, or under bp.Narration below ALL. A newer line
+	 *  replaces an older one, except an answer's acknowledgment (and the stand-up's opening), which the step it causes waits
+	 *  for. bCaption: the words go on the lamp's caption too (where the step has no caption of its own). */
+	void Narrate(const FString& Id, const TCHAR* Why, bool bCaption = false);
+	/** The step was left: a narration line still playing is cut, one waiting is dropped. */
+	void NarrateCut(const TCHAR* Why);
+	/** The line ids of a wing and a room: the sample's own line, else the generic one. */
+	FString NarrateWingId(const FString& InWingId) const;
+	FString NarrateRoomId(const FString& InRoomId) const;
+	/** Steps that make other steps (Home's walk back, a room entered from the site plan) say only the last one. */
+	int32 NarrateHush = 0;
+	/** A tour's end says its line; what its put-back changes after it (the room switch fading back) stays quiet until then. */
+	double NarrateQuietUntil = 0.0;
+	bool bLegendSaid = false;
+	FString NarrateNext;
+	FTimerHandle NarrateTimer;
+	TMap<FString, TArray<uint8>> NarrateClips;
+	void NarratePlay(const FString& Id, const TCHAR* Why);
+	/** Wave N3-W3 (the device, 2026-11-10: his pointing arm and hand covered the wall's left column): where Glim stands while a
+	 *  sheet is far, so that his whole silhouette, the arm and hand included, stays outside the sheet's rectangle from the
+	 *  seated eye: Want (the far rim's left end) when that is clear, else the farthest place along the table's left side that
+	 *  is. Table space. */
+	FVector LampFootClearOfSheet(const FVector& Want) const;
+	void LogTalk() const;
+	/** The conversation as the console's sheet shows it (night two V2): the state's word, the words heard (whole), the reply
+	 *  (whole), the caption's own line for the other states (a refusal, no PC), the input level 0..1 while listening, and
+	 *  whether it is the sample exchange. False when no talk line is on show. */
+	struct FTalkView
+	{
+		FString Word;
+		FString Heard;
+		FString Reply;
+		FString Line;
+		float Level = 0.f;
+		bool bSample = false;
+		/** G2: the turn's quick replies (their labels), drawn as up to three large buttons under the reply; a press sends that
+		 *  reply's words as the next turn (TalkReply). Empty while a turn is in flight. */
+		TArray<FString> Replies;
+		/** Wave U5: while THINKING, what Glim is doing in plain words (newest last, at most three); his words so far are Reply. */
+		TArray<FString> Steps;
+	};
+	bool TalkView(FTalkView& Out) const;
+	/** G2, quick reply N (1..3; BpTalk.Reply, the sheet's buttons): its words go to Glim as the next turn, through the same path
+	 *  as words heard. In the bundle the sample's replies play the other sample lines. False when there is no such reply. */
+	bool TalkReply(int32 N, const TCHAR* Route);
+	/** G2: where the person is for a companion turn (the surface): the place in words, and the target "this one" means, in this
+	 *  order: the stand-up's open decision sheet, else the deck's front decision (or the decision card's finding), else the room
+	 *  in view (the lifted one). bSpoken: the reply is voiced (the talk). */
+	struct FBpTurnSurface TurnSurface(bool bSpoken);
+	/** G2: a turn's focus events, acted on one per event in order (TalkFocusStepS apart): a page opens that console page (on the
+	 *  wall in wall mode), a wing, room or feature moves the table there, a decision opens it on the stand-up (or the room's
+	 *  deck) where Glim points at it. AskedAt: when the turn was asked; anything the person did since (a move of the table, a
+	 *  console tap) wins, and the rest are dropped. */
+	void TalkActOnFocus(const TArray<struct FBpTurnFocus>& Focuses, double AskedAt);
+	/** G2: the person's own last act (a move of the table by hand, a console tap), FPlatformTime seconds: Glim never yanks the view
+	 *  from under it. */
+	double OwnActAt = -1.0;
+	void NoteOwnAct() { OwnActAt = FPlatformTime::Seconds(); }
+	static constexpr float TalkFocusStepS = 1.2f;
+	/** The conversation sheet's CLOSE: a talk in flight is cancelled, and the talk's words leave at once. */
+	void TalkDismiss();
+	/** BpTalk.Preview: a still of the conversation in a state (listening, thinking, answering) for captures; no microphone is
+	 *  opened, nothing is sent or spoken; BpTalk.Cancel ends it. */
+	void TalkPreview(const FString& Step, const FString& Heard, const FString& Reply);
+
+	// ---- The console and the pad (BpConsole.cpp, BpPad.cpp; night two W1) -------------------------------------------------
+	/** The deck's slot: its front screen's resting pose in the table's space (the console's open panel stands there). */
+	FTransform ConsoleSlotPose() const { return DeckPose(0.f, 0.f); }
+	/** The target eye in the table's space (the console's bar is turned to it). */
+	FVector ConsoleEyeLocal() const { return EyeLocal(); }
+	/** The console open over the deck (room mode): the deck's screens and spines stay hidden until it is released. */
+	void SetDeckHeld(bool bHeld);
+	bool IsDeckHeld() const { return bDeckHeld; }
+	/** Wave N3-W4: with the wall as the main screen (bp.Projector 1) a room's deck shows its front screen on the wall, where the
+	 *  console's sheet stands, scaled to the wall's size (its controls work through the ray, DeckHit, as at the desk); the spines
+	 *  and the desk's place stay empty. OutFront: the front screen's pose there (table space, the widget's scale). False at the
+	 *  desk (bp.Projector 0 or 2) and outside room mode. */
+	bool DeckOnWall(FTransform& OutFront) const;
+	bool IsDeckOnWall() const { FTransform Unused; return DeckOnWall(Unused); }
+	/** Wave U3: the same, with the wall's size (cm) and the draw size its screens take there (the console's own on the wall,
+	 *  BpProjector::DrawSizeFor), so a screen on the wall is drawn at the wall's density, not the desk's 21 px a cm. */
+	bool DeckWall(FTransform& OutFront, FVector2D& OutSizeCm, FIntPoint& OutDraw) const;
+	/** Wave U3: the deck's front decision on the wall has Glim present it and point at APPROVE, as the stand-up's decision on the
+	 *  wall does (BpProjector's far aims), while the console is closed. Room mode keeps him still otherwise. */
+	bool IsDeckWallPointing() const { return bDeckWallPoint; }
+	/** The decision waiting for a yes or no: the deck's front screen when it is a decision (room mode), else the decision
+	 *  card's finding. Its finding id, its title, and where it waits ("deck" or "card"); false when none waits. */
+	bool WaitingDecision(FString& OutId, FString& OutTitle, FString& OutWhere) const;
+	/** Approve or decline the waiting decision through what its surface calls (DeckApprove/DeckDecline, CardTap). */
+	bool DecideWaiting(bool bApprove, const TCHAR* Route);
+	/** The pad's focus at the table's level: the kind ("wing" or "room") and the ids a step walks through, in reading order
+	 *  on the paper (far to near, left to right): the site plan's wings, or the entered wing's rooms. Empty in room mode. */
+	void FocusSiblings(FString& OutKind, TArray<FString>& OutIds) const;
+	/** The open decisions in the store (proposed findings), for the console's status line. */
+	int32 OpenDecisionCount() const;
+	/** A scan is walking the table now (a real one or the sample), as ScanBand says it. */
+	bool IsScanRunning() const { return bHasScanOutcome && ScanOutcome.bRunning; }
+	// ---- The scan theatre (BpScanTheatre.cpp, wave C1) ------------------------------------------------------------------
+	/** What a scan the table followed read and found, for the SCAN RESULT sheet and the wrist's band: its rooms and features
+	 *  read, how long, the new findings by severity (0 stop-ship, 1 before release, 2 later), the three most severe (ids,
+	 *  most severe first), and whether it was cancelled or failed. */
+	struct FScanResult
+	{
+		bool bSample = false, bCancelled = false, bFailed = false;
+		/** Wave U2: it ended before any read saw it running (TheatreMissed): the sheet says so first. */
+		bool bMissed = false;
+		FString Lens;
+		FString Place;
+		int32 RoomsRead = 0, RoomsTotal = 0, Features = 0;
+		double Seconds = 0.0;
+		int32 Severity[3] = { 0, 0, 0 };
+		TArray<FString> Top;
+		/** Every new finding's id, most severe first (DECIDE THEM looks for the first the stand-up has). */
+		TArray<FString> Found;
+		int32 New = 0;
+	};
+	/** A finding's room opened with its deck at that finding (the lamp's way, LampAct), with a line on the lamp's caption. */
+	void OpenFindingInRoom(const FString& ProposalId, const FString& Line);
+	bool GetScanResult(FScanResult& Out) const { Out = TheatreResult; return bTheatreResult; }
+	/** A result the person has not seen yet (the bar's chip "SCAN DONE · 6 NEW"). */
+	bool IsScanResultWaiting() const { return bTheatreResult && !bTheatreResultSeen; }
+	void ScanResultSeen();
+	/** The bar's chip for a waiting result (empty: none). */
+	FString ScanResultChip() const;
+	/** A finding of the result raised on the site plan (its room up, the lamp beside it). */
+	void ScanResultRaise(const FString& ProposalId);
+	/** The scan being read now, for the SCAN page: the room's name, its n of m, the lens and when it began (world seconds). */
+	struct FScanReading
+	{
+		FString Room;
+		int32 At = 0, Of = 0;
+		FString Lens;
+		double StartedAt = 0.0;
+		bool bSample = false;
+	};
+	bool GetScanReading(FScanReading& Out) const;
+	/** A finding's severity as the result counts it: 0 stop-ship, 1 before release, 2 later. */
+	static int32 ScanSeverity(const struct FBpProposal& Proposal, const int32* Tier);
+	/** A result in one line (the wrist's band, the bar): what it read, then what it found by severity. */
+	static FString ScanResultWords(const FScanResult& Result);
+	/** BpScan.TheatreLines: every sample scope's rooms and landings, logged (the clips tour-voice.ts --scan renders). */
+	void LogTheatreLines() const;
+	/** The stand-up's place (BpStandup.cpp, night two W2b): the plan follows the deck. A card about a feature, a room or a wing
+	 *  raises its room (or wing) on the site plan (out of room mode and home first) and the lamp goes beside it; Line, when given,
+	 *  is said on its caption. Kind empty: the highlight clears and the lamp goes home. Returns the room raised (empty: none). */
+	FString StandupShow(const FString& Kind, const FString& Id, const FString& Line);
+	/** The lamp says Line (a notice: shown on the site plan too), for the stand-up and the tour's close. */
+	void StandupSay(const FString& Line) { SayLamp(Line, true); }
+	/** The stand-up's spoken opening (wave EV), through the scan theatre's voice queue: a bundled clip (voice/scan/<Clip>.wav)
+	 *  on the sample, else one line through the PC's say (the caption carries it when there is none). */
+	void StandupVoice(const FString& Clip, const FString& Say) { TheatreVoice(Clip, Say); }
+	/** The room a feature, bay or room id stands in on this plan (empty: none). */
+	FString StandupRoomOf(const FString& Id) const;
+	/** A room's or wing's name on this plan (empty: none). */
+	FString StandupPlaceName(const FString& Id) const;
+	/** A room's id by its name on this plan (the deck's lines name rooms), empty when none has it. */
+	FString StandupRoomByName(const FString& Name) const;
+private:
+	/** The room the sample walk read last (a room change starts the lamp's flight and caption). */
+	int32 SampleRoomAt = INDEX_NONE;
+	int32 SampleRoomsEntered = 0;
+	bool bSampleRestart = false;
+
+	// ---- The scan theatre's state (BpScanTheatre.cpp, wave C1): nothing here ticks at rest ---------------------------
+	/** A scan the theatre follows is running (the sample's walk, or the first running measure job), its key (the job id or
+	 *  "sample"), its lens and place words, when it began (world seconds), the room being read and how many rooms it has
+	 *  entered of how many in scope. */
+	bool bTheatre = false;
+	bool bTheatreSample = false;
+	FString TheatreKey;
+	FString TheatreLens;
+	FString TheatrePlace;
+	double TheatreStartedAt = 0.0;
+	int32 TheatreRoom = INDEX_NONE;
+	int32 TheatreRoomAt = 0;
+	int32 TheatreRoomsOf = 0;
+	/** The lamp works for the scan (it does not go home idle); a room change it has not flown to yet because the person
+	 *  has the lamp (a talk, an ask, the stand-up): it catches up after. */
+	bool bTheatreLamp = false;
+	int32 TheatreLampOwed = INDEX_NONE;
+	/** The lamp's light in the lens's colour while it reads (BpLampLook.cpp's sixth state). */
+	FLinearColor TheatreTint = FLinearColor::White;
+	/** The ScanTint last written to MPC_BpScan. */
+	FLinearColor ScanTintShown = FLinearColor(-1.f, -1.f, -1.f, -1.f);
+	/** A line waiting for the lamp's voice to be free: its clip id (the bundle), or its words for the PC's say (linked),
+	 *  and when it was asked for (FPlatformTime seconds; dropped when more than 10 s stale). */
+	FString TheatreVoiceClip;
+	FString TheatreVoiceSay;
+	double TheatreVoiceAt = -1.0;
+	FTimerHandle TheatreTimer;
+	TMap<FString, TArray<uint8>> ScanClips;
+	FScanResult TheatreResult;
+	bool bTheatreResult = false;
+	bool bTheatreResultSeen = true;
+	double TheatreEndedAt = -1.0;
+	/** The sample's scripted findings: open findings held back from the pins at the walk's start (their room), landed as
+	 *  the walk leaves their room; nothing is written. */
+	TMap<FString, int32> ScanHeld;
+	TArray<FString> TheatreLanded;
+	/** The open findings the pins showed last (a new one lands, while a scan runs or just ended); none before the first. */
+	TSet<FString> PinsKnownOpen;
+	bool bPinsPrimed = false;
+	bool bPinsNoLand = false;
+	/** Seconds since the landing began (-1: none in motion). */
+	float PinLandClock = -1.f;
+	void TheatreBegin(bool bSample, const FString& Key, const FString& Lens, const FString& PlaceWords, const FString& ScopeWords, int32 RoomsOf, bool bSpeak = true);
+	/** A pin's landing now: how far over its tile it still is (cm) and whether it shows yet (0 before its turn). */
+	float PinLandOffset(const FPin& Pin, float& OutShow) const;
+	/** BuildPins's new findings on these tiles (in arrival order) start to land. */
+	void NoteArrivals(const TArray<int32>& ArrivedTiles);
+public:
+	/** Wave U1, "decisions land" (bp.Wow.DecisionLands): a stand-up decision answered on a feature drops that feature's pin
+	 *  onto its tile again (the scan theatre's landing: a fall and a small settle in 0.38 s), so the answer given on the wall
+	 *  lands on the plan. False (nothing moves) with reduced motion, the cvar off, a landing in motion or no pin there. */
+	bool LandDecision(const FString& FeatureId, const FString& Verdict);
+private:
+	/** Wave U1: the decided room's highlight flashes once as the answer lands (0 at rest; seconds since, -1 none). */
+	float DecisionFlash = 0.f;
+	double DecisionFlashAt = -1.0;
+	/** The room LandDecision pointed (raised) for its flash when nothing else was pointed; cleared with the flash. */
+	FString DecisionFlashRoom;
+	/** Wave U2: the raise LandDecision makes (and its settle) is nobody's point: the posed capture hand is not moved for it. */
+	bool bLandingRaise = false;
+	/** The game thread's milliseconds of each frame over a landing's flash (logged as it ends). */
+	TArray<float> DecisionGameMs;
+	/** SetHighlight's steps, timed: the breakdown as words for the log (BpLevels.cpp). */
+	FString SetHighlightTimed(const FString& Kind, const FString& Id);
+	/** New findings land now (a scan runs or just ended, not reduced motion, not the first read). */
+	bool LandingsWanted() const;
+	/** The live result is read a moment after the job ends (the store's last rows). */
+	FTimerHandle TheatreEndTimer;
+	void TheatreReading(int32 Room, int32 At, int32 Of);
+	void TheatreEnd(bool bCancelled, bool bFailed, bool bQuiet);
+	/** Wave U2: a linked scan that ended before any read saw it running: its result sheet anyway, a moment later, said as
+	 *  "Done before I could watch: here's what it found." (ReceiveScanState finds it; ScanJobsSeen holds every measure job
+	 *  seen, the first read only priming it). BpScan.MissedTest stands a finished job in for captures. */
+public:
+	void TheatreMissed(const struct FBpScanJob& Job, const struct FBpScanState& State);
+private:
+	TSet<FString> ScanJobsSeen;
+	bool bScanJobsPrimed = false;
+	bool bTheatreMissed = false;
+	void TheatreFly(int32 Room);
+	void TheatreVoice(const FString& Clip, const FString& Say);
+	void TheatrePump();
+	bool TheatrePersonHasLamp() const;
+	bool TickScanTheatre(float DeltaSeconds);
+	void HoldSampleFindings();
+	void LandHeld(int32 Room);
+	void FinishTheatreResult(bool bCancelled, bool bFailed);
+	void OfferScanResult();
+	/** The talk's state (BpTalk.cpp): made at the first hold, never ticked while idle. */
+	TSharedPtr<struct FBpTalkState> Talk;
+	bool TickTalk(float DeltaSeconds);
+	/** The talk as the lamp's light reads it (BpLampLook.cpp): 0 idle, 1 the wearer speaking (arming, listening, hearing),
+	 *  2 thinking, 3 the lamp answering (its reply or the sample). */
+	int32 TalkLampState() const;
+	// ---- The lamp's look, its home and the studio floor (BpLampLook.cpp; night two V1) -----------------------------------
+	/** Every tick, cheap at rest: the Quest tier's self-lit lamp materials, its light state (idle, waiting on you, listening,
+	 *  thinking, answering) when it changes, bp.Lamp.HomeX/Y when they change, the studio floor and the engine's screen
+	 *  warnings. */
+	void TickLampLook();
+	/** The lamp's site home from bp.Lamp.HomeX/HomeY (table cm), turned toward the seat; FindLamp calls it once. */
+	void ApplyLampHome();
+	TSharedPtr<struct FBpLampLook> LampLookState;
+	/** Night two V3, the lamp's manner (BpLampLook.cpp): it turns to the person while it listens or speaks (LampFace, 0 to 1,
+	 *  eased; a glance only while it shows something) and nods once when a stand-up decision is answered (LampNodT, seconds
+	 *  into the nod, or -1). Ticked from TickSwitch; true while either moves. bp.ReducedMotion stills both. */
+	bool TickLampManner(float DeltaSeconds);
+	/** The nod's bow now, degrees (0 outside a nod). */
+	float LampNodDeg() const;
+	float LampFace = 0.f;
+	/** Wave U1: Glim's glance toward the ray's point (0 to 1, eased; LampGlanceAim eased toward LampGlanceAt, table space). */
+	float LampGlance = 0.f;
+	float LampGlanceTarget = 0.f;
+	FVector LampGlanceAt = FVector::ZeroVector;
+	FVector LampGlanceAim = FVector::ZeroVector;
+	double LampGlanceSetAt = 0.0;
+	double LampGlanceSeenAt = 0.0;
+	/** Wave PJ1: Glim turned to the far sheet (0 to 1, eased; BpProjector::FarAimLocal is where), while it shows a sheet. */
+	float LampProj = 0.f;
+	/** Wave N3-W2: the point on the far sheet Glim's turn and arm follow (table space), eased toward BpProjector::FarAimLocal so
+	 *  his move from the loupe to APPROVE is a sweep (at once with reduced motion). */
+	FVector LampProjAim = FVector::ZeroVector;
+	bool bLampProjAim = false;
+	/** Wave N3-W2: the beam from his lens to the wall (bp.Projector.Beam), built only when its ends move; and its last key. */
+	UPROPERTY(Transient)
+	TObjectPtr<UProceduralMeshComponent> GlimBeam;
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> GlimBeamMat;
+	FString GlimBeamKey;
+	float GlimBeamGlow = -1.f;
+	/** Wave N3-W2: the beam placed or hidden (TickLampManner, after the lamp moved or the sheet did). */
+	void TickGlimBeam();
+	float LampNodT = -1.f;
+	double LampNodSince = 0.0;
+	void TalkBegin();
+	void TalkSend();
+	void TalkTurn(const FString& Heard);
+	void TalkSpeak(const FString& Reply, const FString& ShownIn = FString());
+	void TalkSample(const FString& ForceId = FString());
+	/** G2: the focus events still to act on (TalkActOnFocus), when their turn was asked, and the step's timer. */
+	TArray<TPair<FString, FString>> TalkFocusQueue;
+	double TalkFocusAskedAt = 0.0;
+	FTimerHandle TalkFocusTimer;
+	void TalkFocusStep();
+	/** Wave U4: the focus steps still to come dropped and their timer cleared (a cancel, CLOSE, a product switch): a queue
+	 *  never outlives its conversation. */
+	void TalkFocusClear(const TCHAR* Why);
+	void TalkSays(const FString& Line, float Seconds = 0.f);
+	void TalkIdle();
+	/** The app went away (background, deactivated, the headset off, or the XR focus lost) during a hold or a recording: the
+	 *  microphone closes and what it heard is dropped, never sent. True when there was a hold or a recording to drop. */
+	bool TalkAbandon(const TCHAR* Why);
+	bool bDeckHeld = false;
+	float TourVoiceGain = -1.f;
+	void EnterTourStep(int32 Step);
+	/** The step's line in Glim's voice at the lamp's head (Content/BpData/voice/tour/<Clip>.wav, apps/vr/tools/tour-voice.ts);
+	 *  a line still playing stops first. Silent when the clip is missing or bp.TourVoice is 0. */
+	void SpeakTour(const TCHAR* Clip);
+	TWeakObjectPtr<class UAudioComponent> TourVoice;
+	UPROPERTY(Transient)
+	TObjectPtr<class USoundAttenuation> TourVoiceFalloff;
+	TMap<FString, TArray<uint8>> TourClips;
+	/** The clip playing, and a step line waiting for "shown" (the lamp's "Like this.") to finish before it speaks. */
+	FString TourVoiceClip;
+	FString TourVoiceNext;
+	/** When the clip's samples run out (world seconds): a procedural wave plays silence after them, so this, not IsPlaying,
+	 *  says when a line is done, and the component is stopped there. */
+	double TourVoiceEndsAt = 0.0;
+	/** Pause and resume (the competition's "easy to get into and out of"): while a headset is on and the app has lost its
+	 *  focus (the Quest menu, the headset off), the tour holds still, and from when it comes back its clocks run on as if
+	 *  no time had passed; the step's line is said again. A cold start waits for the focus too. */
+	bool bTourAway = false;
+	double TourAwayAt = 0.0;
+	void SayTour(const FString& Line);
+	/** The tour's picks from the plan and the scan: the most urgent room in a wing (any wing when empty), and the room's
+	 *  feature with the most open findings (its first on the map when none has any). */
+	FString TourRoomIn(const FString& InWingId) const;
+	FString TourFeatureIn(const FString& InRoomId) const;
 	/** The lasso: its stroke (paper cm), its length, whether it draws, how long the closed loop stays lit, BpRoom.Lasso's
 	 *  loop and its progress, the last outcome and the features it picked. */
 	TArray<FVector2D> LassoPath;
@@ -1360,6 +2282,262 @@ private:
 	FDelegateHandle PlanHandle;
 	FDelegateHandle FailedHandle;
 	FDelegateHandle ScanHandle;
+
+	// ---- Another product at runtime, and the onboarding's lamp lines (spark onboarding-vr WP-V1) ----------------------
+	FDelegateHandle ProductHandle;
+	FDelegateHandle OnboardingHandle;
+	FDelegateHandle MilestoneHandle;
+	/** The product DrawnRev was drawn for: the same rev of another product is another plan. */
+	FString DrawnProduct;
+	/** BpLink moved to another product (SetProduct): everything drawn of the old one goes (the levels home, room mode and
+	 *  its deck closed, the volumes, labels, names, glyphs, pins, scan line and card cleared), and the empty sheet says
+	 *  which product it waits for, until the new plan lands through ApplyPlan (or ShowNoPlan, for one with no map yet). */
+	void OnProductChanged(const FString& Slug);
+	/** The empty sheet's line follows the open product's onboarding while it has no plan. */
+	void OnOnboardingState(const FBpOnboardingState& State);
+	/** A running onboarding's milestone, whatever product is open: said by the lamp (SayLamp's notice). */
+	void OnMilestone(const FBpProductEntry& Entry, EBpOnboardingMilestone Kind, const FString& Line);
+	/** The empty sheet's line for the open product: "<name> · being onboarded" while its job builds, "<name> · stopped at
+	 *  <phase>", "<name> · no map yet", or "<name> · loading" while its read is out. */
+	FString EmptySheetLine(bool bLoading) const;
+	/** The sheet's render target and the paper's binding to it, made on first need (the first plan, or the empty sheet). */
+	void EnsureSheet();
+	/** The sheet with no plan: the border and the one title line (TitleWaitLine), centred. */
+	void DrawEmptySheet(UCanvas* Canvas);
+	/** The empty sheet is shown (a product switch, or a product with no map yet); before the first plan it is not drawn. */
+	bool bEmptySheet = false;
+	/** The lamp's caption shows outside room mode too while it says an onboarding's milestone. */
+	bool bLampNotice = false;
+	/** The caption's line is the talk's (BpTalk.cpp): the console's conversation sheet shows it, the lamp's box stays quiet. */
+	bool bTalkCaption = false;
+	/** Night two V8: the caption's line is a stand-up sheet's own title (StandupShow): the sheet shows those words, so the
+	 *  lamp's box stays quiet for it as for a talk line (the voice still plays); the next line the lamp says clears it. */
+	bool bSheetCaption = false;
+	/** The talk's words left the caption (their time ran out): the console and the wrist redraw. */
+	void TalkCaptionEnded();
+	/** The console shows the conversation now (bp.TalkSheet and no sheet holding the panel). */
+	bool TalkOnConsole() const;
+	/** Wave U2: a sheet (a page, the stand-up, the conversation) is on the far wall: the lamp's caption box stays off it. */
+	bool WallSheetOpen() const;
+	/** The live plan's body (ApplyPlan's, minus the build-up's hold). */
+	void ApplyPlanNow(const FBpPlan& Plan);
+
+	// ---- The build-up (BpBuildup.cpp; spark onboarding-vr WP-V2): the table builds itself while the open product onboards ----
+	// Mirrors the web's winner B ("the outline becomes the building") in the table's own idiom, from the job's feed only:
+	// the survey's code areas chalked onto the paper as dashed parcels, the outline's domains typed in the paper's near
+	// margin, each domain line flying to its wing as the wing's outline draws itself and its rooms rise one at a time (the
+	// rest walls' Show scalar and their height, never visibility), pencil brackets on the batch being judged, provisional
+	// health pencilled and the final reading inked, the agent's narration on the follow caption and the phase strip in
+	// the title block. Everything 2D is drawn into the sheet's one render target, so the build-up adds no draw call of
+	// its own. At done the live plan (the same islands boxes) takes over and the ink fades into it.
+public:
+	/** The build-up's pace (seconds): a parcel chalked, a domain line's flight, a wing's outline drawn, the stagger
+	 *  between two rooms and one room's rise, the survey's recession, an ink stroke. A burst longer than BuildDrainS is
+	 *  compressed to it (B's DRAIN). bp.ReducedMotion 1 draws each step at its end state. */
+	static constexpr float BuildChalkS = 0.5f;
+	static constexpr float BuildFlyS = 0.8f;
+	static constexpr float BuildWingDrawS = 0.7f;
+	static constexpr float BuildRoomStaggerS = 0.4f;
+	static constexpr float BuildRoomRiseS = 0.6f;
+	static constexpr float BuildRecedeS = 1.2f;
+	static constexpr float BuildInkS = 0.4f;
+	static constexpr float BuildDrainS = 30.f;
+	/** Characters a second the outline is typed at. */
+	static constexpr float BuildTypeCps = 45.f;
+	/** The sheet is redrawn at most this often while something on it moves. */
+	static constexpr float BuildSheetHz = 15.f;
+	/** After the hand-over the ink overlay fades into the live table over this long. */
+	static constexpr float BuildSettleS = 2.f;
+	/** For checks: "<phase> <n>/<of> areas=<a> domains=<d> rooms=<risen>/<rooms> pencil=<p> ink=<i>" or "" when none runs. */
+	FString GetBuildLine() const;
+	bool IsBuilding() const { return bBuild; }
+private:
+	struct FBuildArea
+	{
+		FString Id;
+		FString Name;
+		FString Group;
+		int32 Files = 0;
+		int32 Lines = -1;
+		/** Where it lies on the paper (cm), where it lay before a re-send resized it, and since when. */
+		FBox2D Box = FBox2D(ForceInit);
+		FBox2D From = FBox2D(ForceInit);
+		double MovedAt = -1.0e6;
+		double BornAt = -1.0e6;
+	};
+	struct FBuildDomain
+	{
+		FString Id;
+		FString Name;
+		int32 Order = 0;
+		TArray<FString> CapIds;
+		TArray<FString> CapNames;
+		/** When its typing starts; its lines' flights (by line: 0 the domain, 1.. its capabilities); -1 unflown. */
+		double TypeAt = -1.0e6;
+		TArray<double> FlyAt;
+	};
+	FDelegateHandle BuildupHandle;
+	void OnBuildup(const struct FBpBuildupBatch& Batch);
+	void ApplyBuildupEvent(const struct FBpBuildupEvent& Event, bool bPast);
+	/** Steps the build-up's clock, commits at most one room a frame, redraws the sheet while it moves and hands over at
+	 *  done; true while anything moves. */
+	bool TickBuildup(float DeltaSeconds);
+	/** Forgets the build-up (another product, or the hand-over's fade done). */
+	void ResetBuildup();
+	/** The structure as the plan the table draws (the islands boxes the feed sends), through ApplyPlanNow, and its
+	 *  choreography queued. */
+	void BuildupStructure(bool bPast);
+	void LayoutSurvey(bool bPast);
+	/** The hand-over: the live plan drawn (the same boxes), the build-up's ink fading into it. */
+	void EndBuildup();
+	void TryHandOver();
+	/** The build-up's 2D on the sheet: the parcels, the margin outline and its flights, the wings drawing themselves, the
+	 *  judging brackets, pencil and ink, and its title block with the phase strip. bWithPlan: drawn over a plan. */
+	void DrawBuildup(UCanvas* Canvas, bool bWithPlan);
+	/** 0..1: how far a room (plan index) has risen; a wing's outline, drawn; 1 when no build-up runs. */
+	float RoomBuildShow(int32 Room) const;
+	float WingBuildShow(const FString& Wing) const;
+	/** The rising rooms' rest walls at their height now (from RestBase), and the levels' Show again. */
+	void ApplyRoomRise();
+	/** The narration on the follow caption. */
+	void SayBuildCaption();
+	bool bBuild = false;
+	FString BuildJob;
+	FString BuildName;
+	/** The build-up's own clock (seconds) and when what is queued on it settles. */
+	double BuildClock = 0.0;
+	double BuildQueue = 0.0;
+	TArray<FBuildArea> BuildAreas;
+	double SurveyGoneAt = 1.0e9;
+	FString LitArea;
+	double LitAt = -1.0e6;
+	TArray<FBuildDomain> BuildDomains;
+	/** The structure as it arrived (merged by id), and whether one has. */
+	TSharedPtr<FBpPlan> BuildPlan;
+	bool bBuildHasPlan = false;
+	TMap<FString, double> WingDrawAt;
+	TMap<FString, double> RoomRiseAt;
+	/** Rooms (plan index) in the order they rise, how many are committed (at most one more a frame), and each one's rise as
+	 *  last written. */
+	TArray<FString> RiseOrder;
+	TSet<FString> RisenRooms;
+	/** Each structure drawn bumps it (the synthesized plan's rev). */
+	int32 BuildSerial = 0;
+	/** The last caption said, so it is set only when it changes. */
+	FString BuildCaptionKey;
+	/** Whether the sheet showed anything moving at the last tick (one more redraw lands the end state). */
+	bool SheetMovingNow() const;
+	TArray<float> RoomRiseShown;
+	/** The rest walls' transforms as BuildVolumes made them (a rising room's are scaled from these). */
+	TArray<FTransform> RestBase;
+	TMap<FString, FString> BuildPencil;
+	TMap<FString, double> PencilAt;
+	TMap<FString, FString> BuildInk;
+	TMap<FString, double> InkAt;
+	TSet<FString> BuildJudging;
+	FString BuildPhase;
+	int32 BuildN = 0;
+	int32 BuildOf = 0;
+	/** The phase BuildN of BuildOf counts (the title shows it only while that phase runs). */
+	FString BuildCountPhase;
+	FString NarrText;
+	FString NarrNext;
+	bool bBuildEnded = false;
+	bool bBuildFailed = false;
+	FString BuildFailPhase;
+	FString BuildFailText;
+	double BuildEndedAt = -1.0;
+	/** The live plan, held while the build-up still draws. */
+	TSharedPtr<FBpPlan> PendingLivePlan;
+	/** When a live plan was held for a build-up not yet started (real seconds; < 0: none), and how long it may wait. */
+	double HeldPlanAt = -1.0;
+	static constexpr double BuildHoldS = 3.0;
+	/** The ink's fade after the hand-over (< 0: none). */
+	double SettleAt = -1.0;
+	double NextSheetDrawAt = 0.0;
+	bool bSheetMoving = false;
+	/** ApplyPlanNow is drawing the build-up's own plan. */
+	bool bApplyingBuild = false;
+	/** The narration holds the follow caption. */
+	bool bBuildCaption = false;
+	/** History's glide to the final boxes: from and to (by room id, paper-local cm offset), start. */
+	TMap<int32, FVector> GlideDelta;
+	double GlideAt = -1.0;
+	TSharedPtr<FBpPlan> GlideTo;
+	/** The wall-clock seconds the structure's commit took (ApplyPlanNow), for the report. */
+	double StructureCommitMs = 0.0;
+	/** A plan the build-up commits (its structure, the glide's landing, the hand-over) is committed over several frames:
+	 *  the volumes and the sheet at once, then the level labels, the room names and the glyphs one step a frame (the
+	 *  rooms stand at Show 0 or are already drawn by then). bSpreadCommit asks ApplyPlanNow for it; DeferredSteps counts
+	 *  what is left for the plan of rev DeferredRev. */
+	bool bSpreadCommit = false;
+	int32 DeferredSteps = 0;
+	FString DeferredRev;
+	void StepDeferredCommit();
+	/** The last sheet draw's game-thread cost (ms) and the most of any since the build-up began. */
+	double LastSheetMs = 0.0;
+	double MaxSheetMs = 0.0;
+	int32 SheetDraws = 0;
+	/** One heavy piece of a build-up's commit a frame (WP-V3: the structure's frame cost 28 ms): the structure's volumes,
+	 *  a deferred step, a slice of level labels, a wing label, a glyph mesh loaded ahead, a sheet redraw. Each asks
+	 *  HeavyBusy first and calls NoteHeavy after; HeavyFrame is the frame (GFrameCounter) the last one ran in. While
+	 *  SpreadNow, RedrawSheet only marks the sheet dirty and the tick draws it in a free frame. */
+	uint64 HeavyFrame = MAX_uint64;
+	bool SpreadNow() const { return bBuild || SettleAt >= 0.0; }
+	bool HeavyBusy() const;
+	void NoteHeavy(const TCHAR* What, double StartSeconds);
+	/** The structure arrived (one or more events): committed by the tick in a free frame, as past or live. */
+	bool bStructurePending = false;
+	bool bStructurePast = false;
+	bool bSheetDirty = false;
+	/** The sheet drawn now (RedrawSheet's body). */
+	void DrawSheetNow();
+	/** The level labels made a slice a frame while SpreadNow: the next room (then bay) to make one for; -1 when none waits. */
+	int32 LevelLabelsNext = -1;
+	void StepLevelLabels(double BudgetMs);
+	/** The wing labels made one a frame while SpreadNow: the next spec to make one for. */
+	int32 WingLabelsNext = 0;
+	/** The furniture kit loaded ahead while the build-up draws its survey and outline (one mesh a frame), and held, so the
+	 *  structure's glyph step never loads one. */
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMesh>> GlyphMeshHold;
+	int32 GlyphPreloadNext = 0;
+	/** The judge's count for the title block: progress, batches LANDED of N (WP-V3), kept with the phase it counts. */
+	void NoteBuildCount(const FString& Phase, int32 N, int32 Of);
+
+	// ---- The shared focus state (BpFollow.cpp) ----------------------------------------------------------------------------
+	FDelegateHandle FollowHandle;
+	void InitFollow();
+	/** Sends the owner's settled move (PublishSettleS), then TickFollowCaption; true while either still has to run. */
+	bool TickFollow(float DeltaSeconds);
+	/** The caption's fade and a followed feature's deck focus; true while the caption fades. */
+	bool TickFollowCaption(float DeltaSeconds);
+	/** A follow that came before the plan: ApplyPlan takes BpLink's last place when it lands. */
+	bool bFollowPending = false;
+	/** EnterRoomMode is running for a follow (it then takes the lift entry and the follow's pace). */
+	bool bFollowEntering = false;
+	/** The pace of the room-mode change under way: the fade and the lift's hold in seconds (0 and -1: the cvars'). */
+	float RoomFadeNowS = 0.f;
+	float RoomHoldNowS = -1.f;
+	/** The feature (or the bay, by its first feature in the deck) whose screen comes to the front once its room's map has
+	 *  settled. */
+	FString FollowFeature;
+	FString FollowBay;
+	UPROPERTY(Transient)
+	TObjectPtr<UWidgetComponent> FollowCaption;
+	FString FollowLine;
+	float FollowCaptionAlpha = 0.f;
+	void ShowFollowCaption(const FString& Who, const FString& Where);
+	/** The caption's two lines (ShowFollowCaption's "Following <who>", or a publish's "Shared from this table"). */
+	void ShowCaption(const FString& Line1, const FString& Where);
+	void ApplyFollowCaption();
+	/** Follow is applying a place: the navigation it calls is not the owner's, so nothing is published. */
+	bool bFollowApplying = false;
+	/** The owner's move waits to settle until this real time (seconds); negative while none waits. */
+	double PublishAtS = -1.0;
+	void NotePlaceMoved();
+	/** Sends the place the table rests on now (BpLink.PublishPlace) and, when it went, says so on the caption. */
+	void PublishRestingPlace();
 
 	// ---- The headset session (BpHeadset.cpp) ------------------------------------------------------------------------------
 	UPROPERTY(Transient)

@@ -6,10 +6,10 @@
 :root,
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --paper: #071a33;
-  --paper-hi: #12497a;
-  --paper-mid: #0e3a68;
-  --paper-lo: #061830;
+  --paper: #0a2149;
+  --paper-hi: #1a4c8f;
+  --paper-mid: #123a72;
+  --paper-lo: #06142e;
   --ink: #dff0ff;
   --ink-2: rgba(223, 240, 255, 0.74);
   --ink-3: rgba(223, 240, 255, 0.38);
@@ -18,7 +18,7 @@
   --grid: rgba(127, 224, 255, 0.07);
   --panel: rgba(5, 20, 40, 0.78);
   --panel-solid: #0a2342;
-  --halo: rgba(7, 26, 51, 0.92);
+  --halo: rgba(9, 31, 68, 0.92);
   --accent: #7fe0ff;
   --mint: #6ff2c8;
   --amber: #ffc35a;
@@ -63,6 +63,14 @@
   --heat-box: #ffd23f;
   --veil: rgba(2, 10, 22, 0.55);
   --lift: #ffffff;
+  /* the light table: the desk already looks like the table's first frame. --glow is the light under the
+     glass (wall bloom, slab edge), --glass-edge the lit wall line, --rim the table's backlit bezel, --lamp the warm
+     pool the lamp throws on the paper */
+  --glow: #4fd2ff;
+  --glass-edge: #c4f2ff;
+  --rim: #e6fbff;
+  --lamp: rgba(255, 178, 92, 0.13);
+  --paper-core: #2162ad;
 }
 
 :root[data-theme='light'] {
@@ -119,6 +127,11 @@
   --heat-box: #ffd23f;
   --veil: rgba(2, 10, 22, 0.55);
   --lift: #ffffff;
+  --glow: #2b8fd8;
+  --glass-edge: #0b2a4a;
+  --rim: #7cc3f0;
+  --lamp: rgba(255, 170, 60, 0.1);
+  --paper-core: #ffffff;
 }
 
 /* Release-train scales (theme-independent). Train CSS (src/components/ledger/train/**) uses only these and the theme

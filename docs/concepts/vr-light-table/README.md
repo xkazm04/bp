@@ -50,14 +50,47 @@ lenses, scans and waves, drawn for a headset.
   first (seated calibration), and the session script and record (2026-10-26).
 - [`standalone-plan.md`](standalone-plan.md): the competition build, a Quest with no PC: the bundled snapshot (done), the
   Android target and toolchain, a mobile fidelity tier, packaging and submission (2026-10-27).
+- [`../desk-to-table/plan.md`](../desk-to-table/plan.md): the crossing from the web app into the table (2026-10-28): the
+  winner of the `web-vr-crossing` contest and hackathon, its web half on master, and the VR half (the S8 door's `place`
+  scope, BpLink's baton, `ABpCrossing`, the pin ceremony) as an optional phase on Lynx.
 - [`run-locally.md`](run-locally.md): the PC-first route, step by step: setup, build, and running against the server, the
   Simulator or a Quest through Link.
 - [`voice-sdk-plan.md`](voice-sdk-plan.md): speech-to-text in the headset with Meta's Voice SDK for Unreal (Wit.ai), for a
   later session.
 - [`machine.md`](machine.md): the build host's measured facts and readings 1 to 14.
 - [`wolf-plan.md`](wolf-plan.md): the retired Wolf plan (2026-10-23), kept for its readings and history.
+- [`table-link-v2.md`](table-link-v2.md) and [`voice-link.md`](voice-link.md): the headset-to-PC contract (pairing, the
+  Wi-Fi door, the stand-up's decisions, bounded grants) and the speech routes (2026-11-09/10).
+- [`compliance.md`](compliance.md): what ships in the APK against the competition's rules, its permissions, what leaves
+  the headset, and the licence proof the owner keeps.
+- [`headset-morning-check.md`](headset-morning-check.md): the headset check for the next time the owner wears it (package
+  and install first), with the console value to tune for each step.
+- [`runs/`](runs/): one note per build run; the latest is [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md).
 
 ## Status
+
+> **2026-11-10 (night two).** Built and on the owner's Quest 3S: the console, the stand-up, talk to the lamp,
+> pairing over the cable and Wi-Fi, your room in passthrough, and the app's own settings file `Saved/BpTable.json`. What
+> was measured on the headset and what still needs a person wearing it: [`runs/2026-11-10-night-two.md`](runs/2026-11-10-night-two.md).
+> The paragraphs below are the history.
+
+> **2026-11-10 (day two, wave EV, "reason to come back").** Proven on the PC (the sample and a linked demo server), not yet
+> on the headset: the stand-up's YESTERDAY sheet (what earlier approvals became, BEFORE and AFTER side by side), its
+> welcome-back opening, PROJECTS' ADD A PROJECT (the headset asks, you confirm on the PC's Headsets page), and PC LINK's
+> pairing words naming the Headsets page. How to run each: [`run-locally.md`](run-locally.md).
+
+> **2026-11-10 (day two, all of it).** What the table does now, on the PC: none of this is on the headset yet (it holds the
+> build of 11:44, through night two); the record is [`runs/2026-11-10-day-two.md`](runs/2026-11-10-day-two.md).
+> - **The tour**: a first tour of about 90 s that runs once and resumes after a quit; MENU > TOUR replays it and holds
+>   seven chapters (hands and wrist, scan a room, your morning, your room, talk to Glim, text size, your PC).
+> - **The scan theatre**: Glim follows a scan room to room and narrates it, findings land as pins, a SCAN RESULT
+>   sheet closes it (on the sample; a linked scan was not run).
+> - **YESTERDAY**: the stand-up shows what earlier approvals became, with BEFORE and AFTER, and opens with "Welcome
+>   back" on a later day.
+> - **The Headsets page** in the PC's web app (`/headsets`): pair by typing the code the headset shows, revoke, and read
+>   what the table did.
+> - **Add a project**: PROJECTS > ADD A PROJECT asks the PC to read a new folder; the run starts only after the owner
+>   confirms on the Headsets page (tried with a stubbed job runner only).
 
 Planned, not started. Nothing in this folder is built. Execution happens on the GPU workstation;
 this checkout only holds the plan.

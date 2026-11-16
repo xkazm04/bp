@@ -12,7 +12,9 @@
 //      not dispatchable while it is in flight;
 //   7. source (comments blanked): useLedger.ts has no component-state overlay and no clear-on-any-change effect;
 //      dispatchIds and dispatchWave both go through the shared send helper over the intents module; Decide.tsx
-//      prunes its pending set with the shared settle().
+//      prunes its pending set with the shared settle();
+//   8. Y and N beside the brief: decideOne paints approved / declined through the same send helper, posts proposals/[id]
+//      (never dispatch: no job), refuses while read-only; Y/N bind only in the backlog and only while decisions are on.
 // GUARDS (behaviour that must not change): a finding with no intent reads its store status and stays dispatchable;
 // settle with nothing to drop returns the very same map (a no-op store write).
 // Run: node scripts/check-ledger-intents.ts  (Node's type stripping; scripts/overlays-loader.mjs transpiles the src).
@@ -121,11 +123,25 @@ const p1 = has('paint') ? I.paint(new Map(), ['a', 'b'], of({ a: 'proposed', b: 
   const body = (name: string, next: string) => { const i = L.indexOf('const ' + name + ' = useCallback'); const j = L.indexOf(next, i + 1); return i < 0 ? '' : L.slice(i, j < 0 ? undefined : j); };
   const helper = body('sendIntent', 'const dispatchIds');
   caseOk(7, /\bpaint\(/.test(helper) && /\brevert\(/.test(helper), 'the send helper paints and reverts through the intents module');
-  caseOk(7, /\bsendIntent\(/.test(body('dispatchIds', 'const waveTags')), 'dispatchIds goes through the send helper');
+  caseOk(7, /\bsendIntent\(/.test(body('dispatchIds', 'const decideOne')), 'dispatchIds goes through the send helper');
   caseOk(7, /\bsendIntent\(/.test(body('dispatchWave', 'const showInTable')), 'dispatchWave goes through the send helper');
   const D = blankComments(fs.readFileSync(path.join(LEDGER, 'train/Decide.tsx'), 'utf8'));
   // the train components reach the ledger through ../useLedger (check:train-quality's allowlist), which re-exports it
   caseOk(7, /^import \{[^}]*\bsettle\b[^}]*\} from '\.\.\/useLedger';$/m.test(D) && /^export \{ settle \} from '\.\/intents';$/m.test(raw) &&/\bsettle\(\s*(?:u|ui)\.pending/.test(D) && !/\.filter\(\(\[id, s\]\) => T\.byId\.get\(id\)\?\.status !== s\)/.test(D), 'Decide.tsx prunes pending with the shared settle()');
+}
+
+// ------------------------------------------------------------------------------------------- 8. Y and N beside the brief
+{
+  const L = blankComments(fs.readFileSync(path.join(LEDGER, 'useLedger.ts'), 'utf8'));
+  const i = L.indexOf('const decideOne = useCallback'), d = i < 0 ? '' : L.slice(i, L.indexOf('const waveTags', i));
+  caseOk(8, /\bsendIntent\(\[id\], decision === 'approve' \? 'approved' : 'declined'\)/.test(d) && /\bwithdraw\(\)/.test(d), 'decideOne paints approved or declined through the send helper and withdraws on a refusal');
+  caseOk(8, /\bdecideFinding\(ctx, id,/.test(d) && !/\bdispatch\(/.test(d) && /E\.refuseReadOnly\(\)/.test(d), 'decideOne posts proposals/[id] (decideFinding), never dispatch: no job is queued; read-only refuses');
+  const K = await import(pathToFileURL(path.join(LEDGER, 'train/keymap.ts')).href) as Any;
+  caseOk(8, K.keyAction(['backlog'], 'y') === 'approveLater' && K.keyAction(['backlog'], 'N') === 'decline' && K.keyAction(['backlog'], 'y', false) === null && K.keyAction(['backlog'], 'n', false) === null
+    && K.keyAction(['packs'], 'y') === null && K.keyAction(['backlog'], 'd', false) === 'dispatch', 'Y and N bind in the backlog only, and not at all while decisions are off');
+  caseOk(8, !K.shownKeys('backlog', false).some((b: Any) => b.action === 'approveLater' || b.action === 'decline') && K.shownKeys('backlog', true).some((b: Any) => b.action === 'decline'), 'BP_WRITES=off: the ? sheet lists neither');
+  const P = blankComments(fs.readFileSync(path.join(LEDGER, 'LedgerPage.tsx'), 'utf8'));
+  caseOk(8, /keyAction\([^)]*, k, L\.writes\)/.test(P) && /decide=\{L\.writes \?/.test(P), 'LedgerPage binds Y/N and offers the drawer\'s decision only while decisions are on');
 }
 
 const red = [...cases].filter(([, v]) => !v).map(([k]) => k);

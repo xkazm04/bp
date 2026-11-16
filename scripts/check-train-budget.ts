@@ -185,7 +185,8 @@ const noop = () => {};
 const BUDGETS: [string, number, () => string, number][] = [
   ['In packs table, 120 items in 10 packs', 120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'packs' })), 3300],
   ['Backlog table, 1,120 findings', 1120, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'backlog' }, what: 'backlog' })), 24600],
-  ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 110],
+  // the compare panels carry the decision brief since 2026-11-03 (BriefDrawer: 11 elements; measured 121)
+  ['compare panel, an item with screens, diff closed', 1, () => render(h(ComparePanel, { id: first, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 133],
   ['compare panel, a perf item (runs table), diff closed', 1, () => render(h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop })), 270],
   // the decision surface: the bar with a target (the Decide buttons and the package pill), and with its note editor open
   ['decision bar, one target', 1, () => render(h(Host, { ui: { ...EMPTY_UI, scope: 'packs' }, what: 'bar', targets: [first] })), 24],
@@ -223,6 +224,44 @@ for (const [what, rows, run, budget] of BUDGETS) {
   expect(same === 36, `verdictIn agrees with the per-item filters: ${same} of 36 answers`);
   expect(visits <= measurements.length, `a 12-item selection asked three times visits ${visits} measurements, budget ${measurements.length} (one pass; 7,200 per ask before)`);
   console.log(`verdict  12 items x 3 asks over ${measurements.length} measurements: ${visits} visits, ${same} of 36 answers equal the reference`);
+}
+
+// ------------------------------------------------------------------------------------------- 4. the compare evidence
+// Opening a perf item reads its evidence, its next item's (the prefetch) and its 11 pack mates' (the whole-pack table).
+// Counted in visits to the measurements and the shots through counting arrays: one grouping pass over each
+// (packages/core/src/scan/evidence.ts evidenceIndex, cached per array), never one pass per item (13 before the index).
+// (a) the evidence path the Body takes, compareOf for those 13 items; (b) the whole panel server-rendered over a counted
+// store: three passes over the measurements, each once per table: the evidence index, onMain.ts scanOfTrain's copy for
+// trackOf (Main now) and track.ts's own index (the decision brief's precedent, BriefDrawer); one over the shots.
+// Before the index (2026-11-07): (a) 3,900 measurement and 6,240 shot visits (13 passes); (b) 4 counted passes, the 13
+// compareOf passes running uncounted over the panel's own copy of the tables (useScan), i.e. 17 passes in all.
+{
+  const { compareOf } = await impCore('src/scan/compare.ts');
+  const counter = <T extends object>(xs: T, hit: () => void): T => new Proxy(xs, { get: (t, k, r) => { if (typeof k === 'string' && /^\d+$/.test(k)) hit(); return Reflect.get(t, k, r); } });
+  const N = measurements.length, NS = shots.length;
+  let mv = 0, sv = 0;
+  const cm: Any = counter(measurements, () => mv++), cs: Any = counter(shots, () => sv++);
+  const me = proposals.find((p) => p.id === perf)!, mates = proposals.filter((p) => p.pack_id === me.pack_id && p.id !== perf);
+  const next = mates.find((p) => p.id.endsWith('-1'))!;
+  const sc = { proposals, measurements: cm, shots: cs };
+  const asked = [perf, next.id, ...mates.map((p) => p.id)];
+  for (const id of asked) compareOf(sc, id, P.lenses);
+  expect(mv <= N, `compare evidence: the perf item, its next item and its 11 mates visit ${mv} measurements, budget ${N} (one grouping pass)`);
+  expect(sv <= NS, `compare evidence: the same ${asked.length} items visit ${sv} shots, budget ${NS} (one grouping pass)`);
+  console.log(`compare  ${asked.length} compareOf calls (item, next, 11 mates): ${mv} measurement visits of ${N}, ${sv} shot visits of ${NS}`);
+  const again = mv + sv;
+  for (const id of asked) compareOf(sc, id, P.lenses);
+  expect(mv + sv === again, `compare evidence: J/K over the same store reads no evidence again (${mv + sv - again} visits on the second pass)`);
+  // (b) the panel itself, over a fresh counted store (its own caches start cold)
+  mv = 0; sv = 0;
+  const cm2: Any = counter(measurements, () => mv++), cs2: Any = counter(shots, () => sv++);
+  const live2 = { slug: 'synthetic', product: { status: 'live', events: '', jobs: [], scan: { ...scan, measurements: cm2, shots: cs2 } } };
+  let err = '';
+  try { renderToString(h(VariantCtx.Provider, { value: getVariant('subtle') }, h(EngineCtx.Provider, { value: E }, h(LiveCtx.Provider, { value: live2 }, h(ComparePanel, { id: perf, view: EMPTY_UI.cmp, wide: false, phone: false, onView: noop, onWide: noop, onClose: noop }))))); } catch (e) { err = String(e); }
+  expect(!err, 'compare panel over a counted store: the render threw: ' + err);
+  expect(mv <= 3 * N, `compare panel, a perf item: ${mv} measurement visits, budget ${3 * N} (the evidence index, scanOfTrain's copy for trackOf, track.ts's index for the brief)`);
+  expect(sv <= NS, `compare panel, a perf item: ${sv} shot visits, budget ${NS} (the evidence index's pass)`);
+  console.log(`compare  panel render, a perf item: ${mv} measurement visits (${(mv / N).toFixed(1)} passes), ${sv} shot visits (${(sv / NS).toFixed(1)} passes)`);
 }
 
 if (failures.length) { for (const f of failures) console.log('FAIL ' + f); console.log(`check-train-budget: ${failures.length} failed, ${held} held`); process.exit(1); }

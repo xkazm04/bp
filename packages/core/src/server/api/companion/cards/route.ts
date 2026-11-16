@@ -6,6 +6,7 @@
 // (door.server.ts). Localhost only.
 import { jsonOnly, localHost, localOnly } from '../../../../scan/local-only.ts';
 import { fileCard, listCards, originOf } from '../door.server.ts';
+import { trail } from '../../../brief.server.ts';
 
 export function GET(req: Request): Response {
   const denied = localHost(req);
@@ -22,5 +23,6 @@ export async function POST(req: Request): Promise<Response> {
   try { b = (await req.json()) as typeof b; } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
   const r = await fileCard(b?.tool, b?.args, originOf(req));
   if (!r.ok) return Response.json({ error: r.error }, { status: r.status });
+  trail(req, { kind: 'card', tool: r.card.tool, card: r.card.id, ...(r.card.product ? { product: r.card.product } : {}) });
   return Response.json(r.card, { status: r.card.state === 'pending' ? 201 : 200 });
 }

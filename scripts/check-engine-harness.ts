@@ -17,6 +17,7 @@
 import { register, createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { ALL_CLOSED, openStates } from './lib/surface-states.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_ENGINE_MUTATE || '[]') } });
@@ -392,6 +393,13 @@ const measured: Record<string, string> = {};
     const E4 = mount(1280, 800, 4), M4 = E4.M, base = room.base;
     const now = Date.now(), job = { id: 'j1', kind: 'measure', lens, scope: { kind: 'room', id: base, label: room.name, features: room.feats.map((f: Any) => f.id) }, status: 'running', queued_at: new Date(now - 1000).toISOString(), started_at: new Date(now - 1000).toISOString() };
     const { views } = scanViews([job], undefined, M4, () => '#6ff2c8', now);
+    // the rooms' own reading on the real ?scale=4 layout: each line's room carries its own counts, nothing added across lines
+    const { roomScans } = await imp('engine/render/scans.ts');
+    const roomRows = roomScans(views, M4.L), roomLines = M4.L.rooms.filter((r: Any) => r.base === base);
+    expect(roomLines.length === 4 && roomRows.length === 4 && roomRows.every((r: Any) => r.total === room.feats.length && r.done === 0 && r.state === 'scanning'), '?scale=4: a room scan gives each line\'s room its own total (' + JSON.stringify(roomRows.slice(0, 2)) + ')');
+    const every = scanViews([{ ...job, scope: { kind: 'all', label: 'Everything', features: [] } }], undefined, M4, () => '#6ff2c8', now).views;
+    const everyRows = roomScans(every, M4.L);
+    expect(every.every((v: Any) => v.all === true) && everyRows.length === M4.L.rooms.length && everyRows.reduce((a: number, r: Any) => a + r.total, 0) === M4.L.tiles.length, '?scale=4: an everything scan counts every tile once across every line\'s rooms (' + everyRows.reduce((a: number, r: Any) => a + r.total, 0) + ' of ' + M4.L.tiles.length + ')');
     const v2 = views.find((v: Any) => v.id === 'j1@2');
     expect(!!v2, 'at ?scale=4 the job has a view j1@2 (' + views.map((v: Any) => v.id).join(' ') + ')');
     if (v2) {
@@ -413,34 +421,30 @@ const measured: Record<string, string> = {};
 }
 
 // ---------------------------------------------------------------------------------------------- 4. goUp: the Esc ladder, in order
+// The order is engine/surfaces.ts SURFACES (check:surfaces pins it and every pair); here the real goUp walks it rung by
+// rung: each surface open with the next one below it, Esc closes the upper and leaves the lower. Rows sharing a seat never
+// stand open together, so blast and the readiness mode are driven through their openers instead of a constructed state.
 {
-  const rung = (name: string, patch: Record<string, unknown>, field: string, cleared: unknown) => {
-    reset(patch); E.goUp(); const s = E.S as Any;
-    expect(JSON.stringify(s[field]) === JSON.stringify(cleared), 'Esc ladder: ' + name + ' closes first (' + field + ' -> ' + JSON.stringify(s[field]) + ')');
-  };
-  rung('the scan menu', { menu: { x: 1, y: 1, chain: [], tile: null }, tl: true, dtab: 'view' }, 'menu', null);
-  rung('the timeline, before the morning card', { tl: true, morning: true, dtab: 'view' }, 'tl', false);
-  rung('the morning card, before the person menu', { morning: true, whoMenu: true, dtab: 'view' }, 'morning', false);
-  rung('the person menu, before the dock flyout', { whoMenu: true, dtab: 'view' }, 'whoMenu', false);
-  rung('the dock flyout, before info', { dtab: 'view', info: true }, 'dtab', null);
-  rung('info, before an open feature', { info: true, open: Object.keys(M.P.F)[0] }, 'info', false);
-  {
-    const f = Object.keys(M.P.F)[0]; reset({ open: f, blast: f }); E.goUp();
-    expect(E.S.open === null && E.S.blast === f, 'Esc ladder: an open feature closes before a blast mode');
+  const { SURFACES } = await imp('engine/surfaces.ts');
+  const OPEN = openStates(M);
+  let rungs = 0;
+  for (let i = 0; i + 1 < SURFACES.length; i++) {
+    const a = SURFACES[i], b = SURFACES[i + 1];
+    if (a.seat === b.seat || a.barrier) continue;
+    rungs++; reset({ ...ALL_CLOSED, ...OPEN[a.id], ...OPEN[b.id] }); E.goUp();
+    expect(!a.isOpen(E.S) && b.isOpen(E.S), 'Esc ladder: ' + a.id + ' closes before ' + b.id);
   }
+  expect(rungs >= 10, 'Esc ladder: the walk covers the stack (' + rungs + ' rungs)');
   {
-    const f = Object.keys(M.P.F)[0]; reset({ blast: f, ga: true }); E.goUp();
-    expect(E.S.blast === null && E.S.ga === true, 'Esc ladder: blast clears before the GA mode');
-    E.goUp(); expect(E.S.ga === false, 'Esc ladder: then the GA mode');
+    const f = Object.keys(M.P.F)[0]; reset({ ...ALL_CLOSED, ...OPEN.ga }); E.toggleBlast(f);
+    expect(E.S.blast === f && E.S.ga === false, 'Esc ladder: blast and the GA mode never stand together (blast turns GA off)');
+    E.goUp(); expect(E.S.blast === null, 'Esc ladder: then Esc clears blast');
   }
   {
     reset({ page: 'ledger', tl: false, dtab: null, key: 'x' }); E.goUp();
     expect(E.S.page === 'ledger' && E.S.key === 'x', 'Esc ladder: on the ledger page Esc changes nothing behind it');
   }
-  {
-    reset({ key: 'x' }); E.goUp(); expect(E.S.key === null, 'Esc ladder: the legend key closes after the modes');
-  }
-  reset();
+  reset({ ...ALL_CLOSED });
 }
 
 // ---------------------------------------------------------------------------------------------- 5. onKey: refusals and the map
@@ -485,6 +489,73 @@ const measured: Record<string, string> = {};
   reset();
 }
 
+// ---------------------------------------------------------------------------------------------- 5b. the keyboard selects (DW-141)
+// With target mode on (S), Enter selects the place in view instead of navigating: the nearest tile when one fills the view
+// (the test plain Enter uses), else the place the camera is framed on (the last crumb). Target mode off: Enter as before.
+{
+  const noTarget = () => E.store.set({ tgt: { ids: {}, n: 0, label: '' } });
+  const fills = () => { const T = E.nearestTile(); return T && T.w * E.cam.k >= 96 * E.U && E.lod() > 0.5 ? T : null; };
+  const frame = (cam: Any) => { E.cam.set(cam); E.cam.stopFly?.(); E.dirty(); flush(); E.syncPlace(); }; // syncPlace: what a real frame ends with
+  const T0 = M.L.tiles[0], atTile = () => frame({ x: T0.x + T0.w / 2, y: T0.y + T0.h / 2, k: E.KB1 * 2.5 });
+  const fidK = Object.keys(M.P.F)[0];
+
+  // the mode's own toast says Enter does it (a keyboard user is otherwise told only to click or drag)
+  reset(); noTarget(); atTile(); key('s');
+  expect(E.S.selMode === true && /Enter/.test(E.S.toast?.text ?? ''), 'target mode: the toast names Enter (got ' + JSON.stringify(E.S.toast?.text) + ')');
+  const near = fills();
+  expect(!!near, 'a tile fills the view at tile level');
+  key('Enter');
+  expect(E.S.open === null, 'target mode: Enter on a tile opens nothing (open ' + E.S.open + ')');
+  expect(E.S.tgt?.n === 1 && !!near && E.S.tgt.ids[near.id] === 1 && !!E.S.tgt.label, 'target mode: Enter selects the tile in view, with a label (got ' + JSON.stringify(E.S.tgt) + ')');
+
+  // no tile fills the view: the place the camera is framed on, its last crumb (a wing, on this sample)
+  const atWing = () => frame(E.fitOf({ t: 'wing', o: Object.values(M.L.WING)[0] }));
+  reset({ selMode: true }); noTarget(); atWing();
+  const crumb = E.S.place.at(-1), framed = crumb ? E.placeById(crumb.t, crumb.id) : null;
+  expect(!fills() && !!framed && framed.feats.length > 1, 'a framed wing has no tile filling the view and is the last crumb (' + JSON.stringify(E.S.place) + ')');
+  if (framed) {
+    const k0 = E.cam.k, x0 = E.cam.x, y0 = E.cam.y;
+    key('Enter');
+    expect(E.S.tgt?.n === framed.feats.length && framed.feats.every((f: Any) => E.S.tgt.ids[f.id] === 1) && !!E.S.tgt.label, 'target mode: Enter selects the framed place, with a label (got n ' + E.S.tgt?.n + ' of ' + framed.feats.length + ', label ' + JSON.stringify(E.S.tgt?.label) + ')');
+    expect(!E.cam.flying && E.cam.k === k0 && E.cam.x === x0 && E.cam.y === y0, 'target mode: Enter on a framed place does not move the camera');
+    // target mode off: as before, a framed place selects nothing
+    reset(); noTarget(); atWing(); key('Enter'); E.cam.stopFly?.();
+    expect(E.S.tgt?.n === 0, 'GUARD target mode off: Enter on a framed place selects nothing');
+  }
+  // nothing framed (the whole plan): no crumb to select, and Enter still navigates nowhere it was not asked to
+  reset({ selMode: true }); noTarget(); frame(E.HOME);
+  { let threw = ''; try { key('Enter'); } catch (e) { threw = String(e); } E.cam.stopFly?.(); expect(threw === '' && E.S.open === null, 'target mode: Enter on the whole plan throws nothing and opens nothing' + (threw ? ' (' + threw + ')' : '')); }
+
+  // an active trouble-route arrival opens its feature only in plain mode; target mode selects
+  reset({ selMode: true }); noTarget(); atTile(); E.routeTarget = () => fidK; key('Enter');
+  expect(E.S.open === null && E.S.tgt?.n === 1, 'target mode: Enter selects even on a trouble-route arrival (open ' + E.S.open + ', n ' + E.S.tgt?.n + ')');
+  reset(); noTarget(); atTile(); key('Enter');
+  expect(E.S.open === fidK && E.S.tgt?.n === 0, 'GUARD target mode off: a trouble-route arrival still opens its feature');
+  delete E.routeTarget;
+
+  // target mode off: Enter still opens the tile in view; a focused control keeps its Enter in either mode
+  reset(); noTarget(); atTile(); { const T = fills(); key('Enter'); expect(!!T && E.S.open === T.id && E.S.tgt?.n === 0, 'GUARD target mode off: Enter opens the tile in view and selects nothing'); }
+  const btn = new El('button'); btn.matchSel = ['button'];
+  reset({ selMode: true }); noTarget(); atTile(); key('Enter', { target: btn });
+  expect(E.S.tgt?.n === 0 && E.S.open === null, 'GUARD target mode: Enter on a focused control belongs to that control');
+  reset(); noTarget(); E.cam.set(E.HOME); E.cam.stopFly?.();
+}
+
+// ---------------------------------------------------------------------------------------------- 5c. the hints use the plan's own word (DW-138)
+// The ladder and the sheet say feature; no visible label calls a tile a fixture. The Engine's hint runs here; the three rail
+// panels have no harness, so their hint sentences are read as source.
+{
+  reset(); E.needTarget();
+  const said = (E.S.toast?.strong ?? '') + ' ' + (E.S.toast?.text ?? '');
+  expect(!/fixture/i.test(said) && /wing, room or feature/.test(said), 'the point-at-a-place toast says feature, not fixture (got ' + JSON.stringify(said) + ')');
+  const fsH = await import('node:fs');
+  for (const f of ['agents.tsx', 'orders.tsx', 'rules.tsx']) {
+    const src = fsH.readFileSync(path.join(SRC, 'components/rail/wide', f), 'utf8');
+    expect(!/or fixture/.test(src) && /Shift-click a wing, room or feature/.test(src), 'rail/wide/' + f + ': the shift-click hint says feature, not fixture');
+  }
+  reset();
+}
+
 // ---------------------------------------------------------------------------------------------- 6. the hash: write, push / replace, read back
 {
   E.destroy(); E = mount(); reset();
@@ -521,6 +592,10 @@ const measured: Record<string, string> = {};
   expect(E.S.delta === 14, 'a mangled %-escape skips that pair; the valid ones still apply');
   loc.hash = '#lens=no-such-lens&who=nobody&open=nothing&t=garbage'; win.dispatch('popstate', {});
   expect(E.S.view === 'general' && E.S.who === null && E.S.open === null, 'an unknown lens, person and feature in a hash are ignored, not adopted');
+  { const said = (E.S.toast?.strong ?? '') + ' ' + (E.S.toast?.text ?? ''); // DW-139: open= joins the one notice when another key is bad too
+    expect(E.S.toast?.tone === 'warn' && ['nothing', 'no-such-lens', 'nobody'].every((v) => said.includes(v)), 'an unknown lens, person and feature in a hash say so in one warn toast naming them all (got ' + JSON.stringify(E.S.toast) + ')'); }
+  { const n0 = E.S.toast?.n; E.openFeature('nothing-either'); (E as Any).cam.stopFly(); advance(600); // the restore's flight home runs on motion, not this fake clock: land it, then pass the restore window
+    expect(E.S.open === null && E.S.toast?.n === (n0 ?? 0) + 1 && E.S.toast?.strong === 'No feature nothing-either on this map:' && !loc.hash.includes('open='), 'openFeature of an unknown id toasts once, leaves open null and writes no open= (' + loc.hash + ')'); }
   // our own write must not be read back as a navigation
   E.setDelta(14); advance(300); const hs = E.S.delta; win.dispatch('hashchange', {});
   expect(E.S.delta === hs, 'the engine\'s own hash write is not restored as a navigation');
@@ -535,6 +610,98 @@ const measured: Record<string, string> = {};
   const E2 = new Engine({ canvas, ui, root, model: buildModel(1, () => clock, null), expression, intro: false });
   expect(E2.S.delta === 14 && E2.S.view === M.P.lenses[1].id && E2.S.open === Object.keys(M.P.F)[0], 'a hash present at load is read into the store: lens, delta and open feature');
   E2.destroy();
+}
+
+// ---------------------------------------------------------------------------------------------- 6a. a link that cannot be honoured says so (DW-139)
+// Unknown at=, lens=, blast=, who= and open= make one warn notice naming them all, on a pasted hash (restoreHash) and on first
+// load (readHash). open= alone keeps its words. A known value makes no notice; a hash the engine wrote itself does not re-announce.
+{
+  E.destroy();
+  const EL = mount(); advance(1100);
+  const P0 = EL.M.P, fidL = Object.keys(P0.F)[0], person = Object.keys(P0.P)[0], lensL = P0.lenses[1].id, roomL = EL.M.L.rooms[0].id;
+  /** The warn toasts one pasted hash raises: hashchange and popstate both fire for it, as a browser's do. */
+  const paste = (Eng: Any, hash: string) => {
+    let seen = Eng.S.toast?.n ?? 0; const got: Any[] = [];
+    const off = Eng.store.subscribe(() => { const t = Eng.S.toast; if (t && t.n !== seen) { seen = t.n; if (t.tone === 'warn') got.push(t); } });
+    loc.hash = hash; win.dispatch('hashchange', {}); win.dispatch('popstate', {}); off();
+    Eng.cam.stopFly(); advance(700);
+    return got;
+  };
+  const says = (t: Any) => (t?.strong ?? '') + ' ' + (t?.text ?? '');
+  for (const [k, v] of [['at', 'ghost-room'], ['lens', 'ghost-lens'], ['blast', 'ghost-feature'], ['who', 'ghost-person']]) {
+    const g = paste(EL, '#' + k + '=' + v);
+    expect(g.length === 1 && says(g[0]).includes(v), 'a pasted ' + k + '= not on the map makes one notice naming it (got ' + JSON.stringify(g) + ')');
+    paste(EL, '');
+  }
+  const all = paste(EL, '#at=gh-at&lens=gh-lens&blast=gh-blast&who=gh-who&open=gh-open');
+  expect(all.length === 1 && ['gh-at', 'gh-lens', 'gh-blast', 'gh-who', 'gh-open'].every((v) => says(all[0]).includes(v)), 'five unknown keys in one pasted hash make ONE notice naming them all (got ' + JSON.stringify(all) + ')');
+  // the engine wrote the hash after that notice: reading its own write back announces nothing
+  const quiet = (() => { let seen = EL.S.toast?.n ?? 0, more = 0; const off = EL.store.subscribe(() => { const t = EL.S.toast; if (t && t.n !== seen) { seen = t.n; more++; } }); win.dispatch('hashchange', {}); win.dispatch('popstate', {}); off(); return more; })();
+  expect(quiet === 0, 'a hash the engine itself wrote does not re-announce (' + quiet + ' toasts)');
+  paste(EL, '');
+  const lone = paste(EL, '#open=gh-open');
+  expect(lone.length === 1 && lone[0].strong === 'No feature gh-open on this map:', 'GUARD open= alone keeps saying what it said (got ' + JSON.stringify(lone) + ')');
+  paste(EL, '');
+  const known = paste(EL, '#at=' + roomL + '&lens=' + lensL + '&who=' + person);
+  expect(known.length === 0, 'known at=, lens= and who= make no notice (got ' + JSON.stringify(known) + ')');
+  paste(EL, '');
+  const knownB = paste(EL, '#blast=' + fidL);
+  expect(knownB.length === 0, 'a known blast= makes no notice (got ' + JSON.stringify(knownB) + ')');
+  paste(EL, '');
+  const gen = paste(EL, '#lens=general');
+  expect(gen.length === 0, 'lens=general is known: no notice (got ' + JSON.stringify(gen) + ')');
+  EL.destroy();
+  // first load: the same notice, from readHash
+  const load = (hash: string) => { win.innerWidth = 1280; win.innerHeight = 800; rafQ = []; loc.hash = hash; return new Engine({ canvas, ui, root, model: buildModel(1, () => clock, null), expression, intro: false }); };
+  const L1 = load('#at=gh-at&lens=gh-lens&blast=gh-blast&who=gh-who&open=gh-open');
+  expect(L1.S.toast?.tone === 'warn' && L1.S.toast?.n === 1 && ['gh-at', 'gh-lens', 'gh-blast', 'gh-who', 'gh-open'].every((v) => says(L1.S.toast).includes(v)), 'on first load, five unknown keys make ONE notice naming them all (got ' + JSON.stringify(L1.S.toast) + ')');
+  L1.cam.stopFly(); advance(1200);
+  { const n = L1.S.toast?.n; win.dispatch('hashchange', {}); expect(L1.S.toast?.n === n, 'after first load, the hash the engine wrote does not re-announce'); }
+  L1.destroy();
+  for (const [k, v] of [['at', 'gh-at'], ['lens', 'gh-lens'], ['blast', 'gh-blast'], ['who', 'gh-who']]) {
+    const L = load('#' + k + '=' + v);
+    expect(L.S.toast?.tone === 'warn' && says(L.S.toast).includes(v), 'on first load an unknown ' + k + '= makes a notice naming it (got ' + JSON.stringify(L.S.toast) + ')');
+    L.destroy();
+  }
+  const L2 = load('#open=gh-open');
+  expect(L2.S.toast?.strong === 'No feature gh-open on this map:', 'GUARD on first load open= alone keeps saying what it said (got ' + JSON.stringify(L2.S.toast) + ')');
+  L2.destroy();
+  const L3 = load('#at=' + roomL + '&lens=' + lensL + '&who=' + person + '&blast=' + fidL + '&open=' + fidL);
+  expect(L3.S.toast?.tone !== 'warn', 'on first load known values make no notice (got ' + JSON.stringify(L3.S.toast) + ')');
+  L3.destroy();
+  E = mount();
+}
+
+// ---------------------------------------------------------------------------------------------- 6b. an empty map
+// A live product registered before it declares anything (no domain, capability or feature) lays out an empty walk (layout.ts): the arrow walk and the level
+// buttons (Overlays.tsx -> goLevel) must do nothing there, not throw from the keydown handler.
+{
+  const { buildLiveModel } = await impCore('src/model/live-feed.ts');
+  const { emptyScan } = await impCore('src/scan/types.ts');
+  const fs = await import('node:fs');
+  const map: Any = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/core/data/kettle.app-structure.json'), 'utf8'));
+  map.domains = []; map.capabilities = []; map.features = []; map.milestones = []; map.facets = [];
+  E.destroy(); win.innerWidth = 1280; win.innerHeight = 800; loc.hash = ''; rafQ = [];
+  const live = { slug: 'empty', decide: async () => { throw new Error('unused'); } };
+  const EE = new Engine({ canvas, ui, root, model: buildLiveModel(map, '', emptyScan(), live, 1, () => clock, null), expression, intro: false });
+  expect(EE.M.L.walk.length === 0, 'an empty map lays out an empty walk (' + EE.M.L.walk.length + ' rooms)');
+  const threw = (f: () => void) => { try { f(); return ''; } catch (e) { return String(e); } };
+  const arrows = threw(() => { key('ArrowRight'); key('ArrowLeft'); flush(); });
+  expect(arrows === '', 'ArrowRight / ArrowLeft on an empty map throw nothing' + (arrows ? ' (' + arrows + ')' : ''));
+  const levels = threw(() => { for (let d = 1; d < EE.levelNames().length - 1; d++) EE.goLevel(d); flush(); });
+  expect(levels === '', 'the level jump on an empty map throws nothing' + (levels ? ' (' + levels + ')' : ''));
+  // DW-140: U on a live product answers in words: an answer there went to the product and cannot be taken back
+  {
+    expect(EE.M.sim.live === true, 'the empty map runs a live sim');
+    const n0 = EE.S.toast?.n ?? 0;
+    key('u');
+    const t = EE.S.toast, said = (t?.strong ?? '') + ' ' + (t?.text ?? '');
+    expect((t?.n ?? 0) === n0 + 1 && t?.tone === 'warn' && /live|cannot|can't/i.test(said), 'U on a live product toasts once, tone warn, saying the answer cannot be taken back (got ' + JSON.stringify(t) + ')');
+  }
+  EE.destroy(); rafQ = [];
+  E = mount();
+  // the sample's empty history keeps its own toast (check-sim-undo case 4 pins the sim's words)
+  { key('u'); expect(E.S.toast?.tone === 'warn' && /^Nothing to undo/.test(E.S.toast?.strong ?? ''), 'GUARD U on the sample with an empty history still says "Nothing to undo" (got ' + JSON.stringify(E.S.toast) + ')'); }
 }
 
 // ---------------------------------------------------------------------------------------------- 7. destroy

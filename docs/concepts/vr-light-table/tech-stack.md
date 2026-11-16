@@ -134,6 +134,8 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `decision.answer` (Approve or decline one proposal (final: no route reopens a decided proposal)) | no | internal | GATED |
 | `triage.set` (Triage shipped items: accept, rework, descope or reopen) | yes | internal | AUTO |
 | `policy.propose` (Propose a scoped, expiring policy that lets the companion answer some GATED tools; only the person can grant it) | no | internal | GATED |
+| `rules.list` (The owner's standing rules for a product: orders and grants, each with its id, author, place and expiry) | yes | none | AUTO |
+| `rule.propose` (Propose a standing rule to the owner; they see it replayed over their own past decisions before they set it) | no | internal | GATED |
 | `wave.compose` (Group findings into a draft wave of packages, each with a model and an effort) | yes | internal | AUTO |
 | `wave.dispatch` (Dispatch a draft wave: queue its packages' build jobs, which spend money and edit code) | no | external | GATED |
 | `release.draft` (Create a draft release from shipped items (its version stays taken: no route deletes a draft)) | no | internal | GATED |
@@ -141,10 +143,15 @@ server (`apps/mcp/bp-mcp.mjs`) and the companion all read; `scripts/check-compan
 | `release.finish` (Finish a release whose PR is open or merged) | no | external | GATED |
 | `scan.gaps` (Where coverage is lacking: unmeasured, stale, unknown or deviating features, ranked) | yes | none | AUTO |
 | `scan.place` (Start a lens scan of a scope (feature, bay, room, wing or all)) | yes | internal | AUTO |
+| `scan.directed` (Start a directed scan: one lens reads a scope for what the person's note says to look for, and files ranked findings) | no | internal | GATED |
 | `plan.find` (Find places on a product's plan by name (wings, rooms, bays, features) and get their ids, before focus.show or a scoped scan) | yes | none | AUTO |
+| `plan.brief` (Before you propose a change to a feature, read what the person already decided about it: their declines of the same or a similar idea in their own words, how similar decisions went, what it touches and costs) | yes | none | AUTO |
+| `morning.brief` (The Morning Watch: one standup across every live product, as cards, each decision card with its decision brief, each card with the place it shows) | yes | none | AUTO |
+| `next.steps` (What to do next, ranked by bp from the morning, the gaps and the shipped items waiting, each step with its reason; G3, 2026-11-11) | yes | none | AUTO |
 | `focus.show` (Show the person a place: fly the view to a feature, room or wing, or open a decision, wave, release, ledger row or lens) | yes | none | AUTO |
 | `finding.decline` (Decline one finding (a proposed change); final) | no | internal | GATED |
 | `memory.note` (Keep one fact about the person or a project, citing the conversation it came from) | yes | internal | AUTO |
+| `help.find` (How to use the VR table, from bp's help corpus; G1, 2026-11-11) | yes | none | AUTO |
 
 Open seam, settled in P5: athena's gate treats every new origin as GATED on first sight, and its
 host model assumes a web page. `apps/server` registers with a `page_origin` such as

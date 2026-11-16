@@ -20,9 +20,23 @@ const nextConfig: NextConfig = {
   // apps/server (:3100). With BP_COMPANION_URL set (a loopback origin, e.g. http://127.0.0.1:3100), this app hands every
   // /api/companion request to that process instead of serving its own (beforeFiles: the app's own companion routes would
   // otherwise answer first), so a focus from the desk reaches the headset and back. Unset: this process is the companion.
+  // The place baton (/api/session) goes with it: the headset claims it on that process, and its `place` events go out on
+  // that process's bus, the one the page's companion stream reads - served here, the page would arm a baton the headset
+  // never sees and publish on a bus no page hears.
   async rewrites() {
     const url = companionUrl();
-    return url ? { beforeFiles: [{ source: '/api/companion/:path*', destination: `${url}/api/companion/:path*` }], afterFiles: [], fallback: [] } : [];
+    // Only a page this machine opened by a loopback name is handed over (S4, 2026-11-10: DNS rebinding). Next's proxy sets
+    // changeOrigin, so the companion would see Host 127.0.0.1 for a page at rebind.example:3010 too; with this condition such
+    // a request falls through to this app's own routes, whose Host check (local-only.ts) refuses it. The companion also
+    // refuses a foreign X-Forwarded-Host, so either one alone holds.
+    const loopback = [{ type: 'host' as const, value: '(?:localhost|127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3})' }];
+    return url ? {
+      beforeFiles: [
+        { source: '/api/companion/:path*', has: loopback, destination: `${url}/api/companion/:path*` },
+        { source: '/api/session/:path*', has: loopback, destination: `${url}/api/session/:path*` },
+      ],
+      afterFiles: [], fallback: [],
+    } : [];
   },
 };
 

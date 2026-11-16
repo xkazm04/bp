@@ -7,10 +7,12 @@
 // glyphs inside into the draft wave (BpLink AddToDraft: compose or PATCH, never a dispatch). Urgency is the owner's order:
 // T0 then T1 findings, then open findings, then the plan's order; nothing here computes a layout or a health.
 #include "BpTable.h"
+#include "BpProjector.h"
 
 #include "BpGameMode.h"
 #include "BpLink.h"
 #include "BpPawn.h"
+#include "BpSheet.h"
 #include "BpType.h"
 #include "BpWords.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -35,6 +37,10 @@
 
 namespace
 {
+	/** Wave N3-W4: his arm stays low while he presents (he points with his beam only): no stand with the arm raised cleared the
+	 *  sheet. Set with the stand (ABpTable::LampFootClearOfSheet), read by PlaceLamp. */
+	bool GLampArmLow = false;
+
 	TAutoConsoleVariable<float> CVarLampSwitchDelayS(
 		TEXT("bp.LampSwitchDelayS"),
 		ABpTable::LampSwitchDelayS,
@@ -58,12 +64,18 @@ namespace
 
 	const FLinearColor SwitchCyan(FColor(0xBF, 0xE8, 0xFF));
 	const FLinearColor SwitchAmber(FColor(0xFF, 0xB5, 0x47));
-	const FLinearColor SwitchGlass(FColor(0x08, 0x16, 0x2E));
 
 	float SwitchEase(float Alpha)
 	{
 		Alpha = FMath::Clamp(Alpha, 0.f, 1.f);
 		return Alpha * Alpha * (3.f - 2.f * Alpha);
+	}
+
+	/** Wave U1: bp.Wow.GlimGlanceShare (BpLampLook.cpp), how much of the way Glim's glance turns. */
+	float CVarGlimGlanceShareRead()
+	{
+		static const IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Wow.GlimGlanceShare"));
+		return Var ? Var->GetFloat() : 0.8f;
 	}
 
 	bool SwitchReduced()
@@ -243,6 +255,7 @@ void ABpTable::InitSwitch()
 	if (RoomBeads && RoomBeads->GetMaterial(0)) LassoBars->SetMaterial(0, RoomBeads->GetMaterial(0));
 	RoomModeChanged.AddUObject(this, &ABpTable::OnSwitchRoomChanged);
 	FindLamp();
+	InitLegend();
 }
 
 FVector ABpTable::EyeLocal() const
@@ -290,12 +303,14 @@ void ABpTable::FindLamp()
 	const FVector HeadAt = GetActorTransform().InverseTransformPosition(Head);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp %s at table (%.1f, %.1f, %.1f) yaw %.0f, head at (%.1f, %.1f, %.1f); moves with it: %s"), *Lamp->GetName(), At.X, At.Y, At.Z,
 		LampRest.Rotator().Yaw, HeadAt.X, HeadAt.Y, HeadAt.Z, *FString::Join(Names, TEXT(", ")));
+	// Its site home clear of the console's slot (bp.Lamp.HomeX/HomeY, BpLampLook.cpp).
+	ApplyLampHome();
 }
 
 FVector ABpTable::GetCaptionWorld() const
 {
 	// Where ApplyLampWidgets puts it (the component stays at the table's origin until it first shows).
-	return GetActorTransform().TransformPosition(FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm));
+	return GetActorTransform().TransformPosition(CaptionAt());
 }
 
 bool ABpTable::LampHead(FVector& OutWorld) const
@@ -316,7 +331,11 @@ void ABpTable::PlaceLamp()
 {
 	if (!Lamp.IsValid()) return;
 	const FTransform& Table = GetActorTransform();
-	const bool bHome = LampAway <= 0.f && LampLook <= 0.f;
+	FVector RideAt, LeanAxis;
+	double RideYaw = 0.0;
+	float LeanDeg = 0.f;
+	const bool bRide = LampRidePose(RideAt, RideYaw, LeanAxis, LeanDeg);
+	const bool bHome = LampAway <= 0.f && LampLook <= 0.f && !bRide && !bLampAtStation && LampFace <= 0.f && LampProj <= 0.f && LampNodT < 0.f && LampGlance <= 0.f;
 	const auto SetMovable = [](AActor* Actor, uint8 Mobility)
 	{
 		const EComponentMobility::Type Want = static_cast<EComponentMobility::Type>(Mobility);
@@ -351,16 +370,381 @@ void ABpTable::PlaceLamp()
 	const FVector Eye = EyeLocal();
 	const double RoomYaw = LampYawToward(RoomAt, FMath::Lerp(DeckPose(0.f, 0.f).GetLocation(), Eye, static_cast<double>(LampRoomFaceShare)));
 	const float A = SwitchEase(LampAway);
-	const FVector At = FMath::Lerp(RestAt, RoomAt, static_cast<double>(A));
+	FVector At = FMath::Lerp(RestAt, RoomAt, static_cast<double>(A));
 	double Yaw = RestYaw + FMath::FindDeltaAngleDegrees(RestYaw, RoomYaw) * A;
-	if (LampLook > 0.f) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
-	const FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+	// A ride (or a station it stands at) overrides the home place; a home-bound ride follows a home still moving.
+	if (bRide)
+	{
+		At = RideAt;
+		Yaw = RideYaw;
+		if (bLampToHome) At += FMath::Lerp(RestAt, RoomAt, static_cast<double>(A)) - LampRideHome;
+	}
+	else if (bLampAtStation)
+	{
+		At = LampStationAtLocal + FVector(0.0, LampAsideCm, 0.0);
+		Yaw = LampStationYaw;
+	}
+	// Waves PJ1/PJ2 (the device, 2026-11-10: from the seat Glim covered the far sheet's lower-left corner and its PREV): while a
+	// sheet is far he stands at the foot of it, on the table's far rim LEFT of the sheet, so his whole silhouette stays outside
+	// its rectangle from the seated eye (the sheet is at most about 22 degrees each side; he stands about 34 degrees left).
+	if (LampProj > 0.f && !bRide && !bLampAtStation)
+	{
+		const FVector FootAt = LampFootClearOfSheet(FVector(TableDepthCm * 0.5 - 7.0, -(TableWidthCm * 0.5 - 14.0), RestAt.Z));
+		At = FMath::Lerp(At, FootAt, static_cast<double>(SwitchEase(LampProj)));
+	}
+	if (LampLook > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampLookAt)) * SwitchEase(LampLook);
+	// Wave U1, "Glim alive": a partial glance toward where the person's ray points on the plan.
+	if (LampGlance > 0.f && !bRide && !bLampAtStation) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, LampGlanceAim)) * SwitchEase(LampGlance) * FMath::Clamp(CVarGlimGlanceShareRead(), 0.f, 1.f);
+	// Wave PJ1: to the far sheet's point of interest while a sheet is thrown (TickLampManner eases LampProj).
+	// Wave N3-W2: the eased point (LampProjAim), so the move from the loupe to APPROVE is a sweep.
+	const FVector ProjAim = bLampProjAim ? LampProjAim : BpProjector::FarAimLocal();
+	if (LampProj > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, ProjAim)) * SwitchEase(LampProj);
+	// V3: to the person while it listens or speaks (TickLampManner), and a nod toward them.
+	if (LampFace > 0.f && !bRide) Yaw += FMath::FindDeltaAngleDegrees(Yaw, LampYawToward(At, Eye)) * SwitchEase(LampFace);
+	FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+	if (LeanDeg != 0.f && !LeanAxis.IsNearlyZero()) Turn = FQuat(LeanAxis.GetSafeNormal(), FMath::DegreesToRadians(LeanDeg)) * Turn;
+	// Wave N3-W2: a decision open on the wall, Glim raises his arm toward what he points at (the loupe's region, the title, then
+	// APPROVE): he tilts back from his base by the point's elevation over his head, at most bp.Glim.PointDeg, eased with his
+	// turn. Facing the person (he listens or speaks) lowers it again; reduced motion: he only faces it.
+	// Wave N3-W4: not where his raised arm would cross the sheet from the seat (LampFootClearOfSheet): he points with his beam.
+	if (LampProj > 0.f && !bRide && !bLampAtStation && BpProjector::IsPointing() && !SwitchReduced() && !GLampArmLow)
+	{
+		FVector Head = At + FVector(0.0, 0.0, 30.0);
+		if (Lamp.IsValid()) Head = Table.InverseTransformPosition(Lamp->GetActorTransform().TransformPosition(LampHeadLocal)) - Table.InverseTransformPosition(Lamp->GetActorLocation()) + At;
+		const FVector To = ProjAim - Head;
+		const double Elev = FMath::RadiansToDegrees(FMath::Atan2(To.Z, FVector2D(To.X, To.Y).Size()));
+		// The point's elevation plus a gesture's 10 degrees (the wall stands near his head's height, so its elevation alone was
+		// 1 to 5 degrees: no visible raise, PIE 2026-11-10).
+		const double Raise = FMath::Clamp(Elev + 10.0, 0.0, static_cast<double>(BpProjector::PointMaxDeg())) * SwitchEase(LampProj) * (1.0 - SwitchEase(LampFace));
+		if (Raise > 0.01)
+		{
+			const double Y = FMath::DegreesToRadians(Yaw);
+			const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+			const FVector Across = FVector::CrossProduct(FVector::UpVector, Facing);
+			// The nod's axis: a positive angle bows toward Facing, so a raise is the negative one.
+			Turn = FQuat(Across, FMath::DegreesToRadians(-Raise)) * Turn;
+		}
+		static double RaiseShown = -1.0;
+		if (FMath::Abs(Raise - RaiseShown) > 2.0 && SwitchEase(LampProj) >= 0.999f)
+		{
+			RaiseShown = Raise;
+			UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim raises his arm %.1f deg toward %s (its elevation %.1f deg over his head)"), Raise, BpProjector::IsAsking() ? TEXT("APPROVE") : TEXT("what he presents"), Elev);
+		}
+	}
+	if (LampNodT >= 0.f && !bRide)
+	{
+		// The hood faces (-sin y, cos y) (LampYawToward); it bows about the level axis across that, from its base.
+		const double Y = FMath::DegreesToRadians(Yaw);
+		const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+		const FVector Across = FVector::CrossProduct(FVector::UpVector, Facing);
+		Turn = FQuat(Across, FMath::DegreesToRadians(LampNodDeg())) * Turn;
+	}
 	const FTransform World(Table.GetRotation() * Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), Table.TransformPosition(At), LampRest.GetScale3D());
 	Lamp->SetActorTransform(World);
 	for (int32 Index = 0; Index < LampGroup.Num(); ++Index)
 	{
 		if (AActor* Each = LampGroup[Index].Get()) Each->SetActorTransform(LampGroupRel[Index] * World);
 	}
+}
+
+namespace
+{
+	TAutoConsoleVariable<float> CVarFootClearDeg(TEXT("bp.Glim.SheetClearDeg"), 3.f,
+		TEXT("Wave N3-W3: while a sheet is far, the least angle (degrees, from the seated eye) between Glim's whole silhouette (his arm and hand included) and the sheet's edge; 0 turns the rule off (he stands at the far rim's left end, as before)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarFootEyeSlackCm(TEXT("bp.Glim.EyeSlackCm"), 15.f,
+		TEXT("Wave N3-W4: Glim's stand by the far sheet must clear it from the seated eye and from eyes this far behind, in front of, left and right of it (cm, 0 to 40): a person who sits back or leans still sees him off the sheet."), ECVF_Default);
+
+	/** bp.Lamp.NodDeg as set (BpLampLook.cpp owns it): the nod's bow the stand must stay clear through. */
+	float NodVarDeg()
+	{
+		const IConsoleVariable* Var = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Lamp.NodDeg"));
+		return Var ? Var->GetFloat() : 7.f;
+	}
+
+	/** Wave N3-W4: SM_LampAgent's parts in its own space (cm, before the actor's 1.05 scale), measured from its LOD0 vertices
+	 *  (2026-11-10): the body (hood, torso, the stem to its back), the arm (out from the body at 0 to 45 degrees about +Z, 8 to
+	 *  18 cm from the axis, 11 to 14 cm up) and the hand (18 to 27 cm out). Each is tested by its eight corners in his pose. */
+	struct FLampPart { const TCHAR* Name; FBox Box; };
+	const FLampPart LampParts[] = {
+		{ TEXT("body"), FBox(FVector(-18.4, -5.9, -3.1), FVector(8.0, 8.0, 23.4)) },
+		{ TEXT("arm"), FBox(FVector(5.0, -1.0, 11.0), FVector(18.0, 13.0, 14.0)) },
+		{ TEXT("hand"), FBox(FVector(14.0, 4.0, 11.0), FVector(21.6, 14.5, 14.0)) },
+	};
+}
+
+FVector ABpTable::LampFootClearOfSheet(const FVector& Want) const
+{
+	// Wave N3-W4 (the owner's device capture n3-dev-dec2: his raised arm and hand crossed the wall's left column while the PC
+	// capture, framed narrower, showed him clear). The rule before tested a cylinder of his rest pose's reach about his axis;
+	// now it projects his POSED parts (body, arm, hand: their corners in the very pose PlaceLamp gives him while he points)
+	// from the eye onto the sheet's plane, for every point he points at on it, from the seated eye and from eyes around it.
+	// Where the raised pose would cross the sheet, the arm stays low and he points with his beam only (GLampArmLow); where
+	// even that crosses, he steps down the table's left side toward the seat.
+	FTransform FarPose;
+	FVector2D Size;
+	const float MarginDeg = FMath::Clamp(CVarFootClearDeg.GetValueOnGameThread(), 0.f, 15.f);
+	static FString KeptKey;
+	static FVector Kept = FVector::ZeroVector;
+	static bool bKeptLow = false;
+	static FVector KeptWant = FVector::ZeroVector;
+	static bool bEaseLogged = false;
+	if (MarginDeg <= 0.f || !Lamp.IsValid() || !BpProjector::FarSheet(FarPose, Size))
+	{
+		// Wave U4: the wall closed (SetFar(false) forgets the sheet at once) while LampProj still eases him home over 0.6 s: he
+		// leaves from the stand he kept, not from Want, which jumped him to the far rim's end in one frame.
+		if (MarginDeg > 0.f && Lamp.IsValid() && LampProj > 0.f && !KeptKey.IsEmpty() && KeptWant.Equals(Want, 0.5))
+		{
+			if (!bEaseLogged)
+			{
+				bEaseLogged = true;
+				UE_LOG(LogBpTable, Log, TEXT("BpProjector: the far sheet closed: Glim eases home from his kept stand (%.0f, %.0f), not from the rim's end (%.0f, %.0f)"), Kept.X, Kept.Y, Want.X, Want.Y);
+			}
+			GLampArmLow = bKeptLow;
+			return Kept;
+		}
+		GLampArmLow = false;
+		return Want;
+	}
+	bEaseLogged = false;
+	const float SlackCm = FMath::Clamp(CVarFootEyeSlackCm.GetValueOnGameThread(), 0.f, 40.f);
+	const bool bMayRaise = BpProjector::PointMaxDeg() > 0.f && !SwitchReduced();
+	const FString Key = FString::Printf(TEXT("%s|%s|%s|%.1f|%.0f|%d|%.1f"), *FarPose.GetLocation().ToString(), *FarPose.Rotator().ToString(), *Size.ToString(), MarginDeg, SlackCm, bMayRaise,
+		BpProjector::PointMaxDeg()) + Want.ToString() + EyeLocal().ToString() + FString::SanitizeFloat(NodVarDeg());
+	if (Key == KeptKey)
+	{
+		GLampArmLow = bKeptLow;
+		return Kept;
+	}
+	// Wave U4: every layout's stand is kept (a few sheet sizes and settings at most), so going back to one never searches again.
+	struct FKeptStand { FVector At; bool bLow; };
+	static TMap<FString, FKeptStand> Stands;
+	if (const FKeptStand* Known = Stands.Find(Key))
+	{
+		KeptKey = Key;
+		Kept = Known->At;
+		KeptWant = Want;
+		bKeptLow = Known->bLow;
+		GLampArmLow = bKeptLow;
+		return Kept;
+	}
+	// Wave U4: the search's cost, once per sheet layout (the review's estimate: ~456k corner casts at worst).
+	const double SearchT0 = FPlatformTime::Seconds();
+	int64 Casts = 0;
+	const FTransform& Table = GetActorTransform();
+	const double RestYaw = (Table.GetRotation().Inverse() * LampRest.GetRotation()).Rotator().Yaw;
+	// The mesh component's pose relative to the actor (the parts are in the mesh's space).
+	FTransform MeshRel = FTransform::Identity;
+	{
+		TArray<UStaticMeshComponent*> Meshes;
+		Lamp->GetComponents(Meshes);
+		for (const UStaticMeshComponent* Mesh : Meshes)
+		{
+			if (Mesh->GetStaticMesh() && Mesh->GetStaticMesh()->GetName() == LampMeshName) MeshRel = Mesh->GetComponentTransform().GetRelativeTransform(Lamp->GetActorTransform());
+		}
+	}
+	// What he points at: the sheet's points of interest, fixed in the sheet's own space so his stand does not move from one
+	// sheet to the next (the title's top left, the loupe's middle column, what it touches, APPROVE under them, the centre).
+	TArray<FVector> Aims;
+	for (const FVector2D& Uv : { FVector2D(0.18, 0.2), FVector2D(0.5, 0.25), FVector2D(0.82, 0.25), FVector2D(0.4, 0.88), FVector2D(0.5, 0.5), FVector2D(0.15, 0.6) })
+	{
+		// A widget's x is the component's -Y, its y the component's -Z (UWidgetComponent's mapping).
+		Aims.Add(FarPose.TransformPositionNoScale(FVector(0.0, -(Uv.X - 0.5) * Size.X, -(Uv.Y - 0.5) * Size.Y)));
+	}
+	// His pose at a stand P pointing at Aim, as PlaceLamp gives it with every ease at its end (turned to it; raised by the
+	// point's elevation over his head plus the gesture's 10 degrees, at most bp.Glim.PointDeg).
+	const FVector HeadOff = Table.InverseTransformVector(LampRest.TransformVector(LampHeadLocal));
+	// G2: the poses tested were only "turned to an aim, fully raised" and "turned in 15-degree steps, unraised". PlaceLamp gives
+	// him more: right after an answer he NODS (bp.Lamp.NodDeg, a bow toward his facing) while he FACES THE PERSON exactly
+	// (LampFace 1: the nod and the narration's line both ask for it), and between the two he is part turned and part raised (the
+	// raise is scaled by 1 - LampFace). Every such pose is tested now: the exact turn to the seat, with and without the bow, and
+	// the turn from each aim to the seat at quarter steps with its raise. (The HOLD-row crossing of cap\u1-after-decision.png
+	// was not this stand at all but a stand-up station ride: BpLampTravel.cpp LampToStation.)
+	const FVector Seat = EyeLocal();
+	const double NodMax = SwitchReduced() ? 0.0 : FMath::Clamp(static_cast<double>(NodVarDeg()), 0.0, 15.0);
+	const auto PoseYaw = [&](const FVector& P, double Yaw, double Raise, double Bow)
+	{
+		FQuat Turn(FVector::UpVector, FMath::DegreesToRadians(Yaw - RestYaw));
+		const double Y = FMath::DegreesToRadians(Yaw);
+		const FVector Facing(-FMath::Sin(Y), FMath::Cos(Y), 0.0);
+		const FVector Across = FVector::CrossProduct(FVector::UpVector, Facing);
+		if (Raise > 0.01) Turn = FQuat(Across, FMath::DegreesToRadians(-Raise)) * Turn;
+		if (Bow > 0.01) Turn = FQuat(Across, FMath::DegreesToRadians(Bow)) * Turn;
+		// In the table's space (the table's own rotation cancels: Table^-1 * (Table * Turn * Table^-1 * Rest)).
+		return FTransform(Turn * Table.GetRotation().Inverse() * LampRest.GetRotation(), P, LampRest.GetScale3D());
+	};
+	const auto RaiseFor = [&](const FVector& P, const FVector& Aim)
+	{
+		const FVector To = Aim - (P + HeadOff);
+		const double Elev = FMath::RadiansToDegrees(FMath::Atan2(To.Z, FVector2D(To.X, To.Y).Size()));
+		return FMath::Clamp(Elev + 10.0, 0.0, static_cast<double>(BpProjector::PointMaxDeg()));
+	};
+	const auto PoseAt = [&](const FVector& P, const FVector& Aim, bool bRaise)
+	{
+		return PoseYaw(P, LampYawToward(P, Aim), bRaise ? RaiseFor(P, Aim) : 0.0, 0.0);
+	};
+	// The poses between pointing and facing the person, and the nod (all for a stand P; bRaise: his arm may rise).
+	const auto MannerPoses = [&](const FVector& P, bool bRaise, TArray<FTransform>& Out)
+	{
+		const double ToSeat = LampYawToward(P, Seat);
+		Out.Add(PoseYaw(P, ToSeat, 0.0, 0.0));
+		if (NodMax > 0.0) Out.Add(PoseYaw(P, ToSeat, 0.0, NodMax));
+		for (const FVector& Aim : Aims)
+		{
+			const double ToAim = LampYawToward(P, Aim);
+			const double Raise = bRaise ? RaiseFor(P, Aim) : 0.0;
+			for (const double F : { 0.25, 0.5, 0.75 }) Out.Add(PoseYaw(P, ToAim + FMath::FindDeltaAngleDegrees(ToAim, ToSeat) * F, Raise * (1.0 - F), 0.0));
+		}
+	};
+	// The eyes: the seated one, and SlackCm behind, in front, left and right of it.
+	TArray<FVector> Eyes = { Seat };
+	if (SlackCm > 0.f) for (const FVector& D : { FVector(-1.0, 0.0, 0.0), FVector(1.0, 0.0, 0.0), FVector(0.0, -1.0, 0.0), FVector(0.0, 1.0, 0.0) }) Eyes.Add(Seat + D * SlackCm);
+	// One part's clearance (degrees; negative overlaps) from one eye: its corners cast from the eye onto the sheet's plane, their
+	// box against the sheet's rectangle (the box of the cast corners holds the part's whole outline).
+	const auto PartClear = [&](const FTransform& Pose, const FBox& Box, const FVector& Eye)
+	{
+		const FVector E = FarPose.InverseTransformPositionNoScale(Eye);
+		++Casts;
+		FBox2D Cast(ForceInit);
+		for (int32 C = 0; C < 8; ++C)
+		{
+			const FVector Corner((C & 1) ? Box.Max.X : Box.Min.X, (C & 2) ? Box.Max.Y : Box.Min.Y, (C & 4) ? Box.Max.Z : Box.Min.Z);
+			const FVector S = FarPose.InverseTransformPositionNoScale(Pose.TransformPosition(MeshRel.TransformPosition(Corner)));
+			// A corner at or beyond the sheet's plane (or behind the eye) cannot be cast: it counts as on the sheet.
+			if (S.X <= 0.5 || S.X >= E.X - 0.5) return -90.0;
+			const double T = E.X / (E.X - S.X);
+			Cast += FVector2D(E.Y + (S.Y - E.Y) * T, E.Z + (S.Z - E.Z) * T);
+		}
+		const double Cm = FMath::Max(FMath::Max(-Size.X * 0.5 - Cast.Max.X, Cast.Min.X - Size.X * 0.5), FMath::Max(-Size.Y * 0.5 - Cast.Max.Y, Cast.Min.Y - Size.Y * 0.5));
+		return FMath::RadiansToDegrees(FMath::Atan2(Cm, FMath::Max(1.0, E.X)));
+	};
+	// The least clearance of each part over every aim and eye, for a stand and an arm. And over every way he turns unraised:
+	// while he speaks or listens he faces the person (LampFace), and his arm, which stands out of his side at 30 degrees from
+	// his facing, then reaches across toward the sheet (the device capture's pose); the turn between sweeps it through the rest.
+	TArray<FVector> Turns;
+	for (int32 Step = 0; Step < 24; ++Step)
+	{
+		const double A = FMath::DegreesToRadians(Step * 15.0);
+		Turns.Add(FVector(FMath::Cos(A), FMath::Sin(A), 0.0) * 100.0);
+	}
+	// Wave U4 (the search measured 7.3 ms on the PC at 26,400 casts): a stand is given up as soon as its least clearance can no
+	// longer matter, i.e. below the rule AND no better than the best low stand so far (Floor; +inf for the raised test, which
+	// only asks "does it clear the rule"). A stand that is kept is still measured over every pose, so the result is the same.
+	const auto StandClear = [&](const FVector& P, bool bRaise, double (&OutParts)[3], double Floor)
+	{
+		for (double& Each : OutParts) Each = TNumericLimits<double>::Max();
+		bool bGiveUp = false;
+		const auto Take = [&](const FTransform& Pose)
+		{
+			if (bGiveUp) return;
+			for (const FVector& Eye : Eyes)
+			{
+				for (int32 Part = 0; Part < 3; ++Part) OutParts[Part] = FMath::Min(OutParts[Part], PartClear(Pose, LampParts[Part].Box, Eye));
+			}
+			const double Least = FMath::Min3(OutParts[0], OutParts[1], OutParts[2]);
+			bGiveUp = Least < MarginDeg && Least <= Floor;
+		};
+		for (const FVector& Aim : Aims) Take(PoseAt(P, Aim, bRaise));
+		for (const FVector& Turn : Turns) Take(PoseAt(P, P + Turn, false));
+		if (!bGiveUp)
+		{
+			TArray<FTransform> Manner;
+			MannerPoses(P, bRaise, Manner);
+			for (const FTransform& Pose : Manner) Take(Pose);
+		}
+		return FMath::Min3(OutParts[0], OutParts[1], OutParts[2]);
+	};
+	// Along the table's left side from Want toward the seat: the first place that clears by MarginDeg, with the arm raised if
+	// that clears, else with it low; none clears: the place (arm low) that clears most.
+	FVector Best = Want;
+	double BestClear = -TNumericLimits<double>::Max();
+	double BestParts[3] = { 0.0, 0.0, 0.0 };
+	bool bClear = false, bLow = true;
+	const double NearX = -(TableDepthCm * 0.5) + 8.0;
+	int32 Steps = 0;
+	// One place: true when it clears (raised if it can, else low); a place that does not is still the low fallback's candidate.
+	const auto Try = [&](double X)
+	{
+		const FVector P(X, Want.Y, Want.Z);
+		double Parts[3];
+		++Steps;
+		if (bMayRaise && StandClear(P, true, Parts, TNumericLimits<double>::Max()) >= MarginDeg)
+		{
+			Best = P; bLow = false; bClear = true;
+			FMemory::Memcpy(BestParts, Parts, sizeof(Parts));
+			BestClear = FMath::Min3(Parts[0], Parts[1], Parts[2]);
+			return true;
+		}
+		const double Low = StandClear(P, false, Parts, BestClear);
+		if (Low > BestClear) { BestClear = Low; Best = P; bLow = true; FMemory::Memcpy(BestParts, Parts, sizeof(Parts)); }
+		if (Low >= MarginDeg) { bClear = true; return true; }
+		return false;
+	};
+	// Wave U4: 6 cm steps first, then the 2 cm places between the last that failed and the first that cleared (the same stand
+	// as a 2 cm walk wherever clearing does not come and go within 6 cm). Nothing clears: the full 2 cm walk for the fallback.
+	double Failed = TNumericLimits<double>::Max();
+	for (double X = Want.X; X >= NearX && !bClear; X -= 6.0)
+	{
+		if (Try(X)) break;
+		Failed = X;
+	}
+	if (bClear && Failed != TNumericLimits<double>::Max())
+	{
+		const FVector Coarse = Best;
+		const bool bCoarseLow = bLow;
+		double CoarseParts[3];
+		FMemory::Memcpy(CoarseParts, BestParts, sizeof(BestParts));
+		const double CoarseClear = BestClear;
+		bClear = false;
+		BestClear = -TNumericLimits<double>::Max();
+		for (double X = Failed - 2.0; X > Coarse.X + 0.5 && !bClear; X -= 2.0) Try(X);
+		if (!bClear)
+		{
+			Best = Coarse; bLow = bCoarseLow; bClear = true; BestClear = CoarseClear;
+			FMemory::Memcpy(BestParts, CoarseParts, sizeof(BestParts));
+		}
+	}
+	else if (!bClear)
+	{
+		BestClear = -TNumericLimits<double>::Max();
+		for (double X = Want.X; X >= NearX; X -= 2.0) if (Try(X)) break;
+	}
+	// The same stand's clearance from the seated eye alone (what the captures show).
+	double SeatParts[3] = { TNumericLimits<double>::Max(), TNumericLimits<double>::Max(), TNumericLimits<double>::Max() };
+	TArray<FTransform> SeatPoses;
+	for (const FVector& Aim : Aims) SeatPoses.Add(PoseAt(Best, Aim, !bLow));
+	for (const FVector& Turn : Turns) SeatPoses.Add(PoseAt(Best, Best + Turn, false));
+	MannerPoses(Best, !bLow, SeatPoses);
+	for (const FTransform& Pose : SeatPoses)
+	{
+		for (int32 Part = 0; Part < 3; ++Part) SeatParts[Part] = FMath::Min(SeatParts[Part], PartClear(Pose, LampParts[Part].Box, Seat));
+	}
+	KeptKey = Key;
+	Kept = Best;
+	KeptWant = Want;
+	bKeptLow = bLow && bMayRaise;
+	GLampArmLow = bKeptLow;
+	if (Stands.Num() >= 32) Stands.Reset();
+	Stands.Add(Key, FKeptStand{ Best, bKeptLow });
+	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim's stand search took %.2f ms (%lld part casts of 8 corners, %d places)"), (FPlatformTime::Seconds() - SearchT0) * 1000.0, Casts, Steps);
+	UE_LOG(LogBpTable, Log, TEXT("BpProjector: Glim stands at table (%.0f, %.0f) %s the far sheet (%.0f x %.0f cm) with his arm %s; projected clearance from the seated eye: body %.1f, arm %.1f, hand %.1f deg; least over %d eyes (slack %.0f cm), %d aims and %d turns: body %.1f, arm %.1f, hand %.1f deg (rule %.1f; %d places tried from the far rim's end)"),
+		Best.X, Best.Y, bClear ? TEXT("clear of") : TEXT("as clear as he can be of"), Size.X, Size.Y, bLow ? (bMayRaise ? TEXT("LOW (he points with his beam only)") : TEXT("low (no raise asked)")) : TEXT("RAISED"),
+		SeatParts[0], SeatParts[1], SeatParts[2], Eyes.Num(), SlackCm, Aims.Num(), Turns.Num(), BestParts[0], BestParts[1], BestParts[2], MarginDeg, Steps);
+	return Best;
+}
+
+FString ABpTable::LampCaptionFit(const FString& Text) const
+{
+	// One line of the plate, cut as CaptionLines cuts a line (BpType's rule), by the measured width SayLamp lays out to.
+	const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), CaptionCapCm * CaptionPxPerCm);
+	const float MaxW = CaptionWidthCm * CaptionPxPerCm - 2.f * 22.f - 12.f;
+	const FString Flat = Text.Replace(TEXT("\n"), TEXT(" "));
+	if (CaptionWidth(Flat, Font) <= MaxW) return Flat;
+	for (int32 Keep = Flat.Len() - 1; Keep > 0; --Keep)
+	{
+		const FString Cut = Flat.Left(Keep).TrimEnd() + BpType::Ellipsis();
+		if (CaptionWidth(Cut, Font) <= MaxW) return Cut;
+	}
+	return Flat;
 }
 
 // ---- Urgency, the next room and the switch ----------------------------------------------------------------------------
@@ -490,38 +874,167 @@ void ABpTable::OnSwitchRoomChanged(const FString& InRoomId)
 
 // ---- The lamp's caption and its ring ----------------------------------------------------------------------------------
 
-void ABpTable::SayLamp(const FString& Line)
+void ABpTable::SayLamp(const FString& Line, bool bNotice)
 {
 	LampLine = Line;
+	bLampNotice = bNotice;
+	// A line that is not the talk's (BpTalk.cpp sets it again after this for its own): the lamp's box shows it.
+	bTalkCaption = false;
+	bSheetCaption = false;
 	LampCaptionClock = FMath::Max(LampCaptionS, PendingSwitch.IsEmpty() ? 0.f : CVarLampSwitchDelayS.GetValueOnGameThread() + 1.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: lamp says \"%s\""), *Line.Replace(TEXT("\n"), TEXT(" / ")));
-	if (LampCaption)
+	LayoutLampCaption();
+	SetActorTickInterval(0.f);
+	ApplyLampWidgets();
+}
+
+void ABpTable::LayoutLampCaption()
+{
+	if (!LampCaption) return;
 	{
-		static const FSlateRoundedBoxBrush Plate(SwitchGlass.CopyWithNewOpacity(0.96f), 18.f, SwitchAmber.CopyWithNewOpacity(0.9f), 3.f);
-		static const FSlateRoundedBoxBrush Glow(SwitchAmber.CopyWithNewOpacity(0.12f), 24.f);
+		// Night two V4: the sheet's family (BpSheet.h): its paper and ink, THE LAMP as a chip for who is speaking, the line
+		// wrapped whole (never cut), the plate as tall as its lines; it still leaves by itself (LampCaptionClock).
 		const float Cap = CaptionCapCm * CaptionPxPerCm;
-		const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), Cap);
-		const float W = CaptionWidthCm * CaptionPxPerCm, H = CaptionHeightCm * CaptionPxPerCm, Pad = 22.f;
-		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
-		for (const FString& Each : CaptionLines(Line, Font, W - 2.f * Pad - 12.f))
-		{
-			Lines->AddSlot().AutoHeight().Padding(0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Each)).Font(Font).ColorAndOpacity(FSlateColor(FLinearColor::White))];
-		}
+		const FSlateFontInfo Font = CaptionFont(TEXT("Bold"), Cap), ChipFont = CaptionFont(TEXT("Bold"), Cap * 0.85f);
+		// V7: TEXT SIZE scales the plate as a whole (ApplyLampWidgets), so it is laid out narrower: on the table it grows by the
+		// square root of the size (26 cm at 1.0, 29.6 at 1.3, not 33.8), the larger words taking more lines upward; CaptionAt
+		// keeps it whole inside the view.
+		const float W = FMath::RoundToFloat(CaptionWidthCm * CaptionNarrow * CaptionPxPerCm / FMath::Sqrt(BpSheet::TextScale())), Pad = 20.f;
+		const float Pitch = Cap / static_cast<float>(BpType::CapPerEm) * 1.2f, ChipH = Cap * 0.85f / static_cast<float>(BpType::CapPerEm) * 1.2f + 6.f;
+		TArray<FString> Parts, Wrapped;
+		LampLine.ParseIntoArrayLines(Parts);
+		for (const FString& Part : Parts) Wrapped.Add(BpSheet::Wrap(Part, Font, W - 2.f * Pad - 14.f, 0));
+		const FString Words = FString::Join(Wrapped, TEXT("\n"));
+		const float H = FMath::CeilToFloat(14.f + ChipH + 8.f + BpSheet::Lines(Words) * Pitch + 14.f);
+		LampCaption->SetDrawSize(FVector2D(W, H));
 		LampCaption->SetSlateWidget(
 			SNew(SBox).WidthOverride(W).HeightOverride(H)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot()[SNew(SBorder).BorderImage(&Glow)]
-				+ SOverlay::Slot().Padding(5.f)[SNew(SBorder).BorderImage(&Plate)]
-				+ SOverlay::Slot().Padding(FMargin(Pad, 8.f)).VAlign(VAlign_Center)[Lines]
+				+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f).Bar(BpSheet::Amber).BarPx(6.f)]
+				+ SOverlay::Slot().Padding(FMargin(Pad + 6.f, 14.f, Pad, 14.f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left)[SNew(SBox).HeightOverride(ChipH).WidthOverride(BpSheet::ChipWidth(TEXT("GLIM"), ChipFont))[BpSheet::Chip(TEXT("GLIM"), ChipFont, ChipH, BpSheet::Amber)]]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 8.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(Words)).Font(Font).ColorAndOpacity(FSlateColor(BpSheet::InkHi))]
+				]
 			]);
 		LampCaption->RequestRedraw();
 		UE_LOG(LogBpTable, Log, TEXT("BpType: lamp caption cap_cm=%.2f; %.1f cm from the target eye: %.1f px"), CaptionCapCm,
-			FVector::Dist(EyeLocal(), FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm)),
-			CaptionCapCm * 800.0 / FVector::Dist(EyeLocal(), FVector(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm)));
+			FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)),
+			CaptionCapCm * 800.0 / FVector::Dist(EyeLocal(), FVector(CaptionXCm, LampCaptionY, PlacedHeightCm + CaptionAboveTopCm)));
 	}
-	SetActorTickInterval(0.f);
-	ApplyLampWidgets();
+}
+
+FVector ABpTable::CaptionAt() const
+{
+	// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
+	// names and the pin tags under it. V5: at home it follows the lamp's step aside, and rises by CaptionLiftCm until it
+	// covers no pin tag, wing name or lifted thing from the seat (UpdateCaptionLift).
+	const float GrowCm = LampCaption ? FMath::Max(0.f, static_cast<float>(LampCaption->GetDrawSize().Y) / CaptionPxPerCm - CaptionHeightCm) : 0.f;
+	const bool bHome = LampTravelT < 0.f && !bLampAtStation && RoomModeId.IsEmpty();
+	// V7: at a station the caption goes with the lamp's step beside the console's slot.
+	const FVector2D Step = bHome ? LampStepCm : bLampAtStation ? FVector2D(0.0, LampAsideCm) : FVector2D::ZeroVector;
+	FVector At(CaptionXCm + Step.X, LampCaptionY + Step.Y + (RoomModeId.IsEmpty() ? CaptionSlideCm : 0.f), PlacedHeightCm + CaptionAboveTopCm + (GrowCm * 0.5f + 2.f) * BpSheet::TextScale() + (RoomModeId.IsEmpty() ? CaptionLiftCm : 0.f));
+	// V7: whole inside the comfortable view (BpView.Fov's 30 degrees either side, a degree to spare) at every text size and
+	// wherever the lamp stands: it slides inward along the table's width before an edge would leave the view.
+	const FVector Eye = EyeLocal();
+	const double Ahead = FMath::Max(At.X - Eye.X, 1.0);
+	const double HalfW = (LampCaption ? LampCaption->GetDrawSize().X / CaptionPxPerCm : CaptionWidthCm) * BpSheet::TextScale() * 0.5;
+	const double Reach = FMath::Tan(FMath::DegreesToRadians(29.0)) * Ahead;
+	if (Reach > HalfW) At.Y = FMath::Clamp(At.Y, Eye.Y - Reach + HalfW, Eye.Y + Reach - HalfW);
+	return At;
+}
+
+void ABpTable::UpdateCaptionLift()
+{
+	if (!LampCaption) return;
+	TArray<FBox2D> Keep;
+	SeatKeepouts(Keep);
+	const FVector Eye = EyeLocal();
+	const float Was = CaptionLiftCm, WasSlide = CaptionSlideCm;
+	// V7: at a station beside an open sheet the plate may rise over the sheet's top edge (above the lamp, not beside it).
+	const float MaxLift = bLampAtStation ? CaptionMaxStationLiftCm : CaptionMaxLiftCm;
+	FBox2D Slot;
+	const bool bSlot = ConsoleSeatBox(Slot);
+	// The search runs again only when what it reads changed (it is checked every LampStepCheckS while the lamp is home).
+	{
+		uint32 Hash = GetTypeHash(LampCaption->GetDrawSize().ToString()) ^ GetTypeHash(LampStepCm.ToString()) ^ GetTypeHash(LampAsideCm) ^ (bLampAtStation ? 7u : 3u) ^ GetTypeHash(CaptionNarrow);
+		if (bSlot) Hash = HashCombine(Hash, GetTypeHash(Slot.ToString()));
+		for (const FBox2D& K : Keep) Hash = HashCombine(Hash, GetTypeHash(FIntPoint(FMath::RoundToInt(K.Min.X * 4.0), FMath::RoundToInt(K.Min.Y * 4.0))) ^ GetTypeHash(FIntPoint(FMath::RoundToInt(K.Max.X * 4.0), FMath::RoundToInt(K.Max.Y * 4.0))));
+		if (Hash == CaptionLiftHash) return;
+		CaptionLiftHash = Hash;
+	}
+	const auto SeenAt = [&]()
+	{
+		const double W = LampCaption->GetDrawSize().X / CaptionPxPerCm * BpSheet::TextScale();
+		const double H = LampCaption->GetDrawSize().Y / CaptionPxPerCm * BpSheet::TextScale();
+		const FVector At = CaptionAt();
+		const FVector Right = FVector::CrossProduct(FVector::UpVector, (At - Eye).GetSafeNormal()).GetSafeNormal() * (W * 0.5);
+		const FVector Up = FVector(0.0, 0.0, H * 0.5);
+		FBox Plate(ForceInit);
+		for (const FVector& C : { At - Right - Up, At + Right - Up, At - Right + Up, At + Right + Up }) Plate += C;
+		return SeatAngles(Plate);
+	};
+	// The plate's four corners as it stands square to the eye, at a lift; the least lift (0.5 cm steps) that covers nothing.
+	// Wave P1 (the tour's stand-up step, cap/ev-tour-standup.png): at home with a sheet open no lift cleared the sheet's edge and
+	// the plate stood over it. Then (an open sheet, not the bar) the plate slides along the table's width away from the slot,
+	// the least slide then the least lift that covers nothing, and when the comfortable view leaves it no room beside the sheet
+	// it is laid out narrower (CaptionNarrowScale, more lines upward) and tried again. The sheet wins over a tag or a name.
+	const auto Search = [&](float Dir, bool bSheetOnly, float& OutLift, float& OutSlide)
+	{
+		for (float Slide = 0.f; Slide <= (Dir != 0.f ? CaptionMaxSlideCm : 0.f) + 1e-3f; Slide += 1.f)
+		{
+			CaptionSlideCm = Dir * Slide;
+			for (float Lift = 0.f; Lift <= MaxLift + 1e-3f; Lift += 0.5f)
+			{
+				CaptionLiftCm = Lift;
+				const FBox2D Seen = SeenAt();
+				// V7: never over the top of the comfortable view (a lift past the console's top edge by more than a few degrees is out).
+				if (Lift > CaptionMaxLiftCm && bSlot && Seen.Max.Y > Slot.Max.Y + 4.0) break;
+				const bool bCovers = bSheetOnly ? Seen.Intersect(Slot) : Keep.ContainsByPredicate([&Seen](const FBox2D& K) { return Seen.Intersect(K); });
+				if (!bCovers) { OutLift = Lift; OutSlide = CaptionSlideCm; return true; }
+			}
+		}
+		return false;
+	};
+	CaptionSlideCm = 0.f;
+	CaptionLiftCm = 0.f;
+	const bool bSheet = bSlot && Slot.GetSize().Y > 8.0;
+	float Best = CaptionMaxLiftCm, BestSlide = 0.f;
+	FString How;
+	bool bFound = Search(0.f, false, Best, BestSlide);
+	if (!bFound && bSheet)
+	{
+		const float Dir = SeenAt().GetCenter().X < Slot.GetCenter().X ? -1.f : 1.f;
+		bFound = Search(Dir, false, Best, BestSlide) || Search(Dir, true, Best, BestSlide);
+		if (bFound) How = TEXT(" beside the open sheet");
+		else if (CaptionNarrow == 1.f)
+		{
+			CaptionNarrow = CaptionNarrowScale;
+			LayoutLampCaption();
+			UE_LOG(LogBpTable, Log, TEXT("BpLampLook: no room for the caption beside the open sheet: laid out at %.0f%% width"), CaptionNarrow * 100.f);
+			CaptionSlideCm = CaptionLiftCm = 0.f;
+			bFound = Search(Dir, false, Best, BestSlide) || Search(Dir, true, Best, BestSlide);
+			How = TEXT(" beside the open sheet, narrower");
+		}
+	}
+	else if (!bSheet && CaptionNarrow != 1.f)
+	{
+		// The sheet closed: the plate takes its width back.
+		CaptionNarrow = 1.f;
+		LayoutLampCaption();
+	}
+	if (!bFound) { Best = CaptionMaxLiftCm; BestSlide = 0.f; }
+	CaptionLiftCm = Best;
+	CaptionSlideCm = BestSlide;
+	if (CaptionLiftCm != Was || CaptionSlideCm != WasSlide)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpLampLook: lamp caption rises %.1f cm%s clear of the tags and names%s%s"), CaptionLiftCm,
+			CaptionSlideCm != 0.f ? *FString::Printf(TEXT(" and slides %.0f cm %s"), FMath::Abs(CaptionSlideCm), CaptionSlideCm < 0.f ? TEXT("left") : TEXT("right")) : TEXT(""), *How,
+			bFound ? TEXT("") : TEXT(" (no clear place: it covers something)"));
+		ApplyLampWidgets();
+	}
 }
 
 void ABpTable::ApplyLampWidgets()
@@ -529,10 +1042,18 @@ void ABpTable::ApplyLampWidgets()
 	const FVector Eye = EyeLocal();
 	if (LampCaption)
 	{
-		const bool bShow = !LampLine.IsEmpty() && !RoomModeId.IsEmpty();
+		// The talk's lines read on the console's conversation sheet (night two V2), not in this box, while it shows them.
+		// bp.Captions 1 (SETTINGS › ACCESSIBILITY › CAPTIONS ALWAYS): every line the lamp says, on the site plan too.
+		const IConsoleVariable* Always = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.Captions"));
+		// Wave U2: while a page or the stand-up is open on the far wall the box is not drawn (from the seat it stood over the sheet's
+		// lower left, its PREV and status line): his words are spoken, and stay on the wrist's conversation. CAPTIONS ALWAYS keeps it.
+		const bool bAlways = Always && Always->GetInt() != 0;
+		const bool bShow = !LampLine.IsEmpty() && (!RoomModeId.IsEmpty() || bLampNotice || bAlways) && !(bTalkCaption && TalkOnConsole()) && !bSheetCaption && (bAlways || !WallSheetOpen());
 		if (LampCaption->IsVisible() != bShow) LampCaption->SetVisibility(bShow);
-		const FVector At(CaptionXCm, CaptionYCm, PlacedHeightCm + CaptionAboveTopCm);
-		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(1.0 / CaptionPxPerCm)));
+		// Night two V4: the plate grows with its lines, upward from its old foot (plus 2 cm), so it never drops over the wing
+		// names and the pin tags under it.
+		const FVector At = CaptionAt();
+		LampCaption->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(BpSheet::TextScale() / CaptionPxPerCm)));
 		const float Fade = FMath::Clamp(LampCaptionClock / 0.4f, 0.f, 1.f);
 		LampCaption->SetTintColorAndOpacity(FLinearColor(0.95f, 0.95f, 0.95f, Fade));
 		LampCaption->SetTranslucentSortPriority(14);
@@ -629,13 +1150,21 @@ void ABpTable::AskLamp(const FString& FeatureId)
 	LampLookAt = WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(Slot->GlyphBox.GetCenter(), 0.f));
 	LampLookTarget = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: ask %s"), *FeatureId);
+	++TourAsks;
+	PresentLamp(LampLookAt, TEXT("ask"));
 	SayLamp(FString::Printf(TEXT("%s:\n%s · %s · %s"), *Tile.name, *Findings, *Health, *Scan));
 }
 
 bool ABpTable::TickSwitch(float DeltaSeconds)
 {
 	bool bBusy = false;
+	// The lamp's tour (BpTour.cpp) reads where the table is, at whatever rate the actor ticks.
+	TickTour();
 	const bool bReduced = SwitchReduced();
+	// A ride along the edges (BpLampTravel.cpp), or its settle.
+	bBusy |= TickLampTravel(DeltaSeconds);
+	// Its manner: to the person while it listens or speaks, a nod on a decision answered (BpLampLook.cpp, V3).
+	bBusy |= TickLampManner(DeltaSeconds);
 	// The lamp to its place and turn.
 	const float WasAway = LampAway, WasLook = LampLook;
 	if (LampAway != LampAwayTarget) LampAway = bReduced ? LampAwayTarget : FMath::FInterpConstantTo(LampAway, LampAwayTarget, DeltaSeconds, 1.f / LampMoveS);
@@ -654,7 +1183,13 @@ bool ABpTable::TickSwitch(float DeltaSeconds)
 		{
 			LampCaptionClock = 0.f;
 			LampLine.Reset();
+			bLampNotice = false;
 			LampLookTarget = 0.f;
+			if (bTalkCaption) { bTalkCaption = false; TalkCaptionEnded(); }
+			// The answer has had its time: its offer lapses, and the lamp goes back to rest.
+			if (LampOffer != ELampOffer::None) { ClearLampOffer(); LampNotifyAsk(); }
+			// A scan the theatre follows keeps the lamp at its room (BpScanTheatre.cpp); it goes home when the scan ends.
+			if (TourStep < 0 && !bTheatreLamp && (bLampAtStation || LampTravelT >= 0.f)) LampGoHome(TEXT("caption ended"));
 		}
 		ApplyLampWidgets();
 		bBusy = true;

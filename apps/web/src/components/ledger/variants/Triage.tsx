@@ -1,5 +1,5 @@
 'use client';
-// The Backlog scope of the triage table: one dense, keyboard-first row per finding (lens, feature, title, before →
+// The phone's Backlog (a wide window has backlog/Schedule.tsx; the dispatch bar below serves both): one dense, keyboard-first row per finding (lens, feature, title, before →
 // expected, risk, size, status), open ones first and best value per effort first within a status. J/K move, Space
 // selects, D dispatches, A dispatches the focused one, Enter opens the feature; the goal is an empty Proposed list
 // ("inbox zero"). Below ~720 px a row folds into a two-line card, the phone's backlog. Its bar is the dispatch bar
@@ -7,10 +7,18 @@
 // Waves (waves/*): a finding that sits in a wave carries a small chip after its title (wave . package; the title attribute
 // names the package's model and effort), passed to the memoised Row as four strings; the dispatch bar's "Add to wave" opens
 // the composer over the selection. Dispatch stays the direct path, untouched.
-import { memo, type ReactNode } from 'react';
+// v5 (scan-finding/1): a Score cell (the stored score, "est." for a pre-v5 estimate, "unscored"; never 0) with impact and
+// confidence under it, a predicted-verdict chip and a machine-decided mark after the title (bits.tsx Verdict), and each lens's
+// reserve findings collapsed under "n in reserve" after the ranked rows (expandable; L.reserve, L.toggleReserve).
+import { memo, useMemo, type ReactNode } from 'react';
 import type { Finding, Ledger } from '../useLedger';
+import { forecastDispatch } from '@/lib/scan/actions';
+import { MAX_PROPOSALS } from '@bp/core/scan/jobs';
+import { useScanCtx } from '../../hooks';
+import { useForecast } from '../useWaves';
+import { forecastView } from '../build-forecast';
 import { LensTag, StateMark } from '../train/ui/Marks.tsx';
-import { FeatureLink, KindTag, Move, Risk, Size, fromControl } from './bits';
+import { FeatureLink, KindTag, Move, Risk, Score, Size, Verdict, fromControl } from './bits';
 import { OriginChip, TierChip } from '../../Queue';
 
 interface RowProps {
@@ -38,7 +46,8 @@ const Row = memo(function Row({ f, on, focus, onFocus, onToggle, onOpen, move, w
       <span role="cell" className="c-sel"><input type="checkbox" tabIndex={-1} checked={on} onChange={() => onToggle(f.p.id)} aria-label={'Select ' + f.p.title} /></span>
       <span role="cell" className="c-lens"><LensTag id={f.p.lens} /></span>
       <span role="cell" className="c-feat"><FeatureLink f={f} onOpen={onOpen} act={focus} /></span>
-      <span role="cell" className="c-title"><TierChip p={f.p} /><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /><OriginChip p={f.p} act={focus} />{wave ? <span className="lg-wv" data-wave={wave} title={'Wave ' + wave + ' · package ' + pkg + ' · ' + model + ', ' + effort + ' effort'}>{wave} · {pkg}</span> : null}</span>
+      <span role="cell" className="c-title"><TierChip p={f.p} /><span className="lg-t">{f.p.title}</span><KindTag p={f.p} /><OriginChip p={f.p} act={focus} /><Verdict p={f.p} />{wave ? <span className="lg-wv" data-wave={wave} title={'Wave ' + wave + ' · package ' + pkg + ' · ' + model + ', ' + effort + ' effort'}>{wave} · {pkg}</span> : null}</span>
+      <span role="cell" className="c-sc"><Score f={f} /></span>
       <span role="cell" className="c-mv"><Move f={f} move={move} /></span>
       <span role="cell" className="c-risk"><Risk p={f.p} /></span>
       <span role="cell" className="c-size"><Size p={f.p} /></span>
@@ -48,17 +57,23 @@ const Row = memo(function Row({ f, on, focus, onFocus, onToggle, onOpen, move, w
 });
 
 export function Triage({ L }: { L: Ledger }) {
-  const open = L.rows.filter((f) => f.status === 'proposed').length;
+  const open = L.rows.filter((f) => f.status === 'proposed' && f.w.band !== 'reserve').length; // reserve is never counted as ranked
   const proposedShown = !L.ui.status.size || L.ui.status.has('proposed');
   // every dimension that narrows `L.rows` and can therefore hide a proposed finding from `open`: the lens chips, the
   // matrix's feature drill-down, the text filter and the selected wave tab (useLedger's `keep` and `waveIds`). The
   // status chips are not one here: `proposedShown` already stands down when they exclude proposed.
   const narrowed = !!(L.ui.lens.size || L.ui.feat.size || L.ui.q || L.ui.wave);
   const first = L.rows[0]?.p.id, foc = L.ui.focus && L.byId.has(L.ui.focus) ? L.ui.focus : first;
+  // the ranked rows; an expanded reserve group's rows are in L.rows too (after the ranked ones) but render under their group
+  const ranked = L.rows.filter((f) => f.w.band !== 'reserve');
+  const row = (f: Finding) => {
+    const w = L.waveTag(f.p.id);
+    return <Row key={f.p.id} f={f} on={L.ui.sel.has(f.p.id)} focus={f.p.id === foc} onFocus={L.setFocus} onToggle={L.toggle} onOpen={L.openFeature} move={L.move} wave={w?.wave} pkg={w?.pkg} model={w?.model} effort={w?.effort} />;
+  };
   return (
     <div className="lg-tri">
       {proposedShown && !open && L.all.length ? <div className="lg-zero" role="status"><b>Inbox zero</b>Nothing proposed{narrowed ? ' under these filters' : ''}. New findings land here as scans propose them.</div> : null}
-      {L.rows.length ? (
+      {L.rows.length || L.reserve.length ? (
         <div role="table" className="lg-tbl" aria-label="Findings">
           {/* a direct child of the table, as train/PackTable.tsx's `.tr-thead` is: `.lg-tr.hd` is `position: sticky`,
               and sticky is clamped to its CONTAINING BLOCK, so a rowgroup wrapper of its own height gave it no travel */}
@@ -67,17 +82,28 @@ export function Triage({ L }: { L: Ledger }) {
             <span role="columnheader" className="c-lens">Lens</span>
             <span role="columnheader" className="c-feat">Feature</span>
             <span role="columnheader" className="c-title">Finding</span>
+            <span role="columnheader" className="c-sc" title="scan-score/1, stored by the scan; est. = a pre-v5 estimate (value per effort); impact 1-10 · confidence">Score</span>
             <span role="columnheader" className="c-mv">Before → expected</span>
             <span role="columnheader" className="c-risk">Risk</span>
             <span role="columnheader" className="c-size">Size</span>
             <span role="columnheader" className="c-st">Status</span>
           </div>
           <div role="rowgroup">
-            {L.rows.map((f) => {
-              const w = L.waveTag(f.p.id);
-              return <Row key={f.p.id} f={f} on={L.ui.sel.has(f.p.id)} focus={f.p.id === foc} onFocus={L.setFocus} onToggle={L.toggle} onOpen={L.openFeature} move={L.move} wave={w?.wave} pkg={w?.pkg} model={w?.model} effort={w?.effort} />;
-            })}
+            {ranked.map(row)}
           </div>
+          {L.reserve.map((g) => (
+            <div key={g.lens} role="rowgroup" className="lg-rsv" aria-label={'Reserve · ' + g.lens}>
+              <div role="row" className="lg-rsv-h">
+                <span role="cell">
+                  <button type="button" aria-expanded={g.open} onClick={() => L.toggleReserve(g.lens)}
+                    title="Found, verified and scored, but over the run's cap: filed, not discarded, and not counted as ranked">
+                    <span aria-hidden="true">{g.open ? '▾' : '▸'}</span><LensTag id={g.lens} />{g.items.length} in reserve
+                  </button>
+                </span>
+              </div>
+              {g.open ? g.items.map(row) : null}
+            </div>
+          ))}
         </div>
       ) : <div className="lg-empty">{L.all.length ? 'No finding matches these filters.' : 'No findings yet. A lens scan proposes them; they appear here as it does.'}</div>}
     </div>
@@ -87,25 +113,41 @@ export function Triage({ L }: { L: Ledger }) {
 /** The backlog's bar: what is selected, which lenses it spans, its effort, Clear (Esc), Add to wave and Dispatch (D). With
  *  nothing selected it shows the scope's key reminders (`hint`). Add to wave is off when nothing selected can go, or when
  *  every one that can already sits in a draft wave (the title says which). */
-export function DispatchBar({ L, hint }: { L: Ledger; hint?: ReactNode }) {
+export function DispatchBar({ L, hint, place }: { L: Ledger; hint?: ReactNode; /** Replaces Add to wave: the wide Backlog's slots (backlog/parts.tsx PlaceBar); the phone keeps the composer. */ place?: ReactNode }) {
   const n = L.ui.sel.size, m = L.ready.length;
   const spans = L.lenses.filter((l) => L.ready.some((f) => f.p.lens === l.id));
   const wm = L.waveReady.length, taken = L.waveTaken[0]?.wave.name;
   const whyNot = !m ? 'Select proposed or approved findings that no job is building' : !wm ? 'These findings are already in the draft wave ' + taken : null;
+  // Dispatch sends every selected finding, the ones the filters hide included (useLedger dispatchIds): the live label says
+  // how many the person cannot see before D acts on them, as the decision bar does In packs
+  const hidden = useMemo(() => {
+    if (!n) return 0;
+    const shown = new Set(L.scoped.map((f) => f.p.id));
+    let k = 0;
+    for (const id of L.ui.sel) if (!shown.has(id)) k++;
+    return k;
+  }, [n, L.scoped, L.ui.sel]);
+  // the build forecast (a dry dispatch: nothing written): what an order holds and what a job builds, said on the button
+  // before D; past MAX_PROPOSALS the dispatch goes in chunks and the label keeps the client's count
+  const ctx = useScanCtx(), ids = L.ready.map((f) => f.p.id);
+  const key = L.writes && m && m <= MAX_PROPOSALS && !L.busy ? (ctx.slug ?? 'kettle') + '|' + ids.join(',') : null;
+  const fc = forecastView('Dispatch', useForecast(key, () => forecastDispatch(ctx, ids)).state, m);
   return (
     <div className="lg-bar" role="region" aria-label="Dispatch">
-      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
+      <span className="lg-bar-n" aria-live="polite">{n ? n + ' selected' + (hidden ? ' · ' + hidden + ' hidden by filters' : '') : 'Nothing selected'}{n && m !== n ? ' · ' + m + ' can go' : ''}</span>
       {spans.length ? <span className="lg-bar-l" title={spans.map((l) => l.name).join(', ')}>{spans.length === 1 ? '1 lens' : spans.length + ' lenses'}{spans.map((l) => <LensTag key={l.id} id={l.id} />)}</span>
         : !n && hint ? <span className="lg-bar-l">{hint}</span> : null}
       {m ? <span className="lg-bar-e" title="Effort: XS 1, S 2, M 3, L 5, XL 8">effort {L.effort}</span> : null}
       <span className="lg-sp" />
       <button type="button" className="bt" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear <kbd>Esc</kbd></button>
-      {L.writes ? <button type="button" className="bt" data-wave="add" disabled={!!whyNot} onClick={() => L.openComposer()}
+      {place ?? null}
+      {L.writes && !place ? <button type="button" className="bt" data-wave="add" disabled={!!whyNot} onClick={() => L.openComposer()}
         title={whyNot ?? 'Group ' + wm + (wm === 1 ? ' finding' : ' findings') + ' into a draft wave of packages, each with its own model and effort'}>
         Add to wave{wm && wm !== m ? ' ' + wm : ''}
       </button> : null}
-      {L.writes ? <button type="button" className="bt go" disabled={!m || L.busy} onClick={() => void L.dispatchIds()} title="Approve the proposed ones and start one execute run over all of them (D)">
-        {L.busy ? 'Dispatching…' : 'Dispatch ' + m}<kbd>D</kbd>
+      {L.writes ? <button type="button" className="bt go" disabled={!m || L.busy || fc.block} onClick={() => void L.dispatchIds()} data-forecast={fc.label}
+        title={fc.title ?? 'Approve the proposed ones and start one execute run over all of them (D)'}>
+        {L.busy ? 'Dispatching…' : fc.label}<kbd>D</kbd>
       </button> : null}
     </div>
   );

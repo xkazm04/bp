@@ -106,7 +106,8 @@ bad = False
 with sync_playwright() as p:
     b = p.chromium.launch(args=['--enable-gpu-rasterization', '--ignore-gpu-blocklist'])
     pg = b.new_page(viewport={'width': W, 'height': H}, device_scale_factor=float(os.environ.get('DPR', 1)))
-    pg.goto(url, wait_until='networkidle'); time.sleep(3 if mode != 'gesture' else 2)
+    # 'load', not 'networkidle': the page holds /api/companion/stream (SSE) open, so the network is never idle
+    pg.goto(url, wait_until='load'); pg.wait_for_function('() => !!window.__bp', timeout=60000); time.sleep(3 if mode != 'gesture' else 2)
     if mode == 'lod':
         for r in pg.evaluate(LOD_JS, int(os.environ.get('N', 30))):
             print(json.dumps(r))

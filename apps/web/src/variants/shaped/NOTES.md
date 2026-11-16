@@ -30,5 +30,6 @@ the health cell and its sheet badge the lens's name icon, never "reviewed", "des
 `check:shaped-legend` gates the model; the browser walk (security tab, Plan flyout, Tab to a row, Enter twice:
 `__bp.S.hl` steps through the row, `__bp.S.open` stays null) is a manual pass against a dev server.
 
-**Known limits.** `marks` gets dominance through a hand-off from `shape` (the seam doesn't pass it).
-The chip row needs fixtures about 100 px wide or more for six chips (wider for more lenses).
+**Known limits.** The chip row needs fixtures about 100 px wide or more for six chips (wider for more lenses).
+Edge marks read the dominance the engine passes on `MarkArgs.d`, so they hold on a sim patch that reuses a cached
+outline (`check:channel-seam`).

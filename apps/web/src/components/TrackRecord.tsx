@@ -30,7 +30,7 @@ export function TrackRecord({ id }: { id: string }) {
       <div className="row"><span>Feature</span><b>{f?.name ?? t.feature}</b></div>
       {t.expected !== undefined && <div className="row"><span>Expected</span><b>{t.expected}{t.unit ? ' ' + t.unit : ''}</b></div>}
       {t.branch !== undefined && <div className="row"><span>On {t.branchName}</span><b>{t.branch}</b></div>}
-      {t.current !== undefined && <div className="row"><span>{t.evidence ? 'Product, after the release' : 'Product now (observation)'}</span><b>{t.current}</b></div>}
+      {t.current !== undefined && <div className="row"><span>{t.evidence ? (t.landed && t.status === 'accepted' ? 'Product, after it landed' : 'Product, after the release') : 'Product now (observation)'}</span><b>{t.current}</b></div>}
       <div className="sub">RECORD</div>
       {t.lines.map((l) => <div key={l} style={{ color: 'var(--ink-2)', fontSize: 13 }}>{l}</div>)}
       {plan && (

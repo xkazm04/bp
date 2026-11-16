@@ -11,25 +11,33 @@ export type KeyScope = 'packs' | 'backlog' | 'compare' | 'release';
 /** What a key does; the scope's handler maps each action onto its own call. */
 export type KeyAction =
   | 'next' | 'prev' | 'select' | 'open'
-  | 'accept' | 'rework' | 'descope' | 'undo'
-  | 'dispatch' | 'dispatchFocused'
-  | 'filter' | 'view1' | 'view2' | 'view3'
+  | 'accept' | 'rework' | 'descope' | 'undo' | 'measure'
+  | 'dispatch' | 'dispatchFocused' | 'approveLater' | 'decline'
+  | 'filter' | 'view1' | 'view2' | 'view3' | 'stageNext' | 'stagePrev'
+  | 'place' | 'newWave' | 'unplace' | 'undoPlace' | 'brief'
   | 'theme' | 'mode' | 'wide'
-  | 'build' | 'finish'
+  | 'build' | 'finish' | 'tag'
   | 'help' | 'escape';
 
-/** One action and the keys that trigger it; `label` is the words the footer and the `?` sheet show. */
-export interface KeyBinding { keys: readonly string[]; action: KeyAction; label: string }
+/** One action and the keys that trigger it; `label` is the words the footer and the `?` sheet show. `write`: a decision
+ *  key, bound and shown only while decisions are on (BP_WRITES=off hides it: keyAction's `writes`). */
+export interface KeyBinding { keys: readonly string[]; action: KeyAction; label: string; write?: true }
 
 const move: readonly KeyBinding[] = [
   { keys: ['j', 'ArrowDown'], action: 'next', label: 'next item' },
   { keys: ['k', 'ArrowUp'], action: 'prev', label: 'previous item' },
   { keys: ['x', ' '], action: 'select', label: 'select' },
 ];
+/** The stage strip's order, a step at a time: in every scope, since the Backlog gives 1-9 to its waves. */
+const stages: readonly KeyBinding[] = [
+  { keys: [']'], action: 'stageNext', label: 'next stage' },
+  { keys: ['['], action: 'stagePrev', label: 'previous stage' },
+];
 const views: readonly KeyBinding[] = [
   { keys: ['1'], action: 'view1', label: 'triage table' },
   { keys: ['2'], action: 'view2', label: 'feature × lens matrix' },
   { keys: ['3'], action: 'view3', label: 'release' },
+  ...stages,
 ];
 /** The compare panel's screen modes, in the order M cycles them: the one list LedgerPage's M, the Screens segment and
  *  this label read (useLedger.ts CompareMode derives from it). Here because this module is value-free. */
@@ -50,6 +58,8 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['r'], action: 'rework', label: 'send back to rework' },
     { keys: ['s'], action: 'descope', label: 'descope' },
     { keys: ['u'], action: 'undo', label: 'undo the last decision' },
+    // M is the compare panel's screen mode, which layers over this scope: E measures
+    { keys: ['e'], action: 'measure', label: 'measure the selection now · one scan per lens' },
     filter,
     ...views,
     help,
@@ -60,10 +70,19 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['Enter'], action: 'open', label: 'open the feature' },
     { keys: ['d'], action: 'dispatch', label: 'dispatch the selection' },
     { keys: ['a'], action: 'dispatchFocused', label: 'dispatch this finding' },
+    // decided beside the focused row's brief (BriefDrawer), through proposals/[id]: no job is queued
+    { keys: ['y'], action: 'approveLater', label: 'approve this finding for later (no build yet)', write: true },
+    { keys: ['n'], action: 'decline', label: 'decline this finding, with a reason (final)', write: true },
+    // the wave bench (backlog/bench.ts): every change shows at once and saves itself
+    { keys: ['1', '2', '3', '4', '5', '6', '7', '8', '9'], action: 'place', label: 'place in that draft wave', write: true },
+    { keys: ['+', '='], action: 'newWave', label: 'start a new wave with it', write: true },
+    { keys: ['0'], action: 'unplace', label: 'take it out of its wave', write: true },
+    { keys: ['z'], action: 'undoPlace', label: 'undo the last wave change', write: true },
+    { keys: ['b'], action: 'brief', label: 'maximize the brief · again: back' },
     filter,
-    ...views,
+    ...stages,
     help,
-    { keys: ['Escape'], action: 'escape', label: 'clear the selection' },
+    { keys: ['Escape'], action: 'escape', label: 'close the brief, then clear the selection' },
   ],
   compare: [
     { keys: ['l'], action: 'theme', label: 'light · dark · both' },
@@ -71,21 +90,28 @@ export const KEYMAP: Readonly<Record<KeyScope, readonly KeyBinding[]>> = {
     { keys: ['w'], action: 'wide', label: 'full width' },
   ],
   release: [
+    { keys: ['j', 'ArrowDown'], action: 'next', label: 'next item (before a draft)' },
+    { keys: ['k', 'ArrowUp'], action: 'prev', label: 'previous item (before a draft)' },
+    { keys: ['x', ' '], action: 'select', label: 'choose it for the draft' },
     { keys: ['b'], action: 'build', label: 'build the release' },
     { keys: ['f'], action: 'finish', label: 'finish after the merge' },
+    { keys: ['t'], action: 'tag', label: 'tag what already landed' },
     ...views,
     help,
-    { keys: ['Escape'], action: 'escape', label: 'back to triage' },
+    { keys: ['Escape'], action: 'escape', label: 'clear the chosen items, then back to triage' },
   ],
 };
 
 /** The action `key` triggers in the first of `scopes` that binds it (a layered scope first: compare over packs), or
- *  null. Letters compare case-insensitively; every other key (Enter, Escape, the arrows, '?', ' ') as it is. */
-export function keyAction(scopes: readonly KeyScope[], key: string): KeyAction | null {
+ *  null. Letters compare case-insensitively; every other key (Enter, Escape, the arrows, '?', ' ') as it is. With
+ *  `writes` false (BP_WRITES=off) a decision key binds nothing. */
+export function keyAction(scopes: readonly KeyScope[], key: string, writes = true): KeyAction | null {
   const k = key.length === 1 ? key.toLowerCase() : key;
-  for (const s of scopes) for (const b of KEYMAP[s]) if (b.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === k)) return b.action;
+  for (const s of scopes) for (const b of KEYMAP[s]) if ((writes || !b.write) && b.keys.some((x) => (x.length === 1 ? x.toLowerCase() : x) === k)) return b.action;
   return null;
 }
+/** A scope's bindings as shown: without the decision keys while decisions are off. */
+export const shownKeys = (scope: KeyScope, writes: boolean): readonly KeyBinding[] => (writes ? KEYMAP[scope] : KEYMAP[scope].filter((b) => !b.write));
 
 const NAMES: Readonly<Record<string, string>> = { ' ': 'Space', ArrowDown: '↓', ArrowUp: '↑', Escape: 'Esc', Enter: 'Enter' };
 /** A key as the footer and the `?` sheet print it: letters uppercase, Space, the arrows as arrows, Esc. */
@@ -95,7 +121,7 @@ export const keyName = (k: string): string => NAMES[k] ?? (k.length === 1 ? k.to
  *  dispatch buttons carry their own keys; the `?` sheet lists the rest). */
 export const SHORT: Readonly<Record<KeyScope, readonly KeyAction[]>> = {
   packs: ['next', 'select', 'open', 'help'],
-  backlog: ['next', 'select', 'open', 'help'],
+  backlog: ['next', 'select', 'place', 'brief', 'help'],
   compare: ['theme', 'mode', 'wide'],
-  release: ['build', 'finish', 'help'],
+  release: ['build', 'tag', 'finish', 'help'],
 };

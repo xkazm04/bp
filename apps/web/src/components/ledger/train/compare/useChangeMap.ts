@@ -3,7 +3,7 @@
 // the main thread does no pixel work. Where Worker or OffscreenCanvas is missing, or the worker cannot start, the pair
 // is computed once on the main thread instead; the panel shows "computing…" either way until the result arrives.
 import { useEffect, useSyncExternalStore } from 'react';
-import { diffPixels, type PixGrid } from '@bp/core/train/pixels';
+import { diffPixels, withSizes, type PixGrid } from '@bp/core/train/pixels';
 import type { MapReply, MapRequest } from './changeMap.worker';
 
 /** A shot pair to compare: its cache key and the two image URLs. */
@@ -84,7 +84,7 @@ async function onMain(p: PairRef): Promise<PixGrid> {
     g.drawImage(img, 0, 0, w, h);
     return g.getImageData(0, 0, w, h).data;
   };
-  return diffPixels(read(a), read(b), w, h);
+  return withSizes(diffPixels(read(a), read(b), w, h), [a.naturalWidth, a.naturalHeight], [b.naturalWidth, b.naturalHeight]);
 }
 
 async function compute(p: PairRef): Promise<PixGrid> {

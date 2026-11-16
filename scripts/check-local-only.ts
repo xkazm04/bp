@@ -8,7 +8,7 @@
 // none, the line carries only status, reason, verb, path and a peer-is-loopback flag (no header value, no query), it is
 // injection-safe and clipped, and a burst is rate-capped with the dropped count carried onto the next line.
 // Run: node scripts/check-local-only.ts  (Node's type stripping). Exit 1 on any failure.
-import { isLoopbackAddr, jsonOnly, localHost, localOnly } from '../packages/core/src/scan/local-only.ts';
+import { isLoopbackAddr, jsonOnly, localHost, localOnly, wavOnly } from '../packages/core/src/scan/local-only.ts';
 import { REFUSAL_REASONS, createRefusalLog, formatRefusal, setRefusalLog } from '../packages/core/src/scan/refusals.ts';
 
 let failed = 0, passed = 0;
@@ -38,11 +38,22 @@ check('write allows loopback X-Forwarded-For', localOnly(req({ ...L, 'x-forwarde
 check('read denies foreign X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '203.0.113.9' })) !== null);
 check('read denies a foreign hop after a loopback one', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, 8.8.8.8' })) !== null);
 check('read allows loopback X-Forwarded-For', localHost(req({ ...L, 'x-forwarded-for': '127.0.0.1, ::1' })) === null);
+// DNS rebinding through the web app's proxy (S4, 2026-11-10): Next's rewrite sends Host 127.0.0.1:3100 and the page's real
+// host in X-Forwarded-Host; a rebound name there is refused for reads and writes alike, a loopback one passes.
+for (const xfh of ['rebind.example:3010', 'rebind.example', 'localhost:3010, rebind.example:3010', '127.0.0.1.evil.com:3010', '']) {
+  check(`read denies X-Forwarded-Host ${JSON.stringify(xfh)}`, localHost(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) !== null);
+  check(`write denies X-Forwarded-Host ${JSON.stringify(xfh)}`, localOnly(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) !== null);
+}
+for (const xfh of ['localhost:3010', '127.0.0.1:3010', '[::1]:3010', 'localhost']) check(`read allows X-Forwarded-Host ${xfh}`, localHost(req({ host: '127.0.0.1:3100', 'x-forwarded-host': xfh })) === null);
 check('json allows application/json', jsonOnly(req({ 'content-type': 'application/json' })) === null);
 check('json allows charset suffix', jsonOnly(req({ 'content-type': 'Application/JSON; charset=utf-8' })) === null);
 check('json denies text/plain', jsonOnly(req({ 'content-type': 'text/plain' })) !== null);
 check('json denies form type', jsonOnly(req({ 'content-type': 'application/x-www-form-urlencoded' })) !== null);
 check('json denies none', jsonOnly(req({})) !== null);
+check('wav allows audio/wav', wavOnly(req({ 'content-type': 'audio/wav' })) === null);
+check('wav allows audio/x-wav', wavOnly(req({ 'content-type': 'audio/x-wav' })) === null);
+check('wav denies application/octet-stream', wavOnly(req({ 'content-type': 'application/octet-stream' })) !== null);
+check('wav denies none', wavOnly(req({})) !== null);
 // Branches of local-only.ts that no case above reaches: measured 2026-10-21, dropping the `::ffff:` alternative from
 // isLoopbackAddr, or accepting an unparseable Origin instead of refusing it, left every case above green.
 // A bare `::1` Host is REFUSED although LOOPBACK_HOST lists `::1`: hostOnly cuts at the first colon unless the host is
@@ -85,6 +96,7 @@ const one = (name: string, run: () => string | null, want: string, line: RegExp)
 };
 const LH = { host: 'localhost:3000' };
 const nj = one('jsonOnly text/plain', () => jsonOnly(at('POST', '/api/products', { ...LH, 'content-type': 'text/plain' })), 'body must be application/json (Content-Type: text/plain)', /^refused 415 \(not-json\) "POST" "\/api\/products" /);
+one('wavOnly text/plain', () => wavOnly(at('POST', '/api/companion/listen', { ...LH, 'content-type': 'text/plain' })), 'body must be audio/wav (Content-Type: text/plain)', /^refused 415 \(not-wav\) "POST" "\/api\/companion\/listen" /);
 const fo = one('foreign Origin', () => localOnly(at('POST', '/api/products', { ...LH, origin: 'https://evil.example' })), 'writes are only accepted from a localhost page (Origin: https://evil.example)', /^refused 403 \(foreign-origin\) "POST" /);
 one('opaque Origin', () => localOnly(at('POST', '/api/products', { ...LH, origin: 'null' })), 'writes are not accepted from an opaque origin', /^refused 403 \(opaque-origin\) "POST" /);
 one('cross-site fetch', () => localOnly(at('POST', '/api/products', { ...LH, 'sec-fetch-site': 'cross-site' })), 'cross-site writes are refused', /^refused 403 \(cross-site\) "POST" /);
@@ -129,7 +141,7 @@ check('record: passing requests write 0 lines', take().length === 0);
 }
 // The vocabulary is closed: a reason outside REFUSAL_REASONS is a type error (npm run typecheck) and a runtime throw.
 {
-  check('record: the vocabulary has the ten reasons', REFUSAL_REASONS.length === 10 && new Set(REFUSAL_REASONS).size === 10);
+  check('record: the vocabulary has the eleven reasons', REFUSAL_REASONS.length === 11 && new Set(REFUSAL_REASONS).size === 11);
   let threw = false;
   // @ts-expect-error - 'made-up' is not a RefusalReason; if the type opened up, this directive would fail typecheck.
   try { formatRefusal({ status: 403, reason: 'made-up', method: 'GET', path: '/', peer: null }); } catch { threw = true; }

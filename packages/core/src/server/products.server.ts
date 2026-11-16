@@ -10,6 +10,9 @@ import type { ProductEntry } from '../scan/types';
 if (typeof window !== 'undefined') throw new Error('products.server.ts is server-only');
 
 export const PRODUCTS_FILE = 'bp.products.local.json';
+/** The registry's path: PRODUCTS_FILE at the repo root, or BP_PRODUCTS_FILE when set (a demo or a test points the server at a
+ *  throwaway registry, so the operator's own products are never read or written). */
+export const productsPath = (): string => (process.env.BP_PRODUCTS_FILE ? path.resolve(process.env.BP_PRODUCTS_FILE) : path.join(/* turbopackIgnore: true */ process.cwd(), PRODUCTS_FILE));
 
 /** Each lens-scan product keeps its store and its structure here, under its repo root. */
 export const storeDir = (p: ProductEntry): string => path.join(p.root, '.ai', 'lens-scan');
@@ -57,7 +60,7 @@ export interface RegistryRead { products: ProductEntry[]; problem?: { status: 40
 /** Read on every call (the file is tiny and edited by hand or by scripts/scan-demo.mjs while the server runs). */
 export function readRegistry(): RegistryRead {
   let raw: unknown;
-  try { raw = JSON.parse(fs.readFileSync(path.join(process.cwd(), PRODUCTS_FILE), 'utf8')); } catch (e) {
+  try { raw = JSON.parse(fs.readFileSync(productsPath(), 'utf8')); } catch (e) {
     // No file = no live products (quiet); a file that cannot be read or parsed is said, on the log and in the answer.
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { products: [] };
     warnOnce(PRODUCTS_FILE, e);
@@ -103,6 +106,13 @@ const KETTLE_DATA = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 export function kettleSample(slug: string): { structureFile: string; eventsFile: string } | null {
   if (slug !== KETTLE_SLUG || findProduct(slug)) return null;
   return { structureFile: path.join(KETTLE_DATA, 'kettle.app-structure.json'), eventsFile: path.join(KETTLE_DATA, 'kettle.events.jsonl') };
+}
+
+/** Kettle's screenshots (apps/web/public/sample-shots, beside the web app's other sample files), or null when `slug` is not
+ *  the built-in sample (or a product shadows it). The shots route serves them under its own path rules. */
+export function kettleShotsDir(slug: string): string | null {
+  // BP_KETTLE_SHOTS: a check's throwaway directory (check-table-link.ts), so it never writes into the web's public files
+  return kettleSample(slug) ? path.resolve(process.env.BP_KETTLE_SHOTS || path.resolve(KETTLE_DATA, '../../../apps/web/public/sample-shots')) : null;
 }
 
 /** The sample's map and events as one read, with the `rev` both the structure and plan routes answer: sha1 of the map, a

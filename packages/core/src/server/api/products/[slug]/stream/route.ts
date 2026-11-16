@@ -15,17 +15,23 @@
 // The change check is `PRAGMA data_version` on ONE long-lived read connection: it moves only when another
 // connection (the skill, or a decision) commits, so an idle store costs one pragma a second.
 // Kettle, where this process hosts its sim (kettle-sim.server.ts): snapshot, jobs, delta and ping over the sim, in memory.
+// At most MAX_STREAMS open streams per product: each holds a read connection and a 1 s interval, so a runaway client (a
+// reload loop, a leaked EventSource) answers 429 with one line past the cap instead of piling them up.
+// A purge (DELETE /api/products/[slug]?purge=store) ends the stream first (store.server.ts holdStore / closeStoresUnder).
 import { unknownProduct } from '@bp/core/server/products.server';
 import fs from 'node:fs';
 import { findProduct, recovered, storeDir, storeFile, warnOnce } from '@bp/core/server/products.server';
 import { localHost } from '@bp/core/scan/local-only';
-import { advance, close, dataVersion, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@bp/core/server/store.server';
+import { advance, close, dataVersion, holdStore, isEmptyScan, mapRev, newCursor, openRead, readDelta, readSnapshot, emptyScan, type Cursor } from '@bp/core/server/store.server';
 import type { ScanSnapshot, StreamEvent } from '@bp/core/scan/types';
 import { RUN_NOTE_PREFIX } from '@bp/core/scan/jobs';
 import { attachRun, list as listJobs, subscribe as onJobs } from '@bp/core/server/jobs.server';
 import { kettleSim, kettleStream } from '@bp/core/server/kettle-sim.server';
 
 const TICK_MS = 1000, PING_MS = 15000;
+/** The most streams one product may hold open at once (per server process). */
+export const MAX_STREAMS = 16;
+const OPEN = ((globalThis as typeof globalThis & { __bpOpenStreams?: Map<string, number> }).__bpOpenStreams ??= new Map<string, number>());
 
 export async function GET(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
   const denied = localHost(req);
@@ -35,18 +41,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
   if (k) return kettleStream(k, req);
   const p = findProduct(slug);
   if (!p) return unknownProduct(slug);
+  const open = OPEN.get(slug) ?? 0;
+  if (open >= MAX_STREAMS) return Response.json({ error: `${open} streams are already open for ${slug} (at most ${MAX_STREAMS}); close one first` }, { status: 429 });
+  OPEN.set(slug, open + 1);
   const file = storeFile(p), enc = new TextEncoder(), logKey = `stream ${slug} (${file})`;
   let db: ReturnType<typeof openRead> = null, dv = -1, cur: Cursor = newCursor();
   const dir = storeDir(p);
   let rev = '';
   let tick: ReturnType<typeof setInterval> | null = null, lastSent = Date.now(), done = false, sentErr = '';
-  let unsubscribe: (() => void) | null = null;
+  let unsubscribe: (() => void) | null = null, release: (() => void) | null = null, end: (() => void) | null = null;
 
   const stop = () => {
     if (done) return;
     done = true;
+    OPEN.set(slug, Math.max(0, (OPEN.get(slug) ?? 1) - 1));
     if (tick) clearInterval(tick);
     unsubscribe?.(); unsubscribe = null;
+    release?.(); release = null;
     close(db); db = null;
   };
 
@@ -102,7 +113,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ slug: st
         } catch (e) { close(db); db = null; warnOnce(logKey, e); /* store replaced or locked past the timeout: reconnect next tick */ }
         if (Date.now() - lastSent >= PING_MS) send('ping', { at: new Date().toISOString() });
       }, TICK_MS);
-      req.signal.addEventListener('abort', () => { stop(); try { ctrl.close(); } catch { /* already closed */ } });
+      end = () => { stop(); try { ctrl.close(); } catch { /* already closed */ } };
+      // a purge (purge.server.ts) ends this stream before it deletes the store: the connection must not hold the file
+      if (!done) release = holdStore(file, () => end?.());
+      req.signal.addEventListener('abort', () => end?.());
     },
     cancel() { stop(); },
   });

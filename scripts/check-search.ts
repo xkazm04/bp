@@ -5,6 +5,7 @@
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: [] } });
@@ -13,9 +14,7 @@ type Any = any;
 const { buildModel } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/sample.ts')).href)) as Any;
 const { search, searchAll, searchPage, baseId } = (await import(pathToFileURL(path.join(ROOT, 'packages/core/src/model/index.ts')).href)) as Any;
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-search');
 
 const P1 = buildModel(1, () => 0, null).P, P4 = buildModel(4, () => 0, null).P;
 const names = (fs: Any[]) => fs.map((f: Any) => f.name);
@@ -65,5 +64,4 @@ const pg = searchPage(P1, 'a', 3);
 expect(pg.hits.length === 3 && pg.total === searchAll(P1, 'a').length && pg.total > 3, `searchPage reports the full count (${pg.hits.length} of ${pg.total})`);
 expect(search(P1, 'a').length <= 8, 'search keeps its default cap of 8');
 
-if (failures.length) { console.error('check-search: FAIL\n  ' + failures.join('\n  ')); process.exit(1); }
-console.log(`check-search: ${held} expectations hold`);
+done();

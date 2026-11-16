@@ -27,6 +27,21 @@ namespace
 	/** A highlighted room's shell glows this much brighter (Show above 1 scales M_EdgeGlow's emissive). */
 	constexpr float HighlightShow = 1.6f;
 
+	/** Wave U2: where a room's raise spends its game-thread time (SetHighlightTimed; the decisions-land raise logs it). */
+	struct FRaiseProf
+	{
+		bool bOn = false;
+		double Ms[10] = {};
+	};
+	FRaiseProf GRaise;
+	struct FRaiseSpan
+	{
+		int32 Slot;
+		uint32 C0;
+		explicit FRaiseSpan(int32 InSlot) : Slot(InSlot), C0(FPlatformTime::Cycles()) {}
+		~FRaiseSpan() { if (GRaise.bOn) GRaise.Ms[Slot] += FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C0); }
+	};
+
 	/** Ease-in-out on a step's progress; 0 and 1 map to exactly 0 and 1, so a settled step is exactly at rest or lifted. */
 	float Ease(float Alpha)
 	{
@@ -174,6 +189,10 @@ bool ABpTable::EnterWing(const FString& InWingId)
 	LogStep(EBpLevel::L0, EBpLevel::L1);
 	UpdateBreadcrumb();
 	KickLevels();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
+	// Wave N3-W3: Glim names the wing and one thing about it.
+	Narrate(NarrateWingId(InWingId), TEXT("a wing entered"), true);
 	return true;
 }
 
@@ -200,7 +219,11 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 	}
 	if (Level == EBpLevel::L0)
 	{
-		if (!EnterWing(Room->parentId)) return false;
+		// Wave N3-W3: the room is the step said; its wing opens quietly on the way.
+		++NarrateHush;
+		const bool bWing = EnterWing(Room->parentId);
+		--NarrateHush;
+		if (!bWing) return false;
 	}
 	else if (Room->parentId != WingId)
 	{
@@ -217,6 +240,9 @@ bool ABpTable::EnterRoom(const FString& InRoomId)
 	LogStep(EBpLevel::L1, EBpLevel::L2);
 	UpdateBreadcrumb();
 	KickLevels();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
+	Narrate(NarrateRoomId(InRoomId), TEXT("a room lifted"), true);
 	return true;
 }
 
@@ -247,12 +273,17 @@ void ABpTable::Back()
 	}
 	UpdateBreadcrumb();
 	KickLevels();
+	NotePlaceMoved();
+	Narrate(Level == EBpLevel::L1 ? TEXT("back-wing") : TEXT("back-plan"), TEXT("back"));
 }
 
 void ABpTable::Home()
 {
+	// Wave N3-W3: the walk home is no step of its own: whatever called it says the step.
+	++NarrateHush;
 	if (!RoomModeId.IsEmpty()) ExitRoomMode();
 	while (Level != EBpLevel::L0) Back();
+	--NarrateHush;
 }
 
 bool ABpTable::IsLevelMoving() const
@@ -276,6 +307,7 @@ void ABpTable::ResetLevels()
 	LiftedRoom = INDEX_NONE;
 	LiftedRoomSlideCm = 0.f;
 	LiftedShell->ClearInstances();
+	LiftPlateKey.Reset();
 	HighlightKind.Reset();
 	HighlightId.Reset();
 	// Unknown, so the first ApplyLevelVisuals writes every instance's Show and redraws the sheet.
@@ -507,7 +539,8 @@ void ABpTable::ApplyLevelVisuals()
 		Write(Rooms, ShownRooms, Index, Show, bRoomsDirty);
 		if (RoomLabels.IsValidIndex(Index))
 		{
-			const float Alpha = bInWing ? Ew * (Index == Lifted ? 1.f : FMath::Lerp(1.f, LevelDim, Er)) : 0.f;
+			// V5: the lifted room's own header name gives way to the lift's nameplate (ApplyLiftPlate) as it rises.
+			const float Alpha = bInWing ? Ew * (Index == Lifted ? 1.f - Er : FMath::Lerp(1.f, LevelDim, Er)) : 0.f;
 			SetLabelAlpha(RoomLabels[Index], Alpha);
 		}
 	}
@@ -532,6 +565,8 @@ void ABpTable::ApplyLevelVisuals()
 	// The rooms at rest stay on the paper; the lifted wing's leave with it. The pins and tags follow the lifts.
 	ApplyRestVolumes(Ew);
 	PlacePins();
+	// What is lifted wears its name in full (V5).
+	ApplyLiftPlate(WingT, RoomT, Ew, Er);
 
 	// The sheet is redrawn only when what it dims around or highlights changes: as a wing starts to rise and once it
 	// has settled back, never per frame.
@@ -582,6 +617,7 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	}
 	if (Pointed != HighlightRestRoom)
 	{
+		FRaiseSpan Span(0);
 		HighlightShell->ClearInstances();
 		HighlightRestRoom = Pointed;
 		if (Pointed != INDEX_NONE)
@@ -617,14 +653,20 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				// The room's own walls' footprint (the first full-face instance is the room's box, BuildVolumes adds it first).
 				const FVector Foot = RoomWalls.GetScale3D() * 100.0;
 				const double Floor0 = RoomWalls.GetLocation().Z - Foot.Z * 0.5 - HighlightLiftCm;
-				const auto Slab = [&](double Z0, double H, float Show, float Face)
+				const auto Slab = [&](double Z0, double H, float Show, float Face, double InsetCm)
 				{
-					Raised.Add(FTransform(FQuat::Identity, FVector(RoomWalls.GetLocation().X, RoomWalls.GetLocation().Y, Z0 + H * 0.5), FVector(Foot.X, Foot.Y, H) / 100.0));
-					Data.Append({ static_cast<float>(Foot.X), static_cast<float>(Foot.Y), static_cast<float>(H), Show, Face });
+					const double SX = FMath::Max(1.0, Foot.X - 2.0 * InsetCm), SY = FMath::Max(1.0, Foot.Y - 2.0 * InsetCm);
+					Raised.Add(FTransform(FQuat::Identity, FVector(RoomWalls.GetLocation().X, RoomWalls.GetLocation().Y, Z0 + H * 0.5), FVector(SX, SY, H) / 100.0));
+					Data.Append({ static_cast<float>(SX), static_cast<float>(SY), static_cast<float>(H), Show, Face });
 				};
-				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm, HighlightFloorCm, HighlightFloorShow, 1.f);
-				Slab(Floor0, HighlightLiftCm - HighlightFloorCm, HighlightPlinthShow, 0.5f);
-				AimCaptureHand(RoomWalls.GetLocation() - Foot * 0.5);
+				// Wave U2 (shimmer from the seat): the floor plate's top stood in the raised walls' foot and the plinth's foot on the
+				// paper, coplanar faces that fought at the seat's grazing angle; each now stands a hair clear (Gap) and inset.
+				constexpr double Gap = 0.15;
+				Slab(Floor0 + HighlightLiftCm - HighlightFloorCm - Gap, HighlightFloorCm, HighlightFloorShow, 1.f, 0.25);
+				Slab(Floor0 + Gap, FMath::Max(0.1, HighlightLiftCm - HighlightFloorCm - 3.0 * Gap), HighlightPlinthShow, 0.5f, 0.6);
+				// The posed capture hand points at the pointed room (captures only); a decision's raise is nobody's point.
+				FRaiseSpan Aim(2);
+				if (!bLandingRaise) AimCaptureHand(RoomWalls.GetLocation() - Foot * 0.5);
 			}
 			HighlightShell->SetNumCustomDataFloats(5);  // as RestVolumes: size, Show, face
 			if (Raised.Num() > 0)
@@ -633,11 +675,16 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 				HighlightShell->SetCustomData(0, Raised.Num() - 1, Data, true);
 			}
 		}
-		LiftGlyphs(Pointed);
+		{
+			FRaiseSpan Lift(1);
+			LiftGlyphs(Pointed);
+		}
 		UE_LOG(LogBpTable, Log, TEXT("BpLevel: pointed room %s (%d raised)"), Pointed == INDEX_NONE ? TEXT("none") : *SheetPlan->rooms[Pointed].id, HighlightShell->GetInstanceCount());
 	}
 	HighlightShell->SetRelativeTransform(PointedGroupTransform());
 	ApplyColumnLook();
+	TOptional<FRaiseSpan> Walls;
+	Walls.Emplace(3);
 	bool bDirty = false;
 	for (int32 Index = 0; Index < RestRoom.Num() && Index < ShownRest.Num(); ++Index)
 	{
@@ -647,11 +694,15 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 		if (bOn) Show = AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
 		// The line-weight hierarchy (FC3): rooms medium, partitions fine.
 		if (RestInk.IsValidIndex(Index)) Show *= RestInk[Index];
+		// A room a scan is on: its own walls step back for the lit wall in the lens accent (BpScanMarks.cpp).
+		if (RestFace.IsValidIndex(Index) && RestFace[Index] >= 1.f) Show *= ScanRestShow(Room);
 		// The pointed room shows in HighlightShell instead, and every other room recedes around it (FO).
 		if (Room != INDEX_NONE && Room == Pointed) Show = 0.f;
 		else if (Pointed != INDEX_NONE) Show *= PointedDim;
 		// Room mode: the site's walls fade as the room's map comes in.
 		Show *= SiteShow();
+		// The build-up (BpBuildup.cpp): a room's walls come up with its rise.
+		Show *= RoomBuildShow(Room);
 		if (ShownRest[Index] == Show) continue;
 		ShownRest[Index] = Show;
 		RestVolumes->SetCustomDataValue(Index, 3, Show, false);
@@ -664,19 +715,79 @@ void ABpTable::ApplyRestVolumes(float WingEase)
 	{
 		const FString& Wing = WingLabelSpecs[Index].Wing;
 		const float Alpha = !bOn ? 0.f : AnimWing.IsEmpty() ? 1.f : (Wing == AnimWing ? 1.f - WingEase : FMath::Lerp(1.f, LevelDim, WingEase));
-		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow());
+		SetLabelAlpha(WingLabels[Index], Alpha * SiteShow() * WingBuildShow(Wing));
 	}
-	ApplyGlyphs(WingEase);
-	ApplyRoomNames(WingEase);
+	Walls.Reset();
+	{
+		FRaiseSpan Span(4);
+		ApplyGlyphs(WingEase);
+	}
+	{
+		FRaiseSpan Span(5);
+		ApplyRoomNames(WingEase);
+	}
+	FRaiseSpan Span(6);
+	ApplyScanMarks();
+}
+
+FString ABpTable::SetHighlightTimed(const FString& Kind, const FString& Id)
+{
+	// SetHighlight's steps, each timed (wave U2: the decisions-land raise had a 2.5 to 5.5 ms frame on the PC).
+	GRaise = FRaiseProf();
+	GRaise.bOn = true;
+	const uint32 C0 = FPlatformTime::Cycles();
+	HighlightKind = Id.IsEmpty() ? FString() : Kind.ToLower();
+	HighlightId = Id;
+	UE_LOG(LogBpTable, Log, TEXT("BpLevel: highlight %s (timed)"), HighlightId.IsEmpty() ? TEXT("cleared") : *FString::Printf(TEXT("%s=%s"), *HighlightKind, *HighlightId));
+	for (float& Shown : ShownRooms) Shown = -1.f;
+	{
+		// The crumb names a room a hand points at; a decision's raise points nothing, so it keeps its words (0.7 ms a raise).
+		FRaiseSpan Span(8);
+		if (!bLandingRaise) UpdateBreadcrumb();
+	}
+	const uint32 C1 = FPlatformTime::Cycles();
+	ApplyLevelVisuals();
+	const double Visuals = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C1);
+	{
+		FRaiseSpan Span(9);
+		if (bCardShown) RefreshCard();
+	}
+	GRaise.bOn = false;
+	const double All = FPlatformTime::ToMilliseconds(FPlatformTime::Cycles() - C0);
+	const double* M = GRaise.Ms;
+	const double Rest = Visuals - (M[0] + M[3] + M[4] + M[5] + M[6]);
+	return FString::Printf(TEXT("%.2f ms: copy %.2f (glyph lift %.2f, capture hand %.2f), rest walls %.2f, glyphs %.2f, names %.2f, scan marks %.2f, crumb %.2f, card %.2f, the rest of the visuals (rooms, pins, plate, sheet) %.2f"),
+		All, M[0], M[1], M[2], M[3], M[4], M[5], M[6], M[8], M[9], Rest);
+}
+
+void ABpTable::ReapplyRestVolumes()
+{
+	if (SheetPlan.IsValid()) ApplyRestVolumes(Ease(WingAlpha));
 }
 
 void ABpTable::RedrawSheet()
 {
+	// While a build-up draws (WP-V3) the sheet is drawn by the tick, in a frame no other heavy piece of its commit took.
+	if (SpreadNow())
+	{
+		bSheetDirty = true;
+		SetActorTickInterval(0.f);
+		return;
+	}
+	DrawSheetNow();
+}
+
+void ABpTable::DrawSheetNow()
+{
+	bSheetDirty = false;
 	if (Sheet) Sheet->UpdateResource();
 }
 
 void ABpTable::SetHighlight(const FString& Kind, const FString& Id)
 {
+	// A hand on the decision card keeps the plan's highlight: the card asks about the pointed room's finding, and pointing
+	// at its buttons must not change which finding that is.
+	if (Kind.Equals(TEXT("card"), ESearchCase::IgnoreCase) && !Id.IsEmpty()) return;
 	HighlightKind = Id.IsEmpty() ? FString() : Kind.ToLower();
 	HighlightId = Id;
 	UE_LOG(LogBpTable, Log, TEXT("BpLevel: highlight %s"), HighlightId.IsEmpty() ? TEXT("cleared") : *FString::Printf(TEXT("%s=%s"), *HighlightKind, *HighlightId));
@@ -726,15 +837,18 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 {
 	OutKind.Reset();
 	OutId.Reset();
+	bAimHitLocal = false;
 	if (!SheetPlan.IsValid() || WorldDir.IsNearlyZero()) return false;
 	const FTransform& Actor = GetActorTransform();
 	const FVector Origin = Actor.InverseTransformPosition(WorldOrigin), Dir = Actor.InverseTransformVector(WorldDir);
-	const auto OnPlane = [&Origin, &Dir](double Z, FVector& Point)
+	const auto OnPlane = [this, &Origin, &Dir](double Z, FVector& Point)
 	{
 		if (FMath::IsNearlyZero(Dir.Z)) return false;
 		const double T = (Z - Origin.Z) / Dir.Z;
 		if (T < 0.0) return false;
 		Point = Origin + Dir * T;
+		AimHitLocal = Point;
+		bAimHitLocal = true;
 		return true;
 	};
 	// A point on a lifted plane, back through its batch's transform to the paper, then to plan space.
@@ -750,6 +864,7 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 		if (DeckHit(WorldOrigin, WorldDir, OutId))
 		{
 			OutKind = TEXT("deck");
+			bAimHitLocal = false;
 			return true;
 		}
 		// The lamp's head (WP3: a hold asks it for the next room), a sphere about it.
@@ -762,10 +877,34 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 			{
 				OutKind = TEXT("lamp");
 				OutId = TEXT("lamp");
+				bAimHitLocal = false;
 				return true;
 			}
 		}
 		return OnPlane(PlacedHeightCm - GlassRecessCm, Point) && RoomModeHit(LocalToPaperCm(Point), OutKind, OutId);
+	}
+	// The decision card first (it stands above the far edge, between the eye and whatever lies behind it): its buttons (F8).
+	if (CardHit(WorldOrigin, WorldDir, OutId))
+	{
+		OutKind = TEXT("card");
+		bAimHitLocal = false;
+		return true;
+	}
+	// The lamp's head on the site plan too: a pinch asks it what to do next (BpAsk.cpp).
+	{
+		FVector Head;
+		if (LampHead(Head))
+		{
+			const FVector ToHead = Head - WorldOrigin;
+			const double Along = FVector::DotProduct(ToHead, WorldDir.GetSafeNormal());
+			if (Along > 0.0 && (ToHead - WorldDir.GetSafeNormal() * Along).SizeSquared() <= FMath::Square(LampHeadRadiusCm))
+			{
+				OutKind = TEXT("lamp");
+				OutId = TEXT("lamp");
+				bAimHitLocal = false;
+				return true;
+			}
+		}
 	}
 	const float Ew = Ease(WingAlpha), Er = Ease(RoomAlpha);
 	const FTransform WingT = WingGroupTransform(Ew);
@@ -831,6 +970,82 @@ bool ABpTable::HitTest(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	return false;
 }
 
+bool ABpTable::GetAimHit(FVector& OutWorld) const
+{
+	if (!bAimHitLocal) return false;
+	OutWorld = GetActorTransform().TransformPosition(AimHitLocal);
+	return true;
+}
+
+bool ABpTable::AssistHit(const FVector& WorldOrigin, const FVector& WorldDir, float RadiusDeg, FString& OutKind, FString& OutId) const
+{
+	OutKind.Reset();
+	OutId.Reset();
+	if (RadiusDeg <= 0.f || !SheetPlan.IsValid() || WorldDir.IsNearlyZero()) return false;
+	const FTransform& Actor = GetActorTransform();
+	const FVector Origin = Actor.InverseTransformPosition(WorldOrigin), Dir = Actor.InverseTransformVector(WorldDir).GetSafeNormal();
+	if (FMath::IsNearlyZero(Dir.Z)) return false;
+	const double TanRadius = FMath::Tan(FMath::DegreesToRadians(FMath::Min<double>(RadiusDeg, 10.0)));
+	/** A footprint on one lift's plane, in paper cm. */
+	struct FTarget { FBox2D Box; int32 Group; };
+	TArray<FTarget, TInlineAllocator<64>> Targets;
+	const FTransform AtRest = WingGroupTransform(0.f);
+	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
+	FTransform RoomT = WingT;
+	RoomT.AddToTranslation(FVector(-LiftedRoomSlideCm * Ease(RoomAlpha), 0.0, RoomLiftCm * Ease(RoomAlpha)));
+	const FTransform Groups[3] = { AtRest, WingT, RoomT };
+	const auto PlanBox = [this](const FBpPlanBox& B)
+	{
+		FBox2D Out(ForceInit);
+		Out += PlanToPaperCm(FVector2D(B.x, B.y));
+		Out += PlanToPaperCm(FVector2D(B.x + B.w, B.y + B.h));
+		return Out;
+	};
+	if (!RoomModeId.IsEmpty())
+	{
+		for (const FCrumb& Crumb : RoomCrumbs) if (!Crumb.Id.IsEmpty()) Targets.Add({ Crumb.PaperCm, 0 });
+		for (const FKeyCell& Cell : KeyCells) Targets.Add({ Cell.PaperCm, 0 });
+		for (const FRoomSlot& Slot : RoomSlots) Targets.Add({ Slot.Box, 0 });
+	}
+	else
+	{
+		for (const FCrumb& Crumb : Crumbs) if (!Crumb.Id.IsEmpty()) Targets.Add({ Crumb.PaperCm, 0 });
+		for (const FBpPlanWing& Wing : SheetPlan->wings) Targets.Add({ PlanBox(Wing.box), 0 });
+		if (!AnimWing.IsEmpty() && WingAlpha > 0.f)
+		{
+			for (const FBpPlanRoom& Room : SheetPlan->rooms)
+			{
+				if (Room.parentId != AnimWing) continue;
+				Targets.Add({ PlanBox(Room.box), Room.id == AnimRoom && RoomAlpha > 0.f ? 2 : 1 });
+			}
+		}
+	}
+	// The nearest footprint to the ray's point on its own plane, within the cone there.
+	double Best = TNumericLimits<double>::Max();
+	FVector BestWorld = FVector::ZeroVector;
+	for (int32 Group = 0; Group < UE_ARRAY_COUNT(Groups); ++Group)
+	{
+		const double T = (Groups[Group].GetTranslation().Z - Origin.Z) / Dir.Z;
+		if (T <= 0.0) continue;
+		const FVector2D On = LocalToPaperCm(Groups[Group].InverseTransformPosition(Origin + Dir * T));
+		const double Reach = T * TanRadius;
+		for (const FTarget& Target : Targets)
+		{
+			if (Target.Group != Group || !Target.Box.bIsValid) continue;
+			const FVector2D Nearest(FMath::Clamp(On.X, Target.Box.Min.X, Target.Box.Max.X), FMath::Clamp(On.Y, Target.Box.Min.Y, Target.Box.Max.Y));
+			const double Gap = FVector2D::Distance(On, Nearest);
+			if (Gap > Reach || Gap >= Best) continue;
+			Best = Gap;
+			// A hair inside the footprint, so the confirming ray lands in it.
+			const FVector2D Inside = FMath::Lerp(Nearest, Target.Box.GetCenter(), 0.1);
+			const FVector Local(PaperDepthCm * 0.5 - Inside.Y, Inside.X - PaperWidthCm * 0.5, 0.0);
+			BestWorld = Actor.TransformPosition(Groups[Group].TransformPosition(Local));
+		}
+	}
+	if (Best == TNumericLimits<double>::Max()) return false;
+	return HitTest(WorldOrigin, (BestWorld - WorldOrigin).GetSafeNormal(), OutKind, OutId) && !OutId.IsEmpty();
+}
+
 bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 {
 	if (!SheetPlan.IsValid()) return false;
@@ -846,8 +1061,9 @@ bool ABpTable::AimAt(const FString& Id, FVector& OutWorld) const
 	const FTransform WingT = WingGroupTransform(Ease(WingAlpha));
 	// The screen deck's controls, and a feature's glyph on the room's map (BpDeck.cpp's taps).
 	if (Id.StartsWith(TEXT("deck:"))) return DeckAim(Id, OutWorld);
+	if (Id.StartsWith(TEXT("card:"))) return CardAim(Id, OutWorld);
 	// WP3: the lamp's head, a key plan room, the room map's middle.
-	if (Id == TEXT("lamp")) return !RoomModeId.IsEmpty() && LampHead(OutWorld);
+	if (Id == TEXT("lamp")) return LampHead(OutWorld);
 	if (Id.StartsWith(TEXT("minimap:")))
 	{
 		const FString Room = Id.Mid(8);

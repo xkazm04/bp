@@ -4,15 +4,21 @@
 // A timer runs only while a job runs (never a rAF); every change notifies once per tick. Pure and free of
 // '@/' value imports, so Node can drive it (the scan-package probes). It also keeps the sample's ledger waves (waves.ts)
 // in this browser (localStorage `bp.waves.kettle`, memory when storage refuses), under the rules waves.server.ts applies. The sample release train (packs, triage, releases,
-// the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer.
+// the release job's steps) is train-sim.ts, seeded at the first bind; its jobs run on this timer. Its saved focuses (focus.ts) are
+// memory only, seeded with the two the sample shows.
 import type { Activity, ActivityKind, CommitDiff, Measurement, Proposal, ReleaseCreated, Run, ScanSnapshot, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
 import type { ReleaseStep, ScanJob, ScanScope } from '@bp/core/scan/jobs';
+import type { Landings } from '@bp/core/scan/landed';
 import type { LensExecuteResult } from '@bp/core/scan/jobs';
 import type { LensEntry, LensField, LensManifest } from '@bp/core/standard/types';
-import { MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
+import { BAD_FOCUS, checkFocusNote, focusRefusal, keepFocus, type SavedFocus } from '../scan/focus.ts';
+import { ALL_LENSES, MAX_PROPOSALS, MAX_QUEUED, MAX_RUNNING, MAX_SELECTION, RUN_NOTE_PREFIX, SAFE_ID, TEMP_LENS_ID } from '../scan/jobs.ts';
 import { NOTHING_TO_BUILD, admitForBuild, buildChunks, busyIds } from '../scan/admit.ts';
 import { WAVE_EFFORTS, WAVE_MODELS, createIn, packagesOf, patchIn, recordJobs, removeIn, type Wave, type WaveBody, type WaveDispatchResult, type WaveEffort, type WaveModel } from '../scan/waves.ts';
 import { TrainSim, type TrainToggles } from './train-sim.ts';
+import { evidenceOpts, type TrackOpts } from '../scan/track.ts';
+import { checkpointPlan, newWatch, recordPlan, setWatchIn, type Watch } from '../train/watch.ts';
+import type { Model } from './index.ts';
 import { NUMERIC } from '../standard/present.ts';
 import { SCAN_SCOPE_KINDS } from '../standard/schema-vocab.ts';
 import { PREPARABLE } from '../scan/lens-setup.ts';
@@ -23,6 +29,16 @@ export type { TrainToggles };
  *  queued. `gh` is `unchecked` on a live product: a dry run reads local state only and never spawns gh, so the login is
  *  still checked when the build starts; the sample's toggle is local state, so it says `signed-in`. */
 export interface ReleaseReady { ready: true; gh: 'signed-in' | 'unchecked' }
+
+/** A build's forecast (POST dispatch `{ dry: true }`, ScanSim.forecastDispatch): what the real call would approve
+ *  (`approve`), build (`take`) and skip, in how many execute jobs; `held`/`note` cite the standing orders that hold some
+ *  (a live product only: the sample has no orders). Nothing was written. */
+export interface BuildForecast { dry: true; approve: string[]; take: string[]; skipped: { id: string; status: string }[]; jobs: number; held?: { id: string; order: { id: string } }[]; note?: string }
+/** One package's row of a wave's forecast. */
+export interface PackageForecast { id: string; model: string; effort: string; approve: string[]; take: string[]; skipped: { id: string; status: string }[]; jobs: number }
+/** A wave dispatch's forecast (POST waves/[wave]/dispatch `{ dry: true }`, ScanSim.forecastWave): the totals and one row per
+ *  package; the wave as it stands (still a draft when it was one). */
+export interface WaveForecast extends BuildForecast { wave: Wave; packages: PackageForecast[] }
 
 /** What the sim needs of the product: bound once the model is built (`ScanSim.bind`). */
 export interface ScanSimProduct {
@@ -120,17 +136,21 @@ export class ScanSim {
   snapshot(): ScanSnapshot {
     if (!this.snap || this.snapV !== this.v) {
       this.snapV = this.v;
-      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: this.train.shots.slice(), coverage: [], packs: this.train.packs.slice(), releases: this.train.releases.slice() };
+      this.snap = { runs: this.runs.slice(), measurements: this.ms.slice(), proposals: this.props.slice(), activity: this.act.slice(), shots: this.train.shots.slice(), coverage: [], packs: this.train.packs.slice(), releases: this.train.releases.slice(), trust_events: [] };
     }
     return this.snap;
   }
   /** The features a temporary lens found nothing to say about, by lens: their health must read `na`. */
   noImpact(): ReadonlyMap<string, ReadonlySet<string>> { return this.na; }
 
-  startScan(lens: string, scope: ScanScope): ScanJob {
+  /** A scan, as POST scans does; with `focus` a directed one (the same walk, the note on the job and on the run's note). */
+  startScan(lens: string, scope: ScanScope, focus?: string): ScanJob {
     const P = this.prod;
     if (!P) throw refuse(503, 'The sample is still loading');
+    if (focus !== undefined && lens === ALL_LENSES) throw refuse(400, BAD_FOCUS);
     if (!P.manifest(lens)) throw refuse(400, 'unknown-lens');
+    const note = focus === undefined ? undefined : checkFocusNote(focus);
+    if (note === null) throw refuse(400, BAD_FOCUS);
     const all = scope?.kind === 'all', known = new Set(P.order);
     if (!scope || !KINDS.has(scope.kind) || typeof scope.label !== 'string' || !scope.label || !Array.isArray(scope.features)
       || (all ? scope.features.length > 0 || scope.id !== undefined : !scope.features.length || scope.features.some((f) => !known.has(f)))
@@ -140,7 +160,7 @@ export class ScanSim {
     const id = 'sim-' + ++this.nextId;
     const rank = new Map(P.order.map((s, i) => [s, i]));
     const items = all ? P.order.slice() : [...new Set(scope.features)].sort((a, b) => rank.get(a)! - rank.get(b)!);
-    const job: ScanJob = { id, kind: 'measure', lens, scope: { ...scope, features: scope.features.slice() }, status: 'queued', queued_at: at };
+    const job: ScanJob = { id, kind: 'measure', lens, scope: { ...scope, features: scope.features.slice() }, ...(note === undefined ? {} : { focus: note }), status: 'queued', queued_at: at };
     this.recs.push({ job, items, i: 0, stepAt: 0, step: STEP_MS, runId: 'run-' + id });
     this.pump();
     this.changed();
@@ -163,16 +183,39 @@ export class ScanSim {
     return this.recOf(id)!.job;
   }
 
+  /** Approve (for later: no job) or decline a proposed finding, as POST proposals/[id] does: the updated row; 400 for a
+   *  bad body, 404 for an unknown id, 409 (the current row as `proposal`) when it is no longer proposed. Signed 'blueprint'. */
+  decide(id: string, body: { decision: 'approve' | 'decline'; note?: string }): Proposal {
+    if (!body || (body.decision !== 'approve' && body.decision !== 'decline') || (body.note !== undefined && typeof body.note !== 'string')) throw refuse(400, 'bad-body');
+    const p = this.prop(id);
+    if (!p) throw refuse(404, `no proposal ${id}`);
+    if (p.status !== 'proposed') throw Object.assign(refuse(409, `proposal ${id} was already decided (${p.status})`), { proposal: p });
+    const at = this.iso();
+    this.setProp(id, { status: body.decision === 'approve' ? 'approved' : 'declined', decided_by: 'blueprint', decided_at: at, updated_at: at, ...(body.note !== undefined ? { decision_note: body.note } : {}) });
+    this.changed();
+    return this.prop(id)!;
+  }
+
   dispatch(ids: string[], opts: ExecOpts = {}): { job: ScanJob; approved: string[]; skipped: { id: string; status: string }[] } {
-    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
-    if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
-      || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
-    const at = this.iso(), { approved, go, skipped } = this.admit(ids, at);
-    if (!go.length) throw refuse(409, NOTHING_TO_BUILD, { skipped });
+    const { at, approved, go, skipped } = this.takeIds(ids, opts, false);
     const id = this.queueExecute(go, at, opts);
     this.pump();
     this.changed();
     return { job: this.recOf(id)!.job, approved, skipped };
+  }
+  /** The dispatch's forecast, as POST dispatch `{ dry: true }`: the same refusals (400, 409) and nothing approved or queued. */
+  forecastDispatch(ids: string[], opts: ExecOpts = {}): BuildForecast {
+    const { approved, go, skipped } = this.takeIds(ids, opts, true);
+    return { dry: true, approve: approved, take: go, skipped, jobs: buildChunks(go).length };
+  }
+  /** dispatch's guards and admission; `dry` approves nothing. */
+  private takeIds(ids: string[], opts: ExecOpts, dry: boolean): { at: string; approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
+    if (!Array.isArray(ids) || !ids.length || ids.length > MAX_IDS || ids.some((x) => typeof x !== 'string')) throw refuse(400, 'bad-ids');
+    if ((opts.model !== undefined && !WAVE_MODELS.includes(opts.model)) || (opts.effort !== undefined && !WAVE_EFFORTS.includes(opts.effort))
+      || (opts.wave !== undefined && !SAFE_ID.test(opts.wave)) || (opts.package !== undefined && !SAFE_ID.test(opts.package))) throw refuse(400, 'bad-opts');
+    const at = this.iso(), t = this.admit(ids, at, dry);
+    if (!t.go.length) throw refuse(409, NOTHING_TO_BUILD, { skipped: t.skipped });
+    return { at, ...t };
   }
 
   /**
@@ -247,17 +290,62 @@ export class ScanSim {
     this.writeWaves(r.waves);
     return { id };
   }
+  // ----------------------------------------------------------------------------------------- the sample's saved focuses
+  // Under the rules of focuses.server.ts, in memory. Seeded on the first read, so a fake clock needs nothing at construction.
+  private focusRows: SavedFocus[] | null = null;
+  private focusId = 0;
+  private focusList(): SavedFocus[] {
+    return (this.focusRows ??= [
+      { id: 'focus-' + ++this.focusId, lens: 'security', note: 'Best practice penetration test', created_at: this.iso() },
+      { id: 'focus-' + ++this.focusId, lens: 'design', note: 'Coverage of framer motion transition animations for pages and large sections', created_at: this.iso() },
+    ]);
+  }
+  /** Newest first, as GET focuses. */
+  listFocuses(): SavedFocus[] { return this.focusList().slice().reverse(); }
+  /** Keep a focus, as POST focuses: 400 bad-focus or unknown-lens; the same lens and note answers the row it already is. */
+  saveFocus(lens: string, note: string): SavedFocus {
+    const bad = focusRefusal(lens, note);
+    if (bad) throw refuse(400, bad);
+    const r = keepFocus(this.focusList(), lens, checkFocusNote(note)!, this.iso(), () => 'focus-' + ++this.focusId);
+    this.focusRows = r.focuses;
+    return r.focus;
+  }
+  /** Forget a saved focus, as DELETE focuses/[id]: 404 when it is not there. */
+  deleteFocus(id: string): { id: string } {
+    const rows = this.focusList();
+    if (!rows.some((f) => f.id === id)) throw refuse(404, `no focus ${id}`);
+    this.focusRows = rows.filter((f) => f.id !== id);
+    return { id };
+  }
+
   /** Dispatch a wave (default: every package) or the named packages, as POST waves/[wave]/dispatch. */
-  dispatchWave(id: string, names?: string[]): WaveDispatchResult {
+  dispatchWave(id: string, names?: string[]): WaveDispatchResult { return this.walkWave(id, names, false) as WaveDispatchResult; }
+  /** A wave dispatch's forecast, as POST waves/[wave]/dispatch `{ dry: true }`: the same walk and refusals (404, 400, 409, 429
+   *  with the forecast as its body) with nothing approved, queued or stored. */
+  forecastWave(id: string, names?: string[]): WaveForecast { return this.walkWave(id, names, true) as WaveForecast; }
+  private walkWave(id: string, names: string[] | undefined, dry: boolean): WaveDispatchResult | WaveForecast {
     if (!this.prod) throw refuse(503, 'The sample is still loading');
     const waves = this.readWaves(), wave = waves.find((w) => w.id === id);
     if (!wave) throw refuse(404, `no wave ${id}`);
     const pkgs = packagesOf(wave, names);
     if (typeof pkgs === 'string') throw refuse(400, pkgs);
     const approved: string[] = [], skipped: { id: string; status: string }[] = [], refs: { package: string; job: string }[] = [], at = this.iso();
-    let full = false, went = 0;
+    let full = false, went = 0, planned = 0;
+    const rows: PackageForecast[] = [], take: string[] = [], busy = busyIds(this.recs.map((r) => r.job));
+    let room = MAX_QUEUED - this.recs.filter((r) => r.job.status === 'queued').length;
     for (const pk of pkgs) {
       if (full) break;
+      if (dry) {
+        // the forecast: the chunks counted against the queue's room, their findings held as a queued job would hold them
+        const a = admitForBuild(pk.ids, (x) => this.prop(x)?.status, busy), row: PackageForecast = { id: pk.id, model: pk.model, effort: pk.effort, approve: a.approve, take: a.take, skipped: a.skipped, jobs: 0 };
+        rows.push(row); take.push(...a.take); approved.push(...a.approve); skipped.push(...a.skipped); went += a.take.length;
+        for (const chunk of buildChunks(a.take)) {
+          if (room <= 0) { full = true; break; }
+          room--; planned++; row.jobs++;
+          for (const x of chunk) busy.add(x);
+        }
+        continue;
+      }
       const t = this.admit(pk.ids, at); // the jobs queued for an earlier package are in this.recs: they hold their findings
       approved.push(...t.approved); skipped.push(...t.skipped); went += t.go.length;
       for (const chunk of buildChunks(t.go)) {
@@ -265,6 +353,12 @@ export class ScanSim {
         refs.push({ package: pk.id, job: this.queueExecute(chunk, at, { model: pk.model, effort: pk.effort, wave: wave.id, package: pk.id }) });
         this.pump();
       }
+    }
+    if (dry) {
+      if (!planned && !full && !went) throw refuse(409, 'none of these findings can be built (only proposed or approved ones that no job is building can)', { skipped });
+      const f: WaveForecast = { dry: true, wave, packages: rows, approve: approved, take, skipped, jobs: planned };
+      if (full) throw refuse(429, 'queue-full', { ...f });
+      return f;
     }
     if (!refs.length && !full && !went) { this.changed(); throw refuse(409, 'none of these findings can be built (only proposed or approved ones that no job is building can)', { skipped }); }
     const next = recordJobs(wave, refs, at);
@@ -277,26 +371,71 @@ export class ScanSim {
 
   // ----------------------------------------------------------------------------------------- the sample train
   // Kettle's release train (train-sim.ts): sample packs over Kettle features, triage and reopen, a version
-  // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer.
+  // suggestion, and a release job draft -> building -> pr-open -> (sampleMerge) -> merged -> tagged on the sim timer, or
+  // (items already on main) draft -> building -> tagged.
   // Same results and refusals as the routes (Error + status + body). Everything it makes is labelled sample.
 
   /** Triage built items, as POST triage: 409 with the result as `body` when none moved. */
   triage(body: TriageBody): TriageResult { return this.train.triage(body); }
-  /** The next version for the accepted items with no release, as GET releases/suggest. */
-  suggestRelease(): VersionSuggestion { return this.train.suggest(); }
+  /** The next version for the accepted items with no release (only the chosen `ids` among them), as GET releases/suggest. */
+  suggestRelease(ids?: readonly string[]): VersionSuggestion { return this.train.suggest(ids); }
   /** A draft release, as POST releases. */
   createRelease(version: string, ids?: string[]): ReleaseCreated { return this.train.create(version, ids); }
   /** The sample job that builds a release (draft or failed); 412 'gh not authenticated' when the gh toggle is off. */
   buildRelease(id: string): ScanJob { return this.queueRelease(id, 'build'); }
   /** The sample job that finishes a merged release (tag, items released, settled packs closed). */
   finishRelease(id: string): ScanJob { return this.queueRelease(id, 'finish'); }
-  /** The build's pre-flight, as POST build `{"dry":true}`: every refusal the build would give (400, 404, 409, 412 when
-   *  the gh toggle is off, 429), then `{ ready: true }` with no job queued and nothing notified. */
-  preflightRelease(id: string): ReleaseReady { this.queueRelease(id, 'build', true); return { ready: true, gh: 'signed-in' }; }
+  /** The sample job that tags a draft whose items all landed on the sample's main (the "already on main" toggle). */
+  tagRelease(id: string): ScanJob { return this.queueRelease(id, 'tag'); }
+  /** The build's (or tag's) pre-flight, as POST build `{"dry":true}`: every refusal that step would give (400, 404, 409,
+   *  412 when the gh toggle is off, 429), then `{ ready: true }` with no job queued and nothing notified. */
+  preflightRelease(id: string, step: 'build' | 'tag' = 'build'): ReleaseReady { this.queueRelease(id, step, true); return { ready: true, gh: 'signed-in' }; }
   /** Kettle only: stands in for the person merging the PR on GitHub (pr-open -> merged). */
   sampleMerge(id: string): void { this.train.merge(id); }
+  /** What landed on the sample's main (each merged release's items; with the "already on main" toggle, every accepted
+   *  item too), as GET releases/landed. */
+  landings(): Landings { return this.train.landings(!!this.toggles.landed); }
   /** A sample item commit's diff. */
   commitDiff(sha: string): CommitDiff { return this.train.diff(sha); }
+  /** The sample's outcome watches (packages/core/src/train/watch.ts, in memory), after queueing the checkpoints that are due, as GET
+   *  releases/watch does on a live product (watch.server.ts reconcileWatches): one selection scan per lens, labelled. */
+  watches(): Watch[] {
+    const now = this.now();
+    this.watchList = this.watchList.map((w) => {
+      const plans = checkpointPlan(w, now, this.jobs());
+      if (!plans.length) return w;
+      const queued = new Map<number, string[]>();
+      for (const pl of plans) for (const q of pl.queue) {
+        try { const j = this.startScan(q.lens, { kind: 'selection', label: q.label, features: q.features }); queued.set(pl.day, [...(queued.get(pl.day) ?? []), j.id]); } catch { /* refused: asked again on the next read */ }
+      }
+      return recordPlan(w, plans, queued);
+    });
+    return this.watchList.slice();
+  }
+  /** Turn release `id`'s watch on or off, as POST releases/watch: 400 a bad id, 404 unknown release (or no watch to turn
+   *  off), 409 a release not merged or tagged yet. */
+  setWatch(id: string, on: boolean): Watch {
+    if (typeof id !== 'string' || !SAFE_ID.test(id) || typeof on !== 'boolean') throw refuse(400, 'body must be { release: <release id>, on: true | false }');
+    const iso = new Date(this.now()).toISOString();
+    let w: Watch | null = null;
+    if (on && !this.watchList.some((x) => x.release === id)) {
+      const made = newWatch(this.snapshot(), id, this.watchOpts(), iso, 'user:sample');
+      if (!made.ok) throw refuse(made.status, made.error);
+      w = made.watch;
+    }
+    const r = setWatchIn(this.watchList, w, id, on, iso);
+    if (!r.ok) throw refuse(r.status, r.error);
+    this.watchList = r.watches;
+    this.changed();
+    return r.watch;
+  }
+  /** The sample's landings and its lenses' bounds, as trackOf takes them (the live plane: git and the map). */
+  watchOpts(): TrackOpts {
+    const fields = (lens: string) => (this.prod?.manifest(lens) ?? this.lensEntries().find((e) => e.id === lens)?.manifest)?.fields ?? [];
+    const lenses = [...new Set(this.props.map((p) => p.lens))].map((id) => ({ id, fields: fields(id) as { key?: string; min?: number; max?: number }[] }));
+    return evidenceOpts(this.landings(), lenses);
+  }
+  private watchList: Watch[] = [];
   /** Kettle only: what the sample release job should run into (all off = a clean run, gh logged in). */
   get trainToggles(): TrainToggles { return this.toggles; }
   setTrainToggles(t: TrainToggles): void { this.toggles = t; this.changed(); }
@@ -335,9 +474,9 @@ export class ScanSim {
   private recOf(id: string): Rec | undefined { return this.recs.find((r) => r.job.id === id); }
   /** Add a queued execute job over `ids`; answers its id (the caller pumps and notifies). */
   /** packages/core/src/scan/admit.ts's rule over the sim's findings and jobs: the proposed ones approved here (decided_by 'blueprint'). */
-  private admit(ids: Iterable<string>, at: string): { approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
+  private admit(ids: Iterable<string>, at: string, dry = false): { approved: string[]; go: string[]; skipped: { id: string; status: string }[] } {
     const a = admitForBuild(ids, (id) => this.prop(id)?.status, busyIds(this.recs.map((r) => r.job)));
-    for (const id of a.approve) this.setProp(id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at });
+    if (!dry) for (const id of a.approve) this.setProp(id, { status: 'approved', decided_by: 'blueprint', decided_at: at, updated_at: at });
     return { approved: a.approve, go: a.take, skipped: a.skipped };
   }
   private queueExecute(ids: string[], at: string, opts: ExecOpts = {}): string {
@@ -400,7 +539,7 @@ export class ScanSim {
     }
     const lenses = j.kind === 'measure' ? [j.lens!] : [...new Set(r.items.map((id) => this.prop(id)?.lens).filter((l): l is string => !!l))];
     const scope = j.kind === 'measure' ? { features: j.scope!.features.slice() } : { proposals: r.items.slice() };
-    this.runs.push({ id: r.runId, started_at: at, updated_at: at, phase: j.kind === 'measure' ? 'measure' : 'execute', status: 'running', lenses, scope, model: 'sample', note: RUN_NOTE_PREFIX + j.id });
+    this.runs.push({ id: r.runId, started_at: at, updated_at: at, phase: j.kind === 'measure' ? 'measure' : 'execute', status: 'running', lenses, scope, model: 'sample', note: RUN_NOTE_PREFIX + j.id + (j.focus ? ` · focus:focusDemo ${j.focus}` : '') });
     this.setJob(r, { status: 'running', started_at: at, run_id: r.runId });
     r.i = 0; r.stepAt = t + r.step;
     this.open(r);
@@ -488,4 +627,19 @@ function fresh(f: LensField, feature: string, lens: string): number {
   if (!(hi > lo)) hi = lo + 10;
   const v = lo + rand01(feature + '|' + lens + '|' + f.key) * (hi - lo);
   return f.type === 'integer' ? Math.round(v) : round(v);
+}
+
+/** What the Kettle scan sim needs of the model, bound the same way by the web app's Kettle and the headless server's
+ *  (apps/server/src/kettle-sim.ts), so the server's sample scans see what the browser shows: base slugs in layout order,
+ *  the enabled lenses, the facet values now, and every lens the model knows. */
+export function bindKettleScan(sim: ScanSim, M: Model): void {
+  const P = M.P, base = new Map(P.base.features.map((f) => [f.id, f])), on = new Set(P.lenses.map((l) => l.id));
+  const order = [...new Set(M.L.tiles.filter((T) => T.wing.bld.i === 0).map((T) => T.f.slug))];
+  sim.bind({
+    order,
+    manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
+    value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
+    // every lens the model knows, enabled or not: the ids and looks a new Kettle lens may not repeat
+    lenses: () => Object.values(P.LENS).map((d) => ({ id: d.id, version: d.manifest.version, source: d.source, enabled: d.i >= 0, manifest: d.manifest, ...(d.temporary ? { temporary: true as const } : {}) })),
+  });
 }

@@ -3,11 +3,15 @@
 // polls (GET .../scans, .../scan, .../waves); nothing here invents a finding, a job or a place. Places are the plan's
 // boxes, as the sheet draws them (BpTable.h's frame of reference).
 #include "BpTable.h"
+#include "BpProjector.h"
+#include "BpSheet.h"
 
 #include "BpGameMode.h"
+#include "BpTier.h"
 #include "BpLink.h"
 #include "BpType.h"
 #include "BpWords.h"
+#include "Schema/BpSchemaVocab.h"
 #include "CanvasItem.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/WidgetComponent.h"
@@ -16,6 +20,8 @@
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GlobalRenderResources.h"
@@ -27,6 +33,7 @@
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
+#include "TimerManager.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
@@ -43,6 +50,10 @@ namespace
 	const FLinearColor CardInk(FColor(0x14, 0x22, 0x3C));
 	const FLinearColor CardPaper(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor AmberInk(FColor(0xFF, 0xB5, 0x47));
+	/** Wave P1: a stop-ship tag's rule (the result sheet's STOP-SHIP red, BpSheet::Red, deepened to hold on the tag's tan paper)
+	 *  and its second line darkened further (the high-risk mark's red). */
+	const FLinearColor StopShipInk(FColor(0xD9, 0x3B, 0x2C));
+	const FLinearColor StopShipText(FColor(0xA8, 0x1F, 0x15));
 	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
 	/** The card's glass and its edge (FE): near-white, a little cool, as the concept's card. */
 	const FLinearColor CardGlass(FColor(0xF4, 0xF7, 0xFB));
@@ -51,6 +62,9 @@ namespace
 	const FLinearColor CardGlow(FColor(0xFF, 0xB8, 0x60));
 	/** The card's layout is in pixels at this density; SDPIScaler draws it at bp.CardPxPerCm. */
 	constexpr float CardLayoutPxPerCm = 40.f;
+	/** What a card carrying the decision brief adds to its size (cm). */
+	constexpr float CardBriefExtraWCm = 7.f;
+	constexpr float CardBriefExtraHCm = 2.5f;
 	/** The card's render density (FM, element 10: the judge's "blurry" card). The widget's target has no mips, so a density
 	 *  far above what the eye resolves there is minified with aliasing, read as blur; FE and FK's 24 and 32 px/cm were four
 	 *  times the target capture's. */
@@ -110,6 +124,10 @@ namespace
 	{
 		return FSlateFontInfo(ABpTable::TextFontObject(), CapPx / (static_cast<float>(BpType::CapPerEm) * 96.f / 72.f), FName(Style));
 	}
+
+	/** Wave 4: the soft halos round the beads, off by default (a translucent sprite per bead; the plan's marker has none). */
+	TAutoConsoleVariable<float> CVarScanSweepGain(TEXT("bp.ScanSweepGain"), 0.45f, TEXT("On the Quest tier, the scan sweep's tint (the lens's colour, or the line's cyan) is scaled by this, 0 to 2, so the band tints what it reads rather than clipping it white on the LDR path (wave Q1). The PC keeps 1. Read while a scan runs."));
+	TAutoConsoleVariable<int32> CVarPinHalos(TEXT("bp.PinHalos"), 0, TEXT("The soft translucent halos round the pins' beads: 0 off (wave 4, the default), 1 on."));
 
 	/** The survey pin as modelled (ArtSource/survey-pin): its height, and its tag's height (the tag sits at the top). */
 	constexpr double PinModelCm = 6.38;
@@ -228,6 +246,36 @@ namespace
 			WithPlannedTables(World, TEXT("BpScan.Start ") + FString::Join(Args, TEXT(" ")), [&Args, &Lens](ABpTable& Table) { Table.StartScan(Args[0], Lens); });
 		}));
 
+	/** BpScan.Directed <focus id> [room id|site]: a directed scan of a saved focus, the wrist's path (no second pinch). */
+	FAutoConsoleCommandWithWorldAndArgs CmdScanDirected(
+		TEXT("BpScan.Directed"),
+		TEXT("BpScan.Directed <focus id> [room id|site]: start a directed scan of a saved focus through apps/server (the wrist's path; refused from the bundle; a live product takes it, a plain BpScan.Start never). No place: the room the table shows, or the site."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpScan: usage BpScan.Directed <focus id> [room id|site]"));
+				return;
+			}
+			const FString Focus = Args[0], Target = Args.Num() > 1 ? Args[1] : FString();
+			WithPlannedTables(World, TEXT("BpScan.Directed ") + FString::Join(Args, TEXT(" ")), [&Focus, &Target](ABpTable& Table) { Table.StartDirected(Focus, Target, nullptr); });
+		}));
+
+	/** BpScan.Sample <focus id> [room id|site]: the bundle's local sample scan, directly (the proof that a server refuses one). */
+	FAutoConsoleCommandWithWorldAndArgs CmdScanSample(
+		TEXT("BpScan.Sample"),
+		TEXT("BpScan.Sample <focus id> [room id|site]: the bundle's sample scan, no server involved (refused, logged, on a table a server answers). No place: the room the table shows, or the site."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			if (Args.Num() == 0)
+			{
+				UE_LOG(LogBpTable, Warning, TEXT("BpScan: usage BpScan.Sample <focus id> [room id|site]"));
+				return;
+			}
+			const FString Focus = Args[0], Target = Args.Num() > 1 ? Args[1] : FString();
+			WithPlannedTables(World, TEXT("BpScan.Sample ") + FString::Join(Args, TEXT(" ")), [&Focus, &Target](ABpTable& Table) { Table.StartSampleScan(Focus, Target, nullptr); });
+		}));
+
 	/** BpCard.Show [1|0]: show or hide the decision card. */
 	FAutoConsoleCommandWithWorldAndArgs CmdCardShow(
 		TEXT("BpCard.Show"),
@@ -236,6 +284,16 @@ namespace
 		{
 			const bool bShow = Args.Num() == 0 || Args[0] != TEXT("0");
 			WithPlannedTables(World, TEXT("BpCard.Show ") + FString(bShow ? TEXT("1") : TEXT("0")), [bShow](ABpTable& Table) { Table.ShowCard(bShow); });
+		}));
+
+	/** BpCard.Ask <proposal id>: the card asks about this open finding (the Morning Watch's decision, a repeat). */
+	FAutoConsoleCommandWithWorldAndArgs CmdCardAsk(
+		TEXT("BpCard.Ask"),
+		TEXT("BpCard.Ask <proposal id>: the decision card asks about this open finding, with its brief; no id goes back to the room rule."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
+		{
+			const FString Id = Args.Num() ? Args[0] : FString();
+			WithPlannedTables(World, TEXT("BpCard.Ask ") + Id, [&Id](ABpTable& Table) { Table.AskCard(Id); });
 		}));
 }
 
@@ -310,6 +368,13 @@ void ABpTable::LoadMarks()
 void ABpTable::ReceiveScanState(const FBpScanState& State)
 {
 	if (!SheetPlan.IsValid()) return;
+	// A decision written from this table (a repeat declined, an approve) bridges only until the store's read shows it: then
+	// the store's status rules.
+	for (auto It = CardDecided.CreateIterator(); It; ++It)
+	{
+		const FBpProposal* Read = State.Scan.proposals.FindByPredicate([&It](const FBpProposal& P) { return P.id == *It; });
+		if (!Read || Read->status != TEXT("proposed")) It.RemoveCurrent();
+	}
 	BuildPins(State);
 	if (!PendingReplayScope.IsEmpty() && State.bHasScan)
 	{
@@ -320,6 +385,25 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 
 	// The scan line: the first running measure job (a queued one has not started reading).
 	const FBpScanJob* Job = State.Jobs.FindByPredicate([](const FBpScanJob& J) { return J.kind == TEXT("measure") && J.status == TEXT("running"); });
+	// Wave U2: a scan that finished before any read saw it running (a fast server) never started the theatre and nothing said it
+	// ran. A measure job first seen already ended (after the first read, which only learns what is there), within two minutes,
+	// still gets its result sheet: "Done before I could watch: here's what it found."
+	{
+		const FBpScanJob* Missed = nullptr;
+		for (const FBpScanJob& J : State.Jobs)
+		{
+			if (J.kind != BpVocab::ScanJob::Kind::Measure) continue;
+			bool bKnown = false;
+			ScanJobsSeen.Add(J.id, &bKnown);
+			if (bKnown || !bScanJobsPrimed || J.id == ScanJob) continue;
+			if (J.status != BpVocab::ScanJob::Status::Done && J.status != BpVocab::ScanJob::Status::Failed) continue;
+			FDateTime Ended;
+			if (!FDateTime::ParseIso8601(*(J.ended_at.IsEmpty() ? J.queued_at : J.ended_at), Ended) || (FDateTime::UtcNow() - Ended).GetTotalSeconds() > 120.0) continue;
+			Missed = &J;
+		}
+		bScanJobsPrimed = true;
+		if (Missed && !Job && !bTheatre && !bScanSample && !bScanReplay) TheatreMissed(*Missed, State);
+	}
 	if (Job)
 	{
 		if (Job->id != ScanJob)
@@ -329,8 +413,38 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 			bScanReplay = false;
 			SetScanPlace(Job->scope.features, Job->scope.kind == TEXT("all"));
 			UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s lens=%s scope=%s:%s features=%d"), *Job->id, *Job->lens, *Job->scope.kind, *Job->scope.id, Job->scope.features.Num());
+			// Wave C1: the theatre follows it (the lamp to each room, captions, the start said when it has just begun: a scan
+			// that began before this table looked is followed but not announced, and lands nothing retroactively).
+			GetWorldTimerManager().ClearTimer(TheatreEndTimer);
+			if (bTheatre && !bTheatreSample) TheatreEnd(true, false, true);
+			TSet<int32> ScopeRooms;
+			const TSet<FString> Want(Job->scope.features);
+			const bool bAllScope = Job->scope.kind == BpVocab::ScanScope::Kind::All;
+			for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
+			{
+				if ((bAllScope || Want.Contains(SheetPlan->tiles[Index].id)) && TileRoom.IsValidIndex(Index) && SheetPlan->rooms.IsValidIndex(TileRoom[Index])) ScopeRooms.Add(TileRoom[Index]);
+			}
+			FDateTime Began;
+			const bool bFresh = FDateTime::ParseIso8601(*(Job->started_at.IsEmpty() ? Job->queued_at : Job->started_at), Began) && (FDateTime::UtcNow() - Began).GetTotalSeconds() < 20.0;
+			const FString ScopeWords = bAllScope ? FString(TEXT("everything")) : Job->scope.kind == BpVocab::ScanScope::Kind::Wing ? FString(TEXT("this wing")) : Job->scope.kind == BpVocab::ScanScope::Kind::Room ? FString(TEXT("this room")) : FString(TEXT("this place"));
+			TheatreBegin(false, Job->id, Job->lens, Job->scope.label.IsEmpty() ? FString(TEXT("Everything")) : Job->scope.label, ScopeWords, ScopeRooms.Num(), bFresh);
+			if (!bTheatre) PresentScanPlace(TEXT("scan"));
 		}
+		const FString WasRun = ScanRun;
 		ScanRun = Job->run_id;
+		// Wave P1 (the first linked scan, 2026-11-10): the server learns a job's run only through the stream route, which the table
+		// does not read, so a running job's run_id is empty here. The run that names the job in its note (`bp-job:<id>`, or
+		// `bp-job:<id> <more>`: jobs.ts isJobNote, as the scan marks find it) is its run; without it no reading row matched and
+		// the lamp never left home.
+		if (ScanRun.IsEmpty())
+		{
+			const FString Named = TEXT("bp-job:") + Job->id;
+			if (const FBpRun* Run = State.Scan.runs.FindByPredicate([&Named](const FBpRun& R) { return R.note == Named || R.note.StartsWith(Named + TEXT(" ")); }))
+			{
+				ScanRun = Run->id;
+				if (ScanRun != WasRun) UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s's run is %s (named in its note)"), *Job->id, *ScanRun);
+			}
+		}
 		// The feature being read: the run's latest reading or measured row (blueprint-ui.md, Views: "current").
 		const FBpActivity* Current = nullptr;
 		for (const FBpActivity& Row : State.Scan.activity)
@@ -347,18 +461,64 @@ void ABpTable::ReceiveScanState(const FBpScanState& State)
 				const double Target = Box.y + Box.h * (Current->kind == TEXT("measured") ? 1.0 : 0.5);
 				if (Target != ScanTargetY) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan current=%s (%s)"), *Current->feature, *Current->kind);
 				ScanTargetY = Target;
+				// The theatre: the room being read, and how many rooms the run has entered (its rows in order).
+				if (bTheatre && TileRoom.IsValidIndex(Tile))
+				{
+					TArray<int32> Entered;
+					TArray<const FBpActivity*> Rows;
+					for (const FBpActivity& Row : State.Scan.activity) if (Row.run_id == ScanRun && !Row.feature.IsEmpty() && (Row.kind == BpVocab::Activity::Kind::Reading || Row.kind == BpVocab::Activity::Kind::Measured)) Rows.Add(&Row);
+					Rows.Sort([](const FBpActivity& A, const FBpActivity& B) { return A.id < B.id; });
+					for (const FBpActivity* Row : Rows)
+					{
+						const int32 At = SheetPlan->tiles.IndexOfByPredicate([Row](const FBpPlanTile& T) { return T.id == Row->feature; });
+						if (At != INDEX_NONE && TileRoom.IsValidIndex(At)) Entered.AddUnique(TileRoom[At]);
+					}
+					const int32 Room = TileRoom[Tile];
+					TheatreReading(Room, Entered.Find(Room) + 1, TheatreRoomsOf);
+				}
 			}
 		}
 		bScanLive = ScanPlanBox.bIsValid;
 	}
-	else if (!bScanReplay)
+	else if (!bScanReplay && !bScanSample)
 	{
 		if (bScanLive) UE_LOG(LogBpTable, Log, TEXT("BpTable: scan job=%s ended"), *ScanJob);
+		// The theatre's result, a moment later (the store's last rows: a directed run writes its findings near its end).
+		if (bTheatre && !bTheatreSample && !ScanJob.IsEmpty() && !GetWorldTimerManager().IsTimerActive(TheatreEndTimer))
+		{
+			const FBpScanJob* Ended = State.Jobs.FindByPredicate([this](const FBpScanJob& J) { return J.id == ScanJob; });
+			const bool bFailed = Ended && Ended->status == BpVocab::ScanJob::Status::Failed;
+			const bool bCancelled = !Ended || Ended->status == BpVocab::ScanJob::Status::Cancelled;
+			UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: %s left running (%s); the result in %.0f s"), *ScanJob, Ended ? *Ended->status : TEXT("gone"), 2.0);
+			const FString EndedRun = Ended && !Ended->run_id.IsEmpty() ? Ended->run_id : ScanRun;
+			GetWorldTimerManager().SetTimer(TheatreEndTimer, FTimerDelegate::CreateWeakLambda(this, [this, bFailed, bCancelled, EndedRun]()
+			{
+				// Wave P1 (the first real linked scan, 2026-11-10): a job can exit `done` while the run it wrote is `failed` (the
+				// model found nothing it could read and closed its run so). The store's run is the truth the result tells.
+				bool bRunFailed = bFailed;
+				const FBpRun* Run = EndedRun.IsEmpty() ? nullptr : FBpLinkModule::Get().GetScanState().Scan.runs.FindByPredicate([&EndedRun](const FBpRun& R) { return R.id == EndedRun; });
+				if (!bFailed && !bCancelled && Run && (Run->status == BpVocab::Run::Status::Failed || Run->status == BpVocab::Run::Status::Aborted))
+				{
+					bRunFailed = true;
+					UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the job ended done but its run %s is %s (%s): the result says it failed"), *EndedRun, *Run->status, *Run->note.Left(160));
+				}
+				if (!EndedRun.IsEmpty()) ScanRun = EndedRun;
+				TheatreEnd(bCancelled, bRunFailed, false);
+			}), 2.f, false);
+		}
 		bScanLive = false;
 		ScanJob.Reset();
 	}
+	// A real scan's result stays true to the store for a minute after it ends: findings written late are counted.
+	if (bTheatreResult && !TheatreResult.bSample && TheatreEndedAt > 0.0 && GetWorld()->GetTimeSeconds() - TheatreEndedAt < 60.0)
+	{
+		const int32 Was = TheatreResult.New;
+		FinishTheatreResult(TheatreResult.bCancelled, TheatreResult.bFailed);
+		if (TheatreResult.New != Was) { UE_LOG(LogBpTable, Log, TEXT("BpScanTheatre: the result now counts %d new"), TheatreResult.New); ScanBandChanged.Broadcast(); }
+	}
 	if (bScanLive || ScanStrength > 0.f) SetActorTickInterval(0.f);
 	if (bCardShown) RefreshCard();
+	RefreshScanMarks();
 	// Room mode's map shows the room's open findings: a read that changes them redraws it.
 	if (!ShownRoomMode.IsEmpty() && RoomFindingsKey() != RoomMapKey) BuildRoomMap();
 	// The screen deck's queue and its screens' content (the findings, the waves) follow the store (BpDeck.cpp).
@@ -377,24 +537,37 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	TMap<int32, int32> PinOfTile;
 	FString Key;
 	int32 Open = 0, Triaged = 0;
+	// Wave C1: a finding the pins did not show last time lands (while a scan runs or just ended); the sample's held ones wait.
+	const bool bLand = LandingsWanted();
+	TArray<int32> Arrived;
+	TMap<int32, int32> NewOfTile;
+	TSet<FString> ShownOpen;
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
-		if (!IsOpen(Proposal)) continue;
+		if (!IsOpen(Proposal) || ScanHeld.Contains(Proposal.id)) continue;
 		++Open;
+		ShownOpen.Add(Proposal.id);
 		const int32* HasTier = State.Tiers.Find(Proposal.id);
 		Triaged += HasTier ? 1 : 0;
 		Key += Proposal.id + (HasTier ? FString::Printf(TEXT(":%d,"), *HasTier) : FString(TEXT(",")));
 		const int32* Tile = TileOf.Find(Proposal.feature);
 		if (!Tile) continue;
+		if (bLand && !PinsKnownOpen.Contains(Proposal.id))
+		{
+			Arrived.AddUnique(*Tile);
+			++NewOfTile.FindOrAdd(*Tile);
+		}
 		FPin Pin;
 		Pin.Line1 = Proposal.id.ToUpper();
 		Pin.Tier = HasTier ? *HasTier : -1;
 		Pin.Risk = FMath::RoundToInt(Proposal.risk);
 		Pin.bUrgent = HasTier ? *HasTier <= PinTagTierMax : Pin.Risk >= PinTagRiskMin;
+		Pin.bStopShip = ScanSeverity(Proposal, HasTier) == 0;
 		if (const int32* Have = PinOfTile.Find(*Tile))
 		{
 			FPin& Into = Next[*Have];
 			++Into.Findings;
+			Into.bStopShip |= Pin.bStopShip;
 			if (MoreUrgent(Pin, Into))
 			{
 				Into.Line1 = Pin.Line1;
@@ -407,10 +580,15 @@ void ABpTable::BuildPins(const FBpScanState& State)
 		Pin.Tile = *Tile;
 		Pin.Room = TileRoom.IsValidIndex(*Tile) ? TileRoom[*Tile] : INDEX_NONE;
 		Pin.Findings = 1;
+		Pin.CountTiles = { *Tile };
 		PinOfTile.Add(*Tile, Next.Num());
 		Next.Add(Pin);
 	}
-	for (FPin& Pin : Next) Pin.bTagged = Pin.bUrgent;
+	for (FPin& Pin : Next)
+	{
+		Pin.bTagged = Pin.bUrgent;
+		Pin.NewHere = NewOfTile.FindRef(Pin.Tile);
+	}
 	// Tags that would overlap from the target eye merge (FC3): in store order, a tagged pin within TagClearUCm across of an
 	// earlier tagged pin, and nearer or farther than it by less than the paper its tag hides from the target eye, gives
 	// its tag up to that pin, whose count then carries its findings. Every pin keeps its bead on its own feature.
@@ -436,6 +614,8 @@ void ABpTable::BuildPins(const FBpScanState& State)
 			if (FMath::Abs(Here.X - There.X) >= TagClearUCm || FMath::Abs(Here.Y - There.Y) >= Hidden) continue;
 			Next[Index].bTagged = false;
 			Next[Earlier].Findings += Next[Index].Findings;
+			Next[Earlier].CountTiles.Append(Next[Index].CountTiles);
+			Next[Earlier].bStopShip |= Next[Index].bStopShip;
 			if (MoreUrgent(Next[Index], Next[Earlier]))
 			{
 				Next[Earlier].Line1 = Next[Index].Line1;
@@ -478,21 +658,10 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	{
 		Pin.Cell = Pin.bTagged && Cells < TagAtlasCols * TagAtlasRows ? Cells++ : INDEX_NONE;
 		Pin.bTagged = Pin.Cell != INDEX_NONE;
-		// The second line, longest first: the tier with its word (the ledger's T0..T3 chip) or the risk, then how many more
-		// findings the tag stands for (DrawTags sets the first that fits).
-		const FString More = Pin.Findings > 1 ? FString::Printf(TEXT("  +%d"), Pin.Findings - 1) : FString();
-		Pin.Line2.Reset();
-		if (Pin.Tier >= 0)
-		{
-			const FString Chip = FString::Printf(TEXT("T%d"), Pin.Tier);
-			Pin.Line2 = { Chip + TEXT(" ") + TierWord(Pin.Tier) + More, Chip + More, Chip };
-		}
-		else
-		{
-			const FString Risk = FString::Printf(TEXT("RISK %d"), Pin.Risk);
-			Pin.Line2 = { Risk + More, Risk };
-		}
+		Pin.Line2 = PinLine2(Pin, Pin.Findings);
 	}
+	PinsKnownOpen = MoveTemp(ShownOpen);
+	bPinsPrimed = true;
 	if (Key == PinsKey && PinList.Num() == Next.Num()) return;
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pin rule tier<=T%d (untriaged: risk>=%d), %d per %.0f cm of wing inside the table: tags=%d of %d pins, merged=%d (tags that would overlap from the target eye), capped=%d, outside=%d; open=%d triaged=%d"),
 		PinTagTierMax, PinTagRiskMin, PinTagsPerWing, PinTagWingCm, Cells, Next.Num(), Merged, Capped, Outside, Open, Triaged);
@@ -521,14 +690,33 @@ void ABpTable::BuildPins(const FBpScanState& State)
 	TArray<FTransform> Beads;
 	Beads.Init(FTransform::Identity, PinList.Num() + Cells);
 	if (Beads.Num() > 0) PinBeads->AddInstances(Beads, false, false, false);
-	if (Beads.Num() > 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
+	if (Beads.Num() > 0 && CVarPinHalos.GetValueOnGameThread() != 0 && LoadSoft(PinHaloMaterial)) PinHalos->AddInstances(Beads, false, false, false);
 	if (Places.Num() > 0) PinStems->AddInstances(Places, false, false, false);
-	if (TagAtlas) TagAtlas->UpdateResource();
 	RaisePins();
 	PlacePins();
+	NoteArrivals(Arrived);
+	// After the arrivals are known, so a landing's tags first show the counts already on the plan (TickScanTheatre ticks them up).
+	PinCountsKey.Reset();
+	if (PinLandClock >= 0.f) TickPinCounts();
+	else if (TagAtlas) TagAtlas->UpdateResource();
 	// The wing labels slide off the new stems (SlideOffStems).
 	RedrawSheet();
 	UE_LOG(LogBpTable, Log, TEXT("BpTable: pins=%d tagged=%d open_findings=%d (beads on the features that carry them)"), PinList.Num(), Pins->GetInstanceCount(), Open);
+}
+
+TArray<FString> ABpTable::PinLine2(const FPin& Pin, int32 Findings)
+{
+	// The second line, longest first: the tier with its word (the ledger's T0..T3 chip) or the risk, then how many more
+	// findings the tag stands for (DrawTags sets the first that fits).
+	const FString More = Findings > 1 ? FString::Printf(TEXT("  +%d"), Findings - 1) : FString();
+	if (Pin.Tier >= 0)
+	{
+		const FString Chip = FString::Printf(TEXT("T%d"), Pin.Tier);
+		return { Chip + TEXT(" ") + TierWord(Pin.Tier) + More, Chip + More, Chip };
+	}
+	// The ledger's mark and number (DrawTags draws the mark): the same words as the PC's risk column.
+	const FString Risk = FString::FromInt(Pin.Risk);
+	return { Risk + More, Risk };
 }
 
 double ABpTable::TagRaiseCm(const FPin& Pin) const
@@ -640,7 +828,7 @@ void ABpTable::PlacePins()
 	if (!SheetPlan.IsValid() || PinList.Num() == 0) return;
 	TArray<FTransform> PinPlaces, BeadPlaces, StemPlaces, HaloPlaces;
 	// Room mode: the site's pins and tags shrink away as the room's map comes in (a hidden batch would lose its custom data).
-	const double Site = SiteShow();
+	const double SiteAll = SiteShow();
 	for (const FPin& Pin : PinList)
 	{
 		const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
@@ -648,14 +836,25 @@ void ABpTable::PlacePins()
 		// On its tile: the paper at rest, the lifted room's tile top when its room is up.
 		const float Rise = RoomRiseEase(Pin.Room);
 		const FString* Reading = Tile.health.Find(ActiveLens);
-		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString());
+		// Wave C1: a landing pin is still over its tile, or not yet shown (BpScanTheatre.cpp).
+		float LandShow = 1.f;
+		// Wave U2 (from the seat the pointed room's stems ran through its raised floor, the beads left under it): the pointed room's
+		// pins stand on its raised copy's floor, with its furniture (LiftGlyphs).
+		const float PointedLift = HighlightRestRoom != INDEX_NONE && Pin.Room == HighlightRestRoom && LiftRoomId.IsEmpty() ? HighlightLiftCm : 0.f;
+		const float StandCm = Rise * TileHeightCm(Reading ? *Reading : FString()) + PinLandOffset(Pin, LandShow) + PointedLift;
+		const double Site = SiteAll * LandShow;
 		const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
 		const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm));
-		BeadPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * Site)));
+		// The plan's marker: a flat square on the paper (the cube's scale is cm / 100), a hair above it so it never fights the paper.
+		BeadPlaces.Add(FTransform(FQuat::Identity, Foot + Group.TransformVector(FVector(0.0, 0.0, 0.1)), FVector(FVector2D(PinBeadCm * 1.3f / 100.f), 0.16f / 100.f) * Site));
 		HaloPlaces.Add(FTransform(FQuat::Identity, Foot, FVector(PinBeadCm * 0.5 * PinHaloScale * Site)));
 		if (!Pin.bTagged) continue;
-		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm));
-		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale * Site)));
+		// Wave W3: the tag (the top PinTagModelCm of the pin's model; its body is hidden) shrinks about its own centre while a
+		// sheet is on the wall, so it steps aside where it stands rather than sliding down its stem.
+		const double TagsShow = FMath::Clamp(static_cast<double>(WallTagsShow), 0.0, 1.0);
+		const double TagCentreCm = (PinModelCm - 0.5 * PinTagModelCm) * PinScale * Site;
+		const FVector Head = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + TagCentreCm * (1.0 - TagsShow)));
+		PinPlaces.Add(FTransform(FRotator(0.f, PinYawDeg, 0.f), Head, FVector(PinScale * Site * TagsShow)));
 		// The hairline from the bead up to the tag's foot (the engine cube: 100 cm, pivot at its centre); the pin's own body
 		// is hidden (HiddenMaterial), so the hairline is the whole stem.
 		const FVector TagFoot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
@@ -664,13 +863,38 @@ void ABpTable::PlacePins()
 		// The head bead (FAB, element 7: the concept's glowing amber bead at the top of each stem, under the tag), its
 		// centre one radius under the tag's foot, so the stem runs into it.
 		const FVector HeadBead = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale - PinHeadBeadCm * 0.5));
-		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * Site)));
+		BeadPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm / 100.f, PinHeadBeadCm / 100.f, PinHeadBeadCm * 0.4f / 100.f) * Site));
 		HaloPlaces.Add(FTransform(FQuat::Identity, HeadBead, FVector(PinHeadBeadCm * 0.5 * PinHaloScale * Site)));
 	}
 	if (PinPlaces.Num() > 0 && Pins->GetInstanceCount() == PinPlaces.Num()) Pins->BatchUpdateInstancesTransforms(0, PinPlaces, false, true);
 	if (BeadPlaces.Num() > 0 && PinBeads->GetInstanceCount() == BeadPlaces.Num()) PinBeads->BatchUpdateInstancesTransforms(0, BeadPlaces, false, true);
 	if (StemPlaces.Num() > 0 && PinStems->GetInstanceCount() == StemPlaces.Num()) PinStems->BatchUpdateInstancesTransforms(0, StemPlaces, false, true);
 	if (HaloPlaces.Num() > 0 && PinHalos->GetInstanceCount() == HaloPlaces.Num()) PinHalos->BatchUpdateInstancesTransforms(0, HaloPlaces, false, true);
+}
+
+bool ABpTable::TickWallTags(float DeltaSeconds)
+{
+	// Wave W3 (the owner, 2026-11-11: "the wall growth to 53"): the 53 degree wall's foot stands where the far pins' tallest
+	// tags are from the seat, so while any sheet is on the far surface (a decision, YESTERDAY, MENU, SETTINGS, the conversation,
+	// a scan's result) the tags step aside, and come back when it closes. An ease over WallTagsS at the frame rate, then
+	// nothing: at rest this is one compare.
+	constexpr float WallTagsS = 0.25f;
+	const bool bAway = BpProjector::IsFar();
+	if (bAway != bWallTagsAway)
+	{
+		bWallTagsAway = bAway;
+		UE_LOG(LogBpTable, Log, TEXT("BpTable: the pin tags %s (%d tagged pins; %.2f s)"), bAway ? TEXT("step aside: a sheet is on the wall") : TEXT("come back: the wall closed"),
+			Pins ? Pins->GetInstanceCount() : 0, WallTagsS);
+	}
+	const float Want = bAway ? 0.f : 1.f;
+	if (WallTagsShow == Want) return false;
+	WallTagsShow = FMath::FInterpConstantTo(WallTagsShow, Want, DeltaSeconds, 1.f / WallTagsS);
+	// Smooth at both ends: the instances take an eased scale, the clock stays linear.
+	const float Linear = WallTagsShow;
+	WallTagsShow = Linear * Linear * (3.f - 2.f * Linear);
+	PlacePins();
+	WallTagsShow = Linear;
+	return WallTagsShow != Want;
 }
 
 void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
@@ -712,11 +936,18 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		// A pixel of margin so the mips never bleed one card into the next.
 		const FVector2D Min = Cell + FVector2D(4.0, 4.0), Max = Cell + FVector2D(TagCellWidthPx - 4.0, TagCellHeightPx - 4.0);
 		Fill(Min, Max, TagPaper);
-		Fill(Min, FVector2D(Max.X, Min.Y + 8.0), AmberInk);
+		// Wave P1: a stop-ship tag's rule in the stop-ship red (the result sheet's STOP-SHIP), from its landing on.
+		const bool bStop = PinList[Index].bStopShip;
+		Fill(Min, FVector2D(Max.X, Min.Y + (bStop ? 12.0 : 8.0)), bStop ? StopShipInk : AmberInk);
 		const float Room = TagCellWidthPx - 8.f - 2.f * Pad;
 		const FSlateFontInfo Bold = CanvasFont(TEXT("Bold"), Cap);
 		const auto FitsAt = [&](const FString& Text, float Tracking) { return !Text.IsEmpty() && Measure(Text, Bold).X + Tracking * Text.Len() <= Room; };
 		const auto Fits = [&](const FString& Text) { return FitsAt(Text, Track); };
+		// The second line starts after the risk mark, in the ledger's three bands (useLedger.ts riskBand): drawn, since the tag's face has no such glyphs.
+		const float MarkPx = Cap * 0.92f, MarkGap = 12.f;
+		const bool bRiskLine = PinList[Index].Tier < 0;
+		const double PinRisk = PinList[Index].Risk;
+		const auto FitsLine2 = [&](const FString& Text) { return !Text.IsEmpty() && Measure(Text, Bold).X + Track * Text.Len() <= Room - (bRiskLine ? MarkPx + MarkGap : 0.f); };
 		// The finding's id, else its part after the prefix (a live store's "P-4A6A4F" is two letters over the tag at the
 		// floor; the hex alone still names it in its product, as a short commit sha does).
 		FString Id = PinList[Index].Line1;
@@ -725,9 +956,39 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		// FAF: an id a little wider than the tag (pof's "A0AB2A") sets without the tracking rather than going missing.
 		if (Fits(Id)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, Track });
 		else if (FitsAt(Id, 0.f)) Texts.Add({ Id, FVector2D(Min.X + Pad, Top(Min.Y + 26.f)), Bold, TagInk, 0.f });
-		// The second line as it fits: the risk and the count, else the risk alone.
-		const FString* Line2 = PinList[Index].Line2.FindByPredicate(Fits);
-		if (Line2) Texts.Add({ *Line2, FVector2D(Min.X + Pad, Top(Min.Y + 26.f + Cap + 20.f)), Bold, CountInk, Track });
+		// The second line as it fits: the risk and the count, else the risk alone. During a landing the count is what has
+		// touched down so far (wave P1: it ticks up pin by pin).
+		const TArray<FString> Line2s = PinLandClock >= 0.f ? PinLine2(PinList[Index], ShownFindings(PinList[Index])) : PinList[Index].Line2;
+		const FString* Line2 = Line2s.FindByPredicate(FitsLine2);
+		if (Line2)
+		{
+			const float LineTop = Min.Y + 26.f + Cap + 20.f;
+			float TextX = Min.X + Pad;
+			FLinearColor LineInk = bStop ? StopShipText : CountInk;
+			if (bRiskLine)
+			{
+				// ▲ high, ◆ medium, ▽ low, in the ledger's colours darkened for the tag's paper.
+				const FVector2D O(TextX, LineTop);
+				const float H = Cap, W = MarkPx;
+				LineInk = PinRisk >= 7.0 ? FLinearColor(FColor(0xA8, 0x1F, 0x15)) : PinRisk >= 4.0 ? FLinearColor(FColor(0x7A, 0x4A, 0x0C)) : FLinearColor(FColor(0x1E, 0x45, 0x72));
+				const auto Tri = [&](const FVector2D& P0, const FVector2D& P1, const FVector2D& P2)
+				{
+					FCanvasUVTri T;
+					T.V0_Color = T.V1_Color = T.V2_Color = LineInk;
+					T.V0_Pos = P0; T.V1_Pos = P1; T.V2_Pos = P2;
+					Tris.Add(T);
+				};
+				if (PinRisk >= 7.0) Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W, H), O + FVector2D(0.0, H));
+				else if (PinRisk >= 4.0)
+				{
+					Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W, H * 0.5), O + FVector2D(W * 0.5, H));
+					Tri(O + FVector2D(W * 0.5, 0.0), O + FVector2D(W * 0.5, H), O + FVector2D(0.0, H * 0.5));
+				}
+				else Tri(O + FVector2D(0.0, 0.0), O + FVector2D(W, 0.0), O + FVector2D(W * 0.5, H));
+				TextX += W + MarkGap;
+			}
+			Texts.Add({ *Line2, FVector2D(TextX, Top(LineTop)), Bold, LineInk, Track });
+		}
 	}
 	if (Tris.Num() > 0)
 	{
@@ -741,6 +1002,11 @@ void ABpTable::DrawTags(UCanvas* Canvas, int32 Width, int32 Height)
 		Item.HorizSpacingAdjust = Text.Tracking;
 		Canvas->DrawItem(Item);
 	}
+}
+
+void ABpTable::PresentScanPlace(const TCHAR* Why)
+{
+	if (ScanPlanBox.bIsValid) PresentLamp(WingGroupTransform(0.f).TransformPosition(PaperCmToLocal(PlanToPaperCm(ScanPlanBox.GetCenter()), 0.f)), Why);
 }
 
 void ABpTable::SetScanPlace(const TArray<FString>& Features, bool bAll)
@@ -896,10 +1162,31 @@ void ABpTable::WriteScanParams(float Strength)
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanCentre"), FLinearColor(Centre.X, Centre.Y, Centre.Z, HalfWidth));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanAxis"), FLinearColor(Axis.X, Axis.Y, Axis.Z, Strength));
 	UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanSide"), FLinearColor(Side.X, Side.Y, Side.Z, HalfLength));
-	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it.
+	// Wave C1: the line is the lamp's light, in the lens's colour while the theatre follows a scan (the collection's ScanTint,
+	// c1_scan_tint.py; its default is the line's own cyan). A collection without it is left alone.
+	if (ScanParams->GetVectorParameterByName(TEXT("ScanTint")))
+	{
+		FLinearColor Tint = bTheatre ? TheatreTint : FLinearColor(0.0395f, 0.5776f, 1.f, 1.f);
+		// Wave Q1 (the real headset, 2026-11-10: the Design lens's pink sweep drew the line and the room it read as solid
+		// white-pink blocks): the band adds Scan x Band light to the paper and the edges (fg_holo.py), which the PC's tonemapper
+		// rolls off and the Quest's LDR path clips per channel. On the Quest tier the tint is scaled by bp.ScanSweepGain, so
+		// the band tints the lines in the lens's colour and what lies under it still reads. The PC keeps its look (gain 1).
+		if (BpTier::IsOn(World))
+		{
+			const float Gain = FMath::Clamp(CVarScanSweepGain.GetValueOnGameThread(), 0.f, 2.f);
+			Tint = FLinearColor(Tint.R * Gain, Tint.G * Gain, Tint.B * Gain, 1.f);
+		}
+		if (!Tint.Equals(ScanTintShown))
+		{
+			ScanTintShown = Tint;
+			UKismetMaterialLibrary::SetVectorParameterValue(World, ScanParams, TEXT("ScanTint"), Tint);
+		}
+	}
+	// The veil (FP) stands on the line, as long as it, its face to the person at the near edge, fading with it. The Quest
+	// tier (BpTier.h) draws the line alone: no second translucent sheet over the paper.
 	if (ScanVeil && ScanVeilMid)
 	{
-		const bool bVeil = Strength > 0.01f && HalfLength > 0.0;
+		const bool bVeil = Strength > 0.01f && HalfLength > 0.0 && !BpTier::IsOn(World);
 		ScanVeil->SetVisibility(bVeil);
 		if (bVeil)
 		{
@@ -911,17 +1198,10 @@ void ABpTable::WriteScanParams(float Strength)
 	}
 }
 
-void ABpTable::StartScan(const FString& Id, const FString& Lens)
+bool ABpTable::BuildScanScope(const FString& Id, FString& Kind, FString& ScopeId, FString& Label, TArray<FString>& Features) const
 {
-	if (!SheetPlan.IsValid())
-	{
-		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, no plan yet"));
-		return;
-	}
 	// The scope as the web names it (blueprint-ui.md, Scope ids): a wing by its WING_DEFS key, a room by its domain, a bay
 	// by its capability, a feature by its slug; its features are the plan's tiles under it.
-	FString Kind, ScopeId, Label;
-	TArray<FString> Features;
 	const auto TilesWhere = [this, &Features](TFunctionRef<bool(int32 Tile)> Keep)
 	{
 		for (int32 Index = 0; Index < SheetPlan->tiles.Num(); ++Index)
@@ -938,48 +1218,237 @@ void ABpTable::StartScan(const FString& Id, const FString& Lens)
 		if (ScopeId.IsEmpty()) ScopeId = Id;
 		Label = Wing->name;
 		TilesWhere([this, &Id](int32 Tile) { return TileRoom.IsValidIndex(Tile) && RoomWing.IsValidIndex(TileRoom[Tile]) && RoomWing[TileRoom[Tile]] == Id; });
+		return true;
 	}
-	else if (const FBpPlanRoom* Room = FindRoom(Id))
+	if (const FBpPlanRoom* Room = FindRoom(Id))
 	{
 		Kind = TEXT("room");
 		ScopeId = Id;
 		Label = Room->name;
 		const int32 RoomIndex = SheetPlan->rooms.IndexOfByPredicate([&Id](const FBpPlanRoom& R) { return R.id == Id; });
 		TilesWhere([this, RoomIndex](int32 Tile) { return TileRoom.IsValidIndex(Tile) && TileRoom[Tile] == RoomIndex; });
+		return true;
 	}
-	else if (const int32* Bay = BayIndex.Find(Id))
+	if (const int32* Bay = BayIndex.Find(Id))
 	{
 		Kind = TEXT("bay");
 		ScopeId = Id;
 		Label = SheetPlan->bays[*Bay].name;
 		TilesWhere([this, &Id](int32 Tile) { return SheetPlan->tiles[Tile].parentId == Id; });
+		return true;
 	}
-	else if (const FBpPlanTile* Tile = SheetPlan->tiles.FindByPredicate([&Id](const FBpPlanTile& T) { return T.id == Id; }))
+	if (const FBpPlanTile* Tile = SheetPlan->tiles.FindByPredicate([&Id](const FBpPlanTile& T) { return T.id == Id; }))
 	{
 		Kind = TEXT("feature");
 		ScopeId = Id;
 		Label = Tile->name;
 		Features.Add(Id);
+		return true;
 	}
-	else
+	return false;
+}
+
+void ABpTable::StartScan(const FString& Id, const FString& Lens)
+{
+	if (!SheetPlan.IsValid())
+	{
+		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, no plan yet"));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (!BuildScanScope(Id, Kind, ScopeId, Label, Features))
 	{
 		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused, %s is no wing, room, bay or feature of the plan"), *Id);
 		return;
 	}
-	if (!FBpLinkModule::Get().IsKettle())
-	{
-		// A live product (the owner's ruling, FAD): nothing new starts from the table; the beam replays its last scan.
-		UE_LOG(LogBpTable, Warning, TEXT("BpScan: refused to POST a scan of %s:%s for %s, a live product; replaying its last completed scan instead"),
-			*Kind, *ScopeId, *FBpLinkModule::Get().GetProductSlug());
-		StartReplay(Kind + TEXT(":") + ScopeId, Features);
-		return;
-	}
+	// A live product too (owner, 2026-11-09, table link v2 section 0): this is the operator's console door (BpScan.Start); a
+	// hand reaches a plain scan only through the console's armed SCAN THIS (StartPlain).
 	const FString UseLens = Lens.IsEmpty() ? ActiveLens : Lens;
 	UE_LOG(LogBpTable, Log, TEXT("BpScan: POST scans lens=%s scope=%s:%s label=\"%s\" features=%d"), *UseLens, *Kind, *ScopeId, *Label, Features.Num());
 	FBpLinkModule::Get().PostScan(UseLens, Kind, ScopeId, Label, Features, [](int32 Status, const FString& Body)
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpScan: POST scans answered %d %.160s"), Status, *Body);
 	});
+}
+
+FString ABpTable::DirectedTarget() const
+{
+	if (!RoomModeId.IsEmpty()) return RoomModeId;
+	if (!RoomId.IsEmpty()) return RoomId;
+	if (!WingId.IsEmpty()) return WingId;
+	return TEXT("site");
+}
+
+FString ABpTable::DirectedLabel(const FString& Target) const
+{
+	if (Target == TEXT("site")) return TEXT("Everything");
+	if (!SheetPlan.IsValid()) return FString();
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	return BuildScanScope(Target, Kind, ScopeId, Label, Features) ? Label : FString();
+}
+
+FString ABpTable::DirectedScope(const FString& Target) const
+{
+	if (Target == TEXT("site") || Target.IsEmpty()) return TEXT("everything");
+	if (FindRoom(Target)) return TEXT("this room");
+	if (FindWing(Target)) return TEXT("this wing");
+	return TEXT("this place");
+}
+
+void ABpTable::StartDirected(const FString& FocusId, const FString& InTarget, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
+	// The bundle: no server keeps a scan, so the only scan here is the local sample. It is a different door, not a mode of this one:
+	// nothing below runs for it, and nothing it does reaches PostScan.
+	if (Link.IsFromBundle())
+	{
+		StartSampleScan(FocusId, Target, OnDone);
+		return;
+	}
+	// A focus the table has not read yet (the console, before the Scan tab was ever opened): read them once, then go on.
+	if (!Link.GetFocusList().Focuses.ContainsByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; }) && !Link.IsFromBundle())
+	{
+		TWeakObjectPtr<ABpTable> Self(this);
+		Link.GetFocuses([Self, FocusId, Target, OnDone](const FBpFocusList&)
+		{
+			if (ABpTable* T = Self.Get()) T->StartDirectedRead(FocusId, Target, OnDone);
+		});
+		return;
+	}
+	StartDirectedRead(FocusId, Target, OnDone);
+}
+
+int32 ABpTable::PlanTileCount() const
+{
+	return SheetPlan.IsValid() ? SheetPlan->tiles.Num() : 0;
+}
+
+void ABpTable::StartPlain(const FString& InTarget, const FString& InLens, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: plain: %s: %s"), bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FString Target = InTarget.IsEmpty() ? DirectedTarget() : InTarget;
+	FString Lens = InLens.IsEmpty() ? ActiveLens : InLens;
+	if (Lens.IsEmpty() && SheetPlan.IsValid() && SheetPlan->lenses.Num() > 0) Lens = SheetPlan->lenses[0];
+	if (Link.IsFromBundle())
+	{
+		// The bundle: the sample walk, with the sample focus on this lens (else the first), and it says it is a sample.
+		const TArray<FBpSavedFocus>& Samples = Link.GetFocusList().Focuses;
+		const FBpSavedFocus* Pick = Samples.FindByPredicate([&Lens](const FBpSavedFocus& F) { return F.Lens == Lens; });
+		if (!Pick && Samples.Num() > 0) Pick = &Samples[0];
+		if (!Pick || !Link.HasSampleFocuses())
+		{
+			Finish(false, TEXT("This build has no sample scan to run. Connect to your PC to scan."));
+			return;
+		}
+		StartSampleScan(Pick->Id, Target, OnDone);
+		return;
+	}
+	if (!SheetPlan.IsValid())
+	{
+		Finish(false, TEXT("The table has no plan yet."));
+		return;
+	}
+	if (Lens.IsEmpty())
+	{
+		Finish(false, TEXT("The plan names no lens to scan with."));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (Target == TEXT("site"))
+	{
+		Kind = TEXT("all");
+		Label = TEXT("Everything");
+	}
+	else if (!BuildScanScope(Target, Kind, ScopeId, Label, Features))
+	{
+		Finish(false, FString::Printf(TEXT("%s is no wing, room, bay or feature of the plan."), *Target));
+		return;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpScan: plain POST lens=%s scope=%s:%s label=\"%s\" features=%d"), *Lens, *Kind, *ScopeId, *Label, Features.Num());
+	Link.PostScan(Lens, Kind, ScopeId, Label, Features, [Finish, Label, Lens](int32 Status, const FString& Body)
+	{
+		if (Status == 202) Finish(true, FString::Printf(TEXT("Started: %s · %s"), *Label, *BpWords::Lens(Lens)));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	});
+}
+
+void ABpTable::StartEveryLens(TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: every lens: %s: %s"), bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	if (Link.IsFromBundle())
+	{
+		Finish(false, TEXT("Every lens needs your PC: the sample walks one lens (SCAN THIS)."));
+		return;
+	}
+	// jobs.ts ALL_LENSES: one job over every enabled lens, one running slot (section 5: { lens: all, scope: { kind: all, label, features: [] } }).
+	Link.PostScan(TEXT("all"), TEXT("all"), FString(), TEXT("Everything"), TArray<FString>(), [Finish](int32 Status, const FString& Body)
+	{
+		if (Status == 202) Finish(true, TEXT("Started: everything · every lens"));
+		// table-link-v2.md section 9: a product whose scanner has no every-lens job (Kettle's simulation) answers unknown-lens.
+		else if (Status == 400 && Body.Contains(TEXT("unknown-lens"))) Finish(false, TEXT("This product scans one lens at a time: its scanner has no every-lens job. Use SCAN THIS or a saved focus."));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	});
+}
+
+void ABpTable::StartDirectedRead(const FString& FocusId, const FString& Target, TFunction<void(bool bOk, const FString& Words)> OnDone)
+{
+	const auto Finish = [FocusId, OnDone](bool bOk, const FString& Words)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: directed %s: %s: %s"), *FocusId, bOk ? TEXT("queued") : TEXT("not started"), *Words);
+		if (OnDone) OnDone(bOk, Words);
+	};
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	if (!SheetPlan.IsValid())
+	{
+		Finish(false, TEXT("The table has no plan yet."));
+		return;
+	}
+	if (Link.IsFromBundle())
+	{
+		Finish(false, TEXT("This table reads the build's bundled snapshot, and no server keeps a scan."));
+		return;
+	}
+	const FBpFocusList& List = Link.GetFocusList();
+	const FBpSavedFocus* Focus = List.Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+	if (!Focus)
+	{
+		Finish(false, !List.Error.IsEmpty() ? List.Error : FString::Printf(TEXT("No saved focus %s on %s."), *FocusId, *Link.GetProductSlug()));
+		return;
+	}
+	FString Kind, ScopeId, Label;
+	TArray<FString> Features;
+	if (Target == TEXT("site"))
+	{
+		Kind = TEXT("all");
+		Label = TEXT("Everything");
+	}
+	else if (!BuildScanScope(Target, Kind, ScopeId, Label, Features))
+	{
+		Finish(false, FString::Printf(TEXT("%s is no wing, room, bay or feature of the plan."), *Target));
+		return;
+	}
+	const FString Lens = Focus->Lens, Note = Focus->Note;
+	UE_LOG(LogBpTable, Log, TEXT("BpScan: directed POST lens=%s scope=%s:%s label=\"%s\" features=%d focus=\"%.120s\""), *Lens, *Kind, *ScopeId, *Label, Features.Num(), *Note);
+	Link.PostScan(Lens, Kind, ScopeId, Label, Features, [Finish, Label, Lens](int32 Status, const FString& Body)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpScan: directed POST answered %d %.200s"), Status, *Body);
+		if (Status == 202) Finish(true, FString::Printf(TEXT("Started: %s · %s"), *Label, *BpWords::Lens(Lens)));
+		else Finish(false, FBpLinkModule::ScanAnswerWords(Status, Body));
+	}, Note);
 }
 
 void ABpTable::ShowCard(bool bShow)
@@ -989,6 +1458,44 @@ void ABpTable::ShowCard(bool bShow)
 	if (bShow) RefreshCard();
 	ApplyCardVisibility();
 	if (bShow && CardProposal.IsEmpty()) UE_LOG(LogBpTable, Log, TEXT("BpTable: card none (no open finding to ask about)"));
+}
+
+void ABpTable::AskCard(const FString& ProposalId)
+{
+	CardAskId = ProposalId;
+	CardProposal.Reset();
+	if (bCardShown) RefreshCard();
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: card asks %s"), CardAskId.IsEmpty() ? TEXT("by the room rule") : *CardAskId);
+}
+
+void ABpTable::RequestCardBrief(const FString& ProposalId)
+{
+	// One read per finding (docs/concepts/decision-brief/README.md, VR): the answer redraws the card when it is still the
+	// finding asked about; a stale answer (the card moved on) is dropped.
+	BriefFor = ProposalId;
+	bBriefRead = false;
+	BriefLines.Reset();
+	BriefDeclinedLine = INDEX_NONE;
+	bBriefRepeat = false;
+	BriefRepeatNote.Reset();
+	TWeakObjectPtr<ABpTable> Self(this);
+	FBpLinkModule::Get().FetchBrief(ProposalId, [Self, ProposalId](bool bOk, const FBpDecisionBrief& Brief)
+	{
+		ABpTable* T = Self.Get();
+		if (!T || !bOk || T->BriefFor != ProposalId) return;
+		T->bBriefRead = true;
+		for (int32 Index = 0; Index < Brief.lines.Num() && Index < 5; ++Index) T->BriefLines.Add(Brief.lines[Index]);
+		for (int32 Index = 0; Index < Brief.facts.Num() && Index < 5; ++Index) if (Brief.facts[Index].key == TEXT("declined")) T->BriefDeclinedLine = Index;
+		// advice withdraw = the same idea was declined before: Decline is the recommendation, with core's repeatNote
+		T->bBriefRepeat = Brief.advice.say == TEXT("withdraw") && Brief.declines.Num() > 0;
+		if (T->bBriefRepeat)
+		{
+			const FBpBriefDecided& D = Brief.declines[0];
+			T->BriefRepeatNote = (FString::Printf(TEXT("Repeats %s, declined %s"), *D.id, *D.at) + (D.note.IsEmpty() ? FString() : TEXT(": \"") + D.note + TEXT("\""))).Left(500);
+		}
+		T->CardProposal.Reset();
+		if (T->bCardShown) T->RefreshCard();
+	});
 }
 
 void ABpTable::RefreshCard()
@@ -1005,18 +1512,26 @@ void ABpTable::RefreshCard()
 	for (const FBpProposal& Proposal : State.Scan.proposals)
 	{
 		const int32* Tile = TileOf.Find(Proposal.feature);
-		if (!IsOpen(Proposal) || !Tile) continue;
+		if (!IsOpen(Proposal) || !Tile || CardDecided.Contains(Proposal.id)) continue;
 		if (!Ask) Ask = &Proposal;
 		if (Lifted != INDEX_NONE && TileRoom.IsValidIndex(*Tile) && TileRoom[*Tile] == Lifted) { Ask = &Proposal; break; }
 	}
+	// BpCard.Ask: the finding named, while it is open and on the plan
+	if (!CardAskId.IsEmpty())
+	{
+		for (const FBpProposal& Proposal : State.Scan.proposals) if (Proposal.id == CardAskId && IsOpen(Proposal) && TileOf.Contains(Proposal.feature) && !CardDecided.Contains(Proposal.id)) { Ask = &Proposal; break; }
+	}
 	if (!Ask)
 	{
+		CardShownId.Reset();
 		CardProposal.Reset();
 		Card->SetVisibility(false);
 		return;
 	}
 	const float PxPerCm = FMath::Clamp(CVarCardPxPerCm.GetValueOnGameThread(), 4.f, 64.f);
-	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm);
+	CardShownId = Ask->id;
+	if (BriefFor != Ask->id) RequestCardBrief(Ask->id);
+	const FString Key = Ask->id + Ask->status + ActiveLens + FString::SanitizeFloat(PxPerCm) + (bBriefRead ? TEXT("+brief") : TEXT(""));
 	if (Key == CardProposal && Card->GetSlateWidget().IsValid())
 	{
 		ApplyCardVisibility();
@@ -1064,10 +1579,12 @@ void ABpTable::RefreshCard()
 	// FO: Decline an outlined button (the judge: it "does not read as a button"), a full-ink rule and a faint fill.
 	static const FSlateRoundedBoxBrush Decline(CardInk.CopyWithNewOpacity(0.06f), 12.f, CardInk.CopyWithNewOpacity(0.9f), 4.5f);
 	// A button: its mark in Slate's default face (Barlow has no check or cross), its word in the sheet's family.
-	const auto Button = [](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
+	// with a brief the buttons are a little lower, so its five lines fit the card (BriefLines is read before the card builds)
+	const bool bTight = bBriefRead && BriefFor == Ask->id && BriefLines.Num() > 0;
+	const auto Button = [bTight](const FSlateBrush* Brush, const FString& Mark, const FString& Text)
 	{
 		// FP: larger (the judge: "enlarge the header line and the buttons").
-		return SNew(SBorder).BorderImage(Brush).Padding(FMargin(32.f, 22.f)).HAlign(HAlign_Center)
+		return SNew(SBorder).BorderImage(Brush).Padding(bTight ? FMargin(28.f, 10.f) : FMargin(32.f, 22.f)).HAlign(HAlign_Center)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 16.f, 0.f)
@@ -1076,10 +1593,36 @@ void ABpTable::RefreshCard()
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
+					SNew(STextBlock).Text(FText::FromString(Text)).Font(CanvasFont(TEXT("Bold"), bTight ? 46.f : 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 				]
 			];
 	};
+	// The decision brief (docs/concepts/decision-brief/README.md, VR): its lines under the header, at most 5 of 120
+	// characters, the quoted decline in the card's amber ink; with it the body's Impact steps aside (the brief says what the
+	// change touches). A repeat of a declined idea makes Decline the first, filled answer ("DECLINE · REPEAT"); a likeness
+	// only shows the quote. Until the brief is read (or offline) the card is as it was.
+	static const FLinearColor DeclinedInk(FColor(0x9A, 0x5B, 0x00));
+	TSharedRef<SVerticalBox> BriefBox = SNew(SVerticalBox);
+	for (int32 Index = 0; Index < BriefLines.Num(); ++Index)
+	{
+		const bool bDeclined = Index == BriefDeclinedLine;
+		BriefBox->AddSlot().AutoHeight().Padding(0.f, Index ? 6.f : 0.f, 0.f, 0.f)
+		[
+			SNew(STextBlock).Text(FText::FromString(BriefLines[Index])).AutoWrapText(true)
+				.Font(CanvasFont(bDeclined ? TEXT("Bold") : TEXT("Regular"), 37.f)).ColorAndOpacity(FSlateColor(bDeclined ? DeclinedInk : CardInk.CopyWithNewOpacity(0.9f)))
+		];
+	}
+	const bool bBrief = bBriefRead && BriefFor == Ask->id && BriefLines.Num() > 0, bRepeat = bBrief && bBriefRepeat;
+	TSharedRef<SHorizontalBox> Buttons = SNew(SHorizontalBox);
+	// The two buttons are kept so the hands can find them on the card (CardHit, CardAim: their painted boxes).
+	const TSharedRef<SBorder> First = bRepeat ? Button(&Approve, TEXT("✕"), TEXT("DECLINE · REPEAT")) : Button(&Approve, TEXT("✓"), TEXT("APPROVE"));
+	const TSharedRef<SBorder> Second = bRepeat ? Button(&Decline, TEXT("✓"), TEXT("APPROVE")) : Button(&Decline, TEXT("✕"), TEXT("DECLINE"));
+	Buttons->AddSlot().FillWidth(bRepeat ? 1.25f : 1.f).Padding(0.f, 0.f, 14.f, 0.f)[First];
+	Buttons->AddSlot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)[Second];
+	CardButtons[0] = First;
+	CardButtons[1] = Second;
+	bCardFirstIsDecline = bRepeat;
+	if (bRepeat) Header = FString::Printf(TEXT("REPEATS A DECLINE  ·  %s LENS"), *BpWords::Lens(Ask->lens).ToUpper());
 	Card->SetSlateWidget(
 		SNew(SDPIScaler).DPIScale(PxPerCm / CardLayoutPxPerCm)
 		[
@@ -1102,7 +1645,7 @@ void ABpTable::RefreshCard()
 					SNew(STextBlock).Text(FText::FromString(Ask->id.ToUpper())).Font(CanvasFont(TEXT("Regular"), 42.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.8f)))
 				]
 			]
-			+ SVerticalBox::Slot().FillHeight(1.f).Padding(0.f, 16.f, 0.f, 0.f)
+			+ SVerticalBox::Slot().FillContentHeight(bBrief ? 0.f : 1.f, bBrief ? 0.f : 1.f).Padding(0.f, 16.f, 0.f, 0.f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0.f, 0.f, 20.f, 0.f)
@@ -1110,42 +1653,43 @@ void ABpTable::RefreshCard()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Text(FText::FromString(Target)).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 60.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Target)).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).AutoWrapText(true).Font(CanvasFont(TEXT("Bold"), 60.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 16.f, 0.f, 0.f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, bBrief ? 0.f : 16.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
+						SNew(STextBlock).Text(FText::FromString(Ask->title)).AutoWrapText(true).Font(CanvasFont(bBrief ? TEXT("Bold") : TEXT("Regular"), 54.f)).ColorAndOpacity(FSlateColor(CardInk))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 10.f, 0.f, 0.f)
 					[
-						SNew(STextBlock).Text(FText::FromString(Impact)).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 46.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.92f)))
+						SNew(STextBlock).Text(FText::FromString(bBrief ? FString() : Impact)).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).AutoWrapText(true).Font(CanvasFont(TEXT("Regular"), 46.f)).ColorAndOpacity(FSlateColor(CardInk.CopyWithNewOpacity(0.92f)))
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
 				[
-					SNew(SBox).WidthOverride(300.f).HeightOverride(230.f)
+					// with the brief the sketch steps aside: its first line says where the change lands
+					SNew(SBox).Visibility(bBrief ? EVisibility::Collapsed : EVisibility::Visible).WidthOverride(300.f).HeightOverride(230.f)
 					[
 						Sketch
 					]
 				]
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 18.f, 0.f, 0.f)
+			+ SVerticalBox::Slot().FillContentHeight(bBrief ? 1.f : 0.f, 1.f).Padding(0.f, bBrief ? 14.f : 0.f, 0.f, 0.f)
 			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(0.f, 0.f, 14.f, 0.f)
+				SNew(SBox).Visibility(bBrief ? EVisibility::Visible : EVisibility::Collapsed).Clipping(EWidgetClipping::ClipToBounds)
 				[
-					Button(&Approve, TEXT("✓"), TEXT("APPROVE"))
+					BriefBox
 				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).Padding(14.f, 0.f, 0.f, 0.f)
-				[
-					Button(&Decline, TEXT("✕"), TEXT("DECLINE"))
-				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, bTight ? 10.f : 18.f, 0.f, 0.f)
+			[
+				Buttons
 			]
 		]
 		]
 		]
 		]);
-	Card->SetDrawSize(FVector2D(CardWidthCm * PxPerCm, CardHeightCm * PxPerCm));
+	// a card with a brief is a little wider and taller (by capture: its five lines wrapped and the last was cut), about its centre
+	Card->SetDrawSize(FVector2D((CardWidthCm + (bBrief ? CardBriefExtraWCm : 0.f)) * PxPerCm, (CardHeightCm + (bBrief ? CardBriefExtraHCm : 0.f)) * PxPerCm));
 	Card->RequestRedraw();
 	ApplyCardVisibility();
 	// Near the lamp agent at the far edge, right of it and above the rim. Upright (FM, element 10: the judge's "upright
@@ -1157,11 +1701,198 @@ void ABpTable::RefreshCard()
 	const float FaceYaw = FMath::RadiansToDegrees(FMath::Atan2(Eye.Y - Place.Y, Eye.X - Place.X));
 	Card->SetRelativeLocationAndRotation(Place, FRotator(0.f, FaceYaw, 0.f));
 	Card->SetRelativeScale3D(FVector(CardScale / PxPerCm));
-	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s"), *Ask->id, *Target, *Ask->status);
+	UE_LOG(LogBpTable, Log, TEXT("BpTable: card proposal=%s target=\"%s\" status=%s brief=%d lines%s"), *Ask->id, *Target, *Ask->status, bBrief ? BriefLines.Num() : 0, bRepeat ? TEXT(" (repeat: Decline recommended)") : TEXT(""));
+}
+
+// ---- The card's buttons under the hands (ROADMAP F8) -------------------------------------------------------------------
+
+namespace
+{
+	/** A button's painted box in the card's draw px (a widget component's window is laid out at its draw size, so a painted
+	 *  widget's absolute box is in draw px); invalid before the first paint. */
+	FSlateRect PaintedBox(const TSharedPtr<SWidget>& Widget)
+	{
+		if (!Widget.IsValid()) return FSlateRect(0.f, 0.f, -1.f, -1.f);
+		const FGeometry& G = Widget->GetPaintSpaceGeometry();
+		const FVector2D Size = G.GetAbsoluteSize();
+		if (Size.X < 1.0 || Size.Y < 1.0) return FSlateRect(0.f, 0.f, -1.f, -1.f);
+		const FVector2D At = G.GetAbsolutePosition();
+		return FSlateRect(At.X, At.Y, At.X + Size.X, At.Y + Size.Y);
+	}
+}
+
+bool ABpTable::CardHit(const FVector& WorldOrigin, const FVector& WorldDir, FString& OutId) const
+{
+	if (!Card || !Card->IsVisible() || CardShownId.IsEmpty() || !RoomModeId.IsEmpty()) return false;
+	const FTransform& T = Card->GetComponentTransform();
+	const FVector Normal = T.GetUnitAxis(EAxis::X);
+	const double Denom = FVector::DotProduct(WorldDir, Normal);
+	if (FMath::IsNearlyZero(Denom)) return false;
+	const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
+	if (Along < 0.0) return false;
+	// UWidgetComponent's own mapping (as DeckHit): widget x = -local Y, y = -local Z, from its centre pivot, in draw px.
+	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
+	const FVector2D Draw = Card->GetDrawSize();
+	const FVector2D Px(-Local.Y + Draw.X * 0.5, -Local.Z + Draw.Y * 0.5);
+	if (Px.X < 0.0 || Px.Y < 0.0 || Px.X > Draw.X || Px.Y > Draw.Y) return false;
+	OutId = TEXT("card:panel");
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const FSlateRect Box = PaintedBox(CardButtons[Index]);
+		if (Box.IsValid() && Box.ContainsPoint(Px)) OutId = (Index == 0) == bCardFirstIsDecline ? TEXT("card:decline") : TEXT("card:approve");
+	}
+	return true;
+}
+
+bool ABpTable::CardAim(const FString& Id, FVector& OutWorld) const
+{
+	if (!Card || CardShownId.IsEmpty() || (Id != TEXT("card:decline") && Id != TEXT("card:approve"))) return false;
+	const int32 Index = (Id == TEXT("card:decline")) == bCardFirstIsDecline ? 0 : 1;
+	const FSlateRect Box = PaintedBox(CardButtons[Index]);
+	if (!Box.IsValid()) return false;
+	const FVector2D Draw = Card->GetDrawSize(), Centre = Box.GetCenter();
+	OutWorld = Card->GetComponentTransform().TransformPosition(FVector(0.0, Draw.X * 0.5 - Centre.X, Draw.Y * 0.5 - Centre.Y));
+	return true;
+}
+
+FString ABpTable::GetCardLine() const
+{
+	if (CardShownId.IsEmpty() || !Card || !Card->IsVisible()) return FString();
+	return CardShownId + (bBriefRead && BriefFor == CardShownId && bBriefRepeat ? TEXT(" repeat") : TEXT(""));
+}
+
+void ABpTable::CardTap(const FString& Id)
+{
+	const FString Shown = CardShownId;
+	if (Shown.IsEmpty() || !Card || !Card->IsVisible())
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: tap %s refused: no card is shown"), *Id);
+		return;
+	}
+	const bool bRepeat = bBriefRead && BriefFor == Shown && bBriefRepeat;
+	const bool bApprove = Id == TEXT("card:approve");
+	if (!bApprove && Id != TEXT("card:decline")) return;
+	if (!bApprove && !bRepeat)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s not written: it repeats no declined idea (the plan's Decline, with your own note, is the desk's)"), *Shown);
+		return;
+	}
+	if (bApprove)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: approve %s -> the store (the Morning Watch's Approve; no build is queued)"), *Shown);
+	}
+	else
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: decline %s as a repeat -> the store (%s)"), *Shown, *BriefRepeatNote);
+	}
+	TWeakObjectPtr<ABpTable> Self(this);
+	const auto Answered = [Self, Shown, bApprove](int32 Status, const FString& Body)
+	{
+		ABpTable* T = Self.Get();
+		if (!T) return;
+		const TCHAR* Verb = bApprove ? TEXT("approve") : TEXT("decline");
+		if (Status != 200)
+		{
+			UE_LOG(LogBpTable, Warning, TEXT("BpCard: %s %s not written (HTTP %d) %.200s"), Verb, *Shown, Status, *Body);
+			return;
+		}
+		// The card leaves (optimistic until the store's read shows it decided): the next open finding (the room rule)
+		// comes forward, or the card hides.
+		T->CardDecided.Add(Shown);
+		if (T->CardAskId == Shown) T->CardAskId.Reset();
+		T->CardProposal.Reset();
+		if (T->bCardShown) T->RefreshCard();
+		UE_LOG(LogBpTable, Log, TEXT("BpCard: %s %s in the store%s; the card now shows %s"), bApprove ? TEXT("approved") : TEXT("declined"), *Shown,
+			bApprove ? TEXT("") : TEXT(" as a repeat"), T->CardShownId.IsEmpty() ? TEXT("nothing") : *T->CardShownId);
+	};
+	if (bApprove) FBpLinkModule::Get().ApproveDecision(Shown, Answered);
+	else FBpLinkModule::Get().DeclineRepeat(Shown, Answered);
 }
 
 void ABpTable::ApplyCardVisibility()
 {
 	// Shown when asked for and it has a finding, on the site plan only: in room mode the screen deck asks (BpDeck.cpp).
 	if (Card) Card->SetVisibility(bCardShown && !CardProposal.IsEmpty() && RoomModeId.IsEmpty());
+}
+
+FBox2D ABpTable::SeatAngles(const FBox& LocalBox) const
+{
+	// Night two V5: azimuth right + and elevation up +, from the target eye, over the box's eight corners.
+	const FVector Eye = EyeLocal();
+	FVector Corners[8];
+	LocalBox.GetVertices(Corners);
+	FBox2D Out(ForceInit);
+	for (const FVector& P : Corners)
+	{
+		const FVector D = P - Eye;
+		Out += FVector2D(FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X)), FMath::RadiansToDegrees(FMath::Atan2(D.Z, FVector2D(D.X, D.Y).Size())));
+	}
+	return Out;
+}
+
+void ABpTable::SeatKeepouts(TArray<FBox2D>& Out) const
+{
+	Out.Reset();
+	if (!SheetPlan.IsValid()) return;
+	const FTransform& Table = GetActorTransform();
+	// Each tagged pin's tag: a card PinScale x 2.2 cm wide facing the seat, from its foot to the pin's top (PlacePins's place).
+	const double Site = SiteShow();
+	// Wave W3: the tags still keep their places out while they step aside behind a sheet on the wall (TickWallTags): the lamp
+	// and its caption do not move for the wall.
+	if (Site > 0.0)
+	{
+		for (const FPin& Pin : PinList)
+		{
+			if (!Pin.bTagged || !SheetPlan->tiles.IsValidIndex(Pin.Tile)) continue;
+			const FBpPlanTile& Tile = SheetPlan->tiles[Pin.Tile];
+			const FTransform Group = GroupTransformForRoom(Pin.Room);
+			const FString* Reading = Tile.health.Find(ActiveLens);
+			const float StandCm = RoomRiseEase(Pin.Room) * TileHeightCm(Reading ? *Reading : FString());
+			const FVector2D Centre = PlanToPaperCm(FVector2D(Tile.box.x + Tile.box.w * 0.5, Tile.box.y + Tile.box.h * 0.5));
+			const FVector Foot = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + (PinModelCm - PinTagModelCm) * PinScale));
+			const FVector Top = Group.TransformPosition(PaperCmToLocal(Centre, StandCm + Pin.RaiseCm + PinModelCm * PinScale));
+			const double Half = 0.5 * 2.2 * PinScale;
+			Out.Add(SeatAngles(FBox(FVector(Foot.X - 0.2, Foot.Y - Half, Foot.Z), FVector(Top.X + 0.2, Top.Y + Half, Top.Z))));
+		}
+	}
+	// The wing names shown, the lift's plate: their bounds (world) in the table's space.
+	const auto Bounds = [&](const UPrimitiveComponent* Prim)
+	{
+		if (!Prim || !Prim->IsVisible()) return;
+		const FBox World = Prim->Bounds.GetBox();
+		FBox Local(ForceInit);
+		FVector Corners[8];
+		World.GetVertices(Corners);
+		for (const FVector& C : Corners) Local += Table.InverseTransformPosition(C);
+		Out.Add(SeatAngles(Local));
+	};
+	for (const UWidgetComponent* Label : WingLabels) Bounds(Label);
+	Bounds(LiftPlate);
+	// The console's bar (the pawn's ConsolePanel, BpConsole.cpp): nothing stands in front of it or behind it.
+	if (const APlayerController* PC = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr)
+	{
+		if (const APawn* Pawn = PC->GetPawn())
+		{
+			TArray<UWidgetComponent*> Widgets;
+			Pawn->GetComponents(Widgets);
+			for (const UWidgetComponent* Widget : Widgets)
+			{
+				// Wave PJ1: not the sheet on the far surface (behind everything on the table).
+				if (Widget && Widget->GetName() == TEXT("ConsolePanel") && !BpProjector::IsFar()) Bounds(Widget);
+			}
+		}
+	}
+	// The lifted wing's rooms (their shells where they stand now), or with a room up, that room.
+	if (!AnimWing.IsEmpty() && WingAlpha > 0.f)
+	{
+		for (int32 Index = 0; Index < SheetPlan->rooms.Num(); ++Index)
+		{
+			const FBpPlanRoom& Room = SheetPlan->rooms[Index];
+			if (Room.parentId != AnimWing || (!AnimRoom.IsEmpty() && RoomAlpha > 0.f && Room.id != AnimRoom)) continue;
+			const FTransform Group = GroupTransformForRoom(Index);
+			const FVector A = Group.TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Room.box.x, Room.box.y)), 0.f));
+			const FVector B = Group.TransformPosition(PaperCmToLocal(PlanToPaperCm(FVector2D(Room.box.x + Room.box.w, Room.box.y + Room.box.h)), RoomShellCm));
+			Out.Add(SeatAngles(FBox(A.ComponentMin(B), A.ComponentMax(B))));
+		}
+	}
 }

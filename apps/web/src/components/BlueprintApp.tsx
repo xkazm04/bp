@@ -15,7 +15,7 @@ import type { Cam } from '@/engine/camera';
 import { EMPTY_SCAN, clampScale, type Model } from '@bp/core/model';
 import { applyScan, buildLiveModel, lensesOnly, liveSwarm, refreshLiveModel } from '@bp/core/model/live-feed';
 import { LiveFacets } from '@bp/core/model/live-health';
-import type { ScanSim } from '@bp/core/model/scan-sim';
+import { bindKettleScan, type ScanSim } from '@bp/core/model/scan-sim';
 import { decideProposal, useLiveProduct, type LiveProduct } from '@/lib/scan/client';
 import type { JobStatus, ScanJob } from '@bp/core/scan/jobs';
 import type { Proposal, ScanSnapshot } from '@bp/core/scan/types';
@@ -23,19 +23,25 @@ import { holdsBuild } from '@bp/core/scan/admit';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { scanViews } from '@/lib/scan/scan-views';
 import { readTempLenses, subscribeTempLenses } from '@/lib/scan/temp-lens';
-import { projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
+import { SWITCH_EVENT, projectHref, refreshProjects, useProductName } from '@/lib/scan/projects';
 import { getVariant, loadVariant } from '@/variants/registry';
 import type { Variant, VariantId } from '@/variants/types';
 import { EngineCtx, LiveCtx, ScanCtxCtx, VariantCtx, shallowEqual, useBp, type LiveInfo } from './hooks';
 import { Header } from './Header';
 import { CompanionHost } from './companion/CompanionHost';
+import { CrossingHost } from './crossing/CrossingHost';
+import { FollowHost } from './focus/FollowHost';
+import { MorningWatch } from './focus/MorningWatch';
 import { Dock } from './Dock';
 import { BaseBar } from './BaseBar';
-import { Callout, DecisionCard, HoverCard, Ladder, Morning, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
+import { Callout, DecisionCard, HoverCard, Ladder, LensFailNotice, Morning, PlaceVoice, ScaleBar, SelBar, Ticker, Toast } from './Overlays';
 import { FeatureSheet } from './FeatureSheet';
 import { LedgerPageLazy, Phone } from './Phone';
 import { ProjectSwitcher } from './ProjectSwitcher';
 import { ScanMenu } from './ScanMenu';
+import { DirectedScan } from './DirectedScan';
+import { EmptyPlan } from './EmptyPlan';
+import { OnboardingBanner } from '@/onboarding/Banner';
 import { LensesButton, LensesPanel } from './ledger/lens/LensesPanel';
 import { GENERAL } from '@bp/core/data/types';
 import './blueprint.css';
@@ -60,17 +66,24 @@ const Chrome = memo(function Chrome() {
       <BaseBar />
       <Ladder />
       <ScaleBar />
+      <LensFailNotice />
       <Ticker />
       <SelBar />
       <Callout />
+      <EmptyPlan />
       <HoverCard />
+      <PlaceVoice />
       <DecisionCard />
       <Toast />
       <FeatureSheet />
       {s.ledger ? <LedgerPageLazy lensButton={<LensesButton />} lensPanel={<LensesPanel />} /> : null}
       <ScanMenu />
+      <DirectedScan />
       <Morning />
       <CompanionHost />
+      <CrossingHost />
+      <FollowHost />
+      <MorningWatch />
     </>
   );
 });
@@ -82,7 +95,7 @@ function RootFlags({ root }: { root: HTMLDivElement }) {
     root.classList.toggle('bp-intro', s.intro);
     root.classList.toggle('bp-phone', s.phone);
   }, [root, s]);
-  return s.phone ? <Phone /> : null;
+  return s.phone ? <><Phone /><MorningWatch phone /></> : null;
 }
 
 /**
@@ -150,7 +163,7 @@ function toastFailures(E: Engine, jobs: readonly ScanJob[], seen: { init: boolea
   for (const j of jobs) {
     const was = seen.st.get(j.id);
     if (seen.init && j.status === 'failed' && (was ? was !== 'failed' : now - Date.parse(j.queued_at) < 15000)) {
-      E.toast(j.kind === 'measure' ? 'Scan failed' : j.kind === 'release' ? 'Release ' + (j.version ?? '') + ' failed' : j.kind === 'prepare' ? 'Repo preparation failed' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'), undefined, undefined, 'bad');
+      E.toast(j.kind === 'measure' ? 'Scan failed' : j.kind === 'release' ? 'Release ' + (j.version ?? '') + ' failed' : j.kind === 'prepare' ? 'Repo preparation failed' : j.kind === 'adopt' ? 'Onboarding stopped' : 'Execute run failed', (j.lens ? j.lens + ': ' : '') + (j.error ?? 'no reason given'), undefined, undefined, 'bad');
     }
     seen.st.set(j.id, j.status);
   }
@@ -173,19 +186,6 @@ function busyTiles(M: Model, jobs: readonly ScanJob[], proposals: readonly Propo
   for (const f of feats) for (const b of M.P.buildings.slice(0, M.P.scale)) if (M.L.TILE[f + (b?.sf ?? '')]) out.push(f + (b?.sf ?? ''));
   return out;
 }
-/** What the Kettle scan sim needs of the model: base slugs in layout order, the enabled lenses, the facet values now. */
-function bindSim(sim: ScanSim, M: Model) {
-  const P = M.P, base = new Map(P.base.features.map((f) => [f.id, f])), on = new Set(P.lenses.map((l) => l.id));
-  const order = [...new Set(M.L.tiles.filter((T) => T.wing.bld.i === 0).map((T) => T.f.slug))];
-  sim.bind({
-    order,
-    manifest: (l) => (on.has(l) ? P.LENS[l]?.manifest : undefined),
-    value: (f, l, k) => { const v = base.get(f)?.lens[l]?.facet?.values?.[k]; return typeof v === 'number' ? v : undefined; },
-    // every lens the model knows, enabled or not: the ids and looks a new Kettle lens may not repeat
-    lenses: () => Object.values(P.LENS).map((d) => ({ id: d.id, version: d.manifest.version, source: d.source, enabled: d.i >= 0, manifest: d.manifest, ...(d.temporary ? { temporary: true as const } : {}) })),
-  });
-}
-
 export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // subtle (the `/` expression) is in memory at once; a prototype (shaped, bold) is a chunk of its own, loaded here,
   // and the engine mounts once it is in (variants/registry.ts). data-variant reads the prop, so it never waits.
@@ -205,6 +205,14 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   // undefined until mounted (the server render cannot read the query); null = Kettle
   const [product, setProduct] = useState<string | null | undefined>(undefined);
   useEffect(() => { setProduct(new URLSearchParams(location.search).get('product') || null); }, []);
+  // another product in place (switchProduct: the shared focus or the Morning deck opening it), and back / forward across
+  // such a switch: the product follows the URL, the engine rebuilds, the page does not reload. No intro after a switch.
+  const switched = useRef(false);
+  useEffect(() => {
+    const take = () => { const p = new URLSearchParams(location.search).get('product') || null; setProduct((cur) => { if (cur !== p) switched.current = true; return p; }); };
+    addEventListener(SWITCH_EVENT, take); addEventListener('popstate', take);
+    return () => { removeEventListener(SWITCH_EVENT, take); removeEventListener('popstate', take); };
+  }, []);
   // a live product's tab reads "<name> · blueprint" (the name from the registry, else the slug); Kettle keeps the page metadata
   // it follows the registry name, so a rename shows at once
   const title = useProductName(product || null, product || '');
@@ -235,7 +243,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     const mount = (model: Model) => {
       // the Kettle sim's jobs, rows and findings outlive a rebuild: its readings go over the new model from scratch
       if (kept?.sim && model.scanSim && !model.live) { model.scanSim.dispose(); model.scanSim = kept.sim; }
-      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: !kept && qs.get('intro') !== '0' && !location.hash });
+      const e = new Engine({ canvas: cv.current!, ui: ui.current!, root: root.current!, model, expression: variant.expression, intro: !kept && !switched.current && qs.get('intro') !== '0' && !location.hash });
       if (kept) e.cam.set(kept.cam); // the hash restored lens, place and page; the camera stands exactly where it was
       built = e;
       setEngine(e);
@@ -260,6 +268,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   useEffect(() => {
     if (!engine?.M.live || !live.scan) return;
     applyScan(engine.M, live.scan);
+    engine.setScan(live.scan); // a travelled date replays lens health from these readings
     engine.feed(liveSwarm(engine.M.P, live.scan));
   }, [engine, live.scan]);
   // the answer tracks read the snapshot and the jobs (an execute job holding a proposal reads "building")
@@ -285,7 +294,7 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
   useEffect(() => {
     const M = engine?.M, sim = M?.scanSim;
     if (!engine || !M || M.live || !sim) return;
-    bindSim(sim, M);
+    bindKettleScan(sim, M);
     const facets = (M.liveFacets ??= new LiveFacets(M.P, M.agg));
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sync = () => {
@@ -318,14 +327,16 @@ export function BlueprintApp({ variantId }: { variantId: VariantId }) {
     <MotionConfig reducedMotion="user">
     <div className="bp" ref={root} data-variant={variantId} data-view={GENERAL}>
       <div className="bp-paper" />
-      <canvas ref={cv} className="bp-map" tabIndex={0} role="application"
-        aria-label={'Zoomable floor plan of the product with the ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' working over it. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, Enter opens, Escape goes back. Shift-drag draws a selection.'} />
+      <canvas ref={cv} className="bp-map" tabIndex={0} role="application" aria-label="Product floor plan" aria-describedby="bp-said bp-keys" />
+      <p id="bp-keys" className="bp-vh">{'The ' + (product ? 'live lens scan' : 'simulated agent swarm') + ' works over the plan. Scroll or pinch to zoom, drag to pan, click to go one level deeper. Plus and minus zoom, arrows walk rooms, N and Shift+N step through the features in trouble under the lens, Enter opens, Escape goes back. Shift-drag draws a selection. Where the plan rests is read out in the status line.'}</p>
       <div className="bp-vig" />
+      <div className="bp-sheen" />
       <div className="bp-frame" />
       {!engine && buildErr && <LiveEmpty slug={product || 'kettle'} kettle={!product} live={{ ...live, status: 'error', error: buildErr }} />}
       {product && !engine && !buildErr && <LiveEmpty slug={product} live={live} />}
       {product === null && !engine && !buildErr && <SampleLoading />}
       {product && !engine && <div className="bp-hdr-lite"><ProjectSwitcher current={product} /></div>}
+      {product && <OnboardingBanner slug={product} />}
       <div className="bp-ui" ref={ui}>
         {engine && variant && (
           <EngineCtx.Provider value={engine}>

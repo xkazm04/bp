@@ -6,6 +6,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { glyph, type GlyphSpec } from '@/engine/render/lens-glyph';
 import type { Proposal } from '@bp/core/scan/types';
+import { worthText } from '@bp/core/scan/score';
+import { machineDecided } from '@bp/core/scan/trust';
+import { dayHhmmUTC } from '@bp/core/model';
 import { useTheme } from '../../ThemeToggle';
 import { riskBand, type Finding } from '../useLedger';
 
@@ -56,6 +59,24 @@ export function Risk({ p }: { p: Proposal }) {
 }
 export function Size({ p }: { p: Proposal }) {
   return <span className="lg-size" title="Size">{p.size ?? '–'}</span>;
+}
+// ------------------------------------------------------------------------------------------- v5: score, verdict
+/** The finding's worth (@bp/core/scan/score): the stored score, `est. 0.15` for a pre-v5 estimate, `unscored` (never 0),
+ *  and under it impact and confidence when the scan stated them. At most three elements: the budget counts them per row. */
+export function Score({ f }: { f: Finding }) {
+  const p = f.p, t = worthText(f.w), sub = [p.impact !== undefined ? 'impact ' + p.impact : '', p.confidence ?? ''].filter(Boolean).join(' · ');
+  const title = f.w.kind === 'score' ? 'scan-score/1, stored by the scan' + (p.impact_why ? ' · impact: ' + p.impact_why : '')
+    : f.w.kind === 'est' ? 'No stored score (a pre-v5 finding): the blueprint\'s estimate, value per effort' : 'Unscored: impact or effort unknown';
+  return <span className={'lg-sc k-' + f.w.kind} title={title}><b>{t}</b>{sub ? <small>{sub}</small> : null}</span>;
+}
+const VERDICT_WORD = { accept: 'accept', reject: 'reject', defer: 'defer' } as const;
+/** The predicted verdict (recorded before any person saw the item) and, when a machine recorded the decision, `machine`. */
+export function Verdict({ p }: { p: Proposal }) {
+  const m = machineDecided(p);
+  if (!p.predicted_verdict && !m) return null;
+  const title = (p.predicted_verdict ? 'Predicted ' + p.predicted_verdict + (p.predicted_by ? ' by ' + p.predicted_by : '') + (p.predicted_why ? ': ' + p.predicted_why : '') : '')
+    + (m ? (p.predicted_verdict ? ' · ' : '') + 'decided by ' + (p.decided_by?.startsWith('machine:') ? p.decided_by : p.triaged_by) + (p.veto_until ? ', veto until ' + dayHhmmUTC(p.veto_until) : '') : '');
+  return <span className={'lg-pv' + (p.predicted_verdict ? ' v-' + p.predicted_verdict : '') + (m ? ' mach' : '')} title={title}>{p.predicted_verdict ? VERDICT_WORD[p.predicted_verdict] : ''}{m ? (p.predicted_verdict ? ' · ' : '') + 'machine' : ''}</span>;
 }
 /** The feature name: opens the feature on the finding's lens tab, in the drawing set. `act` false keeps it out of the
  *  Tab order (only the focused row's controls are tabbable; J/K move between rows). */

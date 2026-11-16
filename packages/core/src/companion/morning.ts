@@ -1,0 +1,403 @@
+// The Morning Watch: one standup across every live product, as a deck of cards read in order. Pure: the server reads the
+// stores and the plans (server/api/companion/morning.server.ts) and hands each product's facts here; this decides what the
+// morning says and where each card takes the owner. Every card that is about a place carries it (a FocusPlace), so as a
+// card is read the deck publishes it to the shared focus and every following surface flies there.
+//   open      the portfolio in one line: built, failed, releases that moved their lens or fell short, decisions waiting
+//   outcomes  per product, before its other cards: what the owner's approvals of the last days (before this window) became -
+//             built (with its commit), failed (with the reason), building, or "approved, not built yet" - each with its
+//             before and after screens when the store has them (companion/outcomes.ts; ProductFacts.outcomes)
+//   built     per product: what agents built overnight (and what failed), at the room where most of it landed
+//   release   per product: a release merged in the window, and whether readings taken after it confirm its items; and
+//             the accepted items git says landed on the base branch in the window (ProductFacts.landed), judged by the
+//             same rule from their landing (scan/track.ts): held, short of expected, or not measured since
+//   quiet     per product with nothing in the window: said once, calmly, so silence is never mistaken for "not read"
+//   agents    what agents did with the owner's decisions overnight (the agent trail, companion/trail.ts): the briefs they
+//             read before proposing, the declines they heard back, what they withdrew and what they recommended
+//   decision  the top blockers across products (tier first: stop-ship, then high...), each Approve / Defer / Hold, and each
+//             carrying its decision brief (scan/brief.ts: what it touches, the owner's declines quoted, undo, cost). Only
+//             when the brief says the same idea was declined before (advice 'withdraw') does Decline join the keys, as
+//             the recommendation, with the "Repeats <id> ..." note; a likeness only shows the quote (never flips)
+//   close     what was decided this morning (repeats declined counted), and where the steering log is
+// News during the standup (roadmap C1): a reader that opened the deck at `opened` asks again with it. What landed after it
+// - a finding raised, an item built - never enters the part already read: the built and release cards and the ranked
+// decisions are read over [since, opened], and the news goes to the end, before the close card, marked `news`, with
+// `deck.news` counting it ("1 new"). A decision filed after `opened` never takes a ranked slot, so nothing reshuffles.
+// Headlines are one plain line. Honesty: a release item counts as confirmed only on a reading taken after the release
+// that meets its expected value (scan/track.ts); anything else is "not measured since", never good.
+import type { FocusPlace } from '../session/focus.ts';
+import type { Proposal, ScanSnapshot } from '../scan/types.ts';
+import { boundWords, mainOutcome, trackOf, tracksOf, type Track, type TrackOpts } from '../scan/track.ts';
+import type { LandedMap } from '../scan/landed.ts';
+import type { Brief, BriefMap } from '../scan/brief.ts';
+import { cardBrief, clip, type CardBrief } from './card-brief.ts';
+export { cardBrief, type CardBrief };
+import { trailSessions, trailTally, type TrailRow, type TrailTally } from './trail.ts';
+import { STEER_VERDICTS } from '../standard/schema-vocab.ts';
+import { outcomeLine, outcomesHeadline, outcomesTone, type Outcome } from './outcomes.ts';
+export type { Outcome };
+// The wire is packages/schema/schema/morning-deck-1.schema.json (MorningDeck, AgentDeck, SteerRow, SteerPost);
+// check:schema holds these hand-written types to it field by field.
+
+export type CardKind = 'open' | 'agents' | 'outcomes' | 'built' | 'release' | 'quiet' | 'decision' | 'close';
+export type Tone = 'good' | 'warn' | 'bad' | 'calm';
+/** `decline` is offered on a repeat only (the card's brief recommends it); the server refuses it on any other card. */
+export type Verdict = (typeof STEER_VERDICTS)[number];
+export const VERDICTS: readonly Verdict[] = STEER_VERDICTS;
+
+export interface Where { room: string; roomName: string; wing: string; wingName: string; name: string }
+export interface ProductFacts {
+  slug: string;
+  name: string;
+  scan: Pick<ScanSnapshot, 'proposals' | 'measurements' | 'packs' | 'releases' | 'runs'>;
+  /** feature slug -> where it sits on the product's plan. */
+  where: ReadonlyMap<string, Where>;
+  /** `lens|metric` -> the manifest's label ('Secrets in code'), when the map has one. */
+  labels?: ReadonlyMap<string, string>;
+  /** The plan as the decision brief reads it (briefMapOfStructure); absent -> every brief says 'not on the plan'. */
+  map?: BriefMap;
+  /** What git says already landed on the base branch `ref` (server: release.server.ts landings); absent or unknown -> none. */
+  landed?: { ref: string; items: LandedMap };
+  /** git's ancestry for the readings and the lenses' bounds (track.ts evidenceOpts): the ledger's eligibility, here too. */
+  evidence?: Pick<TrackOpts, 'contains' | 'bounds'>;
+  /** Open finding id -> the live standing order no agent door will build it past (morning.server.ts). Not the owner's Hold verdict. */
+  orders?: ReadonlyMap<string, string>;
+  /** What the person's earlier approvals became (companion/outcomes.ts joinOutcomes; the server's join is
+   *  server/outcomes.server.ts): one `outcomes` card when there is any. Absent or empty -> no card. */
+  outcomes?: readonly Outcome[];
+}
+/** One row of a product's steering log (work/steering-log.jsonl). `note`: what a Decline wrote to the store. */
+export interface SteerRow { at: string; product: string; proposal: string; verdict: Verdict; title: string; by: string; until?: string; warning?: string; note?: string }
+/** The body of POST /api/companion/morning (the human path). */
+export interface SteerPost { product: string; proposal: string; verdict: Verdict }
+
+export interface CardLine { text: string; tone?: Tone }
+export interface MorningCard {
+  id: string;
+  kind: CardKind;
+  product?: string;
+  productName?: string;
+  headline: string;
+  lines: CardLine[];
+  tone: Tone;
+  place?: FocusPlace;
+  decision?: { proposal: string; tier?: number; steered?: SteerRow; brief?: CardBrief };
+  /** Landed after the reader opened the deck: appended at the end, never into the read part. */
+  news?: true;
+  /** kind `outcomes` only: what yesterday's approvals became, newest decision first (1..OUTCOMES_MAX). */
+  outcomes?: Outcome[];
+}
+export interface ProductSummary { slug: string; name: string; built: number; failed: number; releases: number; confirmed: number; short: number; waiting: number }
+/** `skipped`: products the server could not read (morning.server.ts), named, never dropped silently. */
+/** `news`: what landed after `opened` (the instant the reader opened this deck), counted: findings raised and items built. */
+export interface MorningDeck { since: string; until: string; products: ProductSummary[]; cards: MorningCard[]; agents?: TrailTally; skipped?: { product: string; why: string }[]; news?: { since: string; count: number } }
+
+export const TOP_DECISIONS = 3;
+export const HELD_SHOWN = 2;
+/** At most this many decisions that arrived during the standup are shown at the end. */
+export const NEWS_SHOWN = 3;
+/** A built card's lines: this many, unless more builds failed. A failure is always named, so failures come first. */
+export const BUILT_SHOWN = 6;
+const TIER_WORDS = ['stop-ship', 'high', 'medium', 'backlog'];
+const n = (k: number, one: string, many = one + 's') => `${k} ${k === 1 ? one : many}`;
+const list = (xs: string[]) => (xs.length <= 1 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1]);
+const fmt = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
+const builtLines = (ok: readonly string[], bad: readonly string[]): CardLine[] => [...bad.map((t) => ({ text: `Failed: ${t}`, tone: 'bad' as Tone })), ...ok.map((t) => ({ text: t, tone: 'good' as Tone }))].slice(0, Math.max(BUILT_SHOWN, bad.length));
+const hoursAgo = (iso: string, now: number) => { const h = Math.max(0, Math.round((now - Date.parse(iso)) / 3600e3)); return h < 1 ? 'just now' : h + ' h ago'; };
+
+/** The room most of these features sit in (ties: the first met), or undefined. */
+function busiestRoom(fs: readonly string[], where: ReadonlyMap<string, Where>): Where | undefined {
+  const count = new Map<string, { w: Where; k: number }>();
+  for (const f of fs) { const w = where.get(f); if (w) { const c = count.get(w.room); if (c) c.k++; else count.set(w.room, { w, k: 1 }); } }
+  let best: { w: Where; k: number } | undefined;
+  for (const c of count.values()) if (!best || c.k > best.k) best = c;
+  return best?.w;
+}
+const roomPlace = (product: string, w: Where | undefined, say: string): FocusPlace | undefined => (w ? { product, target: { kind: 'room', id: w.room }, level: 'L2', say } : undefined);
+const featurePlace = (product: string, feature: string, say: string): FocusPlace => ({ product, target: { kind: 'feature', id: feature }, level: 'L4', say });
+const inWindow = (iso: string | undefined, since: string, until: string) => !!iso && iso >= since && iso <= until;
+/** git's committer time (an offset) as UTC, comparable as text with the window. */
+const utc = (iso: string) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? new Date(ms).toISOString() : iso; };
+
+/** A decision on the morning's table. `today`: steered in this window, so it keeps its slot (marked) and the deck does not
+ *  reshuffle as the owner decides; `held`: held on an earlier morning, still waiting. */
+interface Choice { x: Proposal; s?: SteerRow; today: boolean; held: boolean }
+
+/** Decisions for the morning: every open finding not deferred (a defer from an earlier morning hides it until its
+ *  `until`), plus every one steered this morning whatever its status now (approved ones included). */
+function openDecisions(p: ProductFacts, steer: readonly SteerRow[], since: string, until: string): Choice[] {
+  const last = new Map<string, SteerRow>();
+  for (const r of steer) if (r.product === p.slug) last.set(r.proposal, r);
+  const out: Choice[] = [];
+  for (const x of p.scan.proposals) {
+    const s = last.get(x.id), today = !!s && s.at >= since;
+    if (!today && x.status !== 'proposed') continue;
+    if (!today && s?.verdict === 'defer' && s.until && s.until > until) continue;
+    out.push({ x, ...(s && (today || s.verdict === 'hold') ? { s } : {}), today, held: !today && s?.verdict === 'hold' });
+  }
+  return out;
+}
+
+/** `trail`: the agent trail's rows (brief.server.ts readTrail); the ones in the window make the agents card. `opened`: when
+ *  the reader first read this morning's deck; what landed after it is news (see the header). */
+export function buildDeck(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, now: number, trail: readonly TrailRow[] = [], opened?: string): MorningDeck {
+  const until = new Date(now).toISOString(), cards: MorningCard[] = [], sums: ProductSummary[] = [];
+  // the read part covers [since, cut]; (cut, until] is news. Without `opened` there is no news: cut is now
+  const cut = opened && opened > since && opened < until ? opened : until;
+  const decisions: (Choice & { p: ProductFacts })[] = [], fresh: (Choice & { p: ProductFacts })[] = [], newsCards: MorningCard[] = [];
+  let newsCount = 0;
+  const perProduct: MorningCard[][] = [], outcomeCards: MorningCard[] = [];
+  // products where something landed on the base branch in the window (a landed card)
+  const landedIn = new Set<string>();
+  for (const p of products) {
+    const mine: MorningCard[] = [];
+    if (p.outcomes?.length) outcomeCards.push(outcomesCard(p, p.outcomes, now));
+    const built = p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && inWindow(x.updated_at, since, cut));
+    const builtLate = cut === until ? [] : p.scan.proposals.filter((x) => (x.status === 'done' || x.status === 'failed') && !!x.updated_at && x.updated_at > cut && x.updated_at <= until);
+    if (builtLate.length) { newsCards.push(lateBuilt(p, builtLate)); newsCount += builtLate.length; }
+    const ok = built.filter((x) => x.status === 'done'), bad = built.filter((x) => x.status === 'failed');
+    if (built.length) {
+      const w = busiestRoom(ok.length ? ok.map((x) => x.feature) : bad.map((x) => x.feature), p.where);
+      const headline = ok.length
+        ? `${p.name}: agents built ${n(ok.length, 'item')} overnight${bad.length ? `; ${n(bad.length, 'build')} failed` : ''}.`
+        : `${p.name}: ${n(bad.length, 'build')} failed overnight; nothing landed.`;
+      mine.push({
+        id: `built:${p.slug}`, kind: 'built', product: p.slug, productName: p.name, headline, tone: bad.length ? 'warn' : 'good',
+        lines: builtLines(ok.map((x) => `${x.title}${p.where.get(x.feature) ? ' · ' + p.where.get(x.feature)!.roomName : ''}`), bad.map((x) => x.title)),
+        ...(roomPlace(p.slug, w, headline) ? { place: roomPlace(p.slug, w, headline) } : {}),
+      });
+    }
+    // releases merged in the window, read through the answer tracks
+    const rels = p.scan.releases.filter((r) => (r.status === 'merged' || r.status === 'tagged') && inWindow(r.updated_at, since, cut));
+    const ev: TrackOpts = { ...p.evidence, ...(p.landed ? { landed: p.landed.items } : {}) };
+    const tracks = tracksOf(p.scan, now, ev);
+    // a tile on the plan says its NEWEST track (live-tracks.ts; tracksOf is newest first): the card flies to an item whose
+    // tile shows this release's reading, and names it first, so the card and the tile agree (the demo pass found the card
+    // on Card payments, whose tile showed a later build, while the "confirmed · measured 190" sat on Class packs)
+    const tileTop = new Map<string, string>();
+    for (const t of tracks) if (!tileTop.has(t.feature)) tileTop.set(t.feature, t.id);
+    const onTile = (t: Track) => tileTop.get(t.feature) === t.id;
+    let confirmed = 0, short = 0;
+    // accepted items that landed on the base branch in the window, with no release behind them: judged as a release's
+    const L = p.landed, lts: Track[] = [];
+    if (L) for (const id of Object.keys(L.items)) {
+      if (!inWindow(utc(L.items[id].at), since, cut)) continue;
+      const t = trackOf(p.scan, id, ev);
+      if (t && t.status === 'accepted' && mainOutcome(t)) lts.push(t);
+    }
+    if (lts.length) {
+      const good = lts.filter((t) => t.stage === 'confirmed'), fell = lts.filter((t) => t.stage === 'not-confirmed'), unk = lts.length - good.length - fell.length;
+      confirmed += good.length; short += fell.length; landedIn.add(p.slug);
+      const headline = fell.length ? `${p.name}: ${fell.length} of ${n(lts.length, 'item')} that landed on ${L!.ref} ${fell.length === 1 ? 'is' : 'are'} short of what was expected.`
+        : unk ? `${p.name}: ${n(lts.length, 'item')} landed on ${L!.ref}; ${unk} not measured since.`
+          : `${p.name}: ${n(lts.length, 'item')} landed on ${L!.ref}; ${lts.length === 1 ? 'it' : 'all ' + lts.length} held.`;
+      const focus = fell.find(onTile) ?? fell[0] ?? good[0] ?? lts[0];
+      mine.push({
+        id: `landed:${p.slug}`, kind: 'release', product: p.slug, productName: p.name, headline, tone: fell.length ? 'bad' : unk ? 'warn' : 'good',
+        lines: [focus, ...lts.filter((t) => t !== focus)].map((t) => ({ text: trackWords(t, p.where), tone: t.stage === 'confirmed' ? 'good' as Tone : t.stage === 'not-confirmed' ? 'bad' as Tone : 'warn' as Tone })).slice(0, 5),
+        place: featurePlace(p.slug, focus.feature, headline),
+      });
+    }
+    for (const r of rels) {
+      const ts = tracks.filter((t) => t.release === r.id);
+      const good = ts.filter((t) => t.stage === 'confirmed'), fell = ts.filter((t) => t.stage === 'not-confirmed'), unk = ts.filter((t) => t.stage !== 'confirmed' && t.stage !== 'not-confirmed');
+      confirmed += good.length; short += fell.length;
+      const lenses = [...new Set(ts.map((t) => t.lens))];
+      const headline = !ts.length ? `${p.name} ${r.version} merged; it carried nothing to measure.`
+        : fell.length ? `${p.name} ${r.version} fell short: ${fell.length} of ${n(ts.length, 'item')} below what was expected.`
+          : unk.length ? `${p.name} ${r.version} merged; ${n(unk.length, 'item')} not measured since.`
+            : `${p.name} ${r.version} moved ${list(lenses)}: ${ts.length === 1 ? 'its item' : ts.length === 2 ? 'both items' : 'all ' + ts.length + ' items'} confirmed.`;
+      const focus: Track | undefined = fell.find(onTile) ?? good.find(onTile) ?? fell[0] ?? good[0] ?? ts[0];
+      mine.push({
+        id: `release:${p.slug}:${r.id}`, kind: 'release', product: p.slug, productName: p.name, headline, tone: fell.length ? 'bad' : unk.length ? 'warn' : 'good',
+        lines: (focus ? [focus, ...ts.filter((t) => t !== focus)] : ts).map((t) => ({ text: trackWords(t, p.where), tone: t.stage === 'confirmed' ? 'good' as Tone : t.stage === 'not-confirmed' ? 'bad' as Tone : 'warn' as Tone })).slice(0, 5),
+        ...(focus ? { place: featurePlace(p.slug, focus.feature, headline) } : {}),
+      });
+    }
+    const all = openDecisions(p, steer, since, until), late = (d: Choice) => !d.today && d.x.created_at > cut;
+    const picks = all.filter((d) => !late(d)), open = picks.filter((d) => d.x.status === 'proposed');
+    for (const d of picks) decisions.push({ p, ...d });
+    for (const d of all) if (late(d)) fresh.push({ p, ...d });
+    if (!mine.length) {
+      const headline = `${p.name} had a quiet night: nothing built, nothing released.`;
+      mine.push({ id: `quiet:${p.slug}`, kind: 'quiet', product: p.slug, productName: p.name, headline, tone: 'calm', lines: [{ text: open.length ? `${n(open.length, 'decision')} still ${open.length === 1 ? 'waits' : 'wait'} for you.` : 'Nothing waits for you here.' }], place: { product: p.slug, level: 'L0', say: headline } });
+    }
+    perProduct.push(mine);
+    sums.push({ slug: p.slug, name: p.name, built: ok.length, failed: bad.length, releases: rels.length, confirmed, short, waiting: open.length });
+  }
+  // the blockers, by tier (stop-ship first; untiered last), then the riskiest, then the oldest. This morning's pool (open and
+  // steered today) keeps its order as the owner decides; held ones from earlier mornings follow, marked (at most HELD_SHOWN)
+  const rank = (d: Choice) => [d.x.tier ?? 4, -(d.x.risk ?? 0), d.x.created_at] as const;
+  const byRank = (a: Choice, b: Choice) => { const x = rank(a), y = rank(b); for (let i = 0; i < 2; i++) if (x[i] !== y[i]) return (x[i] as number) - (y[i] as number); return x[2] < y[2] ? -1 : x[2] > y[2] ? 1 : 0; };
+  decisions.sort(byRank);
+  fresh.sort(byRank);
+  newsCount += fresh.length;
+  const top = [...decisions.filter((d) => !d.held).slice(0, TOP_DECISIONS), ...decisions.filter((d) => d.held).slice(0, HELD_SHOWN)];
+  // the open decisions the deck's end actually shows: held ones count, and one already steered today (a kept slot) does not
+  const atEnd = top.filter((d) => d.x.status === 'proposed').length;
+  const S = sums.reduce((a, s) => ({ built: a.built + s.built, failed: a.failed + s.failed, confirmed: a.confirmed + s.confirmed, short: a.short + s.short, waiting: a.waiting + s.waiting }), { built: 0, failed: 0, confirmed: 0, short: 0, waiting: 0 });
+  const moved = sums.filter((s) => s.built || s.failed || s.releases || landedIn.has(s.slug)).length;
+  const shipped = !landedIn.size ? 'Releases' : sums.some((s) => s.releases) ? 'Releases and landings' : 'Landed on the base branch';
+  const openLine = products.length
+    ? `Overnight, ${moved ? (products.length === 1 ? 'your product moved' : n(moved, 'product') + ' of ' + products.length + ' moved') : products.length === 1 ? 'your product did not move' : 'none of your ' + products.length + ' products moved'}${S.built ? `: ${n(S.built, 'item')} built` : ''}${S.failed ? (S.built ? `, ${S.failed} failed` : `: ${n(S.failed, 'build')} failed`) : ''}.`
+    : 'No live products are registered, so there is nothing to brief.';
+  cards.push({
+    id: 'open', kind: 'open', headline: 'Good morning.', tone: 'calm',
+    lines: [{ text: openLine }, ...(S.confirmed || S.short ? [{ text: `${shipped}: ${S.confirmed} item${S.confirmed === 1 ? '' : 's'} confirmed${S.short ? `, ${S.short} fell short` : ''}.`, tone: (S.short ? 'warn' : 'good') as Tone }] : []),
+      { text: S.waiting ? `${n(S.waiting, 'decision')} ${S.waiting === 1 ? 'waits' : 'wait'}; the top ${atEnd} ${atEnd === 1 ? 'is' : 'are'} at the end.` : 'Nothing waits for a decision.', ...(S.waiting ? { tone: 'warn' as Tone } : {}) }],
+  });
+  // the agent trail of the window: one line on the opening card, and a card of its own with what they heard and did
+  const inWin = trail.filter((r) => r.at >= since && r.at <= until), agents = inWin.length ? trailTally(inWin, since, until) : undefined;
+  if (agents?.reads) {
+    cards[0].lines.push({
+      text: `Overnight, agents checked your decisions ${n(agents.reads, 'time')} before proposing: they heard ${n(agents.heard, 'decline')} of yours and withdrew ${n(agents.withdrew, 'proposal')}${agents.recommended ? `, and recommend you decline ${n(agents.recommended, 'repeat')}` : ''}.`,
+      ...(agents.heard ? { tone: 'warn' as Tone } : {}),
+    });
+    const lines = trailSessions(inWin, now, 3, undefined, Infinity).flatMap((x) => x.lines).slice(0, 6);
+    const met = inWin.find((r): r is Extract<TrailRow, { kind: 'brief' }> => r.kind === 'brief' && !r.id && (r.advice === 'withdraw' || !!r.quoted));
+    const at = met ? products.find((p) => p.slug === met.product) : undefined;
+    const headline = agents.heard ? (agents.withdrew ? `Agents heard your declines and stood down ${n(agents.withdrew, 'time')}.` : 'Agents heard your declines and withdrew nothing.') : `Agents checked your decisions ${n(agents.reads, 'time')}; none met a decline.`;
+    cards.push({
+      id: 'agents', kind: 'agents', headline, tone: agents.heard ? 'warn' : 'calm',
+      lines: lines.map((l) => ({ text: l.text, ...(l.tone === 'heard' ? { tone: 'warn' as Tone } : l.tone === 'act' ? { tone: 'good' as Tone } : {}) })),
+      ...(met && at ? { product: at.slug, productName: at.name, place: featurePlace(at.slug, met.feature, headline) } : {}),
+    });
+  }
+  // what earlier approvals became: after the opening (and the agents card), before what was built overnight
+  cards.push(...outcomeCards);
+  for (const m of perProduct) cards.push(...m);
+  // a decision card; `head` is its first line ("2 of 3" for a ranked one), `news` marks one filed after the deck was opened
+  const card = ({ p, x, s, held }: Choice & { p: ProductFacts }, head: string, news: boolean): MorningCard => {
+    const w = p.where.get(x.feature), tier = x.tier !== undefined ? TIER_WORDS[x.tier] : undefined, brief = cardBrief(p, x), order = x.status === 'proposed' ? p.orders?.get(x.id) : undefined;
+    return {
+      id: `decision:${p.slug}:${x.id}`, kind: 'decision', product: p.slug, productName: p.name, headline: x.title, tone: x.tier === 0 ? 'bad' : 'warn',
+      lines: [
+        { text: `${head} · ${p.name}${w ? ' · ' + w.roomName : ''}`, ...(news ? { tone: 'warn' as Tone } : {}) },
+        { text: [tier ? tier.charAt(0).toUpperCase() + tier.slice(1) : 'Untiered', x.risk_class ? x.risk_class : null, 'raised ' + hoursAgo(x.created_at, now)].filter(Boolean).join(' · '), ...(x.tier === 0 ? { tone: 'bad' as Tone } : {}) },
+        ...(stakes(p, x) ? [{ text: stakes(p, x)! }] : []),
+        ...(order ? [{ text: `Your order ${order} covers this: no agent door will build it until you lift ${order}, and approving it here reads as a breach of ${order}.`, tone: 'warn' as Tone }] : []),
+        ...(held && s ? [{ text: `Held since ${s.at.slice(0, 10)}: still yours to decide.`, tone: 'warn' as Tone }] : []),
+      ],
+      // a follower's lower third reads the place's words: the title, then the brief's short line (<= 280 on the wire)
+      place: featurePlace(p.slug, x.feature, clip(x.title, 118) + (brief.short ? '\n' + brief.short : '')),
+      decision: { proposal: x.id, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(s ? { steered: s } : {}), brief },
+      ...(news ? { news: true as const } : {}),
+    };
+  };
+  top.forEach((d, i) => cards.push(card(d, `${i + 1} of ${top.length}`, false)));
+  for (const d of fresh.slice(0, NEWS_SHOWN)) cards.push(card(d, `New since you opened the deck (${d.x.created_at.slice(11, 16)} UTC)`, true));
+  cards.push(...newsCards);
+  cards.push({ id: 'close', kind: 'close', headline: 'That is the morning.', tone: 'calm', lines: [] });
+  return { since, until, products: sums, cards, ...(agents ? { agents } : {}), ...(cut !== until ? { news: { since: cut, count: newsCount } } : {}) };
+}
+
+/** The `outcomes` card of one product: what its earlier approvals became, at the room most of them sit in. */
+function outcomesCard(p: ProductFacts, xs: readonly Outcome[], now: number): MorningCard {
+  const headline = outcomesHeadline(xs, now, p.name), feat = new Map(p.scan.proposals.map((x) => [x.id, x.feature]));
+  const place = roomPlace(p.slug, busiestRoom(xs.map((x) => feat.get(x.proposal) ?? ''), p.where), headline);
+  const tone = (x: Outcome): Tone => (x.outcome === 'built' ? 'good' : x.outcome === 'failed' ? 'bad' : x.outcome === 'waiting' ? 'warn' : 'calm');
+  return {
+    id: `outcomes:${p.slug}`, kind: 'outcomes', product: p.slug, productName: p.name, headline, tone: outcomesTone(xs),
+    lines: xs.map((x) => ({ text: outcomeLine(x), tone: tone(x) })), ...(place ? { place } : {}), outcomes: [...xs],
+  };
+}
+
+/** Items built after the deck was opened, in one card at the end (the built card above stays as it was read). */
+function lateBuilt(p: ProductFacts, xs: readonly Proposal[]): MorningCard {
+  const ok = xs.filter((x) => x.status === 'done'), bad = xs.filter((x) => x.status === 'failed');
+  const headline = `${p.name}, since you opened the deck: ${ok.length ? `agents built ${n(ok.length, 'item')}` : 'nothing landed'}${bad.length ? `; ${n(bad.length, 'build')} failed` : ''}.`;
+  const place = roomPlace(p.slug, busiestRoom((ok.length ? ok : bad).map((x) => x.feature), p.where), headline);
+  return {
+    id: `news-built:${p.slug}`, kind: 'built', product: p.slug, productName: p.name, headline, tone: bad.length ? 'warn' : 'good', news: true,
+    lines: builtLines(ok.map((x) => x.title), bad.map((x) => x.title)),
+    ...(place ? { place } : {}),
+  };
+}
+
+/** What deciding buys, in one line: "Now 9.3 literals, expected 7 · size S · change risk 3 of 10" (the number only when the
+ *  product has a current reading of the finding's metric). */
+function stakes(p: ProductFacts, x: Proposal): string | null {
+  let cur: { value: number; unit?: string; at: string } | undefined;
+  if (x.metric) for (const m of p.scan.measurements) {
+    if (m.feature !== x.feature || m.lens !== x.lens || m.metric !== x.metric || m.phase === 'after' || m.proposal_id) continue;
+    if (!cur || m.measured_at > cur.at) cur = { value: m.value, ...(m.unit ? { unit: m.unit } : {}), at: m.measured_at };
+  }
+  const u = cur?.unit ? ' ' + cur.unit : '';
+  const parts = [
+    cur && x.metric ? `${p.labels?.get(x.lens + '|' + x.metric) ?? x.metric} now ${fmt(cur.value)}${u}${x.expected_delta ? `, expected ${fmt(cur.value + x.expected_delta)}${u}` : ''}` : null,
+    x.size ? 'size ' + x.size : null,
+    x.risk !== undefined ? `change risk ${x.risk} of 10` : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(' · ') : null;
+}
+
+/** The deck as an agent reads it on the door (morning.brief: GET /api/companion/morning?view=agent): the same cards and the
+ *  same brief lines, without the page's styling and evidence, so a whole morning fits the door's result cap (tool-call.ts
+ *  RESULT_CAP; the full deck with every card's brief did not). */
+export interface AgentCard {
+  id: string; kind: CardKind; product?: string; headline: string; lines: string[]; news?: true;
+  place?: { product: string; target?: FocusPlace['target'] };
+  decision?: { proposal: string; tier?: number; steered?: { verdict: Verdict; at: string }; brief?: { lines: string[]; advice: Brief['advice']['say']; recommend?: 'decline'; note?: string } };
+}
+export interface AgentDeck { since: string; until: string; products: ProductSummary[]; agents?: TrailTally; cards: AgentCard[]; news?: { since: string; count: number } }
+export function agentDeck(d: MorningDeck): AgentDeck {
+  // the page prints deck.skipped itself; this view has no such key, so an agent reads it in the open card's lines
+  const notRead = d.skipped?.length ? ['Not read: ' + d.skipped.map((x) => `${x.product} (${x.why})`).join('; ')] : [];
+  return {
+    since: d.since, until: d.until, products: d.products, ...(d.agents ? { agents: d.agents } : {}), ...(d.news ? { news: d.news } : {}),
+    cards: d.cards.map((c) => {
+      const x = c.decision, b = x?.brief;
+      return {
+        id: c.id, kind: c.kind, ...(c.product ? { product: c.product } : {}), headline: c.headline, lines: [...c.lines.map((l) => l.text), ...(c.kind === 'open' ? notRead : [])], ...(c.news ? { news: true as const } : {}),
+        ...(c.place ? { place: { product: c.place.product, ...(c.place.target ? { target: c.place.target } : {}) } } : {}),
+        ...(x ? { decision: {
+          proposal: x.proposal, ...(x.tier !== undefined ? { tier: x.tier } : {}), ...(x.steered ? { steered: { verdict: x.steered.verdict, at: x.steered.at } } : {}),
+          ...(b ? { brief: { lines: b.lines, advice: b.advice.say, ...(b.recommend ? { recommend: b.recommend, note: b.note } : {}) } } : {}),
+        } } : {}),
+      };
+    }),
+  };
+}
+
+/** One release (or landed) item in words: "Split the X bundle · Checkout: expected 41 KB, measured 44 KB". */
+export function trackWords(t: Track, where: ReadonlyMap<string, Where>): string {
+  const room = where.get(t.feature)?.roomName, u = t.unit ? ' ' + t.unit : '';
+  const head = t.title + (room ? ' · ' + room : ''), since = t.landed && t.status === 'accepted' ? 'it landed' : 'the release';
+  if (t.stage === 'confirmed' && t.current !== undefined) return `${head}: measured ${fmt(t.current)}${u} after ${since}, as expected`;
+  if (t.stage === 'not-confirmed' && t.current !== undefined && t.expected !== undefined) return `${head}: expected ${fmt(t.expected)}${u}, measured ${fmt(t.current)}${u}`;
+  if (t.outOfBounds && t.expected !== undefined) return `${head}: target out of bounds (expected ${fmt(t.expected)}${u}, ${boundWords(t.outOfBounds)})`;
+  if (t.ineligible && !t.evidence) return `${head}: no eligible reading since ${since} (${t.ineligible})`;
+  return `${head}: not measured since ${since}`;
+}
+
+/** A decision taken this morning somewhere other than the deck: on the plan, in the ledger, or in Personas (which writes the
+ *  same store through its own path). The deck counts them so the morning reads as one place. */
+export interface Elsewhere { product: string; title: string; status: string; by?: string }
+
+/** Proposals decided in [since, until] with no steering row: what other surfaces decided this morning. */
+export function decidedElsewhere(products: readonly ProductFacts[], steer: readonly SteerRow[], since: string, until: string): Elsewhere[] {
+  const mine = new Set(steer.filter((r) => r.at >= since).map((r) => r.product + ' ' + r.proposal)), out: Elsewhere[] = [];
+  for (const p of products) for (const x of p.scan.proposals) {
+    if (!x.decided_at || x.decided_at < since || x.decided_at > until || mine.has(p.slug + ' ' + x.id)) continue;
+    if (x.status !== 'approved' && x.status !== 'declined') continue;
+    out.push({ product: p.name, title: x.title, status: x.status, ...(x.decided_by ? { by: x.decided_by } : {}) });
+  }
+  return out;
+}
+
+const VERDICT_WORD: Record<Verdict, string> = { approve: 'Approved', defer: 'Deferred', hold: 'Held', decline: 'Declined as a repeat' };
+
+/** The close card's lines for what was steered this morning (rows at or after `since`) and what was decided elsewhere. */
+export function closeLines(steer: readonly SteerRow[], since: string, logWhere: string, elsewhere: readonly Elsewhere[] = []): CardLine[] {
+  const today = steer.filter((r) => r.at >= since);
+  const k = (v: Verdict) => today.filter((r) => r.verdict === v).length;
+  const other: CardLine[] = elsewhere.length
+    ? [{ text: `Also decided this morning elsewhere (the plan, the ledger or Personas): ${elsewhere.length}.` }, ...elsewhere.slice(0, 3).map((e) => ({ text: `${e.status === 'approved' ? 'Approved' : 'Declined'} in ${e.product}${e.by ? ' by ' + e.by : ''}: ${e.title}` }))]
+    : [];
+  if (!today.length) return [{ text: 'Nothing was decided on this deck this morning. The decisions will be here tomorrow.' }, ...other];
+  return [
+    { text: `${k('approve')} approved, ${k('defer')} deferred to tomorrow, ${k('hold')} held, ${k('decline')} declined as ${k('decline') === 1 ? 'a repeat' : 'repeats'}.`, tone: 'good' },
+    ...today.slice(-5).map((r) => ({ text: `${VERDICT_WORD[r.verdict]}: ${r.title}` })),
+    ...other,
+    { text: `Steering log: ${logWhere}` },
+  ];
+}

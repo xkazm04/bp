@@ -54,3 +54,79 @@ export const mergeRecord = (prev, ran, red) => [...new Set([...prev.filter((n) =
 export const lastLine = (red, previously) => red.length
   ? `${red.length} red: ${red.join(', ')}; rerun just these with npm run check -- --failed (then the full npm run check before pushing)`
   : previously != null ? `${previously} of ${previously} previously failing now pass; run npm run check before pushing` : '';
+
+// - the counts: how many expectations each check proved. countOf reads a child's output (the RESULT line of
+//   scripts/lib/expect.ts first, else one of the prose summaries older checks print), and a per-checkout baseline of the
+//   last green counts (os.tmpdir()/bp-check-counts-<sha1(root)>.json, or BP_CHECK_COUNTS; never inside the repo) names any
+//   check that now asserts fewer things than it did (THINNER). That is reported, never failed: whether a shrink fails the
+//   gate is the owner's call.
+const RESULT_LINE = /^RESULT (\{.*\})\s*$/gm;
+// The prose summaries older checks print. A summary is any line that is not an expectation line of its own (FAIL, SKIP,
+// 'ok    <what>', a stack frame): a count quoted inside a FAIL text is never read. Per line the first shape that matches gives
+// that line's count (group 1, the expectations that held). A 'N of T' tally is weak: beside a strong summary it is a
+// sub-tally ('acceptance cases: 8 of 8 hold' over 'review record: 15 assertions held') and gives way. Two different strong
+// counts (or, with none, two different weak ones) are null, never a guess.
+const NOT_SUMMARY = /^\s*(?:FAIL|SKIP|at|RESULT)\b|^\s*ok(?!:| - )\b/;
+const SHAPES = [
+  [/\b(\d+) (?:passed|held|ok), \d+ failed\b/, 'strong'],                                            // 'check-x: 5 passed, 0 failed'
+  [/\b(\d+)(?: of |\/)\d+ (?:[\w-]+ )*?(?:hold|held|holds|valid|agree|declared|green|passed)\b/, 'weak'], // '12 of 12 sim-answer expectations hold'
+  [/\b(\d+) (?:[\w-]+ )?(?:expectations?|checks?|assertions?|cases?|invariants?) (?:held|hold|holds|passed|green)\b/, 'strong'], // '92 expectations held'
+  [/^\S[^:]*: (\d+) (?:held|passed)$/, 'strong'],                                                      // 'check-train-budget: 21 held'
+];
+
+/** The number of expectations a child's output says held, or null when it states none (or states two different ones). */
+export const countOf = (out) => {
+  const text = String(out ?? '');
+  const results = [...text.matchAll(RESULT_LINE)].map((m) => { try { return JSON.parse(m[1]); } catch { return null; } });
+  // The harness prints exactly one RESULT line, as done()'s last line; a check that forwards a child's output prints its own last.
+  const own = results.at(-1);
+  if (own && Number.isInteger(own.held) && own.held >= 0) return own.held;
+  const found = { strong: new Set(), weak: new Set() };
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (NOT_SUMMARY.test(line)) continue;
+    for (const [re, rank] of SHAPES) { const m = re.exec(line); if (m) { found[rank].add(Number(m[1])); break; } }
+  }
+  const set = found.strong.size ? found.strong : found.weak;
+  return set.size === 1 ? [...set][0] : null;
+};
+
+/** Where this checkout's baseline of green counts lives: outside the repo, so it is never committed. */
+export const countsPath = (root, env) => env.BP_CHECK_COUNTS
+  || path.join(os.tmpdir(), `bp-check-counts-${crypto.createHash('sha1').update(root).digest('hex')}.json`);
+
+/** Parse the baseline's text: { counts } (empty when there is no file, `text` null) or { error } when it cannot be read. */
+export const parseCounts = (text) => {
+  if (text == null) return { counts: {} };
+  let v;
+  try { v = JSON.parse(text); } catch (e) { return { error: `it does not parse: ${e.message}` }; }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return { error: 'it is not an object of check names' };
+  const bad = Object.entries(v).filter(([, n]) => !Number.isInteger(n) || n < 0).map(([k]) => k);
+  if (bad.length) return { error: `${bad.join(', ')} ${bad.length === 1 ? 'is' : 'are'} not a whole count` };
+  return { counts: v };
+};
+
+/** The checks whose green count fell below their baseline: [{ name, was, now }] in the order of `now`. */
+export const thinner = (prev, now) => Object.entries(now)
+  .filter(([n, c]) => Number.isInteger(c) && Number.isInteger(prev[n]) && c < prev[n])
+  .map(([name, c]) => ({ name, was: prev[name], now: c }));
+
+/** One THINNER line. */
+export const thinnerLine = ({ name, was, now }) => `THINNER  ${name}  ${was} -> ${now} held (${was - now} fewer than the last green run)`;
+
+/** The new baseline: the previous one with this run's GREEN counts written over it (a red or uncounted check keeps its old figure). */
+export const mergeCounts = (prev, greenNow) => {
+  const next = { ...prev };
+  for (const [n, c] of Object.entries(greenNow)) if (Number.isInteger(c)) next[n] = c;
+  return next;
+};
+
+/** The summary's tail: '· N expectations in K counted check(s)', plus the uncounted names. `counts` maps every check run to a count or null. */
+export const countSummary = (counts) => {
+  const e = Object.entries(counts);
+  const counted = e.filter(([, c]) => Number.isInteger(c));
+  const none = e.filter(([, c]) => !Number.isInteger(c)).map(([n]) => n);
+  const total = counted.reduce((s, [, c]) => s + c, 0);
+  return `· ${total} expectations in ${counted.length} counted check${counted.length === 1 ? '' : 's'}`
+    + (none.length ? `; ${none.length} uncounted: ${none.join(', ')}` : '');
+};

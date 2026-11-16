@@ -30,7 +30,7 @@ const err = (fn: () => unknown): Refusal => { try { fn(); return {}; } catch (e)
 
 type Check = { id: string; verdict: 'block' | 'warn' | 'ok'; words: string };
 type Mod = {
-  preflightOf: (rel: { status: string; version: string } | undefined, items: unknown[], probe: unknown) => Check[];
+  preflightOf: (rel: { status: string; version: string } | undefined, items: unknown[], probe: unknown, onBase?: { landed: ReadonlyMap<string, unknown>; base: string }) => Check[];
   gated: (available: readonly string[], checks: readonly Check[]) => string[];
 };
 let M: Mod | null = null;
@@ -78,6 +78,23 @@ if (M) {
   check('4 building, pr-open, merged, tagged -> []', ['building', 'pr-open', 'merged', 'tagged'].every((s) => preflightOf({ status: s, version: '1.2.0' }, bad, { status: 412, text: 'x' }).length === 0));
   check('4 failed is pre-flighted too', blocks(preflightOf({ status: 'failed', version: '1.2.0' }, bad, READY)).length === 1);
   check('4 no release -> []', preflightOf(undefined, bad, READY).length === 0);
+  // 6 items already on the base branch: some -> a warn (the cut skips them), every one -> ok (Tag, not Build); by count,
+  //   naming the first three with their landing commit
+  const land = (sha: string) => ({ sha: sha.padEnd(40, '0'), at: T0, by: 'trailer' });
+  const pkg = [item('p-l00001', 'L1'), item('p-l00002', 'L2'), item('p-l00003', 'L3'), item('p-l00004', 'L4'), item('p-c00005', 'Cut me')];
+  const onBase = { landed: new Map(pkg.slice(0, 4).map((x, i) => [x.p.id, land('abc000' + i)])), base: 'master' };
+  const c6 = preflightOf(draft, pkg, READY, onBase), lb = c6.find((c) => c.id === 'landed');
+  check('6 a mixed package -> one warn in words: the count, the base, no pick needed, three named with their commit, the rest counted',
+    lb?.verdict === 'warn' && lb.words.startsWith('4 items are already on master and need no pick (the cut skips them): "L1" as abc0000') && lb.words.endsWith('and 1 more.') && !lb.words.includes('Cut me'), JSON.stringify(lb));
+  check('6 a mixed package keeps Build for the unlanded ones', gated(['build'], c6).join() === 'build');
+  const all = pkg.slice(0, 4), c6a = preflightOf(draft, all, READY, onBase), la = c6a.find((c) => c.id === 'landed');
+  check('6 every item landed -> ok: Tag tags the version there and cherry-picks nothing', la?.verdict === 'ok' && la.words.startsWith('All 4 items are already on master: Tag tags v1.2.0 there and cherry-picks nothing: "L1" as abc0000') && gated(['tag'], c6a).join() === 'tag', JSON.stringify(la));
+  const one = preflightOf(draft, pkg.slice(0, 1), READY, { landed: new Map([['p-l00001', land('abc0000')]]), base: 'main' }).find((c) => c.id === 'landed');
+  check('6 one landed item says it', one?.words.startsWith('The item is already on main: Tag tags v1.2.0 there') === true, JSON.stringify(one));
+  const noSha = [item('p-l00009', 'No sha but landed', { sha: false })];
+  check('6 a landed item needs no commit_sha (its landing is the commit)', blocks(preflightOf(draft, noSha, READY, { landed: new Map([['p-l00009', land('abc0009')]]), base: 'main' })).length === 0);
+  check('6 a block holds Tag back as it holds Build', gated(['tag', 'build'], [{ id: 'probe', verdict: 'block', words: 'gh is not signed in' }]).length === 0);
+  check('6 nothing landed (or git unread) -> no landed check', !preflightOf(draft, pkg, READY, { landed: new Map(), base: 'main' }).some((c) => c.id === 'landed') && !preflightOf(draft, pkg, READY).some((c) => c.id === 'landed'));
   check('every check has an id, a verdict and words', [...c1, ...c2, ...c3, ...c3c].every((c) => !!c.id && ['block', 'warn', 'ok'].includes(c.verdict) && c.words.trim().length > 5));
 }
 

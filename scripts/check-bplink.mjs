@@ -29,8 +29,11 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import Ajv2020Module from 'ajv/dist/2020.js';
+import { schemaAjv } from '../packages/schema/roots.mjs';
 import { WING_DEFS } from '../packages/core/src/model/constants.ts';
+import { QUICK_REPLY_MAX, PAGE_TARGETS } from '../packages/core/src/companion/contract.ts';
+import { SURFACE_KEYS, PLACE_MAX, readSurface } from '../packages/core/src/companion/surface.ts';
+import { LABEL_MAX, SAY_MAX } from '../packages/core/src/companion/replies.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'packages/core/data');
@@ -152,12 +155,9 @@ export function junctionSpec(ps1) {
   return link && target ? { link, target } : null;
 }
 
-// The payload schemas, all six registered under their $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
-// Same ajv options as scripts/validate-structure.mjs and packages/schema/generate.mjs (strict, allowUnionTypes).
-const SCHEMA_DIR = path.join(ROOT, 'packages/schema/schema');
-const Ajv2020 = Ajv2020Module.default ?? Ajv2020Module;
-const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
-for (const f of fs.readdirSync(SCHEMA_DIR).filter((n) => n.endsWith('.schema.json'))) ajv.addSchema(JSON.parse(fs.readFileSync(path.join(SCHEMA_DIR, f), 'utf8')));
+// The payload schemas: the one ajv (packages/schema/roots.mjs) every validator uses, each schema registered under its
+// file name and its $id so structure-envelope-1's relative $ref to app-structure-3 resolves.
+const ajv = schemaAjv();
 const PAYLOAD_SCHEMAS = { envelope: 'structure-envelope-1', plan: 'plan-1', islands: 'plan-1', snapshot: 'scan-wire-1', waves: 'scan-wire-1' };
 const PAYLOAD_LABEL = { envelope: '/structure body', plan: '/plan body', islands: '/plan?layout=islands body', snapshot: '/stream snapshot frame', waves: '/waves body' };
 // One break per payload, applied to a copy of the live body. scan-wire-1's root takes one property per frame name, so a
@@ -270,6 +270,106 @@ export function structureDiagProblems(cppText) {
   return out;
 }
 
+/**
+ * What is wrong with how BpLink.cpp's AddToDraft builds the PATCH for an existing draft ([] when nothing). The packages are
+ * sent whole and the new ids are appended inside the loop over the draft's packages, so a draft with none sent [] and
+ * dropped the findings behind a 200. After that loop the body must add a package holding `Fresh` when the loop added none.
+ */
+export function addToDraftProblems(cppText) {
+  const code = stripCxx(cppText);
+  const head = /\bvoid\s+FBpLinkModule::AddToDraft\s*\(/.exec(code);
+  const span = head && braceSpan(code, head.index + head[0].length);
+  if (!span) return ['no FBpLinkModule::AddToDraft body'];
+  const body = code.slice(span[0], span[1]);
+  const loop = /for\s*\([^;]*;[^;]*Draft->packages\.Num\(\)[^)]*\)/.exec(body);
+  if (!loop) return ['no loop over Draft->packages'];
+  const after = braceSpan(body, loop.index + loop[0].length);
+  const rest = after ? body.slice(after[1]) : '';
+  return /^\s*if\s*\(\s*Packages\.Num\(\)\s*==\s*0\s*\)\s*\{?\s*Packages\.Add\(\s*Package\([^;]*\bFresh\s*\)\s*\)\s*;/.test(rest)
+    ? [] : ['an empty draft gets no package holding the new ids after the loop (the PATCH would send packages: [])'];
+}
+
+/**
+ * Table link v2 (night two W2a), read off BpLink.cpp so the client and the server cannot drift: the keys each link function
+ * reads from an answer (`Try...Field(TEXT("k"))` inside FBpLinkModule::<fn>, lambdas included), the keys PostPair sends, the
+ * scopes it asks for, and what is wrong with how requests are made ([] when nothing): every request but the ceremony's own
+ * two (POST /pair, /pair/claim, which must not carry a stale token) starts at NewRequest, which sets
+ * `Authorization: Bearer <token>`; and the link's routes are requested in code.
+ */
+export function linkSource(cppText) {
+  const code = stripCxx(cppText), lit = stripCxx(cppText, true);
+  const body = (fn) => {
+    const head = new RegExp(`\\bFBpLinkModule::${fn}\\s*\\(`).exec(code);
+    const span = head && braceSpan(code, head.index + head[0].length);
+    return span ? { code: code.slice(span[0], span[1]), lit: lit.slice(span[0], span[1]) } : null;
+  };
+  const reads = (fn) => { const b = body(fn); return b ? [...new Set([...b.lit.matchAll(/Try\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]))] : null; };
+  const sets = (fn) => { const b = body(fn); return b ? [...new Set([...b.lit.matchAll(/Set\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]))] : null; };
+  const problems = [];
+  const nr = /TSharedRef<IHttpRequest,\s*ESPMode::ThreadSafe>\s+NewRequest\s*\(\s*\)/.exec(code);
+  const nrSpan = nr && braceSpan(code, nr.index + nr[0].length);
+  const nrLit = nrSpan ? lit.slice(nrSpan[0], nrSpan[1]) : '';
+  if (!/SetHeader\(\s*TEXT\("Authorization"\)\s*,\s*TEXT\("Bearer "\)\s*\+\s*GToken\s*\)/.test(nrLit)) problems.push('NewRequest does not set Authorization: Bearer <GToken>');
+  const mg = /MakeGet\s*\([^)]*\)\s*\{/.exec(code);
+  if (!mg || !/=\s*NewRequest\(\)/.test(code.slice(mg.index, mg.index + 300))) problems.push('MakeGet does not start at NewRequest');
+  const raw = [...code.matchAll(/FHttpModule::Get\(\)\.CreateRequest\(\)/g)].map((m) => m.index);
+  const inside = (i, fn) => { const head = new RegExp(`\\bFBpLinkModule::${fn}\\s*\\(`).exec(code); const s = head && braceSpan(code, head.index + head[0].length); return !!s && i >= s[0] && i < s[1]; };
+  const stray = raw.filter((i) => !(nrSpan && i >= nrSpan[0] && i < nrSpan[1]) && !inside(i, 'PostPair') && !inside(i, 'SendClaim'));
+  if (stray.length) problems.push(`${stray.length} request(s) made with FHttpModule::Get().CreateRequest() outside NewRequest, PostPair and SendClaim: they would go out without the token`);
+  for (const route of ['/api/health', '/lan/where', '/pair', '/pair/claim', '/pair/me', '/api/session/place', '/scans/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  const cancel = body('CancelScan');
+  if (!cancel || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(cancel.lit)) problems.push('CancelScan does not send DELETE');
+  const scopes = /PairScopes\s*=\s*TEXT\("([^"]*)"\)/.exec(lit)?.[1]?.split(',') ?? null;
+  if (!scopes) problems.push('no FBpLinkModule::PairScopes literal');
+  // The stand-up (night two W2b, table-link-v2.md section 3): the morning, the cards and the policies are requested in code,
+  // every decision body carries `shown`, the revoke is a DELETE, and the grant is refused here past the bound it names.
+  for (const route of ['/api/companion/morning', '/api/companion/cards', '/api/companion/cards/', '/api/companion/policies', '/api/companion/policies/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  for (const fn of ['PostMorningVerdict', 'AnswerCompanionCard', 'GrantPolicy', 'AskOnboard']) {
+    const b = body(fn);
+    if (!b || !/SetStringField\(\s*TEXT\("shown"\)/.test(b.lit)) problems.push(`${fn} does not send shown`);
+  }
+  // Wave EV, add a project from the headset (table-link-v2.md section 14, S4): the offer, the ask and its answer are requested
+  // in code, only past CanOnboard (a pairing whose /pair/me scopes hold `onboard`), and the ask sends exactly { candidate, shown }.
+  for (const route of ['/api/onboarding/candidates', '/api/onboarding/start', '/api/onboarding/requests/']) {
+    if (!lit.includes(`TEXT("${route}")`)) problems.push(`no request names ${route}`);
+  }
+  for (const fn of ['GetOnboardCandidates', 'AskOnboard', 'GetOnboardAsk']) {
+    const b = body(fn);
+    if (!b || !/CanOnboard\(\)/.test(b.code)) problems.push(`${fn} does not refuse without CanOnboard()`);
+  }
+  const canOnboard = body('CanOnboard');
+  if (!canOnboard || !/Scopes\.Contains\(\s*TEXT\("onboard"\)\s*\)/.test(canOnboard.lit)) problems.push('CanOnboard does not read `onboard` from the pairing\'s scopes');
+  {
+    const askSets = sets('AskOnboard');
+    if (JSON.stringify([...(askSets ?? [])].sort()) !== JSON.stringify(['candidate', 'shown'])) problems.push(`AskOnboard sends ${askSets}, not exactly { candidate, shown }`);
+  }
+  // A refusal's `words` (the voice routes' 429 budget: { error: "budget", words: "<a sentence>" }) is what the person reads:
+  // AnswerWords and RefusalWords read it before `error`.
+  for (const fn of ['AnswerWords', 'RefusalWords']) {
+    const b = body(fn);
+    const w = b ? b.lit.search(/TryGetStringField\(\s*TEXT\("words"\)/) : -1;
+    const e = b ? b.lit.search(/TryGetStringField\(\s*TEXT\("error"\)|ErrorOf\(/) : -1;
+    if (w < 0) problems.push(`${fn} does not read a refusal's words`);
+    else if (fn === 'RefusalWords' && e >= 0 && e < w) problems.push('RefusalWords reads error before words');
+  }
+  const revoke = body('RevokePolicy');
+  if (!revoke || !/SetVerb\(\s*TEXT\("DELETE"\)\s*\)/.test(revoke.lit)) problems.push('RevokePolicy does not send DELETE');
+  const toolsSpan = /FBpLinkModule::PolicyTools\(\)\s*\{[^}]*\{([^}]*)\}/.exec(lit);
+  const policyTools = toolsSpan ? [...toolsSpan[1].matchAll(/TEXT\("([^"]+)"\)/g)].map((m) => m[1]) : null;
+  const maxHours = Number(/PolicyMaxHours\s*=\s*(\d+)/.exec(stripCxx(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../apps/vr/Source/BpLink/Public/BpLink.h'), 'utf8')))?.[1] ?? NaN);
+  const grant = body('GrantPolicy');
+  if (!grant || !/PolicyTools\(\)\.Contains/.test(grant.code) || !/Hours\s*>\s*PolicyMaxHours/.test(grant.code) || !/MinTier\s*<\s*1/.test(grant.code)) problems.push('GrantPolicy does not refuse a grant past the bound (tools, minTier 1..3, hours) before sending');
+  return {
+    problems, scopes, policyTools, maxHours,
+    reads: { health: reads('ProbeCandidate'), where: reads('ReceiveWhere'), pair: reads('PostPair'), claim: reads('SendClaim'), me: reads('AskPairMe'), cancel: reads('CancelScan'), candidates: reads('GetOnboardCandidates') },
+    pairSends: sets('PostPair'),
+  };
+}
+
 /** True when this file was started directly (`node scripts/check-bplink.mjs`), false when another module imported it for its helpers. */
 const isMain = !!process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
 
@@ -297,7 +397,10 @@ async function main() {
   const wantEventLines = wantEvents.length + seedBy('events');
 
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-bplink-'));
-  const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  // --pair: the pairing ceremony on the loopback listener (table link v2 section 4), so the link block below can pin it; its
+  // registry lives in the temp directory (BP_HOME), never the owner's.
+  const child = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0', '--pair'],
+    { cwd, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, BP_HOME: path.join(cwd, 'bp-home') } });
   let out = '';
   child.stdout.on('data', (d) => (out += d));
   child.stderr.on('data', (d) => (out += d));
@@ -473,6 +576,15 @@ async function main() {
       check('source: the /structure diagnosis rule refuses the one-condition shape reading 10 ran',
         structureDiagProblems(`MakeGet(Root + TEXT("/structure"), x);\n${oneLine}MakeGet(Root + TEXT("/plan"), y);`).length === 5);
 
+      // AddToDraft into a draft with no packages: the PATCH body must still carry the new ids (a package of its own).
+      const draftBad = addToDraftProblems(cppText);
+      check('source: AddToDraft into a draft with no packages sends the new ids in a first package, not packages: []', draftBad.length === 0, draftBad.join(' | '));
+      // permanent control: the rule refuses the shape that dropped them (the guard gone, or only in a comment)
+      const guard = /\n[ \t]*if \(Packages\.Num\(\) == 0\) Packages\.Add\(Package\([^\n]*\bFresh\)\);/;
+      check('source: the empty-draft rule refuses an AddToDraft without the guard, and one whose guard is only a comment',
+        guard.test(cppText) && addToDraftProblems(cppText.replace(guard, '')).length > 0
+        && addToDraftProblems(cppText.replace(guard, (m) => m.replace('if (', '// if ('))).length > 0);
+
       // One path to the generated USTRUCT headers (2026-10-23, R1 closed): the junction Source/BpLink/Public/Schema ->
       // packages/schema/generated/ue that apps/vr/tools/link-schema.ps1 makes; Public/ is on the module's include path,
       // so BpLink.Build.cs adds none. The junction is git-ignored machine state, so a fresh checkout has none: the link
@@ -504,7 +616,10 @@ async function main() {
       check(`build: Public/Schema, where it exists, is a link to that target, not a copy (${linkState})`, linkOk, linkState);
       // `Schema/` is the junction Source/BpLink/Public/Schema -> that target, so `Schema/X` is read there as X.
       const schemaIncludes = (text) => [...stripCxx(text, true).matchAll(/#include\s+"([^"]+)"/g)].map((m) => m[1])
-        .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h') && h !== 'BpLink.h');
+        .filter((h) => /^(Schema\/)?Bp/.test(h) && !h.endsWith('.generated.h')
+          // the module's own headers (BpLink.h, BpStore.h) are not generated; a `Schema/` path is never one of them, even
+          // where the Public/Schema junction makes it exist under Public
+          && (h.startsWith('Schema/') || !fs.existsSync(path.join(MOD, 'Public', h))));
       const sources = ['Public/BpLink.h', 'Private/BpLink.cpp'].map((f) => fs.readFileSync(path.join(MOD, f), 'utf8'));
       const includes = sources.flatMap(schemaIncludes);
       const missing = includes.filter((h) => !fs.existsSync(path.join(inc, h.replace(/^Schema\//, ''))));
@@ -519,6 +634,227 @@ async function main() {
       // permanent control: the rule refuses a BpLink.h that goes back to the PublicIncludePaths spelling
       check('build: the one-spelling rule refuses a BpLink.h that includes "BpSchema.h"',
         otherSpelling(schemaIncludes(sources[0].replace('"Schema/BpSchema.h"', '"BpSchema.h"'))).length > 0);
+
+      // The app's own saved state (2026-11-10, Quest 3S): the engine deletes a saved GameUserSettings.ini at the next launch
+      // on the Quest, so the token, the consent and the settings live in Saved/BpTable.json through FBpStore, flushed at the
+      // change. Only BpStore.cpp's one-time migration may still name GGameUserSettingsIni.
+      {
+        const SRC = path.join(ROOT, 'apps/vr/Source');
+        const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => e.name === 'Schema' ? []
+          : e.isDirectory() ? walk(path.join(dir, e.name)) : /\.(h|cpp)$/.test(e.name) ? [path.join(dir, e.name)] : []);
+        const iniUsers = walk(SRC).filter((f) => path.basename(f) !== 'BpStore.cpp' && /\bGGameUserSettingsIni\b/.test(stripCxx(fs.readFileSync(f, 'utf8'))));
+        check('saved state: nothing in apps/vr/Source but BpStore.cpp\'s migration reads or writes GGameUserSettingsIni', iniUsers.length === 0, iniUsers.map((f) => path.relative(ROOT, f)).join(', '));
+        const savedAt = (text, fnName, section, key) => {
+          const lit = stripCxx(text, true);
+          const at = lit.indexOf(`void ${fnName}(`); // the definition, not a call (BpTalk calls ABpTable::SetTalkConsent above it)
+          const span = at < 0 ? null : braceSpan(lit, at);
+          const body = span ? lit.slice(span[0], span[1]) : '';
+          const set = body.indexOf(`FBpStore::SetString(${section}, TEXT("${key}")`);
+          return set >= 0 && body.indexOf('FBpStore::Flush()', set) > set;
+        };
+        const talkText = fs.readFileSync(path.join(SRC, 'bp/BpTalk.cpp'), 'utf8');
+        check('saved state: SaveLink writes the token through FBpStore and flushes it there', savedAt(cppText, 'FBpLinkModule::SaveLink', 'LinkSection', 'Token'));
+        check('saved state: SetTalkConsent writes the consent through FBpStore and flushes it there', savedAt(talkText, 'ABpTable::SetTalkConsent', 'TalkSection', 'Consent'));
+        // permanent control: the rule refuses a SaveLink whose flush is gone, and a consent written through GConfig
+        check('saved state: the rule refuses a SaveLink without its flush and a consent written through GConfig',
+          !savedAt(cppText.replace(/FBpStore::Flush\(\);\s*\}\s*\nvoid FBpLinkModule::ChangedLink/, '}\nvoid FBpLinkModule::ChangedLink'), 'FBpLinkModule::SaveLink', 'LinkSection', 'Token')
+          && !savedAt(talkText.replace('FBpStore::SetString(TalkSection, TEXT("Consent")', 'GConfig->SetString(TalkSection, TEXT("Consent")'), 'ABpTable::SetTalkConsent', 'TalkSection', 'Consent'));
+      }
+
+      // ---- Table link v2 (night two W2a): the requests the headset's link makes, against this server run with --pair ----
+      const send = (method, p, body, headers = {}) => new Promise((resolve) => {
+        const data = body === undefined ? undefined : JSON.stringify(body);
+        const r = http.request({ host: '127.0.0.1', port, path: p, method, headers: { host: `localhost:${port}`, accept: 'application/json', ...(data ? { 'content-type': 'application/json' } : {}), ...headers } }, (res) => {
+          let s = ''; res.on('data', (d) => (s += d)); res.on('end', () => { let json = null; try { json = JSON.parse(s); } catch { /* not JSON */ } resolve({ status: res.statusCode, json, body: s }); });
+        });
+        r.on('error', (e) => resolve({ status: 0, json: null, body: e.message }));
+        if (data) r.write(data);
+        r.end();
+      });
+      // Wave EV, the YESTERDAY sheet: the generated FBpMorningCard carries `outcomes` (FromJson reads it, no raw literal), the
+      // stand-up reads that card through BpVocab, and the bundled sample's outcomes card names screens the bundle carries.
+      {
+        const schemaH = fs.readFileSync(path.join(ROOT, 'packages/schema/generated/ue/BpSchema.h'), 'utf8');
+        const standup = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpStandup.cpp'), 'utf8'));
+        const morning = JSON.parse(fs.readFileSync(path.join(ROOT, 'apps/vr/Content/BpData/kettle/morning.json'), 'utf8'));
+        const card = (morning.cards ?? []).find((c) => c.kind === 'outcomes');
+        const shots = path.join(ROOT, 'apps/vr/Content/BpData/kettle/shots');
+        const files = card ? card.outcomes.flatMap((o) => [o.before, o.after]).filter(Boolean) : [];
+        const missing = files.filter((f) => !fs.existsSync(path.join(shots, f)));
+        check(`outcomes: FBpMorningCard has TArray<FBpOutcome> outcomes, BpStandup reads Kind::Outcomes and ->outcomes, and the sample's card (${card?.outcomes?.length ?? 0} outcomes, ${files.length} screens) names only screens the bundle carries`,
+          /TArray<FBpOutcome>\s+outcomes;/.test(schemaH) && /MorningCard::Kind::Outcomes/.test(standup) && /->outcomes\b/.test(standup) && !!card && card.outcomes.length >= 1 && missing.length === 0,
+          `missing ${missing}`);
+      }
+      const ls = linkSource(cppText);
+      check('link source: every request but POST /pair and /pair/claim starts at NewRequest (Authorization: Bearer), and the link\'s routes and the DELETE are in code', ls.problems.length === 0, ls.problems.join(' | '));
+      // permanent control (wave EV): a CanOnboard that stops reading the scope, and an ask that sends a third key, are refused
+      check('link source: the rule refuses a CanOnboard that ignores the onboard scope and an AskOnboard that sends more than { candidate, shown }',
+        linkSource(cppText.replace('LinkStatus.Scopes.Contains(TEXT("onboard"))', 'true')).problems.length > 0
+        && linkSource(cppText.replace('Json->SetStringField(TEXT("candidate"), Candidate);', 'Json->SetStringField(TEXT("candidate"), Candidate); Json->SetStringField(TEXT("model"), Candidate);')).problems.length > 0);
+      // permanent control: a request made around NewRequest, and a NewRequest that forgets the header, are refused
+      check('link source: the rule refuses a stray CreateRequest and a NewRequest without the Bearer header',
+        linkSource(cppText.replace('Request->SetVerb(TEXT("DELETE"));', 'Request = FHttpModule::Get().CreateRequest(); Request->SetVerb(TEXT("DELETE"));')).problems.length > 0
+        && linkSource(cppText.replace('TEXT("Bearer ") + GToken', 'GToken')).problems.length > 0);
+
+      // ---- The voice link (night two W3, voice-link.md): what BpLink's PostListen and PostSay send ----------------------
+      // Live, and free: a silent 16 kHz mono WAV is answered before any key or cloud call (heard "silence"), and the same body
+      // without the consent header is refused 403 no-consent. In the source: the consent header goes out only from PostListen,
+      // only past its bConsented guard, and both routes start at NewRequest (the Bearer).
+      {
+        const wav = (() => {
+          const n = 16000, b = Buffer.alloc(44 + n * 2);
+          b.write('RIFF', 0); b.writeUInt32LE(36 + n * 2, 4); b.write('WAVE', 8); b.write('fmt ', 12); b.writeUInt32LE(16, 16);
+          b.writeUInt16LE(1, 20); b.writeUInt16LE(1, 22); b.writeUInt32LE(16000, 24); b.writeUInt32LE(32000, 28); b.writeUInt16LE(2, 32);
+          b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(n * 2, 40);
+          return b;
+        })();
+        const listen = (headers) => new Promise((resolve) => {
+          const r = http.request({ host: '127.0.0.1', port, path: '/api/companion/listen', method: 'POST', headers: { host: `localhost:${port}`, 'content-type': 'audio/wav', 'content-length': wav.length, ...headers } }, (res) => {
+            let s = ''; res.on('data', (d) => (s += d)); res.on('end', () => { let json = null; try { json = JSON.parse(s); } catch { /* not JSON */ } resolve({ status: res.statusCode, json }); });
+          });
+          r.on('error', () => resolve({ status: 0, json: null }));
+          r.end(wav);
+        });
+        const quiet = await listen({ 'x-bp-speech-consent': 'cloud' });
+        check('voice: POST /api/companion/listen with consent and a silent 16 kHz WAV answers 200 heard silence (nothing leaves the PC)', quiet.status === 200 && quiet.json?.heard === 'silence', `${quiet.status} ${JSON.stringify(quiet.json)}`);
+        const bare = await listen({});
+        check('voice: the same WAV without x-bp-speech-consent is refused 403 no-consent', bare.status === 403 && bare.json?.error === 'no-consent', `${bare.status} ${JSON.stringify(bare.json)}`);
+        const code = stripCxx(cppText);
+        const fn = (name) => { const at = code.indexOf(`void FBpLinkModule::${name}(`); return at < 0 ? '' : code.slice(at, code.indexOf('\nvoid FBpLinkModule::', at + 10)); };
+        const lit = stripCxx(cppText, true);
+        const listenLit = (() => { const at = lit.indexOf('void FBpLinkModule::PostListen('); return at < 0 ? '' : lit.slice(at, lit.indexOf('\nvoid FBpLinkModule::', at + 10)); })();
+        const consentAt = listenLit.indexOf('"x-bp-speech-consent"'), guardAt = listenLit.indexOf('if (!bConsented)'), sendAt = listenLit.indexOf('ProcessRequest()');
+        check('voice source: PostListen and PostSay start at NewRequest and POST their routes; the consent header is set only in PostListen, after its bConsented refusal',
+          /NewRequest\(\)/.test(fn('PostListen')) && /NewRequest\(\)/.test(fn('PostSay')) && listenLit.includes('"/api/companion/listen"')
+          && guardAt >= 0 && consentAt > guardAt && sendAt > consentAt && (lit.match(/"x-bp-speech-consent"/g) ?? []).length === 1,
+          `guard ${guardAt}, header ${consentAt}, send ${sendAt}`);
+      }
+      // ---- Glim's turn from the headset (G2, companion-link.md section 2): the surface beside the words, the page ids a focus
+      // may name, the quick replies' bounds. Read from the C++ (strings kept where the assertion is about a literal) against
+      // core's own constants, and the body BpLink would build run through the server's readSurface.
+      {
+        const lit = stripCxx(cppText, true);
+        const fnLit = (name) => { const at = lit.indexOf(`FBpLinkModule::${name}(`); const span = at < 0 ? null : braceSpan(lit, at); return span ? lit.slice(span[0], span[1]) : ''; };
+        const post = fnLit('PostCompanionTurn');
+        const keys = (body) => [...body.matchAll(/Set\w+Field\(\s*TEXT\("(\w+)"\)/g)].map((m) => m[1]);
+        const surfBlock = (() => { const a = post.indexOf('const TSharedRef<FJsonObject> Where'); const b = post.indexOf('Json->SetObjectField(TEXT("surface")'); return a >= 0 && b > a ? post.slice(a, b) : ''; })();
+        const surfKeys = [...new Set(keys(surfBlock))];
+        const topKeys = [...new Set(keys(post.replace(surfBlock, '')))];
+        check(`glim: PostCompanionTurn sends { ${topKeys} } with surface { ${surfKeys} }: the surface's keys are core's SURFACE_KEYS (${SURFACE_KEYS}) and the body's are TurnRequest's`,
+          surfBlock.length > 0 && JSON.stringify([...surfKeys].sort()) === JSON.stringify([...SURFACE_KEYS].sort())
+          && topKeys.every((k) => ['conversationId', 'product', 'text', 'surface'].includes(k)) && topKeys.includes('surface'), `surface ${surfKeys} / body ${topKeys}`);
+        const body = Object.fromEntries(surfKeys.map((k) => [k, k === 'kind' ? 'vr' : k === 'spoken' ? true : k === 'target' ? 'kettle-room.1:a_b' : k === 'product' ? 'kettle' : 'Billing; the decision in view: a title']));
+        const ok = readSurface(body), bad = readSurface({ ...body, mood: 'x' });
+        check('glim: the surface BpLink builds passes the server\'s readSurface, and the same with one more key is refused (the route\'s 400)', 'surface' in ok && 'error' in bad, JSON.stringify(ok).slice(0, 120));
+        check('glim: no "(Spoken aloud at the VR table" prefix is left in apps/vr/Source (the surface replaced it)',
+          !fs.readdirSync(path.join(ROOT, 'apps/vr/Source/bp')).some((f) => /\.cpp$/.test(f) && stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp', f), 'utf8'), true).includes('Spoken aloud at the VR table')));
+        const hText = fs.readFileSync(path.join(ROOT, 'apps/vr/Source/BpLink/Public/BpLink.h'), 'utf8');
+        const num = (name) => { const m = new RegExp(`\\b${name}\\s*=\\s*(\\d+)`).exec(stripCxx(hText)); return m ? Number(m[1]) : null; };
+        check(`glim: BpLink's bounds are core's: ${num('CompanionRepliesMax')} replies (QUICK_REPLY_MAX ${QUICK_REPLY_MAX}), label ${num('CompanionReplyLabelMax')} (LABEL_MAX ${LABEL_MAX}), say ${num('CompanionReplySayMax')} (SAY_MAX ${SAY_MAX}), place ${num('CompanionPlaceMax')} (PLACE_MAX ${PLACE_MAX})`,
+          num('CompanionRepliesMax') === QUICK_REPLY_MAX && num('CompanionReplyLabelMax') === LABEL_MAX && num('CompanionReplySayMax') === SAY_MAX && num('CompanionPlaceMax') === PLACE_MAX);
+        const span = (src, sig) => { const at = src.indexOf(sig); const s = at < 0 ? null : braceSpan(src, at); return s ? src.slice(s[0], s[1]) : ''; };
+        const read = span(lit, 'bool ReadTurnLine(');
+        check('glim: the turn\'s line reader (ReadTurnLine) reads every tool name, every focus (kind, id, say), every card, and the end\'s replies capped at CompanionRepliesMax',
+          /Out\.Focuses\.Add\(/.test(read) && /Out\.Cards\.Add\(/.test(read) && /TEXT\("replies"\)/.test(read) && /Out\.Replies\.Num\(\)\s*>=\s*FBpLinkModule::CompanionRepliesMax\)\s*break;/.test(read)
+          && /TEXT\("say"\)/.test(read) && /CompanionReplyLabelMax/.test(read) && /CompanionReplySayMax/.test(read) && /Out\.Tools\.Add\(/.test(read));
+        // Wave U5, the streamed read: one parser for the progress and the end, whole lines only (a body split mid-line reads as
+        // it does whole). The C++ self-test (BpLink.TurnParseTest: every byte split of a sample body, PASS in the log) runs the
+        // parser itself; these pin its shape, with mutants as controls.
+        const streamRules = (src) => {
+          const l = stripCxx(src, true);
+          const feed = span(l, 'bool FeedTurnBytes(');
+          const post = span(l, 'FBpLinkModule::PostCompanionTurn(');
+          const whole = span(l, 'void ReadTurnEvents(');
+          return {
+            'FeedTurnBytes parses only up to the last newline unless the body ended (the rest waits in Tail)': /if \(bLast\) Cut = R\.Tail\.Num\(\);/.test(feed) && /R\.Tail\.FindLast\(static_cast<uint8>\('\\n'\), Cut\)/.test(feed) && /R\.Tail\.RemoveAt\(0, Cut/.test(feed),
+            'FeedTurnBytes reads each whole line through ReadTurnLine': /ReadTurnLine\(Line, R\)/.test(feed),
+            'the whole-body read is FeedTurnBytes with bLast (the same parser)': /FeedTurnBytes\(R, [^;]*, true\)/.test(whole),
+            'PostCompanionTurn reads the body as it arrives (SetResponseBodyReceiveStreamDelegateV2) and never re-reads it whole (no GetContentAsString)': /SetResponseBodyReceiveStreamDelegateV2\(/.test(post) && !/GetContentAsString\(/.test(post),
+            'progress is handed to the game thread and dropped once the turn ended, was cancelled or was superseded': /AsyncTask\(ENamedThreads::GameThread/.test(post) && /if \(Stream->bDone \|\| Serial != GTurnSerial \|\| Serial == GTurnCancelled\) return;/.test(post),
+            'the end reads the rest by the same parser (FeedNew(true)) after marking the stream done': /Stream->bDone = true;[\s\S]*Stream->FeedNew\(true\);/.test(post),
+          };
+        };
+        const sr = streamRules(cppText);
+        for (const [name, ok] of Object.entries(sr)) check(`glim stream: ${name}`, ok);
+        const mutTail = streamRules(cppText.replace("if (bLast) Cut = R.Tail.Num();", 'Cut = R.Tail.Num();'));
+        const mutWhole = streamRules(cppText.replace('ReadTurnEvents(Response->GetContentAsString()', 'X').replace('Stream->FeedNew(true);', 'ReadTurnEvents(Response->GetContentAsString(), Turn, Conv);'));
+        check('glim stream: the rule refuses a parser that reads a line before its newline came, and an end that re-reads the body whole', Object.values(mutTail).some((v) => !v) && Object.values(mutWhole).some((v) => !v));
+        const talkSrc = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpTalk.cpp'), 'utf8'), true);
+        const stepTable = span(talkSrc, 'FString StepWords(');
+        check('glim stream: the talk passes its progress (PostCompanionTurn(Heard, Surface, ..., OnProgress)), and the step words table maps every tool family to words with no tool id in them',
+          /\},\s*OnProgress\);/.test(talkSrc) && /TEXT\("Working on it"\)/.test(stepTable)
+          && [...stepTable.matchAll(/\{ TEXT\("([\w.]+)"\), TEXT\("([^"]+)"\) \}/g)].every((m) => !/\w\.\w/.test(m[2])) && /TEXT\("scan\."\)/.test(stepTable) && /TEXT\("wave\."\)/.test(stepTable));
+        const pages = (() => { const b = fnLit('CompanionPageTargets'); return [...b.matchAll(/TEXT\("([\w-]+)"\)/g)].map((m) => m[1]); })();
+        check(`glim: the page ids the table opens (${pages}) are core's PAGE_TARGETS, in order`, JSON.stringify(pages) === JSON.stringify([...PAGE_TARGETS]), `${pages} vs ${PAGE_TARGETS}`);
+        const talk = stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpTalk.cpp'), 'utf8'), true);
+        const focusStep = (() => { const at = talk.indexOf('void ABpTable::TalkFocusStep('); const span = at < 0 ? null : braceSpan(talk, at); return span ? talk.slice(span[0], span[1]) : ''; })();
+        check('glim: every turn the headset makes sends a surface (the talk spoken, the ASK page and PLAN MY DAY not), and a page focus is checked against CompanionPageTargets',
+          /PostCompanionTurn\(\s*Heard\s*,\s*Surface\s*,/.test(talk) && /TurnSurface\(true\)/.test(talk)
+          && /PostCompanionTurn\(\s*Text\s*,\s*TurnSurface\(false\)/.test(stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpAsk.cpp'), 'utf8')))
+          && /PostCompanionTurn\(\s*Text\s*,\s*Surface\s*,/.test(stripCxx(fs.readFileSync(path.join(ROOT, 'apps/vr/Source/bp/BpStandup.cpp'), 'utf8')))
+          && /CompanionPageTargets\(\)\.Contains\(Id\)/.test(focusStep) && /OwnActAt\s*>\s*TalkFocusAskedAt/.test(focusStep));
+        // permanent control: a surface that grows a key, and a replies cap that is lost, are refused
+        const mut = cppText.replace('Where->SetBoolField(TEXT("spoken"), Surface.bSpoken);', 'Where->SetBoolField(TEXT("spoken"), Surface.bSpoken); Where->SetStringField(TEXT("mood"), Text);');
+        const mutPost = (() => { const l = stripCxx(mut, true); const at = l.indexOf('FBpLinkModule::PostCompanionTurn('); const span = at < 0 ? null : braceSpan(l, at); return span ? l.slice(span[0], span[1]) : ''; })();
+        const mutSurf = (() => { const a = mutPost.indexOf('const TSharedRef<FJsonObject> Where'); const b = mutPost.indexOf('Json->SetObjectField(TEXT("surface")'); return a >= 0 && b > a ? mutPost.slice(a, b) : ''; })();
+        check('glim: the rule refuses a surface with a key the contract lacks', mut !== cppText && JSON.stringify([...new Set(keys(mutSurf))].sort()) !== JSON.stringify([...SURFACE_KEYS].sort()));
+      }
+      // The grant's bound in BpLink is the server's VR_POLICY_BOUND (packages/core/src/server/table-bound.server.ts since S3,
+      // 2026-11-10; decider.server.ts re-exports it), read as text.
+      {
+        const decider = fs.readFileSync(path.join(ROOT, 'packages/core/src/server/table-bound.server.ts'), 'utf8');
+        const bound = /VR_POLICY_BOUND\s*=\s*\{[\s\S]*?tools:\s*\[([^\]]*)\][\s\S]*?maxHours:\s*(\d+)/.exec(decider);
+        const serverTools = bound ? [...bound[1].matchAll(/'([^']+)'/g)].map((m) => m[1]) : null;
+        check(`link source: BpLink's grant bound is the server's VR_POLICY_BOUND (tools ${ls.policyTools}, at most ${ls.maxHours} h)`,
+          !!serverTools && JSON.stringify(ls.policyTools) === JSON.stringify(serverTools) && ls.maxHours === Number(bound[2]), `server ${serverTools} ${bound?.[2]} h`);
+        check('link source: the rule refuses a GrantPolicy that skips the hours bound', linkSource(cppText.replace('Hours > PolicyMaxHours', 'Hours > 999')).problems.length > 0);
+      }
+      const keysIn = (obj, keys, skip = []) => (keys ?? ['(function not found)']).filter((k) => !skip.includes(k) && !(obj && Object.prototype.hasOwnProperty.call(obj, k)));
+
+      const h1 = await send('GET', '/api/health'), h2 = await send('GET', '/api/health');
+      check('link: GET /api/health answers 200 { ok: true, boot, at }, the same boot on a second read', h1.status === 200 && h1.json?.ok === true && typeof h1.json?.boot === 'string' && typeof h1.json?.at === 'string' && h2.json?.boot === h1.json?.boot, h1.body.slice(0, 120));
+      check(`link: every key BpLink reads from /api/health (${ls.reads.health}) is in the answer`, keysIn(h1.json, ls.reads.health).length === 0, `missing ${keysIn(h1.json, ls.reads.health)}`);
+      const wh = await send('GET', '/lan/where');
+      check('link: GET /lan/where (--pair) answers { door: null, listening, window, pairing: true }', wh.status === 200 && wh.json?.door === null && typeof wh.json?.listening === 'boolean' && wh.json?.pairing === true && 'window' in (wh.json ?? {}), wh.body.slice(0, 160));
+      check(`link: every top-level key BpLink reads from /lan/where (${ls.reads.where}) is in the answer (address, port: the door's)`, keysIn(wh.json, ls.reads.where, ['address', 'port']).length === 0, `missing ${keysIn(wh.json, ls.reads.where, ['address', 'port'])}`);
+      // The body PostPair sends, built from the keys it sets (never retyped): nonce, device, scopes.
+      const nonce = Array.from({ length: 48 }, () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+      const pairBody = Object.fromEntries((ls.pairSends ?? []).map((k) => [k, k === 'nonce' ? nonce : k === 'device' ? 'check-bplink' : k === 'scopes' ? ls.scopes : '']));
+      check('link: PostPair sends exactly { nonce, device, scopes }', JSON.stringify([...(ls.pairSends ?? [])].sort()) === JSON.stringify(['device', 'nonce', 'scopes']), `${ls.pairSends}`);
+      const pr = await send('POST', '/pair', pairBody);
+      check('link: POST /pair with that body answers 201 { state: pending, code (6 of A-Z2-9 less I, O), expiresAt }', pr.status === 201 && pr.json?.state === 'pending' && /^[A-HJ-NP-Z2-9]{6}$/.test(pr.json?.code ?? ''), pr.body.slice(0, 120));
+      check(`link: every key BpLink reads from POST /pair (${ls.reads.pair}) is in the answer`, keysIn(pr.json, ls.reads.pair).length === 0, `missing ${keysIn(pr.json, ls.reads.pair)}`);
+      const c1 = await send('POST', '/pair/claim', { nonce });
+      check('link: POST /pair/claim before the approve answers 202 { state: pending }', c1.status === 202 && c1.json?.state === 'pending', c1.body.slice(0, 120));
+      const ap = await send('POST', '/lan/pair/approve', { code: pr.json?.code, scopes: ls.scopes });
+      const c2 = await send('POST', '/pair/claim', { nonce });
+      check(`link: after the owner's approve (${ap.status}), the claim answers 200 { token, device, scopes: [${ls.scopes}], expiresAt }`, c2.status === 200 && typeof c2.json?.token === 'string' && JSON.stringify(c2.json?.scopes) === JSON.stringify(ls.scopes), c2.body.replace(/"token":"[^"]*"/, '"token":"<token>"').slice(0, 160));
+      check(`link: every key BpLink reads from the claim (${ls.reads.claim}) is in the answer`, keysIn(c2.json, ls.reads.claim).length === 0, `missing ${keysIn(c2.json, ls.reads.claim)}`);
+      const me = await send('GET', '/pair/me', undefined, { authorization: `Bearer ${c2.json?.token ?? 'none'}` });
+      check(`link: GET /pair/me with the Bearer answers 200 with every key BpLink reads (${ls.reads.me})`, me.status === 200 && keysIn(me.json, ls.reads.me).length === 0, me.body.slice(0, 160));
+      // Wave EV: the scopes BpLink asks for include `onboard`; the owner's approve named it here, so /pair/me lists it (what
+      // CanOnboard reads), and the onboarding routes answer the headset's Bearer in the contract's shapes. Nothing is started:
+      // an id the PC does not offer is 404 with a sentence, an unknown ask is 404.
+      {
+        const bearer = { authorization: `Bearer ${c2.json?.token ?? 'none'}` };
+        check('link: PairScopes asks for onboard, and /pair/me lists it after an approve that names it', (ls.scopes ?? []).includes('onboard') && (me.json?.scopes ?? []).includes('onboard'), `${ls.scopes} / ${JSON.stringify(me.json?.scopes)}`);
+        const cand = await send('GET', '/api/onboarding/candidates', undefined, bearer);
+        check(`link: GET /api/onboarding/candidates with an onboard Bearer answers 200 { candidates[], roots, held }, every top-level key BpLink reads (${ls.reads.candidates}) in it`,
+          cand.status === 200 && Array.isArray(cand.json?.candidates) && typeof cand.json?.held === 'number' && keysIn(cand.json, ls.reads.candidates, ['id', 'name', 'hint', 'state']).length === 0, `${cand.status} ${cand.body.slice(0, 160)}`);
+        const start = await send('POST', '/api/onboarding/start', { candidate: 'f'.repeat(24), shown: 'Ask your PC to read nothing? check-bplink' }, bearer);
+        check('link: POST /api/onboarding/start { candidate, shown } for an id the PC does not offer answers 404 with a sentence (nothing asked)', start.status === 404 && typeof start.json?.error === 'string' && start.json.error.includes(' '), `${start.status} ${start.body.slice(0, 160)}`);
+        const reqd = await send('GET', `/api/onboarding/requests/${'0'.repeat(24)}`, undefined, bearer);
+        check('link: GET /api/onboarding/requests/<24 hex> for no ask of this pairing answers 404 (the headset says "did not answer in time")', reqd.status === 404, `${reqd.status} ${reqd.body.slice(0, 120)}`);
+      }
+      const bad = await send('GET', '/api/health', undefined, { authorization: 'Bearer not-a-token' });
+      check('link: a dead token is answered 401 "... pair again" before any route (BpLink forgets it on that 401)', bad.status === 401 && /pair again/.test(bad.json?.error ?? ''), bad.body.slice(0, 120));
+      const job = await send('POST', '/api/products/kettle/scans', { lens: 'development', scope: { kind: 'all', label: 'Everything', features: [] } });
+      const del = await send('DELETE', `/api/products/kettle/scans/${job.json?.id ?? 'none'}`);
+      check(`link: DELETE .../scans/<job> cancels it (200 { status: cancelled }), and BpLink reads ${ls.reads.cancel} from it`, job.status === 202 && del.status === 200 && del.json?.status === 'cancelled' && keysIn(del.json, ls.reads.cancel).length === 0, `${job.status} ${del.status} ${del.body.slice(0, 120)}`);
+      const gone = await send('DELETE', '/api/products/kettle/scans/no-such-job');
+      check('link: DELETE of an unknown job answers 404 (the console says it is gone)', gone.status === 404, `${gone.status}`);
+      const place = await send('POST', '/api/session/place', { place: { product: 'kettle', hash: '', level: 'L0', from: 'vr' } }, { 'x-bp-device': 'vr-table' });
+      check('link: SHOW ON PC with no baton claimed answers 409 (BpLink then sends the place as the shared focus)', place.status === 409, `${place.status} ${place.body.slice(0, 120)}`);
     }
   } finally {
     // the child holds its working directory until it has exited (Windows), so wait before removing it

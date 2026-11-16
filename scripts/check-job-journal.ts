@@ -152,6 +152,21 @@ try {
   M4.cancel('p3', 'j-old-0004');
   check('...and its pid (a stranger by now) is never killed', alive(stranger.pid!));
 
+  // ---------------------------------------------------------------- nor a line dated in the future (a clock stepped back)
+  const Fu = root('future');
+  const fr = sleeper(), fc = sleeper();
+  const ahead = new Date(Date.now() + 3600_000).toISOString();
+  fs.mkdirSync(path.dirname(jfile(Fu)), { recursive: true });
+  fs.writeFileSync(jfile(Fu), [
+    { at: ahead, slug: 'pf', pid: fr.pid, job: { ...base, id: 'j-fut-0012', status: 'running', started_at: ahead } },
+    { at: ahead, slug: 'pf', pid: fc.pid, phase: 'cancelling', job: { ...base, id: 'j-fut-0013', status: 'cancelled', started_at: ahead, ended_at: ahead } },
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n');
+  const MF = await restart();
+  MF.reconcileJobs('pf', Fu);
+  check('a future-dated running line with a live pid is failed, not adopted', get(MF, 'pf', 'j-fut-0012')?.status === 'failed');
+  await sleep(600);
+  check('...and a future-dated cancelling line never kills its pid', alive(fr.pid!) && alive(fc.pid!));
+
   // ----------------------------------------------------- duplicate release after a restart is refused
   const Rl = root('rel');
   const rel = sleeper();

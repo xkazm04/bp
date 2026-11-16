@@ -1,5 +1,6 @@
 #include "BpGameMode.h"
 
+#include "BpProjector.h"
 #include "BpPawn.h"
 #include "BpTable.h"
 #include "Camera/PlayerCameraManager.h"
@@ -87,7 +88,13 @@ ABpGameMode::ABpGameMode()
 bool ABpGameMode::ApplyPose(UWorld* World, const FString& Name)
 {
 	FBpPose Pose;
-	if (!FindPose(Name, Pose)) return false;
+	// Wave PJ1: "far" is the target eye turned up to frame the far sheet over the table (bp.Projector 1, a sheet open).
+	// Wave PJ2: "far:<yaw>" turns that frame by yaw degrees (the stage's flanks: far:-35, far:35); "rest" is the seated
+	// resting gaze, 10 degrees down along the table's forward (the device's finding: where the eyes are when nobody looks up).
+	FString FarYaw;
+	const bool bFar = Name.Equals(TEXT("far"), ESearchCase::IgnoreCase) || (Name.StartsWith(TEXT("far:"), ESearchCase::IgnoreCase) && Name.Split(TEXT(":"), nullptr, &FarYaw));
+	const bool bRest = Name.Equals(TEXT("rest"), ESearchCase::IgnoreCase);
+	if (!FindPose(bFar || bRest ? FString(TEXT("target")) : Name, Pose)) return false;
 	// From the editor's console (or an editor tool) the world is the editor's; the pose belongs to the playing one.
 	if (GEngine && (!World || !World->IsGameWorld()))
 	{
@@ -110,6 +117,13 @@ bool ABpGameMode::ApplyPose(UWorld* World, const FString& Name)
 	FRotator View;
 	PoseView(**Table, Pose, Eye, View);
 	if (Name.Equals(TEXT("deck"), ESearchCase::IgnoreCase)) View = (Table->GetDeckFrontWorld() - Eye).Rotation();
+	if (bFar)
+	{
+		const FVector Centre = Table->GetActorTransform().TransformPosition(BpProjector::FarCentreLocal());
+		View = (FMath::Lerp(Centre, Table->GetDeckFrontWorld(), 0.35) - Eye).Rotation();
+		if (!FarYaw.IsEmpty()) View.Yaw += FCString::Atof(*FarYaw);
+	}
+	if (bRest) View = FRotator(-10.0, Table->GetActorRotation().Yaw, 0.0);
 	// The wrist panel's and the lamp's caption's close-ups (spark vr-room-layers WP3, readability judging), as the deck's.
 	if (Name.Equals(TEXT("lamp"), ESearchCase::IgnoreCase)) View = (Table->GetCaptionWorld() - Eye).Rotation();
 	if (Name.Equals(TEXT("wrist"), ESearchCase::IgnoreCase))

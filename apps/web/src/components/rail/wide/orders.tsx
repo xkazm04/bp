@@ -7,14 +7,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ORDER_TEMPLATES, STAGE_WORD, pname, sheetOf, stageAt, type OrderTemplate, type SimOrder } from '@bp/core/model';
 import { StageSym } from '../../Symbols';
-import { shallowEqual, useBp, useEngine } from '../../hooks';
+import { shallowEqual, useBp, useEngine, useLive } from '../../hooks';
 import { ORDERS_WRITE, seatHere, type PreviewSeat } from '@/lib/model/preview-seat';
 import { PreviewBox } from '../panels';
 import { Fig, Group, Row, Sec, Workbench, useListRef, usePreviewSeat, useWalk } from './shell';
+import { LiveRules } from './rules';
 
 const WRITE = ORDERS_WRITE;
 
+/** A live product's orders are the owner's real standing rules (rules.tsx); Kettle's are its simulated swarm's. */
 export function Orders() {
+  const live = useLive();
+  return live ? <LiveRules slug={live.slug} /> : <SimOrders />;
+}
+
+function SimOrders() {
   const E = useEngine(), M = E.M, sim = M.sim;
   const s = useBp((s) => ({ simV: s.simV }), shallowEqual);
   const [sel, setSel] = useState<string | null>(null);
@@ -125,7 +132,7 @@ function Writer({ seat }: { seat: PreviewSeat }) {
       <p className="wb-lede">An order is a standing rule the agents follow inside a place until you lift it. Pick the place on the plan, then a rule.</p>
       {!s.tgt.n ? (
         <Sec head="First, point at a place" aside="plan">
-          <p>Shift-click a wing, room or fixture, or shift-drag a box on the plan. The selection shows here.</p>
+          <p>Shift-click a wing, room or feature, or shift-drag a box on the plan. The selection shows here.</p>
         </Sec>
       ) : (
         <>

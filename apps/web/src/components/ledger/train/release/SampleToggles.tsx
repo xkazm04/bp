@@ -1,5 +1,5 @@
 // Kettle only: what the scan sim's sample release job runs into (ScanSim.trainToggles): gh logged in, a cherry-pick
-// conflicts, a gate fails. Labelled sample; a live product has no such switches (its job is the real CLI).
+// conflicts, a gate fails, the accepted items are already on main (so a draft of them is tagged, not cut). Labelled sample; a live product has no such switches (its job is the real CLI).
 import { useSyncExternalStore } from 'react';
 import type { ScanCtx } from '@/lib/scan/actions';
 import { SampleTag } from '../ui/Marks.tsx';
@@ -17,6 +17,7 @@ export function SampleToggles({ sim }: { sim: Sim }) {
       <label><input type="checkbox" checked={!t.ghOff} onChange={(e) => set({ ghOff: !e.target.checked })} />gh logged in</label>
       <label><input type="checkbox" checked={t.conflict} onChange={(e) => set({ conflict: e.target.checked })} />a cherry-pick conflicts</label>
       <label><input type="checkbox" checked={t.gateFails} onChange={(e) => set({ gateFails: e.target.checked })} />a gate fails</label>
+      <label><input type="checkbox" checked={!!t.landed} onChange={(e) => set({ landed: e.target.checked })} />accepted items already on main</label>
     </div>
   );
 }

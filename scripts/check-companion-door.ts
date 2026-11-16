@@ -14,7 +14,10 @@
 //             product, expiry and policy.propose are honoured by policyFor (in process)
 //   gaps      the formula (base x tier weight) on every reason and tier, and GET gaps on `good` answers exactly the
 //             expected ranked list
-//   inbox     two products, `bad` named in skipped with why; `good`'s open and triage items ranked tier, value, age
+//   inbox     two products, `bad` named in skipped with why; `good`'s open and triage items ranked tier, band, stored score,
+//             pre-v5 estimate, unscored (scan/score.ts), age
+//   signed    triage_set over the MCP door (AUTO, BP_CONVERSATION conv-check) is signed companion:conv-check, not the person;
+//             the same route with no header is signed user:<login>; a malformed header is 400 (DW-106)
 //   doc       tech-stack.md section 4 is the catalog (name, flags, class)
 // Run: node scripts/check-companion-door.ts   Exit 1 on any failure.
 import fs from 'node:fs';
@@ -65,6 +68,12 @@ fs.writeFileSync(path.join(good, '.ai', 'lens-scan', 'app-structure.json'), JSON
   p.run('p4', 'a', 'Tier 1 open, cheap', 'proposed', 'XS', 1, 1, iso(NOW - 2 * H), iso(NOW - 2 * H)); // 0.5
   p.run('p5', 'a', 'Accepted already', 'accepted', 'M', 5, 0, iso(NOW - 10 * H), iso(NOW - 10 * H));
   p.run('p6', 'b', 'Tier 1 open, dear', 'proposed', 'XL', 9, 1, iso(NOW - 200 * H), iso(NOW - 200 * H)); // 0.0125
+  // v5 (scan-finding/1): the STORED score leads its tier (never recomputed: 40.5 is the contract's (8,medium,4,3) value), a
+  // v5 row without a score is unscored and ranks after the pre-v5 estimates, and a reserve row ranks after every ranked one
+  const v5 = db.prepare('INSERT INTO proposals (id, run_id, feature, lens, title, kind, status, size, risk, tier, impact, confidence, effort, score, band, created_at, updated_at) VALUES (?, \'r1\', \'a\', \'dev\', ?, \'fix\', \'proposed\', \'M\', 3, 1, ?, ?, ?, ?, ?, ?, ?)');
+  v5.run('p7', 'Tier 1 open, scored', 8, 'medium', 4, 40.5, 'ranked', iso(NOW - 3 * H), iso(NOW - 3 * H));
+  v5.run('p8', 'Tier 1 open, reserve', 10, 'high', 1, 95, 'reserve', iso(NOW - 4 * H), iso(NOW - 4 * H));
+  v5.run('p9', 'Tier 1 open, unscored', 6, 'low', null, null, 'ranked', iso(NOW - 5 * H), iso(NOW - 5 * H));
   const m = db.prepare("INSERT INTO measurements (run_id, feature, lens, metric, value, measured_at) VALUES ('r1', ?, ?, 'm', 1, ?)");
   m.run('a', 'dev', iso(NOW - 1 * H));  // fresh
   m.run('b', 'dev', iso(NOW - 48 * H)); // stale
@@ -81,8 +90,11 @@ fs.writeFileSync(path.join(good, '.ai', 'lens-scan', 'work', 'bp-waves.json'), J
 ] }));
 
 // ------------------------------------------------------------------------------------------------ the server
+// the server runs in a temp folder, where lens-scan's resolver has no manifest to read: name the install this checkout finds
+const { lensScanDirs } = await import('../packages/core/src/server/release.server.ts');
+const lensDir = lensScanDirs().find((d: string) => fs.existsSync(path.join(d, 'scripts', 'store.mjs')));
 const server = spawn(process.execPath, ['--import', pathToFileURL(path.join(ROOT, 'packages/core/register.mjs')).href, path.join(ROOT, 'apps/server/src/main.ts'), '--port', '0'],
-  { cwd: tmp, env: { ...process.env, BP_HOME: HOME }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+  { cwd: tmp, env: { ...process.env, BP_HOME: HOME, ...(lensDir ? { BP_LENS_SCAN_DIR: lensDir } : {}) }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 let out = '';
 server.stdout!.on('data', (d) => (out += d));
 server.stderr!.on('data', (d) => (out += d));
@@ -207,6 +219,18 @@ try {
   check('human: decline runs nothing (card declined, no job)', dec.status === 200 && dec.json?.state === 'declined' && (await jobsOf(w2)) === 0, j(dec));
   check('mcp: the MCP process never wrote anything but JSON-RPC on stdout', mcpStdoutJunk === '', mcpStdoutJunk.slice(0, 200));
 
+  // -------------------------------------------------------------------------------------------- host (roadmap I1)
+  // Another local process listens on its own port and answers a card with `Host: 127.0.0.1:<that port>`: the card's request
+  // must still run against apps/server's own bound origin, so the listener receives nothing and never sees the human token.
+  const thief: { path: string; token: string }[] = [];
+  const trap = http.createServer((q, s) => { thief.push({ path: q.url ?? '', token: String(q.headers['x-bp-human'] ?? '') }); s.writeHead(200, { 'content-type': 'application/json' }); s.end('{}'); });
+  const trapPort: number = await new Promise((resolve) => trap.listen(0, '127.0.0.1', () => resolve((trap.address() as { port: number }).port)));
+  const cH = await compose(), wH: string = cH.json?.wave?.id;
+  const gH = await call('wave_dispatch', { slug: 'kettle', wave: wH });
+  const foreign = await req('POST', `/api/companion/cards/${gH.json?.card}`, { host: `127.0.0.1:${trapPort}`, 'x-bp-human': TOKEN }, { decision: 'approve' });
+  check('host: a card answered with a foreign Host port runs on this server (done, its job made here)', foreign.status === 200 && foreign.json?.state === 'done' && (await jobsOf(wH)) === 1, j(foreign));
+  check('host: ... and the foreign port received no request and no human token', thief.length === 0, j(thief));
+
   // -------------------------------------------------------------------------------------------- policy
   const grantBody = { product: 'kettle', tools: ['wave_dispatch'], hours: 1 };
   const pNo = await req('POST', '/api/companion/policies', {}, grantBody);
@@ -219,6 +243,10 @@ try {
   const c3 = await compose(), w3: string = c3.json?.wave?.id;
   const g3 = await call('wave_dispatch', { slug: 'kettle', wave: w3 });
   check('policy: a covered GATED call runs at once, decidedBy policy with the grant id', !g3.isError && g3.json?.state === 'done' && g3.json?.decidedBy === 'policy' && g3.json?.policy === grant.json?.id && (await jobsOf(w3)) === 1, g3.text);
+  const cP = await compose(), wP: string = cP.json?.wave?.id;
+  const fP = await req('POST', '/api/companion/cards', { host: `127.0.0.1:${trapPort}` }, { tool: 'wave_dispatch', args: { slug: 'kettle', wave: wP } });
+  check('host: a card FILED with a foreign Host port under a grant runs here, and that port hears nothing', fP.status === 200 && fP.json?.decidedBy === 'policy' && fP.json?.state === 'done' && (await jobsOf(wP)) === 1 && thief.length === 0, j({ fP, thief }));
+  trap.close();
   const del = await req('DELETE', `/api/companion/policies/${grant.json?.id}`, {});
   const delTok = await req('DELETE', `/api/companion/policies/${grant.json?.id}`, { 'x-bp-human': TOKEN });
   const c4 = await compose(), w4: string = c4.json?.wave?.id;
@@ -230,13 +258,24 @@ try {
   process.env.BP_HOME = HOME2;
   const door = await import('../packages/core/src/server/api/companion/door.server.ts');
   const { toolOf } = await import('../packages/core/src/server/api/companion/tool-call.ts');
+  check('host: selfOrigin is the bound Next port on 127.0.0.1 (process.env.PORT), else nothing to guess from', door.selfOrigin({ PORT: '3312' }) === 'http://127.0.0.1:3312' && door.selfOrigin({}) === null && door.selfOrigin({ PORT: '33x' }) === null);
+  const hostile = new Request('http://127.0.0.1:5555/api/companion/cards', { headers: { host: '127.0.0.1:5555' } });
+  door.setSelfOrigin('http://127.0.0.1:4999');
+  check('host: once bound, originOf sends a card to the bound origin whatever Host the request named', door.originOf(hostile).origin === 'http://127.0.0.1:4999' && door.selfOrigin({ PORT: '3312' }) === 'http://127.0.0.1:4999');
   const wd = toolOf('wave.dispatch')!;
   const tiered = door.addPolicy({ product: 'good', tools: ['wave.dispatch'], minTier: 1, hours: 1 });
   check('policy: minTier 1 does not cover a wave holding a tier 0 (stop-ship) finding', door.policyFor(wd, { slug: 'good', wave: 'w-t0' }) === null);
-  check('policy: minTier 1 covers a wave whose findings are tier 2', door.policyFor(wd, { slug: 'good', wave: 'w-t2' })?.id === tiered.id);
+  // S3 finding 6 (2026-11-10): w-t2 holds p3 (tier 2) and p2, which has no tier; an untiered finding counts as tier 0, so a
+  // tier floor no longer covers it (this line used to expect it covered: the gap the review found)
+  check('policy: minTier 1 does not cover a wave holding an untiered finding (it counts as tier 0)', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }) === null);
+  const da = toolOf('decision.answer')!, tieredD = door.addPolicy({ product: 'good', tools: ['decision.answer'], minTier: 1, hours: 1 });
+  check('policy: minTier 1 covers a finding of tier 2 (p3)', door.policyFor(da, { slug: 'good', id: 'p3', decision: 'approve' })?.id === tieredD.id);
+  check('policy: minTier 1 does not cover a finding the store does not hold', door.policyFor(da, { slug: 'good', id: 'p-none', decision: 'approve' }) === null);
   check('policy: minTier with a wave it cannot read covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-none' }) === null);
-  check('policy: another product is not covered', door.policyFor(wd, { slug: 'bad', wave: 'w-t2' }) === null);
-  check('policy: an expired grant covers nothing', door.policyFor(wd, { slug: 'good', wave: 'w-t2' }, NOW + 2 * H) === null);
+  check('policy: another product is not covered', door.policyFor(da, { slug: 'bad', id: 'p3', decision: 'approve' }) === null);
+  check('policy: an expired grant covers nothing', door.policyFor(da, { slug: 'good', id: 'p3', decision: 'approve' }, NOW + 2 * H) === null);
+  door.removePolicy(tieredD.id);
+  void tiered;
   const star = door.addPolicy({ product: '*', tools: ['policy.propose', 'release.build'], hours: 1 });
   check('policy: no grant ever covers policy.propose', door.policyFor(toolOf('policy.propose')!, { product: '*', tools: ['wave.dispatch'], hours: 1 }) === null);
   check('policy: a * grant covers any product', door.policyFor(toolOf('release.build')!, { slug: 'good', id: 'rel-1.0.0' })?.id === star.id);
@@ -258,12 +297,26 @@ try {
   const ib = await req('GET', '/api/companion/inbox');
   const items = ib.json?.items ?? [];
   const order = items.map((x: any) => `${x.product}:${x.id}:${x.kind}:${x.rank}`).join(' ');
-  check('inbox: tier first, then value per effort, then age (accepted items left out)', order === 'good:p1:proposal:1 good:p4:proposal:2 good:p6:proposal:3 good:p3:triage:4 good:p2:proposal:5', order);
+  check('inbox: tier first, then band, the stored score, the estimate, unscored, then age (accepted items left out)',
+    order === 'good:p1:proposal:1 good:p7:proposal:2 good:p4:proposal:3 good:p6:proposal:4 good:p9:proposal:5 good:p8:proposal:6 good:p3:triage:7 good:p2:proposal:8', order);
   check('inbox: the unreadable product is skipped and named with why', (ib.json?.skipped ?? []).some((s: any) => s.product === 'bad' && /cannot read the scan store/.test(s.why)), j(ib.json?.skipped));
   check('inbox: a recommendation rides on its item', items.find((x: any) => x.id === 'p2')?.recommendation?.verdict === 'decline', j(items.find((x: any) => x.id === 'p2')));
   check('inbox: ageMs measured from created_at (p2 ~120 h)', Math.abs((items.find((x: any) => x.id === 'p2')?.ageMs ?? 0) - 120 * H) < 10 * 60000);
   const ibl = await call('inbox_list', { limit: 2 });
   check('inbox: the inbox_list tool answers it, limited', !ibl.isError && ibl.json?.items?.length === 2, ibl.text);
+
+  // -------------------------------------------------------------------------------------------- signed (DW-106)
+  if (lensDir) {
+    const url = `http://127.0.0.1:${port}/api/products/good/triage`;
+    const post = async (headers: Record<string, string>, body: unknown) => { const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }); return { status: res.status, json: await res.json().catch(() => null) as any }; }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const tr = await call('triage_set', { slug: 'good', ids: ['p3'], decision: 'accept' });
+    check('signed: triage_set runs at once (AUTO) and the store signs it companion:conv-check, not the person', !tr.isError && tr.json?.by === 'companion:conv-check', tr.text);
+    const back = await post({}, { ids: ['p3'], decision: 'reopen' });
+    check('signed: the route with no header signs user:<login>, as before', back.status === 200 && /^user:/.test(back.json?.by ?? ''), j(back));
+    const worse = await post({ 'x-bp-conversation': 'has space' }, { ids: ['p3'], decision: 'accept' });
+    check('signed: a malformed x-bp-conversation is refused 400, never signed as the person', worse.status === 400, j(worse));
+    if (worse.status === 200) await post({}, { ids: ['p3'], decision: 'reopen' });
+  } else console.log('SKIP  signed: no lens-scan install on this machine (store.mjs signs the call)');
 
   // -------------------------------------------------------------------------------------------- doc
   const doc = fs.readFileSync(path.join(ROOT, 'docs/concepts/vr-light-table/tech-stack.md'), 'utf8');

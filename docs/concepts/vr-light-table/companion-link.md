@@ -20,19 +20,42 @@ The companion moves the person's attention with the `focus.show` tool. Each call
   an id the server no longer keeps), every kept command. Ids sort by time, so BpLink keeps the newest id it acted on and
   passes it back.
 - Poll every 1 to 2 s while the lamp is awake. Act on the **first** element only (the newest); the older ones are history.
-- `target.kind` is one of `feature`, `room`, `wing`, `decision`, `wave`, `release`, `ledger-row`, `lens`. The target is
+- `target.kind` is one of `feature`, `room`, `wing`, `decision`, `wave`, `release`, `ledger-row`, `lens`, `page`. The target is
   always explicit: the companion never says "the current selection". A kind VR cannot show yet (the ledger kinds) is
-  skipped silently; `say` is the caption under the lamp.
+  skipped silently; `say` is the caption under the lamp. A finding is shown as `decision` with its proposal id.
+- `page` (G1, 2026-11-11): open a console page. `id` is one of `menu`, `standup`, `scan`, `rooms`, `settings`, `tour`,
+  `pc-link` (`PAGE_TARGETS` in contract.ts; the route answers 400 for any other). The web page skips the kind. Glim uses
+  it for "open the stand-up", "how do I use the wall" (help.find's entry names its page), "open yesterday".
 - The commands live in the server's memory (the last 20): a server restart forgets them, and BpLink starts again with no
   `since`.
 
 ## 2. Turns: talk to the companion
 
-- `POST /api/companion/turn`, body `TurnRequest` `{ conversationId?, product?, text }`. Omit `conversationId` to start a
+- `POST /api/companion/turn`, body `TurnRequest` `{ conversationId?, product?, text, surface? }`. Omit `conversationId` to start a
   conversation; pass the `product` slug the person is looking at. The answer is Server-Sent Events, one `TurnEvent` per
   event (`start`, `text` deltas, `tool`, `tool_result`, `card`, `focus`, then one `end` with `outcome`
   `done | interrupted | failed`). A conversation that already has a turn running answers **409** `{ error: 'thread_busy' }`
   before any event: wait and retry, do not queue.
+- **The turn's stream carries `card` and `focus` (G1, 2026-11-11).** Until then the engine never emitted them (they reached
+  only `/stream` and the focus poll). Now a GATED tool's result adds a `card` event with the stored card (`state: pending`,
+  its `summary` the line to show), and a `focus.show` result a `focus` event with the FocusCommand, right after the
+  tool's `tool_result`.
+- **`surface` (G1)**: the body takes `surface: { kind: "vr" | "web", place?, target?, product?, spoken? }`: where the
+  person is, sent BESIDE their words. `place` is what the table shows in words (at most 160 characters), `target` the id
+  "this one" means (a decision's proposal id, a room's or feature's id; `[A-Za-z0-9][A-Za-z0-9_.:-]{0,119}`), `product`
+  a slug, `spoken: true` when the reply is spoken (the constitution's spoken rule: two short sentences, under about 40
+  words, details to the sheet). The prompt carries it as a "Where we are" block before "The person says"; the place's
+  words sit in an untrusted fence. **400** for an unknown key or a bad value. With no `target`, Glim answers "approve it"
+  with a question ("which one?") and files nothing. The headset's old prefix still works: a text that starts with
+  `(Spoken aloud at the VR table; it shows <place>[ [<target>]] on <slug>. Answer in ...)` has the prefix lifted into a
+  surface (`kind: vr, spoken: true`, its place, target unless `site`, product) and only the words after it are the
+  person's (packages/core/src/companion/surface.ts `liftLegacySurface`; when the body also has `surface`, nothing is
+  lifted). Switch to `surface` and drop the prefix.
+- **Quick replies (G1)**: a `done` `end` may carry `replies: [{ label, say }]`, at most 3 (`label` at most 32 characters,
+  `say` at most 120, distinct). Show them as buttons under the reply; a press sends `say` as the next turn's `text` through
+  this same route (same conversation), never as an action. They belong to that turn: drop them when the person speaks or
+  presses one. The model writes them as `[[reply: label | say]]` lines; the engine lifts those out of the `text` events,
+  so they are never spoken.
 - If UE's HTTP stack cannot read SSE, post the turn and poll `GET /api/companion/conversations` (the conversation's
   `updatedAt` and `turns` move when the turn ends), then read the reply from it. Turns and conversations are owned by the
   runtime package (P1); this page names the routes, P1's route headers are their contract.

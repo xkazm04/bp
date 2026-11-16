@@ -1,7 +1,8 @@
 // Wire types for the lens-scan store: one SQLite file per product repo, `<root>/.ai/lens-scan/scan.db`,
 // written by the /lens-scan skill and read (plus proposal decisions) by the blueprint's routes. The
 // DDL is docs/standard/lens-scan-store.sql, name for name. Absent values are omitted, never null or 0:
-// no measurement row means "unmeasured".
+// no measurement row means "unmeasured". v5 adds the scan-finding/1 columns (score, band, mvp, predicted verdict,
+// veto window, proof) and the trust_events table; a v4 store reads with those keys absent and trust_events empty.
 import type { MetricMethod } from '@bp/core/standard/types';
 import type { Readiness } from './readiness';
 import type { LensSetupNeed } from './lens-setup';
@@ -116,7 +117,83 @@ export interface Proposal {
   risk_class?: RiskClass;
   ranked_by?: string;
   ranked_at?: string;
+  // v5: scan-finding/1 (docs/standard/lens-scan-store.sql, the contract's "Fields every finding carries"). The skill stores
+  // them; the blueprint reads them and never recomputes `score`. A v4 store has none of these keys.
+  /** v5: 1-10, the severity of a defect or the value of an opportunity. */
+  impact?: number;
+  /** v5: the one-line reason for `impact`. */
+  impact_why?: string;
+  confidence?: Confidence;
+  /** v5: 1-10 build effort. */
+  effort?: number;
+  /** v5: scan-score/1, one decimal, stored by the skill. Omitted = unscored (impact or effort unknown): never 0. */
+  score?: number;
+  score_parts?: ScoreParts;
+  /** v5: omitted = 'ranked' (the store's default, like origin's 'scan'); 'reserve' = verified and scored, over the run's cap. */
+  band?: Band;
+  /** v5: true on the top finding of its lens in its run; omitted = false (the store's default 0). */
+  mvp?: true;
+  mvp_rule?: MvpRule;
+  /** v5: why the MVP is not the top score (with mvp_rule 'override'). */
+  mvp_why?: string;
+  category?: FindingCategory;
+  /** v5: the model's verdict, recorded before any person decided (shadow mode). */
+  predicted_verdict?: PredictedVerdict;
+  predicted_why?: string;
+  /** v5: `<skill>@<version>:<model>`. */
+  predicted_by?: string;
+  predicted_at?: string;
+  /** v5: set when a machine decided under L1 (`decided_by` 'machine:lens-scan'): a person may veto it until then. */
+  veto_until?: string;
+  proof?: Proof;
 }
+
+/** v5 (scan-finding/1). */
+export type Confidence = 'low' | 'medium' | 'high';
+export type Band = 'ranked' | 'reserve';
+export type MvpRule = 'top-score' | 'override';
+export type FindingCategory = 'technical' | 'product';
+export type PredictedVerdict = 'accept' | 'reject' | 'defer';
+export type ProofVerdict = 'better' | 'not-better' | 'inconclusive';
+/** v5: the score's breakdown, shipped with the number (`formula` names it: 'scan-score/1'). */
+export interface ScoreParts {
+  impact?: number;
+  confidence_w?: number;
+  effort_div?: number;
+  risk_factor?: number;
+  formula?: string;
+}
+/** v5: a built change's before/after under one method, with its control (`red` = the control proved the gate bites). */
+export interface Proof {
+  metric?: string;
+  method?: string;
+  unit?: string;
+  before?: number;
+  after?: number;
+  verdict?: ProofVerdict;
+  control?: 'red' | 'absent';
+  base_sha?: string;
+  head_sha?: string;
+}
+/** v5: one row of the append-only autonomy ledger. `slice` = '<category>|<lens>|<risk_class>|<size>', '-' for an absent part;
+ *  levels 0 propose, 1 auto-triage, 2 auto-build with proof, 3 auto-merge. The blueprint reads it and never writes it. */
+export interface TrustEvent {
+  id: number;
+  at: string;
+  slice: string;
+  from_level: number;
+  to_level: number;
+  /** 'promote: agreement' | 'demote: reversal <id>' | 'demote: not-better <id>' | 'overlay: <key>'. */
+  reason: string;
+  /** 0..1 over the window, when computed. */
+  agreement?: number;
+  /** Human-decided items in the window. */
+  n?: number;
+  /** The item that caused a demotion. */
+  item_id?: string;
+}
+/** `POST /api/products/[slug]/proposals/[id]/veto` body: a person reverses a machine decision inside its veto window. */
+export interface VetoBody { reason: string }
 
 export interface Activity {
   id: number;
@@ -202,12 +279,15 @@ export interface ScanSnapshot {
   packs: Pack[];
   /** v2, oldest first (empty on a v1 store). */
   releases: Release[];
+  /** v5, oldest first (empty on a v4 store). Optional on the wire only for a sender older than v5: every snapshot this
+   *  repo builds (emptyScan) carries it. */
+  trust_events?: TrustEvent[];
 }
 /** New or changed rows since the last delta; same keys as the snapshot. */
 export type ScanDelta = ScanSnapshot;
 
 /** The snapshot's tables. A Record over `keyof ScanSnapshot`, so a table added above fails to compile until it is listed here. */
-const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true, packs: true, releases: true };
+const TABLE_SET: Record<keyof ScanSnapshot, true> = { runs: true, measurements: true, proposals: true, activity: true, shots: true, coverage: true, packs: true, releases: true, trust_events: true };
 /** Most ids one triage (or release-add) body may name. One value: the route and the store call (release.server.ts), the sample
  *  sim (train-sim.ts) and the ledger's decision path (Decide.tsx) all take it from here, so a client cannot build a body the
  *  server refuses (scripts/check-triage-cap.ts). */
@@ -228,7 +308,7 @@ export function fullScan(x: Partial<ScanSnapshot>): ScanSnapshot {
   for (const t of SCAN_TABLES) if (Array.isArray(x[t])) s[t] = x[t];
   return s as ScanSnapshot;
 }
-export const isEmptyScan = (s: ScanSnapshot): boolean => SCAN_TABLES.every((t) => s[t].length === 0);
+export const isEmptyScan = (s: ScanSnapshot): boolean => SCAN_TABLES.every((t) => !s[t]?.length);
 
 /** One line of `bp.products.local.json` (gitignored). Kettle is built in and never listed. */
 export interface ProductEntry {

@@ -1,10 +1,12 @@
 #include "BpPawn.h"
 
+#include "BpAudio.h"
 #include "BpGameMode.h"
 #include "BpHands.h"
 #include "BpLink.h"
 #include "BpTable.h"
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "EngineUtils.h"
@@ -12,6 +14,7 @@
 #include "Engine/Engine.h"
 #include "IXRTrackingSystem.h"
 #include "IsdkFunctionLibrary.h"
+#include "Misc/CoreDelegates.h"
 #include "MotionControllerComponent.h"
 #include "Rig/IsdkControllerRigComponent.h"
 #include "Rig/IsdkHandRigComponent.h"
@@ -136,16 +139,42 @@ void ABpPawn::BeginPlay()
 		for (TActorIterator<AActor> It(GetWorld()); It && !bCaptureHands; ++It) bCaptureHands = It->ActorHasTag(CaptureHandsTag);
 		if (bCaptureHands) SetRestHandsVisible(false);
 	}
+	BpAudio::LoadSettings();
 	MakeWristPanel();
 	MakeFrameMeter();
 	// Seated calibration (headset-plan code item 1): once the head is tracked, the table comes to the seated eye.
-	if (IsHeadsetOn()) GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
+	if (IsHeadsetOn())
+	{
+		HeadOnHandle = FCoreDelegates::VRHeadsetPutOnHead.AddUObject(this, &ABpPawn::OnHeadOn);
+		HeadOffHandle = FCoreDelegates::VRHeadsetRemovedFromHead.AddUObject(this, &ABpPawn::OnHeadOff);
+		RecenterHandle = FCoreDelegates::VRHeadsetRecenter.AddUObject(this, &ABpPawn::OnRecenter);
+		GetWorldTimerManager().SetTimer(SeatTimer, this, &ABpPawn::SeatAtStart, SeatRetryS, true, SeatRetryS);
+	}
 }
 
 void ABpPawn::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	if (FBpLinkModule* Link = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink"))) Link->OnScanState().Remove(ScanHandle);
-	if (ABpTable* Table = WristTable.Get()) Table->OnRoomModeChanged().Remove(RoomHandle);
+	if (FBpLinkModule* Link = FModuleManager::GetModulePtr<FBpLinkModule>(TEXT("BpLink")))
+	{
+		Link->OnScanState().Remove(ScanHandle);
+		Link->OnOnboarding().Remove(WristOnboardingHandle);
+		Link->OnProduct().Remove(WristProductHandle);
+		Link->OnFocuses().Remove(WristFocusHandle);
+		Link->OnLinkStatus().Remove(WristLinkHandle);
+	}
+	GetWorldTimerManager().ClearTimer(ConsoleClockTimer);
+	if (ABpTable* Table = WristTable.Get())
+	{
+		Table->OnRoomModeChanged().Remove(RoomHandle);
+		Table->OnScanBandChanged().Remove(WristBandHandle);
+		Table->OnLampAskChanged().Remove(WristAskHandle);
+		Table->SetDeckHeld(false);
+	}
+	if (Music) Music->Stop();
+	FCoreDelegates::VRHeadsetPutOnHead.Remove(HeadOnHandle);
+	FCoreDelegates::VRHeadsetRemovedFromHead.Remove(HeadOffHandle);
+	FCoreDelegates::VRHeadsetRecenter.Remove(RecenterHandle);
+	GetWorldTimerManager().ClearTimer(RecenterTimer);
 	Super::EndPlay(EndPlayReason);
 }
 

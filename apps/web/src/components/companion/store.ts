@@ -12,6 +12,21 @@ import type { Card, CompanionEvent, FocusCommand, LampState, TurnEvent } from '@
 export const POINT_MS = 6000;
 /** How long a decided card stays on the slip (it fades out as it leaves). */
 export const CARD_FADE_MS = 2000;
+/** A failed card says why, so it stays long enough to be read. */
+export const FAILED_FADE_MS = 30000;
+const fadeOf = (c: Card) => (c.state === 'failed' ? FAILED_FADE_MS : CARD_FADE_MS);
+const FAILED_MAX = 600;
+/** Why an approved card failed, from its stored result (`<status> <body>`, or the door's own sentence): the status and the
+ *  body's `error` when it has one, bounded. null unless it failed. */
+export function failedWords(c: Pick<Card, 'state' | 'result'>): string | null {
+  if (c.state !== 'failed') return null;
+  const r = (c.result ?? '').trim();
+  if (!r) return 'No reason was recorded.';
+  let w = r;
+  const m = /^(\d{3}) (\{[\s\S]*\})$/.exec(r);
+  if (m) { try { const e = (JSON.parse(m[2]) as { error?: unknown }).error; if (typeof e === 'string') w = m[1] + ': ' + e; } catch { /* not JSON: the result as it is */ } }
+  return w.length > FAILED_MAX ? w.slice(0, FAILED_MAX - 1) + '…' : w;
+}
 /** How long a notice ("still answering the last one") replaces the caption. */
 export const NOTICE_MS = 4000;
 /** The caption while the stream is down. */
@@ -122,11 +137,12 @@ export function reduce(s: CompanionState, a: Action, now: number): CompanionStat
       if (e.type === 'card') return upsertCard(s, e.card, now);
       if (e.type === 'focus') return focus(s, e.focus, now);
       if (e.type === 'status') return { ...s, busy: e.busy, sleeping: e.sleeping };
+      if (e.type === 'place' || e.type === 'shared') return s; // the crossing's host follows the place, the follow chip the shared focus; the lamp neither
       if (s.local !== null && (e.conversationId === s.local || s.local === PENDING)) return s; // the POST body carries it
       return turn(s, e.conversationId, e.event, now);
     }
     case 'prune': {
-      const gone = s.cards.filter((c) => c.state !== 'pending' && (s.decided[c.id] ?? 0) + CARD_FADE_MS <= now);
+      const gone = s.cards.filter((c) => c.state !== 'pending' && (s.decided[c.id] ?? 0) + fadeOf(c) <= now);
       const notice = s.notice && s.notice.until <= now ? null : s.notice;
       if (!gone.length && notice === s.notice) return s;
       const decided = { ...s.decided };
@@ -141,7 +157,7 @@ export function nextDeadline(s: CompanionState, now: number): number | null {
   const ts: number[] = [];
   if (s.lastFocus && s.lastFocus.at + POINT_MS > now) ts.push(s.lastFocus.at + POINT_MS);
   if (s.notice) ts.push(s.notice.until);
-  for (const c of s.cards) if (c.state !== 'pending') ts.push((s.decided[c.id] ?? now) + CARD_FADE_MS);
+  for (const c of s.cards) if (c.state !== 'pending') ts.push((s.decided[c.id] ?? now) + fadeOf(c));
   return ts.length ? Math.min(...ts) : null;
 }
 

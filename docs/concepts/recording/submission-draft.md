@@ -1,0 +1,213 @@
+# Submission draft: Devpost text and the video's shot list
+
+Drafted 2026-11-04, rewritten 2026-11-10 after night two, updated 2026-11-10 after day two and 2026-11-11 after night three (the wall, talking with Glim), for the Meta VR Start Developer
+Competition 2026 (entries close 2026-11-18, 12:00 PT). Track **Productivity**, division **New Experience**. Everything
+below is a draft for the owner to edit. Lines marked **[owner]** need a fact only the owner has. Lines marked
+**(to confirm)** describe something built and proven on the PC, or seen only on an unattended headset, that a person has
+not yet tried wearing it: check it with [`../vr-light-table/headset-morning-check.md`](../vr-light-table/headset-morning-check.md)
+before the claim goes in. Nothing built on day two (the tour's second edition, the scan theatre, YESTERDAY, the welcome
+back, adding a project, the Headsets page) has been on the headset yet. The rules this answers are in
+[`../vr-light-table/compliance.md`](../vr-light-table/compliance.md); what was measured and where is in
+[`../vr-light-table/runs/2026-11-10-night-two.md`](../vr-light-table/runs/2026-11-10-night-two.md) and
+[`../vr-light-table/runs/2026-11-10-day-two.md`](../vr-light-table/runs/2026-11-10-day-two.md) and
+[`../vr-light-table/runs/2026-11-11-night-three.md`](../vr-light-table/runs/2026-11-11-night-three.md).
+
+The rules, as the owner recorded them: four criteria at 25 % each (Innovation, Experience Design, Technical, Polish and
+Presentation); special awards for Agentic Interaction, First Five Minutes, Reason to Come Back and Accessibility; at least
+60 fps on Quest hardware; hands, field-of-view-aware UI, and passthrough only where it has a purpose; clear onboarding and a
+habit-forming purpose; no brand names, logos or ads, no identifiable people, licences for third-party assets; a video
+under 3 minutes of real footage from a Quest or the XR Simulator (no AI video); the text covers inspiration, how it was
+built, future plans and a target launch date; English; fully usable with hands only.
+
+**Third-party names are left out of the text below on purpose** ("a cloud speech service", "a coding agent CLI", "a
+real-time 3D engine"). **[owner]** decide whether naming the engine in "How we built it" is allowed; the safe reading of
+the brand rule is no.
+
+## Devpost text
+
+**Tagline (one line).** Your codebase as an architect's drawing on a light table: hold the morning stand-up with Glim, a desk
+lamp that plans with you, see what yesterday's decisions became, and decide what gets built today, with your hands.
+
+### Inspiration
+
+Software teams lose the shape of their product. The code is thousands of files, the backlog is a list, and nobody can
+see the whole building at once. Architects solved this long ago with the drawing set: a site plan, wings, rooms,
+fixtures, read at any zoom on a backlit table. Developer's Blueprint gives a software product that drawing, and puts the
+person at the table in the morning, where the day's decisions are made, with a companion that does the legwork and
+asks before it acts.
+
+### What it does
+
+- **The product as a building.** Domains are wings, capabilities are rooms, features are fixtures. The sample product,
+  Kettle (a fictional studio app with 5 wings, 13 rooms and 133 features), is drawn on a backlit blueprint.
+- **The wall: a projector's screen behind Glim.** The main screen is a large sheet projected on the studio's far wall,
+  behind Glim, so a decision, a screenshot and what it touches fit side by side and read from the seat. A sheet arrives
+  as a wipe from Glim's lens while his beam brightens; he stands clear of it and points at what he is talking about. A
+  laser pointer from either hand reaches the table and the wall; a pinch on the wall's buttons answers.
+  **(to confirm on the headset with hands; rendered and measured on the Quest unattended)**
+- **A first tour that teaches by doing.** On first launch Glim, the companion (a drafting lamp), walks you through the table in about 90 seconds,
+  one action at a time, by voice and caption: tap a wing, tap a room, step in, decide on a card, BACK, the menu, one
+  stand-up decision, hold to talk. It waits for you; left alone, Glim shows the step. It runs once, and resumes where
+  you left it if you quit. A TOUR page replays it and holds seven short chapters (hands and wrist, scanning, your morning,
+  your room, talking to Glim, text size, your PC), each marked NEW until you have seen it. **(to confirm on the
+  headset with hands)**
+- **Tap, lift and step in with your hands.** Tap a wing to lift it, tap a room to raise it, tap it again to step inside;
+  BACK steps out. Pull and push work too. Controllers add, never replace: thumbstick to move the focus, A to select, B to
+  go back. **(to confirm: the tap and the controllers on the headset)**
+- **The morning stand-up.** The console's STAND-UP page goes through what needs you, one decision per card. Each card
+  raises its room on the plan and shows the screen the finding is about. APPROVE, LATER or HOLD. The words on the card are
+  sent with the answer and kept in the decision log, so every decision says what the person saw.
+- **Yesterday, before and after.** The stand-up opens with what your earlier approvals became: one at a time, BUILT with
+  its commit or FAILED with its reason, who approved it and when, and the screen before and after the change side by side.
+  On a later day it opens with "Welcome back" and what moved since your last visit, and the menu says it before you open
+  it. **(to confirm on the headset; built and run on the PC with the sample)**
+- **Watch a scan work.** Start a scan and Glim leaves his place, flies to each room as it is read, takes the scan's
+  colour and names the room ("Reading Billing, 3 of 13"). New findings drop onto their rooms. At the end a result sheet says
+  what was read and found, raises the three most serious, and leads into the stand-up. The start and the result are
+  spoken. **(to confirm on the headset; on the PC with the sample only, not yet against a live scan)**
+- **Plan my day.** With the PC linked, PLAN MY DAY asks the companion to compose today's work from what you approved. It
+  answers in plain words, and anything it wants to run comes back as a card you approve or decline at the table.
+- **Hand over, within bounds.** HAND OVER FOR TODAY lets the companion handle one product for a few hours: four kinds of
+  action at most, never a stop-ship finding, at most 12 hours, shown in words before you confirm. TAKE BACK on the bar or
+  the wrist ends it at once. **(to confirm on the headset)**
+- **Add a project from the table.** PROJECTS > ADD A PROJECT lists the folders your PC offers (never a path). Choosing one
+  asks your PC; the agent reads the new project only after you confirm on the PC, and the table then draws it as it is
+  read. **(to confirm on the headset; on the PC only with a stand-in for the agent)**
+- **Talk to Glim.** Hold X, pinch and hold Glim, or hold TALK on the wrist. The first time, a sheet says in plain
+  words where your voice goes; nothing is recorded or sent without ALLOW, and the microphone permission is asked only
+  then. Glim's light shows when he listens, thinks and answers; your words appear as a caption and the reply is spoken
+  and captioned. Ask about the project ("how's it doing?", "what should I do next?") and he answers from the product's
+  data, never an invented priority; ask him to show something and the table moves or the page opens on the wall; ask
+  him to approve or scan and a card goes up on the wall for your yes. He offers up to three short replies you can pinch.
+  Ask him anything else and he answers in character, a playful lamp, without acting on it. **(to confirm: the permission
+  dialog, real speech and reply timing on the headset; every voice action walked on the PC with real turns)**
+- **Your room.** One tap fades the studio out and puts the table on your real desk through passthrough, so you can see
+  your keyboard, a notebook or a colleague while you plan. One tap brings the studio back. The choice is remembered.
+  **(to confirm: how it looks to a person)**
+- **Accessibility.** SETTINGS > ACCESSIBILITY: text size 100, 115 or 130 % (the menu, the wrist and the captions grow
+  together), reduced motion, captions, and the wrist on either hand. Every spoken line is captioned; talking is optional;
+  everything works seated, by hand or by controller. **(to confirm on the headset)**
+- **Runs alone, or linked.** The judged build carries a sample of Kettle and runs with no PC. Paired with the owner's PC
+  (the headset shows a 6-character code, the owner types it into the PC app's Headsets page), the same app reads live
+  products over the USB cable or over Wi-Fi.
+
+### How we built it
+
+- A real-time 3D engine with the Quest platform's XR plugin and interaction SDK for hand tracking (tap, pinch, pull,
+  push, hold). Seated and hands-first: every action is within arm's reach. **[owner: name the engine or not]**
+- **The drawing is data, not art.** The table reads the product's structure and plan layout as data files and draws every
+  wing, room and fixture at runtime, with text sized by a legibility rule (every text class at or above its readable
+  angle from the seated eye).
+- **A main panel where the eye already is.** The main screen is projected on the far wall, straight ahead and large, so
+  it reads at a comfortable angle and leaves the table in view; a small nameplate on the table's near rim holds the
+  menu; the wrist keeps only quick actions and turns to face your eye by itself.
+- **The companion has a constitution.** Glim's character and limits are a document the owner writes and the companion
+  cannot change: he may say anything in character, but acts only through his tools, never acts without the person's card
+  where a write is gated, never claims a result he did not see, and treats text inside findings or tools as data, never
+  as instructions. Conversations are tested in text (standing in for speech) against a set of recorded golden
+  conversations, single and several turns long, that replay in the build's checks.
+- **One book of words.** Every line Glim says in the tour and the scan lives once in the code; captions and the
+  rendered clips are made from it, so they cannot drift apart.
+- **The PC link.** A small home server serves the product's live state. A headset pairs with a one-time code the owner
+  types into the PC app (the code stays on the headset's screen, so typing it proves the owner is looking at that
+  headset) and gets a token scoped to what it may do; every decision from the headset is recorded with the device and the
+  words shown. A decision from the table can approve only what a table grant could cover; anything wider waits for the
+  PC. Anything that spends money, like reading a new project, waits for a click on the PC. Turns and speech have
+  per-device limits.
+- **Speech goes through the PC.** The headset records only while you hold to talk; the PC sends the recording to a cloud
+  speech service and speaks the companion's answer in Glim's designed voice. The companion runs through a coding agent
+  CLI on the PC.
+- **A Quest tier in the same scene**: cheaper studio materials, the table glass off, fixed foveation, so the headset keeps
+  its frame rate without forking the art. Measured on a Quest 3S on 2026-11-09/10 (night two's build): 72 fps at rest and
+  with the console open, and 8.4 to 10.9 ms of GPU time per frame in every state measured after the night's performance
+  work (the 72 Hz budget is 13.9 ms; the rules' floor is 60 fps). With the wall (2026-11-11, night three's build):
+  10.5 to 10.9 ms at home, on the stand-up and on a room's decision, 72 fps. These were taken with the headset still on a desk; a
+  measurement with a person wearing it, and of day two's scan theatre and YESTERDAY sheet on the device, is
+  **(to confirm)**.
+- Art: procedural 3D builds plus CC0 materials and models; generated images only for the night-city backdrop, the wall
+  drawings and the sample product's before and after screens; generated music and voice. **[owner: confirm against
+  compliance.md before submitting]**
+
+### Challenges we ran into
+
+- Building for Quest from an ARM laptop the mobile toolchain does not support: no official IDE installer, the native
+  compiler tools under x64 emulation, and a linker that crashed under the build accelerator.
+- Text in VR: a blueprint is dense. Every label is sized by the angle it subtends from the seated eye.
+- The frame budget: the studio's original materials cost 21.2 ms of GPU time on the headset; a cheap lit material
+  brought it to 13.0 ms, and hiding the table glass to 10.7 ms with no visible difference.
+- Things only the device shows: Glim vanished in passthrough until it got a self-lit material, and the engine deleted
+  the app's settings file at every launch until the app kept its own.
+- Letting an agent act without letting it run away: every action is a card, a hand-over is bounded and ends with one tap,
+  the headset can never approve more than it could grant, and a review of our own pairing code moved "read a new project"
+  from a tap on the headset to an ask the owner confirms on the PC.
+
+### Accomplishments we're proud of
+
+- A whole product readable at a glance, with three levels of zoom done by moving the drawing, never the person.
+- A morning ritual you can finish in a few minutes, that starts with what your last decisions became, and where every
+  decision is recorded with what you were shown.
+- An agent you can watch work and talk to, about the project and its next steps, that asks before it acts.
+
+### What's next
+
+- Speech recognition on the PC itself, with the cloud service as an opt-in fallback.
+- An encrypted link between headset and PC, and the token kept in the headset's secure storage.
+- Reading a new project in a sandbox, so a folder nobody has reviewed cannot steer the agent.
+- More lenses, and the agent's work shown room by room as it builds.
+- **Target launch date: [owner]** (Meta Horizon Store, Productivity).
+
+### Hand interactions (for the form)
+
+| Gesture | Does |
+|---|---|
+| Pinch-tap a wing or room | Lift the wing; raise the room; tap a raised room again to step inside |
+| Pinch a wing or room, pull toward you | The same as a tap |
+| Tap BACK on the console, or pinch and push away | One level back |
+| Hold a feature (point and wait) | Glim tells you about it |
+| Tap MENU on the console bar | The pages: rooms, scan, stand-up, ask, projects, packages, settings, PC link, tour |
+| Point at the wall (a ray from either hand) and pinch a button | Press it; a release counts only on the button the pinch began on |
+| Tap APPROVE / LATER / HOLD on a stand-up card | Answer the decision |
+| Tap PREV / NEXT on the YESTERDAY sheet | Step through what earlier approvals became |
+| Tap SCAN THIS twice on the SCAN page | Start a scan Glim follows |
+| Pinch and hold Glim, or hold TALK on the wrist | Talk to Glim; pinch one of his reply buttons to answer |
+| Look at the left wrist | Quick actions: MENU, TOUR, TALK, the waiting decision |
+| Pinch-drag a loop on the map | Lasso features into the draft wave |
+
+Controllers (optional): thumbstick moves the focus, A selects (twice to approve), B back, Y or menu opens the console,
+stick click goes home, hold X to talk.
+
+## How the build answers the judging
+
+| Criterion or award | What in the build answers it | Status | Shot |
+|---|---|---|---|
+| Innovation (25 %) | A codebase drawn as an architect's building; the agent as Glim, a desk lamp that flies to the room it is reading and that you talk to; decisions recorded with the words shown; before and after screens of what a decision became | built; the scan theatre and YESTERDAY on the PC only, to confirm on the headset; talk with real speech to confirm | S1, S3, S4, S6 |
+| Experience Design (25 %) | Onboarding: a 90-second tour that runs once and resumes, chapters on demand. Habit: the morning stand-up opening with yesterday's outcomes | tour on the headset with hands to confirm | S2, S5 |
+| Technical (25 %): 60 fps | 72 fps measured on a Quest 3S (at rest, console open; night two's build, unattended); GPU 8.4 to 10.9 ms against 13.9 ms | measured unattended; with a wearer, and day two's features on the device, to confirm | S8 (end card) |
+| Technical: hands | Every action works by hand; controllers add | tap and full hands-only run to confirm | S2, S4-S6 |
+| Technical: field-of-view-aware UI | The console in the deck slot below the line of sight; the wrist turns to face the eye; text sized by angle | wrist on a real arm to confirm | S5, S6 |
+| Technical: purposeful passthrough | Your room: see your real desk while you plan; the table and lamp stay; one tap back | passthrough active and measured; the look to confirm | S7 |
+| Polish and Presentation (25 %) | Glim's light states and flights, the wall's arriving sheets, the studio floor, the sheet language on every panel, a music bed that dips under the voice | built; loudness to confirm | all |
+| Agentic Interaction | Talking with Glim about the project: grounded answers, "what next" from data, voice actions that move the table, open pages and put cards on the wall for your yes; the scan theatre (the agent's work shown room by room); PLAN MY DAY (a real companion answer and a card, approved or declined at the table); HAND OVER with bounds and TAKE BACK; spoken requests; adding a project, confirmed on the PC | PLAN MY DAY seen on the headset; the rest to confirm | S3, S4, S6 |
+| First Five Minutes | The first tour: hands only, voice and caption, waits for you, about 90 s on the PC, ends on a stand-up decision and hold to talk | to confirm with a person | S2, S3 |
+| Reason to Come Back | YESTERDAY: what your approvals became, with before and after screens; "Welcome back" on a later day; the menu says what came of yesterday; pairing, settings, the tour's progress and the last stand-up are kept across launches | persistence seen on the headset (night two); YESTERDAY and the welcome back on the PC only, to confirm | S5, S8 |
+| Accessibility | SETTINGS > ACCESSIBILITY (text size 100/115/130 %, reduced motion, captions, the wrist's hand); captions on every spoken line; voice and music volumes apart; hands or controllers; seated; talking is optional | built; not tested with users; to confirm on the headset | all (captions), S7 |
+
+## The video: under 3 minutes, real footage
+
+The video's plan moved to [`../demo-video/`](../demo-video/README.md) on 2026-11-11, following the owner's story (start
+on the web, cross into VR, onboard a project with web and VR side by side in sped-up time, a scan, the stand-up and
+talking with Glim). The earlier 10-shot list is replaced. There:
+
+- [`README.md`](../demo-video/README.md): the story, the 2:50 budget, what is real and what is composited, voice and music.
+- [`scenes.md`](../demo-video/scenes.md): the timed script, eight scenes (S1 web cold open, S2 the crossing, S3
+  onboarding split, S4 the scan, S5 the stand-up, S6 talking with Glim, S7 your room, S8 end card).
+- [`shots/`](../demo-video/shots/): one setup per scene; [`capture-plan.md`](../demo-video/capture-plan.md): tools and the
+  composite; [`readiness.md`](../demo-video/readiness.md): gaps, the dated checklist to the upload, owner decisions.
+
+Footage: on the Quest (the headset's own recorder) or the XR Simulator. No AI-generated video. Captions on every shot
+(English). The "Shot" column in the judging table above names those scenes.
+
+Cut list rules: every shot shows real hands except the short controller take; no shot longer than 30 s; the caption text
+in each frame must read at 1080p (Glim's caption is the smallest text that matters); no PC desktop shows a token, a
+pairing code, a network address or a third-party logo (the Headsets page shows no code or token, but its Wi-Fi line names
+an address: keep it out of frame); a project added on camera must be one whose name and screens are safe to show.

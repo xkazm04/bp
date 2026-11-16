@@ -3,6 +3,9 @@
 // and coverage gaps. Pure TypeScript, no Node or DOM, so the web client, the server runtime and the MCP door all read it.
 // Absent values: an optional field is omitted; `null` only for a known unknown (a cost the CLI did not report).
 
+import type { PlaceBaton } from '../session/place.ts';
+import type { SharedView } from '../session/focus.ts';
+
 /** Why a turn failed, read off the CLI's stderr and result record (athena's six classes). */
 export type FailureClass = 'gone' | 'poisoned' | 'auth' | 'limit' | 'transient' | 'unknown';
 
@@ -13,17 +16,36 @@ export type TurnEvent =
   | { type: 'tool_result'; callId: string; ok: boolean; summary: string }
   | { type: 'card'; card: Card }
   | { type: 'focus'; focus: FocusCommand }
-  | { type: 'end'; outcome: 'done' | 'interrupted' | 'failed'; failure?: FailureClass; costUsd: number | null };
+  /** `replies`: at most QUICK_REPLY_MAX next utterances the model proposed (G1, 2026-11-11), only on a `done` end that has
+   *  some. A surface shows them as buttons; a press sends `say` as the next turn's text through POST /turn, never an action. */
+  | { type: 'end'; outcome: 'done' | 'interrupted' | 'failed'; failure?: FailureClass; costUsd: number | null; replies?: QuickReply[] };
 
-/** POST /api/companion/turn body. `conversationId` omitted starts a new conversation; `product` scopes memory and tools. */
-export interface TurnRequest { conversationId?: string; product?: string; text: string }
+/** One proposed next utterance: `label` on the button (at most 32 characters), `say` the text the press sends (at most 120),
+ *  in the person's voice. Model text: a surface renders it as text only. */
+export interface QuickReply { label: string; say: string }
+export const QUICK_REPLY_MAX = 3;
+
+/** Where the person is when they speak (G1): the surface sends it beside the words, never inside them. `place` is what the
+ *  surface shows (its words), `target` the id a deictic ("this one") means: a decision's proposal id, a room's or a
+ *  feature's id. `spoken`: the reply is spoken aloud (two short sentences, details to the sheet). */
+export interface TurnSurface { kind: 'vr' | 'web'; place?: string; target?: string; product?: string; spoken?: boolean }
+
+/** POST /api/companion/turn body. `conversationId` omitted starts a new conversation; `product` scopes memory and tools;
+ *  `surface` says where the person is (the prompt's "Where we are" block). */
+export interface TurnRequest { conversationId?: string; product?: string; text: string; surface?: TurnSurface }
 
 /** What the lamp is doing; the web host derives it, a skin only draws it. */
 export type LampState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'asking' | 'pointing' | 'working';
 
 export type FocusKind = 'feature' | 'room' | 'wing' | 'decision' | 'wave' | 'release' | 'ledger-row' | 'lens';
+/** A console page the table opens (G1, 2026-11-11): `{ kind: 'page', id: <one of PAGE_TARGETS> }`. The web page has no
+ *  such pages and skips the kind. A finding is shown as `decision` with its proposal id. */
+export const PAGE_TARGETS = ['menu', 'standup', 'scan', 'rooms', 'settings', 'tour', 'pc-link'] as const;
+export type PageTarget = (typeof PAGE_TARGETS)[number];
+export type FocusTargetKind = FocusKind | 'page';
+export const FOCUS_TARGET_KINDS: readonly FocusTargetKind[] = ['feature', 'room', 'wing', 'decision', 'wave', 'release', 'ledger-row', 'lens', 'page'];
 /** Show the person a place. The target is always explicit (never "the current selection"). */
-export interface FocusCommand { id: string; product: string; target: { kind: FocusKind; id: string }; say?: string }
+export interface FocusCommand { id: string; product: string; target: { kind: FocusTargetKind; id: string }; say?: string }
 
 export type CardState = 'pending' | 'approved' | 'declined' | 'expired' | 'done' | 'failed';
 /** A GATED tool call waiting for a person (or a policy). Only a human path may move it out of `pending`. */
@@ -55,7 +77,12 @@ export interface InboxItem {
   tier?: 0 | 1 | 2 | 3;
   ageMs: number;
   rank: number;
-  recommendation?: { verdict: Verdict; why: string };
+  /** `brief`: the decision brief's lines when the recommendation was made (scan/brief.ts). */
+  recommendation?: { verdict: Verdict; why: string; brief?: string[] };
+  /** A live standing order holds its place (bp-rules.json): no door will build it until the owner lifts `heldBy`. */
+  heldBy?: string;
+  /** A live standing grant lets an agent approve it without a card. */
+  grant?: string;
 }
 
 export type GapReason = 'unmeasured' | 'stale' | 'unknown' | 'deviation';
@@ -66,7 +93,13 @@ export type CompanionEvent =
   | { type: 'turn'; conversationId: string; event: TurnEvent }
   | { type: 'card'; card: Card }
   | { type: 'focus'; focus: FocusCommand }
-  | { type: 'status'; busy: string[]; sleeping: boolean };
+  | { type: 'status'; busy: string[]; sleeping: boolean }
+  /** The place baton moved because the table wrote it (live) or handed it back (returned): the page follows it
+   *  (session/place.ts; published by POST /api/session/place and /return). */
+  | { type: 'place'; baton: PlaceBaton }
+  /** The shared focus moved, or a reader came, went or changed whom it follows: the whole view (session/focus.ts; published
+   *  by POST /api/session/focus and by the writers that go through it, the companion's focus.show and the baton's table). */
+  | { type: 'shared'; shared: SharedView };
 
 /** The header a human path carries; the token is minted per server boot and never given to the MCP process. */
 export const HUMAN_HEADER = 'x-bp-human';

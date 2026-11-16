@@ -5,10 +5,9 @@
 // and shows up only as a drop landing beside the cursor.
 // Run: node scripts/check-camera.ts  (Node's type stripping; no build step). Exit 1 when any expectation fails.
 import { Camera, WheelIntent } from '../apps/web/src/engine/camera.ts';
+import { harness } from './lib/expect.ts';
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-camera');
 const near = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) <= eps * Math.max(1, Math.abs(a), Math.abs(b));
 
 const WORLD = { x: 0, y: 0, w: 4000, h: 2400 };
@@ -178,9 +177,4 @@ const make = () => {
   expect(!c.wz && near(c.k, 1.8), `under reduced motion a wheel zoom lands at once (k ${c.k})`);
 }
 
-if (failures.length) {
-  console.error(`check-camera: ${failures.length} failed, ${held} held`);
-  for (const f of failures) console.error('  FAIL ' + f);
-  process.exit(1);
-}
-console.log(`check-camera: ${held} expectations held`);
+done();

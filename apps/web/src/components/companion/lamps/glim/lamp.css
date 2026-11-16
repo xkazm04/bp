@@ -83,6 +83,7 @@
 .glim .lp-no { background: transparent; border: 1px solid var(--ink-3); color: var(--ink); }
 .glim .lp-no:hover { border-color: var(--ink); }
 .glim .lp-done { font: 600 15px var(--sans); color: var(--mint-2); }
+.glim .lp-failed { font: 400 13px var(--sans); color: inherit; overflow-wrap: anywhere; }
 
 /* ---------- pointing: the wire and the ring thrown around the place */
 .glim .lp-wire { position: absolute; width: 1.5px; margin-left: -0.75px; background: var(--lp-amber); transform-origin: 50% 0; animation: lp-wire 0.4s ease-out 1s both; }

@@ -6,15 +6,15 @@
 // opens the item in the compare panel; the checkbox selects. Memoised by id: its props are the proposal row (kept by
 // identity until it changes) and the item's facts (useItemFacts keeps an unchanged item's facts object).
 //
-// useItemFacts: what the table, the decision bar and the matrix need of every pack item, from useTrain() in one pass
-// over the measurements and shots: the verdict (compare.ts verdictOf, noise-aware), before/after, screens, runs and
-// the attempt chain.
+// useItemFacts: what the table, the decision bar and the matrix need of every pack item, from useTrain() (factsOf):
+// lookups in the one evidence index (@bp/core/scan/evidence, grouped once per measurements and shots array): the
+// verdict (compare.ts verdictOf, noise-aware), before/after, screens, runs and the attempt chain.
 import { memo, useMemo, useRef } from 'react';
 import type { Measurement, Proposal } from '@bp/core/scan/types';
 import { verdictOf, type Verdict } from '@bp/core/scan/compare';
+import { NO_EVIDENCE, evidenceIndex } from '@bp/core/scan/evidence';
 import { isFlagged } from '@bp/core/train/rules';
-import { useTrain } from './data';
-import { readingsOf } from './Decide';
+import { useTrain, type TrainData } from './data';
 import { LensTag, MetricMove, StateMark, VerdictChip } from './ui/Marks.tsx';
 
 /** What a pack item's row and the decisions need to know about it. */
@@ -42,35 +42,38 @@ export interface ItemFacts {
 
 const same = (a: ItemFacts, b: ItemFacts) => (Object.keys(a) as (keyof ItemFacts)[]).every((k) => a[k] === b[k]) && Object.keys(a).length === Object.keys(b).length;
 
-/** Facts of every pack item, by id. An item whose facts did not change keeps its object, so its row skips the render. */
+/** Facts of every pack item, by id, from the evidence index. An item whose facts equal its entry in `old` keeps that
+ *  object, so its row skips the render. */
+export function factsOf(T: Pick<TrainData, 'proposals' | 'byId' | 'measurements' | 'shots' | 'lenses'>, old: ReadonlyMap<string, ItemFacts> = new Map()): ReadonlyMap<string, ItemFacts> {
+  const ev = evidenceIndex(T.measurements, T.shots), out = new Map<string, ItemFacts>();
+  for (const p of T.proposals) {
+    if (!p.pack_id) continue;
+    const e = ev.get(p.id) ?? NO_EVIDENCE, v = verdictOf(p, e.before, e.after, T.lenses);
+    const own = (m: Measurement) => m.lens === p.lens && m.metric === p.metric;
+    let shots = 0; // every capture the pairs hold: each phase of each theme and size
+    for (const s of e.pairs) shots += (s.before ? 1 : 0) + (s.after ? 1 : 0);
+    const f: ItemFacts = { verdict: v.verdict, shots, runs: e.before.filter(own).length, afters: e.after.filter(own).length, attempt: 1, failed: false, flagged: false };
+    if (v.base !== undefined) f.before = v.base; // the verdict's own baseline: the runs' median, else the one reading
+    if (v.to) f.after = v.to.value;
+    const unit = v.from?.unit ?? v.to?.unit;
+    if (unit) f.unit = unit;
+    let a: Proposal | undefined = p;
+    while (a?.attempt_of && f.attempt < 50) { f.attempt++; a = T.byId.get(a.attempt_of); }
+    if (p.attempt_of) { f.prev = p.attempt_of; const n = T.byId.get(p.attempt_of)?.triage_note; if (n) f.prevNote = n; }
+    // the status before the triage tells a failed build once it is accepted
+    const was = p.status === 'accepted' ? p.triaged_from ?? p.status : p.status;
+    f.failed = was === 'failed';
+    f.flagged = p.status === 'accepted' && isFlagged({ status: was }, v.verdict);
+    const o = old.get(p.id);
+    out.set(p.id, o && same(o, f) ? o : f);
+  }
+  return out;
+}
+
+/** factsOf over useTrain(), keeping an unchanged item's facts object across changes of the train. */
 export function useItemFacts(): ReadonlyMap<string, ItemFacts> {
   const T = useTrain(), prev = useRef<ReadonlyMap<string, ItemFacts>>(new Map());
-  return useMemo(() => {
-    const ev = readingsOf(T.measurements), shots = new Map<string, Set<string>>();
-    for (const s of T.shots) if (s.proposal_id && s.phase) { let k = shots.get(s.proposal_id); if (!k) shots.set(s.proposal_id, (k = new Set())); k.add(s.phase + '\u0000' + (s.theme ?? '') + '\u0000' + (s.size ?? '')); }
-    const out = new Map<string, ItemFacts>(), old = prev.current;
-    for (const p of T.proposals) {
-      if (!p.pack_id) continue;
-      const e = ev.get(p.id), v = verdictOf(p, e?.before ?? [], e?.after ?? [], T.lenses);
-      const base = (e?.before ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric);
-      const f: ItemFacts = { verdict: v.verdict, shots: shots.get(p.id)?.size ?? 0, runs: base.length, afters: (e?.after ?? []).filter((m) => m.lens === p.lens && m.metric === p.metric).length, attempt: 1, failed: false, flagged: false };
-      if (v.base !== undefined) f.before = v.base; // the verdict's own baseline: the runs' median, else the one reading
-      if (v.to) f.after = v.to.value;
-      const unit = v.from?.unit ?? v.to?.unit;
-      if (unit) f.unit = unit;
-      let a: Proposal | undefined = p;
-      while (a?.attempt_of && f.attempt < 50) { f.attempt++; a = T.byId.get(a.attempt_of); }
-      if (p.attempt_of) { f.prev = p.attempt_of; const n = T.byId.get(p.attempt_of)?.triage_note; if (n) f.prevNote = n; }
-      // the status before the triage tells a failed build once it is accepted
-      const was = p.status === 'accepted' ? p.triaged_from ?? p.status : p.status;
-      f.failed = was === 'failed';
-      f.flagged = p.status === 'accepted' && isFlagged({ status: was }, v.verdict);
-      const o = old.get(p.id);
-      out.set(p.id, o && same(o, f) ? o : f);
-    }
-    prev.current = out;
-    return out;
-  }, [T]);
+  return useMemo(() => (prev.current = factsOf(T, prev.current)), [T]);
 }
 
 export interface ItemRowProps {

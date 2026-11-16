@@ -71,7 +71,7 @@ export function View() {
             {secs.map((x) => (
               <Row key={x.id} id={x.id} on={sel === x.id} onPick={() => go(x.id)} cls="nav">
                 <span className="rt one">{x.name}</span>
-                <span className="rm"><span>{x.sub}</span><span>{x.id === 'win' ? (s.delta === 1 ? '24h' : s.delta + 'd') : x.id === 'modes' ? (s.ga ? 'GA on' : s.blast ? 'blast on' : 'off') : x.id === 'desk' ? (s.who ? persons.find((p) => p.id === s.who)?.name.split(' ')[0] : 'everyone') : h ? h.bad + ' bad' : ''}</span></span>
+                <span className="rm"><span>{x.sub}</span><span>{x.id === 'win' ? (s.delta === 1 ? '24h' : s.delta + 'd') : x.id === 'modes' ? (s.ga ? 'readiness on' : s.blast ? 'blast on' : 'off') : x.id === 'desk' ? (s.who ? persons.find((p) => p.id === s.who)?.name.split(' ')[0] : 'everyone') : h ? h.bad + ' bad' : ''}</span></span>
               </Row>
             ))}
           </ul>
@@ -92,11 +92,11 @@ export function View() {
           </Sec>
           <Sec id="wbv-modes" head="Modes" aside="keys work on the plan">
             <div className="wb-modes">
-              {E.hasGA && ga && (
+              {E.hasGA && (
                 <button type="button" className="wb-mode" aria-pressed={s.ga} onClick={() => E.toggleGA()}>
                   <span className="sw" aria-hidden="true"><i /></span>
-                  <b>{ga.name} readiness</b><kbd>G</kbd>
-                  <span className="x">Marks every feature {ga.name} needs and how far each is from done{ga.date ? ', against the ' + ga.date + ' date' : ''}. {ga.goal}</span>
+                  <b>Readiness</b><kbd>G</kbd>
+                  <span className="x">Reads whatever you are looking at (a selection, the room or wing in view{ga ? ', else ' + ga.name : ', else the whole product'}) through every lens: what is clear, what is unproven (readings older than {E.readyMaxAge} days), the verified steps left and whether a proposal covers them, and what is blocked.{ga?.goal ? ' ' + ga.goal : ''}</span>
                 </button>
               )}
               <button type="button" className="wb-mode" aria-pressed={!!s.blast} onClick={() => E.toggleBlast()}>

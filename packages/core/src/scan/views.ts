@@ -1,10 +1,11 @@
 // Scans as the plan draws them, shared by live products and the Kettle sim: the scopes a right-click offers at a
 // place (`scopesAt`), a job's progress read from the store rows (`jobProgress`), and what a scan of a scope would
 // repeat (`scopeFacts`: the job already on it, the last read, the queue room). Pure.
+import { focusOfRunNote } from './focus.ts';
 import type { Layout } from '../model/layout.ts';
 import type { Product } from '../model/product.ts';
 import type { ScanSnapshot } from './types.ts';
-import { isJobNote, MAX_QUEUED, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
+import { ALL_LENSES, isJobNote, MAX_QUEUED, type ScanJob, type ScanScope, type ScanScopeKind } from './jobs.ts';
 import { lastRead, measuredFeatures } from './derive.ts';
 import { ago, jobLiveness } from './liveness.ts';
 
@@ -48,6 +49,32 @@ export interface JobProgress {
   m: number;
 }
 
+/** `activity --kind note` of a real run's no-impact judgement (lens-scan SKILL.md): the feature is on the row's `feature`; a
+ *  steps lens writes `no impact: <feature>: <reason>` and no `feature` (steps.mjs), so there it is read off the text. */
+const NO_IMPACT = 'no impact:', NO_IMPACT_TEXT = /^no impact: ([^:\s]+):/;
+
+/**
+ * Scans the store shows that this process has no job for, as the jobs they are: the web app and apps/server keep separate job
+ * registries, so a scan started from VR (or by a CLI) is only known here through the store both read. A run counts while it runs and
+ * for `linger` after it ended, if it reads feature by feature: a measure run, or a directed one (which runs as phase propose). A plain
+ * propose run writes no per-feature rows, so it could only ever show a false tick. A run this process's jobs already claim is left to them.
+ */
+export function foreignRunJobs(jobs: readonly ScanJob[], scan: Pick<ScanSnapshot, 'runs'> | undefined, now: number, linger: Partial<Record<'done' | 'failed', number>>): ScanJob[] {
+  const out: ScanJob[] = [];
+  for (const r of scan?.runs ?? []) {
+    if (r.lenses?.length !== 1 || r.lenses[0] === ALL_LENSES) continue; // a row with no lens list says nothing about what it read
+    if (r.phase !== 'measure' && !(r.phase === 'propose' && focusOfRunNote(r.note))) continue;
+    const status = r.status === 'running' ? 'running' : r.status === 'done' || r.status === 'failed' ? r.status : null;
+    if (!status) continue;
+    if (status !== 'running' && !(Date.parse(r.ended_at ?? '') + (linger[status] ?? 0) > now)) continue;
+    if (jobs.some((j) => j.run_id === r.id || isJobNote(r.note, j.id))) continue;
+    const features = Array.isArray(r.scope?.features) ? (r.scope.features as unknown[]).filter((f): f is string => typeof f === 'string') : [];
+    out.push({ id: 'run:' + r.id, kind: 'measure', lens: r.lenses[0], scope: features.length ? { kind: 'selection', label: 'A scan started elsewhere', features } : { kind: 'all', label: 'Everything', features: [] },
+      status, queued_at: r.started_at, started_at: r.started_at, run_id: r.id, ...(r.ended_at ? { ended_at: r.ended_at } : {}) });
+  }
+  return out;
+}
+
 /** A measure job's progress from the store rows: its run (by `run_id`, else the `bp-job:<id>` note), the features measured in it on its lens, the one being read. */
 export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total: number): JobProgress {
   const sc = job.scope, all = !sc || sc.kind === 'all', m = all ? total : sc.features.length;
@@ -55,10 +82,19 @@ export function jobProgress(job: ScanJob, scan: ScanSnapshot | undefined, total:
   const run = scan && (scan.runs.find((r) => r.id === job.run_id) ?? scan.runs.find((r) => isJobNote(r.note, job.id)));
   if (!run || !scan || !job.lens) return { done, n: 0, m };
   const want = all ? null : new Set(sc!.features);
-  for (const f of measuredFeatures(scan, run.id, job.lens)) if (!want || want.has(f)) done.add(f);
+  // an every-lens job (lens 'all', one job) counts a feature once any lens read it in the run
+  const every = job.lens === ALL_LENSES, runId = run.id;
+  const read = every ? new Set(scan.measurements.filter((x) => x.run_id === runId && !x.phase).map((x) => x.feature)) : measuredFeatures(scan, run.id, job.lens);
+  for (const f of read) if (!want || want.has(f)) done.add(f);
   let current: string | undefined;
   for (const a of scan.activity) {
-    if (a.run_id !== run.id || a.lens !== job.lens || !a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
+    if (a.run_id !== run.id || (!every && a.lens !== job.lens)) continue;
+    if (a.kind === 'note' && a.text.startsWith(NO_IMPACT)) { // judged: nothing here for the lens, and a room's rail still has to reach m/m
+      const f = a.feature ?? NO_IMPACT_TEXT.exec(a.text)?.[1];
+      if (f && (!want || want.has(f))) done.add(f);
+      continue;
+    }
+    if (!a.feature || (a.kind !== 'reading' && a.kind !== 'measured')) continue;
     if (a.kind === 'measured' && (!want || want.has(a.feature))) done.add(a.feature); // judged with nothing to measure (a temporary lens's "no impact")
     if (!want || want.has(a.feature)) current = a.feature;
   }
@@ -94,7 +130,7 @@ export function scopeFacts(a: { jobs: readonly ScanJob[]; scan: ScanSnapshot | u
   const of = a.features.length, ask = new Set(a.features);
   let busy: ScopeFacts['busy'];
   for (const j of a.jobs) {
-    if (j.kind !== 'measure' || j.lens !== a.lens || (j.status !== 'queued' && j.status !== 'running')) continue;
+    if (j.kind !== 'measure' || (j.lens !== a.lens && j.lens !== ALL_LENSES) || (j.status !== 'queued' && j.status !== 'running')) continue; // an every-lens job reads this lens too
     const sc = j.scope, overlap = !sc || sc.kind === 'all' ? of : sc.features.filter((f, i, fs) => ask.has(f) && fs.indexOf(f) === i).length;
     if (!overlap) continue;
     const status = jobLiveness(j, a.scan, a.now) as 'running' | 'stale' | 'queued';

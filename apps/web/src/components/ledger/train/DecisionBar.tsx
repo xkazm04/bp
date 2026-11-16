@@ -2,7 +2,8 @@
 // The decision bar under the In packs table (contest A/1's renderBar, the dispatch bar upgraded): what the decision
 // acts on (the selection, else the open item, else the focused one), its lenses, how many need a note to accept and
 // how many are locked in a release past draft, Clear, the decision buttons (Decide), and the release package pill:
-// "Package v<draft or suggested version> · <n accepted>" with Release -> (the Release tab). With nothing to act on it
+// "Package v<draft or suggested version> · <n accepted>" with Release -> (the Release tab; not on a phone, which has
+// no Release tab, only ReleaseStatusLine). With nothing to act on it
 // shows the scope's key reminders instead. The note editor takes the bar's line while a decision asks for a note.
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import type { Proposal } from '@bp/core/scan/types';
@@ -13,6 +14,7 @@ import { Decide } from './Decide';
 import { decisionCounts } from './plan';
 import { LensTag } from './ui/Marks.tsx';
 import { Btn } from './ui/Controls';
+import { openRelease } from './release/releaseState';
 import './DecisionBar.css';
 
 export interface DecisionBarProps {
@@ -26,9 +28,6 @@ export interface DecisionBarProps {
   phone?: boolean;
 }
 
-/** The release a package goes into: the newest one not yet tagged or failed. */
-const OPEN_REL = new Set(['draft', 'building', 'pr-open', 'merged']);
-
 export function DecisionBar({ L, targets, onRelease, hint, phone = false }: DecisionBarProps) {
   const T = useTrain(), n = L.ui.sel.size;
   const ps = useMemo(() => targets.map((id) => T.byId.get(id)).filter((p): p is Proposal => !!p), [targets, T]);
@@ -36,8 +35,9 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   // the planner's numbers (plan.ts), the same ones the buttons and the note editor read
   const { flagged, locked } = useMemo(() => decisionCounts(T, targets), [T, targets]);
 
-  // the package: accepted items no release holds, plus those of the open release
-  const rel = useMemo(() => [...T.releases].reverse().find((r) => OPEN_REL.has(r.status)), [T.releases]);
+  // the package: accepted items no release holds, plus those of the open release - the Release tab's (openRelease), a
+  // failed one included, so the bar and the tab never name different releases or count different packages
+  const rel = useMemo(() => openRelease(T.releases), [T.releases]);
   const pkg = useMemo(() => T.proposals.filter((p) => p.status === 'accepted' && (!p.release_id || p.release_id === rel?.id)).length, [T.proposals, rel]);
   // the version the package would take. A refused suggestion is NOT the same state as "not asked yet": it reads `v?`
   // and says so, because the version is part of the decision this bar is for.
@@ -51,8 +51,15 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
   const ver = rel?.version ?? (suggested && suggested !== 'failed' ? suggested.ver : null);
   const noVer = !ver && suggested === 'failed';
 
+  // a decision acts on every selected item, the ones the filters hide included (LedgerPage targets): say how many of
+  // them the person cannot see, on the live label, before a button acts on them (table/filtering)
+  const hidden = useMemo(() => {
+    if (!n) return 0;
+    const shown = new Set(L.scoped.map((f) => f.p.id));
+    return targets.filter((id) => !shown.has(id)).length;
+  }, [n, L.scoped, targets]);
   // A/1's words: the focused item reads "focused" (open in compare or not); only an open item the focus left reads "open"
-  const label = n ? n + ' selected' : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
+  const label = n ? n + ' selected' + (hidden ? ' · ' + hidden + ' hidden by filters' : '') : targets.length ? '1 ' + (L.ui.focus === targets[0] || L.ui.open !== targets[0] ? 'focused' : 'open') + ' · ' + targets[0] : 'Nothing selected';
   return (
     <div className="lg-bar tr-bar" role="region" aria-label="Decide" data-role="tr-bar">
       {L.ui.note?.at === 'bar' ? <Decide ids={L.ui.note.ids} /> : (
@@ -67,12 +74,14 @@ export function DecisionBar({ L, targets, onRelease, hint, phone = false }: Deci
           ) : hint ? <span className="lg-bar-l">{hint}</span> : null}
           <span className="lg-sp" />
           {!phone ? <Btn kbd="Esc" disabled={!n} onClick={L.clear} title="Clear the selection (Esc)">Clear</Btn> : null}
-          <Decide ids={targets} />
+          {/* an item open in compare is decided in the panel's own footer; the bar decides a selection, and everything on a phone */}
+          {phone || !L.ui.open || n ? <Decide ids={targets} /> : null}
           <span className="tr-pkg" title={rel ? 'The release package: every accepted item of ' + rel.id + ', plus the accepted items no release holds yet'
             : noVer ? 'The release package: accepted items waiting for a release. The next version could not be read from the store, so none is shown.'
               : 'The release package: accepted items waiting for a release'}>
             <span>Package</span><b>{ver ? 'v' + ver + ' · ' : noVer ? 'v? · ' : ''}{pkg}</b>
-            <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn>
+            {/* the phone has no Release tab (its ledger is the table and a one-line release status): no dead button there */}
+            {!phone ? <Btn onClick={onRelease} title="Open the release (3)">{rel && rel.status !== 'draft' ? rel.status : 'Release'} →</Btn> : null}
           </span>
         </>
       )}

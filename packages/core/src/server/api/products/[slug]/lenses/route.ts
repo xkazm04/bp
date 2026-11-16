@@ -5,31 +5,36 @@
 // enabled lenses (the same glyph AND line is refused). 201 + the entry; 400 `{ error }` saying what failed; 404 for an
 // unknown product or a missing map; 409 when the id exists (any source) or the map does not parse (it is never
 // overwritten). The stream's `map` event then carries the change to every client. Localhost only.
-import { unknownProduct } from '@bp/core/server/products.server';
-import { findProduct } from '@bp/core/server/products.server';
-import { localOnly, jsonOnly } from '@bp/core/scan/local-only';
+// Admission (guards, product, JSON body and its shape): the route door (route-door.server.ts).
+import { door } from '@bp/core/server/route-door.server';
 import { checkLensManifest } from '@bp/core/scan/manifest-check';
 import { addLens } from '@bp/core/server/lens-write.server';
 import type { LensManifest } from '@bp/core/standard/types';
 
-export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }): Promise<Response> {
-  const denied = localOnly(req);
-  if (denied) return Response.json({ error: denied }, { status: 403 });
-  const notJson = jsonOnly(req);
-  if (notJson) return Response.json({ error: notJson }, { status: 415 });
-  const { slug } = await params;
-  const p = findProduct(slug);
-  if (!p) return unknownProduct(slug);
-  let body: unknown;
-  try { body = await req.json(); } catch { return Response.json({ error: 'body must be JSON' }, { status: 400 }); }
-  const b = (body ?? {}) as { manifest?: unknown; temporary?: unknown };
+type LensBody = { manifest: unknown; temporary: boolean; mode: 'temporary' | 'project' };
+
+/** The lens to add and its mode, or the 400 for a `temporary` that is not a boolean. */
+function parse(raw: unknown): LensBody | Response {
+  const b = (raw ?? {}) as { manifest?: unknown; temporary?: unknown };
   if (b.temporary !== undefined && typeof b.temporary !== 'boolean') return Response.json({ error: 'temporary must be a boolean' }, { status: 400 });
   const id = (b.manifest as { id?: unknown } | null | undefined)?.id;
   const temporary = b.temporary === true || (typeof id === 'string' && id.startsWith('tmp.'));
-  const mode = temporary ? 'temporary' : 'project';
-  // the shape first (no map read for a bad body), then again with the map's looks inside the write
-  const bad = checkLensManifest(b.manifest, { mode });
-  if (bad) return Response.json({ error: bad }, { status: 400 });
-  const r = addLens(p, b.manifest as LensManifest, temporary, (taken) => checkLensManifest(b.manifest, { mode, taken }));
-  return r.ok ? Response.json(r.value, { status: 201 }) : Response.json({ error: r.error }, { status: r.status });
+  return { manifest: b.manifest, temporary, mode: temporary ? 'temporary' : 'project' };
+}
+
+const lenses = door('products/[slug]/lenses', {
+  POST: {
+    body: parse,
+    live: ({ product: p, body: { manifest, temporary, mode } }) => {
+      // the shape first (no map read for a bad body), then again with the map's looks inside the write
+      const bad = checkLensManifest(manifest, { mode });
+      if (bad) return Response.json({ error: bad }, { status: 400 });
+      const r = addLens(p, manifest as LensManifest, temporary, (taken) => checkLensManifest(manifest, { mode, taken }));
+      return r.ok ? Response.json(r.value, { status: 201 }) : Response.json({ error: r.error }, { status: r.status });
+    },
+  },
+});
+
+export async function POST(req: Request, ctx: { params: Promise<{ slug: string }> }): Promise<Response> {
+  return lenses.POST(req, ctx);
 }

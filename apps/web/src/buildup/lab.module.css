@@ -1,0 +1,14 @@
+.lab { position: fixed; inset: 0; overflow: hidden; background: var(--paper); color: var(--ink); }
+.note { position: absolute; inset: 0; display: grid; place-items: center; font: 14px var(--font-sans); color: var(--ink); opacity: .74; }
+.bar {
+  position: fixed; right: 12px; bottom: 12px; z-index: 1000; display: flex; gap: 6px; align-items: center;
+  padding: 6px 8px; border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); background: var(--label-bg);
+  font: 12px var(--font-mono); opacity: .55; transition: opacity .2s;
+}
+.bar:hover, .bar:focus-within { opacity: 1; }
+.bar select, .bar button {
+  font: inherit; color: var(--ink); background: var(--paper-lo);
+  border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent); padding: 3px 6px;
+}
+.bar button { cursor: pointer; }
+.bar button:disabled { opacity: .4; cursor: default; }

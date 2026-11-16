@@ -4,9 +4,9 @@
   "tagline": "Booking, memberships and payments for independent fitness studios.",
   "asOf": "2026-10-08T09:00:00Z",
   "stack": {
-   "web-admin": "Studio admin web app (Next.js, TypeScript)",
-   "web-member": "Member booking site and embeddable widget (Next.js)",
-   "mobile": "Member & instructor app (React Native, iOS + Android)",
+   "web-admin": "Studio admin web app (TypeScript)",
+   "web-member": "Member booking site and embeddable widget",
+   "mobile": "Member & instructor app (cross-platform mobile)",
    "api": "API server (Node.js, TypeScript, tRPC + REST)",
    "workers": "Background workers (job queue on Redis)",
    "db": "PostgreSQL, multi-tenant schema",
@@ -875,8 +875,8 @@
   },
   {
    "id": "IAM-03",
-   "name": "Google sign-in",
-   "summary": "Sign in with a Google account.",
+   "name": "Social sign-in",
+   "summary": "Sign in with a social account.",
    "domain": "IAM",
    "capability": "IAM.1",
    "stage": "live",
@@ -955,7 +955,7 @@
    "operations": {
     "environment": "production",
     "flag": {
-     "key": "iam_03_google_sign_in",
+     "key": "iam_03_social_sign_in",
      "rolloutPct": 100
     },
     "sloTarget": 99.5,
@@ -996,8 +996,8 @@
   },
   {
    "id": "IAM-04",
-   "name": "Apple sign-in",
-   "summary": "Sign in with Apple, required for the iOS app store.",
+   "name": "Platform sign-in",
+   "summary": "Platform sign-in, required by the mobile app store.",
    "domain": "IAM",
    "capability": "IAM.1",
    "stage": "flagged",
@@ -1070,7 +1070,7 @@
    "operations": {
     "environment": "production",
     "flag": {
-     "key": "iam_04_apple_sign_in",
+     "key": "iam_04_platform_sign_in",
      "rolloutPct": 50
     },
     "sloTarget": 99.5,
@@ -7345,7 +7345,7 @@
   {
    "id": "MEM-01",
    "name": "Member mobile app",
-   "summary": "iOS and Android app: book, pay, check in.",
+   "summary": "Mobile app: book, pay, check in.",
    "domain": "MEM",
    "capability": "MEM.1",
    "stage": "live",
@@ -7596,7 +7596,7 @@
   {
    "id": "MEM-03",
    "name": "Wallet pass",
-   "summary": "Membership card in Apple and Google Wallet.",
+   "summary": "Membership card in the phone's wallet.",
    "domain": "MEM",
    "capability": "MEM.1",
    "stage": "specified",

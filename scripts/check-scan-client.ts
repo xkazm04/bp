@@ -76,7 +76,7 @@ expect(refusalText(err('that lens has no manifest scan block on disk', { status:
 expect(refusalText(err('Nothing to scan with: no live product and no sample sim', { status: 503 })).startsWith('Nothing to scan with'), 'actions.ts\' own 503 sentence was discarded');
 
 // --------------------------------------------- 1b. the project list's alert says the same things
-// `refreshProjects` built its own sentence from `(e as Error).message`, so ProjectsDialog's role="alert" and
+// `refreshProjects` built its own sentence from `(e as Error).message`, so the manage dialog's (now the /projects page's) alert and
 // the switcher's title read "Could not read the project list: Failed to fetch" - a third implementation of
 // the rule refusalText and saveFailWords already carry, and the one on the surface a reader reaches when
 // nothing else works. Both now come from refusal.ts' causeWords.
@@ -219,6 +219,10 @@ expect(!/\?\.root \?\? ctx\.slug/.test(menu), 'ScanMenu falls back to the slug f
 expect(/\{ctx\.slug && <div className="sm-f warn">/.test(menu), 'the permissions warning is conditioned on something other than there being a live product, so it can disappear while the project list loads');
 expect(/with permissions skipped/.test(menu), 'the permissions warning lost its words');
 expect(/checkout/.test(menu), 'the permissions warning has nothing to say when the root is not known yet');
+// a product with no lenses at all: 'Scan all lenses' is disabled and no other footer fires (off and needy are empty), so the
+// menu says why and where to go, on the lens list itself rather than on a derived list that could be empty for other reasons
+expect(/\{!lensView && !lenses\.length && <div className="sm-f">This product has no lenses yet\. Add one from the ledger’s Lenses panel\.<\/div>\}/.test(menu),
+  'the scan menu says nothing when the product has no lenses (only a disabled Scan all lenses)');
 
 // --------------------------------------------- 4. no request waits for an answer forever
 // A server that accepted the connection and never answers (it died mid-write, or it is wedged on a locked
@@ -293,6 +297,10 @@ const helperNames = [...clientSrc.matchAll(/export (?:async )?(?:const|function)
 expect(helperNames.length >= 10, `found ${helperNames.length} exported request helpers (update this check)`);
 for (const h of helperNames) expect(consumers(h) > 0, `client.ts exports ${h} and nothing in the web app calls it`);
 expect(!/fetch\(\s*'\/api\/lens-draft'/.test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat.tsx makes its own /api/lens-draft request instead of calling postLensDraft');
+// a message sent while Claude answers joins the queue; when the joined queue would pass MAX the chat says so in an error
+// note (the text stays in the box) instead of returning without a word
+expect(/if \(q\.length > MAX\) \{ say\('note', `Not queued: the waiting messages would pass \$\{MAX\} characters\. Send it after this turn\.`, true\); return; \}/
+  .test(readStripped(path.join(SRC, 'components/ledger/lens/LensChat.tsx'))), 'LensChat drops a queued message past MAX without a word');
 {
   const ac = new AbortController();
   asked = [];
@@ -360,6 +368,17 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   const other = [job('x', { kind: 'execute', status: 'running', proposals: ['p'] }), job('r', { kind: 'release', status: 'queued', release: 'rel-1', step: 'build' })];
   const f3 = scopeFacts({ jobs: [...ended, ...other], scan: EMPTY, lens: 'security', features: ['a'], now });
   expect(!!f3 && f3.busy === undefined && f3.queue.running === 1 && f3.queue.queued === 1, 'scopeFacts: an ended, execute or release job reads busy (or the queue does not count every kind)', JSON.stringify(f3));
+  // DW-188: an every-lens measure job is one job with lens 'all' (jobs.ts ALL_LENSES, scope all, jobs.server.ts), and it reads every lens
+  const everyLens = (id: string, o: Record<string, unknown>) => job(id, { lens: 'all', scope: { kind: 'all', label: 'Every lens', features: [] }, ...o });
+  const f3r = scopeFacts({ jobs: [everyLens('ev', { status: 'running' })], scan: EMPTY, lens: 'security', features: ['a', 'b'], now });
+  expect(f3r?.busy?.status === 'running' && f3r.busy.jobId === 'ev' && f3r.busy.overlap === 2 && f3r.busy.of === 2, 'scopeFacts: a running every-lens measure job does not read busy 2 of 2 on a lens (DW-188)', JSON.stringify(f3r?.busy));
+  expect(!!f3r && (V.factsWords as (f: Facts, n: number) => { tag?: string })(f3r, now).tag === 'running', 'factsWords: the menu does not tag a lens running under a running every-lens job (DW-188)', JSON.stringify(f3r));
+  const f3q = scopeFacts({ jobs: [everyLens('evq', { status: 'queued' })], scan: EMPTY, lens: 'design', features: ['x', 'y', 'z'], now });
+  expect(f3q?.busy?.status === 'queued' && f3q.busy.jobId === 'evq' && f3q.busy.overlap === 3 && f3q.busy.of === 3, 'scopeFacts: a queued every-lens measure job does not read busy 3 of 3 on a lens (DW-188)', JSON.stringify(f3q?.busy));
+  const f3p = scopeFacts({ jobs: [everyLens('evp', { kind: 'propose', status: 'running' })], scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(!!f3p && f3p.busy === undefined, 'scopeFacts: an every-lens propose job reads busy, but it measures nothing (DW-188 guard)', JSON.stringify(f3p?.busy));
+  const f3e = scopeFacts({ jobs: ['done', 'failed', 'cancelled'].map((status) => everyLens('eve-' + status, { status })), scan: EMPTY, lens: 'security', features: ['a'], now });
+  expect(!!f3e && f3e.busy === undefined, 'scopeFacts: an ended every-lens measure job reads busy (DW-188 guard)', JSON.stringify(f3e?.busy));
   const ms = (id: number, feature: string, at: number, phase?: string) => ({ id, run_id: 'r1', feature, lens: 'security', metric: 'score', value: 1, measured_at: iso(at), ...(phase ? { phase, proposal_id: 'p' } : {}) });
   const scan4 = { ...EMPTY, measurements: [ms(1, 'a', now - 3 * D), ms(2, 'a', now - 2 * D), ms(3, 'b', now - H), ms(4, 'c', now - 60_000, 'after'), { ...ms(5, 'c', now - 1000), lens: 'design' }] };
   const f4 = scopeFacts({ jobs: [], scan: scan4, lens: 'security', features: ['a', 'b', 'c'], now });
@@ -373,7 +392,7 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
   // of a lens the repo cannot measure yet), no lens id branched on
   const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
   const items = sm.match(/role="menuitem" tabIndex=[^>]*/g) ?? []; // the JSX items, not the selectors that find them
-  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 5 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
+  expect(/\bscopeFacts\(/.test(sm) && /useScanJobs\(false, true\)/.test(sm) && items.length === 6 && items.every((t) => /aria-disabled=\{[^}]*queue\.full/.test(t) && /aria-describedby=/.test(t))
     && !/(['"])(security|design|development|performance)\1/.test(sm), 'ScanMenu.tsx does not read scopeFacts over useScanJobs, put queue.full and its reason on every scan item, or branches on a lens id', String(items.length));
   // Kettle: the sim's own jobs and snapshot feed the same facts, and its refusal agrees with queue.full
   const { ScanSim } = await import('../packages/core/src/model/scan-sim.ts');
@@ -402,6 +421,25 @@ expect(para.includes(`\`LENS_DRAFT_TIMEOUT_MS\` (${client.LENS_DRAFT_TIMEOUT_MS 
     expect(pj.kind === 'prepare' && again === 409 && dev === 400 && nope === 400 && done?.status === 'done' && done.run_id === undefined && /^lens-scan prepared:/.test(done.log_tail ?? '')
       && ps.snapshot().runs.length === runs0, 'Kettle: prepareLens does not queue a prepare job that ends done with no run, or its refusals (409 twice, 400 not-preparable / unknown) differ', JSON.stringify([again, dev, nope, done]));
   } finally { ps.dispose(); }
+}
+
+// --------------------------------------------- 10. "Scan all lenses" over everything is one every-lens job
+// The menu started one job per lens: five lenses took five of the 3 running + 16 queued slots (and could be refused part
+// way) and each re-read every feature, while the every-lens job (postAllLenses, one slot, one read) went unused here.
+// oneJobForAll decides; the route takes no feature list, so a narrower scope, the Kettle sim and a choice that leaves a
+// scannable lens out (it needs setup) keep one job per lens.
+{
+  const { oneJobForAll } = await import('../apps/web/src/lib/scan/scan-views.ts') as { oneJobForAll?: (live: boolean, scope: ScanScope, ids: readonly string[], ok: readonly string[]) => boolean };
+  const all = { kind: 'all', label: 'Everything', features: [] } as ScanScope, room = { kind: 'room', id: 'r', label: 'R', features: ['a'] } as ScanScope;
+  const ok = ['biz', 'dev', 'sec'];
+  const f = oneJobForAll ?? (() => false);
+  expect(typeof oneJobForAll === 'function' && f(true, all, ['sec', 'biz', 'dev'], ok), 'Scan all lenses over Everything on a live product is not one every-lens job');
+  expect(!f(false, all, ok, ok) && !f(true, room, ok, ok) && !f(true, all, ['biz', 'dev'], ok) && !f(true, all, ['dev'], ['dev']),
+    'oneJobForAll takes the every-lens job on the Kettle sim, a narrower scope, a choice that leaves a lens out, or a single lens');
+  const sm = readStripped(path.join(SRC, 'components/ScanMenu.tsx')).replace(/\r\n/g, '\n');
+  const run = sm.slice(sm.indexOf('const run = ('), sm.indexOf('const prepare = ('));
+  expect(/if \(oneJobForAll\(!!ctx\.slug, scope, ids, .*\)\) \{\s*startAllLenses\(ctx, 'measure'\)/.test(run) && run.indexOf('oneJobForAll(') < run.indexOf('Promise.allSettled('),
+    'ScanMenu run() does not queue startAllLenses when oneJobForAll says so, before the per-lens jobs');
 }
 
 if (failures.length) { console.log(failures.map((f) => 'FAIL ' + f).join('\n')); console.log(`check-scan-client: ${failures.length} failed, ${held} held`); process.exit(1); }

@@ -99,7 +99,11 @@ const capabilities: Capability[] = kettle.capabilities.map((c) => ({
   order: kettle.capabilities.filter((x) => x.domain === c.domain).indexOf(c) + 1, source: 'declared',
 }));
 
-const featSlug = new Map(kettle.features.map((f) => [f.id, kebab(f.name)]));
+/** Slugs kept from before the brand names left the sample's wording (readiness.md G1, owner 2026-11-11): these two
+ *  features were renamed to neutral words, but their slug is an id that events, findings and stores already carry, so it
+ *  stays. check-sample-brands.mjs allows exactly these ids and nothing else. */
+const KEPT_SLUG: Record<string, string> = { 'IAM-03': 'google-sign-in', 'IAM-04': 'apple-sign-in' };
+const featSlug = new Map(kettle.features.map((f) => [f.id, KEPT_SLUG[f.id] ?? kebab(f.name)]));
 if (new Set(featSlug.values()).size !== kettle.features.length) fail('feature slugs collide');
 const slugOf = (id: string) => featSlug.get(id) ?? fail(`unknown feature ${id}`);
 
@@ -237,13 +241,13 @@ const ocrFeature: Feature = {
   },
   variations: [
     { slug: 'vltava-bank', name: 'Vltava Bank', audience: 'Vltava Bank (fictional, Czech retail bank)',
-      extends: ['variable symbol and constant symbol fields', 'reads the QR Platba (SPD) code before falling back to OCR', 'CZK amounts with a decimal comma'],
+      extends: ['variable symbol and constant symbol fields', 'reads the bank QR payment code before falling back to OCR', 'CZK amounts with a decimal comma'],
       params: ['confidence threshold 0.92 per field', 'formats: PDF, JPEG, HEIC', 'an SPD payload wins over OCR text'], stage: 'in-dev' },
     { slug: 'nordhavn-sparebank', name: 'Nordhavn Sparebank', audience: 'Nordhavn Sparebank (fictional, Norwegian savings bank)',
       extends: ['KID payment reference with its mod-10 / mod-11 check digit', 'eFaktura hand-off instead of a manual transfer'],
       params: ['confidence threshold 0.95 (the KID check digit confirms the reference)', 'formats: PDF, JPEG', 'at most 2 pages'], stage: 'specified' },
     { slug: 'banco-alameda', name: 'Banco Alameda', audience: 'Banco Alameda (fictional, Portuguese bank)',
-      extends: ['Multibanco entity and reference fields', 'payee NIF (tax number)'],
+      extends: ['bank-transfer entity and reference fields', 'payee NIF (tax number)'],
       params: ['confidence threshold 0.90', 'formats: JPEG, PNG, PDF', 'the reference must be 9 digits'], stage: 'idea' },
   ],
 };
@@ -365,7 +369,7 @@ for (const f of kettle.features) {
       interactionP95Ms: slow ? Math.round(205 + r() * 140) : Math.round(45 + r() * 120),
       frameP95Ms: round(9 + r() * 14, 1),
       memoryMb: Math.round((mobile ? 140 : 70) + r() * 180),
-      probeEnv: mobile ? 'Pixel 7 emulator, release build' : 'local production build, Chrome 1600x1000',
+      probeEnv: mobile ? 'phone emulator, release build' : 'local production build, desktop browser 1600x1000',
     };
     if (d.bundleKb !== undefined) p.bundleKb = d.bundleKb;
     put('performance', p);

@@ -1,0 +1,8 @@
+{
+  "note": "Talk to the lamp, the bundle's scripted sample (BpTalk.cpp): no microphone is opened on the bundle. Each line's clip is <id>.wav, rendered by POST /api/companion/say (voice-link.md) at the tour clips' voice and level.",
+  "lines": [
+    { "id": "next", "ask": "What should I do next?", "reply": "Here is the one I would do first. Pinch me to open it on the deck." },
+    { "id": "scan", "ask": "Scan this room.", "reply": "A scan of this room is ready on your wrist. Pinch start when you want it." },
+    { "id": "plan", "ask": "Plan my day.", "reply": "Let's go through your morning. The decisions are on the stand-up." }
+  ]
+}

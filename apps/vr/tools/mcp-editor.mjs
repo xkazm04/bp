@@ -8,8 +8,8 @@
 //   node apps/vr/tools/mcp-editor.mjs start [--timeout <s>] [--ue-args "<extra editor args>"]
 //                                                             # spawn, wait until the server answers, print MCP_READY
 //   (MetaHuman Creator work headless: --ue-args -NoMetaHumanAccountPortalLoginFallback, so no Epic login fallback opens)
-//   node apps/vr/tools/mcp-editor.mjs stop                    # kill the editor tree recorded in the pid file
-//   node apps/vr/tools/mcp-editor.mjs status
+//   node apps/vr/tools/mcp-editor.mjs stop                    # kill the recorded editor tree, once the PID is proved to be it
+//   node apps/vr/tools/mcp-editor.mjs status                  # who holds the record, and for how long
 //
 // State: apps/vr/Saved/mcp-editor.json (pid, log path); the log is apps/vr/Saved/Logs/mcp-editor.log. Both git-ignored.
 // Exit 0 ok, 1 the server did not come up (the log tail is printed), 2 refused.
@@ -35,14 +35,34 @@ const portOpen = () => new Promise((r) => {
 const readState = () => { try { return JSON.parse(fs.readFileSync(STATE, 'utf8')); } catch { return null; } };
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
+// Windows reuses PIDs, so a live recorded PID proves nothing: it is this editor only if the OS reports the editor's image
+// started when the record says. known: false means the OS did not say (an access denial, no powershell): never kill on that.
+const holder = (st) => {
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+    `$p = Get-Process -Id ${Number(st.pid)} -ErrorAction Stop; $p.ProcessName; $p.StartTime.ToUniversalTime().ToString('o')`], { encoding: 'utf8', windowsHide: true });
+  const [name, at] = (r.stdout ?? '').trim().split(/\r?\n/);
+  const born = Date.parse(at);
+  if (!name || Number.isNaN(born)) return { known: false };
+  return { known: true, name, born, same: /^UnrealEditor-Cmd$/i.test(name) && Math.abs(born - Date.parse(st.started)) < 60000 };
+};
+const other = (st, h) => `pid ${st.pid} is now ${h.name}, started ${new Date(h.born).toISOString()}, not the editor this record started`;
+
 if (cmd === 'status') {
   const st = readState();
-  console.log(`editor ${st && alive(st.pid) ? `running pid ${st.pid}` : 'not running'}; port ${PORT} ${(await portOpen()) ? 'open' : 'closed'}`);
+  const h = st && alive(st.pid) ? holder(st) : null;
+  const who = !h ? 'not running'
+    : !h.known ? `unverified: pid ${st.pid} is alive and its identity could not be read`
+    : h.same ? `running pid ${st.pid}, up ${((Date.now() - h.born) / 3600e3).toFixed(1)} h; it blocks a UBT build of this checkout`
+    : `not running: ${other(st, h)}`;
+  console.log(`editor ${who}; port ${PORT} ${(await portOpen()) ? 'open' : 'closed'}`);
   process.exit(0);
 }
 if (cmd === 'stop') {
   const st = readState();
-  if (st && alive(st.pid)) spawnSync('taskkill.exe', ['/PID', String(st.pid), '/T', '/F']);
+  const h = st && alive(st.pid) ? holder(st) : null;
+  if (h && !h.known) { console.error(`REFUSED: pid ${st.pid} is alive and its identity could not be read; the record stays`); process.exit(2); }
+  if (h?.same) spawnSync('taskkill.exe', ['/PID', String(st.pid), '/T', '/F']);
+  else if (h) console.log(`NOT_KILLED: ${other(st, h)}; record cleared`);
   fs.rmSync(STATE, { force: true });
   console.log('MCP_STOPPED');
   process.exit(0);

@@ -5,12 +5,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   GA_MILESTONE, SPEND_CAP, STAGE_PLAIN, STAGE_WORD, ORDER_TEMPLATES, TICK_CLASS, astat, cursorFor, dnum, fmtWait, isAgentId, isLiveSt, kindWords, lensOf,
-  morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type BayNode, type BldNode, type OrderTemplate, type RoomNode, type WingNode,
+  morningStats, pname, sheetOf, stageAt, watchFor, watchKey, writeCursor, type WatchCursor, type OrderTemplate,
 } from '@bp/core/model';
 import { overlayRight } from '@/engine/chrome';
+import { calloutSeat } from '@/engine/surfaces';
 import type { ToastItem } from '@/engine/state';
 import { illoSVG } from '@/engine/render/illo';
-import { lensFailed } from '@/engine/render/plan';
 import { steerVerbs } from '@/lib/model/live-steer';
 import { altLabel } from '@bp/core/scan/live-plan';
 import { selbarStepsAside } from '@/lib/model/preview-seat';
@@ -18,7 +18,10 @@ import { optHover, shallowEqual, useAnswerNote, useBp, useEngine, useLive, useVa
 import { LiveSteerButtons } from './LiveSteer';
 import { STAGE_WORDS, TrackRecord } from './TrackRecord';
 import { proposalSummary } from './Queue';
+import { BriefFacts, useBrief } from './Brief';
 import { lensWords } from './sheet/words';
+import { placeWords } from '@/engine/place-words';
+import { readinessLine } from '@bp/core/model/ready';
 
 // ---------------------------------------------------------------------------------- ladder, scale
 export function Ladder() {
@@ -35,6 +38,16 @@ export function Ladder() {
       ))}
     </nav>
   );
+}
+
+/** The active lens could not be drawn (its painter threw: render/plan.ts lensFailed). Its marks are missing, so the plan
+ *  says so where the person looks, rather than reading as a lens with nothing to show. */
+export function LensFailNotice() {
+  const E = useEngine();
+  const s = useBp((s) => ({ view: s.view, failed: s.failedLenses }), shallowEqual);
+  if (!s.failed.includes(s.view)) return null;
+  const name = E.M.P.LENS[s.view]?.name ?? s.view;
+  return <div id="lensfail" role="status">{name} could not be drawn - see the console.</div>;
 }
 
 export function ScaleBar() {
@@ -89,13 +102,6 @@ function SwarmLines({ fs }: { fs: readonly import('@bp/core/data').Feature[] }) 
       {ss.asks ? <div className="sw q">{ss.asks} open question{ss.asks > 1 ? 's' : ''}{ss.mine ? ', ' + ss.mine + ' for ' + (S.who ? pname(E.M.P, S.who).split(' ')[0] : 'this sheet') : ''}</div> : null}
     </>
   );
-}
-/**
- * A lens whose aggregate throws costs that lens's line on the card, not the chrome: the card falls back to the
- * general counts and the failure is logged once per engine and lens through the SAME set the canvas labels use (plan.ts lensFailed).
- */
-function lensParts(E: ReturnType<typeof useEngine>, id: string, l: string, fs: readonly import('@bp/core/data').Feature[]): string[] | null {
-  try { return E.lensAgg(id, l, fs).parts; } catch (err) { lensFailed(E, l, 'aggregate', err); return null; }
 }
 function HoverBody() {
   const E = useEngine(), M = E.M, sim = M.sim;
@@ -180,16 +186,8 @@ function HoverBody() {
       </>
     );
   }
-  const o = E.placeById(h.type, h.id); if (!o) return null;
-  let title = '', kick = '', sub = '', art: string | null = null;
-  if (h.type === 'wing') { const w = o as WingNode; title = w.def.name; kick = 'Wing ' + w.def.letter + (M.P.scale > 1 ? ' · ' + w.bld.name : ''); sub = w.def.plain + '. ' + w.rooms.length + ' rooms: ' + w.rooms.map((r) => r.name).join(', ') + '.'; art = w.def.art; }
-  else if (h.type === 'room') { const r = o as RoomNode; title = r.name; kick = 'Room · wing ' + r.wing.def.letter + ' ' + r.wing.def.name; sub = r.summary; art = r.d.base; }
-  else if (h.type === 'bay') { const b = o as BayNode; title = b.name; kick = 'Bay · ' + b.room.name; sub = b.tiles.length + ' features: ' + b.tiles.map((T) => T.f.name).join(', ') + '.'; art = b.room.d.base; }
-  else { const b = o as BldNode; title = b.name; kick = 'Building'; sub = b.wings.length + ' wings, ' + b.wings.reduce((n, w) => n + w.rooms.length, 0) + ' rooms'; }
-  const c = M.agg.countsOf(o.id, o.feats, s.t, s.delta);
-  const lp = lensOf(M.P, s.view) && now ? lensParts(E, o.id, s.view, o.feats) : null;
-  const parts = lp ? [o.feats.length + ' features', ...lp] : [o.feats.length + ' features', c.live + c.flagged + ' live', c.build + ' building', c.paper + ' on paper'];
-  const bad = now ? M.agg.healthOf(o.id, o.feats, s.view).bad : 0, tot = Math.max(1, c.n);
+  const w = placeWords(E, h.type, h.id, s.view, s.t, s.delta); if (!w) return null;
+  const { title, kick, sub, art, counts: c, parts, bad } = w, o = E.placeById(h.type, h.id)!, tot = Math.max(1, c.n);
   return (
     <>
       {art && <div className="art" dangerouslySetInnerHTML={{ __html: illoSVG(art, 'currentColor') }} style={{ color: 'var(--lens)' }} />}
@@ -204,6 +202,15 @@ function HoverBody() {
       <div className="h">Click or scroll to go inside · Shift-click to target</div>
     </>
   );
+}
+/**
+ * The plan's spoken voice: a visually hidden polite status region whose text the engine replaces (never appends) once the
+ * camera has rested on a place (a room walk, a zoom, a lens switch) or on a trouble-route arrival (N / Shift+N). The
+ * canvas's accessible description points here. It re-renders only when the sentence changes.
+ */
+export function PlaceVoice() {
+  const said = useBp((s) => s.said);
+  return <div id="bp-said" className="bp-vh" role="status" aria-live="polite" aria-atomic="true">{said}</div>;
 }
 export function HoverCard() {
   const E = useEngine();
@@ -231,6 +238,7 @@ export function DecisionCard() {
   const [keep, setKeep] = useState(false);
   const ref = useRef<HTMLDivElement>(null), hgt = useRef(0);
   const d = s.dec ? sim.DEC[s.dec] : null, scan = useLive()?.product.scan, note = useAnswerNote(d?.id ?? ''), writes = useWritesOn();
+  const brief = useBrief(d);
   useEffect(() => {
     if (!d) return;
     // the card's height comes from a ResizeObserver, not an offsetHeight read per frame; a change re-places it
@@ -255,7 +263,7 @@ export function DecisionCard() {
   return (
     <AnimatePresence>
       {d && d.open && (() => {
-        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d), down = sim.blockedByFeature(d.f).length;
+        const f = M.P.F[d.f], A = sim.AG[d.by], list = sim.cardOrder(s.who, s.view), pos = list.indexOf(d) + 1, wa = sim.agents.filter((a) => a.wait === d.id), bn = sim.blocksNow(d), down = sim.blockedByFeature(d.f).length, ro = !writes && sim.live;
         return (
           <div ref={ref} style={{ position: 'absolute', left: 0, top: 0, zIndex: 8 }}>
             <motion.div id="dcard" key={d.id} className={'u-' + d.urg} role="dialog" aria-label="Decision" style={{ position: 'relative' }}
@@ -265,13 +273,15 @@ export function DecisionCard() {
               {(() => { const p = scan?.proposals.find((x) => x.id === d.base), sm = p ? proposalSummary(p) : null; return sm ? <div className="psum">{sm}</div> : null; })()}
               <div className="by"><b>{A ? A.base : d.by}</b> ({A ? sim.crewName(A.sq) : ''}) stopped at <b>{f.name}</b> and asks <b>{pname(M.P, d.decider)}</b>{d.ord ? <>, asked because of <b>{d.ord}</b></> : null}.</div>
               <div className="meta"><span>waiting {fmtWait(sim.waitMin(d))}</span><span>holds {bn} agent{bn === 1 ? '' : 's'}</span><span>touches {d.affects.length}</span>{down ? <span>{down} agent{down === 1 ? '' : 's'} blocked downstream</span> : null}</div>
-              {(writes || !sim.live) && d.opts.map((o, i) => (
+              {brief && <BriefFacts b={brief} d={d} compact />}
+              {ro && <p className="op-ro wb-help">Decisions are read-only here (BP_WRITES=off).</p>}
+              {!ro && d.opts.map((o, i) => (
                 <button key={i} type="button" className={'op' + (i === d.rec ? ' rec' : '')} onClick={() => (keep ? E.keepAnswer(d.id, i) : E.decide(d.id, i))} {...optHover(E, d.id, i)}>
-                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
+                  <i className="no">{i + 1}</i><b>{o.label}{i === d.rec && <em>{d.recNote ? 'you declined this before' : d.recBy ? d.recBy + ' recommends' : 'agent suggests'}</em>}</b><span>{o.consequence}</span>
                 </button>
               ))}
               {!sim.live && <label className="keep"><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Answer and keep as an order<small>{s.tl || M.P.D[f.domain]?.name || f.domain}</small></label>}
-              <div className="fx" aria-live="polite">{note ?? <>{wa.length ? 'Answering frees ' + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
+              <div className="fx" aria-live="polite">{note ?? <>{wa.length ? (ro ? 'It holds ' : 'Answering frees ') + wa.map((a) => a.base).join(', ') + '. ' : 'Nobody is blocked on it. '}The amber outlines on the plan are the {d.affects.length} feature{d.affects.length > 1 ? 's' : ''} it touches.</>}</div>
               <div className="nav"><button type="button" aria-label="Previous question" onClick={() => E.stepDecision(-1)}>‹ K</button><span>{pos || '–'} of {list.length}</span><button type="button" aria-label="Next question" onClick={() => E.stepDecision(1)}>J ›</button></div>
             </motion.div>
           </div>
@@ -343,13 +353,16 @@ export function SelBar() {
 // -------------------------------------------------------------------------------------- callouts
 export function Callout() {
   const E = useEngine(), M = E.M, sim = M.sim;
-  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, info: s.info, tgt: s.tgt, simV: s.simV, dock: s.dockHidden, dtab: s.dtab, track: s.track }), shallowEqual);
+  const s = useBp((s) => ({ blast: s.blast, ga: s.ga, scope: s.scope, info: s.info, tgt: s.tgt, simV: s.simV, troubleV: s.troubleV, dock: s.dockHidden, dtab: s.dtab, track: s.track }), shallowEqual);
   const pos = { left: Math.max(10, E.FW / E.U - overlayRight(E.S) - 340), top: E.SAFE.t / E.U + 4, maxHeight: `calc(100% - ${E.SAFE.t / E.U + 140}px)` };
   let body: React.ReactNode = null, cls = '';
-  if (s.track && M.tracks?.T[s.track]) {
+  // which body the box shows is the surface stack's (engine/surfaces.ts): the track record over "What is going on?",
+  // over blast, over readiness; a track this map holds no record of is skipped
+  const seat = calloutSeat(s, (id) => id !== 'track' || !!M.tracks?.T[s.track ?? '']);
+  if (seat === 'track' && s.track) {
     cls = 'info';
     body = <TrackRecord id={s.track} />;
-  } else if (s.info && s.tgt.n) {
+  } else if (seat === 'info') {
     const ids = s.tgt.ids, ag = sim.agentsIn(ids), ds = Object.keys(ids).flatMap((id) => sim.DOF[id] || []), ev = sim.log.filter((e) => ids[e.f]).slice(0, 6);
     cls = 'info';
     body = (
@@ -367,7 +380,7 @@ export function Callout() {
         {ev.length ? ev.map((e, i) => <div key={i} style={{ color: 'var(--ink-2)', fontSize: 13 }}>{new Date(sim.at0 + e.t * 1000).toISOString().slice(11, 16)} · {e.text}</div>) : <div style={{ color: 'var(--ink-2)' }}>Quiet so far this hour.</div>}
       </>
     );
-  } else if (s.blast) {
+  } else if (seat === 'blast' && s.blast) {
     const bl = M.closure.of(s.blast), f0 = M.P.F[s.blast], direct = f0.usedBy;
     const prodAll = bl.filter((id) => isLiveSt(M.P.F[id].stage)), prodDir = direct.filter((id) => isLiveSt(M.P.F[id].stage));
     body = (
@@ -383,28 +396,52 @@ export function Callout() {
         {direct.map((id) => { const g = M.P.F[id]; return <button key={id} type="button" className="lnk" onClick={() => { E.setMode({ blast: null }); E.openFeature(id); }}>{g.code ? <i>{g.code}</i> : null}{g.name} <span style={{ color: 'var(--ink-2)' }}>· {g.stage ? STAGE_WORD[g.stage].toLowerCase() : 'stage unknown'}</span></button>; })}
       </>
     );
-  } else if (s.ga) {
-    // done but unsafe = live (or flagged) and in trouble under any enabled lens; blocked = has open blockers
-    const ga = M.P.MS[GA_MILESTONE], m2 = M.P.features.filter((f) => f.milestone === GA_MILESTONE), cnt = (fn: (f: (typeof m2)[number]) => boolean) => m2.filter(fn).length;
+  } else if (seat === 'ga' && s.scope) {
+    // readiness for what G read (engine readyScope): the summary from the lens manifests and readings (core readiness),
+    // and, when the scope is a milestone, its release rows as before
+    const sc = s.scope, R = E.readinessNow(), ms = sc.kind === 'ms' ? M.P.MS[sc.id] : null;
+    const m2 = ms ? sc.ids.map((id) => M.P.F[id]) : [], cnt = (fn: (f: (typeof m2)[number]) => boolean) => m2.filter(fn).length;
     const blocked = m2.filter((f) => f.blockedBy.length > 0), unsafe = m2.filter((f) => isLiveSt(f.stage) && f.health === 'bad');
-    const days = ga ? Math.round(dnum(ga.date) - dnum(M.P.asOf)) : 0, onM2 = sim.has ? sim.agents.filter((a) => sim.msOf(a.f) === GA_MILESTONE).length : 0;
+    const days = ms ? Math.round(dnum(ms.date) - dnum(M.P.asOf)) : 0, onM2 = ms && sim.has ? sim.agents.filter((a) => sim.msOf(a.f) === ms.id).length : 0;
+    const lensName = (id: string) => M.P.LENS[id]?.name ?? id;
+    const rows = R ? R.features : [], CAP = 8;
+    const stepRows = rows.flatMap((fr) => fr.lenses.flatMap((l) => (l.kind === 'steps' ? l.steps.map((st) => ({ fid: fr.id, lens: l.lens, st })) : [])));
+    const blockRows = rows.flatMap((fr) => fr.lenses.flatMap((l) => (l.kind === 'blocked' ? [{ fid: fr.id, lens: l.lens, why: l.why }] : [])));
+    const oldRows = rows.filter((fr) => fr.kind === 'unproven'), conflictRows = rows.flatMap((fr) => fr.conflicts.map((c) => ({ fid: fr.id, c })));
+    const scopeWord = sc.kind === 'ms' ? 'Milestone ' + (ms?.code ?? '') : sc.kind === 'tgt' ? 'Selection' : sc.kind === 'all' ? 'Whole product' : sc.kind === 'bld' ? 'Building' : sc.kind[0].toUpperCase() + sc.kind.slice(1);
+    const more = (n: number) => (n > CAP ? <div className="row"><span>…and {n - CAP} more</span></div> : null);
+    const open = (fid: string, lens?: string) => { if (lens) E.setView(lens); E.openFeature(fid); };
+    const coverWord = (st: (typeof stepRows)[number]['st']) => !st.cover.covered ? 'no proposal' : st.cover.best.verdict === 'clears' ? 'covered' : st.cover.best.verdict === 'short' ? 'short by ' + st.cover.best.short : st.cover.best.verdict === 'worse' ? 'proposal goes the wrong way' : 'proposal unsized';
     cls = 'ga';
     body = (
       <>
         <button type="button" className="x" onClick={() => E.setMode({ ga: false })}>CLOSE · G</button>
-        <h4>Milestone {ga?.code ?? ''} · {ga?.date}</h4><div className="big">{ga?.name ?? 'The milestone'} in {days} days</div>
-        <div className="row"><span>Features in this release</span><b>{m2.length}</b></div>
-        <div className="row"><span>Done, live for all</span><b>{cnt((f) => f.stage === 'live')}</b></div>
-        <div className="row"><span>Partly open (flagged)</span><b>{cnt((f) => f.stage === 'flagged')}</b></div>
-        <div className="row"><span>Still being built or reviewed</span><b>{cnt((f) => f.stage === 'in-dev' || f.stage === 'in-review')}</b></div>
-        <div className="row"><span>Not started</span><b>{cnt((f) => f.stage === 'specified' || f.stage === 'idea')}</b></div>
-        <div className="row"><span>Blocked</span><b style={{ color: 'var(--amber-2)' }}>{blocked.length}</b></div>
-        <div className="row"><span>Done but unsafe</span><b style={{ color: 'var(--red-2)' }}>{unsafe.length}</b></div>
-        {sim.has && <><div className="row"><span>Agents on it right now</span><b style={{ color: 'var(--mint-2)' }}>{onM2} of {sim.agents.length}</b></div><div style={{ marginTop: 8 }}><button type="button" className="bt go" style={{ width: '100%', justifyContent: 'center' }} onClick={() => E.preview('ga')}>Put the swarm on it…</button></div></>}
-        <div className="sub">DONE BUT UNSAFE</div>
-        {unsafe.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name}</button>)}
-        <div className="sub">BLOCKED</div>
-        {blocked.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name} <span style={{ color: 'var(--ink-2)' }}>← {f.blockedBy.map((b) => M.P.F[b].name).join(', ')}</span></button>)}
+        <h4>Readiness · {scopeWord}{ms ? ' · ' + ms.date : ''}</h4><div className="big">{sc.label}{ms ? ' in ' + days + ' days' : ''}</div>
+        {R && <p className="ready-line">{readinessLine(R, true)}</p>}
+        {ms && <>
+          <div className="row"><span>Done, live for all</span><b>{cnt((f) => f.stage === 'live')}</b></div>
+          <div className="row"><span>Partly open (flagged)</span><b>{cnt((f) => f.stage === 'flagged')}</b></div>
+          <div className="row"><span>Still being built or reviewed</span><b>{cnt((f) => f.stage === 'in-dev' || f.stage === 'in-review')}</b></div>
+          <div className="row"><span>Not started</span><b>{cnt((f) => f.stage === 'specified' || f.stage === 'idea')}</b></div>
+          <div className="row"><span>Blocked by other features</span><b style={{ color: 'var(--amber-2)' }}>{blocked.length}</b></div>
+          <div className="row"><span>Done but unsafe</span><b style={{ color: 'var(--red-2)' }}>{unsafe.length}</b></div>
+          {sim.has && ms.id === GA_MILESTONE && <><div className="row"><span>Agents on it right now</span><b style={{ color: 'var(--mint-2)' }}>{onM2} of {sim.agents.length}</b></div><div style={{ marginTop: 8 }}><button type="button" className="bt go" style={{ width: '100%', justifyContent: 'center' }} onClick={() => E.preview('ga')}>Put the swarm on it…</button></div></>}
+          {unsafe.length > 0 && <div className="sub">DONE BUT UNSAFE</div>}
+          {unsafe.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name}</button>)}
+          {blocked.length > 0 && <div className="sub">BLOCKED BY OTHER FEATURES</div>}
+          {blocked.map((f) => <button key={f.id} type="button" className="lnk" onClick={() => E.openFeature(f.id)}>{f.code ? <i>{f.code}</i> : null}{f.name} <span style={{ color: 'var(--ink-2)' }}>← {f.blockedBy.map((b) => M.P.F[b].name).join(', ')}</span></button>)}
+        </>}
+        {stepRows.length > 0 && <div className="sub">STEPS TO CLEAR · {stepRows.length}</div>}
+        {stepRows.slice(0, CAP).map((r, i) => <button key={'s' + i} type="button" className="lnk" onClick={() => open(r.fid, r.lens)}>{M.P.F[r.fid].name} <span style={{ color: 'var(--ink-2)' }}>· {lensName(r.lens)}: {r.st.step.field} {r.st.step.op} {String(r.st.step.target)} (now {String(r.st.step.now)}) · {coverWord(r.st)}</span></button>)}
+        {more(stepRows.length)}
+        {blockRows.length > 0 && <div className="sub">BLOCKED · NO VERIFIED STEPS</div>}
+        {blockRows.slice(0, CAP).map((r, i) => <button key={'b' + i} type="button" className="lnk" onClick={() => open(r.fid, r.lens)}>{M.P.F[r.fid].name} <span style={{ color: 'var(--ink-2)' }}>· {r.why}</span></button>)}
+        {more(blockRows.length)}
+        {conflictRows.length > 0 && <div className="sub">CROSS-LENS CONFLICTS</div>}
+        {conflictRows.slice(0, CAP).map((r, i) => <button key={'c' + i} type="button" className="lnk" onClick={() => open(r.fid)}>{M.P.F[r.fid].name} <span style={{ color: 'var(--ink-2)' }}>· {r.c}</span></button>)}
+        {oldRows.length > 0 && <div className="sub">UNPROVEN · READINGS OLDER THAN {R!.maxAgeDays} D, OR NONE</div>}
+        {oldRows.slice(0, CAP).map((fr) => <button key={fr.id} type="button" className="lnk" onClick={() => open(fr.id)}>{M.P.F[fr.id].name} <span style={{ color: 'var(--ink-2)' }}>· {fr.lenses.filter((l) => l.kind === 'unproven').map((l) => lensName(l.lens) + (l.kind === 'unproven' && l.newest ? ' read ' + l.newest : ' never measured')).join(', ')}</span></button>)}
+        {more(oldRows.length)}
       </>
     );
   }

@@ -9,6 +9,7 @@ import { CHANNELS, instrumentRect } from './channels';
 import { makeDecor } from './decor';
 import { LENS_NAME } from './palette';
 import { BoldPanel } from './panels';
+import { BoldLegend } from './ScheduleLegend';
 import { queueNote } from './words';
 import { isBuiltinLens } from '../base/legacy';
 import './styles.css';
@@ -37,6 +38,8 @@ export const bold: Variant = {
   expression: boldExpression,
   ui: {
     SheetPanel: BoldPanel,
+    // under a built-in lens the Plan tab's legend is the sheet's schedule: each title-block total walks to its features
+    Legend: BoldLegend,
     tabLabel: (v) => (v === GENERAL ? 'General' : isBuiltinLens(v) ? LENS_NAME[v].nm : null),
     queueNote,
   },

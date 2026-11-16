@@ -21,9 +21,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { isView, lineSuffix } from '@bp/core/model';
 import { emptyScan, type Measurement, type Pack, type Proposal, type ProposalSize, type ProposalStatus, type ScanSnapshot, type TriageDecision, type TriageResult } from '@bp/core/scan/types';
 import { isCurrent, tierRank } from '@bp/core/scan/derive';
+import { SIZE_W, byWorth, estValue, worthOf, type Worth } from '@bp/core/scan/score';
 import type { ScanJob } from '@bp/core/scan/jobs';
+import type { MainOutcome } from '@bp/core/scan/track';
 import { buildChunks, canBuild, holdsBuild } from '@bp/core/scan/admit';
-import { dispatch } from '@/lib/scan/actions';
+import { decideFinding, dispatch } from '@/lib/scan/actions';
+import { focusOfRunNote } from '@bp/core/scan/focus';
 import type { ScanSim } from '@bp/core/model/scan-sim';
 import type { LedgerVariant } from '@/engine/state';
 import type { COMPARE_MODES } from './train/keymap';
@@ -45,8 +48,8 @@ export const STATUSES: readonly ProposalStatus[] = ['proposed', 'approved', 'exe
 export const PACK_STATUSES: readonly ProposalStatus[] = ['done', 'failed', 'accepted', 'rework', 'descoped', 'released'];
 /** The backlog's status chips: v1's six always; a v2 status only while some finding has it. */
 const V1: ReadonlySet<ProposalStatus> = new Set(['proposed', 'approved', 'executing', 'done', 'failed', 'declined']);
-/** Effort per size (the rank's denominator and the dispatch bar's effort). */
-export const SIZE_W: Record<ProposalSize, number> = { XS: 1, S: 2, M: 3, L: 5, XL: 8 };
+/** Effort per size (the estimate's denominator and the dispatch bar's effort): @bp/core/scan/score's one table. */
+export { SIZE_W };
 export const sizeW = (p: Proposal): number => SIZE_W[p.size ?? 'M'] ?? SIZE_W.M;
 /** Risk bands, the same cut as the live queue's urgency (7 and up high, 4 and up medium). A missing risk reads medium. */
 export type RiskBand = 'high' | 'medium' | 'low';
@@ -65,10 +68,13 @@ export interface Finding {
   fi: number;
   /** An execute job queued or running over it. */
   job: ScanJob | null;
-  /** Expected value per effort (the triage order within a status): see `rankValue`. */
-  ev: number;
+  /** What it is worth (@bp/core/scan/score): the stored scan-score/1 `score`, else (a pre-v5 row) the old value per effort
+   *  shown "est.", else unscored; and its band. The triage order after tier and status. */
+  w: Worth;
   /** Whether it can be dispatched now: proposed or approved, no job is on it, and no dispatch of it is in flight. */
   can: boolean;
+  /** The note of the directed scan that filed it, read off its run; absent for an undirected run. */
+  focus?: { metric: string; note: string };
 }
 
 /** A column of the matrix and a filter chip: an enabled lens, or a lens id the findings name that the map does not enable. */
@@ -108,34 +114,44 @@ export function useOpenCount(): number {
 }
 
 /**
- * Expected value per effort, the triage table's order within a status (the order `/lens-scan execute` builds a batch in):
- *   ev = gain x confidence / effort
- *   gain       = 0.25 + 0.75 x |expected_delta| / the largest |expected_delta| among the findings of the same lens and
- *                metric (normalised per metric, so a KB and a finding count compare); 0.5 when the finding names no
- *                metric or no delta (its size is unknown: the middle)
- *   confidence = (11 - risk) / 10, risk 1..10 (a missing risk reads 5)
- *   effort     = size weight XS 1, S 2, M 3, L 5, XL 8 (a missing size reads M)
- * Ties go to the older finding, then the id.
+ * One score (scan-finding/1; @bp/core/scan/score, which the companion's inbox sorts by too): a finding's worth is the
+ * STORED `score` (the skill's scan-score/1, never recomputed here); a row without one keeps the pre-v5 value per effort
+ * (`estValue`, shown "est.") only when it is a pre-v5 row, and a v5 row without a score is "unscored" (never 0).
+ * Within a tier and status: band ranked before reserve, scored before estimated before unscored, the value descending;
+ * ties go to the older finding, then the id. `rankValue` is the estimate's old name.
  */
-export function rankValue(ps: readonly Proposal[]): Map<string, number> {
-  const top = new Map<string, number>();
-  for (const p of ps) if (p.metric && p.expected_delta !== undefined) { const k = p.lens + '\u0000' + p.metric; top.set(k, Math.max(top.get(k) ?? 0, Math.abs(p.expected_delta))); }
-  const out = new Map<string, number>();
-  for (const p of ps) {
-    const t = p.metric && p.expected_delta !== undefined ? top.get(p.lens + '\u0000' + p.metric) ?? 0 : 0;
-    const gain = t > 0 ? 0.25 + (0.75 * Math.abs(p.expected_delta!)) / t : 0.5;
-    const risk = Math.min(10, Math.max(1, p.risk ?? 5));
-    out.set(p.id, (gain * (11 - risk)) / 10 / sizeW(p));
+export const rankValue = estValue;
+const byRank = (a: Finding, b: Finding) => byWorth(a.w, b.w) || (a.p.created_at < b.p.created_at ? -1 : a.p.created_at > b.p.created_at ? 1 : 0) || (a.p.id < b.p.id ? -1 : 1);
+
+/** A lens's reserve findings (band 'reserve': verified and scored, over the run's cap) under the filters: collapsed under
+ *  "n in reserve" unless the lens is in `LedgerUi.reserve`. Never counted as ranked. */
+export interface ReserveGroup { lens: string; items: readonly Finding[]; open: boolean }
+/** The lens's MVP: its latest run's `mvp` finding while it is still open (proposed or approved), else its top open score. */
+export interface LensMvp { lens: string; f: Finding; from: 'mvp' | 'top-score' }
+/** The statuses an MVP card takes (not the build rule: that is @bp/core/scan/admit canBuild). */
+const MVP_OPEN: ReadonlySet<ProposalStatus> = new Set(['proposed', 'approved']);
+/** Per lens with an open finding, in `order` (the lens columns): see LensMvp. `runAt` dates a run (its started_at). */
+export function lensMvps(all: readonly Finding[], order: readonly string[], runAt: (run: string) => string): LensMvp[] {
+  const best = new Map<string, LensMvp>(), mvpAt = new Map<string, string>();
+  for (const f of all) {
+    if (!MVP_OPEN.has(f.status)) continue;
+    const l = f.p.lens, cur = best.get(l);
+    if (f.p.mvp) {
+      const at = runAt(f.p.run_id) || f.p.created_at;
+      if (cur?.from !== 'mvp' || at > (mvpAt.get(l) ?? '')) { best.set(l, { lens: l, f, from: 'mvp' }); mvpAt.set(l, at); }
+    } else if (cur?.from !== 'mvp' && (!cur || byWorth(f.w, cur.f.w) < 0)) best.set(l, { lens: l, f, from: 'top-score' }); // a pre-v5 lens: its top estimate, shown est.
   }
-  return out;
+  const rank = new Map(order.map((id, i) => [id, i]));
+  return [...best.values()].sort((a, b) => (rank.get(a.lens) ?? 1e6) - (rank.get(b.lens) ?? 1e6) || (a.lens < b.lens ? -1 : 1));
 }
-const byRank = (a: Finding, b: Finding) => b.ev - a.ev || (a.p.created_at < b.p.created_at ? -1 : a.p.created_at > b.p.created_at ? 1 : 0) || (a.p.id < b.p.id ? -1 : 1);
 
 /** The ledger's page-level state: survives a view switch and the ledger being closed and opened again. */
 export interface LedgerUi {
   sel: ReadonlySet<string>;
   lens: ReadonlySet<string>;
   status: ReadonlySet<ProposalStatus>;
+  /** In packs: the outcome chips on the base branch (Held / Short / Not measured since; empty: every item). */
+  main: ReadonlySet<MainOutcome>;
   /** Feature slugs: the matrix's "Table" drill-down (empty: every feature). */
   feat: ReadonlySet<string>;
   q: string;
@@ -163,27 +179,36 @@ export interface LedgerUi {
   wave: string | null;
   /** The wave composer: closed (null), or open for a new wave over `ids` / for editing wave `edit`. */
   composer: ComposerAsk | null;
+  /** v5: the lenses whose reserve findings are expanded in the backlog (collapsed under "n in reserve" otherwise). */
+  reserve: ReadonlySet<string>;
 }
 /** What the wave composer opened for: `edit` the draft wave being changed (absent: a new wave), `ids` the findings it starts with. */
 export interface ComposerAsk { edit?: string; ids: readonly string[] }
 /** A decision that needs a note before it is sent (src/lib/train/rules.ts noteRequired). */
-export interface NoteAsk { ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare' }
+export interface NoteAsk {
+  ids: readonly string[]; decision: Exclude<TriageDecision, 'reopen'>; at: 'bar' | 'compare';
+  /** What the note starts from, editable: R on an item short of expected on the base branch writes its evidence. */
+  draft?: string;
+}
 /** A triage decision the store answered: the items it moved and how (a reopen is not one: it clears `last`). */
 export interface LastDecision { ids: readonly string[]; decision: Exclude<TriageResult['decision'], 'reopened'> }
 export type LedgerScope = 'packs' | 'backlog';
 export type CompareTheme = 'light' | 'dark' | 'both';
 /** A compare screen mode: one of train/keymap.ts COMPARE_MODES (side, slider, blink, change map, changed area). */
 export type CompareMode = (typeof COMPARE_MODES)[number]['value'];
-export interface CompareView { theme: CompareTheme; mode: CompareMode }
+/** What the screens set the after against: the item's base, or (a rebuild) the previous attempt's after (compare/attempts.ts). */
+export type CompareAgainst = 'base' | 'prev';
+/** `against` is optional, base by default: a 'prev' carried to a first build shows its base pairs and is kept for the next rebuild. */
+export interface CompareView { theme: CompareTheme; mode: CompareMode; against?: CompareAgainst }
 export const EMPTY_UI: LedgerUi = {
-  sel: new Set(), lens: new Set(), status: new Set(['proposed']), feat: new Set(), q: '', focus: null,
-  scope: 'backlog', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null,
+  sel: new Set(), lens: new Set(), status: new Set(['proposed']), main: new Set(), feat: new Set(), q: '', focus: null,
+  scope: 'backlog', open: null, cmp: { theme: 'light', mode: 'side' }, wide: false, pending: new Map(), intents: new Map(), note: null, last: null, wave: null, composer: null, reserve: new Set(),
 };
 export type SetUi = (f: (u: LedgerUi) => LedgerUi) => void;
 /** The page state in another scope: its per-scope fields start over (the last decision too: Undo never reaches into a
  *  scope the person left). The same object when the scope is already that one. */
 export const switchScope = (u: LedgerUi, scope: LedgerScope): LedgerUi =>
-  u.scope === scope ? u : { ...u, scope, status: new Set(), focus: null, open: null, wide: false, note: null, last: null, composer: null };
+  u.scope === scope ? u : { ...u, scope, status: new Set(), main: new Set(), focus: null, open: null, wide: false, note: null, last: null, composer: null };
 
 // The page state, one per tab: a module store, so the ledger (desktop or phone), the Lenses panel and the plan's
 // right-click menu read the same selection. `product` resets it when another product is shown.
@@ -222,8 +247,15 @@ export interface Ledger {
   /** Every finding, merged, with the optimistic overlay. */
   all: readonly Finding[];
   byId: ReadonlyMap<string, Finding>;
-  /** After the lens, status, feature and text filters, in triage order (status, then rank). */
+  /** After the lens, status, feature and text filters, in triage order (tier, status, then worth): the ranked findings, then
+   *  each EXPANDED reserve group (a collapsed one's findings are not rows: J/K and selections skip them). */
   rows: readonly Finding[];
+  /** v5: per lens, its reserve findings under the filters (lens column order). */
+  reserve: readonly ReserveGroup[];
+  /** Expand or collapse a lens's reserve findings. */
+  toggleReserve(lens: string): void;
+  /** v5: one MVP per lens with an open finding (see lensMvps), lens column order. */
+  mvps: readonly LensMvp[];
   lenses: readonly LensCol[];
   counts: Readonly<Record<ProposalStatus, number>>;
   /** Selected findings that can be dispatched. */
@@ -251,6 +283,9 @@ export interface Ledger {
   setFocus(id: string | null): void;
   /** Dispatch `ids` (default: the selection) as one execute run. Only the dispatchable ones go. */
   dispatchIds(ids?: readonly string[]): Promise<void>;
+  /** Approve one proposed finding for later (no job queued) or decline it with a reason (final), through proposals/[id];
+   *  in flight on the intent store until the store shows the row moved. Resolves true when the store took it. */
+  decideOne(id: string, decision: 'approve' | 'decline', note?: string): Promise<boolean>;
   /** The matrix's drill-down: the triage table, showing only this feature's findings (the other filters stay). */
   showInTable(slug: string): void;
   /** Switch to the drawing set and open the finding's feature on its lens's tab. */
@@ -281,8 +316,11 @@ export function lensMeta(P: ReturnType<typeof useEngine>['M']['P'], id: string):
   return d ? { id, short: d.short, name: d.name, glyph: d.glyph, enabled: d.i >= 0 } : { id, short: id.replace(/^.*\./, '').slice(0, 4).toUpperCase(), name: id, glyph: null, enabled: false };
 }
 const tidy = (s: string) => s.toLowerCase();
+/** An item's outcome on the base branch is one of the chips pressed (an item not on it is none of them). */
+const onMain = (on: ReadonlySet<MainOutcome>, o: MainOutcome | undefined) => o !== undefined && on.has(o);
 
-export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
+/** `mainOf`: each pack item's outcome on the base branch (train/onMain.ts), for the In packs outcome chips' filter. */
+export function useLedger(ui: LedgerUi, set: SetUi, mainOf?: ReadonlyMap<string, MainOutcome>): Ledger {
   const E = useEngine(), M = E.M, P = M.P, ctx = useScanCtx();
   const src = useFindings();
   // the dispatches in flight live in the module store (they outlive this component); `busy` only labels the buttons
@@ -313,13 +351,19 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
     return m;
   }, [src.jobs]);
 
+  // what each directed run was looking for. Every scan delta hands over a new `runs` array, so the map is rebuilt only when
+  // the focuses themselves changed (compared as a string): a new map would remake every Finding and re-render every memoised row
+  const focusKey = useMemo(() => JSON.stringify((src.scan?.runs ?? []).flatMap((r) => { const f = focusOfRunNote(r.note); return f ? [[r.id, f.metric, f.note]] : []; })), [src.scan?.runs]);
+  const focusOf = useMemo(() => new Map((JSON.parse(focusKey) as [string, string, string][]).map(([id, metric, note]) => [id, { metric, note }])), [focusKey]);
+
   const all = useMemo<Finding[]>(() => {
-    const ev = rankValue(src.proposals);
+    const est = estValue(src.proposals);
     return src.proposals.map((p) => {
-      const f = feats.get(p.feature), it = intents.get(p.id), status = overlay(p.status, it), job = jobOf.get(p.id) ?? null;
-      return { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, ev: ev.get(p.id) ?? 0, can: canBuild(status, !!job) && !inFlight(p.status, it) };
+      const f = feats.get(p.feature), it = intents.get(p.id), status = overlay(p.status, it), job = jobOf.get(p.id) ?? null, focus = focusOf.get(p.run_id);
+      const row: Finding = { p, status, fid: f?.fid ?? null, fname: f?.name ?? p.feature, domain: f?.domain ?? '', fi: f?.i ?? 1e6, job, w: worthOf(p, est), can: canBuild(status, !!job) && !inFlight(p.status, it) };
+      return focus ? { ...row, focus } : row;
     });
-  }, [src.proposals, feats, intents, jobOf]);
+  }, [src.proposals, feats, intents, jobOf, focusOf]);
   const byId = useMemo(() => new Map(all.map((f) => [f.p.id, f])), [all]);
 
   const lenses = useMemo<LensCol[]>(() => {
@@ -337,18 +381,32 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   }, [all]);
 
   const q = tidy(ui.q.trim());
-  const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? '', f.p.pack_id ?? ''].join(' ')).includes(q), [q, P]);
-  const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature)) && textOk(f),
-    [ui.lens, ui.status, ui.feat, textOk]);
+  const textOk = useCallback((f: Finding) => !q || tidy([f.p.title, f.fname, f.p.feature, f.p.lens, P.LENS[f.p.lens]?.name ?? '', f.p.standard, f.p.id, f.p.metric ?? '', f.p.pack_id ?? '', f.focus?.note ?? ''].join(' ')).includes(q), [q, P]);
+  const keep = useCallback((f: Finding) => (!ui.lens.size || ui.lens.has(f.p.lens)) && (!ui.status.size || ui.status.has(f.status)) && (!ui.feat.size || ui.feat.has(f.p.feature))
+    && (!ui.main.size || onMain(ui.main, mainOf?.get(f.p.id))) && textOk(f),
+    [ui.lens, ui.status, ui.main, mainOf, ui.feat, textOk]);
   const rank = useMemo(() => new Map(STATUSES.map((s, i) => [s, i])), []);
   // the selected wave tab keeps its findings only (a wave the list does not have, yet or any more, filters nothing)
   const waveIds = useMemo(() => {
     const w = ui.wave ? waves.waves.find((x) => x.id === ui.wave) : undefined;
     return w ? new Set(w.packages.flatMap((p) => p.ids)) : null;
   }, [ui.wave, waves.waves]);
-  const rows = useMemo(() => all.filter((f) => keep(f) && (!waveIds || waveIds.has(f.p.id)))
-    // tier first (untriaged after tier 3, contract v4), then status rank, then value per effort
-    .sort((a, b) => tierRank(a.p.tier) - tierRank(b.p.tier) || (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b)), [all, keep, rank, waveIds]);
+  // tier first (untriaged after tier 3, contract v4; stop-ship stays on top, a documented deviation from "sort by score"), then
+  // status rank (open first: a v4 store orders exactly as before), then worth: band, the stored score, the estimate, unscored
+  const { rows, reserve } = useMemo(() => {
+    const kept = all.filter((f) => keep(f) && (!waveIds || waveIds.has(f.p.id)))
+      .sort((a, b) => tierRank(a.p.tier) - tierRank(b.p.tier) || (rank.get(a.status) ?? STATUSES.length) - (rank.get(b.status) ?? STATUSES.length) || byRank(a, b));
+    const ranked: Finding[] = [], by = new Map<string, Finding[]>();
+    for (const f of kept) if (f.w.band === 'reserve') { let a = by.get(f.p.lens); if (!a) by.set(f.p.lens, (a = [])); a.push(f); } else ranked.push(f);
+    const at = new Map(P.lenses.map((l, i) => [l.id, i]));
+    const reserve = [...by.entries()].sort(([a], [b]) => (at.get(a) ?? 1e6) - (at.get(b) ?? 1e6) || (a < b ? -1 : 1))
+      .map(([lens, items]) => ({ lens, items, open: ui.reserve.has(lens) }));
+    for (const g of reserve) if (g.open) ranked.push(...g.items);
+    return { rows: ranked, reserve };
+  }, [all, keep, rank, waveIds, P, ui.reserve]);
+  const runAt = useMemo(() => { const m = new Map((src.scan?.runs ?? []).map((r) => [r.id, r.started_at])); return (id: string) => m.get(id) ?? ''; }, [src.scan?.runs]);
+  const mvps = useMemo(() => lensMvps(all, P.lenses.map((l) => l.id), runAt), [all, P, runAt]);
+  const toggleReserve = useCallback((lens: string) => set((u) => { const s = new Set(u.reserve); if (!s.delete(lens)) s.add(lens); return { ...u, reserve: s }; }), [set]);
 
   // the packs, oldest first (rules.ts byPackAge); a pack's items in created order (store.mjs `proposals --pack`), the kept ones beside them
   const packList = src.scan?.packs;
@@ -403,9 +461,9 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
 
   // one send over the intent store: paint `ids` (each reads approved and cannot be sent again while in flight), arm the
   // bound, and hand back the withdrawal (compare-and-swap: only this send's entries the store has not moved, or `only`)
-  const sendIntent = useCallback((ids: readonly string[]) => {
+  const sendIntent = useCallback((ids: readonly string[], shows: ProposalStatus = 'approved') => {
     const attempt = nextAttempt();
-    setLedgerUi((u) => ({ ...u, intents: paint(u.intents, ids, statusRef.current, { attempt, at: Date.now(), shows: 'approved' }) }));
+    setLedgerUi((u) => ({ ...u, intents: paint(u.intents, ids, statusRef.current, { attempt, at: Date.now(), shows }) }));
     setTimeout(() => {
       let expired: string[] = [];
       setLedgerUi((u) => {
@@ -449,6 +507,25 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
       setSending((n) => n - 1);
     }
   }, [ui.sel, byId, ctx, E, set, sendIntent]);
+
+  // one decision beside the brief: no job, the same in-flight rule as a dispatch (it shows approved or declined until the
+  // store says otherwise); a refusal withdraws it, and a 409 names what the row already is
+  const decideOne = useCallback(async (id: string, decision: 'approve' | 'decline', note?: string): Promise<boolean> => {
+    if (E.refuseReadOnly()) return false;
+    const f = byId.get(id);
+    if (!f || f.status !== 'proposed') { E.toast('Nothing to decide', (f ? id + ' is ' + f.status : 'no finding ' + id) + ': only a proposed finding takes approve or decline'); return false; }
+    const withdraw = sendIntent([id], decision === 'approve' ? 'approved' : 'declined');
+    try {
+      const p = await decideFinding(ctx, id, note === undefined ? { decision } : { decision, note });
+      E.toast(decision === 'approve' ? 'Approved for later' : 'Declined (final)', id + (decision === 'approve' ? ': no build queued; D dispatches it' : note ? ': ' + note : '') + (p.decided_by ? ' · ' + p.decided_by : ''));
+      return true;
+    } catch (err) {
+      withdraw();
+      const e = err as Error & { status?: number; proposal?: Proposal };
+      E.toast(decision === 'approve' ? 'Not approved' : 'Not declined', e.status === 409 && e.proposal ? id + ' is already ' + e.proposal.status : e.message);
+      return false;
+    }
+  }, [byId, ctx, E, sendIntent]);
 
   const waveTags = useMemo(() => {
     const byWave = new Map(waves.waves.map((w) => [w.id, w]));
@@ -508,7 +585,7 @@ export function useLedger(ui: LedgerUi, set: SetUi): Ledger {
   // the scopes' status chips differ, so a status filter does not cross a scope switch; focus and compare start over
   const setScope = useCallback((scope: LedgerScope) => set((u) => switchScope(u, scope)), [set]);
 
-  return { ui, set, all, byId, rows, lenses, counts, ready, effort, busy, writes, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
+  return { ui, set, all, byId, rows, reserve, toggleReserve, mvps, lenses, counts, ready, effort, busy, writes, scan: moveScan, packs, items, chips, scoped, setScope, toggle, select, selectWhere, clear, setFocus, dispatchIds, decideOne, showInTable, openFeature, move, order, waves, waveTag, waveReady, waveTaken, openComposer, closeComposer, showWave, dispatchWave };
 }
 
 // ------------------------------------------------------------------------------------------- the matrix's rows

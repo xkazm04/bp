@@ -8,6 +8,7 @@
 import { register, createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
+import { harness } from './lib/expect.ts';
 
 const ROOT = path.resolve(import.meta.dirname, '..'), SRC = path.join(ROOT, 'apps/web/src');
 register('./overlays-loader.mjs', { parentURL: import.meta.url, data: { src: SRC, root: ROOT, mutate: JSON.parse(process.env.BP_OVERLAYS_MUTATE || '[]') } });
@@ -27,9 +28,7 @@ const O = await imp('components/Overlays.tsx');
 const { agentAlpha } = await imp('engine/render/dynamic.ts');
 const { keyDotColor } = await imp('engine/render/keyplan.ts');
 
-let held = 0;
-const failures: string[] = [];
-const expect = (ok: boolean, what: string) => { if (ok) held++; else failures.push(what); };
+const { expect, done } = harness('check-sim-blockers');
 
 // 1. before: the raw feed's blockedBy against the map's feature ids; after: the sim's blk
 const M1 = buildModel(1, () => 0, null), sim1 = M1.sim, P1 = M1.P;
@@ -98,5 +97,4 @@ const pausedFill = keyDotColor(th, { status: 'working', paused: true });
 expect(pausedFill !== th.red && pausedFill.startsWith('INK'), `paused fill is ${pausedFill}`);
 expect(keyDotColor(th, { status: 'blocked', paused: false }) === th.red && keyDotColor(th, { status: 'working', paused: false }) === th.mint, 'key plan colours for blocked/working changed');
 
-if (failures.length) { console.error(`check-sim-blockers: ${failures.length} failed (${held} held)`); for (const f of failures) console.error('  ' + f); process.exit(1); }
-console.log(`check-sim-blockers: ${held} expectations held`);
+done();

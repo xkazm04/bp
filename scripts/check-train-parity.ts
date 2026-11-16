@@ -74,10 +74,15 @@ const skips = (l: unknown) => (Array.isArray(l) ? l.map((s: Any) => ({ id: s.id,
 /** A triage refusal: the Error's text (client.ts makes it the route's `error`), what moved and what was skipped. */
 const triageRefusal = (o: Out) => (o.ok ? { ok: true, triaged: o.value?.triaged } : { status: o.status, error: o.message, triaged: o.body?.triaged, skipped: skips(o.body?.skipped) });
 const pkg = (name: string, ids: string[], model = 'opus', effort = 'high') => ({ name, model, effort, ids });
-const FINDINGS = ['q1', 'q2', 'q3', 'q4'];
+const FINDINGS = ['q1', 'q2', 'q3', 'q4', 'q5', 'q6'];
+/** What the ledger's E measures in the rows below: two design items on two features (one twice) and a performance item. */
+const MEASURE = [{ lens: 'design', feature: 'book-a-class' }, { lens: 'performance', feature: 'drag-and-drop-timetable-editor' }, { lens: 'design', feature: 'card-payments' }, { lens: 'design', feature: 'book-a-class' }];
 
+/** The finished release's six items as its outcome watch freezes them (target, direction, unresolved), sorted. */
+const WATCHED: [number | null, string | null, boolean][] = [[1, 'down', false], [1, 'down', false], [1, 'down', false], [1, 'down', false], [70, 'down', false], [78, 'down', false]];
 const MAIN: Row[] = [
   { name: 'listWaves at the start', call: (A, c) => A.listWaves(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
+  { name: 'readLandings before any merge', call: (A, c) => A.readLandings(c), see: (o) => (o.ok ? { ok: true, state: o.value.state, ref: o.value.ref, n: Object.keys(o.value.items ?? {}).length } : refusal(o)), want: () => ({ ok: true, state: 'known', ref: 'main', n: 0 }) },
   { name: 'suggestRelease with no tag', call: (A, c) => A.suggestRelease(c), see: (o) => (o.ok ? { ok: true, version: o.value.version, from: o.value.from } : refusal(o)), want: () => ({ ok: true, version: '0.1.0', from: 'none' }) },
   { name: 'triageItems accept a failed item with no note', needs: (r) => ({ proposals: [r.id('des1-waiver')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-waiver')], 'accept'),
     see: triageRefusal, want: (r) => ({ status: 409, error: 'nothing moved', triaged: [], skipped: [{ id: r.id('des1-waiver'), status: 'failed', reason: 'note-required' }] }) },
@@ -88,12 +93,20 @@ const MAIN: Row[] = [
     see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'createRelease 0.1.0', call: (A, c) => A.createRelease(c, '0.1.0'),
     see: (o) => (o.ok ? { ok: true, id: o.value.release.id, status: o.value.release.status, added: o.value.added } : refusal(o)), want: (r) => ({ ok: true, id: 'rel-0.1.0', status: 'draft', added: [r.id('des1-booking')] }) },
+  { name: 'watchRelease on a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', true), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'triageItems accept a second item', needs: (r) => ({ proposals: [r.id('des1-waitlist')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-waitlist')], 'accept'),
     see: (o) => (o.ok ? { ok: true, triaged: o.value.triaged } : refusal(o)), want: (r) => ({ ok: true, triaged: [r.id('des1-waitlist')] }) },
   { name: 'createRelease of a version that has a release', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.createRelease(c, '0.1.0'), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'buildRelease bad id', call: (A, c) => A.buildRelease(c, 'rel-x;calc'), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
   { name: 'buildRelease unknown release', call: (A, c) => A.buildRelease(c, 'rel-9.9.9'), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
   { name: 'finishRelease of a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.finishRelease(c, 'rel-0.1.0'), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  // the tag step (lens-scan --landed): the route's and the sim's refusals, and its pre-flight (check-release-tag runs it)
+  { name: 'tagRelease bad id', call: (A, c) => A.tagRelease(c, 'rel-x;calc'), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
+  { name: 'tagRelease unknown release', call: (A, c) => A.tagRelease(c, 'rel-9.9.9'), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'tagRelease with gh signed out', ghOut: true, needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.tagRelease(c, 'rel-0.1.0'),
+    see: (o) => (o.ok ? { ok: true } : { status: o.status, error: o.message }), want: () => ({ status: 412, error: 'gh not authenticated' }) },
+  { name: 'preflightRelease tag of a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.preflightRelease(c, 'rel-0.1.0', 'tag'),
+    see: (o) => (o.ok ? { ok: true, ready: o.value.ready } : refusal(o)), want: () => ({ ok: true, ready: true }) },
   // the build's pre-flight: ready with nothing queued on both planes (the live dry run never asks gh, so no ghOut row)
   { name: 'preflightRelease of a draft', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.preflightRelease(c, 'rel-0.1.0'),
     see: (o) => (o.ok ? { ok: true, ready: o.value.ready } : refusal(o)), want: () => ({ ok: true, ready: true }) },
@@ -116,9 +129,47 @@ const MAIN: Row[] = [
     see: (o) => (o.ok ? { ok: true, jobs: o.value.jobs.length, status: o.value.wave.status } : refusal(o)), want: () => ({ ok: true, jobs: 2, status: 'dispatched' }) },
   { name: 'updateWave of a dispatched wave', needs: (r) => ({ waves: [r.wave.first] }), call: (A, c, r) => A.updateWave(c, r.wave.first, { name: 'z' }), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
   { name: 'deleteWave of a dispatched wave', needs: (r) => ({ waves: [r.wave.first] }), call: (A, c, r) => A.deleteWave(c, r.wave.first), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  // the ledger's E (measure the selection now): one selection scan per lens, over that lens's items' features, each once
+  { name: 'measureItems over two lenses', call: (A, c) => A.measureItems(c, MEASURE),
+    see: (o) => (o.ok ? { ok: true, refused: o.value.refused.length, jobs: o.value.jobs.map((j: Any) => ({ kind: j.kind, lens: j.lens, scope: j.scope.kind, features: j.scope.features })).sort((a: Any, b: Any) => (a.lens < b.lens ? -1 : 1)) } : refusal(o)),
+    want: () => ({ ok: true, refused: 0, jobs: [{ kind: 'measure', lens: 'design', scope: 'selection', features: ['book-a-class', 'card-payments'] }, { kind: 'measure', lens: 'performance', scope: 'selection', features: ['drag-and-drop-timetable-editor'] }] }) },
+  { name: 'measureItems with nothing selected', call: (A, c) => A.measureItems(c, []), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
+  // the Backlog's Y and N beside the brief (proposals/[id]): approve for later, decline with a reason; signed, no job
+  { name: 'decideFinding approve for later', needs: () => ({ proposals: ['q5'] }), call: (A, c) => A.decideFinding(c, 'q5', { decision: 'approve' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status, signed: !!o.value.decided_by, job: o.value.status === 'executing' } : refusal(o)), want: () => ({ ok: true, status: 'approved', signed: true, job: false }) },
+  { name: 'decideFinding decline with a reason', needs: () => ({ proposals: ['q6'] }), call: (A, c) => A.decideFinding(c, 'q6', { decision: 'decline', note: 'Not this quarter.' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status, note: o.value.decision_note, signed: !!o.value.decided_by } : refusal(o)), want: () => ({ ok: true, status: 'declined', note: 'Not this quarter.', signed: true }) },
+  { name: 'decideFinding of a decided finding', needs: () => ({ proposals: ['q5'] }), call: (A, c) => A.decideFinding(c, 'q5', { decision: 'decline', note: 'x' }),
+    see: (o) => (o.ok ? { ok: true } : { status: o.status, error: !!o.message }), want: () => ({ status: 409, error: true }) },
+  { name: 'decideFinding unknown finding', call: (A, c) => A.decideFinding(c, 'q-none', { decision: 'approve' }), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  // the build forecast (the Dispatch labels): a dry dispatch and a dry wave dispatch through actions.ts, the same answer on both
+  // planes, nothing written (the decide row after it finds q4 still proposed)
+  { name: 'createWave a second draft', needs: () => ({ proposals: ['q4', 'q5'] }), call: (A, c) => A.createWave(c, { name: 'Second', packages: [pkg('Next', ['q4', 'q5'], 'sonnet', 'medium')] }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status } : refusal(o)), want: () => ({ ok: true, status: 'draft' }), keep: (o, r) => { if (o.ok) r.wave.second = o.value.id; } },
+  { name: 'forecastWave the second draft', needs: (r) => ({ waves: [r.wave.second] }), call: (A, c, r) => A.forecastWave(c, r.wave.second),
+    see: (o) => (o.ok ? { ok: true, dry: o.value.dry, status: o.value.wave.status, jobs: o.value.jobs, packages: o.value.packages } : refusal(o)),
+    want: () => ({ ok: true, dry: true, status: 'draft', jobs: 1, packages: [{ id: 'pk-1', model: 'sonnet', effort: 'medium', approve: ['q4'], take: ['q4', 'q5'], skipped: [], jobs: 1 }] }) },
+  { name: 'forecastWave unknown wave', call: (A, c) => A.forecastWave(c, 'w-none'), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'forecastDispatch over proposed, approved and declined', needs: () => ({ proposals: ['q4', 'q5', 'q6'] }), call: (A, c) => A.forecastDispatch(c, ['q4', 'q5', 'q6']),
+    see: (o) => (o.ok ? { ok: true, dry: o.value.dry, approve: o.value.approve, take: o.value.take, skipped: skips(o.value.skipped), jobs: o.value.jobs } : refusal(o)),
+    want: () => ({ ok: true, dry: true, approve: ['q4'], take: ['q4', 'q5'], skipped: [{ id: 'q6', status: 'declined' }], jobs: 1 }) },
+  { name: 'forecastDispatch of nothing buildable', needs: () => ({ proposals: ['q6'] }), call: (A, c) => A.forecastDispatch(c, ['q6']), see: (o) => refusal(o), want: () => ({ status: 409, error: true }) },
+  { name: 'decideFinding after the forecasts: q4 is still proposed', needs: () => ({ proposals: ['q4'] }), call: (A, c) => A.decideFinding(c, 'q4', { decision: 'approve' }),
+    see: (o) => (o.ok ? { ok: true, status: o.value.status } : refusal(o)), want: () => ({ ok: true, status: 'approved' }) },
 ];
 // the end of the train: every pack closed, des1-card descoped in closed k-des-1 (store.mjs refuses its reopen: pack-closed)
 const TAIL: Row[] = [
+  // the outcome watch (train/watch.ts) on the finished release: what History judges is frozen here, the same on both planes
+  { name: 'readWatches before any', call: (A, c) => A.readWatches(c), see: (o) => (o.ok ? { ok: true, n: o.value.length } : refusal(o)), want: () => ({ ok: true, n: 0 }) },
+  { name: 'watchRelease bad id', call: (A, c) => A.watchRelease(c, 'rel-x;calc', true), see: (o) => refusal(o), want: () => ({ status: 400, error: true }) },
+  { name: 'watchRelease unknown release', call: (A, c) => A.watchRelease(c, 'rel-9.9.9', true), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'watchRelease off with no watch', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', false), see: (o) => refusal(o), want: () => ({ status: 404, error: true }) },
+  { name: 'watchRelease on the finished release', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', true),
+    see: (o) => (o.ok ? { ok: true, release: o.value.release, on: !o.value.off_at, days: o.value.checkpoints.map((x: Any) => x.day), items: o.value.items.map((x: Any) => [x.target ?? null, x.better ?? null, !!x.unresolved]).sort((a: Any, b: Any) => (json(a) < json(b) ? -1 : 1)) } : refusal(o)),
+    want: () => ({ ok: true, release: 'rel-0.1.0', on: true, days: [1, 7, 30], items: WATCHED }) },
+  { name: 'readWatches after enabling', call: (A, c) => A.readWatches(c), see: (o) => (o.ok ? { ok: true, n: o.value.length, jobs: o.value.flatMap((w: Any) => w.checkpoints.flatMap((x: Any) => x.jobs ?? [])).length } : refusal(o)), want: () => ({ ok: true, n: 1, jobs: 0 }) },
+  { name: 'watchRelease off keeps the record', needs: () => ({ releases: ['rel-0.1.0'] }), call: (A, c) => A.watchRelease(c, 'rel-0.1.0', false),
+    see: (o) => (o.ok ? { ok: true, off: !!o.value.off_at, items: o.value.items.length } : refusal(o)), want: () => ({ ok: true, off: true, items: WATCHED.length }) },
   { name: 'triageItems reopen in a closed pack', needs: (r) => ({ proposals: [r.id('des1-card')] }), call: (A, c, r) => A.triageItems(c, [r.id('des1-card')], 'reopen'),
     see: triageRefusal, want: (r) => ({ status: 409, error: 'nothing moved', triaged: [], skipped: [{ id: r.id('des1-card'), status: 'descoped', reason: 'pack-closed' }] }) },
 ];

@@ -6,6 +6,9 @@
 //   generated/ue/BpSchema.h         Unreal USTRUCTs with UPROPERTY fields, named as the JSON keys, so the VR client's
 //                                   FJsonObjectConverter::JsonObjectToUStruct fills them with no hand-written parsing
 //   generated/ue/BpSchemaFixups.h   BpSchema::FixUp and FromJson: fill the <Key>_ fields the converter cannot
+//   generated/ue/BpSchemaVocab.h    BpVocab::<Struct>::<Field>::<Value>: every struct field holding a string enum
+//                                   (inline enums too) as TEXT constants, so BpLink compares against the schema's
+//                                   values, not hand-typed literals (scripts/check-ue-vocab.mjs refuses a new one)
 //   packages/core/src/standard/schema-vocab.ts
 //                                   the vocabularies as consts: every named string enum, the scope kinds, the lens
 //                                   manifest's keys, the wave bounds and the proposal id pattern. Unlike the TS types,
@@ -30,7 +33,7 @@
 //   string-or-object, untyped items   FString <Key>_: the value's JSON text, by FixUp  the precise type
 // Optional and required fields look the same in C++ (a missing key keeps the default); the TS side marks optional.
 //
-// Run: node packages/schema/generate.mjs           write the four files
+// Run: node packages/schema/generate.mjs           write the five files
 //      node packages/schema/generate.mjs --check   exit 1 when a committed file differs from a fresh generation
 //                                                  (stale), when a schema field is neither mapped nor copied by
 //                                                  FixUp, or when types.ts disagrees with the generated types; each
@@ -49,6 +52,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ROOTS as TABLE, HAND_TS, pairingProblems, schemaAjv } from './roots.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_DIR = path.join(HERE, 'schema');
@@ -56,15 +60,9 @@ const OUT_TS = path.join(HERE, 'generated/ts/app-structure.ts');
 const OUT_UE = path.join(HERE, 'generated/ue/BpSchema.h');
 const OUT_FIX = path.join(HERE, 'generated/ue/BpSchemaFixups.h');
 const OUT_VOCAB = path.join(HERE, '../core/src/standard/schema-vocab.ts');
-const HAND_TS = 'packages/core/src/standard/types.ts'; // the hand-written types the code uses; parity.mjs compares
-const ROOTS = [
-  ['app-structure-3.schema.json', 'AppStructure'],
-  ['app-structure-event-3.schema.json', 'AppStructureEvent'],
-  ['lens-manifest-1.schema.json', 'LensManifest'],
-  ['plan-1.schema.json', 'Plan'],
-  ['structure-envelope-1.schema.json', 'StructureEnvelope'],
-  ['scan-wire-1.schema.json', 'ScanWire'],
-];
+const OUT_UE_VOCAB = path.join(HERE, 'generated/ue/BpSchemaVocab.h');
+// The roots, one row per schema file, and the hand-written types.ts parity.mjs compares: roots.mjs, the one table.
+const ROOTS = TABLE.map((row) => [row.file, row.root, row.reads ?? []]);
 const CPP_KEYWORDS = new Set(('alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do double dynamic_cast else enum explicit export extern false float for friend goto if inline int long mutable namespace new noexcept not not_eq nullptr operator or or_eq private protected public register reinterpret_cast requires return short signed sizeof static static_assert static_cast struct switch template this thread_local throw true try typedef typeid typename union unsigned using virtual void volatile wchar_t while xor xor_eq'
   + ' check verify ensure TEXT').split(' ')); // the last four are Unreal macros
 
@@ -147,7 +145,10 @@ export function model(schemas) {
     buildStruct(schemas[file], file, name);
     roots.push(name);
   }
-  return { structs, roots, schemas };
+  // the structs a client reads on their own (ROOTS' third element): each must exist, or the name is a typo
+  // (a root read as an empty stub - a schema new since a git ref, see --since - makes none of them yet)
+  const readable = ROOTS.flatMap(([file, , reads = []]) => (schemas[file].$defs ? reads : []).filter((n) => { if (!structs.has(n)) throw new Error(`${file}: ROOTS reads ${n}, which the schema does not make`); return true; }));
+  return { structs, roots, readable, schemas };
 }
 
 // ---------------------------------------------------------------- TypeScript
@@ -196,6 +197,8 @@ const VOCAB_ROWS = [
   ['WAVE_NAME_MAX_LENGTH', 'scan-wire-1.schema.json', '/$defs/waveName/maxLength', 'number'],
   ['WAVE_PACKAGES_MAX_ITEMS', 'scan-wire-1.schema.json', '/$defs/wave/properties/packages/maxItems', 'number'],
   ['PROPOSAL_ID_PATTERN', 'scan-wire-1.schema.json', '/$defs/proposalId/pattern', 'pattern'],
+  ['BRIEF_MATCHES', 'decision-brief-1.schema.json', '/$defs/briefDecided/properties/match/enum', 'list'],
+  ['BUILDUP_PHASES', 'scan-wire-1.schema.json', '/$defs/scanJob/properties/adopt_phase/enum', 'list'],
 ];
 const constCase = (s) => s.replace(/([a-z0-9])([A-Z])/g, '$1_$2').replace(/[^A-Za-z0-9]+/g, '_').toUpperCase();
 const plural = (s) => (/(S|X|SH|CH)$/.test(s) ? s + 'ES' : /[^AEIOU]Y$/.test(s) ? s.slice(0, -1) + 'IES' : s + 'S');
@@ -226,6 +229,64 @@ export function emitVocab(m) {
     '// hand-typed second copy (scripts/check-schema-vocab.mjs). Pure and import-free.', ''];
   for (const r of rows) out.push(`/** ${r.from}${r.description ? ': ' + oneLine(r.description) : ''} */`, `export const ${r.name} = ${r.text};`);
   out.push('');
+  return out.join('\n');
+}
+
+// ---------------------------------------------------------------- Unreal: the vocabularies BpLink compares against
+// The names AllValues and NumValues sit beside the value constants of each field, so no value may fold onto them.
+const UE_VOCAB_RESERVED = new Set(['AllValues', 'NumValues']);
+/**
+ * Every struct field holding a string enum (two or more values; inline enums too, which emitVocab's named-$def rows
+ * skip), in model order: [{ struct, field, ns: 'BpVocab::<Struct>::<Field>', values, names: Map<value, constant> }].
+ * A value's C++ name is pascal(value) (a leading digit gets a V); two values of one field that fold to one name throw.
+ */
+export function ueVocab(m) {
+  const out = [], fields = new Map();
+  for (const st of m.structs.values()) for (const p of st.props) {
+    const vs = p.node.k === 'string' ? p.node.enum : null;
+    if (!vs || vs.length < 2) continue;
+    const ns = `BpVocab::${st.name}::${pascal(p.key)}`, names = new Map(), by = new Map();
+    if (fields.has(ns)) throw new Error(`${st.name}: fields ${fields.get(ns)} and ${p.key} both make ${ns}`);
+    fields.set(ns, p.key);
+    for (const v of vs) {
+      let n = pascal(v);
+      if (!n) throw new Error(`${st.name}.${p.key}: value ${JSON.stringify(v)} makes no C++ name`);
+      if (/^[0-9]/.test(n)) n = 'V' + n;
+      if (UE_VOCAB_RESERVED.has(n)) throw new Error(`${st.name}.${p.key}: value ${JSON.stringify(v)} makes ${n}, a name the header reserves`);
+      if (by.has(n)) throw new Error(`${st.name}.${p.key}: values ${JSON.stringify(by.get(n))} and ${JSON.stringify(v)} both make ${ns}::${n}`);
+      by.set(n, v); names.set(v, `${ns}::${n}`);
+    }
+    out.push({ struct: st.name, field: p.key, ns, values: [...vs], names });
+  }
+  return out;
+}
+const cxxString = (v) => JSON.stringify(v).replace(/\\u([0-9a-f]{4})/g, '\\x$1');
+/** BpSchemaVocab.h: plain C++ (no USTRUCT, so UHT never reads it), one namespace per enum field of ueVocab(m). */
+export function emitUeVocab(m) {
+  const out = ['// GENERATED by packages/schema/generate.mjs from packages/schema/schema/*.schema.json. Do not edit:',
+    '// change a schema and run `npm run schema:generate`; `npm run check:schema` fails while this file is stale.',
+    '//',
+    "// The schemas' string vocabularies for the VR client (apps/vr, module BpLink): one namespace per struct field of",
+    '// BpSchema.h that holds a string enum, BpVocab::<Struct>::<Field>::<Value>, so BpLink code compares',
+    '// `Wave.status == BpVocab::Wave::Status::Draft` instead of a hand-typed TEXT("draft"). A value the schema drops',
+    '// is a constant that disappears: its users stop compiling instead of comparing false in silence.',
+    '// AllValues lists a field\'s values in schema order, NumValues counts them. scripts/check-ue-vocab.mjs refuses a',
+    '// new raw literal on one of these fields in apps/vr/Source.',
+    '#pragma once', '', '#include "CoreMinimal.h"', '', 'namespace BpVocab', '{'];
+  let last = null;
+  for (const f of ueVocab(m)) {
+    if (f.struct !== last) {
+      if (last !== null) out.push('\t}', '');
+      out.push(`\t/** ${ueName(f.struct)} */`, `\tnamespace ${f.struct}`, '\t{');
+      last = f.struct;
+    } else out.push('');
+    out.push(`\t\t/** ${ueName(f.struct)}::${f.field}: one of ${f.values.join(', ')} */`, `\t\tnamespace ${pascal(f.field)}`, '\t\t{');
+    const consts = f.values.map((v) => f.names.get(v).split('::').pop());
+    f.values.forEach((v, i) => out.push(`\t\t\tinline constexpr const TCHAR* ${consts[i]} = TEXT(${cxxString(v)});`));
+    out.push(`\t\t\tinline constexpr const TCHAR* AllValues[] = { ${consts.join(', ')} };`, `\t\t\tinline constexpr int32 NumValues = ${f.values.length};`, '\t\t}');
+  }
+  if (last !== null) out.push('\t}');
+  out.push('}', '');
   return out.join('\n');
 }
 
@@ -353,7 +414,7 @@ export function emitUe(m) {
 /** BpSchemaFixups.h: BpSchema::FixUp per struct with a carried field (its own or a held struct's), and FromJson. */
 export function emitFixups(m) {
   const { need: work, holds } = fixupStructs(m);
-  const need = new Set([...work, ...m.roots]); // FromJson works for every root
+  const need = new Set([...work, ...m.roots, ...(m.readable ?? [])]); // FromJson works for every root and every struct read on its own
   const order = [...m.structs.keys()].filter((n) => need.has(n));
   const out = ['// GENERATED by packages/schema/generate.mjs from packages/schema/schema/*.schema.json. Do not edit:',
     '// change a schema and run `npm run schema:generate`; `npm run check:schema` fails while this file is stale, and',
@@ -596,9 +657,9 @@ export const readSchemas = () => Object.fromEntries(ROOTS.map(([f]) => {
   try { return [f, JSON.parse(fs.readFileSync(at, 'utf8'))]; }
   catch (e) { throw new Error(`packages/schema/schema/${f} is not readable as JSON: ${e.message}`, { cause: e }); }
 }));
-export const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), vocab: emitVocab(m), m }; };
+export const generate = (schemas) => { const m = model(schemas); return { ts: emitTs(m), ue: emitUe(m), fix: emitFixups(m), vocab: emitVocab(m), ueVocab: emitUeVocab(m), m }; };
 /** [path, fresh text] per output, in the order they are written and checked. */
-export const outputsOf = (fresh) => [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix], [OUT_VOCAB, fresh.vocab]];
+export const outputsOf = (fresh) => [[OUT_TS, fresh.ts], [OUT_UE, fresh.ue], [OUT_FIX, fresh.fix], [OUT_VOCAB, fresh.vocab], [OUT_UE_VOCAB, fresh.ueVocab]];
 const norm = (s) => s.replace(/\r\n/g, '\n');
 
 // The committed-vs-fresh comparison, one function: the --check path and its control both call it, so the control
@@ -656,27 +717,49 @@ if (isMain) {
     // which ignores what it does not understand.
     const ajvProblems = [];
     {
-      const Ajv2020Module = await import('ajv/dist/2020.js');
-      const Ajv2020 = Ajv2020Module.default?.default ?? Ajv2020Module.default ?? Ajv2020Module;
-      // strictRequired off for the same reason the validator turns it off: if/then branches require keys declared one level up
-      const ajv = new Ajv2020({ allErrors: true, strict: true, strictRequired: false, allowUnionTypes: true });
-      for (const [f] of ROOTS) try { ajv.addSchema(schemas[f], f); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
+      const ajv = schemaAjv({ schemas, problems: ajvProblems }); // the one ajv: roots.mjs, the options every validator uses
       for (const [f] of ROOTS) if (!ajvProblems.some((p) => p.startsWith(`${f}:`))) try { if (!ajv.getSchema(f)) ajvProblems.push(`${f}: ajv did not compile it`); } catch (e) { ajvProblems.push(`${f}: ${e.message}`); }
     }
     console.log(`${ajvProblems.length ? 'FAIL' : 'ok  '}  all ${ROOTS.length} schemas compile under ajv strict mode, every $ref resolving${ajvProblems.length ? ': ' + ajvProblems.slice(0, 4).join('; ') : ''}`);
     if (ajvProblems.length) failed++;
+    // ...and that ajv is the only one: a text constructing its own reads its options and key spelling again, as the five
+    // sites before roots.mjs did (check-decision-brief compiled without allowUnionTypes). The needle is spelled apart
+    // so this file is no hit of its own rule.
+    const AJV_NEEDLE = ['ajv', 'dist', '2020'].join('/'), AJV_HOME = 'packages/schema/roots.mjs';
+    const ajvSites = (texts) => [...texts].flatMap(([rel, text]) => (rel === AJV_HOME ? [] : text.split('\n').flatMap((l, i) => (l.includes(AJV_NEEDLE) ? [`${rel}:${i + 1}`] : []))));
+    const grepped = spawnSync('git', ['grep', '-l', '--untracked', '-F', '-e', AJV_NEEDLE], { cwd: path.join(HERE, '../..'), encoding: 'utf8' });
+    const ajvTexts = new Map((grepped.stdout ?? '').split(/\r?\n/).filter(Boolean).map((rel) => [rel, fs.readFileSync(path.join(HERE, '../..', rel), 'utf8')]));
+    const strays = grepped.status === 0 || grepped.status === 1 ? ajvSites(ajvTexts) : [`git grep exited ${grepped.status}`];
+    console.log(`${strays.length ? 'FAIL' : 'ok  '}  no text outside ${AJV_HOME} imports ajv's 2020 build (schemaAjv() is the one instance)${strays.length ? ': ' + strays.slice(0, 6).join(', ') : ''}`);
+    if (strays.length) failed++;
+    const seedRel = 'scripts/validate-structure.mjs', seedText = fs.readFileSync(path.join(HERE, '../..', seedRel), 'utf8').split('\n').filter((l) => !l.includes(AJV_NEEDLE));
+    const seededSites = ajvSites(new Map([[seedRel, [...seedText.slice(0, 12), `import Ajv2020Module from '${AJV_NEEDLE}.js';`, ...seedText.slice(12)].join('\n')], [AJV_HOME, `import x from '${AJV_NEEDLE}.js';`]]));
+    const seedCaught = seededSites.join() === `${seedRel}:13`;
+    console.log(`${seedCaught ? 'ok  ' : 'FAIL'}  control: a seeded ajv import in ${seedRel} is reported at ${seedRel}:13, and roots.mjs's own is not${seedCaught ? '' : ': got ' + (seededSites.join(', ') || 'nothing')}`);
+    if (!seedCaught) failed++;
+    // every struct a client reads (a root, a row's reads) is paired with a hand-written type in roots.mjs, or its row says
+    // why not: a pair dropped from the table cannot drop its compare and its probe in silence
+    const unpaired = pairingProblems(TABLE);
+    console.log(`${unpaired.length ? 'FAIL' : 'ok  '}  every root and read struct in roots.mjs has a hand-written pair or an unpaired reason (${TABLE.flatMap((r) => r.pairs).length} pairs, ${TABLE.filter((r) => r.unpaired).length} unpaired roots: ${TABLE.filter((r) => r.unpaired).map((r) => r.root).join(', ')})${unpaired.length ? ': ' + unpaired.join('; ') : ''}`);
+    if (unpaired.length) failed++;
+    const probeRow = pairingProblems([...TABLE, { file: 'zz-probe-1.schema.json', root: 'ZzProbe', pairs: [] }]).filter((p) => !unpaired.includes(p));
+    const rowCaught = probeRow.length === 1 && probeRow[0].startsWith('ZzProbe: a struct a client reads with no hand-written pair and no unpaired reason');
+    console.log(`${rowCaught ? 'ok  ' : 'FAIL'}  control: a table row whose root is neither paired nor unpaired is reported, naming it${rowCaught ? '' : ': got ' + (probeRow.join('; ') || 'nothing')}`);
+    if (!rowCaught) failed++;
     const read = (f) => (fs.existsSync(f) ? norm(fs.readFileSync(f, 'utf8')) : null);
     for (const r of staleReport(outputs, read, counts)) { console.log(r.line); if (!r.ok) failed++; }
-    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h and schema-vocab.ts, the
-    // same loop reports the first stale at that line and the other two missing, and the TS file (handed its fresh text) current
+    // self-proof: handed a BpSchemaFixups.h that differs at one line and a missing BpSchema.h, schema-vocab.ts and
+    // BpSchemaVocab.h, the same loop reports the first stale at that line and the other three missing, and the TS file
+    // (handed its fresh text) current
     {
       const fixLines = fresh.fix.split('\n'), at = fixLines.findIndex((l) => l.includes('CopyRaw(Json, TEXT("glyph")'));
-      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE || f === OUT_VOCAB ? null : fresh.ts);
+      const handed = (f) => (f === OUT_FIX ? fixLines.map((l, i) => (i === at ? l + ' zzStaleProbe' : l)).join('\n') : f === OUT_UE || f === OUT_VOCAB || f === OUT_UE_VOCAB ? null : fresh.ts);
       const got = staleReport(outputs, handed, counts).map((r) => r.line);
-      const proved = at >= 0 && got.length === 4 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
+      const proved = at >= 0 && got.length === 5 && got[0].startsWith('ok  ') && got[1].startsWith('FAIL') && got[1].includes(' is missing')
         && got[2].startsWith('FAIL') && got[2].includes(` is stale: run npm run schema:generate (first difference at line ${at + 1}:`)
-        && got[3] === 'FAIL  packages/core/src/standard/schema-vocab.ts is missing: run npm run schema:generate';
-      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h and schema-vocab.ts absent are missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
+        && got[3] === 'FAIL  packages/core/src/standard/schema-vocab.ts is missing: run npm run schema:generate'
+        && got[4] === 'FAIL  packages/schema/generated/ue/BpSchemaVocab.h is missing: run npm run schema:generate';
+      console.log(`${proved ? 'ok  ' : 'FAIL'}  self-proof: the stale loop reads what it is handed (BpSchemaFixups.h differing at line ${at + 1} is stale there, BpSchema.h, schema-vocab.ts and BpSchemaVocab.h absent are missing, the TS current)${proved ? '' : ': got ' + got.map((l) => l.slice(0, 120)).join(' / ')}`);
       if (!proved) failed++;
     }
     // every schema field is held by the committed headers: mapped under its key, or a <Key>_ field FixUp fills
@@ -721,7 +804,7 @@ if (isMain) {
     // fields agree.) An entry listed here that stops being a divergence fails below, so the list cannot outlive its fix.
     const KNOWN = [];
     const unexpected = parity.problems.filter((p) => !KNOWN.includes(p));
-    console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the structure, event, lens manifest, snapshot, job, proposal, wave and plan; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
+    console.log(`${unexpected.length ? 'FAIL' : 'ok  '}  ${HAND_TS} agrees with the generated types on every field, its optionality and its string enum, and packages/core/src/scan/ on the scan wire types and the plan (${parity.shapes} shapes and ${parity.enums} enum fields from the ${new Set(TABLE.flatMap((r) => r.pairs.map((p) => p.gen))).size} generated names roots.mjs pairs; ${KNOWN.length} known divergences allowed)${unexpected.length ? ': ' + unexpected.slice(0, 8).join('; ') : ''}`);
     if (unexpected.length) failed++;
     const stale = KNOWN.filter((p) => !parity.problems.includes(p));
     console.log(`${stale.length ? 'FAIL' : 'ok  '}  every allowed divergence is still one (plan-projection.ts types a tile's health as string)${stale.length ? ': fixed, now delete from KNOWN: ' + stale.join('; ') : ''}`);
@@ -756,15 +839,16 @@ if (isMain) {
     if (!enumWideCaught) failed++;
     // The controls above loosen a field or drop one from the generated side, so they stayed green with three parts of
     // compare() gutted (mutations C2 to C4 in plan.md, 2026-10-22): a field only the schema names, a field the schema
-    // requires and types.ts makes optional, and a root pair (Plan) never walked. The roots are named HERE, not read from
-    // parity.mjs's PAIRS, so a pair dropped there cannot also drop its probe. One field per root, added on the generated
-    // side, must come back as "in the schema, not in types.ts" under that root (a root reached only nested, like
-    // Proposal under ScanSnapshot.proposals, counts: the property is that every root's fields are compared).
-    const PARITY_ROOTS = ['AppStructure', 'AppStructureEvent', 'LensManifest', 'ScanSnapshot', 'ScanJob', 'Proposal', 'Wave', 'Plan'];
+    // requires and types.ts makes optional, and a root pair (Plan) never walked. The probed names are every pair's
+    // generated side in roots.mjs; a pair dropped from the table leaves its struct with neither pair nor reason, which
+    // the pairing rule above fails (the hand list this replaced stopped at 8 and missed the 10 contract pairs). One field
+    // per name, added on the generated side, must come back as "in the schema, not in types.ts" under that name (a
+    // name reached only nested, like Proposal under ScanSnapshot.proposals, counts: every pair's fields are compared).
+    const PARITY_ROOTS = [...new Set(TABLE.flatMap((row) => row.pairs.map((p) => p.gen)))];
     const extraGen = PARITY_ROOTS.reduce((t, g) => t.replace(`\nexport interface ${g} {\n`, `\nexport interface ${g} {\n  zzPairProbe_${g}: string;\n`), fresh.ts);
     const extraGot = compare(extraGen, handTs, wireTs).problems;
     const unreached = PARITY_ROOTS.filter((g) => !extraGot.some((p) => p.endsWith(`.zzPairProbe_${g}: in the schema, not in types.ts`)));
-    console.log(`${unreached.length ? 'FAIL' : 'ok  '}  self-proof: a field added to each of the ${PARITY_ROOTS.length} generated roots is reported as in the schema, not in types.ts${unreached.length ? ': not reported for ' + unreached.join(', ') : ''}`);
+    console.log(`${unreached.length ? 'FAIL' : 'ok  '}  self-proof: a field added to each of the ${PARITY_ROOTS.length} generated names roots.mjs pairs is reported as in the schema, not in types.ts (generated names: ${PARITY_ROOTS.join(', ')})${unreached.length ? ': not reported for ' + unreached.join(', ') : ''}`);
     if (unreached.length) failed++;
     const strict = fresh.ts.replace(/(\nexport interface ScanJob \{\n(?:  .*\n)*?)  exit_code\?: number;/, '$1  exit_code: number;');
     const strictGot = strict !== fresh.ts ? compare(strict, handTs, wireTs).problems : [];
@@ -784,14 +868,14 @@ if (isMain) {
     const smokeMisses = (text) => {
       const body = smokeText(text);
       const vars = new Map([...body.matchAll(/FBp(\w+)&\s+(\w+)/g)].map((m) => [m[1], m[2]]));
-      return ROOTS.map(([, name]) => name).filter((name) => {
+      return [...ROOTS.map(([, name]) => name), ...ROOTS.flatMap(([, , reads = []]) => reads)].filter((name) => {
         const v = vars.get(name);
         return !v || !body.includes(`FromJson(Json, ${v})`);
       });
     };
     const smokeRaw = fs.readFileSync(path.join(ROOT, smokeRel), 'utf8');
     const missed = smokeMisses(smokeRaw);
-    console.log(`${missed.length ? 'FAIL' : 'ok  '}  ${smokeRel} instantiates FromJson for all ${ROOTS.length} roots${missed.length ? ': not read: ' + missed.map(ueName).join(', ') : ''}`);
+    console.log(`${missed.length ? 'FAIL' : 'ok  '}  ${smokeRel} instantiates FromJson for all ${ROOTS.length} roots and the ${fresh.m.readable.length} structs read on their own${missed.length ? ': not read: ' + missed.map(ueName).join(', ') : ''}`);
     if (missed.length) failed++;
     // control: a root dropped from the smoke is reported, and a root named only in a comment does not count
     const dropped = smokeMisses(smokeRaw.replace(/&& BpSchema::FromJson\(Json, Wire\)/, ''));
@@ -799,6 +883,11 @@ if (isMain) {
     const smokeControl = dropped.join() === 'ScanWire' && commented.join() === 'ScanWire';
     console.log(`${smokeControl ? 'ok  ' : 'FAIL'}  control: a root dropped from the smoke is reported, and one named only in a comment is not read`);
     if (!smokeControl) failed++;
+    // the stand-in smoke parses BpSchemaVocab.h too: its include, with comments stripped (a comment naming it is no include)
+    const vocabIncluded = (text) => /^\s*#include\s+"BpSchemaVocab\.h"/m.test(smokeText(text));
+    const includeControl = !vocabIncluded(`// #include "BpSchemaVocab.h"\n${smokeRaw.replace(/^\s*#include\s+"BpSchemaVocab\.h".*$/m, '')}`);
+    console.log(`${vocabIncluded(smokeRaw) && includeControl ? 'ok  ' : 'FAIL'}  ${smokeRel} includes BpSchemaVocab.h, so the clang++ -fsyntax-only run parses it (control: the include removed and named only in a comment is not one)`);
+    if (!vocabIncluded(smokeRaw) || !includeControl) failed++;
     // lens-manifest-1's builtinLensId enum against standard/catalog.ts, which loads the built-in manifests as seven
     // JSON imports, one per docs/standard/lenses/<id>.json (those are the manifests, not a copy of the list, so they
     // stay imports and are compared here). scan/manifest-check.ts's BUILTIN_IDS is the generated BUILTIN_LENS_IDS.
@@ -928,6 +1017,8 @@ if (isMain) {
     if (!ref || ref.startsWith('-')) { console.error('--since needs a git ref, e.g. --since HEAD or --since origin/master'); process.exit(2); }
     const before = Object.fromEntries(ROOTS.map(([f]) => {
       const r = spawnSync('git', ['show', `${ref}:packages/schema/schema/${f}`], { cwd: path.join(HERE, '../..'), encoding: 'utf8' });
+      // a schema new since the ref is compared with an empty root, so every struct it brings reads as added (additive)
+      if (r.status !== 0 && /does not exist in|exists on disk, but not in/.test(r.stderr || '')) return [f, { type: 'object', properties: {} }];
       if (r.status !== 0) throw new Error(`packages/schema/schema/${f} is not readable at ${ref}: ${(r.stderr || '').trim()}`);
       try { return [f, JSON.parse(r.stdout)]; } catch (e) { throw new Error(`packages/schema/schema/${f} at ${ref} is not readable as JSON: ${e.message}`, { cause: e }); }
     }));

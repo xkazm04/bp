@@ -1,9 +1,10 @@
 // Scan jobs: a lens scan, an execute run or a release run (cut or finish) the blueprint started. Client-safe types and rules; the
 // live registry that spawns the Claude Code CLI is jobs.server.ts, the Kettle stand-in is
-// lib/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
+// packages/core/src/model/scan-sim.ts. Absent values are omitted, never null (the store's wire convention).
 import type { LensEntry } from '@bp/core/standard/types';
 import type { WaveEffort, WaveModel } from './waves.ts';
 import { PROPOSAL_ID_PATTERN } from '../standard/schema-vocab.ts';
+import type { BuildupPhase } from './onboarding.ts';
 
 /** `selection`: exactly the features behind the ledger's selected findings or matrix rows (1..200 slugs). */
 export type ScanScopeKind = 'feature' | 'bay' | 'room' | 'wing' | 'all' | 'selection';
@@ -18,10 +19,16 @@ export interface ScanScope {
   features: string[];
 }
 
-/** `prepare`: adjust the product repo so lens-scan can measure a lens it would refuse (scan/lens-setup.ts), e.g. write probes. */
-export type JobKind = 'measure' | 'execute' | 'release' | 'prepare';
-/** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge (`--finish`). */
-export type ReleaseStep = 'build' | 'finish';
+/** `prepare`: adjust the product repo so lens-scan can measure a lens it would refuse (scan/lens-setup.ts), e.g. write probes.
+ *  `propose`: backlog items from the latest measurements (`/lens-scan propose --lens <id|all>`).
+ *  `adopt`: onboard the product with the adopt-bp skill, headless (server/onboarding.server.ts); its build-up events go to
+ *  `<id>.buildup.jsonl` beside its log. */
+export type JobKind = 'measure' | 'execute' | 'release' | 'prepare' | 'propose' | 'adopt';
+/** The lens id of a measure or propose job over every enabled lens at once (`--lens all`): ONE job, one MAX_RUNNING slot. */
+export const ALL_LENSES = 'all';
+/** A release job's step: `build` cuts the release (`/lens-scan release --id <rel>`), `finish` tags it after the merge
+ *  (`--finish`), `tag` tags a draft whose every item already landed on the default branch (`--landed`, lens-scan 1.15.0). */
+export type ReleaseStep = 'build' | 'finish' | 'tag';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface ScanJob {
@@ -30,6 +37,8 @@ export interface ScanJob {
   /** The lens a measure job scans, or a prepare job makes measurable. */
   lens?: string;
   scope?: ScanScope;
+  /** A directed scan's note (focus.ts): what this lens is to look for. Absent on a plain scan. */
+  focus?: string;
   /** The proposals an execute job builds. */
   proposals?: string[];
   /** A release job's release id (`rel-<version>`), its version and step. */
@@ -41,6 +50,10 @@ export interface ScanJob {
   effort?: WaveEffort;
   wave?: string;
   package?: string;
+  /** An adopt job that resumes an earlier, failed onboarding (adopt-bp's check produces only what is missing). */
+  resume?: boolean;
+  /** An adopt job: the build-up phase it last started; for a failed job, the phase it failed in. */
+  adopt_phase?: BuildupPhase | null;
   status: JobStatus;
   queued_at: string;
   started_at?: string;
@@ -54,11 +67,13 @@ export interface ScanJob {
 }
 
 /** What the UI calls a job when it names it in a line: a release job reads "Release 1.4.1 · build". */
-export function jobLabel(j: Pick<ScanJob, 'kind' | 'lens' | 'proposals' | 'version' | 'release' | 'step'>): string {
+export function jobLabel(j: Pick<ScanJob, 'kind' | 'lens' | 'proposals' | 'version' | 'release' | 'step'> & Pick<Partial<ScanJob>, 'resume'>): string {
+  if (j.kind === 'adopt') return j.resume ? 'Onboard · resume' : 'Onboard';
   if (j.kind === 'release') return 'Release ' + (j.version ?? j.release ?? '') + ' · ' + (j.step ?? 'build');
   if (j.kind === 'prepare') return 'Prepare · ' + (j.lens ?? 'lens');
   if (j.kind === 'execute') return 'Execute · ' + (j.proposals?.length ?? 0) + ' finding' + (j.proposals?.length === 1 ? '' : 's');
-  return j.lens ?? 'Scan';
+  if (j.kind === 'propose') return 'Propose · ' + (j.lens === ALL_LENSES ? 'every lens' : j.lens ?? 'lens');
+  return j.lens === ALL_LENSES ? 'Scan · every lens' : j.lens ?? 'Scan';
 }
 
 /** Lenses lens-scan can measure without a manifest `scan` block (lens-scan v1). */
@@ -74,11 +89,22 @@ export function scannable(entry: Pick<LensEntry, 'id' | 'manifest'>, sim: boolea
 export const PROJECT_LENS_ID = /^[a-z]{2,}(?:\.[a-z0-9-]+){2,}$/;
 /** Most features one `selection` scan may name. */
 export const MAX_SELECTION = 200;
+/** What measuring a set of items takes: one `selection` scan per lens, over the features of that lens's items (first seen
+ *  first, each once, at most MAX_SELECTION), lenses in the order they first appear. */
+export function measureScopes(items: readonly { lens: string; feature: string }[]): { lens: string; features: string[] }[] {
+  const by = new Map<string, string[]>();
+  for (const x of items) {
+    let fs = by.get(x.lens);
+    if (!fs) by.set(x.lens, (fs = []));
+    if (!fs.includes(x.feature) && fs.length < MAX_SELECTION) fs.push(x.feature);
+  }
+  return [...by].map(([lens, features]) => ({ lens, features }));
+}
 /** The job registry's limits per product (jobs.server.ts enforces them; the Kettle scan sim mirrors them): at most this
  *  many jobs run at once, at most this many wait queued (the next is refused 429), at most this many proposals per execute job. */
 export const MAX_RUNNING = 3, MAX_QUEUED = 16, MAX_PROPOSALS = 50;
 
-/** A glyph+line pair, as checkLensManifest's `taken` lists it (src/lib/scan/manifest-check.ts TakenLook). */
+/** A glyph+line pair, as checkLensManifest's `taken` lists it (packages/core/src/scan/manifest-check.ts TakenLook). */
 export interface LensLook { glyph: string | { path: string }; line: string }
 
 /** Whether a stored glyph can be compared with another: a name, or a `{ path }`. A hand-edited map can hold neither,

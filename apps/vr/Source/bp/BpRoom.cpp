@@ -46,7 +46,7 @@ namespace
 	const FLinearColor RoomPaperInk(FColor(0xF3, 0xE9, 0xD2));
 	const FLinearColor RoomAmber(FColor(0xFF, 0xB5, 0x47));
 
-	constexpr double RoomSheetPxPerCm = ABpTable::SheetWidthPx / ABpTable::PaperWidthCm;
+	double RoomSheetPxPerCm() { return ABpTable::SheetPxPerCm(); }
 	constexpr double RoomSlatePxPerPoint = 96.0 / 72.0;
 	/** The breadcrumb's separator and its bottom on the paper (BpTable.cpp's). */
 	const TCHAR* const RoomCrumbSeparator = TEXT("  ›  ");
@@ -79,18 +79,18 @@ namespace
 	/** The sheet's font at a cap height on the paper (its size in sheet pixels, as BpTable.cpp's SheetFont). */
 	FSlateFontInfo RoomSheetFont(const TCHAR* Style, double CapCm)
 	{
-		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * RoomSheetPxPerCm / (BpType::CapPerEm * RoomSlatePxPerPoint)), FName(Style));
+		return FSlateFontInfo(ABpTable::TextFontObject(), static_cast<float>(CapCm * RoomSheetPxPerCm() / (BpType::CapPerEm * RoomSlatePxPerPoint)), FName(Style));
 	}
 
 	double RoomTrackPx(const BpType::FRecipe& Recipe, double CapCm)
 	{
-		return Recipe.TrackEm * CapCm / BpType::CapPerEm * RoomSheetPxPerCm;
+		return Recipe.TrackEm * CapCm / BpType::CapPerEm * RoomSheetPxPerCm();
 	}
 
 	/** A text's width on the paper at a cap (cm), tracking included. */
 	double RoomTextWidthCm(const FString& Text, const BpType::FRecipe& Recipe, double CapCm)
 	{
-		return (RoomMeasure(Text, RoomSheetFont(Recipe.Face, CapCm)).X + RoomTrackPx(Recipe, CapCm) * Text.Len()) / RoomSheetPxPerCm;
+		return (RoomMeasure(Text, RoomSheetFont(Recipe.Face, CapCm)).X + RoomTrackPx(Recipe, CapCm) * Text.Len()) / RoomSheetPxPerCm();
 	}
 
 	/** The cut a text takes when it does not fit: as many characters as fit, then an ellipsis. */
@@ -110,8 +110,40 @@ namespace
 	{
 		TArray<FString> Lines;
 		if (MaxLines <= 0) return Lines;
-		TArray<FString> Words;
-		Text.ParseIntoArray(Words, TEXT(" "));
+		TArray<FString> Spaced, Words;
+		Text.ParseIntoArray(Spaced, TEXT(" "));
+		// Night two V5 (names on the paper wrap, never cut): a word wider than the line breaks after its hyphens, and a
+		// piece still too wide breaks between letters ("Failed-payme…" was cut).
+		for (const FString& Word : Spaced)
+		{
+			TArray<FString> Pieces;
+			FString Piece;
+			for (const TCHAR Ch : Word)
+			{
+				Piece.AppendChar(Ch);
+				if (Ch == TEXT('-')) { Pieces.Add(Piece); Piece.Reset(); }
+			}
+			if (!Piece.IsEmpty()) Pieces.Add(Piece);
+			FString Joined;
+			for (const FString& Each : Pieces)
+			{
+				if (!Joined.IsEmpty() && RoomTextWidthCm(Joined + Each, Recipe, CapCm) > MaxCm) { Words.Add(Joined); Joined.Reset(); }
+				if (RoomTextWidthCm(Joined + Each, Recipe, CapCm) <= MaxCm) { Joined += Each; continue; }
+				// A piece too wide for a line even alone: hyphenated, the longest head that fits with its hyphen, leaving at
+				// least a few letters to the tail ("reconcili-" / "ation", not "reconciliatio" / "n").
+				FString Rest = Each;
+				while (RoomTextWidthCm(Rest, Recipe, CapCm) > MaxCm && Rest.Len() > 2)
+				{
+					const int32 Tail = FMath::Min(5, Rest.Len() / 2);
+					int32 Head = Rest.Len() - Tail;
+					while (Head > 1 && RoomTextWidthCm(Rest.Left(Head) + TEXT("-"), Recipe, CapCm) > MaxCm) --Head;
+					Words.Add(Rest.Left(Head) + TEXT("-"));
+					Rest = Rest.Mid(Head);
+				}
+				Joined = Rest;
+			}
+			if (!Joined.IsEmpty()) Words.Add(Joined);
+		}
 		FString Line;
 		for (int32 Index = 0; Index < Words.Num(); ++Index)
 		{
@@ -163,13 +195,13 @@ namespace
 			Tris.Add(T);
 		}
 
-		/** A stroke between two paper points (cm), square-capped, WidthPx sheet pixels wide. */
+		/** A stroke between two paper points (cm), square-capped, WidthPx base sheet pixels wide (scaled by SheetPxScale). */
 		void Line(const FVector2D& FromCm, const FVector2D& ToCm, float WidthPx, const FLinearColor& Color)
 		{
 			const FVector2D From = ABpTable::PaperCmToSheetPx(FromCm), To = ABpTable::PaperCmToSheetPx(ToCm);
 			const FVector2D Dir = (To - From).GetSafeNormal();
 			if (Dir.IsZero()) return;
-			const FVector2D Along = Dir * (WidthPx * 0.5f);
+			const FVector2D Along = Dir * (WidthPx * ABpTable::SheetPxScale() * 0.5f);
 			const FVector2D Across(-Along.Y, Along.X);
 			Quad(From - Along - Across, To + Along - Across, To + Along + Across, From - Along + Across, Color);
 		}
@@ -356,7 +388,10 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	const bool bSwitch = !RoomModeId.IsEmpty() || !ShownRoomMode.IsEmpty();
 	RoomModeId = InRoomId;
 	RoomsVisited.Add(InRoomId);
-	RoomEntryNow = GRoomEntry;
+	// A follow (BpFollow.cpp) shows where it goes first: the lift entry, at its own pace; every other route takes BpRoom.Entry.
+	RoomEntryNow = bFollowEntering ? EBpRoomEntry::Lift : GRoomEntry;
+	RoomFadeNowS = bFollowEntering ? (bSwitch ? FollowSwitchFadeS : FollowFadeS) : 0.f;
+	RoomHoldNowS = bFollowEntering ? FollowLiftHoldS : -1.f;
 	LiftAlpha = LiftHoldClock = 0.f;
 	LiftRoomId.Reset();
 	// A switch from another room's map dives straight in; the lift is the way in from the site plan.
@@ -373,6 +408,10 @@ bool ABpTable::EnterRoomMode(const FString& InRoomId)
 	SetActorTickInterval(0.f);
 	AdvanceRoomMode(0.f);
 	ApplyRoomVisuals();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
+	// Wave N3-W3: the step inside, said.
+	Narrate(TEXT("inside-room"), TEXT("stepped inside a room"));
 	return true;
 }
 
@@ -385,6 +424,8 @@ void ABpTable::ExitRoomMode()
 	}
 	const FString Left = RoomModeId;
 	RoomModeId.Reset();
+	RoomFadeNowS = 0.f;
+	RoomHoldNowS = -1.f;
 	LiftRoomId.Reset();
 	ColumnScale = 1.f;
 	UE_LOG(LogBpTable, Log, TEXT("BpRoom: exit %s"), *Left);
@@ -395,6 +436,9 @@ void ABpTable::ExitRoomMode()
 	SetActorTickInterval(0.f);
 	AdvanceRoomMode(0.f);
 	ApplyRoomVisuals();
+	// The owner's move, published once it settles (BpFollow.cpp).
+	NotePlaceMoved();
+	Narrate(TEXT("outside-room"), TEXT("left the room"));
 }
 
 bool ABpTable::IsRoomModeMoving() const
@@ -407,7 +451,8 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 {
 	const IConsoleVariable* Reduced = IConsoleManager::Get().FindConsoleVariable(TEXT("bp.ReducedMotion"));
 	const bool bInstant = Reduced && Reduced->GetInt() != 0;
-	const float Step = bInstant ? 1.f : DeltaSeconds / FMath::Max(CVarRoomFadeS.GetValueOnGameThread(), 0.01f);
+	const float FadeS = RoomFadeNowS > 0.f ? RoomFadeNowS : CVarRoomFadeS.GetValueOnGameThread();
+	const float Step = bInstant ? 1.f : DeltaSeconds / FMath::Max(FadeS, 0.01f);
 	const auto FadeOut = [this, Step]()
 	{
 		RoomFade = FMath::Max(0.f, RoomFade - Step);
@@ -438,7 +483,8 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 			if (LiftRoomId.IsEmpty())
 			{
 				LiftRoomId = RoomModeId;
-				UE_LOG(LogBpTable, Log, TEXT("BpRoom: lift %s from x%.2f to x%.2f, hold %.2f s"), *LiftRoomId, LiftFrom, RoomLiftColumnScale, CVarRoomLiftHoldS.GetValueOnGameThread());
+				UE_LOG(LogBpTable, Log, TEXT("BpRoom: lift %s from x%.2f to x%.2f, hold %.2f s"), *LiftRoomId, LiftFrom, RoomLiftColumnScale,
+					RoomHoldNowS >= 0.f ? RoomHoldNowS : CVarRoomLiftHoldS.GetValueOnGameThread());
 			}
 			if (LiftAlpha < 1.f)
 			{
@@ -447,7 +493,7 @@ void ABpTable::AdvanceRoomMode(float DeltaSeconds)
 				return;
 			}
 			LiftHoldClock += DeltaSeconds;
-			if (!bInstant && LiftHoldClock < CVarRoomLiftHoldS.GetValueOnGameThread()) return;
+			if (!bInstant && LiftHoldClock < (RoomHoldNowS >= 0.f ? RoomHoldNowS : CVarRoomLiftHoldS.GetValueOnGameThread())) return;
 			bLiftDone = true;
 		}
 		ShownRoomMode = RoomModeId;
@@ -799,7 +845,9 @@ void ABpTable::BuildRoomMap()
 			}
 			const double Pitch = Cap / BpType::CapPerEm * RoomLinePitchEm;
 			Slot.Cap = Cap;
-			Slot.Lines = RoomWrap(Tile.name, BpType::FeatureName, Cap, TU1 - TU0, LinesAt(Cap));
+			// V5: whole, never cut: a name that needs more lines than the slot holds at the floor takes them (it runs toward
+			// the slot's foot; the findings' line follows it).
+			Slot.Lines = RoomWrap(Tile.name, BpType::FeatureName, Cap, TU1 - TU0, 64);
 			Slot.TextAt = FVector2D(TU0, TV0);
 			if (Slot.Lines.Num() == 0) Dropped.Add(Tile.id);
 			if (Slot.Findings > 0)
@@ -954,7 +1002,7 @@ void ABpTable::BuildRoomMap()
 		RoomSheet->MipsSamplerFilter = TF_Trilinear;
 		RoomSheet->Filter = TF_Default;
 		RoomSheet->OnCanvasRenderTargetUpdate.AddDynamic(this, &ABpTable::DrawRoomSheet);
-		RoomSheet->InitAutoFormat(SheetWidthPx, SheetHeightPx);
+		RoomSheet->InitAutoFormat(SheetWidthPx(), SheetHeightPx());
 		if (RoomOverlayMid) RoomOverlayMid->SetTextureParameterValue(TEXT("SlateUI"), RoomSheet);
 	}
 	else
@@ -994,7 +1042,7 @@ void ABpTable::DrawRoomSheet(UCanvas* Canvas, int32 Width, int32 Height)
 	}
 	// Each cell: a faint floor, its walls as solid poché with the doorway in the near wall, the door's leaf and swing, the
 	// kind label in its header and a fine rule under it.
-	const float WallPx = static_cast<float>(RoomWallThickCm * 1.6 * RoomSheetPxPerCm);
+	const float WallPx = static_cast<float>(RoomWallThickCm * 1.6 * ABpTable::SheetBaseWidthPx / ABpTable::PaperWidthCm);  // base pixels: the pen scales them
 	const FLinearColor WallInk = RoomCyan.CopyWithNewOpacity(0.7f);
 	for (const FRoomCell& Cell : RoomCells)
 	{
@@ -1047,9 +1095,11 @@ void ABpTable::DrawRoomSheet(UCanvas* Canvas, int32 Width, int32 Height)
 		};
 		double TitleCap = 0.0, SubCap = 0.0;
 		const double TitleTop = Top + 1.3;
-		const FString Title = FitRow(RoomTitle, BpType::Title, TitleTop, TitleCap);
+		// A scan's status takes the block's two rows while it runs, as on the site plan's block (SetScanStatus).
+		const bool bScanStatus = !ScanStatusTitle.IsEmpty();
+		const FString Title = FitRow(bScanStatus ? ScanStatusTitle.ToUpper() : RoomTitle, BpType::Title, TitleTop, TitleCap);
 		const double SubTop = TitleTop + TitleCap + 1.0;
-		const FString Sub = FitRow(RoomSubtitle, BpType::TitleSub, SubTop, SubCap);
+		const FString Sub = FitRow(bScanStatus ? ScanStatusSub.ToUpper() : RoomSubtitle, BpType::TitleSub, SubTop, SubCap);
 		const double TitleW = Put(Title, BpType::Title, U0, TitleTop, TitleCap, RoomPaperInk);
 		const double SubW = Put(Sub, BpType::TitleSub, U0, SubTop, SubCap, RoomCyan.CopyWithNewOpacity(0.9f));
 		const double R = U0 + FMath::Max(TitleW, SubW) + 1.0, Bottom = SubTop + SubCap + 1.0;

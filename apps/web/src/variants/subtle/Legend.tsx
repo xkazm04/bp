@@ -12,7 +12,7 @@ import type { LineName } from '@bp/core/standard/types';
 import { lensOf } from '@bp/core/model/lens';
 import { readTheme } from '@/engine/theme';
 import { lineFill, unknownFill } from '@/engine/render/patterns';
-import { Legend as BaseLegend } from '@/components/Legend';
+import { Legend as BaseLegend, ROOM_SCAN_WORDS, RoomScanKey } from '@/components/Legend';
 import { MAX_SELECTION } from '@bp/core/scan/jobs';
 import type { Engine } from '@/engine/Engine';
 import { unscanned } from '@/engine/lens/unknown';
@@ -211,6 +211,8 @@ export function SubtleLegend({ view }: { view: ViewId }) {
         <div className="sl-one"><TileSwatch d={d} kind="fill" /><span><b>Fill</b> = {fillWords(d)}. A broken line on the top edge means not measured.</span></div>
         <UnscannedRow act={act} d={d} />
         <div className="sl-one"><TileSwatch d={d} kind="faded" /><span><b>Faded</b> = this lens has nothing here</span></div>
+        {/* General gets this row from the shared legend below; under a lens that legend has no shared marks */}
+        <div className="sl-one"><RoomScanKey /><span>{ROOM_SCAN_WORDS}</span></div>
       </div>
       <BaseLegend view={view} />
     </>

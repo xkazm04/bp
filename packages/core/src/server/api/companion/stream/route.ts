@@ -4,6 +4,7 @@
 //   event: turn    { type, conversationId, event: TurnEvent }: every turn's events, whoever started it
 //   event: card    { type, card }: a GATED tool's card, as it is created and decided
 //   event: focus   { type, focus }: a FocusCommand for the page to carry out
+//   event: place   { type, baton }: the place baton, when the table writes it (live) or hands it back (returned)
 //   event: ping    { at } every 15 s, so proxies and the client know the stream is alive
 // The response closes, and unsubscribes, when the request aborts.
 // Runtime state (the bus, locks, running turns) is per process: apps/server (:3100) is the canonical host; `next dev` has its

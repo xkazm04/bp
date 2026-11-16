@@ -5,10 +5,15 @@
 // feature, the metric's before -> after with unit and verdict, the commit and the pack it came from, and a flagged
 // item's triage note; then the items a cherry-pick conflict sent back to rework with their files; then the gates, one
 // line each (a preview, before any run, says where they will go). Only the header block differs between the modes.
-// Pure: value imports ./rules.ts and ../scan/compare.ts only, so Node checks import it (scripts/check-release-notes.ts).
+// An item already on the base branch (lens-scan release.md "Landed", step L4) names its landing commit there instead of
+// the pick and the pack, and a release whose every item landed adds `landed: tagged on <base> at <HEAD>`. The reading on
+// the base branch now (main-now) is not given, though every reading names the commit it measured (Measurement.commit_sha):
+// the notes say what shipped, and the watch (train/watch.ts) follows it after that.
+// Pure: value imports ./rules.ts, ../scan/compare.ts and ../scan/landed.ts only, so Node checks import it (scripts/check-release-notes.ts).
 import type { Measurement, Proposal } from '../scan/types.ts';
 import { verdictOf, type LensFields, type Verdict } from '../scan/compare.ts';
 import { isFlagged } from './rules.ts';
+import { landedIn, type LandedMap } from '../scan/landed.ts';
 
 /** One release item with its evidence: the verdict and the readings it compares, and whether it ships flagged. */
 export interface NoteItem {
@@ -54,25 +59,31 @@ export interface NotesInput {
   conflicts: readonly Pick<Proposal, 'title' | 'triage_note'>[];
   /** The gates the run logged; absent before a run. */
   gates?: readonly NoteGate[];
+  /** What already landed on the base branch (`ref`, at `head`): those items name their landing commit. */
+  landed?: { items: LandedMap; ref: string; head?: string };
 }
 
-export function releaseNotes({ product, version, mode, items, conflicts, gates }: NotesInput): string {
+export function releaseNotes({ product, version, mode, items, conflicts, gates, landed }: NotesInput): string {
   const out = mode === 'sample'
     ? [`## Kettle ${version} (sample)`, '', 'Sample release notes: Kettle is the sample product, and nothing here shipped.', '']
     : [`## ${product} ${version} (preview)`, ''];
-  out.push(`${items.length} change${items.length === 1 ? '' : 's'} from the lens release train, each measured before and after.`, '');
+  const n = items.length, measured = items.filter((x) => x.from && x.to).length, changes = `change${n === 1 ? '' : 's'}`;
+  out.push(measured === n ? `${n} ${changes} from the lens release train, each measured before and after.` : `${measured} of ${n} ${changes} measured before and after, from the lens release train.`, '');
   for (const x of items) {
     const p = x.p, u = x.from?.unit ? ' ' + x.from.unit : '';
     const move = x.from && x.to ? `${p.metric} ${fmtValue(x.from.value)} -> ${fmtValue(x.to.value)}${u} (${x.verdict})` : 'unmeasured';
-    out.push(`- **${p.title}** · ${p.lens} · ${p.feature}: ${move} · commit ${short(p.commit_sha)} from pack ${p.pack_id ?? 'none'}`);
+    const l = landedIn(landed?.items, p.id);
+    out.push(`- **${p.title}** · ${p.lens} · ${p.feature}: ${move} · ${l ? `landed as ${short(l.sha)} on ${landed!.ref}` : `commit ${short(p.commit_sha)} from pack ${p.pack_id ?? 'none'}`}`);
     if (x.flagged && p.triage_note) out.push(`  - Shipped flagged: ${p.triage_note}`);
   }
+  const allLanded = !!landed && items.length > 0 && items.every((x) => !!landedIn(landed.items, x.p.id));
+  if (allLanded && landed.head) out.push('', `landed: tagged on ${landed.ref} at ${short(landed.head)}`);
   if (conflicts.length) {
     out.push('', '### Back to rework (cherry-pick conflict)');
     for (const p of conflicts) out.push(`- ${p.title}: ${p.triage_note ?? ''}`);
   }
   out.push('', '### Gates');
   if (gates?.length) for (const g of gates) out.push(`- ${g.name}: ${g.passed ? 'passed' : 'failed'}`);
-  else out.push(`The release job runs the product's gates on release/${version} and lists them here.`);
+  else out.push(`The release job runs the product's gates on ${allLanded ? landed!.ref + ' at its HEAD' : 'release/' + version} and lists them here.`);
   return out.join('\n') + '\n';
 }

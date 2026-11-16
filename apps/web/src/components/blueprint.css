@@ -12,10 +12,18 @@
 .bp button { font-family: inherit; color: inherit; font-size: inherit; cursor: pointer; }
 .bp [role='button'] { cursor: pointer; }
 .bp :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.bp-paper { position: fixed; inset: 0; background: radial-gradient(ellipse 85% 80% at 38% 46%, var(--paper-hi) 0%, var(--paper-mid) 34%, var(--paper) 70%, var(--paper-lo) 100%); }
+/* The paper is the light table's glass: lit from under (the bright core), deeper toward the edges, with the warm pool
+   the lamp throws from its rail (top right, where Glim hangs). The frame is the table's backlit bezel. */
+.bp-paper { position: fixed; inset: 0; background:
+  radial-gradient(circle at 88% 9%, var(--lamp) 0%, transparent 26%),
+  radial-gradient(ellipse 62% 58% at 42% 50%, var(--paper-core) 0%, transparent 70%),
+  radial-gradient(ellipse 85% 80% at 38% 46%, var(--paper-hi) 0%, var(--paper-mid) 34%, var(--paper) 70%, var(--paper-lo) 100%); }
 .bp-vig { position: fixed; inset: 0; pointer-events: none; box-shadow: inset 0 0 220px 40px var(--vignette); }
-.bp-frame { position: fixed; inset: 5px; border: 1px solid var(--ink-3); pointer-events: none; }
-.bp-frame:after { content: ''; position: absolute; inset: 3px; border: 1px solid var(--ink-4); }
+.bp-frame { position: fixed; inset: 4px; border: 1.5px solid color-mix(in srgb, var(--rim) 70%, transparent); border-radius: 3px; pointer-events: none;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow) 30%, transparent), inset 0 0 14px color-mix(in srgb, var(--glow) 34%, transparent), inset 0 0 46px color-mix(in srgb, var(--glow) 12%, transparent); }
+.bp-frame:after { content: ''; position: absolute; inset: 4px; border: 1px solid color-mix(in srgb, var(--glow) 22%, transparent); }
+/* the glass's sheen: two soft diagonal bands of the rim light across the table, static (compositor only) */
+.bp-sheen { position: fixed; inset: 0; pointer-events: none; background: linear-gradient(112deg, transparent 20%, color-mix(in srgb, var(--rim) 4.5%, transparent) 36%, transparent 50%, transparent 68%, color-mix(in srgb, var(--rim) 3%, transparent) 78%, transparent 88%); }
 .bp-map { position: fixed; left: 0; top: 0; display: block; cursor: grab; touch-action: none; outline: none; }
 .bp-map[data-cursor='pan'] { cursor: grabbing; } .bp-map[data-cursor='pt'] { cursor: pointer; } .bp-map[data-cursor='zin'] { cursor: zoom-in; } .bp-map[data-cursor='sel'] { cursor: crosshair; }
 .bp-map:focus-visible { box-shadow: 0 0 0 2px var(--accent) inset; }
@@ -41,6 +49,8 @@
 #crumbs .sum { margin-left: 14px; font-size: 15px; color: var(--ink-2); letter-spacing: 0.01em; display: inline-flex; flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: pre; }
 #crumbs .sum .cl { flex: 0 0 auto; }
 #crumbs .sum .cl svg { vertical-align: middle; margin-right: 3px; } #crumbs .sum .cl + .cl { margin-left: 10px; }
+/* visually hidden, still read: the plan's live region (#bp-said) and the canvas's key list (#bp-keys) */
+.bp-vh { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 #crumbs .sum.off { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip-path: inset(50%); }
 #crumbs .sum b { color: var(--ink-hi); font-weight: 500; } #crumbs .sum em { font-style: normal; color: var(--red-2); } #crumbs .sum i { font-style: normal; color: var(--amber-2); }
 #crumbs button { background: none; border: 0; padding: 2px 3px; font-size: 19px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-2); border-bottom: 1px solid transparent; flex: 0 0 auto; }
@@ -165,6 +175,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 #ladder .lvl { font: 500 12px/28px var(--mono); color: var(--ink-2); padding: 0 6px 0 9px; letter-spacing: 0.06em; }
 #scalebar { position: absolute; bottom: calc(var(--bb) + 2px); font: 500 12px var(--mono); color: var(--ink-2); letter-spacing: 0.04em; pointer-events: none; z-index: 3; display: flex; align-items: center; gap: 8px; white-space: nowrap; text-shadow: 0 0 6px var(--paper), 0 0 3px var(--paper); }
 #scalebar .sb { display: inline-block; height: 7px; border: 1px solid var(--ink-2); border-top: 0; background: linear-gradient(90deg, var(--ink-2) 0 25%, transparent 25% 50%, var(--ink-2) 50% 75%, transparent 75%); }
+#lensfail { position: absolute; left: 50%; top: 70px; transform: translateX(-50%); padding: 6px 12px; background: var(--card); border: 1px solid var(--red); color: var(--ink-hi); font-size: 13px; z-index: 3; pointer-events: none; }
 #ticker { position: absolute; left: 14px; top: 70px; max-width: 430px; pointer-events: none; font-size: 13px; line-height: 1.3; }
 #ticker div { display: grid; grid-template-columns: 44px 1fr; gap: 6px; background: var(--scrim); border-left: 3px solid var(--ink-3); padding: 3px 10px 3px 8px; max-width: 430px; white-space: nowrap; overflow: hidden; box-shadow: 0 6px 18px var(--shadow); }
 #ticker div i { font: 400 12px var(--mono); font-style: normal; color: var(--ink-2); }
@@ -194,6 +205,7 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 #callout .row { display: flex; justify-content: space-between; border-top: 1px solid var(--ink-4); padding: 3px 0; }
 #callout .row b { font: 500 14px var(--mono); }
 #callout .x { position: absolute; right: 8px; top: 8px; background: none; border: 1px solid var(--ink-3); font: 500 12px var(--mono); color: var(--ink-2); padding: 1px 6px; }
+#callout .ready-line { margin: 0 0 8px; font: 500 14px/1.4 var(--mono); color: var(--ink-hi); }
 #callout .sub { margin-top: 8px; font: 500 12px var(--mono); letter-spacing: 0.1em; color: var(--ink-2); }
 #callout .lnk { background: none; border: 0; padding: 2px 0; color: var(--ink); font-size: 14px; text-align: left; display: block; width: 100%; }
 #callout .lnk:hover { color: var(--ink-hi); text-decoration: underline; }
@@ -370,6 +382,16 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .livepill.on { border-color: var(--mint); color: var(--mint-2); } .livepill.on i { background: var(--mint); animation: bp-blink 1.6s ease-in-out infinite; }
 .livepill.off { border-color: var(--amber); color: var(--amber-2); } .livepill.off i { background: var(--amber); }
 .livepill.idle { color: var(--ink-2); }
+/* the owner's live standing rules (RuleChips.tsx): orders amber, grants mint */
+.rulechips { display: inline-flex; align-items: center; gap: 4px; }
+.rulechip { display: inline-flex; align-items: baseline; gap: 6px; height: 30px; padding: 0 9px; border: 1px solid var(--amber); background: var(--panel); font: 500 12px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--amber-2); white-space: nowrap; cursor: pointer; align-items: center; }
+.rulechip b { font-weight: 600; color: var(--ink-hi); }
+.rulechip em { font-style: normal; color: var(--ink-2); }
+.rulechip.grant { border-color: var(--mint); color: var(--mint-2); }
+.rulechip.more { border-color: var(--ink-3); color: var(--ink-2); }
+.rulechip.warn { border-color: var(--red); box-shadow: inset 0 -2px 0 var(--red); }
+.rulechip:hover { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); }
+.rulechip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @keyframes bp-blink { 50% { opacity: 0.3; } }
 @media (prefers-reduced-motion: reduce) { .livepill.on i { animation: none; } }
 #clock.live .hm { font-size: 20px; }
@@ -430,3 +452,46 @@ a.extchip:hover, a.extchip:focus-visible { text-decoration: underline; }
 .shotv .swipe .cut { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--amber); pointer-events: none; }
 .shotv .swipe input { width: 100%; margin: 6px 0 2px; }
 .shotv .ends { display: flex; justify-content: space-between; gap: 8px; font: 500 12px var(--mono); color: var(--ink-2); }
+
+/* ---------- lit glass: the chrome's panels are the table's glass cards (the VR wrist panel, the decision card): light from
+   the top edge, a lit hairline, a faint glow round the edge. No backdrop blur: the plan under them redraws on every pan
+   frame, and a blur would be recomputed with it (docs/blueprint-ui.md, performance rules). */
+#tabs, #rail, #ladder, #keyplan, #timebox, #flyout, #hov, #dcard, #selbar, #callout {
+  background-image: linear-gradient(180deg, color-mix(in srgb, var(--glow) 11%, transparent) 0, transparent 48px);
+  border-color: color-mix(in srgb, var(--glow) 40%, var(--ink-3));
+}
+#tabs, #rail, #ladder, #keyplan, #timebox {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--rim) 24%, transparent), 0 0 0 1px color-mix(in srgb, var(--glow) 10%, transparent), 0 0 18px color-mix(in srgb, var(--glow) 13%, transparent), 0 14px 36px var(--shadow);
+}
+#rail .ri-table { margin-top: 6px; border-top: 1px solid color-mix(in srgb, var(--glow) 30%, transparent); padding-top: 10px; color: var(--ink-hi); }
+#rail .ri-table .n { color: color-mix(in srgb, var(--glow) 70%, var(--ink-hi)); }
+#rail .ri-table:hover .g { filter: drop-shadow(0 0 6px var(--glow)); }
+/* the table leads (a headset holds the baton and writes the place): the page says so on the button that started it */
+#rail .ri-table[data-live='1'] { background: color-mix(in srgb, var(--mint) 14%, transparent); border-left-color: var(--mint); }
+#rail .ri-table[data-live='1'] .lb, #rail .ri-table[data-live='1'] .n { color: var(--mint-2); }
+#rail .ri-table[data-live='1'] .g { position: relative; }
+#rail .ri-table[data-live='1'] .g::after { content: ''; position: absolute; right: -4px; top: -2px; width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 8px var(--mint); }
+/* the crossing's hand-back on the page: 10 s, then gone (components/crossing/CrossingHost) */
+.bp-left { position: absolute; left: var(--cx, 50%); top: 104px; transform: translateX(-50%); z-index: 39; padding: 9px 16px; font-size: 15px; color: var(--ink-hi); background: var(--card-hi); border: 1px solid var(--mint); box-shadow: 0 10px 30px var(--shadow), 0 0 18px color-mix(in srgb, var(--glow) 25%, transparent); white-space: nowrap; animation: bp-left 10s ease forwards; pointer-events: none; }
+@keyframes bp-left { 0% { opacity: 0; } 4% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .bp-left { animation: none; } }
+/* the feature page is a sheet lifted off the table's glass: the rim's light round its edge, lit from the top (page.css owns
+   the rest; only the frame changes, nothing inside moves) */
+.pg { border-color: color-mix(in srgb, var(--rim) 75%, var(--ink)); box-shadow: 0 30px 90px var(--shadow), 0 0 0 1px color-mix(in srgb, var(--glow) 35%, transparent), 0 0 26px color-mix(in srgb, var(--glow) 22%, transparent), inset 0 1px 0 color-mix(in srgb, var(--rim) 35%, transparent); }
+/* "Take it to the table" (components/crossing/TableCard): a glass card left of the rail, by its VR · Table button */
+.tcard { position: absolute; right: calc(14px + 64px + 10px); bottom: calc(var(--bb) + 10px); width: 360px; z-index: 12; padding: 12px 14px 14px; background: var(--card-hi); border: 1px solid color-mix(in srgb, var(--glow) 45%, var(--ink-3)); border-top: 3px solid var(--glow); box-shadow: 0 18px 50px var(--shadow), 0 0 22px color-mix(in srgb, var(--glow) 22%, transparent); font-size: 14px; }
+.tcard header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 16px; color: var(--ink-hi); }
+.tcard .x { background: none; border: 1px solid var(--ink-3); color: var(--ink-2); font: 500 12px var(--mono); padding: 1px 6px; }
+.tcard .tc-where { margin: 0 0 10px; color: var(--ink-2); }
+.tcard .tc-where code { font: 500 12px var(--mono); color: var(--amber-2); }
+.tcard .tc-arm, .tcard .tc-play { display: block; width: 100%; height: 36px; font-size: 14px; letter-spacing: 0.03em; }
+.tcard .tc-arm { background: var(--glow); color: var(--on-ink); border: 0; font-weight: 600; }
+.tcard .tc-arm.back { background: none; color: var(--ink-hi); border: 1px solid var(--amber); font-weight: 500; }
+.tcard .tc-play { margin-top: 10px; background: none; border: 1px solid var(--ink-3); color: var(--ink); }
+.tcard .tc-play:hover, .tcard .tc-arm:not(:disabled):hover { filter: brightness(1.08); border-color: var(--accent); }
+.tcard .tc-state { margin: 10px 0 0; padding: 7px 10px; border-left: 3px solid var(--ink-3); background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-hi); }
+.tcard .tc-state.s-armed { border-color: var(--amber); } .tcard .tc-state.s-claimed, .tcard .tc-state.s-live { border-color: var(--mint); } .tcard .tc-state.s-expired { border-color: var(--red); }
+.tcard .tc-err { margin: 8px 0 0; color: var(--red-2); }
+.tcard .tc-how { margin: 10px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.4; }
+.tcard .tc-hs { display: block; margin-top: 10px; font-size: 13px; color: var(--accent); text-decoration: none; border-bottom: 1px dashed transparent; width: fit-content; }
+.tcard .tc-hs:hover, .tcard .tc-hs:focus-visible { border-bottom-color: var(--accent); }

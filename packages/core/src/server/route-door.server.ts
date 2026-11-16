@@ -7,6 +7,8 @@
 //   body     `req.json()` (400 "body must be JSON"), then the route's parse (a Response it returns is the refusal)
 //   kettle   the sim answers through simAnswer: its value as JSON at the verb's status, a refusal as its own status + body
 //   store    `store: 'required'` -> 404 "no scan store for <slug>" when the product has no scan.db
+//   map      `map: 'required'` -> the product's map (map.server.ts readProductMap, cached per rev) as `c.map`, or the
+//            reader's own refusal: 404 "no structure at <file>", 500 unreadable, 409 "<file> is not valid JSON (...)"
 //   live     the handler; a throw out of `c.read(...)` is an unreadable store -> 503 "cannot read the scan store: ..."
 // Route files keep `export async function VERB(req, ctx) { return <door>.VERB(req, ctx); }`, so the web mounts, the mount
 // audit and apps/server's route table read the same methods; scripts/check-route-guards.mjs accepts exactly that form for a
@@ -17,6 +19,7 @@ import type { ProductEntry } from '../scan/types.ts';
 import type { ScanSim } from '../model/scan-sim.ts';
 import { findProduct, hasStore, storeFile, unknownProduct } from './products.server.ts';
 import { kettleSim, simAnswer } from './kettle-sim.server.ts';
+import { readProductMap, type ProductMap } from './map.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('route-door.server.ts is server-only');
 
@@ -28,7 +31,11 @@ export interface RouteCtx { params: Promise<Params> }
 /** What the sim and live handlers are given: the request, the path params and the parsed body. */
 export interface DoorInput<B> { req: Request; slug: string; params: Params; body: B }
 /** The live handler's view: the resolved product, and `read` for any store read whose throw means "unreadable" (503). */
-export interface LiveInput<B> extends DoorInput<B> { product: ProductEntry; read<T>(fn: (file: string) => T): T }
+export interface LiveInput<B> extends DoorInput<B> {
+  product: ProductEntry; read<T>(fn: (file: string) => T): T;
+  /** The map the door read, on a verb that declares `map: 'required'`; reading it on any other verb throws. */
+  readonly map: ProductMap;
+}
 
 export interface VerbSpec<B> {
   /** The route takes a JSON body: jsonOnly guards it and the door parses it. `true` passes the raw value on; a function
@@ -44,11 +51,13 @@ export interface VerbSpec<B> {
   kettle?: (sim: ScanSim, c: DoorInput<B>) => unknown;
   /** The status a sim value answers with (default 200). */
   kettleStatus?: number;
+  /** `required`: the map is read after the store stage (an unreadable one refuses with the reader's status) and handed on as `c.map`. */
+  map?: 'required';
   live: (c: LiveInput<B>) => Response | Promise<Response>;
 }
 
 /** One built door verb, as the registry keeps it: the guard and the stages are derived, never chosen by the route. */
-export interface DoorRecord { route: string; verb: Verb; guard: 'localHost' | 'localOnly'; json: boolean; store: boolean; kettle: boolean }
+export interface DoorRecord { route: string; verb: Verb; guard: 'localHost' | 'localOnly'; json: boolean; store: boolean; map: boolean; kettle: boolean }
 /** Every door verb built in this process (one row per route and verb). */
 export const DOORS: DoorRecord[] = [];
 
@@ -77,7 +86,7 @@ export function door<S extends Partial<Record<Verb, VerbSpec<any>>>>(route: stri
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const v = spec[verb] as VerbSpec<any>;
     const guard = guardOf(verb);
-    DOORS.push({ route, verb, guard, json: !!v.body, store: v.store === 'required', kettle: !!v.kettle });
+    DOORS.push({ route, verb, guard, json: !!v.body, store: v.store === 'required', map: v.map === 'required', kettle: !!v.kettle });
     out[verb] = async (req, ctx) => {
       const denied = guard === 'localHost' ? localHost(req) : localOnly(req);
       if (denied) return Response.json({ error: denied }, { status: 403 });
@@ -103,10 +112,18 @@ export function door<S extends Partial<Record<Verb, VerbSpec<any>>>>(route: stri
       if (sim) return simReply(() => v.kettle!(sim, input), v.kettleStatus ?? 200);
       const p = product!;
       if (v.store === 'required' && !hasStore(p)) return Response.json({ error: `no scan store for ${slug}` }, { status: 404 });
+      let map: ProductMap | undefined;
+      if (v.map === 'required') {
+        const m = readProductMap(p);
+        if (!m.ok) return Response.json({ error: m.error }, { status: m.status });
+        map = m;
+      }
       const read = <T>(fn: (file: string) => T): T => {
         try { return fn(storeFile(p)); } catch (e) { throw new StoreUnreadable((e as Error).message); }
       };
-      try { return await v.live({ ...input, product: p, read }); } catch (e) {
+      const live = { ...input, product: p, read } as LiveInput<unknown>;
+      Object.defineProperty(live, 'map', { get: () => { if (!map) throw new Error(`${route} ${verb} reads c.map without declaring map: 'required'`); return map; } });
+      try { return await v.live(live); } catch (e) {
         if (e instanceof StoreUnreadable) return Response.json({ error: `cannot read the scan store: ${e.message}` }, { status: 503 });
         throw e;
       }

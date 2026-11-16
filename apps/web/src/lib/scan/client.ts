@@ -6,12 +6,15 @@ import type { AppStructure, LensEntry, LensManifest } from '@bp/core/standard/ty
 import { refreshProjects, statusOfStore, storeFromList } from './projects.ts';
 import { latestRun } from '@bp/core/scan/derive';
 import type { ScanJob, ScanScope } from '@bp/core/scan/jobs';
+import type { SavedFocus } from '@bp/core/scan/focus';
 import type { DispatchResult } from './actions.ts';
 import type { Wave, WaveBody, WaveDispatchResult } from '@bp/core/scan/waves';
 import { fullScan as full, isEmptyScan as isEmpty, type DecisionBody, type Proposal, type ScanSnapshot } from '@bp/core/scan/types';
 import type { CommitDiff, ReleaseCreated, TriageBody, TriageResult, VersionSuggestion } from '@bp/core/scan/types';
-import type { ReleaseReady } from '@bp/core/model/scan-sim';
-import { errorText, parseCommitDiff, parseJson, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
+import type { BuildForecast, ReleaseReady, WaveForecast } from '@bp/core/model/scan-sim';
+import type { Landings } from '@bp/core/scan/landed';
+import type { Watch } from '@bp/core/train/watch';
+import { errorText, parseCommitDiff, parseFocusBody, parseFocuses, parseJson, parseLandings, parseWatch, parseWatches, parseReleaseCreated, parseScanJob, parseTriageResult, parseVersionSuggestion, parseWaveBody, parseWaveDispatch, parseWaves, type Parsed } from '@bp/core/train/wire';
 import { mergeScan } from '@bp/core/scan/merge';
 
 export { mergeScan, upsert } from '@bp/core/scan/merge';
@@ -264,8 +267,25 @@ async function send<T>(url: string, method: 'POST' | 'PATCH' | 'DELETE', body?: 
 
 /** Queue a lens scan over a scope (202 = the job). Errors: 400 unknown-lens / no-scan-method / bad-scope, 429 queue full. */
 export const postScan = (slug: string, lens: string, scope: ScanScope): Promise<ScanJob> => send(api(slug) + '/scans', 'POST', { lens, scope });
+/** Queue ONE job over every enabled lens (`/lens-scan measure --lens all` or `propose --lens all`; one MAX_RUNNING slot). */
+export const postAllLenses = (slug: string, phase: 'measure' | 'propose'): Promise<ScanJob> =>
+  send(api(slug) + '/scans', 'POST', { lens: 'all', scope: { kind: 'all', label: 'Every lens', features: [] }, ...(phase === 'propose' ? { phase } : {}) });
+/** A person's veto of a machine decision inside its window (seam B2): the row goes back to proposed. 409 = not vetoable now. */
+export const postVeto = (slug: string, id: string, reason: string): Promise<Proposal> => send(api(slug) + '/proposals/' + encodeURIComponent(id) + '/veto', 'POST', { reason });
 /** Approve the proposed ones among `ids` and build them all in one execute job. 409 = none could go (`body.skipped`). */
 export const postDispatch = (slug: string, ids: string[]): Promise<DispatchResult> => send(api(slug) + '/dispatch', 'POST', { ids });
+/** The build forecast (POST dispatch `{ ids, dry: true }`): 200 = what the dispatch would approve, build and skip, with nothing
+ *  written; else the refusal the dispatch would give (403 every id held, 409 none can go, 429 queue full with the forecast). */
+export const postDispatchDry = (slug: string, ids: string[]): Promise<BuildForecast> => call(api(slug) + '/dispatch', 'POST', parseForecast, { ids, dry: true });
+const isIds = (x: unknown): x is string[] => Array.isArray(x) && x.every((i) => typeof i === 'string');
+const isSkips = (x: unknown): x is { id: string; status: string }[] => Array.isArray(x) && x.every((s) => !!s && typeof (s as { id?: unknown }).id === 'string' && typeof (s as { status?: unknown }).status === 'string');
+/** A forecast's shape: `dry: true`, approve / take ids, skipped rows, a job count (a wave's adds `wave` and `packages`). */
+const parseForecast = <T extends BuildForecast>(x: unknown): Parsed<T> => {
+  const o = (x ?? {}) as Partial<WaveForecast>;
+  const ok = o.dry === true && isIds(o.approve) && isIds(o.take) && isSkips(o.skipped) && typeof o.jobs === 'number'
+    && (o.packages === undefined || (Array.isArray(o.packages) && o.packages.every((p) => !!p && typeof p.id === 'string' && isIds(p.take) && isSkips(p.skipped) && typeof p.jobs === 'number')));
+  return ok ? { ok: true, value: o as T } : { ok: false, error: 'not a build forecast (dry, approve, take, skipped, jobs)' };
+};
 /** Cancel a queued or running job. */
 export const deleteJob = (slug: string, id: string): Promise<ScanJob> => send(api(slug) + '/scans/' + encodeURIComponent(id), 'DELETE');
 /** Retire (false) or restore (true) a temporary lens. 403 = not temporary. */
@@ -305,8 +325,15 @@ async function call<T>(url: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
 }
 /** Triage built items (POST triage). 409 = nothing moved (the result is in `body`). */
 export const postTriage = (slug: string, body: TriageBody): Promise<TriageResult> => call(api(slug) + '/triage', 'POST', parseTriageResult, body);
-/** The suggested next version (GET releases/suggest). */
-export const getReleaseSuggestion = (slug: string): Promise<VersionSuggestion> => call(api(slug) + '/releases/suggest', 'GET', parseVersionSuggestion);
+/** The suggested next version (GET releases/suggest), bumped by the chosen items (`ids`) or every free accepted one. */
+export const getReleaseSuggestion = (slug: string, ids?: readonly string[]): Promise<VersionSuggestion> =>
+  call(api(slug) + '/releases/suggest' + (ids?.length ? '?ids=' + encodeURIComponent(ids.join(',')) : ''), 'GET', parseVersionSuggestion);
+/** What already landed on the base branch, read from git (GET releases/landed). */
+export const getLandings = (slug: string): Promise<Landings> => call(api(slug) + '/releases/landed', 'GET', parseLandings);
+/** The outcome watches, after the server queued what is due (GET releases/watch). */
+export const getWatches = (slug: string): Promise<Watch[]> => call(api(slug) + '/releases/watch', 'GET', parseWatches);
+/** Turn release `id`'s outcome watch on or off (POST releases/watch). 404 unknown release; 409 not merged or tagged yet. */
+export const postWatch = (slug: string, id: string, on: boolean): Promise<Watch> => call(api(slug) + '/releases/watch', 'POST', parseWatch, { release: id, on });
 /** A draft release of accepted items (POST releases, 201). 409 = nothing to ship or the version exists. */
 export const postRelease = (slug: string, version: string, ids?: string[]): Promise<ReleaseCreated> =>
   call(api(slug) + '/releases', 'POST', parseReleaseCreated, ids === undefined ? { version } : { version, ids });
@@ -314,13 +341,15 @@ export const postRelease = (slug: string, version: string, ids?: string[]): Prom
 export const postReleaseBuild = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseScanJob, {});
 /** The build's pre-flight (POST build `{"dry":true}`): 200 `{ ready: true }` with nothing queued, else the refusal the
  *  build would give (409 state or busy, 429 queue full). It never checks gh: the dry run reads local state only. */
-export const postReleaseBuildDry = (slug: string, id: string): Promise<ReleaseReady> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/build', 'POST', parseReady, { dry: true });
+export const postReleaseBuildDry = (slug: string, id: string, step: 'build' | 'tag' = 'build'): Promise<ReleaseReady> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/' + step, 'POST', parseReady, { dry: true });
 const parseReady = (x: unknown): Parsed<ReleaseReady> => {
   const o = (x ?? {}) as { ready?: unknown; gh?: unknown };
   return o.ready === true && (o.gh === 'signed-in' || o.gh === 'unchecked') ? { ok: true, value: { ready: true, gh: o.gh } } : { ok: false, error: 'ready: not true, or gh: not signed-in | unchecked' };
 };
 /** Start the release job that finishes `id` after its PR merged (202 = the job). 412 / 409 as build. */
 export const postReleaseFinish = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/finish', 'POST', parseScanJob, {});
+/** Start the release job that tags `id` over items already on the default branch (202 = the job). 412 / 409 as build. */
+export const postReleaseTag = (slug: string, id: string): Promise<ScanJob> => call(api(slug) + '/releases/' + encodeURIComponent(id) + '/tag', 'POST', parseScanJob, {});
 /** One item commit's diff (GET commits/[sha]). 400 = not a sha; 404 = not an item commit of this store. */
 export const getCommitDiff = (slug: string, sha: string): Promise<CommitDiff> => call(api(slug) + '/commits/' + encodeURIComponent(sha), 'GET', parseCommitDiff);
 
@@ -332,11 +361,23 @@ export const getWaves = (slug: string): Promise<Wave[]> => call(api(slug) + '/wa
 export const postWave = (slug: string, body: WaveBody): Promise<Wave> => call(api(slug) + '/waves', 'POST', inWave, body);
 /** Rename a draft wave and/or replace its packages (PATCH). 409 = not a draft, or taken. */
 export const patchWaveReq = (slug: string, id: string, patch: Partial<WaveBody>): Promise<Wave> => call(api(slug) + '/waves/' + encodeURIComponent(id), 'PATCH', inWave, patch);
+/** Queue a directed scan: one lens, a scope and the note (202 = the job). 400 bad-focus / unknown-lens / no-scan-method / bad-scope. */
+export const postDirectedScan = (slug: string, lens: string, scope: ScanScope, focus: string): Promise<ScanJob> => call(api(slug) + '/scans', 'POST', parseScanJob, { lens, scope, focus });
+/** The product's saved focuses, newest first (GET focuses). */
+export const getFocuses = (slug: string): Promise<SavedFocus[]> => call(api(slug) + '/focuses', 'GET', parseFocuses);
+/** Keep a focus (POST focuses, 201; the same lens and note answers its row, 200). 400 bad-focus / unknown-lens. */
+export const postFocus = (slug: string, lens: string, note: string): Promise<SavedFocus> => call(api(slug) + '/focuses', 'POST', parseFocusBody, { lens, note });
+/** Forget a saved focus. 404 = it is not there. */
+export const deleteFocusReq = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/focuses/' + encodeURIComponent(id), 'DELETE');
 /** Delete a draft wave. 409 = not a draft. */
 export const deleteWaveReq = (slug: string, id: string): Promise<{ id: string }> => send(api(slug) + '/waves/' + encodeURIComponent(id), 'DELETE');
 /** Build a wave (202), or only the named packages. 409 = none could go (`body.skipped`); 429 = the queue cap stopped it (`body` = the result so far). */
 export const postWaveDispatch = (slug: string, id: string, packages?: string[]): Promise<WaveDispatchResult> =>
   call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseWaveDispatch, packages === undefined ? {} : { packages });
+/** A wave dispatch's forecast (`{ dry: true }`): 200 = one row per package, nothing approved, queued or saved; else the
+ *  refusal the dispatch would give (404, 400, 403, 409, 429 with the forecast). */
+export const postWaveDispatchDry = (slug: string, id: string, packages?: string[]): Promise<WaveForecast> =>
+  call(api(slug) + '/waves/' + encodeURIComponent(id) + '/dispatch', 'POST', parseForecast<WaveForecast>, packages === undefined ? { dry: true } : { packages, dry: true });
 
 /** One turn of the lens onboarding chat: `product` is a slug or 'kettle'; `session` from the previous answer; `kind`
  *  asks for a permanent project lens (the default) or a temporary one. 504 after 3 minutes. `signal` cancels the turn

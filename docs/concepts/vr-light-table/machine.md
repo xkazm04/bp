@@ -6,6 +6,90 @@ file. Every line below is a command's own output or a file read on the named hos
 > **2026-10-23 (owner).** Lynx is now the only build host; Wolf is retired, and the live plan is
 > [`lynx-plan.md`](lynx-plan.md). The readings below are unchanged. New Lynx facts go in a new dated section.
 
+## Lynx, 2026-11-02 (later): the build-up's structure frame, the judged batch, any count of domains (spark onboarding-vr WP-V3)
+
+The four items WP-V2 left open. The structure is committed by the tick, not the feed callback, and every heavy piece of a
+build-up's commit takes a frame of its own (`HeavyBusy`/`NoteHeavy` in `BpBuildup.cpp`): the structure's volumes, then the
+counts and title, the label map, the room names, the glyphs and the pins as steps, the level labels in 3 ms slices, the
+wing labels one a frame, the furniture kit loaded ahead during the survey (one mesh a frame, held), and every sheet redraw
+(`RedrawSheet` only marks the sheet while a build-up spreads its commit; the tick draws it in a free frame). The CSV has a
+`BpBuild/GameThread/TableTick` column. The batch being judged gets a pencil halo, wash, edge and heavier brackets in the
+sheet's render target (no new draw). The outline margin takes any count: past 12 domains the rows share the band and the
+type shrinks with them to the floor, past what fits at the floor the oldest scroll off. The title's count is the judge's
+`progress` (batches LANDED), shown as "n of N judged"; the narration's batch number is no longer read as one. Server:
+apps/server on 3197 with `fake-onboard.mjs env --dir .../bp-fake-onboard-v3`; 18+ domains from a pass-through proxy in
+scratch that adds 4 made-up domains to each `outline` event of one slug (20 in all; never placed, they recede at the
+structure).
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 51 | game xr-sim, CSV over a whole build-up (`dowser-v3b`), `BpBuild structure/risen/handover` events | idle before: FrameTime p50 8.7 p95 11.5, GameThread p95 6.5 max 8.6, draws p50 120; structure burst (structure to risen + 300): FrameTime p50 8.7 p95 11.4, **GameThread p95 6.9 max 9.7** (was 28.3, reading 49), draws p50 139 max 147; judging: draws p50 141 max 149; hand-over + 300: GameThread max 9.3, draws max 149 |
+| 52 | the same run's log | `the structure drawn ... in 0.5 ms (1.7 ms with its choreography ...)`, then a step a frame: `counts and title in 3.3 ms`, `labels ... in 0.2 ms`, `names in 5.7 ms`, `glyphs in 0.8 ms` (14.9 before: the kit was loaded at the step), `pins in 0.3 ms` on frames 8546-8550 |
+| 53 | the first spread (`dowser-v3a`, counts still in the structure's frame) | structure frame GameThread 14.5 ms (`heavy structure 8.5 ms`); moving counts and title to a step gave reading 51 |
+| 54 | Kettle, `--exec "BpView.Pose target"`, `-csvCaptureFrames=900` | RHI draws p50 **162** p95 164 (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2), as reading 46 |
+| 55 | PIE, `dowser-v3m`/`v3p` through the proxy, 20 domains | `domains=20`; four rows of six in the same band, names and one capability line at the floor, the rest `+n more`; judging: title `JUDGE · 1 OF 3 JUDGED` while the caption says `Judging batch 2: ...` (the fake's journal: `progress` n=1 at 111.6 s, then `Judging batch 2 of 3` at 112.6 s; a real run dispatches its batches in parallel, so `progress` counts landed batches) |
+
+Captures (PIE, `mcp-steps/onb-v3-capture.jsonl`): [judging, after](captures/onb-v3-judging.jpg) (before:
+[onb-v2-judging](captures/onb-v2-judging.jpg)), [20 domains in the margin](captures/onb-v3-margin-20.jpg), [the structure
+a second in, wing labels arriving one a frame](captures/onb-v3-structure.jpg), [built](captures/onb-v3-built.jpg).
+
+Not established: the survey's own sheet redraws still cost 6-12 ms of game thread at 15 Hz, one 30-33 ms (both runs,
+before the structure; text cut and measured per parcel each redraw); a render-thread spike at the structure frame in one
+run of two (166.6 ms RenderThreadTime, GameThread 6.0; reading 51), not seen in the other; the made-up domains are never
+placed, so a real 18-domain structure (its wings and rooms rising) is untested.
+
+## Lynx, 2026-11-02: the table builds itself while a product onboards (spark onboarding-vr WP-V2)
+
+While the open product's adopt job runs, BpLink reads `.../onboarding/feed?after=<n>&job=<id>&layout=islands` every 0.5 s
+(parsed off the game thread) and `BpBuildup.cpp` draws B's choreography on the table: survey parcels, the outline typed in
+the near margin, each line flying to its wing as the wing's outline draws and its rooms rise one at a time (rest walls'
+height and Show, at most one room committed a frame), pencil brackets, pencil then ink health, narration on the follow
+caption and the phase strip in a title block. All 2D goes into the sheet's one render target (no new component). At
+`done` the live plan takes over with the same boxes and the ink fades over 2 s. `BpBuild.Line` logs the state. Server:
+apps/server on 3197 with `fake-onboard.mjs env`; one fresh `fake-onboard.mjs --slug dowser-v2<x>` per run.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 46 | `--mode game --xr-sim --url ... --exec "BpView.Pose target"`, `-csvCaptureFrames=900`, Kettle, before (`29320f0` binaries) and after | RHI draws p50 **162** both (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2), p95 164 both |
+| 47 | game, switch to `dowser-v2a` at 15 s, fake onboarding, feed to done | `structure: 4 wings, 7 rooms queued over 9.4 s`; `history: the final plan ... read; 3 of 7 rooms move` then `the rooms glided to the final boxes`; `done: the live plan ... takes over; 0 of 7 rooms differ from the drawn boxes`; `settled; the table is the live table` |
+| 48 | the structure's commit, before and after spreading it (labels, names, glyphs one a frame) | before `the structure drawn ... in 74.7 ms`; after `in 14.9 ms`, then `commit step labels in 5.2 ms`, `names in 6.9 ms`, `glyphs in 14.9 ms` |
+| 49 | CSV over a whole build-up (`dowser-v2e`, `CsvProfile Start/Stop`, events `BpBuild structure/risen/handover`), ~100 fps xr-sim | idle before: FrameTime p50 5.7 p95 9.1, draws p50 120; structure burst (structure to risen + 300 frames): p50 5.9 **p95 9.3**, game-thread max 28.3 (the structure frame), draws p50 139 p95 143 max 159; judging: draws p50 141; hand-over + 300: p95 10.6, max 15.7, draws max 165; GC every ~60 s 48-59 ms (`GC##` events), as before |
+| 50 | `BpLink.Product kettle` mid-judging, then back (PIE, and game `dowser-v2g`) | `is being onboarded: its live plan ... waits for the build-up`, then `54 events (past, at their end state) applied in 3.7 ms`; every room up and the pencil as live; at done `0 of 7 rooms differ`. Before the hold (PIE run 3) the live plan drew for 7 frames first, then the build-up replaced it |
+
+Captures (PIE, PoF `capture_viewport`, `mcp-steps/onb-v2-capture.jsonl`): [survey](captures/onb-v2-survey.jpg),
+[outline](captures/onb-v2-outline.jpg), [a wing drawing, lines flying](captures/onb-v2-structure-early.jpg),
+[rooms rising](captures/onb-v2-structure-mid.jpg), [built](captures/onb-v2-built.jpg), [judging: pencil and
+brackets](captures/onb-v2-judging.jpg), [join mid-run](captures/onb-v2-join.jpg), [hand-over](captures/onb-v2-handover.jpg),
+[done, the live table](captures/onb-v2-done.jpg), [a long product name](captures/onb-v2-long-name.jpg).
+
+Not established: a frame with no game-thread spike at the structure (28 ms once, down from about 75); the brackets read
+faintly at the target pose; a build of a product with more than 12 domains (the margin holds 12, the rest are not typed).
+
+## Lynx, 2026-11-02: another product at runtime, the wrist's Projects tab, onboarding lines (spark onboarding-vr WP-V1)
+
+`BpLink.Product <slug>` (and a pinch on a Projects row) retargets the table without a relaunch: BpLink cancels what is
+still out for the old product, drops any answer of the old generation, clears its plan, structure, scan side, waves,
+briefs and draft, and reads the new one; the table clears what it drew and rebuilds through `ApplyPlan` (its rev
+early-out is per product). BpLink polls `GET /api/products` (30 s), `GET /api/onboarding` (4 s, 1 s while a job runs)
+and a running job's `.../onboarding/feed?after=<n>` (for `progress` n of N). The lamp says each running onboarding's
+milestones once, whatever is open. `BpLink.Onboarding` logs the model; `BpLink.After <s> <cmd>` times `-ExecCmds`.
+Runs against apps/server (`run-bplink.mjs --url`, new) with `scripts/buildup/fake-onboard.mjs`'s env and clones.
+
+| # | What ran | Verbatim result |
+|---|---|---|
+| 41 | `--mode game --url ... --exec "BpLink.After 30 BpLink.Product pof,BpLink.After 55 BpLink.Product kettle,..."` | `product kettle -> pof (...)`, `BpTable: product -> pof: the old drawing is cleared (kettle ...: rooms=13 bays=29 tiles=133 pins=31)`, `BpTable: instances rooms=32 bays=43 tiles=106`; back: `product pof -> kettle`, `instances rooms=13 bays=29 tiles=133`, `pins=31` |
+| 42 | the same, then `BpRoom.Enter scheduling`, `BpDeck.Approve` / (run 2) `BpDeck.Decline` | `draft w-...: kf-051 composes a new draft (201)`; `decline kf-051: off this session's queue`. The store's approve answers 404 for Kettle's sample, as before |
+| 43 | a fake onboarding (dowser@414e6ed) while Kettle is open, then `BpWrist.Tap wrist:project:dowser-vr` | `onboarding milestone dowser-vr: "Dowser (fake onboarding): the plan is drawn"`; `running judge 1/3 (judge)`; after done: `"... is in bp"`, `finished onboarding while open: reading it again`, `instances rooms=7 bays=7 tiles=17`; with `--fail judge`: `"... stopped at judge"` |
+| 44 | CSV, `--xr-sim`, Kettle at the target pose (`-csvCaptureFrames=600`) | RHI draws p50 **162** (Basepass 32, Prepass 31, occlusion 27, Shadow 3, Translucency 30, SlateUI 2) |
+| 45 | CSV via `CsvProfile Start/Stop` after kettle -> pof -> kettle with the Projects tab open | p50 **162**, every pass identical: a switch leaves nothing behind, and the tab is one Slate widget as before |
+
+Captures (PIE, PoF `capture_viewport`, `mcp-steps/onb-v1-capture.jsonl`): [wrist Projects](captures/onb-v1-wrist-projects-kettle.jpg),
+[a building row](captures/onb-v1-wrist-building-dowser.jpg), [the lamp line at L0](captures/onb-v1-lamp-plan-drawn-kettle.jpg),
+[the empty sheet while onboarding](captures/onb-v1-being-onboarded-target.jpg), [done, the live table](captures/onb-v1-done-target.jpg).
+
+Not established: the 144 of reading 36 predates the pins, glyphs, deck and card sparks, so readings 44-45 are not a
+before/after of this change (none of its code adds a component to the Kettle scene); a headset pinch on a Projects row.
+
 ## Lynx, 2026-10-26: the headset session's code, checked in the flat view
 
 Commits `2d57f40`..`3c4860f` build items 1–6 of [`headset-plan.md`](headset-plan.md) ("Code to change"). No headset is

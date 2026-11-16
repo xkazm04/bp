@@ -1,43 +1,53 @@
-// The wrist panel (spark vr-fidelity-40 FC1, element 11; BpPawn.h): the concept's "Packages" on the left wrist. It shows
-// the latest wave (GET .../waves: the last dispatched one, else the newest draft) and, per package, its name, its model
-// and effort, and a ring for how many of its findings are built (done, accepted or released in the store; a draft's
-// rings say "draft"), all read from BpLink's scan state. With no wave it says so. Nothing here composes, dispatches or
-// computes a wave. In room mode (spark vr-room-layers WP3) two tabs switch it to the product's rooms by urgency, the
-// room shown marked; a tap on a row switches rooms (ABpTable::SwitchRoom, "the wrist").
+// The wrist panel (spark vr-fidelity-40 FC1, element 11; BpPawn.h). Night two W1 (the owner on the Quest 3S, 2026-11-09:
+// "the wrist panel is overpopulated with options, we need to migrate into the main frame and keep wrist for quick
+// decisions"; "wrist screen needs 90 degrees move in clock direction to face direction of my sight"): it keeps MENU (the
+// console, BpConsole.cpp, where the old tabs went), SEAT, TOUR, and one card for what waits for a yes or a no: the armed
+// scan (START, CANCEL), a scan's refusal (DISMISS), the decision on the deck or the card (APPROVE, DECLINE, calling what
+// they call), else the lamp's offer; under it the scan band. Fewer, larger targets, every text over the 22' floor. With a
+// headset it turns to face the eye by itself (bp.WristFace 1), on the hand bp.WristHand names, hidden while that hand is
+// not tracked. The packages' wave (PackagesState) is read here for the console's PACKAGES page.
 #include "BpPawn.h"
 
+#include "BpAudio.h"
 #include "BpGameMode.h"
+#include "BpSheet.h"
 #include "BpLink.h"
 #include "BpTable.h"
 #include "BpType.h"
-#include "Brushes/SlateRoundedBoxBrush.h"
+#include "BpWords.h"
 #include "Camera/CameraComponent.h"
 #include "Components/WidgetComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "MotionControllerComponent.h"
-#include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
-#include "Fonts/FontMeasure.h"
-#include "Framework/Application/SlateApplication.h"
-#include "Rendering/SlateRenderer.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SCanvas.h"
-#include "Widgets/SLeafWidget.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
 namespace
 {
-	const FLinearColor Cyan(FColor(0xBF, 0xE8, 0xFF));
-	const FLinearColor Amber(FColor(0xFF, 0xB5, 0x47));
-	/** The panel's glass, its lit edge and its sub-lines' paler cyan (FR, element 11: from 0A1E40, a lighter blue). */
-	const FLinearColor CyanEdge(FColor(0xD8, 0xF4, 0xFF));
-	/** FAF: the lit glass (from FR's 123366 at 0.88, the judges' "opaque slate") and the sub-lines nearer white. */
-	const FLinearColor GlassLit(FColor(0x15, 0x3C, 0x74));
-	const FLinearColor CyanText(FColor(0xEC, 0xF9, 0xFF));
+	// The panel on the grip with a headset, set live (ABpPawn::ApplyWristPose). The grip's axes: X toward the thumb, Y out
+	// of the palm, Z toward the wrist. 2026-11-08 (the owner, on the Quest 3S): the old pose (FRotator(-60, 180, 0), offset (0,
+	// 0, 6)) faced 131 degrees away from the eye with a resting hand (palm down, forearm toward the paper, 30 cm forward and 40
+	// down from the eye); turned 40% of that toward the eye it stands 79 degrees off, the turn a person makes is 40% shorter.
+	// 2026-11-09 (night two W1): with bp.WristFace 1 (the default) only the offset holds and the panel turns to the eye by
+	// itself; these rotations are bp.WristFace 0's fixed pose. Only the arm can confirm them.
+	TAutoConsoleVariable<float> CVarWristPitch(TEXT("bp.WristPitchDeg"), -32.2f, TEXT("bp.WristFace 0: the wrist panel's pitch on the grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristYaw(TEXT("bp.WristYawDeg"), -110.4f, TEXT("bp.WristFace 0: the wrist panel's yaw on the grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristRoll(TEXT("bp.WristRollDeg"), -54.6f, TEXT("bp.WristFace 0: the wrist panel's roll on the grip (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetX(TEXT("bp.WristOffsetXCm"), -2.3f, TEXT("The wrist panel's offset along the grip's X, toward the thumb (cm)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetY(TEXT("bp.WristOffsetYCm"), -9.2f, TEXT("The wrist panel's offset along the left grip's Y, out of the palm (cm; negative: out of the back of the hand; mirrored on the right hand)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristOffsetZ(TEXT("bp.WristOffsetZCm"), 1.8f, TEXT("The wrist panel's offset along the grip's Z, toward the wrist (cm)."), ECVF_Default);
+	TAutoConsoleVariable<int32> CVarWristPreview(TEXT("bp.WristPreview"), 0, TEXT("A flat check of the wrist pose: 1 hangs the panel from a modelled resting left hand (30 cm forward, 18 left, 40 down from the eye, palm down, forearm forward) with the bp.Wrist* pose, so a flat capture shows the angle."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristTint(TEXT("bp.WristTint"), 1.f, TEXT("The wrist sheet's brightness, 0.4 to 1.5 (1: the capture's)."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristPreviewDeg(TEXT("bp.WristPreviewDeg"), 0.f, TEXT("With bp.WristPreview 1: the hand turned this far along the arc that squares the panel to the eye (degrees)."), ECVF_Default);
+	TAutoConsoleVariable<int32> CVarWristFace(TEXT("bp.WristFace"), 1, TEXT("1 (default): the wrist panel turns to face the eye by itself (its normal at the eye, its up the head's up, smoothed), at the bp.WristOffset* point on the grip; 0: the fixed pose of bp.WristPitchDeg/YawDeg/RollDeg. Saved; settings' WRIST toggles it."), ECVF_Default);
+	TAutoConsoleVariable<int32> CVarWristHand(TEXT("bp.WristHand"), 0, TEXT("The hand the wrist panel is on: 0 left (default), 1 right. Saved; settings' HAND toggles it."), ECVF_Default);
+	TAutoConsoleVariable<float> CVarWristFaceRate(TEXT("bp.WristFaceRate"), 14.f, TEXT("How fast the facing wrist panel follows the eye (1/s, 2 to 60; higher is stiffer)."), ECVF_Default);
 
 	/** The sheet's family (BpType.h; FE): a font whose cap height is CapPx pixels, Roboto until the table built it. */
 	FSlateFontInfo CapFont(const TCHAR* Style, float CapPx)
@@ -46,118 +56,31 @@ namespace
 		return FCoreStyle::GetDefaultFontStyle(Style, CapPx / (0.711f * 96.f / 72.f));
 	}
 
-	/** A progress ring: a faint full circle and an amber arc for the built share, clockwise from the top. */
-	class SBpRing : public SLeafWidget
-	{
-	public:
-		SLATE_BEGIN_ARGS(SBpRing) {}
-			SLATE_ARGUMENT(float, Fraction)
-		SLATE_END_ARGS()
-
-		void Construct(const FArguments& Args) { Fraction = FMath::Clamp(Args._Fraction, 0.f, 1.f); }
-		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(96.0, 96.0); }
-		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer,
-			const FWidgetStyle&, bool) const override
-		{
-			const FVector2f Size = FVector2f(Geometry.GetLocalSize());
-			const FVector2f Centre = Size * 0.5f;
-			const float Radius = FMath::Min(Size.X, Size.Y) * 0.5f - 6.f;
-			const auto Arc = [&](float From, float To, const FLinearColor& Color, float Thickness)
-			{
-				TArray<FVector2f> Points;
-				const int32 Steps = FMath::Max(2, FMath::CeilToInt((To - From) * 64.f));
-				for (int32 Step = 0; Step <= Steps; ++Step)
-				{
-					const float A = 2.f * UE_PI * FMath::Lerp(From, To, static_cast<float>(Step) / Steps) - 0.5f * UE_PI;
-					Points.Add(Centre + FVector2f(FMath::Cos(A), FMath::Sin(A)) * Radius);
-				}
-				FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color, true, Thickness);
-			};
-			Arc(0.f, 1.f, Cyan.CopyWithNewOpacity(0.22f), 7.f);
-			if (Fraction > 0.f) Arc(0.f, Fraction, Amber, 8.f);
-			return Layer + 1;
-		}
-
-	private:
-		float Fraction = 0.f;
-	};
-
-	/** The package's glyph: one small isometric block per finding, up to six, stacked as the concept's package icons. */
-	class SBpBlocks : public SLeafWidget
-	{
-	public:
-		SLATE_BEGIN_ARGS(SBpBlocks) {}
-			SLATE_ARGUMENT(int32, Count)
-		SLATE_END_ARGS()
-
-		void Construct(const FArguments& Args) { Count = FMath::Clamp(Args._Count, 1, 6); }
-		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(100.0, 84.0); }
-		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Out, int32 Layer,
-			const FWidgetStyle&, bool) const override
-		{
-			const float C = 0.866f, S = 0.5f, Unit = 22.f;
-			const FVector2f Origin(50.f, 30.f);
-			const auto P = [&](float X, float Y, float Z) { return Origin + FVector2f((X - Y) * C, (X + Y) * S - Z) * Unit; };
-			for (int32 Index = 0; Index < Count; ++Index)
-			{
-				const float X = static_cast<float>(Index % 2) * 1.1f, Y = static_cast<float>((Index / 2) % 2) * 1.1f, Z = static_cast<float>(Index / 4) * 0.8f;
-				const FVector2f V[8] = { P(X, Y, Z), P(X + 1, Y, Z), P(X + 1, Y + 1, Z), P(X, Y + 1, Z),
-					P(X, Y, Z + 0.7f), P(X + 1, Y, Z + 0.7f), P(X + 1, Y + 1, Z + 0.7f), P(X, Y + 1, Z + 0.7f) };
-				const int32 Edges[12][2] = { {0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7} };
-				for (const auto& Edge : Edges)
-				{
-					TArray<FVector2f> Line = { V[Edge[0]], V[Edge[1]] };
-					FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Line, ESlateDrawEffect::None, Cyan.CopyWithNewOpacity(0.85f), true, 1.6f);
-				}
-			}
-			return Layer + 1;
-		}
-
-	private:
-		int32 Count = 1;
-	};
-
 	bool IsBuilt(const FString& Status)
 	{
 		return Status == TEXT("done") || Status == TEXT("accepted") || Status == TEXT("released");
 	}
 
-	// ---- The rooms tab's layout, in the panel's pixels (WristPanelWidthCm x WristPanelHeightCm at WristPanelPxPerCm): the
-	// content's left and right edges inside the glow, the panel and their pads; the tabs on the title's row, right; the
-	// rows under the title and its sub-line; the pager under them. The hands' boxes are these.
+	// ---- The quick-decision layout (night two V4), in the panel's pixels: WristPanelWidthCm wide at WristPanelPxPerCm, as tall
+	// as what it shows needs and never less than WristPanelHeightCm (nothing on it is cut: a long title makes the panel taller).
+	// The type at its real size on the arm, 40 cm from the eye (50 px a cm): the decision's title 32 px caps (0.64 cm, 55'),
+	// the answers 30 (0.60 cm, 52'), the top row 28 (48'), the words 26 (45'), the strip, the chips and the band 24 (0.48 cm,
+	// 41', the smallest; the floor is 30'). bp.TextSize scales the panel as a whole.
 	constexpr float WristW = ABpPawn::WristPanelWidthCm * ABpPawn::WristPanelPxPerCm;
-	constexpr float WristH = ABpPawn::WristPanelHeightCm * ABpPawn::WristPanelPxPerCm;
-	constexpr float WristX0 = 29.f;
-	constexpr float WristX1 = WristW - 29.f;
-	const FBox2f WristTabPackages(FVector2f(WristX1 - 320.f, 16.f), FVector2f(WristX1 - 166.f, 60.f));
-	const FBox2f WristTabRooms(FVector2f(WristX1 - 154.f, 16.f), FVector2f(WristX1, 60.f));
-	/** With a headset, SEAT left of the tabs (BpHeadset.cpp: the table comes to the seated eye again). */
-	const FBox2f WristSeat(FVector2f(WristX1 - 430.f, 16.f), FVector2f(WristX1 - 332.f, 60.f));
-	constexpr float WristRowTop = 112.f;
-	constexpr float WristRowH = 60.f;
-	constexpr float WristRowStep = 66.f;
-	const FBox2f WristPrev(FVector2f(WristX0, WristRowTop + 5 * WristRowStep), FVector2f(WristX0 + 160.f, WristRowTop + 5 * WristRowStep + 44.f));
-	const FBox2f WristNext(FVector2f(WristX1 - 160.f, WristRowTop + 5 * WristRowStep), FVector2f(WristX1, WristRowTop + 5 * WristRowStep + 44.f));
-
-	float WristTextWidth(const FString& Text, const FSlateFontInfo& Font)
-	{
-		if (FSlateApplication::IsInitialized())
-		{
-			if (FSlateRenderer* Renderer = FSlateApplication::Get().GetRenderer()) return static_cast<float>(Renderer->GetFontMeasureService()->Measure(Text, Font).X);
-		}
-		return Text.Len() * 0.5f * Font.Size * 96.f / 72.f;
-	}
-
-	FString WristCut(const FString& Text, const FSlateFontInfo& Font, float MaxW)
-	{
-		if (WristTextWidth(Text, Font) <= MaxW) return Text;
-		for (int32 Keep = Text.Len() - 1; Keep > 0; --Keep)
-		{
-			const FString Cut = Text.Left(Keep).TrimEnd() + BpType::Ellipsis();
-			if (WristTextWidth(Cut, Font) <= MaxW) return Cut;
-		}
-		return FString();
-	}
+	constexpr float WristMinH = ABpPawn::WristPanelHeightCm * ABpPawn::WristPanelPxPerCm;
+	constexpr float WX0 = 30.f;
+	constexpr float WX1 = WristW - 30.f;
+	constexpr float WGap = 12.f;
+	constexpr float WTopY0 = 22.f, WTopH = 72.f;
+	constexpr float WBtnH = 84.f;
+	constexpr float WButtonCap = 28.f, WAnswerCap = 30.f, WTitleCap = 32.f, WTextCap = 26.f, WSmallCap = 24.f;
+	/** The panel's drawn height now (DrawWrist sets it; the hit test and the aim read it). */
+	float GWristH = WristMinH;
+	/** The text size the panel's scale was last set for (TickWristLive). */
+	float GWristScale = 1.f;
+	/** How many times the wrist has been drawn (an idle panel is not: night two V4's idle count). */
+	int32 GWristDraws = 0;
+	float WPitch(float CapPx) { return BpSheet::LinePitch(CapPx, static_cast<float>(BpType::CapPerEm)); }
 
 	ABpPawn* WristPawn(UWorld* World)
 	{
@@ -167,7 +90,7 @@ namespace
 
 	FAutoConsoleCommandWithWorldAndArgs CmdWristTap(
 		TEXT("BpWrist.Tap"),
-		TEXT("BpWrist.Tap <wrist:tab:rooms|wrist:tab:packages|wrist:room:<id>|wrist:page:next|wrist:page:prev|wrist:seat>: what a hand's tap on that control of the wrist panel does (room mode shows the tabs, a headset SEAT)."),
+		TEXT("BpWrist.Tap <wrist:menu|wrist:seat|wrist:tour|wrist:approve|wrist:decline|wrist:scan:start|wrist:scan:cancel|wrist:scan:dismiss|wrist:ask:act|wrist:<any PanelAct act>|wrist:tab:<projects|rooms|packages|scan|ask|settings>>: what a hand's tap on that control of the wrist panel does (an old tab id opens the console on that page)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = WristPawn(World);
@@ -187,20 +110,21 @@ void ABpPawn::MakeWristPanel()
 	WristPanel->SetDrawSize(FVector2D(WristPanelWidthCm * WristPanelPxPerCm, WristPanelHeightCm * WristPanelPxPerCm));
 	WristPanel->SetDrawAtDesiredSize(false);
 	WristPanel->SetPivot(FVector2D(0.5, 0.5));
-	WristPanel->SetBlendMode(EWidgetBlendMode::Transparent);
+	// Wave 4: opaque (the sheet is the whole quad), cheaper than the glass it replaces and the type no longer fights the forearm.
+	WristPanel->SetBlendMode(EWidgetBlendMode::Opaque);
 	WristPanel->SetTwoSided(false);
 	WristPanel->SetBackgroundColor(FLinearColor::Transparent);
 	WristPanel->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	WristPanel->SetCastShadow(false);
 	WristPanel->SetWindowFocusable(false);
 	WristPanel->SetManuallyRedraw(true);
-	// Over 1 so its cyan and amber reach the bloom, as the concept's panel glows.
-	WristPanel->SetTintColorAndOpacity(FLinearColor(1.3f, 1.3f, 1.3f, 1.f));
+	// bp.WristTint: the sheet's brightness for a device check (TickWristLive applies it live).
+	WristPanel->SetTintColorAndOpacity(FLinearColor(1.f, 1.f, 1.f, 1.f));
 	const FVector Offset(WristPanelForwardCm, WristPanelSideCm, WristPanelDownCm);
 	if (IsHeadsetOn())
 	{
-		// A headset: on the left hand's grip until a wrist pose is wired (no tracked-hand work in this spark).
-		SetWristParent(HandGripLeft.Get(), NAME_None, FTransform(FRotator(-60.f, 180.f, 0.f), FVector(0.0, 0.0, 6.0), FVector(1.0 / WristPanelPxPerCm)));
+		// A headset: on the grip of the hand bp.WristHand names (ApplyWristPose holds the transform, live on the bp.Wrist* cvars).
+		ApplyWristPose();
 	}
 	else
 	{
@@ -221,30 +145,97 @@ void ABpPawn::MakeWristPanel()
 			FQuat Facing = FRotationMatrix::MakeFromXZ(Eye - At, T.TransformVector(ViewUp)).ToQuat();
 			Facing = FQuat(Facing.GetAxisX(), FMath::DegreesToRadians(WristCaptureRollDeg)) * Facing;
 			Facing = FQuat(Facing.GetAxisY(), FMath::DegreesToRadians(WristCaptureTiltDeg)) * Facing;
-			WristPanel->SetWorldTransform(FTransform(Facing, At, FVector(WristCaptureScale / WristPanelPxPerCm)));
+			WristPanel->SetWorldTransform(FTransform(Facing, At, FVector(WristCaptureScale * BpSheet::TextScale() / WristPanelPxPerCm)));
 		}
 		else
 		{
-			SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(1.0 / WristPanelPxPerCm)));
+			SetWristParent(Origin.Get(), NAME_None, FTransform(FRotationMatrix::MakeFromXZ(-Offset, ViewUp).Rotator(), Offset, FVector(BpSheet::TextScale() / WristPanelPxPerCm)));
 		}
 	}
 	WristPanel->RegisterComponent();
-	// Room mode brings the rooms tab (WP3).
+	GWristScale = BpSheet::TextScale();
+	GWristH = WristMinH;
+	// No tick of its own while idle (night two W1): a change asks for one render, then it stops again.
+	WristPanel->SetTickMode(ETickMode::Disabled);
 	if (TActorIterator<ABpTable> It(GetWorld()); It)
 	{
 		WristTable = *It;
 		RoomHandle = It->OnRoomModeChanged().AddUObject(this, &ABpPawn::OnWristRoomChanged);
 		WristRoomMode = It->GetRoomModeId();
+		WristBandHandle = It->OnScanBandChanged().AddUObject(this, &ABpPawn::RefreshWrist);
+		WristAskHandle = It->OnLampAskChanged().AddUObject(this, &ABpPawn::RefreshWrist);
 	}
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	ScanHandle = Link.OnScanState().AddUObject(this, &ABpPawn::ReceiveScanState);
+	// The console's PROJECTS page follows the products, their onboarding and the open product (WP-V1).
+	WristOnboardingHandle = Link.OnOnboarding().AddUObject(this, &ABpPawn::OnWristOnboarding);
+	WristProductHandle = Link.OnProduct().AddUObject(this, &ABpPawn::OnWristProduct);
+	WristFocusHandle = Link.OnFocuses().AddUObject(this, &ABpPawn::OnWristFocuses);
+	WristLinkHandle = Link.OnLinkStatus().AddUObject(this, &ABpPawn::OnWristLink);
+	MakeConsole();
 	ReceiveScanState(Link.GetScanState());
+}
+
+void ABpPawn::OnWristOnboarding(const FBpOnboardingState&)
+{
+	RefreshWrist();
+}
+
+void ABpPawn::OnWristFocuses(const FBpFocusList&)
+{
+	RefreshWrist();
+}
+
+void ABpPawn::OnWristLink(const FBpLinkStatus&)
+{
+	RefreshWrist();
+}
+
+FString ABpPawn::ArmedAct() const
+{
+	if (WristArmedFocus.IsEmpty()) return FString();
+	if (WristArmedFocus == TEXT("@this")) return TEXT("scan:this");
+	if (WristArmedFocus == TEXT("@every")) return TEXT("scan:every");
+	return TEXT("focus:") + WristArmedFocus;
+}
+
+void ABpPawn::WristArmFocus(const FString& FocusId)
+{
+	ABpTable* Table = WristTable.Get();
+	if (!Table) return;
+	WristArmedFocus = FocusId;
+	WristArmedTarget = Table->DirectedTarget();
+	WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+	WristArmedAt = FPlatformTime::Seconds();
+	WristScanWords.Reset();
+	bWristScanRefused = false;
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s by the lamp: Scan %s"), *FocusId, *WristArmedLabel);
+	RefreshWrist();
+}
+
+void ABpPawn::WristDisarm()
+{
+	WristArmedFocus.Reset();
+	WristArmedTarget.Reset();
+	WristArmedLabel.Reset();
+}
+
+void ABpPawn::OnWristProduct(const FString&)
+{
+	// Another product: its rooms are not this one's (the table left room mode), and the packages are its own.
+	WristRoomMode.Reset();
+	// Its focuses are its own, and what was armed was for the old product's place.
+	WristDisarm();
+	WristScanWords.Reset();
+	bWristScanRefused = bWristScanStarting = false;
+	RefreshWrist();
 }
 
 void ABpPawn::OnWristRoomChanged(const FString& RoomId)
 {
 	WristRoomMode = RoomId;
-	if (RoomId.IsEmpty()) bWristRooms = false;
+	// The armed words named the room the table showed; it shows another now.
+	WristDisarm();
 	RefreshWrist();
 }
 
@@ -253,13 +244,15 @@ bool ABpPawn::WristHit(const FVector& WorldOrigin, const FVector& WorldDir, FStr
 	if (!WristPanel || !WristPanel->IsVisible() || WristBoxes.Num() == 0) return false;
 	const FTransform& T = WristPanel->GetComponentTransform();
 	const FVector Normal = T.GetUnitAxis(EAxis::X);
+	// A one-sided mesh: a ray from behind passes through (the panel's back never takes a hit; before 2026-11-08 a ray
+	// crossing it from behind stole the pinch from the table).
 	const double Denom = FVector::DotProduct(WorldDir, Normal);
-	if (FMath::IsNearlyZero(Denom)) return false;
+	if (Denom >= -KINDA_SMALL_NUMBER) return false;
 	const double Along = FVector::DotProduct(T.GetLocation() - WorldOrigin, Normal) / Denom;
 	if (Along < 0.0) return false;
 	// UWidgetComponent's mapping (as the deck's): widget x = -local Y, y = -local Z, from its pivot, in draw pixels.
 	const FVector Local = T.InverseTransformPosition(WorldOrigin + WorldDir * Along);
-	const FVector2f Px(static_cast<float>(-Local.Y + WristW * 0.5f), static_cast<float>(-Local.Z + WristH * 0.5f));
+	const FVector2f Px(static_cast<float>(-Local.Y + WristW * 0.5f), static_cast<float>(-Local.Z + GWristH * 0.5f));
 	for (const FWristBox& Each : WristBoxes)
 	{
 		if (Each.Box.IsInside(Px))
@@ -281,57 +274,531 @@ bool ABpPawn::WristAim(const FString& Id, FVector& OutWorld) const
 	const FWristBox* Box = WristBoxes.FindByPredicate([&Id](const FWristBox& Each) { return Each.Id == Id; });
 	if (!WristPanel || !Box) return false;
 	const FVector2f C = Box->Box.GetCenter();
-	OutWorld = WristPanel->GetComponentTransform().TransformPosition(FVector(0.0, -(C.X - WristW * 0.5f), -(C.Y - WristH * 0.5f)));
+	OutWorld = WristPanel->GetComponentTransform().TransformPosition(FVector(0.0, -(C.X - WristW * 0.5f), -(C.Y - GWristH * 0.5f)));
 	return true;
 }
 
 void ABpPawn::WristTap(const FString& Id)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s"), *Id);
-	ABpTable* Table = WristTable.Get();
-	if (Id == TEXT("wrist:tab:rooms") && !WristRoomMode.IsEmpty())
-	{
-		bWristRooms = true;
-		// The page with the room shown.
-		if (Table)
-		{
-			const TArray<ABpTable::FRoomRank> Ranks = Table->RoomsByUrgency();
-			const int32 At = Ranks.IndexOfByPredicate([this](const ABpTable::FRoomRank& R) { return R.Id == WristRoomMode; });
-			WristPage = At == INDEX_NONE ? 0 : At / WristRoomsPerPage;
-		}
-	}
-	else if (Id == TEXT("wrist:tab:packages")) bWristRooms = false;
-	else if (Id == TEXT("wrist:page:next")) ++WristPage;
-	else if (Id == TEXT("wrist:page:prev")) WristPage = FMath::Max(0, WristPage - 1);
-	else if (Id.StartsWith(TEXT("wrist:room:")) && Table)
-	{
-		Table->SwitchRoom(Id.Mid(11), TEXT("wrist"));
-		return;
-	}
-	else if (Id == TEXT("wrist:seat"))
-	{
-		Seat();
-		return;
-	}
-	else
+	if (!Id.StartsWith(TEXT("wrist:")))
 	{
 		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist tap %s does nothing here"), *Id);
 		return;
 	}
-	RefreshWrist();
+	const FString Act = Id.Mid(6);
+	// MENU: the console, open or closed.
+	if (Act == TEXT("menu"))
+	{
+		if (bConsoleOpen) CloseConsole();
+		else OpenConsole(FString());
+		return;
+	}
+	// The old tabs are the console's pages now (the deck's scan pill, scripts that tap "wrist:tab:scan").
+	if (Act.StartsWith(TEXT("tab:")))
+	{
+		OpenConsole(Act.Mid(4));
+		return;
+	}
+	if (Act.StartsWith(TEXT("page:")))
+	{
+		ConsoleTap(TEXT("console:") + Act);
+		return;
+	}
+	// TALK is held, not tapped (the hands' hold, BpHands.cpp): a tap says so.
+	if (Act == TEXT("talk"))
+	{
+		if (ABpTable* Table = WristTable.Get()) Table->StandupSay(TEXT("Hold TALK and speak;\nlet go to send."));
+		return;
+	}
+	PanelAct(Act);
+}
+
+void ABpPawn::PanelAct(const FString& Act)
+{
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: act %s"), *Act);
+	ABpTable* Table = WristTable.Get();
+	// Wave C1: the scan's result (the wrist's band, the bar's chip): the SCAN RESULT sheet.
+	if (Act == TEXT("scan:result"))
+	{
+		OpenConsole(TEXT("scanresult"));
+		return;
+	}
+	// The stand-up's controls (BpStandup.cpp), from the console's sheet, the wrist and the bar's TAKE BACK.
+	if (Act.StartsWith(TEXT("standup:")))
+	{
+		StandupAct(Act.Mid(8));
+		RefreshWrist();
+		return;
+	}
+	// Talking to the lamp (BpTalk.cpp): the consent sheet's answers, SETTINGS' off, the wrist's cancel.
+	if (Act.StartsWith(TEXT("talk:")))
+	{
+		const FString What = Act.Mid(5);
+		if (What == TEXT("allow"))
+		{
+			ABpTable::SetTalkConsent(1);
+			CloseConsole();
+			if (Table) Table->StandupSay(TEXT("Thank you. Hold to talk to me:\nX, a pinch on me, or TALK on your wrist."));
+		}
+		else if (What == TEXT("notnow"))
+		{
+			ABpTable::SetTalkConsent(2);
+			// The way to ask without talking.
+			OpenConsole(TEXT("ask"));
+		}
+		else if (What == TEXT("off"))
+		{
+			ABpTable::SetTalkConsent(2);
+		}
+		else if (What == TEXT("cancel") && Table)
+		{
+			Table->TalkCancel(TEXT("wrist"));
+		}
+		RefreshConsole();
+		DrawWrist();
+		return;
+	}
+	if (Act == TEXT("room:next") && Table)
+	{
+		Table->SwitchToNextRoom();
+		return;
+	}
+	if (Act.StartsWith(TEXT("open:")))
+	{
+		OpenConsole(Act.Mid(5));
+		return;
+	}
+	// The levels: heard at once, and an armed row stays armed.
+	if (Act == TEXT("voice:minus") || Act == TEXT("voice:plus"))
+	{
+		BpAudio::StepVoiceLevel(Act.EndsWith(TEXT("plus")) ? BpAudio::VoiceStep : -BpAudio::VoiceStep);
+		if (Table) Table->PreviewVoice();
+		RefreshWrist();
+		return;
+	}
+	if (Act == TEXT("music:minus") || Act == TEXT("music:plus"))
+	{
+		BpAudio::StepMusicLevel(Act.EndsWith(TEXT("plus")) ? BpAudio::MusicStep : -BpAudio::MusicStep);
+		RefreshWrist();
+		return;
+	}
+	// START on the wrist: the armed row's second pinch.
+	if (Act == TEXT("scan:start"))
+	{
+		if (WristArmedFocus.IsEmpty()) { UE_LOG(LogBpTable, Log, TEXT("BpPawn: scan:start with nothing armed")); return; }
+		PanelAct(ArmedAct());
+		return;
+	}
+	// The PC link (the console's PC LINK page, BpConsole.cpp): pair, cancel, unpair, ask where.
+	if (Act.StartsWith(TEXT("link:")))
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		const FString What = Act.Mid(5);
+		if (What == TEXT("pair")) Link.Pair();
+		else if (What == TEXT("cancel")) Link.CancelPair();
+		else if (What == TEXT("unpair")) Link.Unpair();
+		else if (What == TEXT("where")) Link.Where();
+		RefreshWrist();
+		return;
+	}
+	// A job's CANCEL on the SCAN page: DELETE .../scans/<job> (scope scan); the sample's stops the local walk.
+	if (Act.StartsWith(TEXT("job:cancel:")))
+	{
+		const FString JobId = Act.Mid(11);
+		if (JobId == TEXT("sample"))
+		{
+			if (Table) Table->CancelSampleScan();
+			ConsoleScanWords = TEXT("The sample scan stopped.");
+			RefreshWrist();
+			return;
+		}
+		ConsoleScanWords = TEXT("Cancelling");
+		TWeakObjectPtr<ABpPawn> Self(this);
+		FBpLinkModule::Get().CancelScan(JobId, [Self](int32, const FString& Words)
+		{
+			if (ABpPawn* Pawn = Self.Get())
+			{
+				Pawn->ConsoleScanWords = Words;
+				Pawn->RefreshWrist();
+			}
+		});
+		RefreshWrist();
+		return;
+	}
+	// A finding in the SCAN page's feed: its decision screen when the room's deck has it, else the decision card asks about it.
+	if (Act.StartsWith(TEXT("finding:")) && Table)
+	{
+		const FString Id = Act.Mid(8);
+		const FBpProposal* Found = FBpLinkModule::Get().GetScanState().Scan.proposals.FindByPredicate([&Id](const FBpProposal& P) { return P.id == Id; });
+		const bool bDeck = Found && Table->DeckFocusProposal(Id, Found->feature);
+		if (!bDeck)
+		{
+			Table->AskCard(Id);
+			Table->ShowCard(true);
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: finding %s opened on the %s"), *Id, bDeck ? TEXT("deck") : TEXT("decision card"));
+		CloseConsole();
+		return;
+	}
+	// A row armed: only that row goes on. Anything else disarms, and the rest of the scan's controls do only that.
+	if (!WristArmedFocus.IsEmpty() && Act != ArmedAct() && !Act.StartsWith(TEXT("toggle:")))
+	{
+		WristDisarm();
+		if (Act.StartsWith(TEXT("focus:")) || Act.StartsWith(TEXT("scan:")))
+		{
+			RefreshWrist();
+			return;
+		}
+	}
+	if (Act == TEXT("scan:dismiss"))
+	{
+		WristScanWords.Reset();
+		bWristScanRefused = false;
+		RefreshWrist();
+		return;
+	}
+	if (Act == TEXT("scan:cancel"))
+	{
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("ask:")) && Table)
+	{
+		const FString What = Act.Mid(4);
+		if (What == TEXT("next")) Table->AskNextStep(TEXT("console"));
+		else if (What == TEXT("here")) Table->AskPlanHere(TEXT("console"));
+		else if (What == TEXT("scan")) Table->AskScanThis(TEXT("console"));
+		else if (What == TEXT("act")) Table->LampAct(TEXT("wrist"));
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("project:")))
+	{
+		FBpLinkModule& Link = FBpLinkModule::Get();
+		const FString Slug = Act.Mid(8);
+		if (Slug == Link.GetProductSlug())
+		{
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: project %s is open already"), *Slug);
+			return;
+		}
+		const FBpProductEntry* Entry = Link.FindProduct(Slug);
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: %s %s (the table switches product)"), Entry && Entry->IsBuilding() ? TEXT("watch") : TEXT("open"), *Slug);
+		Link.SetProduct(Slug);
+		return;
+	}
+	// SCAN THIS and EVERY LENS (owner, 2026-11-09: a plain and an every-lens scan may start on a live product from VR), through
+	// the same armed step a directed scan takes: the first press arms (the wrist shows START), a second press starts it.
+	if ((Act == TEXT("scan:this") || Act == TEXT("scan:every")) && Table)
+	{
+		const FString Token = Act == TEXT("scan:this") ? TEXT("@this") : TEXT("@every");
+		const double Now = FPlatformTime::Seconds();
+		if (WristArmedFocus != Token || Table->DirectedTarget() != WristArmedTarget)
+		{
+			WristArmedFocus = Token;
+			WristArmedTarget = Table->DirectedTarget();
+			WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+			WristArmedAt = Now;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: %s"), *Act, Token == TEXT("@this") ? *FString::Printf(TEXT("Scan %s with %s"), *WristArmedLabel, *BpWords::Lens(Table->GetActiveLens())) : TEXT("Scan everything with every lens"));
+			Table->Narrate(TEXT("scan-armed"), TEXT("a scan armed"));
+		}
+		else if (Now - WristArmedAt < WristConfirmGuardS)
+		{
+			return;
+		}
+		else
+		{
+			const FString Target = WristArmedTarget;
+			WristDisarm();
+			bWristScanStarting = true;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			TWeakObjectPtr<ABpPawn> Self(this);
+			const auto Done = [Self](bool bOk, const FString& Words)
+			{
+				ABpPawn* Pawn = Self.Get();
+				if (!Pawn) return;
+				Pawn->bWristScanStarting = false;
+				Pawn->WristScanWords = Words;
+				Pawn->bWristScanRefused = !bOk;
+				Pawn->RefreshWrist();
+			};
+			if (Token == TEXT("@this")) Table->StartPlain(Target, FString(), Done);
+			else Table->StartEveryLens(Done);
+		}
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("focus:")) && Table)
+	{
+		const FString FocusId = Act.Mid(6);
+		const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
+		const FBpSavedFocus* Focus = List.Focuses.FindByPredicate([&FocusId](const FBpSavedFocus& F) { return F.Id == FocusId; });
+		const double Now = FPlatformTime::Seconds();
+		if (!Focus)
+		{
+			WristDisarm();
+			WristScanWords = TEXT("That focus is gone. Open the page again.");
+			bWristScanRefused = true;
+		}
+		else if (WristArmedFocus != FocusId || Table->DirectedTarget() != WristArmedTarget)
+		{
+			// First pinch, or the table moved under an armed row: the words must say what will happen now.
+			WristArmedFocus = FocusId;
+			WristArmedTarget = Table->DirectedTarget();
+			WristArmedLabel = Table->DirectedLabel(WristArmedTarget);
+			WristArmedAt = Now;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist armed %s: Scan %s for: %s"), *FocusId, *WristArmedLabel, *Focus->Note);
+			Table->Narrate(TEXT("scan-armed"), TEXT("a scan armed"));
+		}
+		else if (Now - WristArmedAt < WristConfirmGuardS)
+		{
+			// The pinch that armed it, bouncing: a real model run must not start on one.
+			return;
+		}
+		else
+		{
+			const FString Target = WristArmedTarget;
+			WristDisarm();
+			bWristScanStarting = true;
+			WristScanWords.Reset();
+			bWristScanRefused = false;
+			TWeakObjectPtr<ABpPawn> Self(this);
+			Table->StartDirected(FocusId, Target, [Self](bool bOk, const FString& Words)
+			{
+				ABpPawn* Pawn = Self.Get();
+				if (!Pawn) return;
+				Pawn->bWristScanStarting = false;
+				Pawn->WristScanWords = Words;
+				Pawn->bWristScanRefused = !bOk;
+				Pawn->RefreshWrist();
+			});
+		}
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("room:")) && Table)
+	{
+		Table->SwitchRoom(Act.Mid(5), TEXT("console"));
+		return;
+	}
+	if (Act == TEXT("seat"))
+	{
+		Seat();
+		return;
+	}
+	if (Act == TEXT("tour") && Table)
+	{
+		// Stop while it runs (BpTour.Stop's door, by hand: dismissed); else the console's TOUR page, where the first tour and
+		// its chapters are (wave T1: the wrist's TOUR and SETTINGS › TABLE › TOUR both open it).
+		if (Table->IsTourRunning()) Table->StopTour(TEXT("the menu"));
+		else OpenConsole(TEXT("tour"));
+		RefreshWrist();
+		return;
+	}
+	if ((Act == TEXT("approve") || Act == TEXT("decline")) && Table)
+	{
+		Table->DecideWaiting(Act == TEXT("approve"), TEXT("wrist"));
+		RefreshWrist();
+		return;
+	}
+	// SETTINGS › ACCESSIBILITY's choices (night two V4): set:<motion|text|captions|hand>:<value>, each a saved console variable.
+	if (Act.StartsWith(TEXT("set:")))
+	{
+		FString What, Value;
+		Act.Mid(4).Split(TEXT(":"), &What, &Value);
+		const TCHAR* Name = What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("text") ? TEXT("bp.TextSize") : What == TEXT("captions") ? TEXT("bp.Captions") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("screen") ? TEXT("bp.Projector") : What == TEXT("narration") ? TEXT("bp.Narration") : nullptr;
+		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
+		{
+			Var->Set(*Value, ECVF_SetByConsole);
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: %s %s"), Name, *Var->GetString());
+		}
+		RefreshWrist();
+		return;
+	}
+	if (Act.StartsWith(TEXT("toggle:")))
+	{
+		const FString What = Act.Mid(7);
+		const TCHAR* Name = What == TEXT("face") ? TEXT("bp.WristFace") : What == TEXT("hand") ? TEXT("bp.WristHand") : What == TEXT("motion") ? TEXT("bp.ReducedMotion") : What == TEXT("room") ? TEXT("bp.Room") : What == TEXT("legend") ? TEXT("bp.Legend") : nullptr;
+		if (IConsoleVariable* Var = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr)
+		{
+			Var->Set(Var->GetInt() != 0 ? 0 : 1, ECVF_SetByConsole);
+			UE_LOG(LogBpTable, Log, TEXT("BpPawn: %s %d"), Name, Var->GetInt());
+		}
+		RefreshWrist();
+		return;
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: act %s does nothing here"), *Act);
 }
 
 void ABpPawn::WristTextClasses(TArray<BpType::FClassSample>& Out) const
 {
 	if (!WristPanel) return;
-	// The panel's caps in its pixels (RefreshWrist's), at its centre, rising along its up; its world scale is cm a pixel.
+	// The panel's caps in its pixels (DrawWrist's), at its centre, rising along its up; its world scale is cm a pixel.
 	const FTransform& T = WristPanel->GetComponentTransform();
 	const double CmPerPx = T.GetScale3D().X;
 	const auto Add = [&](const TCHAR* Name, double CapPx) { Out.Add({ Name, CapPx * CmPerPx, T.GetLocation(), T.GetUnitAxis(EAxis::Z) }); };
-	Add(TEXT("wrist room name"), 25.0);
-	Add(TEXT("wrist room counts"), 19.0);
-	Add(TEXT("wrist package"), 32.0);
-	Add(TEXT("wrist sub-line"), 21.0);
+	Add(TEXT("wrist button"), WButtonCap);
+	Add(TEXT("wrist answer"), WAnswerCap);
+	Add(TEXT("wrist title"), WTitleCap);
+	Add(TEXT("wrist words"), WTextCap);
+	Add(TEXT("wrist strip"), WSmallCap);
+	Add(TEXT("wrist scan band"), WSmallCap);
+}
+
+void ABpPawn::ApplyWristPose()
+{
+	if (!WristPanel) return;
+	const bool bHeadset = IsHeadsetOn();
+	const int32 Preview = CVarWristPreview.GetValueOnGameThread();
+	if (!bHeadset && Preview <= 0) return;
+	const int32 Hand = CVarWristHand.GetValueOnGameThread() != 0 ? 1 : 0;
+	FRotator Rot(CVarWristPitch.GetValueOnGameThread(), CVarWristYaw.GetValueOnGameThread(), CVarWristRoll.GetValueOnGameThread());
+	FVector Off(CVarWristOffsetX.GetValueOnGameThread(), CVarWristOffsetY.GetValueOnGameThread(), CVarWristOffsetZ.GetValueOnGameThread());
+	if (Hand == 1)
+	{
+		// The right grip mirrors the left across the plane of the palm's normal (OpenXR's grip +X points out of the left palm
+		// and into the right one): the offset's Y and the fixed pose's yaw and roll flip.
+		Off.Y = -Off.Y;
+		Rot = FRotator(Rot.Pitch, -Rot.Yaw, -Rot.Roll);
+	}
+	const float Turn = CVarWristPreviewDeg.GetValueOnGameThread();
+	const FString Applied = FString::Printf(TEXT("%.2f/%.2f/%.2f %.2f,%.2f,%.2f p%d %.1f h%d s%.2f %s"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z, Preview, Turn, Hand, BpSheet::TextScale(), *GetActorLocation().ToString());
+	if (Applied == WristPoseApplied) return;
+	const bool bLog = !WristPoseApplied.IsEmpty();
+	WristPoseApplied = Applied;
+	bWristFaceInit = false;
+	const FTransform Relative(Rot, Off, FVector(BpSheet::TextScale() / WristPanelPxPerCm));
+	if (bHeadset)
+	{
+		SetWristParent(Hand == 1 ? HandGripRight.Get() : HandGripLeft.Get(), NAME_None, Relative);
+	}
+	else
+	{
+		// The flat check: a stand-in for the resting grip, 30 cm forward, 18 to the side and 40 down from the eye, X toward the
+		// thumb, Y out of the palm (down), Z toward the wrist (back), turned along the arc that squares the panel to the eye.
+		if (!WristSimGrip)
+		{
+			WristSimGrip = NewObject<USceneComponent>(this, TEXT("WristSimGrip"));
+			WristSimGrip->SetupAttachment(Origin);
+			WristSimGrip->RegisterComponent();
+			SetWristParent(WristSimGrip.Get(), NAME_None, Relative);
+		}
+		const FVector GripAt(30.0, Hand == 1 ? 18.0 : -18.0, -40.0);
+		FQuat Grip = FRotationMatrix::MakeFromXZ(FVector(0.0, Hand == 1 ? -1.0 : 1.0, 0.0), FVector(-1.0, 0.0, 0.0)).ToQuat();
+		const FTransform Neutral(Grip, GripAt);
+		const FVector PanelAt = Neutral.TransformPosition(Off);
+		const FVector Normal = Grip.RotateVector(Rot.Vector());
+		const FVector ToEye = (FVector::ZeroVector - PanelAt).GetSafeNormal();
+		const FVector Axis = FVector::CrossProduct(Normal, ToEye).GetSafeNormal();
+		if (!Axis.IsNearlyZero() && Turn != 0.f) Grip = FQuat(Axis, FMath::DegreesToRadians(Turn)) * Grip;
+		WristSimGrip->SetRelativeLocationAndRotation(GripAt, Grip);
+		SetWristParent(WristSimGrip.Get(), NAME_None, Relative);
+		const double Off1 = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(Grip.RotateVector(Rot.Vector()).GetSafeNormal(), ToEye)));
+		if (bLog) UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist preview turn %.1f deg: the fixed pose faces %.1f deg off the eye"), Turn, Off1);
+	}
+	if (bLog) UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist pose pitch=%.1f yaw=%.1f roll=%.1f offset=(%.1f, %.1f, %.1f) hand=%s applied"), Rot.Pitch, Rot.Yaw, Rot.Roll, Off.X, Off.Y, Off.Z, Hand == 1 ? TEXT("right") : TEXT("left"));
+}
+
+void ABpPawn::TickWristFace(float DeltaSeconds)
+{
+	if (!WristPanel) return;
+	const bool bHeadset = IsHeadsetOn();
+	const bool bPreview = CVarWristPreview.GetValueOnGameThread() > 0;
+	if (!bHeadset && !bPreview) return;
+	// Hidden while its hand is not tracked (hands or controller: the grip reports either); the ray test skips a hidden panel.
+	const int32 Hand = CVarWristHand.GetValueOnGameThread() != 0 ? 1 : 0;
+	const UMotionControllerComponent* Grip = Hand == 1 ? HandGripRight.Get() : HandGripLeft.Get();
+	const bool bTracked = !bHeadset || (Grip && Grip->IsTracked());
+	if (WristPanel->IsVisible() != bTracked)
+	{
+		WristPanel->SetVisibility(bTracked, true);
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist %s (the %s hand %s)"), bTracked ? TEXT("shown") : TEXT("hidden"), Hand == 1 ? TEXT("right") : TEXT("left"), bTracked ? TEXT("is tracked") : TEXT("is not tracked"));
+	}
+	if (!bTracked || CVarWristFace.GetValueOnGameThread() == 0)
+	{
+		// bp.WristFace 0: the fixed pose ApplyWristPose set, relative to the grip.
+		if (bWristFaceInit)
+		{
+			bWristFaceInit = false;
+			WristPoseApplied.Reset();
+			ApplyWristPose();
+		}
+		return;
+	}
+	// The panel's normal at the eye, its up the head's up; smoothed so a trembling hand does not shake the text.
+	const FVector At = WristPanel->GetComponentLocation();
+	const FVector Eye = GetPawnViewLocation();
+	const FVector HeadUp = Camera ? Camera->GetUpVector() : FVector::UpVector;
+	const FVector ToEye = Eye - At;
+	if (ToEye.IsNearlyZero()) return;
+	const FQuat Want = FRotationMatrix::MakeFromXZ(ToEye, HeadUp).ToQuat();
+	if (!bWristFaceInit)
+	{
+		WristFaceQuat = Want;
+		bWristFaceInit = true;
+	}
+	else
+	{
+		const float Rate = FMath::Clamp(CVarWristFaceRate.GetValueOnGameThread(), 2.f, 60.f);
+		WristFaceQuat = FQuat::Slerp(WristFaceQuat, Want, 1.f - FMath::Exp(-Rate * DeltaSeconds));
+	}
+	WristPanel->SetWorldRotation(WristFaceQuat);
+}
+
+void ABpPawn::SetWristHover(const FString& Id, bool bDown)
+{
+	const bool bHeld = bDown && !Id.IsEmpty();
+	if (Id == WristHover && bHeld == bWristHoverDown) return;
+	WristHover = Id;
+	bWristHoverDown = bHeld;
+	DrawWrist();
+}
+
+void ABpPawn::TickWristLive()
+{
+	ApplyWristPose();
+	if (WristPanel)
+	{
+		const float Tint = FMath::Clamp(CVarWristTint.GetValueOnGameThread(), 0.4f, 1.5f);
+		if (Tint != WristTintShown)
+		{
+			WristTintShown = Tint;
+			WristPanel->SetTintColorAndOpacity(FLinearColor(Tint, Tint, Tint, 1.f));
+		}
+	}
+	// SETTINGS › ACCESSIBILITY's TEXT SIZE (bp.TextSize): the panel as a whole, so its layout holds at every step.
+	if (WristPanel && BpSheet::TextScale() != GWristScale)
+	{
+		const float Was = GWristScale;
+		GWristScale = BpSheet::TextScale();
+		if (IsHeadsetOn() || CVarWristPreview.GetValueOnGameThread() > 0) { WristPoseApplied.Reset(); ApplyWristPose(); }
+		else WristPanel->SetRelativeScale3D(WristPanel->GetRelativeScale3D() * (GWristScale / Was));
+		UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist text size %.2f"), GWristScale);
+	}
+	// The hand moved to the other side (settings' HAND, or adb): the pose again.
+	const int32 Hand = CVarWristHand.GetValueOnGameThread() != 0 ? 1 : 0;
+	if (Hand != WristHandShown)
+	{
+		WristHandShown = Hand;
+		WristPoseApplied.Reset();
+		ApplyWristPose();
+	}
+	// The decision the wrist offers follows the deck's front screen and the card, which change without a delegate.
+	if (ABpTable* Table = WristTable.Get())
+	{
+		FString Id, Title, Where;
+		const FString Key = Table->WaitingDecision(Id, Title, Where) ? Where + Id : FString();
+		if (Key != WristDecisionKey)
+		{
+			WristDecisionKey = Key;
+			DrawWrist();
+		}
+	}
 }
 
 void ABpPawn::SetWristParent(USceneComponent* Parent, FName Socket, const FTransform& Relative)
@@ -349,7 +816,12 @@ void ABpPawn::ReceiveScanState(const FBpScanState&)
 
 void ABpPawn::RefreshWrist()
 {
-	if (!WristPanel) return;
+	DrawWrist();
+	RefreshConsole();
+}
+
+const FBpWave* ABpPawn::PackagesState(TArray<FPackageRow>& OutRows, bool& bOutDraft, FString& OutKey) const
+{
 	const FBpScanState& State = FBpLinkModule::Get().GetScanState();
 	// The wave shown: the draft the screen deck last wrote to (spark vr-room-layers WP2: the wrist reflects each Approve),
 	// else the last dispatched, else the newest draft.
@@ -367,10 +839,7 @@ void ABpPawn::RefreshWrist()
 	}
 	TMap<FString, FString> Status;
 	for (const FBpProposal& Proposal : State.Scan.proposals) Status.Add(Proposal.id, Proposal.status);
-
-	struct FRow { FString Name; FString Meta; FString Tiers; float Fraction; int32 Count; };
-	TArray<FRow> Rows;
-	FString Key = Wave ? Wave->id + Wave->status : FString(TEXT("none"));
+	OutKey = Wave ? Wave->id + Wave->status : FString(TEXT("none"));
 	if (Wave)
 	{
 		for (const FBpWavePackage& Package : Wave->packages)
@@ -384,281 +853,342 @@ void ABpPawn::RefreshWrist()
 				if (const int32* Tier = State.Tiers.Find(Id)) ++ByTier[FMath::Clamp(*Tier, 0, 3)];
 			}
 			TArray<FString> Chips;
-			for (int32 Tier = 0; Tier < 4; ++Tier) if (ByTier[Tier] > 0) Chips.Add(FString::Printf(TEXT("T%d  %d"), Tier, ByTier[Tier]));
+			for (int32 Tier = 0; Tier < 4; ++Tier) if (ByTier[Tier] > 0) Chips.Add(FString::Printf(TEXT("T%d %d"), Tier, ByTier[Tier]));
 			const float Fraction = Package.ids.Num() > 0 ? static_cast<float>(Built) / Package.ids.Num() : 0.f;
-			Rows.Add({ Package.name, FString::Printf(TEXT("%d %s · %s · %s"), Package.ids.Num(), Package.ids.Num() == 1 ? TEXT("finding") : TEXT("findings"), *Package.model, *Package.effort),
-				FString::Join(Chips, TEXT("   ")), Fraction, Package.ids.Num() });
-			Key += FString::Printf(TEXT("|%s:%d/%d:%s"), *Package.id, Built, Package.ids.Num(), *Package.name);
+			OutRows.Add({ Package.name, FString::Printf(TEXT("%d %s · %s · %s"), Package.ids.Num(), Package.ids.Num() == 1 ? TEXT("finding") : TEXT("findings"), *Package.model, *Package.effort),
+				FString::Join(Chips, TEXT("  ")), Fraction, Package.ids.Num() });
+			OutKey += FString::Printf(TEXT("|%s:%d/%d:%s"), *Package.id, Built, Package.ids.Num(), *Package.name);
 		}
 	}
 	// A draft (composed, not dispatched) has queued nothing, so its rings say "draft" rather than a built share (FAD).
-	const bool bDraft = Wave && Wave->status == TEXT("draft");
-	// Room mode's tabs and the rooms tab (WP3): the ranks it shows are part of what it shows.
+	bOutDraft = Wave && Wave->status == TEXT("draft");
+	return Wave;
+}
+
+void ABpPawn::DrawWrist()
+{
+	if (!WristPanel) return;
 	ABpTable* Table = WristTable.Get();
-	const bool bTabs = !WristRoomMode.IsEmpty() && Table;
-	const bool bRooms = bTabs && bWristRooms;
-	TArray<ABpTable::FRoomRank> Ranks;
-	if (bRooms)
+	const bool bPlan = Table && Table->HasPlan();
+	// What the card shows, most pressing first: an armed scan, a scan's refusal, the decision waiting, the lamp's offer.
+	enum class ECard : uint8 { Armed, Refused, Decision, Offer, Calm, Standup, Talk };
+	// Talking to the lamp (BpTalk.cpp) comes first while it is in flight: the wearer must see it is listening.
+	const FString TalkWord = bPlan ? Table->TalkStateWord() : FString();
+	FString DecisionId, DecisionTitle, DecisionWhere;
+	const bool bDecision = bPlan && Table->WaitingDecision(DecisionId, DecisionTitle, DecisionWhere);
+	const FString Offer = bPlan ? Table->LampOfferLabel() : FString();
+	// The stand-up (night two W2b): the decision on its sheet with the same answers, else "handed over" with TAKE BACK.
+	FString SuKicker, SuTitle, SuWords;
+	TArray<TPair<FString, FString>> SuButtons;
+	const bool bStandupCard = StandupWristCard(SuKicker, SuTitle, SuWords, SuButtons);
+	const bool bStandupFirst = bStandupCard && IsStandupOpen();
+	const ECard Card = !TalkWord.IsEmpty() ? ECard::Talk : bStandupFirst ? ECard::Standup : !WristArmedFocus.IsEmpty() ? ECard::Armed : bWristScanRefused && !WristScanWords.IsEmpty() ? ECard::Refused
+		: bDecision ? ECard::Decision : !Offer.IsEmpty() ? ECard::Offer : bStandupCard ? ECard::Standup : ECard::Calm;
+	FString BandHead, BandBody;
+	if (bPlan) Table->ScanBand(BandHead, BandBody);
+	// Wave C1: a scan's result carries one button on the band (the SCAN RESULT sheet), until the next scan.
+	ABpTable::FScanResult BandResult;
+	const bool bBandResult = bPlan && !Table->IsScanRunning() && Table->GetScanResult(BandResult) && !(bConsoleOpen && ConsolePageKey == TEXT("scanresult"));
+	const bool bSample = !FBpLinkModule::Get().HasPcLink() && FBpLinkModule::Get().HasSampleFocuses();
+	const bool bTour = bPlan && Table->IsTourRunning();
+	// The link in one word (night two W2a): CABLE, WI-FI, OFFLINE or PAIRING, at the card's top right.
+	const FString LinkWord = FBpLinkModule::RouteWord(FBpLinkModule::Get().GetLinkStatus());
+	// Night two V6: the calm card counts what waits, as the bar does ("40 decisions waiting" over a wrist that said NOTHING WAITING).
+	const int32 Waiting = Card == ECard::Calm && bPlan ? Table->OpenDecisionCount() : 0;
+	FString Key = FString::Printf(TEXT("c%d|%s|%s|%s|%s|%s|%s|%d|%d|%s|%s|%s|w%d"), static_cast<int32>(Card), *WristArmedFocus, *WristArmedLabel, *WristScanWords, *DecisionId, *DecisionTitle,
+		*DecisionWhere, bTour, bConsoleOpen, *BandHead, *BandBody, *LinkWord, Waiting);
+	if (bBandResult) Key += TEXT("|r");
+	if (Card == ECard::Offer) Key += TEXT("|o") + Offer + Table->GetLampAnswer();
+	if (Card == ECard::Talk) Key += TEXT("|t") + TalkWord + Table->TalkStateLine();
+	if (Card == ECard::Standup)
 	{
-		Ranks = Table->RoomsByUrgency();
-		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Ranks.Num(), WristRoomsPerPage));
-		WristPage = FMath::Clamp(WristPage, 0, Pages - 1);
-		Key += FString::Printf(TEXT("|rooms %s p%d|"), *WristRoomMode, WristPage);
-		for (const ABpTable::FRoomRank& Rank : Ranks) Key += FString::Printf(TEXT("%s:%d,%d,%d;"), *Rank.Id, Rank.T0, Rank.T1, Rank.Open);
+		Key += TEXT("|s") + SuKicker + SuTitle + SuWords;
+		for (const TPair<FString, FString>& B : SuButtons) Key += TEXT("/") + B.Key;
 	}
-	else if (bTabs)
-	{
-		Key += TEXT("|tabs");
-	}
-	const bool bSeat = IsHeadsetOn();
-	if (bSeat) Key += TEXT("|seat");
+	Key += TEXT("|h") + WristHover + (bWristHoverDown ? TEXT("|down") : TEXT("")) + TEXT("|m") + ConsoleMark;
 	if (Key == WristKey) return;
 	WristKey = Key;
 	WristBoxes.Reset();
 
-	// FP: an opaque enough back that the sheet's labels do not show through (the judge, element 11; FO 0.72). FR (the
-	// judges: "an opaque dark slab without the concept's glassy edge-lit panel"; "small low-contrast text"): a lighter
-	// blue glass, a lit cyan edge with a soft outer glow and a pale sheen along its top, and larger, brighter type.
-	// FAF (the judges: "opaque slate, not lit glass"): a lighter glass the forearm and the paper show through, a brighter lit
-	// edge and glow, a stronger sheen, and lit rows; the type in white and near-white for contrast through the glass.
-	static const FSlateRoundedBoxBrush Panel(GlassLit.CopyWithNewOpacity(0.8f), 20.f, CyanEdge, 4.5f);  // 0.66 of 1C4E8E read milky, the rail white through a row
-	// FAB (element 11, the judges: the concept's panel has an emissive edge): two glow rings outside the lit edge, the
-	// inner one bright enough to bloom.
-	static const FSlateRoundedBoxBrush EdgeGlow(Cyan.CopyWithNewOpacity(0.16f), 32.f);
-	static const FSlateRoundedBoxBrush EdgeGlowInner(Cyan.CopyWithNewOpacity(0.0f), 24.f, CyanEdge.CopyWithNewOpacity(0.85f), 5.f);
-	static const FSlateRoundedBoxBrush Sheen(FLinearColor(1.f, 1.f, 1.f, 0.12f), 14.f);
-	static const FSlateRoundedBoxBrush Row(Cyan.CopyWithNewOpacity(0.12f), 12.f, CyanEdge.CopyWithNewOpacity(0.7f), 2.f);
-	TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
-	// FAF (pof's draft has two packages, the judges' "only two sparse rows"): up to two rows stand taller, with their tier
-	// line, so the panel reads full; three or four keep FR's compact rows.
-	const bool bTall = Rows.Num() <= 2;
-	for (int32 Index = 0; Index < Rows.Num() && Index < 4; ++Index)
-	{
-		const FRow& R = Rows[Index];
-		TSharedRef<SVerticalBox> Text = SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				SNew(STextBlock).Text(FText::FromString(R.Name)).Font(CapFont(TEXT("Bold"), bTall ? 32.f : 28.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
-			[
-				SNew(STextBlock).Text(FText::FromString(R.Meta)).Font(CapFont(TEXT("Regular"), 21.f)).ColorAndOpacity(FSlateColor(CyanText))
-			];
-		if (bTall && !R.Tiers.IsEmpty())
-		{
-			Text->AddSlot().AutoHeight().Padding(0.f, 7.f, 0.f, 0.f)
-			[
-				SNew(STextBlock).Text(FText::FromString(R.Tiers)).Font(CapFont(TEXT("Bold"), 21.f)).ColorAndOpacity(FSlateColor(Amber))
-			];
-		}
-		List->AddSlot().AutoHeight().Padding(0.f, bTall ? 12.f : 8.f, 0.f, 0.f)
-		[
-			SNew(SBorder).BorderImage(&Row).Padding(FMargin(12.f, bTall ? 14.f : 8.f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SBpBlocks).Count(R.Count)
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(12.f, 0.f)
-				[
-					Text
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SOverlay)
-					+ SOverlay::Slot()
-					[
-						SNew(SBpRing).Fraction(R.Fraction)
-					]
-					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
-					[
-						SNew(STextBlock).Text(FText::FromString(bDraft ? FString(TEXT("draft")) : FString::Printf(TEXT("%d%%"), FMath::RoundToInt(R.Fraction * 100.f))))
-							.Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-					]
-				]
-			]
-		];
-	}
-	if (Rows.Num() == 0)
-	{
-		// FAH (WP1's review: Kettle's panel read blank): the empty state as a row of its own, an empty package outline, the
-		// way to fill it, and an empty ring.
-		static const FSlateRoundedBoxBrush EmptyRow(Cyan.CopyWithNewOpacity(0.05f), 12.f, CyanEdge.CopyWithNewOpacity(0.45f), 2.f);
-		List->AddSlot().AutoHeight().Padding(0.f, 12.f, 0.f, 0.f)
-		[
-			SNew(SBorder).BorderImage(&EmptyRow).Padding(FMargin(12.f, 14.f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SBpBlocks).Count(1)
-				]
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center).Padding(12.f, 0.f)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT("No draft yet"))).Font(CapFont(TEXT("Bold"), 32.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 7.f, 0.f, 0.f)
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT("Approve a decision to start one"))).Font(CapFont(TEXT("Regular"), 21.f)).ColorAndOpacity(FSlateColor(CyanText))
-					]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SOverlay)
-					+ SOverlay::Slot()
-					[
-						SNew(SBpRing).Fraction(0.f)
-					]
-					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
-					[
-						SNew(STextBlock).Text(FText::FromString(TEXT("0"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-					]
-				]
-			]
-		];
-	}
-	FString Sub = Wave ? FString::Printf(TEXT("%s · %s"), *Wave->name, *Wave->status) : FString(TEXT("Draft wave · none"));
-	FString Title = TEXT("PACKAGES");
-	// The tabs and the rooms tab (WP3), at fixed places in the panel (WristHit reads the same boxes).
 	TSharedRef<SCanvas> Over = SNew(SCanvas);
 	const auto Put = [&Over](const FBox2f& Box, const TSharedRef<SWidget>& Widget)
 	{
 		Over->AddSlot().Position(FVector2D(Box.Min.X, Box.Min.Y)).Size(FVector2D(Box.GetSize().X, Box.GetSize().Y))[Widget];
 	};
-	if (bTabs)
+	const FSlateFontInfo TopFont = CapFont(TEXT("Bold"), WButtonCap), AnswerFont = CapFont(TEXT("Bold"), WAnswerCap), TitleFont = CapFont(TEXT("Bold"), WTitleCap);
+	const FSlateFontInfo WordsFont = CapFont(TEXT("Regular"), WTextCap), StripFont = CapFont(TEXT("Bold"), WSmallCap), SmallFont = CapFont(TEXT("Regular"), WSmallCap);
+	using BpSheet::ELook;
+	// One control family (BpSheet::Control, night two V4): the console's and the stand-up's buttons, the same amber and cyan.
+	const auto Button = [&](const FBox2f& Box, const FString& Word, ELook Look, const FString& Id, const FSlateFontInfo& Font)
 	{
-		static const FSlateRoundedBoxBrush TabOn(Cyan.CopyWithNewOpacity(0.32f), 10.f, CyanEdge, 2.5f);
-		static const FSlateRoundedBoxBrush TabOff(Cyan.CopyWithNewOpacity(0.06f), 10.f, CyanEdge.CopyWithNewOpacity(0.5f), 2.f);
-		const auto Tab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
+		const FString Full = TEXT("wrist:") + Id;
+		Put(Box, BpSheet::Control(Word, Font, Look, Full == WristHover, Full == WristHover && bWristHoverDown));
+		WristBoxes.Add({ Full, Box });
+	};
+
+	// The top row: MENU (the console), TALK (held: push to talk, BpTalk.cpp; it says its state while one is in flight), TOUR.
+	// Each as wide as its word needs, the spare shared out, so LISTENING or STOP TOUR is never cut.
+	{
+		const FString Words[3] = { bConsoleOpen ? TEXT("CLOSE") : TEXT("MENU"), TalkWord.IsEmpty() ? FString(TEXT("TALK")) : TalkWord, bTour ? TEXT("STOP TOUR") : TEXT("TOUR") };
+		const float Row = WX1 - WX0 - 2.f * WGap;
+		float Text[3], Sum = 0.f;
+		for (int32 I = 0; I < 3; ++I) { Text[I] = BpSheet::TextWidth(Words[I], TopFont); Sum += Text[I]; }
+		const float Spare = FMath::Max(0.f, (Row - Sum) / 3.f);
+		const ELook Looks[3] = { ELook::Fill, TalkWord == TEXT("LISTENING") ? ELook::Amber : ELook::Edge, ELook::Edge };
+		const TCHAR* Ids[3] = { TEXT("menu"), TEXT("talk"), TEXT("tour") };
+		float X = WX0;
+		for (int32 I = 0; I < 3; ++I)
 		{
-			Put(Box, SNew(SBorder).BorderImage(bOn ? &TabOn : &TabOff).HAlign(HAlign_Center).VAlign(VAlign_Center)
-				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.8f)))
-				]);
-			WristBoxes.Add({ Id, Box });
-		};
-		Tab(WristTabPackages, TEXT("PACKAGES"), !bRooms, TEXT("wrist:tab:packages"));
-		Tab(WristTabRooms, TEXT("ROOMS"), bRooms, TEXT("wrist:tab:rooms"));
-	}
-	if (bSeat)
-	{
-		static const FSlateRoundedBoxBrush SeatBrush(Amber.CopyWithNewOpacity(0.10f), 10.f, Amber.CopyWithNewOpacity(0.8f), 2.f);
-		Put(WristSeat, SNew(SBorder).BorderImage(&SeatBrush).HAlign(HAlign_Center).VAlign(VAlign_Center)
-			[
-				SNew(STextBlock).Text(FText::FromString(TEXT("SEAT"))).Font(CapFont(TEXT("Bold"), 20.f)).ColorAndOpacity(FSlateColor(Amber))
-			]);
-		WristBoxes.Add({ TEXT("wrist:seat"), WristSeat });
-	}
-	if (bRooms)
-	{
-		// The rooms by urgency, a page of them: the name, and the counts that rank it; the room shown marked.
-		List = SNew(SVerticalBox);
-		Title = TEXT("ROOMS");
-		int32 Findings = 0;
-		if (Wave) for (const FBpWavePackage& Package : Wave->packages) Findings += Package.ids.Num();
-		Sub = FString::Printf(TEXT("By urgency · %d rooms · draft %d %s"), Ranks.Num(), Findings, Findings == 1 ? TEXT("finding") : TEXT("findings"));
-		static const FSlateRoundedBoxBrush RoomRow(Cyan.CopyWithNewOpacity(0.10f), 10.f, CyanEdge.CopyWithNewOpacity(0.55f), 2.f);
-		static const FSlateRoundedBoxBrush RoomHere(Cyan.CopyWithNewOpacity(0.30f), 10.f, Amber, 3.f);
-		static const FSlateRoundedBoxBrush Pager(Cyan.CopyWithNewOpacity(0.08f), 10.f, CyanEdge.CopyWithNewOpacity(0.6f), 2.f);
-		const FSlateFontInfo NameFont = CapFont(TEXT("Bold"), 25.f), CountFont = CapFont(TEXT("Bold"), 19.f);
-		for (int32 Index = 0; Index < WristRoomsPerPage; ++Index)
-		{
-			const int32 At = WristPage * WristRoomsPerPage + Index;
-			if (!Ranks.IsValidIndex(At)) break;
-			const ABpTable::FRoomRank& Rank = Ranks[At];
-			const bool bHere = Rank.Id == WristRoomMode;
-			FString Counts;
-			if (Rank.T0 > 0) Counts += FString::Printf(TEXT("T0 %d · "), Rank.T0);
-			if (Rank.T1 > 0) Counts += FString::Printf(TEXT("T1 %d · "), Rank.T1);
-			Counts += Rank.Open > 0 ? FString::Printf(TEXT("%d OPEN"), Rank.Open) : FString(TEXT("NOTHING OPEN"));
-			const FLinearColor CountInk = Rank.T0 + Rank.T1 > 0 ? Amber : Rank.Open > 0 ? CyanText : CyanText.CopyWithNewOpacity(0.6f);
-			const float CountW = WristTextWidth(Counts, CountFont) + 8.f;
-			const float HereW = bHere ? WristTextWidth(TEXT("HERE"), CountFont) + 18.f : 0.f;
-			const FString Name = WristCut(FString::Printf(TEXT("%d  %s"), At + 1, *Rank.Name), NameFont, WristX1 - WristX0 - 28.f - CountW - HereW - 12.f);
-			const FBox2f Box(FVector2f(WristX0, WristRowTop + Index * WristRowStep), FVector2f(WristX1, WristRowTop + Index * WristRowStep + WristRowH));
-			TSharedRef<SHorizontalBox> Line = SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.f).VAlign(VAlign_Center)
-				[
-					SNew(STextBlock).Text(FText::FromString(Name)).Font(NameFont).ColorAndOpacity(FSlateColor(FLinearColor::White))
-				];
-			if (bHere)
-			{
-				Line->AddSlot().AutoWidth().VAlign(VAlign_Center).Padding(0.f, 0.f, 12.f, 0.f)
-				[
-					SNew(STextBlock).Text(FText::FromString(TEXT("HERE"))).Font(CountFont).ColorAndOpacity(FSlateColor(Cyan))
-				];
-			}
-			Line->AddSlot().AutoWidth().VAlign(VAlign_Center)
-			[
-				SNew(STextBlock).Text(FText::FromString(Counts)).Font(CountFont).ColorAndOpacity(FSlateColor(CountInk))
-			];
-			Put(Box, SNew(SBorder).BorderImage(bHere ? &RoomHere : &RoomRow).Padding(FMargin(14.f, 0.f)).VAlign(VAlign_Center)[Line]);
-			WristBoxes.Add({ TEXT("wrist:room:") + Rank.Id, Box });
+			const float W = Text[I] + Spare;
+			Button(FBox2f(FVector2f(X, WTopY0), FVector2f(X + W, WTopY0 + WTopH)), Words[I], Looks[I], Ids[I], TopFont);
+			// Wave EV: a tour step's target on the wrist wears the console targets' amber edge (the talk step's TALK).
+			if (ConsoleMark == TEXT("wrist:") + FString(Ids[I])) Put(FBox2f(FVector2f(X, WTopY0), FVector2f(X + W, WTopY0 + WTopH)).ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
+			X += W + WGap;
 		}
-		// The pager.
-		const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(Ranks.Num(), WristRoomsPerPage));
-		const auto PagerTab = [&](const FBox2f& Box, const TCHAR* Text, bool bOn, const TCHAR* Id)
+	}
+
+	// What the card says: its strip (what it is showing), its title, its words, its answers. The tone is the family's meaning:
+	// amber waits for your answer, cyan is the system's or the lamp's, red did not happen.
+	FString Kicker, Title, Words;
+	FLinearColor Tone = BpSheet::Amber;
+	bool bSampleChip = false;
+	struct FCardButton { FString Word; ELook Look; FString Id; };
+	TArray<FCardButton> Buttons;
+	switch (Card)
+	{
+	case ECard::Armed:
+	{
+		const FBpFocusList& List = FBpLinkModule::Get().GetFocusList();
+		const FBpSavedFocus* Armed = List.Focuses.FindByPredicate([this](const FBpSavedFocus& F) { return F.Id == WristArmedFocus; });
+		Kicker = TEXT("SCAN · READY TO START");
+		bSampleChip = bSample;
+		const FString Place = WristArmedLabel.IsEmpty() ? FString(TEXT("this place")) : WristArmedLabel;
+		if (WristArmedFocus == TEXT("@this"))
 		{
-			Put(Box, SNew(SBorder).BorderImage(&Pager).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			Title = FString::Printf(TEXT("Scan %s"), *Place);
+			Words = FString::Printf(TEXT("%s · %s"), bPlan ? *BpWords::Lens(Table->GetActiveLens()) : TEXT("the lens shown"), bSample ? TEXT("a sample: nothing is read or written") : TEXT("a plain scan on your PC"));
+		}
+		else if (WristArmedFocus == TEXT("@every"))
+		{
+			Title = TEXT("Scan everything with every lens");
+			Words = TEXT("One job on your PC reads each enabled lens.");
+		}
+		else
+		{
+			Title = FString::Printf(TEXT("Scan %s for:"), *Place);
+			Words = Armed ? Armed->Note : FString();
+		}
+		Buttons = { { TEXT("START"), ELook::Amber, TEXT("scan:start") }, { TEXT("CANCEL"), ELook::Edge, TEXT("scan:cancel") } };
+		break;
+	}
+	case ECard::Refused:
+		Kicker = TEXT("THE SCAN DID NOT START");
+		Tone = BpSheet::Red;
+		Words = WristScanWords;
+		Buttons = { { TEXT("DISMISS"), ELook::Edge, TEXT("scan:dismiss") } };
+		break;
+	case ECard::Decision:
+		Kicker = DecisionWhere == TEXT("deck") ? TEXT("DECISION · ON THE SCREEN") : TEXT("DECISION · ON THE CARD");
+		bSampleChip = bSample;
+		Title = DecisionTitle;
+		// Its one line of consequence (the brief's first line, as the deck's sheet leads with it), when the brief is in.
+		if (const FBpDecisionBrief* Brief = FBpLinkModule::Get().FindBrief(DecisionId); Brief && Brief->lines.Num() > 0) Words = Brief->lines[0];
+		Buttons = { { TEXT("APPROVE"), ELook::Amber, TEXT("approve") }, { TEXT("DECLINE"), ELook::Edge, TEXT("decline") } };
+		break;
+	case ECard::Standup:
+	{
+		Kicker = SuKicker;
+		if (Kicker.EndsWith(TEXT(" · SAMPLE"))) { Kicker = Kicker.LeftChop(9); bSampleChip = true; }
+		Tone = Kicker == TEXT("GLIM ASKS") ? BpSheet::Accent : BpSheet::Amber;
+		// YESTERDAY (wave EV): the card in the colour of what the approval became.
+		if (Kicker.StartsWith(TEXT("YESTERDAY"))) Tone = SuWords.StartsWith(TEXT("Built")) ? BpSheet::Accent : SuWords.StartsWith(TEXT("Failed")) ? BpSheet::Red : BpSheet::Amber;
+		Title = SuTitle;
+		Words = SuWords;
+		for (int32 Index = 0; Index < SuButtons.Num(); ++Index)
+		{
+			const bool bTake = SuButtons[Index].Value == TEXT("standup:revoke");
+			const bool bLink = SuButtons[Index].Value == TEXT("open:link");
+			Buttons.Add({ SuButtons[Index].Key, bLink ? ELook::Fill : Index == 0 || bTake ? ELook::Amber : ELook::Edge, SuButtons[Index].Value });
+		}
+		break;
+	}
+	case ECard::Talk:
+		Kicker = TalkWord == TEXT("SAMPLE") ? FString(TEXT("TALK")) : TEXT("TALK · ") + TalkWord;
+		bSampleChip = TalkWord == TEXT("SAMPLE");
+		Title = Table->TalkStateLine();
+		if (TalkWord == TEXT("THINKING") || TalkWord == TEXT("ANSWERING") || TalkWord == TEXT("SAMPLE")) Buttons = { { TEXT("CANCEL"), ELook::Edge, TEXT("talk:cancel") } };
+		break;
+	case ECard::Offer:
+	{
+		Kicker = TEXT("GLIM SUGGESTS");
+		Tone = BpSheet::Accent;
+		// Its first line is what it names (the title), the rest what it says of it, each line kept.
+		Words = Table->GetLampAnswer();
+		FString Rest;
+		if (Words.Split(TEXT("\n"), &Title, &Rest)) { Title.TrimStartAndEndInline(); Words = Rest; }
+		Buttons = { { Offer.ToUpper(), ELook::Amber, TEXT("ask:act") } };
+		break;
+	}
+	default:
+		Kicker = Waiting > 0 ? FString::Printf(TEXT("%d %s WAITING"), Waiting, Waiting == 1 ? TEXT("DECISION") : TEXT("DECISIONS")) : FString(TEXT("NOTHING WAITING"));
+		Tone = Waiting > 0 ? BpSheet::Amber : BpSheet::Ink.CopyWithNewOpacity(0.7f);
+		Words = !bPlan ? TEXT("The table is reading the plan.") : Waiting > 0 ? TEXT("The stand-up and the rooms are in the menu.") : TEXT("Rooms, scans, projects and settings are in the menu.");
+		break;
+	}
+
+	// ---- Measure, then place: the panel is as tall as its content (never cut), at least its rest height ----------------------
+	const float BarW = 6.f, InX0 = WX0 + BarW + 20.f, InX1 = WX1 - 20.f, TextW = InX1 - InX0;
+	// The strip: the kicker in its tone at the left, SAMPLE (amber, solid) and the link's word (a chip) at the right.
+	const FLinearColor LinkInk = LinkWord == TEXT("PAIRING") ? BpSheet::Amber : LinkWord == TEXT("OFFLINE") ? BpSheet::Ink.CopyWithNewOpacity(0.75f) : BpSheet::Accent;
+	const float ChipH = 38.f;
+	const float SampleW = bSampleChip ? BpSheet::ChipWidth(TEXT("SAMPLE"), StripFont) : 0.f, LinkW = LinkWord.IsEmpty() || bSampleChip ? 0.f : BpSheet::ChipWidth(LinkWord, StripFont);
+	const float ChipsW = SampleW + LinkW + (SampleW > 0.f && LinkW > 0.f ? 10.f : 0.f);
+	const FString KickerFit = BpSheet::Wrap(Kicker, StripFont, WX1 - WX0 - ChipsW - 16.f, 0);
+	const float StripY0 = WTopY0 + WTopH + 18.f;
+	const float StripH = FMath::Max(ChipH, BpSheet::Lines(KickerFit) * WPitch(WSmallCap));
+	const float RuleY = StripY0 + StripH + 8.f;
+	// The card's words: the title whole; the words whole, a lamp's long answer as whole sentences (never an ellipsis).
+	const FString TitleFit = Title.IsEmpty() ? FString() : BpSheet::Wrap(Title, TitleFont, TextW, 0);
+	bool bMore = false;
+	FString WordsFit;
+	{
+		// Each line of the words whole (a lamp's long answer as whole sentences, never an ellipsis).
+		TArray<FString> Parts, Fits;
+		Words.ParseIntoArrayLines(Parts);
+		for (const FString& Part : Parts) Fits.Add(Card == ECard::Offer ? BpSheet::Sentences(Part, WordsFont, TextW, 4, bMore) : BpSheet::Wrap(Part, WordsFont, TextW, 0));
+		WordsFit = FString::Join(Fits, TEXT("\n"));
+	}
+	const float TitleH = BpSheet::Lines(TitleFit) * WPitch(WTitleCap), WordsH = BpSheet::Lines(WordsFit) * WPitch(WTextCap);
+	float FrameH = 20.f + TitleH + (TitleH > 0.f && WordsH > 0.f ? 10.f : 0.f) + WordsH + 20.f;
+	// YESTERDAY's stamp (BUILT, FAILED) stands under its words, never over them (wave EV).
+	if (Card == ECard::Standup && Kicker.StartsWith(TEXT("YESTERDAY"))) FrameH += 70.f;
+	const int32 N = Buttons.Num();
+	// The band (the scan on the table or just run): its head and its words, whole.
+	const bool bBand = !BandHead.IsEmpty();
+	bool bBandMore = false;
+	const FString BandFit = bBand && !BandBody.IsEmpty() ? BpSheet::Sentences(BandBody, SmallFont, WX1 - WX0 - 40.f, 3, bBandMore) : FString();
+	const float BandBtnH = bBand && bBandResult ? 12.f + WBtnH : 0.f;
+	const float BandH = bBand ? 14.f + WPitch(WSmallCap) + (BandFit.IsEmpty() ? 0.f : 4.f + BpSheet::Lines(BandFit) * WPitch(WSmallCap)) + 14.f + BandBtnH : 0.f;
+	const auto Total = [&]() { return RuleY + 14.f + FrameH + (N > 0 ? 14.f + WBtnH : 0.f) + (bBand ? 14.f + BandH : 0.f) + 30.f; };
+	if (Total() < WristMinH) FrameH += WristMinH - Total();
+	const float H = FMath::CeilToFloat(Total());
+
+	// The strip and its rule.
+	Put(FBox2f(FVector2f(WX0, StripY0 + 4.f), FVector2f(WX1 - ChipsW - 12.f, StripY0 + StripH + 4.f)), SNew(SBox).VAlign(VAlign_Center)
+		[
+			SNew(STextBlock).Text(FText::FromString(KickerFit)).Font(StripFont).ColorAndOpacity(FSlateColor(Tone))
+		]);
+	{
+		float X = WX1;
+		const float CY = StripY0 + (StripH - ChipH) * 0.5f;
+		if (LinkW > 0.f) { Put(FBox2f(FVector2f(X - LinkW, CY), FVector2f(X, CY + ChipH)), BpSheet::Chip(LinkWord, StripFont, ChipH, LinkInk)); X -= LinkW + 10.f; }
+		if (SampleW > 0.f) Put(FBox2f(FVector2f(X - SampleW, CY), FVector2f(X, CY + ChipH)), BpSheet::Chip(TEXT("SAMPLE"), StripFont, ChipH, BpSheet::Amber, true));
+	}
+	Put(FBox2f(FVector2f(WX0, RuleY), FVector2f(WX1, RuleY + 2.f)), SNew(BpSheet::SPlate).Fill(BpSheet::Ink.CopyWithNewOpacity(0.45f)));
+
+	// The card: the decision sheet's frame, its tone down its left edge; the title, then the words.
+	const float FrameY0 = RuleY + 14.f, FrameY1 = FrameY0 + FrameH;
+	Put(FBox2f(FVector2f(WX0, FrameY0), FVector2f(WX1, FrameY1)), SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.45f)).EdgePx(2.f).Bar(Tone).BarPx(BarW));
+	{
+		float Y = FrameY0 + 20.f;
+		if (TitleH > 0.f)
+		{
+			Put(FBox2f(FVector2f(InX0, Y), FVector2f(InX1 + 8.f, Y + TitleH + 4.f)), SNew(STextBlock).Text(FText::FromString(TitleFit)).Font(TitleFont).ColorAndOpacity(FSlateColor(BpSheet::InkHi)));
+			Y += TitleH + 10.f;
+		}
+		if (WordsH > 0.f)
+		{
+			Put(FBox2f(FVector2f(InX0, Y), FVector2f(InX1 + 8.f, Y + WordsH + 4.f)), SNew(STextBlock).Text(FText::FromString(WordsFit)).Font(WordsFont).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.9f))));
+		}
+	}
+
+	// An answered decision (the stand-up's, no answers left): its verdict as the sheet's stamp, at the card's foot right.
+	const bool bYesterday = Card == ECard::Standup && Kicker.StartsWith(TEXT("YESTERDAY"));
+	if (Card == ECard::Standup && ((N == 0 && Kicker.StartsWith(TEXT("DECISION"))) || bYesterday) && !Words.IsEmpty())
+	{
+		FString Verdict = Words, Rest2;
+		// The first line only (YESTERDAY's words say who approved it under it).
+		Verdict.Split(TEXT("\n"), &Verdict, &Rest2);
+		if (Verdict.Split(TEXT(" · "), &Verdict, &Rest2) || Verdict.Split(TEXT(":"), &Verdict, &Rest2)) {}
+		Verdict = Verdict.TrimStartAndEnd().ToUpper();
+		if (Verdict.Len() <= 12)
+		{
+			const FSlateFontInfo StampFont = CapFont(TEXT("Bold"), 34.f);
+			const FLinearColor StampInk = Verdict.StartsWith(TEXT("APPROVED")) || Verdict.StartsWith(TEXT("BUILT")) ? BpSheet::Accent : Verdict.StartsWith(TEXT("DECLINED")) || Verdict.StartsWith(TEXT("FAILED")) ? BpSheet::Red : BpSheet::Amber;
+			const float SW = BpSheet::TextWidth(Verdict, StampFont) + 48.f, SH = 74.f;
+			const FVector2f C(WX1 - SW * 0.5f - 26.f, FrameY1 - SH * 0.5f - 22.f);
+			Put(FBox2f(C - FVector2f(SW, SH) * 0.5f, C + FVector2f(SW, SH) * 0.5f), SNew(SBox).RenderTransformPivot(FVector2D(0.5, 0.5)).RenderTransform(FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(-7.f))))
 				[
-					SNew(STextBlock).Text(FText::FromString(Text)).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(bOn ? FLinearColor::White : CyanText.CopyWithNewOpacity(0.3f)))
+					SNew(SOverlay)
+					+ SOverlay::Slot()[SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.94f)).Edge(StampInk).EdgePx(4.f)]
+					+ SOverlay::Slot().Padding(7.f)[SNew(BpSheet::SPlate).Edge(StampInk.CopyWithNewOpacity(0.6f)).EdgePx(1.5f)]
+					+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)[SNew(STextBlock).Text(FText::FromString(Verdict)).Font(StampFont).ColorAndOpacity(FSlateColor(StampInk))]
 				]);
-			if (bOn) WristBoxes.Add({ Id, Box });
-		};
-		PagerTab(WristPrev, TEXT("‹  PREV"), WristPage > 0, TEXT("wrist:page:prev"));
-		PagerTab(WristNext, TEXT("NEXT  ›"), WristPage + 1 < Pages, TEXT("wrist:page:next"));
-		Put(FBox2f(FVector2f(WristPrev.Max.X, WristPrev.Min.Y), FVector2f(WristNext.Min.X, WristNext.Max.Y)),
-			SNew(SBox).HAlign(HAlign_Center).VAlign(VAlign_Center)
-			[
-				SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("PAGE %d OF %d"), WristPage + 1, Pages))).Font(CapFont(TEXT("Bold"), 19.f)).ColorAndOpacity(FSlateColor(CyanText))
-			]);
+		}
+	}
+	// The answers under the card: the primary (the first amber) the widest, the rest as wide as their words need.
+	float Y = FrameY1;
+	if (N > 0)
+	{
+		Y += 14.f;
+		const float Row = WX1 - WX0 - (N - 1) * WGap;
+		TArray<float> Widths;
+		float Need = 0.f;
+		for (const FCardButton& Each : Buttons)
+		{
+			const float W = BpSheet::TextWidth(Each.Word, AnswerFont) + 44.f;
+			Widths.Add(Each.Look == ELook::Amber && &Each == &Buttons[0] ? W * 1.45f : W);
+			Need += Widths.Last();
+		}
+		const float Spare = (Row - Need) / N;
+		float X = WX0;
+		for (int32 Index = 0; Index < N; ++Index)
+		{
+			const float W = Spare >= 0.f ? Widths[Index] + Spare : Row * Widths[Index] / Need;
+			Button(FBox2f(FVector2f(X, Y), FVector2f(X + W, Y + WBtnH)), Buttons[Index].Word, Buttons[Index].Look, Buttons[Index].Id, AnswerFont);
+			X += W + WGap;
+		}
+		Y += WBtnH;
+	}
+	if (bBand)
+	{
+		Y += 14.f;
+		const FBox2f Band(FVector2f(WX0, Y), FVector2f(WX1, Y + BandH));
+		Put(Band, SNew(BpSheet::SPlate).Fill(BpSheet::RowFill(false)).Edge(BpSheet::Amber.CopyWithNewOpacity(0.55f)).EdgePx(2.f).Bar(BpSheet::Amber).BarPx(BarW));
+		TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(FText::FromString(BpSheet::Wrap(BandHead.ToUpper(), StripFont, WX1 - WX0 - 40.f, 0))).Font(StripFont).ColorAndOpacity(FSlateColor(BpSheet::Amber))];
+		if (!BandFit.IsEmpty()) Lines->AddSlot().AutoHeight().Padding(0.f, 4.f, 0.f, 0.f)[SNew(STextBlock).Text(FText::FromString(BandFit)).Font(SmallFont).ColorAndOpacity(FSlateColor(BpSheet::Ink))];
+		Put(FBox2f(Band.Min + FVector2f(26.f, 14.f), Band.Max - FVector2f(14.f, 10.f + BandBtnH)), Lines);
+		if (BandBtnH > 0.f)
+		{
+			const FString Word = BandResult.New > 0 && !BandResult.bCancelled && !BandResult.bFailed ? FString::Printf(TEXT("SEE %d NEW"), BandResult.New) : FString(TEXT("SEE RESULT"));
+			const float BW = BpSheet::TextWidth(Word, AnswerFont) + 64.f;
+			Button(FBox2f(FVector2f(Band.Min.X + 26.f, Band.Max.Y - 14.f - WBtnH), FVector2f(Band.Min.X + 26.f + BW, Band.Max.Y - 14.f)), Word, ELook::Amber, TEXT("scan:result"), AnswerFont);
+		}
+	}
+	// The control a hand's ray is on: an amber edge, what a pinch would act on (the aim cursor stops short of the panel).
+	if (const FWristBox* Hovered = WristBoxes.FindByPredicate([this](const FWristBox& Each) { return Each.Id == WristHover; }))
+	{
+		Put(Hovered->Box.ExpandBy(4.f), SNew(BpSheet::SPlate).Edge(BpSheet::Amber).EdgePx(5.f));
+	}
+	if (H != GWristH)
+	{
+		GWristH = H;
+		WristPanel->SetDrawSize(FVector2D(WristW, H));
 	}
 	WristPanel->SetSlateWidget(
 		SNew(SOverlay)
-		+ SOverlay::Slot()
-		[
-		SNew(SBorder).BorderImage(&EdgeGlow).Padding(5.f)
-		[
-		SNew(SBorder).BorderImage(&EdgeGlowInner).Padding(4.f)
-		[
-		SNew(SOverlay)
-		+ SOverlay::Slot()
-		[
-		SNew(SBorder).BorderImage(&Panel).Padding(FMargin(20.f, 14.f))
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				SNew(STextBlock).Text(FText::FromString(Title)).Font(CapFont(TEXT("Bold"), 25.f)).ColorAndOpacity(FSlateColor(FLinearColor::White))
-			]
-			// The wave's name and status on a line of its own (FO: beside the title it was cut and unreadable).
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
-			[
-				SNew(STextBlock).Text(FText::FromString(Sub)).Font(CapFont(TEXT("Regular"), 18.f)).ColorAndOpacity(FSlateColor(CyanText))
-			]
-			+ SVerticalBox::Slot().AutoHeight()
-			[
-				List
-			]
-		]
-		]
-		+ SOverlay::Slot().VAlign(VAlign_Top).Padding(FMargin(14.f, 4.f, 14.f, 0.f))
-		[
-			SNew(SBox).HeightOverride(30.f)
-			[
-				SNew(SBorder).BorderImage(&Sheen)
-			]
-		]
-		]
-		]
-		]
-		// The tabs and the rooms tab over it, at the panel's own pixels (the glow's pads included).
+		+ SOverlay::Slot()[SNew(BpSheet::SSheet)]
 		+ SOverlay::Slot()[Over]);
-	WristPanel->RequestRedraw();
-	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist wave=%s packages=%d%s"), Wave ? *Wave->id : TEXT("none"), Rows.Num(),
-		bRooms ? *FString::Printf(TEXT(" rooms tab page %d (%d rooms, here %s)"), WristPage + 1, Ranks.Num(), *WristRoomMode) : bTabs ? TEXT(" (tabs)") : TEXT(""));
+	WristPanel->RequestRenderUpdate();
+	++GWristDraws;
+	UE_LOG(LogBpTable, Log, TEXT("BpPawn: wrist drawn #%d (%.0f px tall) link=%s card=%s%s%s"), GWristDraws, GWristH, *LinkWord, Card == ECard::Talk ? *(TEXT("talk ") + TalkWord) : Card == ECard::Armed ? TEXT("armed") : Card == ECard::Refused ? TEXT("refused") : Card == ECard::Decision ? TEXT("decision") : Card == ECard::Offer ? TEXT("offer") : Card == ECard::Standup ? *FString::Printf(TEXT("standup \"%s\""), *SuKicker) : TEXT("calm"),
+		Card == ECard::Decision ? *FString::Printf(TEXT(" %s on the %s"), *DecisionId, *DecisionWhere) : TEXT(""), bBand ? *FString::Printf(TEXT(" band \"%s\""), *BandHead) : TEXT(""));
+}
+
+void ABpPawn::TalkChanged()
+{
+	// Both redraw only when what they show changed (their keys).
+	RefreshConsole();
+	DrawWrist();
 }

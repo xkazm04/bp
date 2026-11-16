@@ -10,9 +10,10 @@
 // CLI sees, and the CLI has no shell or file tools to fetch it with). A local program can still send the two headers by hand:
 // the server is loopback-only, so this is a guard against the agent, not against an attacker already on this machine.
 // A grant (policies.json, written only by the human path) covers a card when its product matches (or `*`), the tool is in
-// its tools, it has not expired and, with minTier, every finding the args name that carries a tier has tier >= minTier (that severe or milder); a
+// its tools, it has not expired and, with minTier, every finding the args name has tier >= minTier (that severe or milder;
+// an untiered or unknown finding counts as tier 0); a
 // covered card runs at once and records `decidedBy: 'policy'` and the grant's id. No grant may cover policy.propose.
-// Execution: one fetch to this server's own origin, the request tool-call.ts builds; the human token rides along only on a
+// Execution: one fetch to this server's own BOUND origin (selfOrigin, never the request's Host), the request tool-call.ts builds; the human token rides along only on a
 // human approval (so policy.propose can reach POST /policies when, and only when, a person approved it). Every card state
 // change is published to the bus. One server process serves the companion (apps/server canonical): two processes writing
 // the same cards.jsonl could each move one card, and that is not guarded here.
@@ -27,6 +28,10 @@ import { bounded, isGated, productOf, toolOf, toolRequest } from './tool-call.ts
 import { findProduct, hasStore, storeFile, writeAtomic } from '../../products.server.ts';
 import { snapshotOf } from '../../store.server.ts';
 import { listWaves } from '../../waves.server.ts';
+import { decidedRows, itemsOf, listRules, trustedLenses } from '../../rules.server.ts';
+import { grantFor, type Rule } from '../../../scan/rules.ts';
+import { FOCUS_NOTE_MAX } from '../../../scan/focus.ts';
+import { deviceDriven, grantWithinTableBound } from '../../table-bound.server.ts';
 
 if (typeof window !== 'undefined') throw new Error('door.server.ts is server-only');
 
@@ -38,6 +43,28 @@ export const humanToken = (): string => (g.__bpHumanToken ??= randomBytes(32).to
 export function isHuman(req: Request): boolean {
   const got = Buffer.from(req.headers.get(HUMAN_HEADER) ?? ''), want = Buffer.from(humanToken());
   return got.length === want.length && timingSafeEqual(got, want);
+}
+/** A card the owner's standing permission ran (a rule grant G-n in bp-rules.json, or a companion policy pol_..) carries
+ *  `x-bp-rule: <id>`, `x-bp-rule-tool: <tool>` and this per-process token, so the route it calls signs the decision
+ *  `rule:G-n` / `policy:pol_..` instead of the person's name: the store says who decided, and the record a rule is
+ *  replayed over is the owner's alone (rules.server.ts AGENT_SIGNS). Minted like the human token; never handed out.
+ *  The card's request goes to this server's own bound origin (originOf below), never one a request named; the server is
+ *  loopback-only (a guard against the agent, not against an attacker already on this machine). */
+const ruleToken = (): string => ((g as { __bpRuleToken?: string }).__bpRuleToken ??= randomBytes(32).toString('hex'));
+export const RULE_HEADER = 'x-bp-rule', RULE_TOOL_HEADER = 'x-bp-rule-tool', RULE_TOKEN_HEADER = 'x-bp-rule-token';
+const PERMIT_ID = /^(G-\d{1,6}|pol_[0-9a-z]{6,40})$/;
+/**
+ * Who signs a decision this request makes: `{ by: 'rule:G-n' | 'policy:pol_..' }` when it is this server's own call under
+ * a standing permission THAT STILL COVERS IT (re-checked here, at the moment it lands: a wave changed since the card was
+ * filed, or a grant revoked meanwhile, is refused 403); null for any other request (the route signs as the person).
+ */
+export function agentSigner(req: Request, args: Record<string, unknown>): { by: string } | { refuse: Response } | null {
+  const id = req.headers.get(RULE_HEADER), got = Buffer.from(req.headers.get(RULE_TOKEN_HEADER) ?? ''), want = Buffer.from(ruleToken());
+  if (!id || got.length !== want.length || !timingSafeEqual(got, want) || !PERMIT_ID.test(id)) return null;
+  const t = toolOf(req.headers.get(RULE_TOOL_HEADER));
+  const still = t ? (id.startsWith('G-') ? ruleGrantFor(t, args)?.id : policyFor(t, args, Date.now(), (p) => p.id === id)?.id) : undefined;
+  if (still !== id) return { refuse: Response.json({ error: `${id} no longer covers this call (${t?.name ?? 'unknown tool'}): it waits for the person` }, { status: 403 }) };
+  return { by: (id.startsWith('G-') ? 'rule:' : 'policy:') + id };
 }
 /** Only a browser on bp's own page sends both; neither can be set by a page on another origin. */
 export const fromOwnPage = (req: Request): boolean => req.headers.get('sec-fetch-site') === 'same-origin' && req.headers.get('sec-fetch-mode') === 'cors';
@@ -57,7 +84,8 @@ export const sortableId = (prefix: string): string =>
   `${prefix}${Date.now().toString(36).padStart(9, '0')}${((g.__bpCardSeq = ((g.__bpCardSeq ?? 0) + 1) % 1296)).toString(36).padStart(2, '0')}${randomBytes(2).toString('hex')}`;
 
 // ------------------------------------------------------------------------------------------------ recommendations
-export interface Recommendation { verdict: Verdict; why: string; at: string }
+/** `brief`: the decision brief of the proposal when it was recommended (scan/brief.ts), so a recommendation carries its own context. */
+export interface Recommendation { verdict: Verdict; why: string; at: string; brief?: { say: 'withdraw' | 'ask' | 'proceed'; lines: string[] } }
 export const readRecommendations = (): Record<string, Recommendation> => readJson('recommendations.json', {});
 /** Last writer wins per `slug:id`. */
 export function recommend(slug: string, id: string, r: Omit<Recommendation, 'at'>): Recommendation {
@@ -73,12 +101,18 @@ export const listPolicies = (): PolicyGrant[] => {
   const d = readJson<{ policies?: PolicyGrant[] }>('policies.json', {});
   return Array.isArray(d.policies) ? d.policies : [];
 };
-export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number }): PolicyGrant {
+/** `grantedBy` (decider.server.ts DeciderMarks): who granted it and where; kept on the grant itself. */
+/** `replaces` (a grant from the table, S3 finding 6): the grants it supersedes, removed in the same write. */
+export function addPolicy(p: Omit<PolicyGrant, 'id' | 'createdAt' | 'expiresAt'> & { hours: number; grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } }, replaces: (g: PolicyGrant & { grantedBy?: { surface?: string } }) => boolean = () => false): PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string }; replaced?: string[] } {
   const now = Date.now();
-  const grant: PolicyGrant = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString() };
-  writeJson('policies.json', { policies: [grant, ...listPolicies()] });
-  return grant;
+  const grant: PolicyGrant & { grantedBy?: { surface: 'web' | 'vr'; device?: string; shown?: string } } = { id: sortableId('pol_'), product: p.product, tools: p.tools, ...(p.minTier !== undefined ? { minTier: p.minTier } : {}), expiresAt: new Date(now + p.hours * 3600000).toISOString(), createdAt: new Date(now).toISOString(), ...(p.grantedBy ? { grantedBy: p.grantedBy } : {}) };
+  const all = listPolicies(), gone = all.filter(replaces).map((x) => x.id);
+  writeJson('policies.json', { policies: [grant, ...all.filter((x) => !gone.includes(x.id))] });
+  return { ...grant, ...(gone.length ? { replaced: gone } : {}) };
 }
+/** A grant the table made (grantedBy.surface `vr`) for this product: a new grant from the table replaces it, so the table
+ *  holds at most one grant per product and a renewal never stacks (S3 finding 6). */
+export const tableGrantFor = (product: string) => (g: PolicyGrant & { grantedBy?: { surface?: string } }): boolean => g.product === product && g.grantedBy?.surface === 'vr';
 export function removePolicy(id: string): boolean {
   const all = listPolicies(), rest = all.filter((p) => p.id !== id);
   if (rest.length === all.length) return false;
@@ -86,8 +120,10 @@ export function removePolicy(id: string): boolean {
   return true;
 }
 
-/** The tiers of the findings `args` name (id, ids, or a wave's packages); null when one cannot be read. Untiered ones are left out. */
-function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | undefined): number[] | null {
+/** The tiers of the findings `args` name (id, ids, or a wave's packages); null when one cannot be read. A finding with no
+ *  tier, or one the store does not hold, counts as tier 0 (stop-ship): a tier floor is never passed by what cannot be read
+ *  (S3 finding 6, 2026-11-10; it used to be left out, so `minTier: 1` covered it). */
+export function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | undefined): number[] | null {
   let ids: string[] = [];
   if (typeof args.id === 'string' && /proposals/.test(t.route.path)) ids = [args.id];
   else if (Array.isArray(args.ids)) ids = args.ids.filter((x): x is string => typeof x === 'string');
@@ -103,16 +139,17 @@ function namedTiers(t: ToolSpec, args: Record<string, unknown>, slug: string | u
   if (!p || !hasStore(p)) return null;
   try {
     const by = new Map(snapshotOf(storeFile(p)).proposals.map((x) => [x.id, x.tier]));
-    return ids.map((id) => by.get(id)).filter((x): x is NonNullable<typeof x> => x !== undefined);
+    return ids.map((id) => by.get(id) ?? 0);
   } catch { return null; }
 }
 
-/** The live grant that covers this call, or null. */
-export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now()): PolicyGrant | null {
+/** The live grant that covers this call, or null. `accept`: only grants it passes are considered (a named grant, or one
+ *  within the table's bound for a card a device-driven turn filed). */
+export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now(), accept: (p: PolicyGrant) => boolean = () => true): PolicyGrant | null {
   if (t.name === 'policy.propose') return null;
   const slug = productOf(args);
   for (const p of listPolicies()) {
-    if (Date.parse(p.expiresAt) <= now || !p.tools.includes(t.name)) continue;
+    if (Date.parse(p.expiresAt) <= now || !p.tools.includes(t.name) || !accept(p)) continue;
     if (p.product !== '*' && p.product !== slug) continue;
     if (p.minTier !== undefined) {
       const tiers = namedTiers(t, args, slug);
@@ -121,6 +158,27 @@ export function policyFor(t: ToolSpec, args: Record<string, unknown>, now = Date
     return p;
   }
   return null;
+}
+
+/** The owner's standing grant (bp-rules.json, rules.server.ts) that lets this call run without a card: a decision.answer
+ *  that approves, or a wave.dispatch, every finding of it inside the grant's place and of its tier floor or milder. */
+export function ruleGrantFor(t: ToolSpec, args: Record<string, unknown>, now = Date.now()): Rule | null {
+  const slug = productOf(args), p = slug ? findProduct(slug) : null;
+  if (!p) return null;
+  let ids: string[] = [];
+  if (t.name === 'decision.answer' && args.decision === 'approve' && typeof args.id === 'string') ids = [args.id];
+  else if (t.name === 'wave.dispatch') {
+    const w = listWaves(p.root).find((x) => x.id === args.wave), pk = Array.isArray(args.packages) ? new Set(args.packages) : null;
+    ids = w ? w.packages.filter((k) => !pk || pk.has(k.id)).flatMap((k) => k.ids) : [];
+  }
+  if (!ids.length) return null;
+  try {
+    const rules = listRules(p.root), items = itemsOf(p, ids);
+    if (items.length !== new Set(ids).size) return null; // an id the store lacks is never covered
+    // a cautious grant acts only in the lenses its replay over the owner's own decisions has earned
+    let rows: ReturnType<typeof decidedRows> | null = null;
+    return grantFor(rules, t.name, items, now, (r) => trustedLenses(r, (rows ??= decidedRows(p)))) ?? null;
+  } catch { return null; }
 }
 
 // ------------------------------------------------------------------------------------------------ cards
@@ -156,18 +214,70 @@ export const listCards = (): Card[] => [...current().values()].sort((a, b) => (a
 export const getCard = (id: string): Card | undefined => current().get(id);
 
 const summaryOf = (t: ToolSpec, args: Record<string, unknown>): string => {
-  const shown = Object.entries(args).filter(([k]) => k !== 'slug' && k !== 'product').map(([k, v]) => `${k} ${typeof v === 'string' ? v : JSON.stringify(v)}`).join(', ');
-  const product = productOf(args);
-  return bounded(`${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`).slice(0, 300);
+  if (t.name === 'rule.propose') { // what approving it would set, in words: the agent's own text and label are quoted, never trusted alone
+    const sc = args.scope as { kind?: unknown; label?: unknown; features?: unknown } | undefined, text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : `a ${String(args.kind)} rule`;
+    const n = sc?.kind === 'all' ? 'every feature' : Array.isArray(sc?.features) ? `${sc.features.length} feature${sc.features.length === 1 ? '' : 's'}` : 'its features';
+    const what = args.kind === 'grant'
+      ? `a GRANT (${args.minTier === undefined || args.minTier === 0 ? 'any tier: it covers stop-ship findings' : `tier ${String(args.minTier)}+`}${args.cautious === true ? ', cautious' : ''})`
+      : `an ORDER (${String(args.kind)})`;
+    return bounded(`Proposes ${what} for ${productOf(args) ?? 'a product'}: "${text}" over ${typeof sc?.label === 'string' ? sc.label : 'a place'} (${n})${typeof args.hours === 'number' ? `, for ${args.hours} h` : ', until you lift it'}`).slice(0, 300);
+  }
+  if (t.name === 'scan.directed') { // the note IS what is being approved, so it shows whole (argsShown would cut it at CARD_VALUE_MAX), last so that no other arg can be pushed out of sight by it; the label is the agent's own, so the kind and the features stand beside it
+    const sc = args.scope as { kind?: unknown; label?: unknown; features?: unknown } | undefined, fs = Array.isArray(sc?.features) ? sc.features.map(String) : [];
+    const where = sc?.kind === 'all' ? 'every feature' : `${fs.length} feature${fs.length === 1 ? '' : 's'}${fs.length ? `: ${clip(fs.join(', '), 120)}` : ''}`;
+    const { lens, scope: _scope, focus, ...rest } = args, others = argsShown(t, rest).join(', '), product = productOf(args);
+    return `Directed scan${product ? ` of ${product}` : ''}: lens ${clip(String(lens), CARD_VALUE_MAX)}, scope ${typeof sc?.label === 'string' ? clip(sc.label, CARD_VALUE_MAX) : 'not named'} (${typeof sc?.kind === 'string' ? `${clip(sc.kind, CARD_VALUE_MAX)}, ` : ''}${where})${others ? `, ${others}` : ''}, looking for: ${typeof focus === 'string' ? `"${clip(focus, FOCUS_NOTE_MAX)}"` : clip(JSON.stringify(focus) ?? 'nothing', CARD_VALUE_MAX)}`;
+  }
+  const product = productOf(args), shown = argsShown(t, args).join(', ');
+  return `${t.description.replace(/\.$/, '')}${product ? ` (${product})` : ''}${shown ? `: ${shown}` : ''}`;
 };
 
+/** The most characters one arg's key or value shows on a card; a longer one is cut with an ellipsis. */
+export const CARD_KEY_MAX = 40, CARD_VALUE_MAX = 60;
+const clip = (s: string, max: number): string => (s.length > max ? s.slice(0, max - 1) + '…' : s);
+/**
+ * Every arg the approval sends, as `key value`, in the tool's schema order and then any key the schema does not declare
+ * (toolRequest sends those too). The person approves exactly what the card says (DW-107): the summary used to list the args
+ * in the agent's own order and cut the whole line at 300 characters, so a long `note` sent first pushed `decision` (or
+ * `ids`, `tools`) out of sight of the person approving it. Now a long VALUE is shortened, never the list of keys. Only the
+ * key the product came from (productOf) is left out: the summary names the product itself.
+ */
+export function argsShown(t: ToolSpec, args: Record<string, unknown>): string[] {
+  const from = typeof args.slug === 'string' ? 'slug' : typeof args.product === 'string' ? 'product' : null;
+  const declared = Object.keys(t.params_schema.properties ?? {}), keys = Object.keys(args).filter((k) => k !== from && args[k] !== undefined);
+  const ordered = [...declared.filter((k) => keys.includes(k)), ...keys.filter((k) => !declared.includes(k))];
+  return ordered.map((k) => { const v = args[k]; return `${clip(k, CARD_KEY_MAX)} ${clip(typeof v === 'string' ? v : JSON.stringify(v) ?? String(v), CARD_VALUE_MAX)}`; });
+}
+
+// ------------------------------------------------------------------------------------------------ where a card runs
+// A card's request goes to THIS server's own bound origin, never to the origin the incoming request names. The request's
+// URL is built from its Host header, which any local client sets: a process that filed or answered a card with
+// `Host: 127.0.0.1:<its own port>` used to receive the card's request there, and on a human approval that request carries
+// the per-process human token (roadmap I1, documented by e1's rules-1.md section 8). apps/server names its origin once it
+// listens (main.ts -> setSelfOrigin); `next start` / `next dev` put the port they bound in process.env.PORT
+// (next/dist/server/lib/start-server.js) before any route runs. Only a process that knows neither (a harness calling a
+// handler in process) falls back to the request's own origin, and check:companion-door holds that the servers never do.
+const self = globalThis as unknown as { __bpSelfOrigin?: string };
+/** apps/server: the loopback origin it bound (`http://127.0.0.1:<port>`). */
+export function setSelfOrigin(origin: string): void { self.__bpSelfOrigin = new URL(origin).origin; }
+/** This server's own origin: what apps/server named, else Next's bound port on 127.0.0.1, else null. */
+export function selfOrigin(env: Record<string, string | undefined> = process.env): string | null {
+  if (self.__bpSelfOrigin) return self.__bpSelfOrigin;
+  const port = env.PORT?.trim() ?? '';
+  return /^\d{1,5}$/.test(port) && Number(port) > 0 && Number(port) <= 65535 ? `http://127.0.0.1:${Number(port)}` : null;
+}
+
 export interface Origin { origin: string; conversation?: string }
-/** Where to send a card's request: this server, as the incoming request reached it. */
+/** Where to send a card's request: this server's own bound origin (selfOrigin), whatever Host the request carried. */
 export const originOf = (req: Request): Origin => {
-  const u = new URL(req.url);
-  if (u.hostname === 'localhost') u.hostname = '127.0.0.1'; // the servers bind 127.0.0.1; `localhost` may resolve to ::1 first
   const conversation = req.headers.get('x-bp-conversation');
-  return { origin: u.origin, ...(conversation ? { conversation } : {}) };
+  let origin = selfOrigin();
+  if (!origin) {
+    const u = new URL(req.url);
+    if (u.hostname === 'localhost') u.hostname = '127.0.0.1'; // the servers bind 127.0.0.1; `localhost` may resolve to ::1 first
+    origin = u.origin;
+  }
+  return { origin, ...(conversation ? { conversation } : {}) };
 };
 
 /** Run the card's tool once against this server and record done or failed. */
@@ -177,7 +287,10 @@ async function execute(c: Card, t: ToolSpec, o: Origin, human: boolean): Promise
   try {
     const res = await fetch(o.origin + r.path, {
       method: r.method,
-      headers: { 'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}) },
+      headers: {
+        'content-type': 'application/json', ...(o.conversation ? { 'x-bp-conversation': o.conversation } : {}), ...(human ? { [HUMAN_HEADER]: humanToken() } : {}),
+        ...(!human && c.policy && PERMIT_ID.test(c.policy) ? { [RULE_HEADER]: c.policy, [RULE_TOOL_HEADER]: t.name, [RULE_TOKEN_HEADER]: ruleToken() } : {}),
+      },
       ...(r.body ? { body: JSON.stringify(r.body) } : {}),
       redirect: 'manual',
       signal: AbortSignal.timeout(60000),
@@ -200,21 +313,28 @@ export async function fileCard(tool: unknown, args: unknown, o: Origin): Promise
   if ('error' in req) return { ok: false, status: 400, error: req.error };
   const product = productOf(a);
   const card: Card = { id: sortableId('card_'), tool: t.name, args: a, summary: summaryOf(t, a), ...(product ? { product } : {}), state: 'pending', createdAt: new Date().toISOString() };
-  const grant = policyFor(t, a);
+  // a card a device-driven turn filed (the table's conversation, table-bound.server.ts) runs at once only under a grant the
+  // table itself could have made: a wider grant made at the PC, or a standing rule grant, never becomes reachable from the
+  // table through the agent; the card waits for a person instead (S3 finding 3b)
+  const fromTable = deviceDriven(o.conversation);
+  const grant = fromTable ? policyFor(t, a, Date.now(), grantWithinTableBound)?.id : policyFor(t, a)?.id ?? ruleGrantFor(t, a)?.id;
   if (!grant) return { ok: true, card: put(card) };
-  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant.id });
+  const approved = put({ ...card, state: 'approved', decidedBy: 'policy', policy: grant });
   return { ok: true, card: await execute(approved, t, o, false) };
 }
 
 export type AnswerResult = { ok: true; card: Card } | { ok: false; status: 404 | 409; error: string; card?: Card };
 /** The human path (POST /cards/[id]): approve runs the tool once, decline runs nothing; any other state is a 409.
  *  The `approved` row is written before the first await, so a second answer racing this one already sees it. */
-export async function answerCard(id: string, decision: 'approve' | 'decline', o: Origin): Promise<AnswerResult> {
+/** `marks` (decider.server.ts): who answered and where; every row the answer writes carries them. A headset's approve runs
+ *  the tool WITHOUT the page's human token (its routes sign as they do for any approve), so a table can never reach a
+ *  human-only route through a card; the route refuses the tools that set standing permissions before this runs. */
+export async function answerCard(id: string, decision: 'approve' | 'decline', o: Origin, marks: { surface: 'web' | 'vr'; device?: string; shown?: string } = { surface: 'web' }): Promise<AnswerResult> {
   const c = current().get(id);
   if (!c) return { ok: false, status: 404, error: `no card ${id}` };
   if (c.state !== 'pending') return { ok: false, status: 409, error: `card ${id} is ${c.state}, not pending`, card: c };
-  if (decision === 'decline') return { ok: true, card: put({ ...c, state: 'declined', decidedBy: 'human' }) };
+  if (decision === 'decline') return { ok: true, card: put({ ...c, state: 'declined', decidedBy: 'human', ...marks }) };
   const t = toolOf(c.tool);
-  if (!t) return { ok: true, card: put({ ...c, state: 'failed', decidedBy: 'human', result: `no tool ${c.tool}` }) };
-  return { ok: true, card: await execute(put({ ...c, state: 'approved', decidedBy: 'human' }), t, o, true) };
+  if (!t) return { ok: true, card: put({ ...c, state: 'failed', decidedBy: 'human', result: `no tool ${c.tool}`, ...marks }) };
+  return { ok: true, card: await execute(put({ ...c, state: 'approved', decidedBy: 'human', ...marks }), t, o, marks.surface === 'web') };
 }
