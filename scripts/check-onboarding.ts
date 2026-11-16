@@ -48,7 +48,7 @@ check('1 jobLabel: Onboard', jobLabel({ kind: 'adopt' }) === 'Onboard');
 check('1 jobLabel: Onboard · resume', jobLabel({ kind: 'adopt', resume: true }) === 'Onboard · resume');
 
 // ------------------------------------------------------------------------------------------------- 2 pure
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-onboarding-'));
+const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'bp-onboarding-'))); // the real (long) path: a Windows runner's temp dir is an 8.3 short path, and checkFolder answers with the real one
 // a stub adopt-bp skill: SKILL.md and an adopt.mjs whose `check --json` answers like the real one
 const SKILL = path.join(tmp, 'skill', 'adopt-bp');
 fs.mkdirSync(path.join(SKILL, 'scripts'), { recursive: true });
