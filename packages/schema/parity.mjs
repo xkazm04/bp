@@ -23,7 +23,7 @@
 //
 // Used by `generate.mjs --check` (`npm run check:schema`); compare() takes source texts, so a seeded disagreement
 // can be checked without touching a file.
-import ts from 'typescript';
+import ts from 'typescript-js'; // npm:typescript@5, the JS API; `typescript` 7 is the native compiler (tsc) with no programmatic API
 import { ROOTS, HAND_TS } from './roots.mjs';
 
 /** [generated interface, hand-written type] per pair in the table: `hand` those in types.ts, `wire` the rest. */

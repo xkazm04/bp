@@ -27,7 +27,8 @@ import { blankComments as strip } from './lib/source.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CORE = 'packages/core/src', SERVER = 'packages/core/src/server', WEB = 'apps/web/src';
-const TSC = createRequire(path.join(ROOT, 'package.json')).resolve('typescript/bin/tsc');
+// typescript 7 exports no './bin/tsc' subpath, only './package.json': resolve that and join the bin beside it.
+const TSC = path.join(path.dirname(createRequire(path.join(ROOT, 'package.json')).resolve('typescript/package.json')), 'bin', 'tsc');
 
 const posix = (p) => p.replace(/\\/g, '/');
 const walk = (d) => (fs.existsSync(d) ? fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(path.join(d, e.name)) : [path.join(d, e.name)])) : []);
