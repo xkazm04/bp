@@ -21,7 +21,7 @@ export function initialize(data) {
   SRC = data.src || path.join(ROOT, 'apps/web/src');
   MUTATE = data.mutate || [];
   if (MUTATE.length && !data.transpile) throw new Error('src-hooks: mutate needs { transpile: true }');
-  ts = data.transpile ? createRequire(path.join(ROOT, 'package.json'))('typescript') : null;
+  ts = data.transpile ? createRequire(path.join(ROOT, 'package.json'))('typescript-js') : null; // typescript-js = npm:typescript@5, the JS API; `typescript` 7 is the native compiler (tsc) with no programmatic API
 }
 
 const tryFile = (p) => { for (const c of [p, p + '.ts', p + '.tsx', path.join(p, 'index.ts')]) if (fs.existsSync(c) && fs.statSync(c).isFile()) return c; return null; };
