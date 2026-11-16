@@ -624,6 +624,9 @@ public:
 	/** The next page of the current screen, else the next screen (the queue's end holds; WP3 offers the next room there). */
 	void DeckNext();
 	void DeckPrev();
+	/** Wave W2: the pad's up and down on a room's split board on the wall move its split one stop (Up toward TODAY, Down toward
+	 *  PROPOSED); false when the front shows no split (the pad steps the queue then). */
+	bool DeckPadStop(int32 Delta);
 	/** The screen at a 1-based place in the queue ("3 / 9"), its first page. */
 	bool DeckShow(int32 Place);
 	/** The current decision into the product's draft wave (BpLink AddToDraft: compose or PATCH, never dispatch); advances. */
@@ -1119,6 +1122,14 @@ private:
 	void ReceiveScanState(const struct FBpScanState& State);
 	void BuildPins(const struct FBpScanState& State);
 	void PlacePins();
+	/** Wave W3 (the owner, 2026-11-11: the wall to 53 degrees): while a sheet is on the far surface (BpProjector::IsFar) the
+	 *  plan's pin tags step aside, each shrinking to nothing about its own centre over WallTagsS (no translucency: the tag
+	 *  material stays opaque), and come back the same way when the wall closes; the pins' stems and beads stay. True while it
+	 *  moves (the tick runs at the frame rate then). */
+	bool TickWallTags(float DeltaSeconds);
+	/** How much of the tags shows (1 at rest, 0 behind the wall), and whether they are going (the wall is up). */
+	float WallTagsShow = 1.f;
+	bool bWallTagsAway = false;
 	void UpdateScan(float DeltaSeconds);
 	void WriteScanParams(float Strength);
 	void RefreshCard();
@@ -1581,6 +1592,18 @@ private:
 	bool bDeckShotLoading = false;
 	bool bDeckShotSample = false;
 	uint32 DeckShotGen = 0;
+	/** Wave W1, Glim's board on the wall: the front decision's "after" screen (the split's), read only while the wall is in use and
+	 *  released with the "before"; where the split stands (BpBoard::EStop) and whether the front shows the split's stops now. */
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> DeckAfterShot;
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UTexture2D>> DeckAfterKept;
+	TSharedPtr<struct FSlateBrush> DeckAfterBrush;
+	bool bDeckAfterLoading = false;
+	int32 DeckWallStop = 1;
+	mutable bool bDeckWallSplit = false;
+	/** Wave W1: the split moved to a stop (a pinch on TODAY, SPLIT or PROPOSED), the front drawn again. */
+	void DeckSetStop(int32 Stop);
 	void DeckLoadShot();
 	void DeckReleaseShot();
 	/** The four screens: the front, the two behind it, and the one leaving in a swap. */

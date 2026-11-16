@@ -180,37 +180,32 @@ stick click goes home, hold X to talk.
 
 | Criterion or award | What in the build answers it | Status | Shot |
 |---|---|---|---|
-| Innovation (25 %) | A codebase drawn as an architect's building; the agent as Glim, a desk lamp that flies to the room it is reading and that you talk to; decisions recorded with the words shown; before and after screens of what a decision became | built; the scan theatre and YESTERDAY on the PC only, to confirm on the headset; talk with real speech to confirm | 1, 4, 5, 6 |
-| Experience Design (25 %) | Onboarding: a 90-second tour that runs once and resumes, chapters on demand. Habit: the morning stand-up opening with yesterday's outcomes | tour on the headset with hands to confirm | 2, 4 |
-| Technical (25 %): 60 fps | 72 fps measured on a Quest 3S (at rest, console open; night two's build, unattended); GPU 8.4 to 10.9 ms against 13.9 ms | measured unattended; with a wearer, and day two's features on the device, to confirm | 10 (end card) |
-| Technical: hands | Every action works by hand; controllers add | tap and full hands-only run to confirm | 2, 3 |
-| Technical: field-of-view-aware UI | The console in the deck slot below the line of sight; the wrist turns to face the eye; text sized by angle | wrist on a real arm to confirm | 2, 4 |
-| Technical: purposeful passthrough | Your room: see your real desk while you plan; the table and lamp stay; one tap back | passthrough active and measured; the look to confirm | 9 |
+| Innovation (25 %) | A codebase drawn as an architect's building; the agent as Glim, a desk lamp that flies to the room it is reading and that you talk to; decisions recorded with the words shown; before and after screens of what a decision became | built; the scan theatre and YESTERDAY on the PC only, to confirm on the headset; talk with real speech to confirm | S1, S3, S4, S6 |
+| Experience Design (25 %) | Onboarding: a 90-second tour that runs once and resumes, chapters on demand. Habit: the morning stand-up opening with yesterday's outcomes | tour on the headset with hands to confirm | S2, S5 |
+| Technical (25 %): 60 fps | 72 fps measured on a Quest 3S (at rest, console open; night two's build, unattended); GPU 8.4 to 10.9 ms against 13.9 ms | measured unattended; with a wearer, and day two's features on the device, to confirm | S8 (end card) |
+| Technical: hands | Every action works by hand; controllers add | tap and full hands-only run to confirm | S2, S4-S6 |
+| Technical: field-of-view-aware UI | The console in the deck slot below the line of sight; the wrist turns to face the eye; text sized by angle | wrist on a real arm to confirm | S5, S6 |
+| Technical: purposeful passthrough | Your room: see your real desk while you plan; the table and lamp stay; one tap back | passthrough active and measured; the look to confirm | S7 |
 | Polish and Presentation (25 %) | Glim's light states and flights, the wall's arriving sheets, the studio floor, the sheet language on every panel, a music bed that dips under the voice | built; loudness to confirm | all |
-| Agentic Interaction | Talking with Glim about the project: grounded answers, "what next" from data, voice actions that move the table, open pages and put cards on the wall for your yes; the scan theatre (the agent's work shown room by room); PLAN MY DAY (a real companion answer and a card, approved or declined at the table); HAND OVER with bounds and TAKE BACK; spoken requests; adding a project, confirmed on the PC | PLAN MY DAY seen on the headset; the rest to confirm | 5, 6, 7, 8 |
-| First Five Minutes | The first tour: hands only, voice and caption, waits for you, about 90 s on the PC, ends on a stand-up decision and hold to talk | to confirm with a person | 2 |
-| Reason to Come Back | YESTERDAY: what your approvals became, with before and after screens; "Welcome back" on a later day; the menu says what came of yesterday; pairing, settings, the tour's progress and the last stand-up are kept across launches | persistence seen on the headset (night two); YESTERDAY and the welcome back on the PC only, to confirm | 4 |
-| Accessibility | SETTINGS > ACCESSIBILITY (text size 100/115/130 %, reduced motion, captions, the wrist's hand); captions on every spoken line; voice and music volumes apart; hands or controllers; seated; talking is optional | built; not tested with users; to confirm on the headset | 3, 7 |
+| Agentic Interaction | Talking with Glim about the project: grounded answers, "what next" from data, voice actions that move the table, open pages and put cards on the wall for your yes; the scan theatre (the agent's work shown room by room); PLAN MY DAY (a real companion answer and a card, approved or declined at the table); HAND OVER with bounds and TAKE BACK; spoken requests; adding a project, confirmed on the PC | PLAN MY DAY seen on the headset; the rest to confirm | S3, S4, S6 |
+| First Five Minutes | The first tour: hands only, voice and caption, waits for you, about 90 s on the PC, ends on a stand-up decision and hold to talk | to confirm with a person | S2, S3 |
+| Reason to Come Back | YESTERDAY: what your approvals became, with before and after screens; "Welcome back" on a later day; the menu says what came of yesterday; pairing, settings, the tour's progress and the last stand-up are kept across launches | persistence seen on the headset (night two); YESTERDAY and the welcome back on the PC only, to confirm | S5, S8 |
+| Accessibility | SETTINGS > ACCESSIBILITY (text size 100/115/130 %, reduced motion, captions, the wrist's hand); captions on every spoken line; voice and music volumes apart; hands or controllers; seated; talking is optional | built; not tested with users; to confirm on the headset | all (captions), S7 |
 
 ## The video: under 3 minutes, real footage
 
-Footage: on the Quest (the headset's own recorder) or the XR Simulator. No AI-generated video. Lead with the story,
-then the gestures. Captions on every shot (English). **(to confirm)** whether the headset's recorder captures the
-passthrough room (shot 9); if not, shot 9 is cut or shown in the Simulator's room. Every shot below needs the build with
-day two's work installed first (headset check, step 0).
+The video's plan moved to [`../demo-video/`](../demo-video/README.md) on 2026-11-11, following the owner's story (start
+on the web, cross into VR, onboard a project with web and VR side by side in sped-up time, a scan, the stand-up and
+talking with Glim). The earlier 10-shot list is replaced. There:
 
-| # | Time | Shot | Source |
-|---|---|---|---|
-| 1 | 0:00-0:08 | The studio at night, the table lights up, Glim turns to you. Title: "Your codebase, drawn like a building." | Headset, cold start |
-| 2 | 0:08-0:30 | The first tour: Glim's welcome; tap a wing, it lifts; tap the room, tap again, step inside; BACK. Hold on the hand. | Headset, the tour |
-| 3 | 0:30-0:42 | Hold a feature; Glim answers by voice and caption. A second take with controllers (thumbstick, A, B), 3 s. | Headset |
-| 4 | 0:42-1:10 | The stand-up: "Welcome back", YESTERDAY with a built outcome's BEFORE and AFTER, then a decision card with its finding's screen, its room raised; APPROVE by hand. Cut to the PC: the Headsets page's decision log with the row from the table and the words shown. | Headset; PC screen recording |
-| 5 | 1:10-1:35 | The scan theatre: SCAN THIS, Glim flies room to room in the scan's colour, captions, findings drop onto rooms, the SCAN RESULT sheet. | Headset (sample) |
-| 6 | 1:35-1:52 | PLAN MY DAY: the companion's answer, and the card it raises; approve or decline at the table. | Headset, PC linked |
-| 7 | 1:52-2:12 | Talk to Glim: the consent sheet, ALLOW; "what should I do next?"; he answers from the data; "show me it": the decision opens on the wall and he points; a reply button pinched. | Headset, PC linked |
-| 8 | 2:12-2:27 | HAND OVER: the bounds in words, GRANT; the amber TAKE BACK; take it back. Or ADD A PROJECT: ask, the confirm on the PC, the table drawing the new project. | Headset; PC screen recording |
-| 9 | 2:27-2:42 | Your room: the studio fades, the table sits on the real desk; back to the studio. | Headset (recorder support to confirm) |
-| 10 | 2:42-2:55 | SETTINGS > ACCESSIBILITY at 130 %, then out to the whole site plan, PC LINK showing Wi-Fi. End card: name, track, "hands only", "72 fps on Quest 3S" (only once confirmed with a wearer). | Headset |
+- [`README.md`](../demo-video/README.md): the story, the 2:50 budget, what is real and what is composited, voice and music.
+- [`scenes.md`](../demo-video/scenes.md): the timed script, eight scenes (S1 web cold open, S2 the crossing, S3
+  onboarding split, S4 the scan, S5 the stand-up, S6 talking with Glim, S7 your room, S8 end card).
+- [`shots/`](../demo-video/shots/): one setup per scene; [`capture-plan.md`](../demo-video/capture-plan.md): tools and the
+  composite; [`readiness.md`](../demo-video/readiness.md): gaps, the dated checklist to the upload, owner decisions.
+
+Footage: on the Quest (the headset's own recorder) or the XR Simulator. No AI-generated video. Captions on every shot
+(English). The "Shot" column in the judging table above names those scenes.
 
 Cut list rules: every shot shows real hands except the short controller take; no shot longer than 30 s; the caption text
 in each frame must read at 1080p (Glim's caption is the smallest text that matters); no PC desktop shows a token, a

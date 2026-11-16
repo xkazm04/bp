@@ -538,6 +538,20 @@ FBpLinkModule& FBpLinkModule::Get()
 	return FModuleManager::LoadModuleChecked<FBpLinkModule>(TEXT("BpLink"));
 }
 
+bool FBpLinkModule::FindFacetNumber(const FString& Feature, const FString& Lens, const FString& Key, double& OutValue) const
+{
+	const FJsonObjectWrapper* Wrapper = Facets.Find(Feature);
+	if (!Wrapper || !Wrapper->JsonObject.IsValid()) return false;
+	const TSharedPtr<FJsonObject>* LensObject = nullptr;
+	if (!Wrapper->JsonObject->TryGetObjectField(Lens, LensObject) || !LensObject || !LensObject->IsValid()) return false;
+	const TSharedPtr<FJsonObject>* Values = nullptr;
+	if (!(*LensObject)->TryGetObjectField(TEXT("values"), Values) || !Values || !Values->IsValid()) return false;
+	const TSharedPtr<FJsonValue> Value = (*Values)->TryGetField(Key);
+	if (!Value.IsValid() || Value->Type != EJson::Number) return false;
+	OutValue = Value->AsNumber();
+	return true;
+}
+
 bool FBpLinkModule::IsFromBundle() const
 {
 	return GFromBundle;
@@ -556,11 +570,15 @@ void FBpLinkModule::ReceiveSnapshot(bool bOk, const FBpLinkSnapshot& Snapshot)
 		// Kept before the plan is announced, so a listener drawing the plan finds each tile's kind.
 		FeatureKinds.Reset();
 		FeatureSummaries.Reset();
+		FeaturesBySlug.Reset();
 		for (const FBpFeature& Feature : Snapshot.Structure.features)
 		{
 			if (!Feature.slug.IsEmpty() && !Feature.kind.IsEmpty()) FeatureKinds.Add(Feature.slug, Feature.kind);
 			if (!Feature.slug.IsEmpty() && !Feature.summary.IsEmpty()) FeatureSummaries.Add(Feature.slug, Feature.summary);
+			if (!Feature.slug.IsEmpty()) FeaturesBySlug.Add(Feature.slug, Feature);
 		}
+		// Wave W1: the features' lens values, kept as read (the wall's board reads a finding's metric "today" from them).
+		Facets = Snapshot.Structure.facets;
 		// The lenses' words as their manifests say them (the web reads the same manifests from the same answer).
 		LensNames.Reset();
 		LensAccents.Reset();
@@ -617,6 +635,8 @@ void FBpLinkModule::SetProduct(const FString& InSlug)
 	ProductName = Entry && !Entry->Name.IsEmpty() ? Entry->Name : FString();
 	FeatureKinds.Reset();
 	FeatureSummaries.Reset();
+	FeaturesBySlug.Reset();
+	Facets.Reset();
 	LensNames.Reset();
 	LensAccents.Reset();
 	FieldLabels.Reset();

@@ -13,6 +13,7 @@
 //   - Quiet when it must be: while a tour runs (the tour narrates its own steps), while the person talks to Glim or his reply
 //     plays, and under bp.Narration (SETTINGS > NARRATION: ALL, TOUR ONLY, OFF).
 // Nothing here ticks: a timer runs only while a line waits for an acknowledgment to finish.
+// Wave W2: the same path says Glim's thinking lines (BpTalk.cpp, voice/think/) and the build-up's (BpBuildup.cpp, voice/onboard/).
 #include "BpTable.h"
 
 #include "BpAudio.h"
@@ -27,6 +28,15 @@
 namespace
 {
 	const TCHAR* const NarrateClipDir = TEXT("BpData/voice/narrate");
+	/** Wave W2: the thinking lines (BpTalk.cpp) and the build-up's (BpBuildup.cpp) keep their clips in folders of their own. */
+	const TCHAR* const ThinkClipDir = TEXT("BpData/voice/think");
+	const TCHAR* const OnboardClipDir = TEXT("BpData/voice/onboard");
+	const TCHAR* ClipDirOf(const FString& Id)
+	{
+		if (BpTourBook::HasLine(BpTourBook::ThinkLines(), Id)) return ThinkClipDir;
+		if (BpTourBook::HasLine(BpTourBook::OnboardLines(), Id)) return OnboardClipDir;
+		return NarrateClipDir;
+	}
 
 	/** A line the step it causes waits for: the person's answer acknowledged, and the stand-up's opening. */
 	bool HoldsNext(const FString& Clip)
@@ -133,7 +143,7 @@ void ABpTable::NarratePlay(const FString& Id, const TCHAR* Why)
 	if (!File)
 	{
 		File = &NarrateClips.Add(Id);
-		FFileHelper::LoadFileToArray(*File, *(FPaths::ProjectContentDir() / NarrateClipDir / (Id + TEXT(".wav"))), FILEREAD_Silent);
+		FFileHelper::LoadFileToArray(*File, *(FPaths::ProjectContentDir() / ClipDirOf(Id) / (Id + TEXT(".wav"))), FILEREAD_Silent);
 	}
 	const bool bPlayed = PlayVoiceWav(*File, *Id);
 	UE_LOG(LogBpTable, Log, TEXT("BpNarrate: says %s for %s: \"%s\"%s"), *Id, Why, *BpTourBook::NarrateWords(Id),

@@ -15,6 +15,8 @@
 //             in words on the caption: no PC, no `standup` scope, no microphone permission, no device, silence, no words,
 //             busy (429: "one moment", never retried in a loop), the service refused.
 //   barge-in  A new hold stops the lamp's voice at once.
+//   thinking  A turn with no reply words after bp.TalkThinkS (1.5 s) has Glim say one short bundled line (BpTourBook's
+//             ThinkLines, in turn), once a turn, never over another line; bp.TalkStubReplyS stands a stub reply in for tests.
 //   pause     The app going away during a hold or a recording (background, deactivated, the headset off, the XR focus lost:
 //             bp.TourFocus's rule) closes the microphone and drops what it heard: nothing recorded across a pause is sent.
 //   bundle    No PC and no microphone: a hold plays the scripted sample exchange (Content/BpData/voice/talk/), picked by the
@@ -29,6 +31,7 @@
 #include "BpPawn.h"
 #include "BpSheet.h"
 #include "BpStore.h"
+#include "BpTourBook.h"
 #include "Components/PointLightComponent.h"
 #include "Dom/JsonObject.h"
 #include "Engine/World.h"
@@ -59,6 +62,14 @@ namespace
 	TAutoConsoleVariable<int32> CVarTalkSpokenMax(TEXT("bp.TalkSpokenMax"), 280, TEXT("The lamp speaks a reply's first sentences up to this many characters, cut at a sentence end (the caption keeps it whole; 80 to 1200)."));
 	TAutoConsoleVariable<float> CVarTalkRepliesLingerS(TEXT("bp.TalkRepliesLingerS"), 30.f, TEXT("G2: with quick replies under Glim's answer, the conversation stays this many seconds after his voice ends (1 to 120)."));
 	TAutoConsoleVariable<float> CVarTalkLightGain(TEXT("bp.TalkLightGain"), 1.5f, TEXT("While listening the lamp's light rises by up to this share of its own intensity with the input level (0 to 4; 0: the light stays)."));
+	TAutoConsoleVariable<float> CVarTalkThinkS(TEXT("bp.TalkThinkS"), 1.5f, TEXT("Wave W2 (G4): a talk turn with no reply words this many seconds after the ask has Glim say a short thinking line (BpTourBook ThinkLines, one a turn, in turn; 0.5 to 10; 0: never)."));
+	TAutoConsoleVariable<float> CVarTalkStubReplyS(TEXT("bp.TalkStubReplyS"), 0.f, TEXT("For tests (PIE): above 0, a talk turn sends nothing and answers a fixed stub reply after this many seconds, with no PC and no network (0.1 to 60; 0: off, the real turn)."));
+
+	/** Whether a clip is one of Glim's thinking lines (BpTourBook::ThinkLines). */
+	bool IsThinkLine(const FString& Clip)
+	{
+		return BpTourBook::HasLine(BpTourBook::ThinkLines(), Clip);
+	}
 
 	ABpPawn* TalkPawn(const UWorld* World)
 	{
@@ -304,6 +315,13 @@ struct FBpTalkState
 	int32 FocusesDone = 0;
 	bool bCardShown = false;
 	double FirstStepS = 0.0, FirstTextS = 0.0;
+	/** Wave W2 (G4): the turns asked so far (for the log), the turn whose thinking line was said (at most one a turn), the next
+	 *  of ThinkLines to say (in turn, so never the same twice running), and the timers of the line and of bp.TalkStubReplyS. */
+	int32 Turns = 0;
+	int32 ThoughtTurn = 0;
+	int32 ThinkNext = 0;
+	FTimerHandle ThinkTimer;
+	FTimerHandle StubTimer;
 	void ResetLive()
 	{
 		Steps.Reset();
@@ -930,7 +948,10 @@ void ABpTable::TalkTurn(const FString& Heard)
 	FBpTalkState& S = *Talk;
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	S.Heard = Heard;
-	if (!Link.HasPcLink())
+	// For tests (PIE): bp.TalkStubReplyS answers a stub after its seconds, with no PC, so the thinking line can be heard.
+	const float StubS = CVarTalkStubReplyS.GetValueOnGameThread();
+	const bool bStub = StubS > 0.f;
+	if (!bStub && !Link.HasPcLink())
 	{
 		TalkIdle();
 		TalkSays(TEXT("Connect to your PC to talk to me.\nMENU › ASK has three questions I answer here."), 10.f);
@@ -952,6 +973,68 @@ void ABpTable::TalkTurn(const FString& Heard)
 	const FBpTurnSurface Surface = TurnSurface(true);
 	TWeakObjectPtr<ABpTable> Self(this);
 	S.ResetLive();
+	// Wave W2 (G4): his voice waits for the whole reply (6 to 13 s on the PC, 2026-11-11), so a turn with no reply words after
+	// bp.TalkThinkS has Glim say one short thinking line (ThinkLines, in turn) through the narration's one path. It never cuts a
+	// line (a tour line, a reply, any line still sounding skips it), the tour keeps the voice while it runs, at most one a turn;
+	// a reply that comes while it sounds waits for it (TalkSpeak queues behind any line that is not a reply).
+	const int32 Turn = ++S.Turns;
+	const float ThinkS = CVarTalkThinkS.GetValueOnGameThread();
+	if (ThinkS > 0.f)
+	{
+		const float After = FMath::Clamp(ThinkS, 0.5f, 10.f);
+		GetWorldTimerManager().SetTimer(S.ThinkTimer, FTimerDelegate::CreateWeakLambda(this, [this, Serial, Turn, After]()
+		{
+			if (!Talk.IsValid()) return;
+			FBpTalkState& L = *Talk;
+			const TArray<BpTourBook::FLine>& Lines = BpTourBook::ThinkLines();
+			FString Skip;
+			if (L.Serial != Serial || L.Step != FBpTalkState::EStep::Thinking) Skip = TEXT("the reply came first, or the turn ended");
+			else if (!L.LiveText.IsEmpty()) Skip = TEXT("his reply's words are already showing");
+			else if (L.ThoughtTurn == Turn) Skip = TEXT("this turn already had one");
+			else if (IsVoicePlaying()) Skip = FString::Printf(TEXT("a line is speaking (%s)"), *TourVoiceClip);
+			else if (IsTourRunning()) Skip = TEXT("the tour runs (it keeps Glim's voice)");
+			else if (Lines.Num() == 0) Skip = TEXT("the book has no thinking lines");
+			if (!Skip.IsEmpty())
+			{
+				UE_LOG(LogBpTable, Log, TEXT("BpTalk: thinking filler skipped (turn %d, %.1f s): %s"), Turn, After, *Skip);
+				return;
+			}
+			const BpTourBook::FLine& Line = Lines[L.ThinkNext % Lines.Num()];
+			L.ThinkNext = (L.ThinkNext + 1) % Lines.Num();
+			L.ThoughtTurn = Turn;
+			const FString Id = Line.Id;
+			const FString Words = Line.Words;
+			// Captioned where the turn's words are: the caption (and the wrist), and the sheet as what he is doing, until the
+			// stream says more.
+			// The sheet's newest step takes an ellipsis: the line's own stop goes ("Let me look…", not "Let me look.…").
+			FString Step = Words;
+			Step.RemoveFromEnd(TEXT("."));
+			L.Steps.Add(Step);
+			while (L.Steps.Num() > TalkStepsShown) L.Steps.RemoveAt(0);
+			TalkSays(FString::Printf(TEXT("You: \"%s\"\n%s"), *L.Heard.Left(80), *Words), 600.f);
+			NarratePlay(Id, TEXT("a talk turn with no reply yet"));
+			UE_LOG(LogBpTable, Log, TEXT("BpTalk: thinking filler %s played (turn %d, %.1f s without a reply)"), *Id, Turn, After);
+		}), After, false);
+	}
+	if (bStub)
+	{
+		const float After = FMath::Clamp(StubS, 0.1f, 60.f);
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: bp.TalkStubReplyS: turn %d sends nothing; a stub reply comes in %.1f s"), Turn, After);
+		GetWorldTimerManager().SetTimer(S.StubTimer, FTimerDelegate::CreateWeakLambda(this, [this, Serial, Turn, After]()
+		{
+			if (!Talk.IsValid() || Talk->Serial != Serial || Talk->Step != FBpTalkState::EStep::Thinking) return;
+			FBpTalkState& L = *Talk;
+			const FString Reply = TEXT("This is a stub reply. Nothing was sent.");
+			L.Reply = Reply;
+			L.Step = FBpTalkState::EStep::Speaking;
+			L.bSpoke = false;
+			L.bAwaitSay = false;
+			L.Queued.Reset();
+			TalkSays(FString::Printf(TEXT("You: \"%s\"\n%s"), *L.Heard.Left(60), *Reply), 10.f);
+			UE_LOG(LogBpTable, Log, TEXT("BpTalk: stub reply for turn %d after %.1f s (bp.TalkStubReplyS: no voice, nothing sent)"), Turn, After);
+		}), After, false);
+		return;
+	}
 	// Wave U5: focus events act as they arrive, in order; ones that come while an earlier one's step is still queued join the
 	// queue (a newer turn's still replace an older one's: TalkActOnFocus).
 	const auto ActOnNewFocuses = [](ABpTable* T, const TArray<FBpTurnFocus>& All)
@@ -1229,6 +1312,14 @@ bool ABpTable::TalkCancel(const TCHAR* Why)
 	S.Queued.Reset();
 	S.SampleAct.Reset();
 	if (Was == FBpTalkState::EStep::Speaking || Was == FBpTalkState::EStep::Sample) StopVoice();
+	// Wave W2: the thinking line goes with the turn it was said for, and so do its timer and a stub's.
+	GetWorldTimerManager().ClearTimer(S.ThinkTimer);
+	GetWorldTimerManager().ClearTimer(S.StubTimer);
+	if (Was == FBpTalkState::EStep::Thinking && IsVoicePlaying() && IsThinkLine(TourVoiceClip))
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: thinking filler %s cut by the cancel"), *TourVoiceClip);
+		StopVoice();
+	}
 	// The turn being thought about is called off on the wire too, so the companion is free for the next question at once
 	// (otherwise every talk, PLAN MY DAY and the lamp's ask answer "busy" until the old turn's ten minutes run out).
 	if (Was == FBpTalkState::EStep::Thinking) FBpLinkModule::Get().CancelCompanionTurn(Why);
