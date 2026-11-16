@@ -382,6 +382,10 @@ export class LanDoor {
   private refusalsThisMinute = 0;
   private refusalMinute = 0;
   private suppressed = 0;
+  /** Every refusal that takes the fixed delay (refuse()), ever; the ledger row is rate-capped, this is not. An admission
+   *  refusal (non-private peer, peer in-flight cap) never adds to it, so a check can tell "refused at admission" from
+   *  "refused after the delay" by cause instead of by the wall clock. */
+  refusalsPastAdmission = 0;
   /** Wrong codes typed at approve since the last right one (MAX_WRONG_CODES). */
   private wrongCodes = 0;
   /** The bound port while listening (the configured one, or the ephemeral one when it was 0). */
@@ -479,6 +483,7 @@ export class LanDoor {
   }
   /** Every refusal past admission: recorded with its cause, then the fixed delay, then the bare 403. */
   private async refuse(res: ServerResponse, cause: string, peer: string | undefined): Promise<void> {
+    this.refusalsPastAdmission++;
     this.refusalRow(cause, peer);
     await sleep(REFUSAL_DELAY_MS);
     bare(res);
