@@ -14,6 +14,7 @@
 // the game thread when its card shows and released when the card leaves or the page closes; the replay and the auto-advance are
 // one-shot timers. Closed, the state is dropped (BpStandup.Stat says so).
 #include "BpPawn.h"
+#include "BpBoard.h"
 #include "BpProjector.h"
 
 #include "Algo/AnyOf.h"
@@ -89,6 +90,10 @@ struct FBpStandupState
 	TSharedPtr<FSlateBrush> ShotBrush;
 	FVector2D ShotSize = FVector2D::ZeroVector;
 	uint32 ShotGen = 0;
+	/** Wave W1, Glim's board: the finding's "after" screen (the split's), and where the split stands (BpBoard::EStop). */
+	TSharedPtr<FSlateBrush> AfterBrush;
+	bool bAfterLoading = false;
+	int32 Stop = 1;
 	/** The day's plan: one companion turn. */
 	enum class EPlan : uint8 { Idle, Asking, Done, Failed };
 	EPlan Plan = EPlan::Idle;
@@ -1418,6 +1423,14 @@ void ABpPawn::StandupAct(const FString& Act)
 		StandupVerdict(Act, TEXT("press"));
 		return;
 	}
+	if (Act.StartsWith(TEXT("split:")))
+	{
+		// Wave W1, Glim's board: the split moves to a stop (TODAY, SPLIT, PROPOSED).
+		S.Stop = FMath::Clamp(FCString::Atoi(*Act.Mid(6)), 0, 2);
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the board's split at %s on %s"), S.Stop == BpBoard::StopToday ? TEXT("TODAY") : S.Stop == BpBoard::StopProposed ? TEXT("PROPOSED") : TEXT("SPLIT"), *S.ShotFor);
+		RefreshConsole();
+		return;
+	}
 	if (Act == TEXT("plan")) { StandupPlanDay(); return; }
 	if (Act == TEXT("handover"))
 	{
@@ -1504,6 +1517,9 @@ void ABpPawn::StandupReleaseShot()
 		Standup->ShotFor.Reset();
 		Standup->ShotPath.Reset();
 		Standup->bShotLoading = false;
+		Standup->AfterBrush.Reset();
+		Standup->bAfterLoading = false;
+		Standup->Stop = BpBoard::StopSplit;
 		++Standup->ShotGen;
 	}
 	if (StandupShot)
@@ -1511,6 +1527,12 @@ void ABpPawn::StandupReleaseShot()
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the screen released (%dx%d)"), StandupShot->GetSizeX(), StandupShot->GetSizeY());
 		StandupShotKept = StandupShot;
 		StandupShot = nullptr;
+	}
+	if (StandupAfterShot)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the after screen released (%dx%d)"), StandupAfterShot->GetSizeX(), StandupAfterShot->GetSizeY());
+		StandupAfterKept = StandupAfterShot;
+		StandupAfterShot = nullptr;
 	}
 }
 
@@ -1558,6 +1580,28 @@ void ABpPawn::StandupLoadShot()
 		S.ShotSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
 		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the screen of %s drawn at %dx%d (%.0f KB in memory, %.0f ms to read and decode)%s"), *S.ShotFor, Texture->GetSizeX(), Texture->GetSizeY(),
 			Texture->GetSizeX() * Texture->GetSizeY() * 4 / 1024.0, (FPlatformTime::Seconds() - Asked) * 1000.0, S.bShotSample ? TEXT(", a sample screen") : TEXT(""));
+		Pawn->RefreshConsole();
+	});
+	// Wave W1: on the wall, Glim's board splits the finding's "before" with its "after" when the scan has one (one more texture,
+	// released with the "before"; the desk's sheet never draws it, so it is not read there).
+	const FBpShot* AfterShot = BpProjector::IsOn() ? BpBoard::FindShot(Proposal, BpVocab::Shot::Phase::After) : nullptr;
+	if (!AfterShot) return;
+	S.bAfterLoading = true;
+	FetchBeforeShot(Product, AfterShot->path, [Self, Gen, Proposal](UTexture2D* Texture, bool)
+	{
+		ABpPawn* Pawn = Self.Get();
+		if (!Pawn || !Pawn->Standup.IsValid() || Pawn->Standup->ShotGen != Gen) return;
+		FBpStandupState& S = *Pawn->Standup;
+		S.bAfterLoading = false;
+		if (Texture)
+		{
+			Pawn->StandupAfterShot = Texture;
+			S.AfterBrush = MakeShared<FSlateBrush>();
+			S.AfterBrush->SetResourceObject(Texture);
+			S.AfterBrush->ImageSize = FVector2D(Texture->GetSizeX(), Texture->GetSizeY());
+			S.AfterBrush->DrawAs = ESlateBrushDrawType::Image;
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpStandup: the after screen of %s %s"), *Proposal, Texture ? *FString::Printf(TEXT("drawn at %dx%d (%.0f KB in memory)"), Texture->GetSizeX(), Texture->GetSizeY(), Texture->GetSizeX() * Texture->GetSizeY() * 4 / 1024.0) : TEXT("could not be read"));
 		Pawn->RefreshConsole();
 	});
 }
@@ -1912,6 +1956,14 @@ bool ABpPawn::StandupWristCard(FString& OutKicker, FString& OutTitle, FString& O
 	return false;
 }
 
+bool ABpPawn::StandupOnBoard() const
+{
+	if (!bConsoleFar || !Standup.IsValid() || Standup->bLoading || !Standup->Error.IsEmpty() || !Standup->Sheets.IsValidIndex(Standup->At)) return false;
+	const FBpStandupSheet& Sheet = Standup->Sheets[Standup->At];
+	const FBpMorningCard* Card = Sheet.Kind == FBpStandupSheet::EKind::Deck && Standup->Deck.cards.IsValidIndex(Sheet.Card) ? &Standup->Deck.cards[Sheet.Card] : nullptr;
+	return Card && Card->kind == BpVocab::MorningCard::Kind::Decision;
+}
+
 FString ABpPawn::StandupKey() const
 {
 	if (!Standup.IsValid()) return TEXT("|su-none");
@@ -1925,6 +1977,8 @@ FString ABpPawn::StandupKey() const
 	for (const FBpCardLine& Line : S.CloseLines) Key += TEXT("|c") + Line.text;
 	for (const FBpStandupSheet& Sh : S.Sheets) if (Sh.Kind == FBpStandupSheet::EKind::Companion) Key += TEXT("|r") + Sh.Companion.Id;
 	Key += FString::Printf(TEXT("|st%d"), S.StampFrame);
+	// Wave W1: the board's split (its "after" screen landing, the stop moved).
+	Key += FString::Printf(TEXT("|w%d%d%d"), S.bAfterLoading, S.AfterBrush.IsValid(), S.Stop);
 	const FBpLinkModule& Link = FBpLinkModule::Get();
 	Key += FString::Printf(TEXT("|l%d%d|g%s"), Link.HasPcLink(), Link.CanDecide(), LiveGrant() ? *LiveGrant()->Id : TEXT(""));
 	return Key;
@@ -2038,7 +2092,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	// two screens get the sheet's height (they were 230 px wide in a 1600 px eye image, cap/ev-f-y2-built.png).
 	const bool bYesterdaySheet = !S.bLoading && S.Error.IsEmpty() && ShownOutcome(S) != nullptr;
 	const FBox2f Frame(FVector2f(Pad, FrameY0), FVector2f(LW - Pad, bYesterdaySheet ? YesterdayFrameY1 : FrameY1));
-	Put(Frame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
+	// Wave W1: Glim's board draws its own tiles in the frame's band (no frame around them).
+	if (!StandupOnBoard()) Put(Frame, SNew(BpSheet::SPlate).Fill(BpSheet::PaperLo.CopyWithNewOpacity(0.32f)).Edge(BpSheet::Ink.CopyWithNewOpacity(0.5f)).EdgePx(2.f));
 	const auto TitleBlock = [&](const FString& SheetNo, const FString& Project, float W = 440.f)
 	{
 		const float H = 46.f;
@@ -2322,6 +2377,39 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		{
 			Put(FBox2f(Frame.Min, FVector2f(Frame.Min.X + 8.f, Frame.Max.Y)), SNew(BpSheet::SPlate).Fill(BpSheet::Accent));
 		}
+		FBox2f Img;
+		if (bWall)
+		{
+			// Wave W1 (the owner, 2026-11-11, direction C): on the wall the decision is Glim's board (BpBoard.h), not the desk's
+			// sheet in three columns: the title row in the header's sub-line band, the hero, Glim's line and what it touches, and
+			// a stage the data picks (the split, the screen, the metric, the stage track). The answers' row stays below.
+			BpBoard::FIn In;
+			In.Proposal = D ? D->proposal : FString();
+			In.Title = Card->headline;
+			In.Chip = TEXT("GLIM ASKS");
+			In.Before = S.ShotBrush;
+			In.After = S.AfterBrush;
+			In.bReading = S.bShotLoading || S.bAfterLoading;
+			In.Stop = S.Stop;
+			In.Fallback = D ? D->brief.Short_ : FString();
+			BpBoard::FOut Board;
+			BpBoard::Draw(In, Put, [&](const FBox2f& Box, const FString& Word, bool bOn, int32 Stop)
+			{
+				Button(Box, Word, bOn ? EBtn::Fill : EBtn::Edge, FString::Printf(TEXT("standup:split:%d"), Stop));
+			}, Board);
+			Img = Board.Stage;
+			if (Board.Aim.X >= 0.f) LoupeAimLayout = Board.Aim;
+			static FString Shown;
+			const FString Key = FString::Printf(TEXT("%s %d %d %d %d"), *In.Proposal, In.Before.IsValid(), In.After.IsValid(), In.Stop, static_cast<int32>(Board.Case));
+			if (Key != Shown)
+			{
+				Shown = Key;
+				UE_LOG(LogBpTable, Log, TEXT("BpBoard: the stand-up's decision %s on the wall, %d of %d, stage %s: %s; Glim points at (%.0f, %.0f)"), *In.Proposal, Nth, Of, BpBoard::CaseWord(Board.Case), *Board.Said, Board.Aim.X, Board.Aim.Y);
+			}
+		}
+		// The desk's sheet (and a companion's card anywhere): unchanged by wave W1.
+		if (!bWall)
+		{
 		FString Kicker = bCompanion ? FString(TEXT("GLIM ASKS")) : FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of);
 		if (Card && Card->news) Kicker += TEXT(" · NEW");
 		// Where it is, on the kicker when it fits whole (the plan raises the room as well): the deck's first line without its count.
@@ -2506,7 +2594,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		// The screen: the finding's "before", unlit on the sheet in a fine frame, large, with what it is under it.
 		// The screen fills the right half down to the title block; its caption is a strip across its foot.
 		const float ImgX0 = ColX1 + (bWall ? 24.f : 30.f), ImgX1 = bWall ? RightX0 - 24.f : TextX1, ImgW = ImgX1 - ImgX0, ImgH = FMath::Min(ImgW * 9.f / 16.f, Frame.Max.Y - 62.f - FrameY0 - 16.f);
-		FBox2f Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
+		Img = bScreen ? FBox2f(FVector2f(ImgX0, FrameY0 + 16.f), FVector2f(ImgX1, FrameY0 + 16.f + ImgH))
 			: bWall ? FBox2f(FVector2f(ImgX0, FrameY0 + 120.f), FVector2f(ImgX1, FrameY0 + 300.f))
 			: FBox2f(FVector2f(TextX1 - 470.f, Frame.Max.Y - 200.f), FVector2f(TextX1, Frame.Max.Y - 60.f));
 		if (bScreen && bConsoleFar)
@@ -2571,6 +2659,7 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		}
 		// Wave N3-W2: on the wall the title block closes the right column (the loupe has the middle column's foot).
 		TitleBlock(SheetNo, Project, bWall ? Frame.Max.X - (RightX0 - 12.f) : 440.f);
+		}
 		// The answers. Approve is the primary (amber); LATER is the web's Defer (back tomorrow); DECLINE only on a repeat.
 		const bool bRefused = Answer && Answer->State == FBpStandupAnswer::EState::Refused;
 		const bool bOpen = !Answer || bRefused || Answer->State == FBpStandupAnswer::EState::Unsent;
@@ -2634,7 +2723,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		else
 		{
 			const bool bApproved = bTaken && Answer->Verdict == BpVocab::SteerPost::Verdict::Approve, bHeld = bTaken && Answer->Verdict == BpVocab::SteerPost::Verdict::Hold;
-			Buttons = { Prev, { bArmed ? TEXT("A AGAIN: APPROVE") : bApproved ? TEXT("APPROVED") : TEXT("APPROVE"), LookOf(BpVocab::SteerPost::Verdict::Approve, EBtn::Amber), TEXT("standup:approve"), bArmed ? 320.f : 280.f },
+			// Wave W1: on the board APPROVE is the widest control of the row (the design's 2 to 1).
+			Buttons = { Prev, { bArmed ? TEXT("A AGAIN: APPROVE") : bApproved ? TEXT("APPROVED") : TEXT("APPROVE"), LookOf(BpVocab::SteerPost::Verdict::Approve, EBtn::Amber), TEXT("standup:approve"), bWall ? 380.f : bArmed ? 320.f : 280.f },
 				{ TEXT("LATER"), LookOf(BpVocab::SteerPost::Verdict::Defer, EBtn::Edge), TEXT("standup:defer"), 180.f }, { bHeld ? TEXT("HELD") : TEXT("HOLD"), LookOf(BpVocab::SteerPost::Verdict::Hold, EBtn::Edge), TEXT("standup:hold"), 170.f } };
 			if (Card->decision.brief.recommend == BpVocab::SteerPost::Verdict::Decline) Buttons.Add({ TEXT("DECLINE"), LookOf(BpVocab::SteerPost::Verdict::Decline, EBtn::Edge), TEXT("standup:decline"), 190.f });
 			if (!S.bSample && !Link.CanDecide()) Buttons.Add({ TEXT("PC LINK"), EBtn::Fill, TEXT("open:link"), 190.f });
@@ -2648,7 +2738,8 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 		}
 		else if (!bMay) { Status = Link.HasPcLink() ? TEXT("Pair this headset to decide here: PC LINK pairs it, with decide.") : TEXT("Your PC is gone: answers cannot be sent now. Those taken are kept."); StatusInk = BpSheet::Amber; }
 		else if (bArmed) { Status = TEXT("Press A again to approve · B cancels"); StatusInk = BpSheet::Amber; }
-		else Status = S.bSample ? FString(TEXT("Sample: what you decide is kept on this headset for the day, nothing is sent.")) : FString(TEXT("Your answer goes to your PC with the words on this card."));
+		// Wave W1: the board keeps its words few: the usual line is the desk's only (SAMPLE stands in the header).
+		else if (!bWall) Status = S.bSample ? FString(TEXT("Sample: what you decide is kept on this headset for the day, nothing is sent.")) : FString(TEXT("Your answer goes to your PC with the words on this card."));
 		bPager = false;
 	}
 	else if (bClose)
@@ -2881,11 +2972,13 @@ void ABpPawn::DrawStandup(const TSharedRef<SCanvas>& Canvas)
 	// solid) or FROM YOUR PC (cyan, an edge).
 	const FString Pos = FString::Printf(TEXT("SHEET %d OF %d"), S.At + 1, S.Sheets.Num());
 	const FString Whose = S.bSample ? FString(TEXT("SAMPLE")) : FString(TEXT("FROM YOUR PC"));
-	const float WhoseW = BpSheet::ChipWidth(Whose, SmallBold), PosW = BpSheet::TextWidth(Pos, SmallBold);
+	// Wave W1: on the board the queue reads "DECISION n OF m" there instead (the strip under it is the queue's dots).
+	const FString PosWords = StandupOnBoard() ? FString::Printf(TEXT("DECISION %d OF %d"), Nth, Of) : Pos;
+	const float WhoseW = BpSheet::ChipWidth(Whose, SmallBold), PosW = BpSheet::TextWidth(PosWords, SmallBold);
 	const float HeadX1 = LW - Pad - 214.f;
 	Put(FBox2f(FVector2f(HeadX1 - PosW, 24.f), FVector2f(HeadX1, 94.f)), SNew(SBox).HAlign(HAlign_Right).VAlign(VAlign_Center)
 		[
-			SNew(STextBlock).Text(FText::FromString(Pos)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))
+			SNew(STextBlock).Text(FText::FromString(PosWords)).Font(SmallBold).ColorAndOpacity(FSlateColor(BpSheet::Ink.CopyWithNewOpacity(0.8f)))
 		]);
 	Put(FBox2f(FVector2f(HeadX1 - PosW - 18.f - WhoseW, 39.f), FVector2f(HeadX1 - PosW - 18.f, 79.f)), BpSheet::Chip(Whose, SmallBold, 40.f, S.bSample ? BpSheet::Amber : BpSheet::Accent, S.bSample));
 }

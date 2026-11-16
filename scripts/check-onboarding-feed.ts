@@ -28,7 +28,7 @@ let passed = 0, failed = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) passed++; else { failed++; console.log('FAIL ' + name + (detail ? ': ' + detail : '')); } };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'bp-onboarding-feed-'));
+const tmp = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'bp-onboarding-feed-'))); // the real (long) path, as in check-onboarding.ts
 const SKILL = path.join(tmp, 'skill', 'adopt-bp');
 fs.mkdirSync(path.join(SKILL, 'scripts'), { recursive: true });
 fs.writeFileSync(path.join(SKILL, 'SKILL.md'), '# adopt-bp (stub for check-onboarding-feed)\n');

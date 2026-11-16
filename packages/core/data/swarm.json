@@ -473,7 +473,7 @@
    "role": "review",
    "status": "working",
    "feature": "IAM-04",
-   "task": "review PR for Apple sign-in",
+   "task": "review PR for Platform sign-in",
    "progressPct": 46,
    "since": "2026-10-08T06:56:00Z",
    "tokensPerMin": 8654,
@@ -1643,7 +1643,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-changes",
-   "text": "changes requested on Apple sign-in"
+   "text": "changes requested on Platform sign-in"
   },
   {
    "t": 93,
@@ -1859,7 +1859,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-changes",
-   "text": "changes requested on Apple sign-in"
+   "text": "changes requested on Platform sign-in"
   },
   {
    "t": 324,
@@ -2430,7 +2430,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-pass",
-   "text": "review passed: Apple sign-in"
+   "text": "review passed: Platform sign-in"
   },
   {
    "t": 953,
@@ -2592,7 +2592,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-changes",
-   "text": "changes requested on Apple sign-in"
+   "text": "changes requested on Platform sign-in"
   },
   {
    "t": 1115,
@@ -2616,7 +2616,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-pass",
-   "text": "review passed: Apple sign-in"
+   "text": "review passed: Platform sign-in"
   },
   {
    "t": 1139,
@@ -2632,7 +2632,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-changes",
-   "text": "changes requested on Apple sign-in"
+   "text": "changes requested on Platform sign-in"
   },
   {
    "t": 1155,
@@ -2744,7 +2744,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-pass",
-   "text": "review passed: Apple sign-in"
+   "text": "review passed: Platform sign-in"
   },
   {
    "t": 1273,
@@ -2882,7 +2882,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-changes",
-   "text": "changes requested on Apple sign-in"
+   "text": "changes requested on Platform sign-in"
   },
   {
    "t": 1417,
@@ -3099,7 +3099,7 @@
    "agent": "warden.5",
    "feature": "IAM-04",
    "type": "review-pass",
-   "text": "review passed: Apple sign-in"
+   "text": "review passed: Platform sign-in"
   },
   {
    "t": 1621,

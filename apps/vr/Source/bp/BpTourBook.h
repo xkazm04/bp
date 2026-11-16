@@ -42,8 +42,16 @@ namespace BpTourBook
 	 *  wing and room of the bundled sample (their facts fixed in the bundle), each console page, each stand-up sheet kind and
 	 *  answer, the deck, your room, the legend and a chapter's end. Never a count that a session can change. */
 	const TArray<FLine>& NarrateLines();
-	/** The words of a narration line ("" when there is none). */
+	/** Wave W2 (the demo video's G4): what Glim says when a talk turn has no reply after bp.TalkThinkS (BpTalk.cpp), one a turn,
+	 *  in turn; tour-voice.ts --think renders them into voice/think/. Played through the narration's one path (NarratePlay). */
+	const TArray<FLine>& ThinkLines();
+	/** Wave W2 (the demo video's G3): the build-up's first event and its hand-over (BpBuildup.cpp); tour-voice.ts --onboard
+	 *  renders them into voice/onboard/. Said through Narrate, so they follow bp.Narration and stay quiet under a tour. */
+	const TArray<FLine>& OnboardLines();
+	/** The words of a narration line ("" when there is none): NarrateLines, then ThinkLines and OnboardLines. */
 	FString NarrateWords(const FString& Id);
+	/** Whether Id is one of these lines. */
+	bool HasLine(const TArray<FLine>& Lines, const FString& Id);
 	/** The core tour's steps in order (each id is also its line's id). */
 	const TArray<const TCHAR*>& Core();
 	const TArray<FChapter>& Chapters();
