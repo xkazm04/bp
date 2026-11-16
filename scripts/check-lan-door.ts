@@ -100,10 +100,14 @@ routes.push(...door.adminRoutes());
 await door.start();
 check('start with nothing paired: a pairing window, and the door listens', door.listening && door.status().window !== null, JSON.stringify(door.status()));
 
-interface Res { status: number; body: string; json: Record<string, unknown>; ms: number; sig: string }
+// pastAdmission: how many refusals took the door's fixed delay while this request was in flight (set by send(); requests are
+// sequential except the one burst, which measures its own window). "At admission" is decided by that count, never by the
+// wall clock: a refusal's latency on a loaded runner is not evidence of whether the fixed delay was served (CI run 43839096419: 328 ms).
+interface Res { status: number; body: string; json: Record<string, unknown>; ms: number; sig: string; pastAdmission?: number }
 function send(port: number, method: string, target: string, headers: Record<string, string>, body?: unknown): Promise<Res> {
   const text = body === undefined ? undefined : JSON.stringify(body);
   const t0 = performance.now();
+  const delayedBefore = door.refusalsPastAdmission;
   return new Promise((resolve, reject) => {
     const req = http.request({ host: '127.0.0.1', port, method, path: target, headers: { ...headers, ...(text !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(text)) } : {}) } }, (res) => {
       const parts: Buffer[] = [];
@@ -113,7 +117,7 @@ function send(port: number, method: string, target: string, headers: Record<stri
         let json: Record<string, unknown> = {};
         try { json = JSON.parse(b) as Record<string, unknown>; } catch { /* not JSON */ }
         const h = res.headers;
-        resolve({ status: res.statusCode ?? 0, body: b, json, ms: performance.now() - t0, sig: JSON.stringify([res.statusCode, b, h['content-type'] ?? null, h['content-length'], h['cache-control'], h.connection]) });
+        resolve({ status: res.statusCode ?? 0, body: b, json, ms: performance.now() - t0, pastAdmission: door.refusalsPastAdmission - delayedBefore, sig: JSON.stringify([res.statusCode, b, h['content-type'] ?? null, h['content-length'], h['cache-control'], h.connection]) });
       });
     });
     req.on('error', reject);
@@ -133,7 +137,7 @@ const refused = (name: string, r: Res, delayed = true) => {
   // past admission every refusal waits the fixed delay; at admission it is immediate, which also proves the request
   // never got as far as the token (a loopback peer with no token would otherwise pass as a delayed `no-token`)
   if (delayed) check(`refused after the fixed delay: ${name}`, r.ms >= REFUSAL_DELAY_MS - 5, `${r.ms.toFixed(0)} ms`);
-  else check(`refused at admission, at once: ${name}`, r.ms < REFUSAL_DELAY_MS - 50, `${r.ms.toFixed(0)} ms`);
+  else check(`refused at admission, at once: ${name}`, r.pastAdmission === 0, `${r.pastAdmission} delayed refusals, ${r.ms.toFixed(0)} ms`);
 };
 const nonce = () => randomBytes(18).toString('base64url'); // 24 chars, 144 bits
 const QUEST = '192.168.1.50', OTHER = '10.0.0.7';
@@ -335,9 +339,10 @@ if (speechWas !== undefined) process.env.BP_CLOUD_SPEECH = speechWas;
   const t0 = performance.now();
   r = await lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } });
   check('an answer that takes longer than the request timeout (1.6 s against 1 s here; a 600 s turn on the server) still arrives whole', r.status === 200 && r.json.late === true && performance.now() - t0 >= 1500, `${r.status} ${r.body}`);
+  const delayedBeforeBurst = door.refusalsPastAdmission;
   const burst = await Promise.all(Array.from({ length: MAX_PEER_INFLIGHT + 1 }, () => lan(QUEST, 'POST', '/api/companion/say', { token: tokenV, body: { text: 'x' } })));
   const late = burst.filter((x) => x.status === 200), cut = burst.filter((x) => x.status === 403);
-  check(`one peer holds at most ${MAX_PEER_INFLIGHT} requests in flight: the next is the bare 403 at once`, late.length === MAX_PEER_INFLIGHT && cut.length === 1 && cut[0].body === '' && cut[0].ms < REFUSAL_DELAY_MS, burst.map((x) => x.status).join());
+  check(`one peer holds at most ${MAX_PEER_INFLIGHT} requests in flight: the next is the bare 403 at once`, late.length === MAX_PEER_INFLIGHT && cut.length === 1 && cut[0].body === '' && door.refusalsPastAdmission === delayedBeforeBurst, `${burst.map((x) => x.status).join()} delayed refusals ${door.refusalsPastAdmission - delayedBeforeBurst}`);
   routes.splice(routes.indexOf(slow), 1);
   // a request whose body never finishes is cut by the request timeout (it holds no socket for long)
   const stalled = await new Promise<string>((resolve) => {
@@ -425,7 +430,11 @@ check('with --lan: a pairing window and the door listening', !!p.match && /pairi
 check('with --lan: the owner routes join the loopback mount', /route GET \/lan\/pair\b/.test(p.out) && /route POST \/lan\/pair\/approve/.test(p.out));
 if (p.match) {
   const own = await send(Number(p.match[1]), 'GET', '/api/products/kettle/structure', {});
-  check('the door refuses this machine (loopback is not a private range): the bare 403, at admission', own.sig === refusals[0].r.sig && own.ms < REFUSAL_DELAY_MS - 50, `${own.sig} ${own.ms.toFixed(0)} ms`);
+  // At admission by cause, not by clock: a refusal that took the fixed delay writes its ledger row before it sleeps (refuse()), an
+  // admission refusal writes the `peer` row and nothing else, so the row is already on disk when the answer arrives.
+  const ownRows = fs.readFileSync(path.join(lanHome, 'lan', 'ledger.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l) as { event: string; cause?: string });
+  const ownRefusals = ownRows.filter((x) => x.event === 'refused');
+  check('the door refuses this machine (loopback is not a private range): the bare 403, at admission', own.sig === refusals[0].r.sig && ownRefusals.length === 1 && ownRefusals[0].cause === 'peer', `${own.sig} ${JSON.stringify(ownRefusals)}`);
   const loopPort = /bp server listening on http:\/\/127\.0\.0\.1:(\d+)/.exec(p.out)?.[1];
   const cli = await run(['pair', 'list', '--port', String(loopPort)], lanHome, null);
   check('npm run server -- pair list reaches the owner routes', cli.code === 0 && /pairing window open until/.test(cli.out) && /nothing pending, nothing paired/.test(cli.out), cli.out);

@@ -38,7 +38,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { DatabaseSync } from 'node:sqlite';
+import { DatabaseSync as RawDatabaseSync } from 'node:sqlite';
+
+// node:sqlite's default busy timeout is 0: a connection that meets another writer's lock fails at once with "database is
+// locked". The check's own connections (seeding, reading rows back) meet the store while the job runner's child processes
+// (the fake CLI, store.mjs) are still writing it, so each waits for the lock as the product's own connections do
+// (store.server.ts BUSY_MS) instead of racing it (CI run 43838059630: "database is locked" at the stall-fake release insert).
+// A caller's own `timeout` still wins.
+class DatabaseSync extends RawDatabaseSync {
+  constructor(file: string, options: ConstructorParameters<typeof RawDatabaseSync>[1] = {}) { super(file, { timeout: 5000, ...options }); }
+}
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // the hooks module is plain JS without types: imported through a variable so tsc does not look for its declarations
