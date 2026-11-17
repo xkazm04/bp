@@ -40,10 +40,11 @@ Write-Host "packaging $Config for Android (ASTC) -> $Out; log $log"
 # Start-Process's redirect keeps the log in UAT's UTF-8 (PowerShell 5.1's Tee-Object writes UTF-16)
 $uatArgs = "BuildCookRun `"-project=$project`" -platform=Android -cookflavor=ASTC -clientconfig=$Config -build -cook -stage -pak -package -archive `"-archivedirectory=$Out`" -unattended -utf8output -nop4 -ubtargs=-NoUBA"
 # Shipping is the judged store build: -distribution signs it with the release key and writes android:debuggable="false"
-# (the store refuses a debuggable APK). The key's settings live in the git-ignored Config/UserEngine.ini and the keystore
-# in Build/Android (see the ini's header); without them UBT stops with "DistributionSigning settings are not all set".
+# (the store refuses a debuggable APK). The key's settings (KeyStore, KeyAlias, KeyStorePassword) live in the per-user
+# %LOCALAPPDATA%\Unreal Engine\Engine\Config\UserEngine.ini, a layer UBT reads but the cook never stages (a project
+# Config/UserEngine.ini IS staged into the pak: 2026-11-17), and the keystore in the git-ignored Build/Android.
 if ($Config -eq 'Shipping') {
-    $userIni = Join-Path $VrRoot 'Config\UserEngine.ini'
+    $userIni = Join-Path $env:LOCALAPPDATA 'Unreal Engine\Engine\Config\UserEngine.ini'
     if (-not (Select-String -Path $userIni -Pattern '^KeyStorePassword=.+' -Quiet -ErrorAction SilentlyContinue)) {
         Write-Host "REFUSED: Shipping needs release signing in $userIni (KeyStore, KeyAlias, KeyStorePassword)"; exit 2
     }
@@ -71,8 +72,8 @@ if ($code -eq 0) {
     foreach ($n in $need) {
         if (-not ($staged | Where-Object { $_ -like "*$n*" })) { Write-Host "FAIL: the package has no $n"; $code = 1 }
     }
-    $user = $staged | Where-Object { $_ -match 'Config/User\w*\.ini' }
-    if ($user) { Write-Host "FAIL: a User*.ini (the signing password) is in the package: $($user[0])"; $code = 1 }
+    $user = @($staged | Where-Object { $_ -match 'Config/User\w*\.ini' })
+    if ($user.Count) { Write-Host "FAIL: a User*.ini (it can hold the signing password) is in the package: $($user[0])"; $code = 1 }
     $mh = $staged | Where-Object { $_ -like '*Bp/Art/MetaHuman*' }
     if ($mh) { Write-Host "FAIL: MetaHuman content is in the package ($($mh.Count) files, e.g. $($mh[0]))"; $code = 1 }
     if ($code -eq 0) { Write-Host "staged: $($staged.Count) files; the bundle, the voice and the code-loaded assets are in, no MetaHuman" }
