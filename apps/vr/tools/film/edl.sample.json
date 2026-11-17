@@ -1,0 +1,49 @@
+{
+  "_note": "The 2:19 film on the picked cue (docs/concepts/demo-video/dry-run.md). Sync points: ADD on the drop 23.4, SCAN as the beat returns 68.6, APPROVE on the final peak 113.8. Slide a take with clips[].in/at; never move the cue. Keys starting with _ are ignored.",
+  "output": { "width": 1920, "height": 1080, "fps": 30, "crf": 18, "x264Preset": "medium" },
+  "duration": 139.16,
+  "music": { "file": "apps/vr/Saved/demo/cue/cue.wav", "gainDb": -20, "duckDb": 8, "duckAttackS": 0.25, "duckReleaseS": 0.5, "fadeOutS": 2 },
+  "loudness": { "lufs": -14, "truePeakDb": -1 },
+  "style": { "font": "Segoe UI", "topSize": 58, "bottomSize": 46, "bottomColour": "#FFC98A", "band": 0.55 },
+  "clips": [
+    { "name": "hook",     "at": 0,     "src": "apps/vr/Saved/demo/web/s1-fly.mp4",            "in": 0,    "out": 8,     "preset": "web", "fadeInS": 0.5 },
+    { "name": "hello",    "at": 8,     "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 4,    "out": 12,    "preset": "quest-left-eye" },
+    { "name": "add",      "at": 16,    "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 14,   "out": 21.4,  "preset": "quest-left-eye", "_note": "the ADD pinch frame lands at 23.4" },
+    { "name": "drawn",    "at": 23.4,  "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 21.4, "out": 50.8,  "speed": 1.5, "preset": "quest-left-eye" },
+    { "name": "read-it",  "at": 43,    "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 52,   "out": 72,    "preset": "quest-left-eye" },
+    { "name": "scan",     "at": 63,    "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 74,   "out": 79.6,  "preset": "quest-left-eye", "_note": "the SCAN pinch frame lands at 68.6" },
+    { "name": "findings", "at": 68.6,  "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 79.6, "out": 113.5, "speed": 1.5, "preset": "quest-left-eye" },
+    { "name": "decide",   "at": 91.2,  "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 115,  "out": 137.6, "preset": "quest-left-eye", "_note": "the APPROVE pinch frame lands at 113.8" },
+    { "name": "ask",      "at": 113.8, "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 140,  "out": 151.2, "preset": "quest-left-eye" },
+    { "name": "again",    "at": 125,   "src": "apps/vr/Saved/demo/2026-11-17/spine-take1.mp4", "in": 160,  "out": 167,   "preset": "quest-left-eye", "fadeOutS": 0.6 }
+  ],
+  "cards": [
+    { "at": 132, "dur": 7.16, "lines": ["Developer's Blueprint", "Productivity · Hands only"], "fadeInS": 0.6, "fadeOutS": 1.5 }
+  ],
+  "voice": [
+    { "at": 8.6,   "file": "apps/vr/Content/BpData/voice/tour/welcome.wav" },
+    { "at": 16.5,  "file": "apps/vr/Content/BpData/voice/tour/add-project.wav" },
+    { "at": 24.5,  "file": "apps/vr/Content/BpData/voice/tour/drawing.wav" },
+    { "at": 38.5,  "file": "apps/vr/Content/BpData/voice/tour/drawing-done.wav" },
+    { "at": 45,    "file": "apps/vr/Content/BpData/voice/tour/look-wing.wav" },
+    { "at": 63.3,  "file": "apps/vr/Content/BpData/voice/tour/scan-first.wav" },
+    { "at": 80,    "file": "apps/vr/Content/BpData/voice/tour/findings.wav" },
+    { "at": 92.5,  "file": "apps/vr/Content/BpData/voice/tour/standup.wav" },
+    { "at": 114.5, "file": "apps/vr/Content/BpData/voice/tour/talk.wav" },
+    { "at": 125.6, "file": "apps/vr/Content/BpData/voice/tour/hand-off.wav" }
+  ],
+  "captions": [
+    { "from": 0.5,   "to": 7.8,   "top": "A software product is thousands of files and a list of tickets." },
+    { "from": 8.2,   "to": 15.8,  "top": "Put on the headset.", "bottom": "Hi, I'm Glim. I turn your code into a building we decide on." },
+    { "from": 16.2,  "to": 23.2,  "top": "Add a project.", "bottom": "First, your project. Pinch ADD, and we start with the tutorial one." },
+    { "from": 23.6,  "to": 33,    "top": "Glim reads the code and draws it.", "bottom": "I'm reading your project now. Watch it draw itself." },
+    { "from": 33,    "to": 42.8,  "top": "Glim reads the code and draws it.", "bottom": "There it is: your building, drawn." },
+    { "from": 43.2,  "to": 62.8,  "top": "Wings are areas. Rooms are what they do.", "bottom": "Each wing is one area of your product. Each room, one thing it does." },
+    { "from": 63.2,  "to": 68.4,  "top": "Then a scan reads every room.", "bottom": "Now let's check it. Pinch SCAN, and I'll read every room." },
+    { "from": 68.8,  "to": 91,    "top": "What needs a person becomes a card.", "bottom": "What needs you comes out as a decision card." },
+    { "from": 91.4,  "to": 113.6, "top": "Decide by hand, one card at a time.", "bottom": "Each card is one decision. Approve it, or leave it for later." },
+    { "from": 114,   "to": 124.8, "top": "Or just ask.", "bottom": "Not sure? Hold me, or TALK on your wrist, and ask." },
+    { "from": 125.2, "to": 131.8, "top": "Tomorrow, it opens with what moved.", "bottom": "That's your morning: add a project, scan it, decide. See you tomorrow." }
+  ],
+  "stills": [ { "t": 23.4, "what": "sync: ADD on the drop" }, { "t": 68.6, "what": "sync: SCAN as the beat returns" }, { "t": 113.8, "what": "sync: APPROVE on the final peak" } ]
+}
