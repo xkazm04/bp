@@ -79,6 +79,14 @@ FString ABpTable::NarrateRoomId(const FString& InRoomId) const
 void ABpTable::Narrate(const FString& Id, const TCHAR* Why, bool bCaption)
 {
 	if (NarrateHush > 0) return;
+	// A first run's story is the tour's (owner, 2026-11-17: the welcome was cut by narration): nothing is narrated until the
+	// cold start has decided whether the first tour runs, nor while its table is blank (the legend's and the build-up's lines
+	// played over the welcome).
+	if (bTourBlank || (!bTourBlankChecked && TourStep < 0 && !bTourPlayed))
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpNarrate: %s not said: the first tour has the table (%s)"), *Id, Why);
+		return;
+	}
 	const FString Words = BpTourBook::NarrateWords(Id);
 	if (Words.IsEmpty())
 	{
