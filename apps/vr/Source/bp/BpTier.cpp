@@ -20,6 +20,7 @@
 #include "BpSurround.h"
 #include "BpTable.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Components/LightComponent.h"
 #include "Components/LocalLightComponent.h"
 #include "Components/RectLightComponent.h"
 #include "Components/SkinnedMeshComponent.h"
@@ -34,6 +35,7 @@
 #include "Engine/Texture.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/Pawn.h"
 #include "HAL/IConsoleManager.h"
 #include "MaterialShared.h"
 #include "Materials/Material.h"
@@ -600,6 +602,77 @@ namespace
 		}));
 }
 
+namespace
+{
+	// ---- No side desks (the owner on the Quest 3S, 2026-11-17: "Left right desks are too close, blocking view at wall.
+	// Remove them completely, they are useless"). studio_level.py built the two desks (LEFT_DESK, RIGHT_DESK) into the merged
+	// StudioShell, so their tops and end panels are that mesh's MI_StudioDesk slot: it draws M_Collapsed (no pixels). The
+	// props on them go by their mesh, and the lights and haze cards standing in their footprints (below the pendants) go
+	// too. The baked light stays in the lightmap. On every platform, once a world.
+
+	/** studio_level.py's desks as XY boxes (cm): centre x, centre y, size x, size y; LEFT_DESK and RIGHT_DESK. */
+	struct FDeskBox { float X, Y, SX, SY; };
+	constexpr FDeskBox SideDesks[] = { { 95.f, -160.f, 60.f, 140.f }, { 100.f, 150.f, 60.f, 110.f } };
+	/** The desks' props, by their static mesh. */
+	const TCHAR* const DeskProps[] = { TEXT("SM_StudioDeskLamp"), TEXT("SM_StudioDeskClutter"), TEXT("SM_StudioDrawingTubes"), TEXT("SM_StudioMug") };
+	TWeakObjectPtr<UWorld> DesksGoneWorld;
+
+	bool OverADesk(const FVector& At)
+	{
+		if (At.Z > 150.f) return false;
+		for (const FDeskBox& D : SideDesks)
+		{
+			if (FMath::Abs(At.X - D.X) <= D.SX * 0.5f + 25.f && FMath::Abs(At.Y - D.Y) <= D.SY * 0.5f + 25.f) return true;
+		}
+		return false;
+	}
+
+	void RemoveSideDesks(UWorld* World)
+	{
+		if (!World || DesksGoneWorld.Get() == World) return;
+		DesksGoneWorld = World;
+		UMaterialInterface* Collapsed = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_Collapsed.M_Collapsed"));
+		int32 Slots = 0, Props = 0, Lights = 0, Haze = 0;
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			if (It->IsA<ABpTable>() || It->IsA<APawn>()) continue;
+			if (ALight* Light = Cast<ALight>(*It))
+			{
+				if (OverADesk(Light->GetActorLocation()) || Light->GetName().Contains(TEXT("Desk")))
+				{
+					if (ULightComponent* Comp = Light->GetLightComponent()) Comp->SetVisibility(false);
+					++Lights;
+				}
+				continue;
+			}
+			TArray<UStaticMeshComponent*> Meshes;
+			It->GetComponents(Meshes);
+			for (UStaticMeshComponent* Mesh : Meshes)
+			{
+				if (!Mesh || !Mesh->GetStaticMesh()) continue;
+				const FString MeshName = Mesh->GetStaticMesh()->GetName();
+				bool bProp = false;
+				for (const TCHAR* Prop : DeskProps) bProp |= MeshName == Prop;
+				if (bProp || (IsHazeCard(*Mesh) && OverADesk(Mesh->GetComponentLocation())))
+				{
+					Mesh->SetVisibility(false);
+					Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					++(bProp ? Props : Haze);
+					continue;
+				}
+				for (int32 Slot = 0; Collapsed && Slot < Mesh->GetNumMaterials(); ++Slot)
+				{
+					const UMaterialInterface* Mat = Mesh->GetMaterial(Slot);
+					if (!Mat || Mat->GetName() != TEXT("MI_StudioDesk")) continue;
+					Mesh->SetMaterial(Slot, Collapsed);
+					++Slots;
+				}
+			}
+		}
+		UE_LOG(LogBpTable, Log, TEXT("BpTier: side desks removed: %d desk slot(s) collapsed, %d prop(s), %d light(s), %d haze card(s) hidden"), Slots, Props, Lights, Haze);
+	}
+}
+
 bool BpTier::IsOn(const UWorld* World)
 {
 	const int32 Want = CVarQuestTier.GetValueOnGameThread();
@@ -630,6 +703,7 @@ bool BpTier::LightReaches(const ULocalLightComponent& Light, const TArray<FVecto
 void BpTier::Apply(UWorld* World)
 {
 	if (!World) return;
+	RemoveSideDesks(World);
 	const bool bOn = IsOn(World);
 	ApplySwitches(World, bOn);
 	if (AppliedWorld.Get() == World && bAppliedOn == bOn) return;
