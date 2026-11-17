@@ -116,3 +116,38 @@ Built that night: adopt-bp 1.7.0 and lens-scan 1.17.0 (lessons.md L17). Still pr
 - **A first tagged release** (for example `v0.2.0`) has not been cut. SECURITY.md and `action/README.md` describe releases as the security channel, so cut one with notes when the owner wants the first public release.
 - **Repository settings done:** private vulnerability reporting is enabled, and the labels `security`, `breaking` and `skip-release-notes` exist.
 
+## 7. The second-pass scan (2026-11-17, after the wave) - the next backlog
+
+lens-scan 1.17.0 ran over a refreshed map: measure run `r-20261117225924-6610`, propose run `r-20261117231440-d9d5`.
+
+**What changed against the first pass:**
+
+| Measure | First pass | Second pass |
+|---|---|---|
+| Proposals filed | 42, none tiered | 41, all tiered (1 tier 1, 9 tier 2, 31 tier 3) |
+| Map coverage | 95 of 122 tracked source files | 122 of 122 |
+| desk-agent-network: loc | 7089 | 329 |
+| desk-agent-network: unsafeSinks | 27 | 0 |
+| desk-agent-network: secretHits | 2 | 0 |
+| desk-agent-network: dupSites | 6 | 0 |
+
+The desk-agent-network numbers dropped because its vendored runtime is now excluded.
+
+**These 41 proposals are the next session's backlog.** Each waits for the owner's decision in bp's review UI or a stand-up. The top ones:
+1. `p-e945d0` (tier 1): close a redirect's connection instead of draining its body outside the fetch timeout.
+2. `p-1c7bd9`: refuse to sign when the private key file sits inside the site root.
+3. `p-f4e350`: comment on the open drift issue when its findings change.
+4. `p-f7d646`: fail the duplicate-key rule closed when the key counter cannot read a file.
+5. `p-1aaf28`: say unverifiable when the browser could not read a signed file.
+6. `p-9ddaa4`: report a file added to the vendored runtime folder after the lock was written.
+7. `p-05d52a`: report a receipt signed by a key Customs no longer publishes as unavailable.
+8. `p-c30007`: keep every revocation a site has published.
+9. `p-e1e3da`: cover the code the Desk's website tools run with its signature.
+10. `p-088c6f`: hold https grounding refs and peer addresses to the peer address rule.
+
+**Scanner friction still open after 1.17.0** (logged in lens-scan's LESSONS):
+- **No script lists unmapped files.** The 1.17.0 rule is method text only, and adopt-bp's coverage check counts code files only and ignores `vendored`.
+- **An excluded feature keeps its old numbers.** It gets no new row, so `store.mjs latest` still returns the earlier inflated values. That contradicts "no row means unmeasured".
+- **Performance is reported as runnable.** `run-start --lenses all` lists it even with no probes.
+- **The registry map goes stale.** It is not rebuilt when the context map changes. It was rebuilt by hand that night.
+
