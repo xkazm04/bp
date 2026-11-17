@@ -556,6 +556,8 @@ bool ABpTable::PlayVoiceWav(const TArray<uint8>& WavFile, const TCHAR* Clip)
 	Wave->SetSampleRate(Rate);
 	Wave->NumChannels = Channels;
 	Wave->Duration = static_cast<float>(Bytes) / (2.f * Channels * Rate);
+	// The film tools (apps/vr/tools/film) place the clean clip in the edit from this line's time.
+	UE_LOG(LogBpTable, Log, TEXT("BpVoice: plays %s (%.2f s)"), Clip, Wave->Duration);
 	Wave->SoundGroup = SOUNDGROUP_Voice;
 	Wave->bLooping = false;
 	// The clip at the level (bp.VoiceLevel x BpAudio::VoiceGainAtFull as gain), limited sample by sample: a gain over 1 must not clip.
