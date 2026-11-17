@@ -6,6 +6,7 @@
 //   node apps/vr/tools/film/auto-edl.mjs --take <take dir> [--web <hook.mp4>] [--out <edl.json>] [--hook-text "<caption>"]
 //
 // Output default: apps/vr/Saved/demo/out/<take>.edl.json. Exit 0 written, 1 the take lacks a mark, 2 refused.
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -69,7 +70,18 @@ const cardAt = +Math.min(CUE.duration - CARD_S, Math.max(hookEnd + 1, handOff ? 
 const clipOut = Math.min(seg.duration, cardAt - off);
 
 const clips = [];
-if (web && hookEnd > 0.5) clips.push({ name: 'hook', at: 0, src: rel(web), in: 0, out: hookEnd, preset: 'web', fadeInS: 0.5 });
+// The hook: the web fly-in ends where the take begins; when it is shorter than the slot, --web-still (the plan at rest)
+// fills the start.
+if (web && hookEnd > 0.5) {
+  const durOf = (f) => { try { return Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { encoding: 'utf8' }).trim()); } catch { return 0; } };
+  const webDur = durOf(path.resolve(web));
+  const still = opt('--web-still');
+  const lead = Math.max(0, hookEnd - webDur);
+  if (lead > 0.05 && still) clips.push({ name: 'hook-still', at: 0, src: rel(still), in: 0, out: +Math.min(lead, durOf(path.resolve(still))).toFixed(3), preset: 'web', fadeInS: 0.5 });
+  const fly = Math.min(webDur, hookEnd);
+  const flyAt = still && lead > 0.05 ? +Math.min(lead, durOf(path.resolve(still))).toFixed(3) : +(hookEnd - fly).toFixed(3);
+  clips.push({ name: 'hook', at: flyAt, src: rel(web), in: +(webDur - (hookEnd - flyAt)).toFixed(3) < 0 ? 0 : +(webDur - (hookEnd - flyAt)).toFixed(3), out: +webDur.toFixed(3), preset: 'web', ...(flyAt === 0 ? { fadeInS: 0.5 } : {}) });
+}
 clips.push({ name: 'take', at: hookEnd, src: seg.file, in: +takeStart.toFixed(3), out: +clipOut.toFixed(3), preset: 'quest-left-eye', ...(web ? {} : { fadeInS: 0.6 }), fadeOutS: 0.6 });
 
 // Voice and captions: every clip Glim played inside the take's span, never two at once (a later one waits its turn).
