@@ -56,6 +56,33 @@ never move the cue. Speed-ups only where Glim is silent (the drawing, the scan).
 If the takes leave time and the PC link holds, the linked inserts from scenes.md S5 (YESTERDAY on the wall) and S6
 (a live talk turn) can replace act 7's or 8's sample footage tomorrow. They are not tonight's goal.
 
+## Unattended: the film from a resting headset (built 2026-11-18, `apps/vr/tools/film/`)
+
+The headset lies on the desk on USB; nobody wears it. The Development APK must be installed (it has the console; the
+judged Shipping APK does not). Three commands make the whole film; a re-take is the first one again.
+
+```
+node apps/vr/tools/film/quest-take.mjs --name take5          # about 2:30: a first run, cue-locked, recorded on the headset
+node apps/vr/tools/film/auto-edl.mjs --take apps/vr/Saved/demo/takes/take5 \
+  --web apps/vr/Saved/demo/web/s1-take1.mp4 --web-still apps/vr/Saved/demo/web/web-plan-still-take1.mp4
+node apps/vr/tools/film/compose.mjs apps/vr/Saved/demo/out/take5.edl.json [--preview] --stills   # 25 s preview, 55 s full
+node apps/vr/tools/film/web-take.mjs --scene s1 --out apps/vr/Saved/demo/web/s1-take2.mp4         # re-film the web hook (3.5 min)
+```
+
+- **quest-take** clears the app's data (a true first run), turns the bed off, grants the microphone, keeps the display
+  awake (`prox_close`), records the eye buffers (`screenrecord` 3664x1920) and the log with device time, and drives the
+  tour over the console: ADD, the highlighted wing, SCAN at ADD + 45.2 s, APPROVE at SCAN + 45.2 s (the cue's spacing),
+  the talk sample. The hands are not shown (the synthetic hand does not act while the headset counts as worn).
+- **auto-edl** lays the take on the cue with one offset (ADD on 23.4) and prints the sync error of SCAN and APPROVE;
+  Glim's clean WAVs go where the app played them (`BpVoice: plays`), with our caption on top and his words below.
+- **compose** renders: left-eye crop, the bed at -20 dB ducked 8 dB under Glim, burned captions, -14 LUFS; `contact.png`
+  in `<out>.stills/` to review without watching.
+
+Status 2026-11-18 01:00: **v2** `apps/vr/Saved/demo/out/v2-take4.mp4` (2:19, 1080p, -13.7 LUFS; sync ADD 0.00, SCAN
++0.22, APPROVE +0.01 s). Known: the left desk's top still shows behind Glim (it is in the merged studio shell's own
+material; needs an editor fix); no hands on screen; the engine's splash shows at launch (never in the cut).
+
+
 ## Before the first take (once, about 10 min)
 
 1. The newest Shipping APK is installed (`bp-Android-Shipping-arm64.apk`, 2026-11-17 23:2x, tour v4).
