@@ -43,6 +43,8 @@ namespace
 	 *  every ray from the seat through it lands beyond the paper's edge, so it covers no paper. About 106 cm from the eye. */
 	constexpr float LegendXCm = -30.f;
 	constexpr float LegendYCm = 92.f;
+	/** Since 2026-11-17 it stands on the paper's right corner instead: its right edge this far inside the paper's. */
+	constexpr float LegendInsetCm = 3.f;
 	constexpr float LegendFootCm = 0.5f;
 	constexpr float LegendPxPerCm = 20.f;
 	/** Every line's cap height (cm): 1.05 cm at 110 cm is about 33 arcminutes (the brief's floor: 30). */
@@ -326,7 +328,11 @@ void ABpTable::TickLegend()
 		]);
 	// Placed and turned to the seat: its foot just over the table's top, its centre up by half its height (scaled by TEXT SIZE).
 	const float HeightCm = H / LegendPxPerCm * S;
-	const FVector At(LegendXCm, LegendYCm, PlacedHeightCm + LegendFootCm + HeightCm * 0.5f);
+	// On the paper's right corner (the owner on the Quest 3S, 2026-11-17: "Move Legend into right corner of blueprint desk to
+	// be always on eyes, currently too much on right"): its right edge LegendInsetCm inside the paper's, whatever its width.
+	const float WidthCm = W / LegendPxPerCm * S;
+	const float RightCornerY = ABpTable::PaperWidthCm * 0.5f - LegendInsetCm - WidthCm * 0.5f;
+	const FVector At(LegendXCm, FMath::Min(LegendYCm, RightCornerY), PlacedHeightCm + LegendFootCm + HeightCm * 0.5f);
 	const FVector Eye = EyeLocal();
 	Legend->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S / LegendPxPerCm)));
 	Legend->SetVisibility(true);
