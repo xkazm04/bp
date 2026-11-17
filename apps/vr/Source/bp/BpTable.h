@@ -753,6 +753,10 @@ public:
 	 *  reads the bundled snapshot (bp.Tour -1, the default; 1 any source, 0 never), and again from BpTour.Start or the wrist. */
 	void StartTour();
 	void StopTour(const TCHAR* Why);
+	/** The first tour's add-project step is up: PROJECTS offers the tutorial project (BpConsole.cpp). */
+	bool TourWantsTutorial() const { return TourStep >= 0 && TourStepId == TEXT("add-project"); }
+	/** PROJECTS' ADD on the tutorial project: the add-project step is done, and the drawing step draws it. */
+	void TourAddTutorial();
 	bool IsTourRunning() const { return TourStep >= 0; }
 	/** Wave T1 (the tour's second edition): the core tour runs once at a first launch (FBpStore [/Script/bp.BpTour]: Version,
 	 *  Core done|dismissed@<version>, At <step>@<version> while it runs, Seen <chapter ids>), resumes where a quit left it,
@@ -776,6 +780,8 @@ public:
 	static constexpr float TourWelcomeS = 7.f;
 	/** Each welcome line (welcome, welcome-onboard, welcome-scan) stands at least this long, so captions only still read. */
 	static constexpr float TourWelcomeLineS = 3.5f;
+	/** The first tour's drawing: the tutorial project draws itself over this long (s). */
+	static constexpr float TourDrawS = 12.f;
 	static constexpr float TourStartDelayS = 2.5f;
 
 	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
@@ -1844,6 +1850,14 @@ private:
 	FString TourChapter;
 	FString TourStepId;
 	FString TourLineId;
+	/** The first tour's blank table (BpBuildup.cpp): a build-up begun with nothing drawn; TourDraw replays the plan into it. */
+	bool bTourBlank = false;
+	bool bTourDrawing = false;
+	bool bTourBlankChecked = false;
+	FString TourBlankJob;
+	TSharedPtr<FBpPlan> TourBlankPlan;
+	void TourBlank();
+	void TourDraw(float DoneS);
 	bool bTourBackFromRoom = false;
 	EBpLevel TourBackFromLevel = EBpLevel::L0;
 	int32 TourHoldsAt = 0;

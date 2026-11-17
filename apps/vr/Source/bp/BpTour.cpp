@@ -216,7 +216,7 @@ void ABpTable::StartTour()
 
 void ABpTable::StartTour(const FString& FromStep)
 {
-	if (!SheetPlan.IsValid()) { GTourAsked = true; GTourAskedFrom = FromStep; GTourAskedChapter.Reset(); return; }
+	if (!SheetPlan.IsValid() && !bTourBlank) { GTourAsked = true; GTourAskedFrom = FromStep; GTourAskedChapter.Reset(); return; }
 	if (TourStep >= 0) StopTour(TEXT("another tour"));
 	GTourAsked = false;
 	bTourPlayed = true;
@@ -301,6 +301,7 @@ void ABpTable::TourEnd(const TCHAR* Why, bool bFinished, bool bDismissed)
 {
 	const FString Step = TourStepId;
 	const FString Chapter = TourChapter;
+	if (bTourBlank && Chapter.IsEmpty()) TourDraw(4.f);
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: %s %s at %s (%s)%s"), Chapter.IsEmpty() ? TEXT("the first tour") : TEXT("chapter"), Chapter.IsEmpty() ? TEXT("ends") : *(Chapter + TEXT(" ends")),
 		*Step, Why, bFinished ? TEXT(": finished") : bDismissed ? TEXT(": dismissed") : TEXT(": interrupted"));
 	// The step's own highlight goes; one the hands set stays theirs.
@@ -652,6 +653,13 @@ void ABpTable::EnterTourStep(int32 Step)
 	EnterTourId(TourStepId);
 }
 
+void ABpTable::TourAddTutorial()
+{
+	if (!TourWantsTutorial()) return;
+	if (ABpPawn* Pawn = PawnOf(GetWorld()); Pawn && Pawn->IsConsoleOpen()) Pawn->CloseConsole();
+	TourNext(TEXT("the person adding the tutorial project"));
+}
+
 void ABpTable::TourNext(const TCHAR* How)
 {
 	UE_LOG(LogBpTable, Log, TEXT("BpTour: %s completed by %s (%.1f s)"), *TourStepId, How, GetWorld() ? GetWorld()->GetTimeSeconds() - TourStepAt : 0.0);
@@ -660,13 +668,32 @@ void ABpTable::TourNext(const TCHAR* How)
 
 void ABpTable::EnterTourId(const FString& Id)
 {
-	const FBpPlan& Plan = *SheetPlan;
+	static const FBpPlan NoPlan;
+	const FBpPlan& Plan = SheetPlan.IsValid() ? *SheetPlan : NoPlan;
 	ABpPawn* Pawn = PawnOf(GetWorld());
 	const bool bBundle = FBpLinkModule::Get().IsFromBundle();
 	FString LineId = Id;
 	TourMark(FString());
 	// The situation each step teaches in: the target lit, the page open, the lamp beside it or turned to it.
-	if (Id == TEXT("open-wing") || Id == TEXT("hands-pull"))
+	if (Id == TEXT("welcome") && TourChapter.IsEmpty())
+	{
+		TourBlank();
+		LampGoHome(TEXT("tour"));
+	}
+	else if (Id == TEXT("add-project"))
+	{
+		TourBlank();
+		if (Pawn) Pawn->OpenConsole(TEXT("projects"));
+		TourMark(TEXT("console:add:tutorial"));
+	}
+	else if (Id == TEXT("drawing"))
+	{
+		if (Pawn && Pawn->IsConsoleOpen()) Pawn->CloseConsole();
+		TourBlank();
+		TourDraw(TourDrawS);
+		LampGoHome(TEXT("tour"));
+	}
+	else if (Id == TEXT("open-wing") || Id == TEXT("hands-pull") || Id == TEXT("look-wing"))
 	{
 		if (Id == TEXT("hands-pull"))
 		{
@@ -759,7 +786,7 @@ void ABpTable::EnterTourId(const FString& Id)
 	{
 		LampGoHome(TEXT("tour"));
 	}
-	else if (Id == TEXT("scan-arm"))
+	else if (Id == TEXT("scan-arm") || Id == TEXT("scan-first"))
 	{
 		if (Pawn) Pawn->OpenConsole(TEXT("scan"));
 		TourMark(TEXT("console:scan:this"));
@@ -815,7 +842,15 @@ void ABpTable::TickTour()
 		bTourStoreRead = true;
 		TourSettleOwed(TEXT("a cold start after a run ended mid-chapter"));
 	}
-	if (!SheetPlan.IsValid()) return;
+	// The first tour's blank table (the add-project and drawing steps) ticks with no plan; the cold start may blank it first.
+	if (!bTourBlankChecked && SheetPlan.IsValid() && TourStep < 0 && !bTourPlayed && !GTourAsked)
+	{
+		bTourBlankChecked = true;
+		const int32 Mode = CVarTour.GetValueOnGameThread();
+		const FString Will = Mode == 0 ? FString() : Mode > 0 ? FString(TEXT("welcome")) : TourColdStart();
+		if (Will == TEXT("welcome") || Will == TEXT("add-project") || Will == TEXT("drawing")) TourBlank();
+	}
+	if (!SheetPlan.IsValid() && !bTourBlank) return;
 	const double Now = World->GetTimeSeconds();
 	FBpLinkModule& Link = FBpLinkModule::Get();
 	// A line's samples are done: its component stops (a procedural wave would play silence on), tour or not (a preview of
@@ -929,24 +964,49 @@ void ABpTable::TickTour()
 
 	if (Id == TEXT("welcome"))
 	{
-		// The welcome, then the process in its order (onboard, scan), each line heard to its end (2026-11-17, the owner on
-		// the Quest: "Glim's welcoming sentence is cut in the middle"): a line goes on only when its clip is done and it has
-		// stood TourWelcomeLineS (captions only: no clip), even if the person already opened a wing; open-wing then
-		// catches up with wherever the table is.
-		const bool bLineDone = Now >= TourVoiceEndsAt && InStep >= (TourBeatAt >= 0.0 ? TourBeatAt - TourStepAt : 0.0) + TourWelcomeLineS;
-		if (!bLineDone) return;
-		const bool bMore = TourLineId == TEXT("welcome") || TourLineId == TEXT("welcome-onboard");
-		if (bMore)
+		// Heard to its end (2026-11-17, the owner on the Quest: "Glim's welcoming sentence is cut in the middle").
+		if (InStep >= TourWelcomeLineS && Now >= TourVoiceEndsAt) { TourNext(TEXT("its welcome beat")); return; }
+		return;
+	}
+	else if (Id == TEXT("add-project"))
+	{
+		// The person pinches ADD on the tutorial project (TourAddTutorial). Linked, the PC's own list is up: the step is said,
+		// then the tutorial's drawing follows. Left alone, Glim adds it.
+		if (!Link.IsFromBundle() && InStep >= TourWelcomeLineS && Now >= TourVoiceEndsAt) { TourNext(TEXT("said (linked: your PC adds real projects)")); return; }
+		if (bIdle && !bTourShown && Now >= TourVoiceEndsAt) { Show(TEXT("add the tutorial project")); TourBeatAt = Now; }
+		if (bTourShown && TourBeatAt >= 0.0 && Now - TourBeatAt >= 1.2) { TourNext(TEXT("the lamp (shown)")); return; }
+		return;
+	}
+	else if (Id == TEXT("drawing"))
+	{
+		// The building draws itself (TourDraw); when the live plan has taken over and the ink settled, Glim says it is drawn.
+		const bool bDrawn = !bTourBlank && SheetPlan.IsValid() && !bBuild;
+		if (bDrawn && TourBeatAt < 0.0 && Now >= TourVoiceEndsAt)
 		{
-			if (TourLineId == TEXT("welcome")) TourLineId = TEXT("welcome-onboard");
-			else TourLineId = TEXT("welcome-scan");
 			TourBeatAt = Now;
+			TourLineId = TEXT("drawing-done");
 			SayTour(TourCaption(TourLineId));
 			SpeakTour(*TourLineId);
 			return;
 		}
-		TourNext(Level != EBpLevel::L0 || bInRoom ? TEXT("the person moving on (after the welcome)") : TEXT("its welcome beat"));
+		if (TourBeatAt >= 0.0 && Now - TourBeatAt >= TourWelcomeLineS && Now >= TourVoiceEndsAt) { TourNext(TEXT("the building drawn")); return; }
+		if (InStep >= TourDrawS + 30.0 && SheetPlan.IsValid()) { TourNext(TEXT("a skip (the drawing took too long)")); return; }
 		return;
+	}
+	else if (Id == TEXT("look-wing"))
+	{
+		// A wing opened (by the person, or by Glim when left alone), then a beat to see its rooms.
+		if (Level != EBpLevel::L0 || bInRoom)
+		{
+			if (TourBeatAt < 0.0) TourBeatAt = Now;
+			else if (Now - TourBeatAt >= 2.0 && Now >= TourVoiceEndsAt) { TourNext(bTourShown ? TEXT("the lamp (shown)") : TEXT("the person opening a wing")); return; }
+		}
+		else if (bIdle && !bTourShown && Now >= TourVoiceEndsAt) { Show(TEXT("open the wing")); EnterWing(TourWing); }
+	}
+	else if (Id == TEXT("findings"))
+	{
+		// The scan reads on; when it is done (or after a long wait) its findings are on the table and the cards come next.
+		if ((!IsScanRunning() && InStep >= TourWelcomeLineS && Now >= TourVoiceEndsAt) || InStep >= 45.0) { TourNext(IsScanRunning() ? TEXT("a skip (the scan runs on)") : TEXT("the scan finished")); return; }
 	}
 	else if (Id == TEXT("open-wing") || Id == TEXT("open-room") || Id == TEXT("step-in"))
 	{
@@ -964,7 +1024,7 @@ void ABpTable::TickTour()
 	else if (Id == TEXT("decide"))
 	{
 		// Left the room: going back is learned already.
-		if (!bInRoom) { Jump(TEXT("menu"), TEXT("left the room (BACK done)")); return; }
+		if (!bInRoom) { TourNext(TEXT("left the room")); return; }
 		// A decision is never taken for the person: a tap moves on, and so does a long wait. Offline the tap writes nothing
 		// (BpLink refuses every write on the bundle), so the lamp says so rather than leave the deck's move unexplained.
 		if (TourTaps > 0 && TourBeatAt < 0.0)
@@ -1063,7 +1123,7 @@ void ABpTable::TickTour()
 		if (Level == EBpLevel::L0 && !bInRoom) { TourNext(bTourShown ? TEXT("the lamp (shown)") : TEXT("the person going back out")); return; }
 		if (bIdle && !bTourShown) { Show(TEXT("push away")); Back(); }
 	}
-	else if (Id == TEXT("scan-arm"))
+	else if (Id == TEXT("scan-arm") || Id == TEXT("scan-first"))
 	{
 		if (IsScanRunning()) { TourNext(bTourShown ? TEXT("the lamp (shown)") : TEXT("the person starting a scan")); return; }
 		if (bIdle && !bTourShown)
@@ -1113,7 +1173,7 @@ void ABpTable::TickTour()
 	// The hands' pointing takes the highlight while they point; the step's target gets it back after.
 	if (HighlightKind.IsEmpty())
 	{
-		if ((Id == TEXT("open-wing") || Id == TEXT("hands-pull")) && !TourWing.IsEmpty() && Level == EBpLevel::L0) SetHighlight(TEXT("wing"), TourWing);
+		if ((Id == TEXT("open-wing") || Id == TEXT("hands-pull") || Id == TEXT("look-wing")) && !TourWing.IsEmpty() && Level == EBpLevel::L0) SetHighlight(TEXT("wing"), TourWing);
 		else if (Id == TEXT("open-room") && !TourRoom.IsEmpty()) SetHighlight(TEXT("room"), TourRoom);
 	}
 }

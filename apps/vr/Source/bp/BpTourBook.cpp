@@ -8,23 +8,25 @@ namespace BpTourBook
 	{
 		static const TArray<FLine> All = {
 			// ---- The core tour (first launch; SETTINGS > TABLE > TOUR replays it) ----
-			{ TEXT("welcome"), TEXT("Welcome. My name is Glim. Each block here is part of your product.") },
-			// The welcome step goes on in the process's order (2026-11-17): a project is onboarded, then scanned, then explored.
-			{ TEXT("welcome-onboard"), TEXT("It starts with your project. Add it, and I draw it here.") },
-			{ TEXT("welcome-scan"), TEXT("Then a scan reads each room, and finds what needs your decision.") },
+			// The first tour follows the process (owner, 2026-11-17): add a project, watch it drawn, scan it, decide.
+			{ TEXT("welcome"), TEXT("Hi, I'm Glim. I turn your code into a building we decide on.") },
+			{ TEXT("add-project"), TEXT("First, your project. Pinch ADD, and we start with the tutorial one.") },
+			{ TEXT("drawing"), TEXT("I'm reading your project now. Watch it draw itself.") },
+			{ TEXT("drawing-done"), TEXT("There it is: your building, drawn.") },
+			{ TEXT("look-wing"), TEXT("Each wing is one area of your product. Each room, one thing it does.") },
+			{ TEXT("scan-first"), TEXT("Now let's check it. Pinch SCAN, and I'll read every room.") },
+			{ TEXT("findings"), TEXT("What needs you comes out as a decision card.") },
 			{ TEXT("open-wing"), TEXT("Tap a wing to open it.") },
 			{ TEXT("open-room"), TEXT("Now tap the glowing room.") },
 			{ TEXT("step-in"), TEXT("Tap it once more, to step inside.") },
 			{ TEXT("decide"), TEXT("Each card is one decision. Approve it, or decline.") },
 			{ TEXT("decide-noted"), TEXT("Noted. On this sample, nothing is sent.") },
-			{ TEXT("back"), TEXT("BACK takes you out, one step at a time.") },
-			{ TEXT("menu"), TEXT("Everything else is in the menu. Tap MENU.") },
 			{ TEXT("menu-open"), TEXT("Rooms, scans, your morning, settings, and this tour.") },
-			{ TEXT("standup"), TEXT("Every morning starts here. Approve this one, or leave it for later.") },
+			{ TEXT("standup"), TEXT("Each card is one decision. Approve it, or leave it for later.") },
 			{ TEXT("standup-how"), TEXT("Pinch APPROVE or LATER on the card, or press A twice.") },
 			{ TEXT("standup-none"), TEXT("Nothing waits this morning. The stand-up lives in the menu.") },
-			{ TEXT("talk"), TEXT("And you can simply ask me. Hold me, or hold TALK on your wrist.") },
-			{ TEXT("hand-off"), TEXT("That's the table. It's yours. The tour and its chapters are in the menu.") },
+			{ TEXT("talk"), TEXT("Not sure? Hold me, or TALK on your wrist, and ask.") },
+			{ TEXT("hand-off"), TEXT("That's your morning: add a project, scan it, decide. See you tomorrow.") },
 			{ TEXT("shown"), TEXT("Like this.") },
 			// ---- HANDS AND WRIST ----
 			{ TEXT("hands-pull"), TEXT("Pinch a wing and pull it toward you. It opens, like a tap.") },
@@ -194,8 +196,8 @@ namespace BpTourBook
 
 	const TArray<const TCHAR*>& Core()
 	{
-		static const TArray<const TCHAR*> Steps = { TEXT("welcome"), TEXT("open-wing"), TEXT("open-room"), TEXT("step-in"), TEXT("decide"),
-			TEXT("back"), TEXT("menu"), TEXT("standup"), TEXT("talk"), TEXT("hand-off") };
+		static const TArray<const TCHAR*> Steps = { TEXT("welcome"), TEXT("add-project"), TEXT("drawing"), TEXT("look-wing"), TEXT("scan-first"),
+			TEXT("findings"), TEXT("standup"), TEXT("talk"), TEXT("hand-off") };
 		return Steps;
 	}
 
@@ -203,6 +205,7 @@ namespace BpTourBook
 	{
 		// In any order here: the TOUR page lists them in the MENU's order, read from the console's page registry.
 		static const TArray<FChapter> All = {
+			{ TEXT("explore"), TEXT("EXPLORE THE TABLE"), TEXT("rooms"), TEXT("A wing · a room · step inside · a card"), 30, { TEXT("open-wing"), TEXT("open-room"), TEXT("step-in"), TEXT("decide") } },
 			{ TEXT("hands"), TEXT("HANDS AND WRIST"), TEXT("rooms"), TEXT("Pull and push · the wrist · the pad · the legend"), 30, { TEXT("hands-pull"), TEXT("hands-push"), TEXT("hands-wrist"), TEXT("hands-legend") } },
 			{ TEXT("scan"), TEXT("SCAN A ROOM"), TEXT("scan"), TEXT("Arm, start, watch the findings land"), 20, { TEXT("scan-arm"), TEXT("scan-watch"), nullptr, nullptr } },
 			{ TEXT("morning"), TEXT("YOUR MORNING"), TEXT("standup"), TEXT("Decisions · PLAN MY DAY · HAND OVER"), 30, { TEXT("morning-decide"), TEXT("morning-plan"), TEXT("morning-hand"), nullptr } },

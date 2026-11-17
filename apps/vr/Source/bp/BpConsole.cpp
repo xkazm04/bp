@@ -872,6 +872,19 @@ struct FBpConsolePages
 		{
 			Sub = FString::Printf(TEXT("%s open%s"), *Link.NameOf(Open), Link.IsFromBundle() ? TEXT(" · the sample") : TEXT(""));
 			if (!Link.IsFromBundle()) { Out.Add(Note(TEXT("Reading the projects"))); return; }
+			// The first tour's add-project step (owner, 2026-11-17): the tutorial project is the one to add.
+			if (ABpTable* T = Table(Pawn); T && T->TourWantsTutorial())
+			{
+				Sub = TEXT("ADD A PROJECT · the tutorial project");
+				Out.Add(Note(TEXT("ADD A PROJECT")));
+				FBpConsoleRow Tutorial;
+				Tutorial.Tone = 6;
+				Tutorial.Label = TEXT("The tutorial project");
+				Tutorial.Detail = TEXT("A small studio app. Glim reads it and draws it on the table.");
+				Tutorial.Buttons = { { TEXT("ADD"), TEXT("add:tutorial"), true } };
+				Out.Add(Tutorial);
+				return;
+			}
 			FBpConsoleRow Empty;
 			Empty.Tone = 6;
 			Empty.Label = TEXT("One sample project on this headset");
@@ -1106,6 +1119,11 @@ struct FBpConsolePages
 	static bool ProjectsTap(ABpPawn& Pawn, const FString& Act)
 	{
 		if (!Act.StartsWith(TEXT("add:"))) return false;
+		if (Act == TEXT("add:tutorial"))
+		{
+			if (ABpTable* T = Table(Pawn)) T->TourAddTutorial();
+			return true;
+		}
 		FBpLinkModule& Link = FBpLinkModule::Get();
 		UE_LOG(LogBpTable, Log, TEXT("BpConsole: add a project: %s"), *Act);
 		if (Act == TEXT("add:read")) { AddRead(Pawn); return true; }

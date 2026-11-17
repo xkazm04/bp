@@ -316,6 +316,93 @@ namespace
 		}));
 }
 
+// ---- The first tour's onboarding (owner, 2026-11-17: the story starts from a blank table) ---------------------------------
+// TourBlank begins a build-up with nothing in it (the table empties, as for a project being read); TourDraw replays the plan
+// the table had into that same build-up, as BpBuild.Replay does: the outline now, the structure ReplayStructureS later, done
+// and the live plan after DoneS. Nothing is read or sent.
+
+void ABpTable::TourBlank()
+{
+	if (bTourBlank) return;
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FBpPlan* Current = Link.GetPlan();
+	if (!Current || Current->wings.Num() == 0) return;
+	TourBlankPlan = MakeShared<FBpPlan>(*Current);
+	bTourBlank = true;
+	bTourDrawing = false;
+	const FString Slug = Link.GetProductSlug();
+	TourBlankJob = FString::Printf(TEXT("tour-%d"), ++GBuildReplays);
+	FBpBuildupBatch First = ReplayBatch(Slug, TourBlankJob);
+	FBpBuildupEvent& Begin = First.Events.AddDefaulted_GetRef();
+	Begin.Type = TEXT("begin");
+	Begin.Text = Link.NameOf(Slug);
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: the table is blank for the first tour (%s, job %s)"), *Slug, *TourBlankJob);
+	Link.OnBuildup().Broadcast(First);
+}
+
+void ABpTable::TourDraw(float DoneS)
+{
+	if (!bTourBlank || bTourDrawing || !TourBlankPlan.IsValid()) return;
+	bTourDrawing = true;
+	FBpLinkModule& Link = FBpLinkModule::Get();
+	const FBpPlan Plan = *TourBlankPlan;
+	const FString Slug = Link.GetProductSlug();
+	const FString JobId = TourBlankJob;
+	FBpBuildupBatch First = ReplayBatch(Slug, JobId);
+	{
+		FBpBuildupEvent& Started = First.Events.AddDefaulted_GetRef();
+		Started.Type = TEXT("phase");
+		Started.Phase = TEXT("product-tree");
+		Started.State = TEXT("start");
+		FBpBuildupEvent& Outline = First.Events.AddDefaulted_GetRef();
+		Outline.Type = TEXT("outline");
+		for (const FBpPlanWing& Wing : Plan.wings)
+		{
+			FBpBuildupDomain& Domain = Outline.Domains.AddDefaulted_GetRef();
+			Domain.Id = Wing.id;
+			Domain.Name = Wing.name;
+			Domain.Order = Wing.order;
+			for (const FBpPlanRoom& Room : Plan.rooms)
+			{
+				if (Room.parentId != Wing.id) continue;
+				Domain.CapIds.Add(Room.id);
+				Domain.CapNames.Add(Room.name);
+			}
+		}
+	}
+	UE_LOG(LogBpTable, Log, TEXT("BpTour: the tutorial project draws itself (%d wings, %d rooms, done in %.0f s)"), Plan.wings.Num(), Plan.rooms.Num(), DoneS);
+	Link.OnBuildup().Broadcast(First);
+	const TWeakObjectPtr<ABpTable> Self(this);
+	FTimerHandle StructureTimer, DoneTimer;
+	GetWorldTimerManager().SetTimer(StructureTimer, FTimerDelegate::CreateLambda([Self, Plan, Slug, JobId]()
+	{
+		FBpLinkModule& L = FBpLinkModule::Get();
+		if (!Self.IsValid() || L.GetProductSlug() != Slug) return;
+		FBpBuildupBatch Batch = ReplayBatch(Slug, JobId);
+		FBpBuildupEvent& Structure = Batch.Events.AddDefaulted_GetRef();
+		Structure.Type = TEXT("structure");
+		Structure.Structure = Plan;
+		L.OnBuildup().Broadcast(Batch);
+	}), ReplayStructureS, false);
+	GetWorldTimerManager().SetTimer(DoneTimer, FTimerDelegate::CreateLambda([Self, Plan, Slug, JobId]()
+	{
+		FBpLinkModule& L = FBpLinkModule::Get();
+		ABpTable* T = Self.Get();
+		if (!T) return;
+		T->bTourBlank = false;
+		T->bTourDrawing = false;
+		T->TourBlankPlan.Reset();
+		if (L.GetProductSlug() != Slug) return;
+		FBpBuildupBatch Batch = ReplayBatch(Slug, JobId);
+		Batch.bDone = true;
+		FBpBuildupEvent& Done = Batch.Events.AddDefaulted_GetRef();
+		Done.Type = TEXT("done");
+		UE_LOG(LogBpTable, Log, TEXT("BpTour: the tutorial project is drawn; the live plan follows"));
+		L.OnBuildup().Broadcast(Batch);
+		L.OnPlan().Broadcast(Plan);
+	}), FMath::Max(DoneS, ReplayStructureS + 1.f), false);
+}
+
 // ---- Events -------------------------------------------------------------------------------------------------------------
 
 void ABpTable::OnBuildup(const FBpBuildupBatch& Batch)
