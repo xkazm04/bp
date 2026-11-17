@@ -53,6 +53,8 @@ apps/vr/**/Intermediate/
 apps/vr/**/Saved/
 apps/vr/**/DerivedDataCache/
 apps/vr/**/Build/
+# Release signing for the Quest APK (the keystore's password); the keystore itself sits under Build/Android
+apps/vr/Config/User*.ini
 apps/vr/**/Plugins/*/Binaries/
 apps/vr/**/Plugins/*/Intermediate/
 # Meta XR v207 payloads are reinstalled by the install script, never committed
