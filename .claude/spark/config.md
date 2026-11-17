@@ -117,6 +117,8 @@ None declared.
 - The operator answers sequencing/ordering questions with a doctrine (companion-upgrade: "do both in parallel; the contest is
   only about the visual"). Offer "in parallel, scoped down" as an option whenever two tracks are being ordered.
 
+- Design verdicts: the owner chose the host's 4th-ranked contest variant (Plumbline Desk B/3, 2026-11-17) over more ambitious ones: "they try to express too much info in their pages instead of splitting the content ... creativity winning over practical use". Rank visual work by balance and workability first, wow second; recommend splitting a multi-tool surface into focused views, and offer the calm, buildable option as Recommended rather than the most striking one.
+
 ## Skill improvement log
 
 - 2026-10-09 measured-lens-scans: scouts traced the data path but missed the sample-specific tables in the model (WING_DEFS), and only the real-data smoke test found them. Promoted to Repo law above.
