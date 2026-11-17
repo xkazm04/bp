@@ -13,7 +13,11 @@ const win = process.platform === 'win32';
 function listener() {
   if (win) {
     const out = execFileSync('netstat', ['-ano', '-p', 'TCP'], { encoding: 'utf8' });
-    const row = out.split(/\r?\n/).map((l) => l.trim().split(/\s+/)).find((c) => c[3] === 'LISTENING' && c[1]?.endsWith(`:${port}`));
+    // A listening socket is the row whose foreign address is the wildcard (0.0.0.0:0 or [::]:0). The State column is not
+    // trusted: on Windows 11 build 28000 a live listener read CLOSED, then FIN_WAIT_1 (2026-11-17), and this script then
+    // reported "nothing listens" for a server still answering 200.
+    const row = out.split(/\r?\n/).map((l) => l.trim().split(/\s+/))
+      .find((c) => c[0] === 'TCP' && c[1]?.endsWith(`:${port}`) && (c[3] === 'LISTENING' || /^(0\.0\.0\.0|\[::\]):0$/.test(c[2] ?? '')));
     return row ? Number(row[4]) : null;
   }
   try { return Number(execFileSync('lsof', ['-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).split('\n')[0]) || null; } catch { return null; }
