@@ -97,3 +97,22 @@ Built that night: adopt-bp 1.7.0 and lens-scan 1.17.0 (lessons.md L17). Still pr
 - **Measure the change:** after the backlog wave lands, rerun `/adopt-bp` (map refresh) and `/lens-scan measure --lens
   all` on plumbline and compare the counts and the coverage with the 2026-11-17 runs.
 
+## 6. After the 2026-11-17 backlog wave
+
+- **Done:** 47 of the 50 lens-scan items, from adoption and the full scan, are marked `done` in plumbline's store with their commits:
+  - `2765b4b` trust, adopt, `verify --url`, revocation;
+  - `7e58639` relock, the true runtime upstream, signature expiry, pending peers, the shared drift module;
+  - `5a88eff` the Desk's guards, BYOK, trust export, revoke, accessibility;
+  - `dcb92c5` SECURITY.md, THIRD_PARTY.md, the release channel, the Action report;
+  - `4ee0067` the template pin;
+  - `891c725` relock and re-sign.
+
+  Dowser's 18 cards were resolved by the same commits. Their status lives in Dowser's own store and its Jira flow, which was not used. Run `/dowser` again to see them drop out, or triage them there.
+- **Still open in the store:**
+  - `p-e05cbf`: report upstream that the runtime's sandbox timeout never terminates the worker. This is an issue in cognizant-ai-labs/agentic-web, outward-facing, so it is the owner's call.
+  - `p-b02834`: parse the gate and watch flags with `src/cli/args.ts`. Blocked: args.ts needs repeatable keys (for `--source`) and positionals (for the gate target).
+  - `p-a41521`: the core side is built (`applyRevocationText`, `isPrivateKeyFile`). The Desk still uses its own copies in `site/desk.js` (`#checkRevocation` and the private-key shape check), so switch it to the core helpers.
+- **The live runtime is one upstream commit behind.** agentic-web's `skills/agentify-website/runtime` moved from `7817c1f` to `7ee54a3`. Deciding whether to take it is the runtime-refresh policy question in section 3.
+- **A first tagged release** (for example `v0.2.0`) has not been cut. SECURITY.md and `action/README.md` describe releases as the security channel, so cut one with notes when the owner wants the first public release.
+- **Repository settings done:** private vulnerability reporting is enabled, and the labels `security`, `breaking` and `skip-release-notes` exist.
+
