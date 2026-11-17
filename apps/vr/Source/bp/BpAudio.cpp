@@ -19,12 +19,12 @@ namespace
 	TAutoConsoleVariable<float> CVarVoiceLevel(
 		TEXT("bp.VoiceLevel"),
 		1.f,
-		TEXT("Glim's voice, 0 to 1.5 (shown as 0 to 150 %; 1 plays the clips at BpAudio::VoiceGainAtFull = 2.4 x their levelled -14 LUFS, the old 120 % (2026-11-10), soft-limited, never clipped). Settings' VOICE - and + step it; saved across runs."),
+		TEXT("Glim's voice, 0 to 2 (shown as 0 to 200 %; 1 plays the clips at BpAudio::VoiceGainAtFull = 2.4 x their levelled -14 LUFS, the old 120 % (2026-11-10), soft-limited, never clipped). Settings' VOICE - and + step it; saved across runs."),
 		ECVF_Default);
 	TAutoConsoleVariable<float> CVarMusicLevel(
 		TEXT("bp.MusicLevel"),
-		0.35f,
-		TEXT("The background music bed, 0 to 1 (shown as %); 0 stops the stream and frees it. Settings' MUSIC - and + step it; saved across runs."),
+		1.f,
+		TEXT("The background music bed, 0 to 2 (shown as 0 to 200 %; 1 plays the bed at BpAudio::MusicGainAtFull = 0.35, the old default); 0 stops the stream and frees it. Settings' MUSIC - and + step it; saved across runs."),
 		ECVF_Default);
 	TAutoConsoleVariable<float> CVarMusicDuckDb(
 		TEXT("bp.MusicDuckDb"),
@@ -73,8 +73,8 @@ namespace
 		float Max;
 	};
 	const FSaved Saved[] = {
-		{ TEXT("bp.VoiceLevel"), AudioSection, TEXT("VoiceLevel"), 0.f, 1.5f },
-		{ TEXT("bp.MusicLevel"), AudioSection, TEXT("MusicLevel"), 0.f, 1.f },
+		{ TEXT("bp.VoiceLevel"), AudioSection, TEXT("VoiceLevel"), 0.f, BpAudio::LevelMax },
+		{ TEXT("bp.MusicLevel"), AudioSection, TEXT("MusicLevel"), 0.f, BpAudio::LevelMax },
 		{ TEXT("bp.WristFace"), SettingsSection, TEXT("WristFace"), 0.f, 1.f },
 		{ TEXT("bp.WristHand"), SettingsSection, TEXT("WristHand"), 0.f, 1.f },
 		{ TEXT("bp.ReducedMotion"), SettingsSection, TEXT("ReducedMotion"), 0.f, 1.f },
@@ -107,21 +107,22 @@ namespace
 
 namespace BpAudio
 {
-	float VoiceLevel() { return FMath::Clamp(CVarVoiceLevel.GetValueOnGameThread(), 0.f, 1.5f); }
+	float VoiceLevel() { return FMath::Clamp(CVarVoiceLevel.GetValueOnGameThread(), 0.f, LevelMax); }
 	float VoiceGain() { return VoiceGainAtFull * VoiceLevel(); }
-	float MusicLevel() { return FMath::Clamp(CVarMusicLevel.GetValueOnGameThread(), 0.f, 1.f); }
+	float MusicLevel() { return FMath::Clamp(CVarMusicLevel.GetValueOnGameThread(), 0.f, LevelMax); }
+	float MusicGain() { return MusicGainAtFull * MusicLevel(); }
 	int32 Narration() { return FMath::Clamp(CVarNarration.GetValueOnGameThread(), 0, 2); }
 
 	void StepVoiceLevel(float Delta)
 	{
-		const float Stepped = FMath::Clamp(FMath::GridSnap(VoiceLevel() + Delta, VoiceStep), 0.f, 1.5f);
+		const float Stepped = FMath::Clamp(FMath::GridSnap(VoiceLevel() + Delta, VoiceStep), 0.f, LevelMax);
 		CVarVoiceLevel.AsVariable()->Set(Stepped, ECVF_SetByConsole);
 		UE_LOG(LogBpTable, Log, TEXT("BpAudio: voice level stepped to %.2f (%d%%)"), Stepped, FMath::RoundToInt(Stepped * 100.f));
 	}
 
 	void StepMusicLevel(float Delta)
 	{
-		const float Stepped = FMath::Clamp(FMath::GridSnap(MusicLevel() + Delta, MusicStep), 0.f, 1.f);
+		const float Stepped = FMath::Clamp(FMath::GridSnap(MusicLevel() + Delta, MusicStep), 0.f, LevelMax);
 		CVarMusicLevel.AsVariable()->Set(Stepped, ECVF_SetByConsole);
 		UE_LOG(LogBpTable, Log, TEXT("BpAudio: music level stepped to %.2f (%d%%)"), Stepped, FMath::RoundToInt(Stepped * 100.f));
 	}
@@ -137,7 +138,7 @@ namespace BpAudio
 		float Level = 0.f, Old = 0.f;
 		if (!FBpStore::GetFloat(AudioSection, TEXT("VoiceLevel"), Level) && FBpStore::GetFloat(OldVoiceSection, OldVoiceKey, Old))
 		{
-			const float Migrated = FMath::Clamp(Old * 0.5f, 0.f, 1.5f);
+			const float Migrated = FMath::Clamp(Old * 0.5f, 0.f, LevelMax);
 			FBpStore::SetString(AudioSection, TEXT("VoiceLevel"), FString::Printf(TEXT("%.2f"), Migrated));
 			FBpStore::RemoveKey(OldVoiceSection, OldVoiceKey);
 			FBpStore::Flush();
@@ -279,14 +280,14 @@ void ABpPawn::TickMusic()
 		bMusicDucked = bMusicPaused = false;
 		UE_LOG(LogBpTable, Log, TEXT("BpAudio: music started at %.1f s of the bed, level %.2f (%d%%), 2D, %.1f s chunks"), static_cast<float>(MusicAt) / (4.f * MusicRate), Level, FMath::RoundToInt(Level * 100.f), ChunkS);
 		FeedMusic();
-		Music->SetVolumeMultiplier(Level);
+		Music->SetVolumeMultiplier(BpAudio::MusicGain());
 		Music->Play();
 		MusicLevelShown = Level;
 	}
 	if (Level != MusicLevelShown)
 	{
 		MusicLevelShown = Level;
-		Music->SetVolumeMultiplier(Level);
+		Music->SetVolumeMultiplier(BpAudio::MusicGain());
 		UE_LOG(LogBpTable, Log, TEXT("BpAudio: music level %.2f"), Level);
 	}
 	// Away (the Quest menu, the headset off): paused where it is, as the tour holds.

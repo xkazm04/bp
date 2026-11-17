@@ -7,7 +7,9 @@
 // level keeps meaning its percentage (no migration). bp.VoiceVolume is gone: its one reader (the tour) and its one stepper (the
 // wrist) read this. Saved to Saved/BpTable.json (FBpStore) [/Script/bp.BpAudio] VoiceLevel; a saved old [/Script/bp.BpVoice] VoiceVolume
 // is migrated once (old / 2, clamped) and then removed, so nobody's saved level doubles.
-// Music: bp.MusicLevel 0 to 1 (shown as %), default 0.35, saved beside it. The bed (Content/BpData/music/bed.wav, 16-bit
+// Music: bp.MusicLevel 0 to 2 (shown as 0 to 200 %), default 1 = MusicGainAtFull 0.35, the old default's loudness (the owner
+// on the Quest 3S, 2026-11-17: "keep default background music setting to 100%, allow both Glim and Music up to 200%"), saved
+// beside it; a level saved before is read as the new percentage. The bed (Content/BpData/music/bed.wav, 16-bit
 // stereo PCM at 32 kHz, the whole file the loop) streams from one copy of its samples through a USoundWaveProcedural, 2D,
 // half-second chunks queued from the pawn's tick and wrapped at its end; level 0 stops and frees the stream. Under a tour
 // line it ducks bp.MusicDuckDb (8 dB) over 0.3 s and comes back over 0.8 s; it pauses while the app has lost its XR focus
@@ -18,17 +20,23 @@
 
 namespace BpAudio
 {
-	/** bp.VoiceLevel, clamped to 0..1.5. */
+	/** The top of both levels: 200 % (2026-11-17; voice was 150 %, music 100 %). */
+	constexpr float LevelMax = 2.f;
+	/** bp.VoiceLevel, clamped to 0..LevelMax. */
 	float VoiceLevel();
 	/** The gain at 100 % (bp.VoiceLevel 1): the clips are levelled to -14 LUFS, -1 dBFS ceiling; LimitSample keeps any gain
 	 *  from clipping. 2.0 until 2026-11-10, then the old 120 %. */
 	constexpr float VoiceGainAtFull = 2.4f;
-	/** The gain a voice clip's samples take: VoiceGainAtFull x VoiceLevel (0..3.6). */
+	/** The gain a voice clip's samples take: VoiceGainAtFull x VoiceLevel (0..4.8, soft-limited by LimitSample). */
 	float VoiceGain();
 	/** Steps bp.VoiceLevel by Delta, snapped to VoiceStep; saved by the cvar's change. */
 	void StepVoiceLevel(float Delta);
-	/** bp.MusicLevel, clamped to 0..1. */
+	/** bp.MusicLevel, clamped to 0..LevelMax. */
 	float MusicLevel();
+	/** The bed's volume multiplier at 100 % (bp.MusicLevel 1): the old default 0.35. */
+	constexpr float MusicGainAtFull = 0.35f;
+	/** The bed's volume multiplier: MusicGainAtFull x MusicLevel (0..0.7). */
+	float MusicGain();
 	void StepMusicLevel(float Delta);
 	constexpr float VoiceStep = 0.1f;
 	constexpr float MusicStep = 0.05f;
