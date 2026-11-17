@@ -72,7 +72,8 @@ export function inbox(limit: number, now = Date.now()): { items: InboxItem[]; sk
   return { items: rankInbox(out).slice(0, limit), skipped };
 }
 
-interface MapFacts { features: { slug: string; priority?: string }[]; lenses: string[] }
+interface MapFacts { features: { slug: string; priority?: string }[]; lenses: string[]; notApplicable: Set<string> }
+const naKey = (feature: string, lens: string) => feature + '\u0000' + lens;
 /** The map's features and enabled lens ids (map.server.ts: the shared reader and its one enabled rule), or why it has none. */
 function mapOf(p: ProductEntry): MapFacts | { error: string } {
   const m = readProductMap(p);
@@ -80,7 +81,11 @@ function mapOf(p: ProductEntry): MapFacts | { error: string } {
   const features = (Array.isArray(m.doc.features) ? m.doc.features : []).filter((f): f is { slug: string; priority?: string } => !!f && typeof (f as { slug?: unknown }).slug === 'string');
   // every entry with an id counts here, a manifest or not (the gaps read no manifest); on or off by the one rule
   const lenses = (Array.isArray(m.doc.lenses) ? m.doc.lenses : []).filter((l): l is { id: string } => isObj(l) && typeof l.id === 'string' && lensOn(l)).map((l) => l.id);
-  return { features, lenses };
+  // a facet judged `applicable: false` (a design lens on a feature with no UI) will never be measured: not a gap
+  const notApplicable = new Set<string>();
+  const facets = isObj(m.doc.facets) ? m.doc.facets : {};
+  for (const [feature, byLens] of Object.entries(facets)) if (isObj(byLens)) for (const [lens, facet] of Object.entries(byLens)) if (isObj(facet) && facet.applicable === false) notApplicable.add(naKey(feature, lens));
+  return { features, lenses, notApplicable };
 }
 
 /** A feature's tier: the most severe of its open findings' tiers and its priority's number; undefined when it has neither. */
@@ -102,6 +107,7 @@ export function gaps(product: string | undefined, limit: number, now = Date.now(
     if (map) {
       const last = lastRead(scan.measurements);
       for (const lens of map.lenses) for (const f of map.features) {
+        if (map.notApplicable.has(naKey(f.slug, lens))) continue;
         const t = last.get(lens)?.get(f.slug);
         if (t === undefined) add(f.slug, lens, 'unmeasured');
         else if (now - t > FRESH_MS) add(f.slug, lens, 'stale');

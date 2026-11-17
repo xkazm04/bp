@@ -87,10 +87,12 @@ export function readSteer(p: ProductEntry): SteerRow[] {
 /** The deck for the window [since, now]; products that cannot be read are named in `skipped`, never dropped silently.
  *  `opened`: when the reader first read this morning's deck; what landed after it comes as news, at the end. Each
  *  product's landings are read from git (release.server.ts landings); one git cannot read lands nothing there. */
-export async function morningDeck(since: string | undefined, now = Date.now(), opened?: string): Promise<MorningDeck & { skipped: { product: string; why: string }[] }> {
+/** `product` scopes the deck to one product: its own top decisions, not the cross-product top that a product filter of the
+ *  whole deck would leave (a new product's tier-1 decisions never reached its next.steps beside an older product's backlog). */
+export async function morningDeck(since: string | undefined, now = Date.now(), opened?: string, product?: string): Promise<MorningDeck & { skipped: { product: string; why: string }[] }> {
   const from = since && Number.isFinite(Date.parse(since)) ? new Date(Date.parse(since)).toISOString() : new Date(now - WINDOW_MS).toISOString();
   const cut = opened && Number.isFinite(Date.parse(opened)) ? new Date(Date.parse(opened)).toISOString() : undefined;
-  const { read, skipped } = snapshots();
+  const { read, skipped } = snapshots(product);
   const facts: ProductFacts[] = [], steer: SteerRow[] = [];
   const landed = await Promise.all(read.map(({ p, scan }) => landings(p.root, scan).catch(() => null)));
   for (const [i, { p, scan }] of read.entries()) {
@@ -116,7 +118,7 @@ export async function morningDeck(since: string | undefined, now = Date.now(), o
  *  for triage, read once, with the plan's feature names for the gaps. `product` narrows the steps, never the reads (the deck
  *  ranks decisions across products). */
 export async function nextStepsRead(product: string | undefined, limit: number | undefined, now = Date.now()): Promise<NextSteps> {
-  const deck = await morningDeck(undefined, now);
+  const deck = await morningDeck(undefined, now, undefined, product);
   const g = gaps(product, 200, now).gaps, triage = inbox(500, now).items.filter((x) => x.kind === 'triage').map((x) => ({ product: x.product, id: x.id, title: x.title }));
   const names = new Map<string, Map<string, string>>();
   for (const { p } of snapshots(product).read) names.set(p.slug, new Map([...whereOf(p).where].map(([f, w]) => [f, w.name])));
