@@ -1,4 +1,4 @@
-# Dry run, night of 2026-11-17: a first full cut tonight, fixes and re-takes tomorrow
+# Dry run, night of 2026-11-17: a first full cut tonight, fixes and re-takes tomorrow (2:19, on the picked cue)
 
 The first tour now *is* the story (owner, 2026-11-17): a blank table, ADD the tutorial project, it draws itself, a wing,
 a scan, its findings, the decision cards, talk, the end. So the film's spine is **one uninterrupted first-run take** of
@@ -16,21 +16,42 @@ Method, from the registry (media-generation: `live-system-demo-film`, `trailer-s
   judge it only under his voice in the rendered film, never alone.
 - **Reset the stage between takes**: every take starts from `film-prep.mjs --first-run`, never from the last walk.
 
-## The spine: one first-run take (about 3-4 min raw, cut to about 2:00)
+## The cue (picked 2026-11-17): "Vinyl Crackles & Rhodes", 2:19.2, 84.8 bpm
 
-| Act | Tour step | What the camera sees | Glim (spoken + caption) | Film caption (ours) | Target in the cut |
+The film is the cue's length: **2:19**. Marks from gravitone's music-clip analysis (`analyze --dry`, local DSP; the
+folder is `apps/vr/Saved/demo/cue/`, `music-clip/timeline.json`). One bar is 2.83 s; per-bar intensity 0..1.
+
+| Mark | Time | The music |
+|---|---|---|
+| Intro | 0:00-0:23 | Rhodes and crackle (0.25), lifting from 0:12 (0.35-0.44) |
+| **Drop** | **0:23.4** | the beat enters (0.77) |
+| Groove A | 0:23-1:03 | steady drive (0.7-0.87) |
+| **Breath 1** | **1:03.0-1:08.6** | two bars nearly empty (0.20, 0.41) |
+| Groove B | 1:08.6-1:22.7, easing to 1:31.2 | drive (0.8-0.91), then softer (0.5-0.58) |
+| Peak 1 | 1:31.2-1:45.3 | the loudest yet (0.86-0.95) |
+| **Breath 2** | **1:45.3-1:53.8** | the big pause (0.37, 0.12, 0.36) |
+| **Final peak** | **1:53.8-2:05.0** | full energy (0.93-0.94) |
+| Tail | 2:05.0-2:19.2 | falls away (0.24, 0.06) |
+
+## The spine: one first-run take (about 3-4 min raw), cut to the cue's 2:19
+
+| Act | Tour step | What the camera sees | Glim (spoken + caption) | Film caption (ours) | On the cue |
 |---|---|---|---|---|---|
-| Hook | (S1 web, optional) | the web blueprint flying into a wing | none | "A software product is thousands of files and a list of tickets." | 0:00-0:10 |
-| 1 Hello | welcome | blank lit table, Glim turns on | "Hi, I'm Glim. I turn your code into a building we decide on." | "Put on the headset." | 0:10-0:20 |
-| 2 Add | add-project | PROJECTS, The tutorial project, the hand pinches ADD | "First, your project. Pinch ADD, and we start with the tutorial one." | "Add a project." | 0:20-0:32 |
-| 3 Drawn | drawing | the building draws itself (12 s; speed up x2 if long) | "I'm reading your project now. Watch it draw itself." / "There it is: your building, drawn." | "Glim reads the code and draws it." | 0:32-0:52 |
-| 4 Read it | look-wing | the hand taps a wing; its rooms rise | "Each wing is one area of your product. Each room, one thing it does." | "Wings are areas. Rooms are what they do." | 0:52-1:05 |
-| 5 Scan | scan-first | SCAN pinched; Glim flies room to room | "Now let's check it. Pinch SCAN, and I'll read every room." | "Then a scan reads every room." | 1:05-1:25 |
-| 6 Findings | findings | rooms light as read; findings land | "What needs you comes out as a decision card." | "What needs a person becomes a card." | 1:25-1:35 |
-| 7 Decide | standup | the first card; the hand pinches APPROVE | "Each card is one decision. Approve it, or leave it for later." | "Decide by hand, one card at a time." | 1:35-2:00 |
-| 8 Ask | talk | hold Glim; the sample exchange (unlinked) | "Not sure? Hold me, or TALK on your wrist, and ask." | "Or just ask." | 2:00-2:20 |
-| 9 Again | hand-off | Glim goes home | "That's your morning: add a project, scan it, decide. See you tomorrow." | "Tomorrow, it opens with what moved." | 2:20-2:35 |
-| End | (S8 card) | title on black | none | "Developer's Blueprint · Productivity · Hands only" | 2:35-2:50 |
+| Hook | (S1 web, optional) | the web blueprint flying into a wing | none | "A software product is thousands of files and a list of tickets." | 0:00-0:08 intro |
+| 1 Hello | welcome | blank lit table, Glim turns on | "Hi, I'm Glim. I turn your code into a building we decide on." | "Put on the headset." | 0:08-0:16 intro |
+| 2 Add | add-project | PROJECTS, The tutorial project; **the pinch on ADD lands on the drop** | "First, your project. Pinch ADD, and we start with the tutorial one." | "Add a project." | 0:16-0:23.4 |
+| 3 Drawn | drawing | the building draws itself (sped up about x1.5) | "I'm reading your project now. Watch it draw itself." / "There it is: your building, drawn." | "Glim reads the code and draws it." | 0:23.4-0:43 groove A |
+| 4 Read it | look-wing | the hand taps a wing; its rooms rise | "Each wing is one area of your product. Each room, one thing it does." | "Wings are areas. Rooms are what they do." | 0:43-1:03 groove A |
+| 5 Scan | scan-first | Glim's line in the breath; **SCAN pinched as the beat returns** | "Now let's check it. Pinch SCAN, and I'll read every room." | "Then a scan reads every room." | 1:03-1:08.6 breath 1 |
+| 6 Findings | findings | Glim flies room to room, rooms light, findings land (sped up) | "What needs you comes out as a decision card." (on the softer bars) | "What needs a person becomes a card." | 1:08.6-1:31 groove B |
+| 7 Decide | standup | the first card opens on the downbeat; read it; **the hand hovers in the pause; APPROVE pinched on the final peak's downbeat**, the stamp lands | "Each card is one decision. Approve it, or leave it for later." | "Decide by hand, one card at a time." | 1:31.2-1:53.8 peak 1 + breath 2 |
+| 8 Ask | talk | hold Glim; the sample exchange | "Not sure? Hold me, or TALK on your wrist, and ask." | "Or just ask." | 1:53.8-2:05 final peak |
+| 9 Again | hand-off | Glim goes home | "That's your morning: add a project, scan it, decide. See you tomorrow." | "Tomorrow, it opens with what moved." | 2:05-2:12 tail |
+| End | (S8 card) | title on black | none | "Developer's Blueprint · Productivity · Hands only" | 2:12-2:19 tail |
+
+The three sync points that carry the film: **ADD on the drop (0:23.4)**, **SCAN as the beat returns (1:08.6)**,
+**APPROVE on the final peak (1:53.8)**. Pick them in the takes by their frame, then slide the takes to the marks;
+never move the cue. Speed-ups only where Glim is silent (the drawing, the scan).
 
 If the takes leave time and the PC link holds, the linked inserts from scenes.md S5 (YESTERDAY on the wall) and S6
 (a live talk turn) can replace act 7's or 8's sample footage tomorrow. They are not tonight's goal.
@@ -58,14 +79,9 @@ Two takes tonight. A third only if both failed at the same beat (then that beat 
 
 ## The rough cut tonight
 
-1. **Temporary cue**: the best of the Suno candidates (prompts below), the full 2:50-3:00 version.
-2. Mark the cue (beats, bars, sections) with gravitone's music-clip analysis, which is local DSP with no vendor call:
-   put the mp3, a `style.txt` (the prompt) and a `lyrics.txt` holding `[Instrumental]` in one folder, then
-   `npx tsx pipeline/music-clip.mts analyze "<folder>" --dry` in `C:\Users\kazda\kiro\gravitone-gcloud`. Read
-   `music-clip/timeline.json`: `bpmGlobal`, `sections` (start, end, intensity), `beats`.
-3. Put the acts on the cue's marks: hook on the intro, acts 1-3 on the first section, the drawing's finish on a
-   downbeat, the scan (act 5) where the rhythm drives, the breath before the peak on the first card (act 7 starts in the
-   pause), the peak under APPROVE and the talk, the tail under the hand-off and the title.
+1. **The cue**: "Vinyl Crackles & Rhodes" (picked; frozen: every note from here on is a picture note).
+2. The marks are above (re-run `npx tsx pipeline/music-clip.mts analyze "<bp>/apps/vr/Saved/demo/cue" --audio "<bp>/apps/vr/Saved/demo/cue/cue.mp3" --dry` in gravitone-gcloud if the file changes).
+3. Lay the cue on the timeline first, then the three sync points (ADD, SCAN, APPROVE), then fill the acts between them.
 4. Glim's lines stay whole; speed-ups only where he is silent (the drawing, the scan). The bed at -20 dB, ducked about
    a further 8 dB under each line.
 5. Captions burned in (ours above, Glim's words below), plus an `.srt`.
@@ -83,7 +99,7 @@ Two takes tonight. A third only if both failed at the same beat (then that beat 
 - Midday: final cue picked and frozen, then the fine cut on its marks (no cue change after this point).
 - Afternoon: captions, mix, export, watch once on a phone and once on a laptop, upload by 18:00 CET, link into Devpost.
 
-## Suno prompts (owner picks one; instrumental, 2:50-3:00)
+## Suno prompts (the candidates; the owner picked a lofi Rhodes cue, above)
 
 Each is laid out as the cue the cut needs: a quiet intro for the hello, the rhythm entering for the drawing, drive
 under the scan, **a one-bar stop before the peak** (the first decision card), the peak under APPROVE and the talk, a
