@@ -8,11 +8,13 @@
 //   node scripts/buildup/fake-onboard.mjs env [--dir <scratch>]
 //        print the env the server under test needs (and create the empty temp registry); start the server with it
 //   node scripts/buildup/fake-onboard.mjs --port <n> [--speed 1] [--slug dowser-fake] [--dir <scratch>] [--synthetic]
-//        [--fail <step>] [--no-wait]
+//        [--fail <step>] [--no-wait] [--source <repo> --commit <sha>] [--name <display name>]
 //        a fresh clone, registered, onboarded; prints the slug, the job id and the env, then follows the job to its end
 //        (phase by phase) unless --no-wait. --speed 1 = 150 s of fake run (2 = 75 s ...). --synthetic: fake-adopt's
 //        hermetic one-domain run instead of the real adopt.mjs steps over the clone. --fail <step>: fake-adopt's
-//        FAKE_ADOPT_FAIL (supplement, seed, outline, tree, events, batches, judge).
+//        FAKE_ADOPT_FAIL (supplement, seed, outline, tree, events, batches, judge). --source/--commit: clone another repo
+//        (the demo video's neutral repo, readiness.md G2) at that commit instead of dowser@414e6ed; --commit defaults to
+//        the source's HEAD.
 //   (as BP_CLAUDE_BIN, called by the server with `-p --output-format stream-json --verbose`: the CLI hand-over)
 //
 // Default scratch dir: <os tmp>/bp-fake-onboard (registry products.json, clones under it). A server started without this
@@ -27,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SELF = fileURLToPath(import.meta.url);
 const FAKE_ADOPT = path.resolve(HERE, '..', 'fixtures', 'fake-adopt.mjs');
-const SOURCE = 'C:/Users/kazda/kiro/dowser', COMMIT = '414e6ed';
+const DEFAULT_SOURCE = 'C:/Users/kazda/kiro/dowser', DEFAULT_COMMIT = '414e6ed';
 const RUN_MS = 150_000;
 const SETTINGS = (root) => path.join(root, '.git', 'bp-fake-onboard.json');
 const argv = process.argv.slice(2);
@@ -93,6 +95,10 @@ async function run() {
   try { await api('/api/products'); } catch (e) { die(`no server on ${base} (${e.cause?.code ?? e.message}); start it with:\n  ${envLines(registry).join(' ')}`); }
 
   // a fresh clone at the fixed commit (never the source itself)
+  const SOURCE = opt('--source', DEFAULT_SOURCE);
+  if (!fs.existsSync(path.join(SOURCE, '.git'))) die(`--source ${SOURCE} is not a git repository`, 2);
+  const COMMIT = opt('--commit', SOURCE === DEFAULT_SOURCE ? DEFAULT_COMMIT : execFileSync('git', ['-C', SOURCE, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim());
+  const label = path.basename(path.resolve(SOURCE));
   const root = path.join(dir, slug);
   if (path.resolve(root).toLowerCase() === path.resolve(SOURCE).toLowerCase()) die('the clone would be the source', 2);
   const cur = await api(`/api/products/${slug}/onboarding`);
@@ -106,7 +112,7 @@ async function run() {
   let reg = { products: [] };
   try { reg = JSON.parse(fs.readFileSync(registry, 'utf8')); } catch { /* rewritten below */ }
   const products = (Array.isArray(reg.products) ? reg.products : []).filter((p) => p?.slug !== slug);
-  products.push({ slug, name: 'Dowser (fake onboarding)', root: fwd(root) });
+  products.push({ slug, name: opt('--name', SOURCE === DEFAULT_SOURCE ? 'Dowser (fake onboarding)' : `${label} (fake onboarding)`), root: fwd(root) });
   fs.writeFileSync(registry + '.tmp', JSON.stringify({ products }, null, 2) + '\n');
   fs.renameSync(registry + '.tmp', registry);
   const seen = await api('/api/products');
@@ -120,7 +126,7 @@ async function run() {
   const job = ob.body.job;
   console.log(`slug ${slug}`);
   console.log(`job ${job.id}`);
-  console.log(`root ${fwd(root)} (dowser@${COMMIT}, ${argv.includes('--synthetic') ? 'synthetic' : 'real adopt.mjs steps'}, ~${Math.round(RUN_MS / speed / 1000)} s)`);
+  console.log(`root ${fwd(root)} (${label}@${COMMIT}, ${argv.includes('--synthetic') ? 'synthetic' : 'real adopt.mjs steps'}, ~${Math.round(RUN_MS / speed / 1000)} s)`);
   console.log(`env ${envLines(registry).join(' ')}`);
   console.log(`feed ${base}/api/products/${slug}/onboarding/feed?after=0&layout=islands`);
 
