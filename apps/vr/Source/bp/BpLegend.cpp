@@ -41,10 +41,12 @@ namespace
 	/** Where it stands, in the table's space (cm): on the table's right end at its near corner (the table is 180 wide, the
 	 *  paper 166, the near edge at -45), its foot on the top. Turned to the eye, its inner edge stays over the frame's rim and
 	 *  every ray from the seat through it lands beyond the paper's edge, so it covers no paper. About 106 cm from the eye. */
-	constexpr float LegendXCm = -30.f;
 	constexpr float LegendYCm = 92.f;
 	/** Since 2026-11-17 it stands on the paper's right corner instead: its right edge this far inside the paper's. */
 	constexpr float LegendInsetCm = 3.f;
+	/** And the far corner, behind the plan (owner, 2026-11-17: "into further corner behind the table"): in the paper's far
+	 *  margin (PlanFarMarginCm), where nothing is drawn. */
+	constexpr float LegendFarXCm = ABpTable::PaperDepthCm * 0.5f - 5.f;
 	constexpr float LegendFootCm = 0.5f;
 	constexpr float LegendPxPerCm = 20.f;
 	/** Every line's cap height (cm): 1.05 cm at 110 cm is about 33 arcminutes (the brief's floor: 30). */
@@ -332,7 +334,7 @@ void ABpTable::TickLegend()
 	// be always on eyes, currently too much on right"): its right edge LegendInsetCm inside the paper's, whatever its width.
 	const float WidthCm = W / LegendPxPerCm * S;
 	const float RightCornerY = ABpTable::PaperWidthCm * 0.5f - LegendInsetCm - WidthCm * 0.5f;
-	const FVector At(LegendXCm, FMath::Min(LegendYCm, RightCornerY), PlacedHeightCm + LegendFootCm + HeightCm * 0.5f);
+	const FVector At(LegendFarXCm, FMath::Min(LegendYCm, RightCornerY), PlacedHeightCm + LegendFootCm + HeightCm * 0.5f);
 	const FVector Eye = EyeLocal();
 	Legend->SetRelativeTransform(FTransform((Eye - At).Rotation(), At, FVector(S / LegendPxPerCm)));
 	Legend->SetVisibility(true);
