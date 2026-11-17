@@ -5,7 +5,8 @@
 //
 //   node apps/vr/tools/tour-voice.ts [--force]
 //   node apps/vr/tools/tour-voice.ts --loudness    (re-level the WAVs already on disk: no key, no credits)
-//   add --scan, --narrate, --think or --onboard to either form for that group (voice/scan, narrate, think, onboard)
+//   add --scan, --narrate, --think, --onboard or --talk to either form for that group (voice/scan, narrate, think, onboard,
+//   talk: the replies of talk/sample.json)
 //
 // Every clip is levelled to LOUDNESS (integrated loudness, peak ceiling), measured with ffmpeg's ebur128 and applied as one
 // static gain plus a limiter, so the set is even and the headset's small speakers carry it (2026-11-08: the clips measured
@@ -89,6 +90,10 @@ export const THINK_LINES: Record<string, string> = readBookTable('ThinkLines');
 export const THINK_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'think');
 export const ONBOARD_LINES: Record<string, string> = readBookTable('OnboardLines');
 export const ONBOARD_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'onboard');
+/** The bundle's scripted talk sample (voice/talk/sample.json, BpTalk.cpp): id -> the lamp's reply, one clip each. */
+export const TALK_CLIPS = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'talk');
+export const TALK_LINES: Record<string, string> = Object.fromEntries(
+  (JSON.parse(fs.readFileSync(path.join(TALK_CLIPS, 'sample.json'), 'utf8')).lines as { id: string; reply: string }[]).map((l) => [l.id, l.reply]));
 
 const TOUR_OUT = path.resolve(HERE, '..', 'Content', 'BpData', 'voice', 'tour');
 /** 24 kHz, the live `say` route's own rate (voice-link.server.ts TOUR_LINK): the bundled voice and the live voice are one
@@ -140,8 +145,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const narrate = process.argv.includes('--narrate');
   const think = process.argv.includes('--think');
   const onboard = process.argv.includes('--onboard');
-  const LINES = think ? THINK_LINES : onboard ? ONBOARD_LINES : narrate ? NARRATE_LINES : scan ? SCAN_LINES : TOUR_LINES;
-  const OUT = think ? THINK_CLIPS : onboard ? ONBOARD_CLIPS : narrate ? NARRATE_CLIPS : scan ? SCAN_CLIPS : TOUR_OUT;
+  const talk = process.argv.includes('--talk');
+  const LINES = talk ? TALK_LINES : think ? THINK_LINES : onboard ? ONBOARD_LINES : narrate ? NARRATE_LINES : scan ? SCAN_LINES : TOUR_LINES;
+  const OUT = talk ? TALK_CLIPS : think ? THINK_CLIPS : onboard ? ONBOARD_CLIPS : narrate ? NARRATE_CLIPS : scan ? SCAN_CLIPS : TOUR_OUT;
   if (!onlyLevel && !voiceKey()) { console.log('REFUSED: no ELEVEN_LABS_API_KEY in the environment or bp\'s .env'); process.exit(2); }
   if (spawnSync('ffmpeg', ['-version'], { stdio: 'ignore' }).status !== 0) { console.log('REFUSED: ffmpeg is not on PATH'); process.exit(2); }
   const force = process.argv.includes('--force');
