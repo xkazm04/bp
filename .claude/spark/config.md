@@ -16,6 +16,9 @@ Scaffolded 2026-10-09 from what this repo declares. The vault is `<repo>/.spark/
 ## Gates
 
 always:
+- Gate with `&&` and keep the log in a file; never pipe a gate into `tail`/`head`/`grep` (the pipe's exit code wins, so a red
+  gate reads green). Promoted 2026-11-17 after the second hit: the push-gate memory, then a new repo's first commit went in
+  on a red secret scan through `npm run check | tail`. Every builder brief repeats this line.
 - `npm run typecheck`
 - `npm run check:lens-health`
 
@@ -142,3 +145,4 @@ None declared.
 - 2026-11-11 glim-character: a golden expectation that accepts one right answer turns red on a re-record when a second is also right ("approve that one" after two named items gets "which?"); reference-resolution turns accept a clarifying question (cardOrAsks). The route table in docs/blueprint-ui.md takes real paths only: a ?view= variant as its own row fails check:route-guards.
 
 - 2026-11-17 agentic-web-hackathon: the brainstorm scouted code and the spec but not the live entrants; the first product pick was already built twice (Agent Atlas, Agent Customs) and surfaced after four waves, costing two re-asks. Proposal (first sighting, so gated, not applied): Phase 2 scouts the live entrants or incumbents of a contest, market or standard before wave 1. See docs/concepts/plumbline-scenario/lessons.md L2, L3.
+- 2026-11-17 firebase-hybrid-hackathon (Distill): host arch unchecked before an Android brief (Windows ARM64 has no emulator); a backgrounded codex exec hung on stdin all session; parallel theme packages drifted on a semantic colour a test invented; two creative rounds rejected because the brief carried product framing; adopt-bp's judgement found a privacy breach the builders' test could not see. Method lessons filed in the registry's spark and adopt-bp LESSONS.md; the pipe lesson promoted into ## Gates.
