@@ -151,7 +151,24 @@ const RAISED = TEXT.find((x) => x.v === FLOOR);
 const BELOW = TEXT.filter((x) => x.v < FLOOR).sort((a, b) => a.v - b.v).slice(0, 2);
 const SHOT_FEATURES = [...new Set([SPLIT, LABELS, ...PAIRS].filter(Boolean).map((x) => x.f))].slice(0, 2);
 
-if (RESET) for (const f of [DB, DB + '-wal', DB + '-shm']) fs.rmSync(f, { force: true });
+if (RESET) {
+  for (const f of [DB, DB + '-wal', DB + '-shm']) fs.rmSync(f, { force: true });
+  // Between video takes (readiness.md G10) the stand-up must ask again: the store's approvals go with scan.db, and the
+  // morning's defer/hold rows live in the product's steering log and the person's in $BP_HOME/companion/decisions.jsonl
+  // (YESTERDAY reads its approvals there). Both are cleared for this slug only; other products' rows are kept.
+  for (const f of ['steering-log.jsonl', 'steering-log.md']) fs.rmSync(path.join(STORE, 'work', f), { force: true });
+  const home = process.env.BP_HOME ? path.resolve(process.env.BP_HOME) : path.join(ROOT, '.bp');
+  const log = path.join(home, 'companion', 'decisions.jsonl');
+  if (fs.existsSync(log)) {
+    const rows = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+    const keep = rows.filter((l) => { try { const r = JSON.parse(l); return r.product !== SLUG && r.slug !== SLUG; } catch { return true; } });
+    if (keep.length !== rows.length) {
+      fs.writeFileSync(log + '.tmp', keep.map((l) => l + '\n').join(''));
+      fs.renameSync(log + '.tmp', log);
+      console.log(`reset: dropped ${rows.length - keep.length} ${SLUG} row(s) from ${log}`);
+    }
+  }
+}
 const fresh = !fs.existsSync(DB);
 if (fresh) seed();
 if (REGISTER) await register();
