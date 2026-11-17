@@ -598,6 +598,8 @@ bool ABpTable::TalkHold(const TCHAR* Source, bool bDown)
 		// The microphone opens at once only when the wearer already said ALLOW (so the first words are not lost); anything
 		// else waits for the hold to count (TickTalk), so a tap never raises a sheet.
 		const bool bBundle = FBpLinkModule::Get().IsFromBundle();
+		// The bundle's sample opens no microphone, but its first hold still asks for it, so talking works once linked.
+		if (bBundle && TalkAskMic()) { S.bHeld = false; return true; }
 		if (!bBundle && TalkConsent() == 1 && S.Step == FBpTalkState::EStep::Idle) TalkBegin();
 		SetActorTickInterval(0.f);
 		return false;
@@ -622,6 +624,44 @@ bool ABpTable::TalkHold(const TCHAR* Source, bool bDown)
 	if (FBpLinkModule::Get().IsFromBundle()) { TalkSample(); return false; }
 	if (S.Step == FBpTalkState::EStep::Arming || S.Step == FBpTalkState::EStep::Listening) TalkSend();
 	return false;
+}
+
+/** The microphone's permission (Android): false when it is granted (or not Android). Otherwise the headset's question is
+ *  asked, once a run, at the first hold in ANY mode, the bundle's sample included (2026-11-17, the owner on the Quest:
+ *  "Microphone is not found nor approval requested on use": with no PC link a hold played the sample and never asked), and
+ *  true is returned so the hold does nothing else. A second hold in the same run, still without it, says where to allow it. */
+bool ABpTable::TalkAskMic()
+{
+#if PLATFORM_ANDROID
+	if (UAndroidPermissionFunctionLibrary::CheckPermission(MicPermission)) return false;
+	FBpTalkState& S = *Talk;
+	if (S.bPermissionAsked)
+	{
+		UE_LOG(LogBpTable, Log, TEXT("BpTalk: no microphone permission (asked this run): nothing recorded"));
+		TalkSays(TEXT("I may not use the microphone.\nAllow it in the headset's Settings › Apps › Permissions."));
+		return true;
+	}
+	S.bPermissionAsked = true;
+	UE_LOG(LogBpTable, Log, TEXT("BpTalk: asking for the microphone permission (the first hold)"));
+	TalkSays(TEXT("May I use the microphone?\nAnswer the headset's question, then hold again."));
+	if (UAndroidPermissionCallbackProxy* Proxy = UAndroidPermissionFunctionLibrary::AcquirePermissions({ MicPermission }))
+	{
+		TWeakObjectPtr<ABpTable> Self(this);
+		Proxy->OnPermissionsGrantedDelegate.AddLambda([Self](const TArray<FString>&, const TArray<bool>& Granted)
+		{
+			AsyncTask(ENamedThreads::GameThread, [Self, bOk = Granted.Num() > 0 && Granted[0]]()
+			{
+				ABpTable* T = Self.Get();
+				if (!T) return;
+				UE_LOG(LogBpTable, Log, TEXT("BpTalk: microphone permission %s"), bOk ? TEXT("granted") : TEXT("denied"));
+				T->TalkSays(bOk ? TEXT("Thank you. Hold to talk to me.") : TEXT("No microphone: MENU › ASK still works.\nSettings › Apps › Permissions allows it later."));
+			});
+		});
+	}
+	return true;
+#else
+	return false;
+#endif
 }
 
 void ABpTable::TalkBegin()
@@ -653,39 +693,7 @@ void ABpTable::TalkBegin()
 		else if (ABpPawn* Pawn = TalkPawn(GetWorld())) Pawn->OpenConsole(TEXT("talk"));
 		return;
 	}
-#if PLATFORM_ANDROID
-	if (!UAndroidPermissionFunctionLibrary::CheckPermission(MicPermission))
-	{
-		bool bAskedBefore = false;
-		FBpStore::GetBool(TalkSection, TEXT("MicAsked"), bAskedBefore);
-		if (bAskedBefore || S.bPermissionAsked)
-		{
-			UE_LOG(LogBpTable, Log, TEXT("BpTalk: no microphone permission (asked before): nothing recorded"));
-			TalkSays(TEXT("I may not use the microphone.\nAllow it in the headset's Settings › Apps › Permissions."));
-			return;
-		}
-		S.bPermissionAsked = true;
-		FBpStore::SetBool(TalkSection, TEXT("MicAsked"), true);
-		FBpStore::Flush();
-		UE_LOG(LogBpTable, Log, TEXT("BpTalk: asking for the microphone permission (the first hold)"));
-		TalkSays(TEXT("May I use the microphone?\nAnswer the headset's question, then hold again."));
-		if (UAndroidPermissionCallbackProxy* Proxy = UAndroidPermissionFunctionLibrary::AcquirePermissions({ MicPermission }))
-		{
-			TWeakObjectPtr<ABpTable> Self(this);
-			Proxy->OnPermissionsGrantedDelegate.AddLambda([Self](const TArray<FString>&, const TArray<bool>& Granted)
-			{
-				AsyncTask(ENamedThreads::GameThread, [Self, bOk = Granted.Num() > 0 && Granted[0]]()
-				{
-					ABpTable* T = Self.Get();
-					if (!T) return;
-					UE_LOG(LogBpTable, Log, TEXT("BpTalk: microphone permission %s"), bOk ? TEXT("granted") : TEXT("denied"));
-					T->TalkSays(bOk ? TEXT("Thank you. Hold to talk to me.") : TEXT("No microphone: MENU › ASK still works.\nSettings › Apps › Permissions allows it later."));
-				});
-			});
-		}
-		return;
-	}
-#endif
+	if (TalkAskMic()) return;
 	S.Serial++;
 	// A capture still open (a hold the link's fall to the sample ended) is stopped and closed before a new one is made.
 	S.CloseCapture();

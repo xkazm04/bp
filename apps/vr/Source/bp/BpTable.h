@@ -2219,6 +2219,7 @@ private:
 	void TalkBegin();
 	void TalkSend();
 	void TalkTurn(const FString& Heard);
+	bool TalkAskMic();
 	void TalkSpeak(const FString& Reply, const FString& ShownIn = FString());
 	void TalkSample(const FString& ForceId = FString());
 	/** G2: the focus events still to act on (TalkActOnFocus), when their turn was asked, and the step's timer. */
