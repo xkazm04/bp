@@ -72,3 +72,28 @@ Plumbline's job is to keep an agentic website true after it ships. Directions, r
 
 - `ai-registry` holds local, unpushed commits: adopt-bp 1.6.1 (`414f09f76`, `48b21085b`) and the contest lesson (`10cddb064`). That checkout carries another session's uncommitted work, so push it deliberately.
 - The private key lives at `C:\Users\kazda\.plumbline\keys\plumbline.private.json`. Back it up. Any change to a signed file (the manifest, the network, `site-actions.js`, the bridge, `links.json`, the lock) needs `node dist/cli/index.js sign ...` again, then `npm run build:site` and `npx wrangler deploy`.
+
+## 5. Scanner improvements still open (from the 2026-11-17 full-scope scan)
+
+Built that night: adopt-bp 1.7.0 and lens-scan 1.17.0 (lessons.md L17). Still proposals:
+
+- **Dowser: a lens (or a rule) that owns plain code defects.** The sweep saw that the watch tracked the wrong upstream
+  repository and had no lens to file it under; scan-sweep hunts bugs, but a backlog scan should not silently drop one.
+- **Dowser: ranking.** The per-lens slot guarantee (`SKILL.md:331-333`, up to 4 per lens before any cross-lens score)
+  ranked four indistinguishable impact-2 opportunity cards (5 to 8 points) while two 18-point doc-drift cards went to
+  reserve, and a card predicted `reject` ranked because the prediction does not feed ranking. Consider a score floor
+  for the guaranteed slots and letting the prediction demote.
+- **Dowser: dedupe across anchor granularity.** Two cards for one fix (the Desk's repository link) anchored a section
+  and a whole file; `similar` missed them and headless runs skip merges (`SKILL.md:504`).
+- **Dowser: young repositories.** The 90/120-day git windows (`opportunity.md:78`, `doc-drift.md:74`) are meaningless
+  on a repo whose commits all fall on one day; scale the window to the repo's age.
+- **Dowser: doc-versus-doc and doc-versus-remote drift** have no slot in the doc+code pair rule (`doc-drift.md:154`),
+  and in-product guide text (`strings.js`) is outside the reader-harm tiers.
+- **lens-scan store:** a command to strike a false positive the judgement pass rejected (`metrics.md:53` allows it,
+  nothing records it: 27 unsafe sinks and 2 secret hits on plumbline were all false positives and still count); a
+  `--lens` on `coverage` so per-lens standardsPct is not hand-split; run-log ids that cannot collide within a second.
+- **Retraction:** a value a faulty run wrote stays in the map (L7); the store needs a way to say a key no longer
+  applies.
+- **Measure the change:** after the backlog wave lands, rerun `/adopt-bp` (map refresh) and `/lens-scan measure --lens
+  all` on plumbline and compare the counts and the coverage with the 2026-11-17 runs.
+
