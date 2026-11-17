@@ -606,7 +606,7 @@ namespace
 {
 	// ---- No side desks (the owner on the Quest 3S, 2026-11-17: "Left right desks are too close, blocking view at wall.
 	// Remove them completely, they are useless"). studio_level.py built the two desks (LEFT_DESK, RIGHT_DESK) into the merged
-	// StudioShell, so their tops and end panels are that mesh's MI_StudioDesk slot: it draws M_Collapsed (no pixels). The
+	// StudioShell, so their tops and end panels are that mesh's MI_StudioDesk slot: it draws M_Hidden (no pixels). The
 	// props on them go by their mesh, and the lights and haze cards standing in their footprints (below the pendants) go
 	// too. The baked light stays in the lightmap. On every platform, once a world.
 
@@ -631,7 +631,9 @@ namespace
 	{
 		if (!World || DesksGoneWorld.Get() == World) return;
 		DesksGoneWorld = World;
-		UMaterialInterface* Collapsed = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_Collapsed.M_Collapsed"));
+		// M_Hidden (masked, every pixel discarded), not M_Collapsed: the merged shell does not evaluate the collapse's world
+		// position offset, so on the Quest the desk tops still drew (2026-11-18, the bench's screencap).
+		UMaterialInterface* Collapsed = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Bp/Materials/M_Hidden.M_Hidden"));
 		int32 Slots = 0, Props = 0, Lights = 0, Haze = 0;
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
