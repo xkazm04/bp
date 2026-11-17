@@ -774,6 +774,8 @@ public:
 	void NoteHand(const TCHAR* Kind);
 	static constexpr float TourIdleS = 14.f;
 	static constexpr float TourWelcomeS = 7.f;
+	/** Each welcome line (welcome, welcome-onboard, welcome-scan) stands at least this long, so captions only still read. */
+	static constexpr float TourWelcomeLineS = 3.5f;
 	static constexpr float TourStartDelayS = 2.5f;
 
 	// ---- The headset session (BpHeadset.cpp; docs/concepts/vr-light-table/headset-plan.md) ------------------------------
@@ -2217,9 +2219,9 @@ private:
 	float LampNodT = -1.f;
 	double LampNodSince = 0.0;
 	void TalkBegin();
+	bool TalkAskMic();
 	void TalkSend();
 	void TalkTurn(const FString& Heard);
-	bool TalkAskMic();
 	void TalkSpeak(const FString& Reply, const FString& ShownIn = FString());
 	void TalkSample(const FString& ForceId = FString());
 	/** G2: the focus events still to act on (TalkActOnFocus), when their turn was asked, and the step's timer. */

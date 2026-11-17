@@ -10,7 +10,7 @@ namespace BpTourBook
 {
 	/** The content version: bumped when a step changes meaning. A bump shows as NEW chips on the TOUR page, never as a replay
 	 *  of a core tour already done or dismissed. */
-	constexpr int32 Version = 2;
+	constexpr int32 Version = 3;  // 3 (2026-11-17): the welcome goes on with onboarding and scanning, in order
 	/** No spoken line runs longer than this many words (check:vr-tour pins it). */
 	constexpr int32 MaxWords = 14;
 

@@ -16,6 +16,8 @@
   },
   "lines": {
     "welcome": "Welcome. My name is Glim. Each block here is part of your product.",
+    "welcome-onboard": "It starts with your project. Add it, and I draw it here.",
+    "welcome-scan": "Then a scan reads each room, and finds what needs your decision.",
     "open-wing": "Tap a wing to open it.",
     "open-room": "Now tap the glowing room.",
     "step-in": "Tap it once more, to step inside.",

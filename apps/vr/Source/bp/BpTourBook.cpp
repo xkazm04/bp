@@ -9,6 +9,9 @@ namespace BpTourBook
 		static const TArray<FLine> All = {
 			// ---- The core tour (first launch; SETTINGS > TABLE > TOUR replays it) ----
 			{ TEXT("welcome"), TEXT("Welcome. My name is Glim. Each block here is part of your product.") },
+			// The welcome step goes on in the process's order (2026-11-17): a project is onboarded, then scanned, then explored.
+			{ TEXT("welcome-onboard"), TEXT("It starts with your project. Add it, and I draw it here.") },
+			{ TEXT("welcome-scan"), TEXT("Then a scan reads each room, and finds what needs your decision.") },
 			{ TEXT("open-wing"), TEXT("Tap a wing to open it.") },
 			{ TEXT("open-room"), TEXT("Now tap the glowing room.") },
 			{ TEXT("step-in"), TEXT("Tap it once more, to step inside.") },

@@ -800,7 +800,7 @@ void ABpTable::EnterTourId(const FString& Id)
 	SayTour(TourCaption(LineId));
 	// The lamp's "Like this." finishes before the next line; any other line is cut by the next.
 	const UAudioComponent* Voice = TourVoice.Get();
-	if (Voice && TourStepAt < TourVoiceEndsAt && TourVoiceClip == TEXT("shown")) TourVoiceNext = LineId;
+	if (Voice && TourStepAt < TourVoiceEndsAt && (TourVoiceClip == TEXT("shown") || TourVoiceClip.StartsWith(TEXT("welcome")))) TourVoiceNext = LineId;
 	else SpeakTour(*LineId);
 }
 
@@ -929,7 +929,24 @@ void ABpTable::TickTour()
 
 	if (Id == TEXT("welcome"))
 	{
-		if (InStep >= TourWelcomeS || Level != EBpLevel::L0 || bInRoom) { TourNext(Level != EBpLevel::L0 || bInRoom ? TEXT("the person moving on") : TEXT("its welcome beat")); return; }
+		// The welcome, then the process in its order (onboard, scan), each line heard to its end (2026-11-17, the owner on
+		// the Quest: "Glim's welcoming sentence is cut in the middle"): a line goes on only when its clip is done and it has
+		// stood TourWelcomeLineS (captions only: no clip), even if the person already opened a wing; open-wing then
+		// catches up with wherever the table is.
+		const bool bLineDone = Now >= TourVoiceEndsAt && InStep >= (TourBeatAt >= 0.0 ? TourBeatAt - TourStepAt : 0.0) + TourWelcomeLineS;
+		if (!bLineDone) return;
+		const bool bMore = TourLineId == TEXT("welcome") || TourLineId == TEXT("welcome-onboard");
+		if (bMore)
+		{
+			if (TourLineId == TEXT("welcome")) TourLineId = TEXT("welcome-onboard");
+			else TourLineId = TEXT("welcome-scan");
+			TourBeatAt = Now;
+			SayTour(TourCaption(TourLineId));
+			SpeakTour(*TourLineId);
+			return;
+		}
+		TourNext(Level != EBpLevel::L0 || bInRoom ? TEXT("the person moving on (after the welcome)") : TEXT("its welcome beat"));
+		return;
 	}
 	else if (Id == TEXT("open-wing") || Id == TEXT("open-room") || Id == TEXT("step-in"))
 	{
