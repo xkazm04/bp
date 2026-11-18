@@ -143,14 +143,16 @@ namespace
 #if !UE_BUILD_SHIPPING
 	FAutoConsoleCommandWithWorldAndArgs CmdBench(
 		TEXT("BpView.Bench"),
-		TEXT("BpView.Bench [pitch_deg] [yaw_deg]: for a headset lying still on a desk. Turns and moves the pawn so that the headset's view, wherever it points, is the seated target view over the table (default pitch the target pose's, yaw 0; a yaw looks aside, e.g. at the shelves). The device then renders what a seated person sees, for measurements and screen captures with nobody wearing it. Non-Shipping builds only."),
+		TEXT("BpView.Bench [pitch_deg] [yaw_deg] [back_cm] [up_cm]: for a headset lying still on a desk. Turns and moves the pawn so that the headset's view, wherever it points, is the seated target view over the table (default pitch the target pose's, yaw 0; a yaw looks aside, e.g. at the shelves). The device then renders what a seated person sees, for measurements and screen captures with nobody wearing it. Non-Shipping builds only."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			ABpPawn* Pawn = nullptr;
 			ABpTable* Table = nullptr;
 			const float Pitch = Args.Num() > 0 ? FCString::Atof(*Args[0]) : ABpGameMode::TargetPitchDeg;
 			const float Yaw = Args.Num() > 1 ? FCString::Atof(*Args[1]) : 0.f;
-			if (!FindPlay(World, Pawn, Table) || !Pawn->Bench(Pitch, Yaw)) UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Bench [pitch_deg] [yaw_deg] (needs a playing world with the bp pawn and a table)"));
+			const float Back = Args.Num() > 2 ? FCString::Atof(*Args[2]) : 0.f;
+			const float Up = Args.Num() > 3 ? FCString::Atof(*Args[3]) : 0.f;
+			if (!FindPlay(World, Pawn, Table) || !Pawn->Bench(Pitch, Yaw, Back, Up)) UE_LOG(LogBpTable, Warning, TEXT("BpView: usage BpView.Bench [pitch_deg] [yaw_deg] (needs a playing world with the bp pawn and a table)"));
 		}));
 #endif
 
@@ -331,13 +333,14 @@ bool ABpPawn::Seat(float EyeAboveFloorCm)
 	return true;
 }
 
-bool ABpPawn::Bench(float PitchDeg, float YawDeg)
+bool ABpPawn::Bench(float PitchDeg, float YawDeg, float BackCm, float UpCm)
 {
 	TActorIterator<ABpTable> It(GetWorld());
 	if (!It || !Camera) return false;
 	const FTransform Table = It->GetActorTransform();
 	// The target pose's eye over the table as it stands now (Seat's own EyeOnTable), looking down the table.
-	const FVector EyeOnTable(-(ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm), 0.0, TableTopCm() + ABpGameMode::TargetEyeAboveTopCm);
+	// BackCm and UpCm step the eye back from the table and up (the film's wider view: apps/vr/tools/film/quest-take.mjs).
+	const FVector EyeOnTable(-(ABpTable::TableDepthCm * 0.5 + ABpGameMode::TargetBehindNearEdgeCm + BackCm), 0.0, TableTopCm() + ABpGameMode::TargetEyeAboveTopCm + UpCm);
 	const FTransform Want(Table.GetRotation() * FRotator(PitchDeg, YawDeg, 0.f).Quaternion(), Table.GetLocation() + Table.GetRotation().RotateVector(EyeOnTable));
 	// The camera rides the pawn: world = CameraInPawn * Pawn, so the pawn goes to CameraInPawn^-1 * Want.
 	const FTransform Cam(Camera->GetComponentQuat(), Camera->GetComponentLocation());

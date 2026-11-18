@@ -241,7 +241,7 @@ public:
 	 *  the eye stood that high (BpView.Seat's argument). Logs `BpView: seat ...`. */
 	bool Seat(float EyeAboveFloorCm = -1.f);
 	/** BpView.Bench: puts the view of a headset lying still at the seated target view (measurements with nobody wearing it). */
-	bool Bench(float PitchDeg, float YawDeg);
+	bool Bench(float PitchDeg, float YawDeg, float BackCm = 0.f, float UpCm = 0.f);
 	static constexpr float SeatTopMinCm = 55.f;
 	/** A runtime whose floor is wrong (Steam Link on a Quest 3S, Lynx 2026-10-29: a seated eye read 67.5 cm over it) puts a
 	 *  headset eye under SeatEyeMinCm. The seat then corrects the floor once, raising the pawn (the tracking origin) so the
