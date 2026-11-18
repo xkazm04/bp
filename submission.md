@@ -1,7 +1,36 @@
 # Developer's Blueprint
 
 **Track:** Productivity · **Division:** New Experience · **Platform:** Meta Quest 3 and 3S (standalone, hands first)
-**Video:** [owner: public link] · **Build:** Competition release channel, [owner: invite link]
+**Video:** [owner: public link] · **Build:** Competition release channel, [owner: invite link, from the steps below]
+
+## Getting the build link (Meta Horizon developer dashboard)
+
+The form wants an invite link to the APK in a release channel. The dashboard makes that link once the build is uploaded.
+Menu names drift between dashboard versions; follow the closest match.
+
+1. **The APK.** Upload `apps/vr/.cache/quest/Android_ASTC/bp-Android-Shipping-arm64.apk` (209 MB). It is the Shipping
+   build, release-signed and not debuggable, package `com.developersblueprint.vr`, versionCode 1. Keep the release key
+   and its password (`apps/vr/Build/Android/bp-release.keystore`, `%LOCALAPPDATA%\Unreal Engine\Engine\Config\UserEngine.ini`):
+   every later upload of this app must be signed by the same key and carry a higher versionCode.
+2. **Create the app.** Sign in to the developer dashboard (developers.meta.com/horizon, "My Apps", or your organization's
+   page), create a new app, pick the Meta Quest (Horizon Store) platform, and name it "Developer's Blueprint". The first
+   upload fixes the app's package name to `com.developersblueprint.vr`.
+3. **Make the channel.** In the app: Distribution > Release Channels. Create a channel named **Competition** (the rules
+   ask for that name), or use an existing test channel and rename it if the dashboard allows.
+4. **Upload the build** to the Competition channel with the channel's Upload Build button, or with Meta's command-line
+   uploader: `ovr-platform-util upload-quest-build --app_id <App ID> --app_secret <App Secret> --apk <path> --channel Competition`
+   (App ID and secret: the app's API page; run `ovr-platform-util help upload-quest-build` for the current flags). Wait
+   for the build to finish processing; if it is refused, the message names the manifest field (supported devices are
+   Quest 3 and 3S; the VR category and hand tracking are declared by the build).
+5. **Anything the dashboard asks first.** If it blocks the upload or the channel on missing app details (a Data Use
+   Checkup, an age rating, a privacy policy URL, a short description), fill them from this file: the app reads a
+   product's files on the owner's PC only after pairing, sends speech only when the person holds to talk and allowed it,
+   and collects nothing else.
+6. **The invite link.** In the Competition channel's settings, turn on the invite (shareable) link, or Add Users, and
+   copy the link. Open it once while logged out of your own account, or on a second account, to check it installs. Put
+   the link in the form's build field and at the top of this file.
+7. **Keep it up.** The rules judge the build as it stood at the deadline and keep the channel live until about 11
+   December: do not delete or replace the build there before then.
 **Target launch date:** [owner] (Meta Horizon Store, Productivity)
 
 **Tagline.** Your codebase as an architect's drawing on a light table: Glim, a desk-lamp companion, draws your product as
