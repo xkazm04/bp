@@ -5,6 +5,11 @@
 
 ## Getting the build link (Meta Horizon developer dashboard)
 
+**Done 2026-11-18:** app ID 1439047369295275; the Shipping APK (versionCode 1, 0.1.0) is build 1439076655959013,
+validated with no errors and published to the Competition channel (1894208691932471) with Meta's CLI:
+`metavr store dist upload --app-id 1439047369295275 --channel Competition --apk <apk> --publish` (metavr has no Windows ARM64
+binary; its x64 build runs under emulation). Left for the owner: the channel's invite link (step 6).
+
 The form wants an invite link to the APK in a release channel. The dashboard makes that link once the build is uploaded.
 Menu names drift between dashboard versions; follow the closest match.
 
