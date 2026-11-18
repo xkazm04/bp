@@ -14,7 +14,8 @@ node apps/vr/tools/film/compose.mjs <edl.json> [--preview] [--stills] [--out <fi
 - always writes `<out>.srt` (our line, then Glim's line)
 - output: H.264 High, yuv420p, AAC 192k 48 kHz stereo, `+faststart`, exactly `duration` long (frame-rounded)
 
-Timing on the PC (2026-11-18, synthetic 3664x1920 sources): 2:19 at 1080p about 40 s, preview about 30 s.
+Timing on the PC (2026-11-18): 2:19 at 1080p about 40 s on synthetic sources, about 70 s on take4 with a 33 s
+split; preview about 35 s.
 
 ## EDL
 
@@ -31,14 +32,33 @@ relative to the repo root, or to the EDL's folder, or absolute. Keys starting wi
 | `clips[]` | `at` (timeline s), `src`, `in`, `out` (source s), `speed` (1; retimes the picture), `preset`, `fadeInS`, `fadeOutS`, optional `name`, `crop {x,y,w,h}`, `cropYOffset` |
 | `cards[]` | `at`, `dur`, `lines` (first large, the rest smaller), `colour` (black), `fadeInS`, `fadeOutS`, `textFadeS` (0.4) |
 | `voice[]` | `at`, `file`, `gainDb` (0) |
+| `voiceGainDb` | top level, added to every voice line's `gainDb` (e.g. -1.94 = Glim 20% quieter) |
+| `splits[]` | `at`, `dur`, `left`/`right` {`src`, `in`, `speed`, `preset`, `loop`, `cropYOffset`, `crop`, `aspect`}, `labels` [2], `transitionIn` / `transitionOut` (`left`, `right`, `fade`, `cut`; default left / right), `transitionInS` / `transitionOutS` (0.6), `fadeInS`, `fadeOutS` |
 | `captions[]` | `from`, `to`, `top` (ours, large, white), `bottom` (Glim's words, smaller, warm) |
 | `stills[]` | extra still marks `{t, what}` (e.g. the sync points) |
 
-Presets: `quest-left-eye` (side-by-side Quest capture: the left eye's centred 16:9 region, 1832x1030 from 3664x1920,
+Presets: `quest-left-eye-wide` (the left eye's centred 1832x1200, fitted to the height with navy at the sides),
+`quest-left-eye-tall` (centred 1832x1600, for a split's headset panel), `quest-left-eye` (side-by-side Quest capture: the left eye's centred 16:9 region, 1832x1030 from 3664x1920,
 `cropYOffset` nudges it, `crop` replaces it), `web` / `fit` (scale into the frame, letterbox if not 16:9), `fill`
 (scale and centre-crop). Source audio is never used. Variable frame rate sources are resampled to `fps`.
 
-Picture track: clips and cards may not overlap; gaps are black. Fades go to black. The caption band shows only while a
+Split screen: two panels of the same height on a navy blueprint grid (`style.splitBg`, default #0b1a2e), 2 px light
+frames, letter-spaced cyan labels above (`style.labelFontFile`, default segoeuib.ttf), the caption band kept clear. The
+panel widths follow the presets' aspects (web 16:9, tall 1.145). `transitionIn: "left"` starts with the left panel
+filling the frame and pulls back to the layout (a zoompan camera move, eased); `transitionOut: "right"` pushes into
+the right panel, so the next full-frame clip continues from it. A side source that ends early holds its last frame
+(`loop: true` loops it).
+
+```json
+"voiceGainDb": -1.94,
+"splits": [{ "at": 12, "dur": 33,
+  "left":  { "src": "apps/vr/Saved/demo/web/s1-take1.mp4", "in": 7.595, "preset": "web", "loop": true },
+  "right": { "src": "apps/vr/Saved/demo/takes/take4/seg_1.mp4", "in": 9.5, "preset": "quest-left-eye-tall" },
+  "labels": ["On the web", "In the headset"],
+  "transitionIn": "left", "transitionInS": 0.6, "transitionOut": "right", "transitionOutS": 0.6 }]
+```
+
+Picture track: clips, cards and splits may not overlap; gaps are black. Fades go to black. The caption band shows only while a
 caption is up.
 
 Validation fails with a list of every problem: missing files, `out` beyond the source's duration (ffprobe), `out <= in`,

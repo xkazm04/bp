@@ -100,7 +100,9 @@ if (!(FPS > 0)) err('"output.fps" must be positive');
 const TOTAL_FRAMES = Math.round(D * FPS);
 const fr = (t) => Math.round(t * FPS);
 
-const PRESETS = new Set(['quest-left-eye', 'web', 'fit', 'fill']);
+const PRESETS = new Set(['quest-left-eye', 'quest-left-eye-wide', 'quest-left-eye-tall', 'web', 'fit', 'fill']);
+const BG = edl.style?.splitBg || '#0b1a2e';
+const isQuest = (p) => typeof p === 'string' && p.startsWith('quest-left-eye');
 const music = edl.music || null;
 if (music) {
   music.path = resolvePath(music.file || '');
@@ -128,7 +130,7 @@ for (const c of clips) {
   c.end = c.at + (c.out - c.in) / c.speed;
   c.src_w = p.width;
   c.src_h = p.height;
-  if (c.preset === 'quest-left-eye' && p.width / p.height < 1.5) warn(`${c.label}: preset quest-left-eye but source is ${p.width}x${p.height}, not side-by-side`);
+  if (isQuest(c.preset) && p.width / p.height < 1.5) warn(`${c.label}: preset ${c.preset} but source is ${p.width}x${p.height}, not side-by-side`);
 }
 const cards = (edl.cards || []).map((c, i) => ({ ...c, kind: 'card', idx: i, label: `cards[${i}]` }));
 for (const c of cards) {
@@ -136,8 +138,40 @@ for (const c of cards) {
   if (!Array.isArray(c.lines) || c.lines.length === 0) err(`${c.label}: "lines" must be a non-empty array of strings`);
   c.end = c.at + c.dur;
 }
-// the picture track: clips and cards must not overlap
-const track = [...clips, ...cards].filter((s) => Number.isFinite(s.end)).sort((a, b) => a.at - b.at);
+// splits: two sources side by side on the blueprint background
+const TRANSITIONS = new Set(['left', 'right', 'fade', 'cut']);
+const splits = (edl.splits || []).map((c, i) => ({ ...c, kind: 'split', idx: i, label: `splits[${i}]${c.name ? ` "${c.name}"` : ''}` }));
+for (const sp of splits) {
+  if (!(sp.at >= 0) || !(sp.dur > 0)) err(`${sp.label}: needs "at" >= 0 and "dur" > 0`);
+  sp.end = sp.at + sp.dur;
+  sp.transitionIn = sp.transitionIn || 'left';
+  sp.transitionOut = sp.transitionOut || 'right';
+  sp.transitionInS = sp.transitionIn === 'cut' ? 0 : num(sp.transitionInS, 0.6);
+  sp.transitionOutS = sp.transitionOut === 'cut' ? 0 : num(sp.transitionOutS, 0.6);
+  for (const k of ['transitionIn', 'transitionOut']) if (!TRANSITIONS.has(sp[k])) err(`${sp.label}: ${k} must be one of ${[...TRANSITIONS].join(', ')}`);
+  if (sp.transitionInS + sp.transitionOutS > sp.dur) err(`${sp.label}: transitionInS + transitionOutS is longer than dur ${sp.dur}`);
+  if (sp.labels !== undefined && !Array.isArray(sp.labels)) err(`${sp.label}: "labels" must be an array of two strings`);
+  for (const side of ['left', 'right']) {
+    const c = sp[side];
+    const lab = `${sp.label}.${side}`;
+    if (!c || typeof c.src !== 'string') { err(`${lab}: needs {src, in?, speed?, preset?}`); continue; }
+    c.path = resolvePath(c.src);
+    if (!fs.existsSync(c.path)) { err(`${lab}: source not found: ${c.src}`); continue; }
+    const p = probe(c.path);
+    if (!p.hasVideo) { err(`${lab}: source has no video stream`); continue; }
+    c.speed = num(c.speed, 1);
+    c.in = num(c.in, 0);
+    c.preset = c.preset || (side === 'right' ? 'quest-left-eye-tall' : 'web');
+    c.src_w = p.width; c.src_h = p.height;
+    if (!PRESETS.has(c.preset)) err(`${lab}: unknown preset "${c.preset}"`);
+    if (!(c.speed > 0)) err(`${lab}: speed must be > 0`);
+    if (c.in < 0 || c.in >= p.duration) err(`${lab}: in ${c.in} s is outside the source (${p.duration.toFixed(3)} s)`);
+    const need = c.in + sp.dur * c.speed;
+    if (!c.loop && need > p.duration + 0.05) warn(`${lab}: source ends at ${p.duration.toFixed(2)} s but the split needs it to ${need.toFixed(2)} s; it holds the last frame (set "loop": true to loop)`);
+  }
+}
+// the picture track: clips, cards and splits must not overlap
+const track = [...clips, ...cards, ...splits].filter((s) => Number.isFinite(s.end)).sort((a, b) => a.at - b.at);
 for (let i = 0; i < track.length; i++) {
   const s = track[i];
   if (s.end > D + 1e-6) err(`${s.label}: ends at ${s.end.toFixed(3)} s, beyond the film's duration ${D} s`);
@@ -149,7 +183,7 @@ for (const v of voice) {
   v.path = resolvePath(v.file || '');
   if (!v.file || !fs.existsSync(v.path)) { err(`${v.label}: file not found: ${v.file}`); continue; }
   v.dur = probe(v.path).duration;
-  v.gainDb = num(v.gainDb, 0);
+  v.gainDb = num(v.gainDb, 0) + num(edl.voiceGainDb, 0);
   if (!(v.at >= 0)) err(`${v.label}: "at" must be >= 0`);
   v.end = v.at + v.dur;
   if (v.end > D + 0.01) err(`${v.label}: ends at ${v.end.toFixed(3)} s, beyond the film's duration ${D} s`);
@@ -267,28 +301,51 @@ const vF = [];
 const segs = [];
 let vi = 0;
 let cursorF = 0;
+let needLabelFont = false;
 const gap = (n) => {
   if (n <= 0) return;
   const l = `g${segs.length}`;
   vF.push(`color=c=black:s=${W}x${H}:r=${FPS},format=yuv420p,trim=end_frame=${n},setpts=PTS-STARTPTS[${l}]`);
   segs.push(`[${l}]`);
 };
-function geometry(c) {
-  if (c.preset === 'quest-left-eye') {
+// the source region a preset takes (null = the whole frame)
+function cropRect(c) {
+  if (isQuest(c.preset)) {
     const eyeW = Math.floor(c.src_w / 2);
-    let cw = eyeW, ch = Math.round((eyeW * 9) / 16);
-    if (ch > c.src_h) { ch = c.src_h; cw = Math.round((ch * 16) / 9); }
+    const regionH = c.preset === 'quest-left-eye' ? (eyeW * 9) / 16 : ((c.preset === 'quest-left-eye-wide' ? 1200 : 1600) * eyeW) / 1832;
+    let cw = eyeW, ch = Math.round(regionH);
+    if (ch > c.src_h) ch = c.src_h;
     let x = Math.floor((eyeW - cw) / 2), y = Math.floor((c.src_h - ch) / 2) + num(c.cropYOffset, 0);
     if (c.crop) ({ x = x, y = y, w: cw = cw, h: ch = ch } = c.crop);
     y = Math.max(0, Math.min(c.src_h - ch, y));
     cw -= cw % 2; ch -= ch % 2;
-    return `crop=${cw}:${ch}:${x}:${y},scale=${W}:${H}:flags=lanczos,setsar=1`;
+    return { cw, ch, x, y };
   }
-  let pre = '';
-  if (c.crop) pre = `crop=${c.crop.w}:${c.crop.h}:${c.crop.x ?? 0}:${c.crop.y ?? 0},`;
-  if (c.preset === 'fill') return `${pre}scale=${W}:${H}:force_original_aspect_ratio=increase:flags=lanczos,crop=${W}:${H},setsar=1`;
-  // web and fit: letterbox into the frame (a 16:9 web capture fills it exactly)
-  return `${pre}scale=${W}:${H}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2:black,setsar=1`;
+  if (c.crop) return { cw: c.crop.w, ch: c.crop.h, x: c.crop.x ?? 0, y: c.crop.y ?? 0 };
+  return null;
+}
+const aspectOf = (c) => { const r = cropRect(c); return r ? r.cw / r.ch : c.src_w / c.src_h; };
+const hex = (col) => col.replace('#', '0x');
+// crop + scale into a bw x bh box; anything that is not the box's shape is fitted and padded (navy for the headset presets)
+function geometry(c, bw = W, bh = H, padCol = isQuest(c.preset) ? BG : 'black') {
+  const r = cropRect(c);
+  const pre = r ? `crop=${r.cw}:${r.ch}:${r.x}:${r.y},` : '';
+  if (c.preset === 'fill') return `${pre}scale=${bw}:${bh}:force_original_aspect_ratio=increase:flags=lanczos,crop=${bw}:${bh},setsar=1`;
+  return `${pre}scale=${bw}:${bh}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${bw}:${bh}:(ow-iw)/2:(oh-ih)/2:${hex(padCol)},setsar=1`;
+}
+const even = (x) => Math.max(2, 2 * Math.round(x / 2));
+// split layout in output pixels: both panels the same height, labels above, the caption band kept clear
+function splitLayout(sp) {
+  const k = W / 1920;
+  const margin = 48 * k, gutter = 32 * k, top = 36 * k, labelH = 44 * k;
+  const bottom = Math.max(170 * k, BAND_H * H + 8 * k);
+  const aL = num(sp.left.aspect, aspectOf(sp.left)), aR = num(sp.right.aspect, aspectOf(sp.right));
+  const availW = W - 2 * margin - gutter, availH = H - bottom - top - labelH;
+  const h = even(Math.min(availH, availW / (aL + aR)));
+  const wL = even(h * aL), wR = even(h * aR);
+  const x0 = Math.round((W - (wL + gutter + wR)) / 2);
+  const y = Math.round(top + labelH + (availH - h) / 2);
+  return { k, h, L: { x: x0, y, w: wL, h }, R: { x: Math.round(x0 + wL + gutter), y, w: wR, h } };
 }
 for (const s of track) {
   const a = fr(s.at), b = Math.min(TOTAL_FRAMES, fr(s.end));
@@ -304,6 +361,50 @@ for (const s of track) {
     vF.push(`[${vi}:v]setpts=(PTS-STARTPTS)/${s.speed},fps=${FPS},${geometry(s)},format=yuv420p,` +
       `tpad=stop_mode=clone:stop_duration=2,trim=end_frame=${n},setpts=PTS-STARTPTS${fades}[${l}]`);
     vi++;
+  } else if (s.kind === 'split') {
+    const Lay = splitLayout(s);
+    const k = Lay.k;
+    const sideLabels = [];
+    for (const [side, P] of [['left', Lay.L], ['right', Lay.R]]) {
+      const c = s[side];
+      if (c.loop) vIn.push('-stream_loop', '-1');
+      vIn.push('-ss', c.in.toFixed(3), '-t', (s.dur * c.speed + 0.5).toFixed(3), '-i', c.path);
+      const sl = `${l}${side[0]}`;
+      vF.push(`[${vi}:v]setpts=(PTS-STARTPTS)/${c.speed},fps=${FPS},${geometry(c, P.w, P.h, BG)},format=yuv420p,` +
+        `tpad=stop_mode=clone:stop_duration=${Math.ceil(s.dur + 2)},trim=end_frame=${n},setpts=PTS-STARTPTS[${sl}]`);
+      sideLabels.push(`[${sl}]`);
+      vi++;
+    }
+    const lw = Math.max(1, Math.round(2 * k));
+    const frame = (P) => `drawbox=x=${P.x - lw}:y=${P.y - lw}:w=${P.w + 2 * lw}:h=${P.h + 2 * lw}:color=0xcfe8ff@0.85:t=${lw}`;
+    const labels = s.labels || ['On the web', 'In the headset'];
+    const texts = [];
+    [Lay.L, Lay.R].forEach((P, j) => {
+      if (!labels[j]) return;
+      const tf = `${l}_label${j}.txt`;
+      fs.writeFileSync(path.join(work, tf), String(labels[j]).toUpperCase().split('').join('\u2009'), 'utf8');
+      texts.push(`drawtext=fontfile=label.ttf:textfile=${tf}:fontsize=${Math.round(24 * k)}:fontcolor=0x9fe8ff:x=${P.x}:y=${P.y - Math.round(12 * k)}-th`);
+    });
+    let chain = `color=c=${hex(BG)}:s=${W}x${H}:r=${FPS},format=yuv420p,trim=end_frame=${n},setpts=PTS-STARTPTS,` +
+      `drawgrid=w=${Math.round(40 * k)}:h=${Math.round(40 * k)}:t=1:c=0x6fa8dc@0.10[${l}bg];` +
+      `[${l}bg]${sideLabels[0]}overlay=${Lay.L.x}:${Lay.L.y}:shortest=1[${l}o1];[${l}o1]${sideLabels[1]}overlay=${Lay.R.x}:${Lay.R.y}:shortest=1,` +
+      [frame(Lay.L), frame(Lay.R), ...texts].join(',');
+    // the camera: a zoom from one panel (filling the frame) out to the layout, and back into a panel at the end
+    const fi = Math.round(s.transitionInS * FPS), fo = Math.round(s.transitionOutS * FPS);
+    const fillRect = (P) => { const rw = P.w / P.h >= W / H ? P.w : (P.h * W) / H; return { rw, cx: P.x + P.w / 2, cy: P.y + P.h / 2 }; };
+    const ease = (u) => `(${u})*(${u})*(3-2*(${u}))`;
+    const terms = [];
+    if ((s.transitionIn === 'left' || s.transitionIn === 'right') && fi > 0) terms.push({ r: fillRect(s.transitionIn === 'left' ? Lay.L : Lay.R), e: `(1-${ease(`clip(on/${fi},0,1)`)})` });
+    if ((s.transitionOut === 'left' || s.transitionOut === 'right') && fo > 0) terms.push({ r: fillRect(s.transitionOut === 'left' ? Lay.L : Lay.R), e: ease(`clip((on-${n - 1 - fo})/${fo},0,1)`) });
+    if (terms.length) {
+      const lerp = (base, key) => base + terms.map((t) => `+(${(t.r[key] - base).toFixed(2)})*${t.e}`).join('');
+      const rw = `(${lerp(W, 'rw')})`, cx = `(${lerp(W / 2, 'cx')})`, cy = `(${lerp(H / 2, 'cy')})`;
+      chain += `,zoompan=z='${W}/${rw}':x='clip(${cx}-iw/zoom/2,0,iw-iw/zoom)':y='clip(${cy}-ih/zoom/2,0,ih-ih/zoom)':d=1:s=${W}x${H}:fps=${FPS},setsar=1`;
+    }
+    if (s.transitionIn === 'fade' && fi > 0) chain += `,fade=t=in:st=0:d=${s.transitionInS}`;
+    if (s.transitionOut === 'fade' && fo > 0) chain += `,fade=t=out:st=${Math.max(0, segDur - s.transitionOutS).toFixed(3)}:d=${s.transitionOutS}`;
+    vF.push(`${chain},format=yuv420p,trim=end_frame=${n},setpts=PTS-STARTPTS${fades}[${l}]`);
+    needLabelFont = true;
   } else {
     const col = (s.colour || s.color || 'black').replace('#', '0x');
     vF.push(`color=c=${col}:s=${W}x${H}:r=${FPS},format=yuv420p,trim=end_frame=${n},setpts=PTS-STARTPTS${fades}[${l}]`);
@@ -312,6 +413,11 @@ for (const s of track) {
   cursorF = Math.max(a, cursorF) + n;
 }
 gap(TOTAL_FRAMES - cursorF);
+if (needLabelFont) {
+  const want = path.join(process.env.WINDIR || 'C:/Windows', 'Fonts', style.labelFontFile || 'segoeuib.ttf');
+  if (!fs.existsSync(want)) die(`label font not found: ${want} (set style.labelFontFile)`);
+  fs.copyFileSync(want, path.join(work, 'label.ttf'));
+}
 
 const bandEnable = captions.length ? captions.map((c) => `between(t,${c.from},${c.to})`).join('+') : '0';
 const fontsdir = fwd(path.join(process.env.WINDIR || 'C:/Windows', 'Fonts')).replace(/:/g, '\\:');
@@ -332,7 +438,7 @@ const videoCmd = (af) => ['-hide_banner', '-y', ...vIn, '-i', premaster, '-/filt
 
 const show = (args) => 'ffmpeg ' + args.map((x) => (/[\s'"|;&()<>*]/.test(x) ? `"${x}"` : x)).join(' ');
 
-console.log(`compose: ${fmtT(D)} film, ${W}x${H}@${FPS}, ${clips.length} clip(s), ${cards.length} card(s), ${vs.length} voice line(s), ${captions.length} caption(s)`);
+console.log(`compose: ${fmtT(D)} film, ${W}x${H}@${FPS}, ${clips.length} clip(s), ${splits.length} split(s), ${cards.length} card(s), ${vs.length} voice line(s), ${captions.length} caption(s)`);
 console.log(`compose: work dir ${work}`);
 if (opts.dry) {
   console.log('\n# 1. audio premaster (graph in audio.graph)\n' + show(audioCmd));
@@ -380,6 +486,11 @@ if (opts.stills) {
   for (const c of captions) marks.push({ t: (c.from + c.to) / 2, what: `caption ${c.idx}: ${c.top || c.bottom}` });
   for (const c of cards) marks.push({ t: c.at + c.dur / 2, what: `card ${c.idx}: ${c.lines[0]}` });
   for (const c of clips) marks.push({ t: (c.at + c.end) / 2, what: `clip ${c.idx}${c.name ? ` ${c.name}` : ''}` });
+  for (const c of splits) {
+    marks.push({ t: c.at + c.dur / 2, what: `split ${c.idx}` });
+    if (c.transitionInS > 0) marks.push({ t: c.at + c.transitionInS / 2, what: `split ${c.idx} transition in (mid)` });
+    if (c.transitionOutS > 0) marks.push({ t: c.end - c.transitionOutS / 2, what: `split ${c.idx} transition out (mid)` });
+  }
   for (const s of edl.stills || []) marks.push({ t: Number(s.t ?? s), what: s.what || 'extra' });
   marks.sort((a, b) => a.t - b.t);
   const uniq = marks.filter((mk, i) => i === 0 || Math.abs(mk.t - marks[i - 1].t) > 0.25);
