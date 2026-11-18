@@ -151,3 +151,40 @@ The desk-agent-network numbers dropped because its vendored runtime is now exclu
 - **Performance is reported as runnable.** `run-start --lenses all` lists it even with no probes.
 - **The registry map goes stale.** It is not rebuilt when the context map changes. It was rebuilt by hand that night.
 
+## 8. Night of 2026-11-18: the upstream runtime and the second backlog
+
+**Runtime.** Taken from cognizant-ai-labs/agentic-web `7ee54a3` (`5e4730b`). Otari EU keys now reach the EU gateway; the
+two files were copied byte-for-byte after checking the old copy matched upstream `7817c1f`. The NOTICE, THIRD_PARTY.md,
+the docs, the lock (now with `via` at `7ee54a3`) and the signature follow. The watch reports the runtime current.
+
+**Backlog.** All 41 second-pass items are done in plumbline's store, plus `p-a41521` from the first wave, so the store
+reads 89 done. The commits:
+- `8d80c4f`, core and CLI: revocation lists, rotation chains, adopt and trust by URL, bounded `verify --url`.
+- `ccec194`, fetch, gate and watch: the tier-1 redirect fix, a pure address module, one peer reader shared by the CLI and the Desk.
+- `8bbf831`, the Desk: its signature now covers the Desk's own code (12 files), unread files are unverifiable, CORS headers.
+- `0a50bb1`, the Action: it now keeps the drift issue itself and comments when findings change.
+- `5a93dcb`, the template pin.
+- `7fe75dc`, the relock and the re-signed release.
+
+**Integration by the Director:**
+- the safeFetch runtime ceiling;
+- the duplicate-key counter's 512-character window;
+- one verdict rule for the CLI and the Desk: a READ file that mismatches is tampered, whatever else went unread;
+- `drift.js` in the signed set;
+- the build-site copies;
+- the pin test now checks the template's inputs as well as its outputs.
+
+**Live checks:**
+- the Desk verifies by URL over 12 files;
+- CORS headers are on the modules, the bridge redirect and the 404 page;
+- CI, the Action smoke test and the Desk's watch all pass on GitHub.
+
+**Still open:**
+- `p-b02834`: the args.ts port is being built.
+- `p-e05cbf`: the upstream report. It is outward-facing, so it is the owner's.
+- `site/site.js`'s partner pin still hashes the partner itself. It could use `src/watch/observe.ts`. B2's suggestion was not built.
+- Two hocon warnings, `peer_rules` and `partner_rules`, differ from the skill's template. They predate this wave.
+- The scanner friction in section 7.
+
+The next bp step is a third scan, to see what the backlog looks like now.
+
