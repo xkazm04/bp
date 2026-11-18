@@ -97,3 +97,27 @@ the wrist menu on either hand; voice and music volumes set apart; talking is alw
 
 Unreal Engine 5.8, Meta XR plugin and Interaction SDK, C++, TypeScript, Next.js, Node.js. [owner: confirm whether naming
 the engine and tools is allowed under the brand rule]
+
+## 4. What Meta VR capability(ies) did you use in your project?
+
+The Meta XR plugin (OpenXR runtime on Quest 3 and 3S) for the standalone, seated experience, and the Meta Interaction
+SDK for hand tracking: its hand and controller rigs and its finger-pinch recognizer drive every action, with controllers
+as an optional second input. Passthrough powers "Your room": one tap fades the studio out and puts the light table on
+your real desk, so you can see your keyboard or a notebook while you plan, and one tap brings the studio back. Dynamic
+foveated rendering and a dedicated Quest render tier keep the app at 72 fps on a Quest 3S. The app follows the XR
+session's focus (the guided tour pauses when you take the headset off or open the system menu, and resumes where it
+was), and asks for the microphone through the platform's permission dialog only when you first hold to talk.
+
+## 5. Describe how Hand Interactions are implemented into your experience.
+
+Everything works with bare hands, seated, within arm's reach of the table. A pinch-tap on a wing lifts it, a tap on a
+room raises it, and a second tap steps inside; pinching and pulling a wing toward you does the same, and pinching and
+pushing away goes back a level. Each hand casts a ray that reaches both the table and the large sheet projected on the
+far wall, so you point and pinch to press APPROVE, LATER or SCAN; a press counts only on the control the pinch began on,
+which stops accidental taps while the hand moves. Looking at your left wrist shows a small panel of quick actions (menu,
+tour, talk, the waiting decision) that turns to face your eye. To talk to Glim you pinch and hold him (or hold TALK on the
+wrist) and let go to send, and pinching one of his reply buttons answers him. The interaction layer is built on the
+Interaction SDK's hand rigs and pinch recognition, with our own gesture logic for tap, pull, push and hold, and a
+controls legend on the table's far corner names each gesture; controllers mirror every action (stick to move, A to
+select, B to go back) for anyone who prefers them.
+
