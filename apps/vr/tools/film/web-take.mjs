@@ -23,8 +23,23 @@ import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-// The scenes. `steps[].at` is seconds from the clip's frame 0; `duration` is the clip's length.
+// The scenes. kind 'plan' (default): the blueprint, `steps[].at` seconds from the clip's frame 0. kind 'html': a page of
+// ours rendered frame by frame (intro.html). kind 'onboard': a new project's "Start onboarding" at `clickAt`, then the
+// onboarding screen's build-up (web_take.py run_onboard says how it is staged); there `duration` is the longest it may
+// run (trimToEnd ends it `hold` s after the drawing completes). Elsewhere `duration` is the clip's length.
 const SCENES = {
+  intro: {
+    about: "title sequence: Developer's Blueprint, the problem, the answer; ends on the bare grid (intro.html)",
+    kind: 'html', html: 'intro.html', duration: 12,
+  },
+  onboard: {
+    about: 'a new project (Kettle) on the projects page, Start onboarding at 6.0 s, then its build-up drawing itself',
+    kind: 'onboard', clickAt: 6.0, cut: 0.3, speed: 2.6, hold: 2.0, trimToEnd: true, duration: 40,
+  },
+  'new-project': {
+    about: "the projects page with Kettle not onboarded yet, held 5.5 s (onboard's opening, before the press)",
+    kind: 'onboard', clickAt: null, duration: 5.5,
+  },
   s1: {
     about: 'S1 cold open: the plan at rest, fly into Studio operations, open Booking and attendance, hold',
     duration: 13,
@@ -110,16 +125,19 @@ await ensureServer();
 const q = new URLSearchParams({ intro: '0', theme });
 if (product) q.set('product', product);
 const url = new URL('/?' + q, base).href;
-const FPS = 30, N = Math.round(scene.duration * FPS);
-const job = { url, workDir: work, mode, width: 1920, height: 1080, fps: FPS, settle: 2.5, duration: scene.duration, steps: scene.steps };
+const FPS = 30;
+if (scene.kind && mode === 'realtime') { log(`REFUSED: scene ${sceneId} is frame-stepped only`); stopServer(); process.exit(1); }
+const job = { ...scene, url, base: base.origin, workDir: work, mode, width: 1920, height: 1080, fps: FPS, settle: 2.5, steps: scene.steps ?? [],
+  ...(scene.html ? { html: path.join(import.meta.dirname, scene.html) } : {}) };
 fs.writeFileSync(path.join(work, 'job.json'), JSON.stringify(job, null, 2));
-log(`scene ${sceneId} (${scene.duration}s, ${mode}): ${url}`);
+log(`scene ${sceneId} (${scene.kind ?? 'plan'}, ${scene.duration}s, ${mode})${scene.kind ? '' : ': ' + url}`);
 const py = spawnSync(process.env.PYTHON || 'python', ['-E', '-P', path.join(import.meta.dirname, 'web_take.py'), path.join(work, 'job.json')], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], timeout: 1800000 });
 stopServer();
 if (py.status !== 0) { log(`FAILED: the browser take exited ${py.status}${py.error ? ' (' + py.error.message + ')' : ''}`); process.exit(1); }
 const res = JSON.parse(py.stdout.trim().split('\n').pop());
+const N = res.count ?? Math.round(scene.duration * FPS);
 if (res.pageErrors.length) log(`page errors during the take: ${res.pageErrors.join(' | ')}`);
-for (const e of res.events) if (e.do.startsWith('click') && (!e.flew || e.settled == null)) { log(`FAILED: ${e.do} ${e.name}: flew=${e.flew} settled=${e.settled}`); process.exit(1); }
+for (const e of res.events) if (/^click-(wing|room)$/.test(e.do) && (!e.flew || e.settled == null)) { log(`FAILED: ${e.do} ${e.name}: flew=${e.flew} settled=${e.settled}`); process.exit(1); }
 
 // stepped: the PNG frames are already one per 1/30 s. realtime: Playwright's webm is variable-rate, so cut the load at
 // the head and resample to a constant 30 fps (tpad clones the last frame so the count is exact). H.264, high quality.
@@ -129,11 +147,15 @@ if (res.frames) ff(['-framerate', String(FPS), '-i', res.frames, '-vf', 'setsar=
 else ff(['-ss', String(res.head), '-i', res.webm, '-vf', `fps=${FPS},scale=1920:1080:flags=lanczos,tpad=stop_mode=clone:stop_duration=1,setsar=1`, ...enc]);
 const pr = probe(out), st = pr.streams[0];
 const sidecar = {
-  scene: sceneId, about: scene.about, file: path.basename(out), url: url.replace(base.origin, ''), product: product || 'kettle sample',
+  scene: sceneId, about: scene.about, file: path.basename(out),
+  ...(scene.kind ? { kind: scene.kind } : { url: url.replace(base.origin, ''), product: product || 'kettle sample' }),
+  ...(scene.kind === 'onboard' ? { staged: "projects list and onboard call answered by the capture (nothing registered, no model run); the build-up is the onboarding screen's own preset replay of the Kettle plan", buildupSpeed: scene.speed } : {}),
   theme, mode, width: st.width, height: st.height, fps: FPS, duration: +(+pr.format.duration).toFixed(3), frames: +st.nb_frames,
   recordedAt: new Date().toISOString(), ...(res.webm ? { headCutSeconds: res.head } : {}),
-  // t: seconds from frame 0 when the click landed (the flight starts there); settled: when the camera came to rest
+  // t: seconds from frame 0 (frame = t * 30). Clicks: when it landed (a flight starts there); settled: the camera at rest.
+  // onboard: click-onboard is the press, cut the hard cut to the onboarding screen, buildup-settled the drawing complete.
   actions: res.events.map((e) => ({ do: e.do, name: e.name, cue: e.cue, t: e.t, frame: Math.round(e.t * FPS), settled: e.settled ?? undefined, x: e.x, y: e.y })),
+  ...(res.pageErrors.length ? { pageErrors: res.pageErrors } : {}),
 };
 fs.writeFileSync(out.replace(/\.mp4$/, '') + '.json', JSON.stringify(sidecar, null, 2) + '\n');
 if (!has('--keep-work')) fs.rmSync(work, { recursive: true, force: true });

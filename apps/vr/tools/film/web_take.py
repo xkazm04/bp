@@ -88,6 +88,165 @@ def drift(pg, st):
                 {'zoom': st.get('zoom', 1.05), 'dx': st.get('dx', 40), 'dur': st.get('dur', 8)})
 
 
+# ------------------------------------------------------------------------------------------------ kind: html
+# A page of our own (intro.html), served at <base>/__film/<name> so it can borrow the app's stylesheets. Every animation on
+# it is a CSS animation: each frame pauses them all and sets their currentTime, so frame i is exactly t = i / FPS.
+SEEK_JS = "(ms) => { for (const a of document.getAnimations()) { a.pause(); a.currentTime = ms; } }"
+
+
+def shoot(pg, fdir, i):
+    pg.screenshot(path=os.path.join(fdir, '%05d.png' % i), caret='hide')
+
+
+def run_html(b):
+    ctx = b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=1, color_scheme='dark')
+    html = open(job['html'], encoding='utf-8').read()
+    url = job['base'].rstrip('/') + '/__film/' + os.path.basename(job['html'])
+    ctx.route(url, lambda r: r.fulfill(status=200, content_type='text/html; charset=utf-8', body=html))
+    pg = ctx.new_page()
+    errors = []
+    pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.goto(url, wait_until='load')
+    fonts = pg.evaluate('() => window.__introReady')
+    print('intro fonts: ' + ', '.join(sorted(set(fonts))), file=sys.stderr)
+    fdir = os.path.join(WORK, 'frames'); os.makedirs(fdir, exist_ok=True)
+    n = int(round(float(job['duration']) * FPS))
+    for i in range(n):
+        pg.evaluate(SEEK_JS, i * 1000 / FPS)
+        shoot(pg, fdir, i)
+        if i % 60 == 59: print('  frame %d/%d' % (i + 1, n), file=sys.stderr)
+    ctx.close()
+    return {'frames': os.path.join(fdir, '%05d.png'), 'count': n, 'events': [], 'pageErrors': errors}
+
+
+# ------------------------------------------------------------------------------------------------ kind: onboard
+# A NEW project on the projects page, its "Start onboarding" pressed on cue, then the onboarding screen's build-up drawing
+# the tutorial project. Nothing is registered and no model runs: the projects list and the onboard call are answered by
+# the capture (Playwright routes), and the build-up is the onboarding screen's own preset replay of Kettle's plan
+# (`?preset=demo`, apps/web/src/onboarding/OnboardingScreen.tsx), drawn by the same component a live run draws with.
+# Two segments joined by a hard cut 0.3 s after the press (the real page reloads there; a load is never filmed):
+#   1. /projects with one project, "Kettle", not onboarded (the built-in sample row is hidden so Kettle shows once)
+#   2. /projects/<slug>/onboarding?preset=demo&speed=<s>, from the build-up's first frame until it has settled, + a hold
+# On screen the preset's "Replay of the existing plan" note and the closing band (which names the tool) are hidden, and
+# the projects page's lead says "Blueprint" where the app says its short name.
+NONE = {'rootExists': True, 'map': False, 'mapVersion': None, 'events': False, 'store': False, 'features': 0, 'lenses': 0,
+        'measuredFacets': 0, 'proposals': None, 'lastRunAt': None}
+STAGE_JS = r"""
+(() => {
+  const css = document.createElement('style');
+  css.textContent = 'li[aria-label="Kettle sample"]{display:none!important} [data-film-hide]{visibility:hidden!important}' +
+    '*{cursor:none!important;caret-color:transparent!important}';
+  const fix = () => {
+    if (!css.isConnected && document.head) document.head.appendChild(css);
+    for (const e of document.querySelectorAll('span, div[role=status]')) {
+      const t = e.textContent || '';
+      if (e.tagName === 'SPAN' && t.startsWith('Replay of the existing plan')) e.dataset.filmHide = 'replay';
+      if (e.getAttribute('role') === 'status' && / is in bp/.test(t)) e.dataset.filmHide = 'band';
+    }
+    const w = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    for (let n; (n = w.nextNode());) if (/\bbp\b/.test(n.nodeValue) && !n.parentElement?.closest('[data-film-hide]'))
+      n.nodeValue = n.nodeValue.replace(/\bin bp\b/g, '').replace(/\bbp\b/g, 'Blueprint').replace(/ {2,}/g, ' ');
+  };
+  new MutationObserver(fix).observe(document, { childList: true, subtree: true, characterData: true });
+  document.addEventListener('DOMContentLoaded', fix);
+})();
+"""
+
+
+def run_onboard(b):
+    base, slug, name = job['base'].rstrip('/'), job.get('slug', 'kettle-app'), job.get('name', 'Kettle')
+    product = {'slug': slug, 'name': name, 'root': job.get('root', 'C:/code/kettle'), 'live': False, 'readiness': NONE, 'setup': []}
+    ctx = b.new_context(viewport={'width': W, 'height': H}, device_scale_factor=1, color_scheme='dark', reduced_motion='no-preference')
+    ctx.add_init_script(STAGE_JS)
+    ctx.add_init_script("try { localStorage.setItem('bp-theme', 'dark') } catch (e) {}")
+    one = '/api/products/' + slug
+    ctx.route(base + '/api/products', lambda r: r.fulfill(json=[product]) if r.request.method == 'GET' else r.continue_())
+    ctx.route(base + one + '/onboarding', lambda r: r.fulfill(json={'job': None}))
+    job_doc = {'id': 'j-' + slug + '-1', 'kind': 'adopt', 'status': 'running', 'adopt_phase': 'check', 'log_tail': '[check] reading the repo'}
+    ctx.route(base + one + '/onboard', lambda r: r.fulfill(json={'job': job_doc}))
+    # the preset reads the tutorial project's plan under the new slug
+    def plan(r):
+        res = r.fetch(url=r.request.url.replace(one + '/', '/api/products/' + job.get('plan', 'kettle') + '/'))
+        r.fulfill(response=res)
+    ctx.route(base + one + '/plan', plan)
+    ctx.route(base + one + '/structure', plan)
+    # the page's own hop to the onboarding screen after the press: answered 204, so the page stays (an aborted hop would
+    # show the browser's white error page); segment 2 is its own page
+    ctx.route(base + '/projects/' + slug + '/onboarding?job=*', lambda r: r.fulfill(status=204, body=''))
+    errors = []
+    fdir = os.path.join(WORK, 'frames'); os.makedirs(fdir, exist_ok=True)
+    events, frame = [], 0
+    click_at, total = job.get('clickAt'), float(job['duration'])
+
+    # ---- segment 1: the projects page
+    pg = ctx.new_page()
+    pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.clock.install()
+    pg.goto(base + '/projects?theme=dark', wait_until='load')
+    btn = pg.get_by_role('button', name='Start onboarding')
+    btn.wait_for(state='visible', timeout=30000)
+    pg.evaluate('() => document.fonts.ready')
+    pg.mouse.move(W - 4, H - 4)  # parked in the corner: no hover anywhere
+    pg.wait_for_timeout(800)
+    pg.clock.pause_at(int(pg.evaluate('Date.now()')) + 50)
+    end1 = int(round(((click_at + float(job.get('cut', 0.3))) if click_at is not None else total) * FPS))
+    box = btn.bounding_box()
+    bx, by = box['x'] + box['width'] / 2, box['y'] + box['height'] / 2
+    hover_f = int(round((click_at - 0.5) * FPS)) if click_at is not None else None
+    click_f = int(round(click_at * FPS)) if click_at is not None else None
+    for i in range(end1):
+        if i == hover_f: pg.mouse.move(bx, by)  # the (invisible) pointer arrives: the button lights as it would
+        if i == click_f:
+            pg.mouse.down(); pg.mouse.up()
+            events.append({'do': 'click-onboard', 'name': 'Start onboarding', 'cue': click_at, 't': round(i / FPS, 3), 'x': round(bx), 'y': round(by)})
+            print(json.dumps(events[-1]), file=sys.stderr)
+        pg.clock.run_for(round((i + 1) * 1000 / FPS) - round(i * 1000 / FPS))
+        shoot(pg, fdir, frame); frame += 1
+    pg.close()
+    if click_at is None:
+        ctx.close()
+        return {'frames': os.path.join(fdir, '%05d.png'), 'count': frame, 'events': events, 'pageErrors': errors}
+    cut_t = frame / FPS
+    events.append({'do': 'cut', 'name': 'to the onboarding screen', 't': round(cut_t, 3)})
+
+    # ---- segment 2: the onboarding screen; the clock is paused before the page runs, so frame one is the start
+    pg = ctx.new_page()
+    pg.on('pageerror', lambda e: errors.append(str(e)))
+    pg.clock.install()
+    pg.clock.pause_at(int(time.time() * 1000) + 1000)
+    pg.goto(base + '/projects/%s/onboarding?preset=demo&speed=%s&theme=dark' % (slug, job.get('speed', 2.6)), wait_until='load')
+    # mounted: the chrome is drawn (the build-up renders it) and the plan is in; its `begin` waits on a (paused) timer
+    # The page needs its timers to mount, so the clock is walked in 16 ms steps until the chrome shows; the build-up's
+    # start is a 0 ms timer right after the mount, so at most one step of it runs before frame one.
+    t = time.monotonic()
+    while not pg.evaluate("() => /Onboarding/i.test(document.body.innerText) && !/Reading |Opening/.test(document.body.innerText)"):
+        if time.monotonic() - t > 60: fail('the onboarding screen did not mount in 60 s')
+        pg.clock.run_for(16)
+        pg.wait_for_timeout(30)
+    band_f, hold, max_f = None, int(round(float(job.get('hold', 2.0)) * FPS)), int(round(total * FPS))
+    while frame < max_f:
+        pg.clock.run_for(round((frame + 1) * 1000 / FPS) - round(frame * 1000 / FPS))
+        shoot(pg, fdir, frame); frame += 1
+        if band_f is None and pg.evaluate("() => !!document.querySelector('[data-film-hide=band]')"):
+            band_f = frame
+            # the screen raises its closing band 1 s after the build-up's ending has settled (OnboardingScreen handover)
+            events.append({'do': 'buildup-settled', 'name': 'the drawing is complete', 't': round(band_f / FPS - 1.0, 3)})
+            print(json.dumps(events[-1]), file=sys.stderr)
+            max_f = min(max_f, frame + hold) if job.get('trimToEnd') else max_f
+        if frame % 60 == 0: print('  frame %d' % frame, file=sys.stderr)
+    if band_f is None: errors.append('the build-up did not settle within the clip (raise --duration or the speed)')
+    ctx.close()
+    return {'frames': os.path.join(fdir, '%05d.png'), 'count': frame, 'events': events, 'pageErrors': errors}
+
+
+if job.get('kind') in ('html', 'onboard'):
+    with sync_playwright() as p:
+        b = p.chromium.launch(args=['--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--hide-scrollbars'])
+        res = run_html(b) if job['kind'] == 'html' else run_onboard(b)
+        b.close()
+    print(json.dumps(res))
+    sys.exit(0)
+
 steps = sorted(job['steps'], key=lambda s: s['at'])
 for st in steps:
     if st['do'] not in ('click-wing', 'click-room', 'drift'): fail('unknown step ' + st['do'])
