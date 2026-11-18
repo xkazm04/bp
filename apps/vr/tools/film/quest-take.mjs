@@ -28,7 +28,8 @@ const DEV_DIR = '/sdcard/Movies/bp-take';
 // A driver: each step waits for its log line (after the previous step), then its delay, then sends its commands.
 // Commands are console lines; 'stop' ends the take. The hands are the synthetic hand (BpHands.Tap): it points, pinches and
 // releases on camera, as a person's would.
-const BENCH = 'BpView.Bench -15';
+// Pitch -13, 32 cm back, 10 cm up: about 20 % wider than the seated eye (the owner, 2026-11-18: "VR screen will need 20% zoom out").
+const BENCH = 'BpView.Bench -13 0 32 10';
 const lastMatch = (seen, re) => { for (let i = seen.length - 1; i >= 0; i--) { const m = re.exec(seen[i]); if (m) return m[1]; } return null; };
 const SCRIPTS = {
   spine: [
@@ -63,12 +64,34 @@ const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] :
 
 /** The take's log lines (logcat -v epoch) as Glim's voice clips and the story's events, in s from t0 (device epoch). */
 function timeline(logLines, t0) {
-  const clipFile = (id) => {
+  // The clean clip for a logged id: its WAV of that name, and for "talk" (the talk's replies all log as talk) every WAV in
+  // voice/talk too; the one whose length is nearest the logged length wins (the sample reply is not the tour's talk line).
+  const wavSeconds = (f) => {
+    try {
+      const b = fs.readFileSync(f);
+      let rate = 0, ch = 0, bits = 0;
+      for (let at = 12; at + 8 <= b.length;) {
+        const id = b.toString('ascii', at, at + 4), size = b.readUInt32LE(at + 4);
+        if (id === 'fmt ') { ch = b.readUInt16LE(at + 10); rate = b.readUInt32LE(at + 12); bits = b.readUInt16LE(at + 22); }
+        else if (id === 'data') return rate ? size / (rate * ch * (bits / 8)) : 0;
+        at += 8 + size + (size & 1);
+      }
+    } catch { /* unreadable */ }
+    return 0;
+  };
+  const clipFile = (id, dur) => {
+    const found = [];
     for (const d of fs.readdirSync(VOICE)) {
-      const f = path.join(VOICE, d, `${id}.wav`);
-      if (fs.existsSync(f)) return path.relative(path.resolve(VR, '..', '..'), f).replace(/\\/g, '/');
+      const dir = path.join(VOICE, d);
+      if (!fs.statSync(dir).isDirectory()) continue;
+      for (const f of fs.readdirSync(dir)) {
+        if (!f.endsWith('.wav')) continue;
+        if (f === `${id}.wav` || (id === 'talk' && d === 'talk')) found.push({ file: path.join(dir, f), id: d === 'talk' && id === 'talk' ? `talk-${f.slice(0, -4)}` : id });
+      }
     }
-    return null;
+    if (!found.length) return { file: null, id };
+    found.sort((a, b) => Math.abs(wavSeconds(a.file) - dur) - Math.abs(wavSeconds(b.file) - dur));
+    return { file: path.relative(path.resolve(VR, '..', '..'), found[0].file).replace(/\\/g, '/'), id: found[0].id };
   };
   const events = [];
   const voice = [];
@@ -78,7 +101,7 @@ function timeline(logLines, t0) {
     const t = Number(m[1]) - t0;
     const text = m[2];
     const v = /^BpVoice: plays (\S+) \(([\d.]+) s\)/.exec(text);
-    if (v) voice.push({ t: +t.toFixed(3), clip: v[1], dur: Number(v[2]), file: clipFile(v[1]) });
+    if (v) { const c = clipFile(v[1], Number(v[2])); voice.push({ t: +t.toFixed(3), clip: v[1], line: c.id, dur: Number(v[2]), file: c.file }); }
     if (/^BpTour: (step|start|the first tour|shown)|^BpVoice|^BpBuild: |^BpScan|^BpStandup: (answer|approve)|^BpTalk: (hold|released|sample)|^BpLevel/.test(text)) events.push({ t: +t.toFixed(3), text: text.slice(0, 200) });
   }
   return { voice, events };

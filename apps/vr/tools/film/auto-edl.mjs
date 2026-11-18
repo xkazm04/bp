@@ -16,6 +16,7 @@ const ROOT = path.resolve(HERE, '..', '..', '..', '..');
 const VOICE = path.join(ROOT, 'apps', 'vr', 'Content', 'BpData', 'voice');
 const CUE = { file: 'apps/vr/Saved/demo/cue/cue.wav', duration: 139.16, add: 23.4, scan: 68.6, approve: 113.8 };
 const CARD_S = 7.0;
+const VOICE_GAIN_DB = Number(process.argv.includes('--voice-db') ? process.argv[process.argv.indexOf('--voice-db') + 1] : -1.94);
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : d; };
@@ -84,10 +85,44 @@ if (web && hookEnd > 0.5) {
 }
 clips.push({ name: 'take', at: hookEnd, src: seg.file, in: +takeStart.toFixed(3), out: +clipOut.toFixed(3), preset: 'quest-left-eye', ...(web ? {} : { fadeInS: 0.6 }), fadeOutS: 0.6 });
 
+// v3 (the owner, 2026-11-18): an intro layer says what this is, the web shows a new project that needs onboarding, then the
+// web and the headset onboard it side by side (both press ADD on the drop), and the headset takes the frame.
+//   --intro <12 s mp4> --web-onboard <mp4> [--web-action 6.0] [--web-new <mp4>] [--split-end 45]
+const splits = [];
+const intro = opt('--intro');
+if (intro) {
+  const durOf = (f) => { try { return Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path.resolve(f)], { encoding: 'utf8' }).trim()); } catch { return 0; } };
+  const webOn = opt('--web-onboard');
+  if (!webOn) { console.log('REFUSED: --intro needs --web-onboard'); process.exit(2); }
+  const webAct = Number(opt('--web-action', '6.0'));
+  const webNew = opt('--web-new');
+  clips.length = 0;
+  const introEnd = +Math.min(durOf(intro), hookEnd - 2).toFixed(3);
+  clips.push({ name: 'intro', at: 0, src: rel(intro), in: 0, out: introEnd, preset: 'web', fadeInS: 0.6 });
+  // The web's own clock: its ADD at webAct lands on the cue's drop too.
+  const webIn = (filmT) => +(webAct - (CUE.add - filmT)).toFixed(3);
+  if (webNew) clips.push({ name: 'web-new', at: introEnd, src: rel(webNew), in: 0, out: +Math.min(durOf(webNew), hookEnd - introEnd).toFixed(3), preset: 'web' });
+  else clips.push({ name: 'web-new', at: introEnd, src: rel(webOn), in: Math.max(0, webIn(introEnd)), out: +(Math.max(0, webIn(introEnd)) + hookEnd - introEnd).toFixed(3), preset: 'web' });
+  const splitEnd = Number(opt('--split-end', '45'));
+  splits.push({
+    name: 'onboard', at: hookEnd, dur: +(splitEnd - hookEnd).toFixed(3),
+    left: { src: rel(webOn), in: Math.max(0, webIn(hookEnd)), preset: 'web' },
+    right: { src: seg.file, in: +takeStart.toFixed(3), preset: 'quest-left-eye-tall' },
+    labels: ['On the web', 'In the headset'],
+    transitionIn: 'left', transitionInS: 0.6, transitionOut: 'right', transitionOutS: 0.6,
+  });
+  clips.push({ name: 'take', at: splitEnd, src: seg.file, in: +(splitEnd - off).toFixed(3), out: +clipOut.toFixed(3), preset: 'quest-left-eye', fadeOutS: 0.6 });
+  Object.assign(ACTS, {
+    welcome: 'A new project, waiting to be drawn.',
+    'add-project': 'Add it on the web, or in the headset.',
+    drawing: 'Both draw it, side by side.',
+  });
+}
+
 // Voice and captions: every clip Glim played inside the take's span, never two at once (a later one waits its turn).
 const voice = [];
 const captions = [];
-if (hookEnd > 1) captions.push({ from: 0.6, to: +(hookEnd - 0.3).toFixed(3), top: opt('--hook-text', 'A software product is thousands of files and a list of tickets.'), bottom: '' });
+if (hookEnd > 1 && !intro) captions.push({ from: 0.6, to: +(hookEnd - 0.3).toFixed(3), top: opt('--hook-text', 'A software product is thousands of files and a list of tickets.'), bottom: '' });
 let act = '';
 let busyUntil = 0;
 for (const v of take.voice) {
@@ -97,9 +132,10 @@ for (const v of take.voice) {
   if (v.clip === 'shown') continue;
   at = Math.max(at, busyUntil + 0.15);
   if (ACTS[v.clip]) act = v.clip;
-  voice.push({ at: +at.toFixed(3), file: v.file, gainDb: 0, _clip: v.clip });
+  // Glim 20 % quieter in the film than his clips (the owner, 2026-11-18: "too high"): -1.94 dB.
+  voice.push({ at: +at.toFixed(3), file: v.file, gainDb: VOICE_GAIN_DB, _clip: v.clip });
   busyUntil = at + v.dur;
-  const said = words[v.clip] ?? '';
+  const said = words[v.line ?? v.clip] ?? words[v.clip] ?? '';
   captions.push({ from: +at.toFixed(3), to: +(at + v.dur + 0.6).toFixed(3), top: act ? ACTS[act] : '', bottom: said });
 }
 // Captions never overlap: each ends where the next begins.
@@ -117,6 +153,7 @@ const edl = {
   music: { file: CUE.file, gainDb: -20, duckDb: 8, duckAttackS: 0.25, duckReleaseS: 0.5, fadeOutS: 2 },
   loudness: { lufs: -14, truePeakDb: -1 },
   clips,
+  ...(splits.length ? { splits } : {}),
   cards: [{ at: cardAt, dur: +(CUE.duration - cardAt).toFixed(3), lines: ["Developer's Blueprint", 'Productivity · hands only'] }],
   voice: voice.map(({ _clip, ...v }) => v),
   captions,
