@@ -78,9 +78,15 @@ node apps/vr/tools/film/web-take.mjs --scene s1 --out apps/vr/Saved/demo/web/s1-
 - **compose** renders: left-eye crop, the bed at -20 dB ducked 8 dB under Glim, burned captions, -14 LUFS; `contact.png`
   in `<out>.stills/` to review without watching.
 
-Status 2026-11-18 01:00: **v2** `apps/vr/Saved/demo/out/v2-take4.mp4` (2:19, 1080p, -13.7 LUFS; sync ADD 0.00, SCAN
-+0.22, APPROVE +0.01 s). Known: the left desk's top still shows behind Glim (it is in the merged studio shell's own
-material; needs an editor fix); no hands on screen; the engine's splash shows at launch (never in the cut).
+Status 2026-11-18 03:30: **v3** `apps/vr/Saved/demo/out/v3.mp4` (2:19, 1080p, -13.8 LUFS), from take5 and
+`apps/vr/tools/film/edl.v3.json`. The owner's notes of 01:00, each done: an intro title layer (`intro.html`, 0-12 s); the
+web's new project (12-17.4); web and headset onboarding the tutorial project side by side, both pressing ADD on the drop
+(split 17.4-47.5, `compose.mjs` splits[]); the headset 20 % wider (`BpView.Bench -13 0 32 10`); Glim 20 % quieter
+(-1.94 dB); the talk sample's reply no longer repeats the tour's line. Rebuild v3:
+`node apps/vr/tools/film/auto-edl.mjs --take apps/vr/Saved/demo/takes/take5 --intro apps/vr/Saved/demo/web/intro-take3.mp4
+--web-onboard apps/vr/Saved/demo/web/onboard-take2.mp4 --web-action 6.0 --web-new apps/vr/Saved/demo/web/new-project-take1.mp4
+--split-end 47.5 --out apps/vr/Saved/demo/out/v3.edl.json` then compose. Known: the left desk's top behind Glim (an editor
+fix); no hands on screen.
 
 
 ## Before the first take (once, about 10 min)
