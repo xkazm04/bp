@@ -1,5 +1,13 @@
 # apps/vr: the VR Light Table client
 
+> **Current state, 2026-11-18.** This folder is the UE 5.8 project, and it builds, runs and packages: `tools/package-quest.ps1`
+> makes the Quest APK (`-Config Development` or `Shipping`), and a Shipping build was submitted to the Meta VR Start
+> Developer Competition on 2026-11-18. To set it up, build, install and link it to a PC, follow the root README's
+> [Quick start: VR](../../README.md#quick-start-vr) and
+> [`run-locally.md`](../../docs/concepts/vr-light-table/run-locally.md). Everything below this box is the build host's
+> notes and history from 2026-10-22 onwards, kept as written: its "not compiled" and "no project here yet" statements
+> describe that time, not now. The voice, MetaHuman and BpLink contract sections further down are current.
+
 > **Current state, 2026-10-23 (Lynx, the only build host).** This folder **is** the UE 5.8 project now: `bp.uproject`,
 > `Config/`, `Source/bp` and both Targets, made by the editor's New Project (Blank, C++) and copied in (`8e191b5`), with
 > BpLink added and Meta XR v207 + the Interaction SDK enabled. WP3.1's acceptance is met: the editor (reading 16) and a
