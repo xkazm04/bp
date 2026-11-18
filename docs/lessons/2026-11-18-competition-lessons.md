@@ -9,7 +9,9 @@ this tree (file or commit), and the rule we would follow next time. n = 1 projec
 
 1. **A project-level user config is packed into the build.** Release signing put the keystore password in
    `apps/vr/Config/UserEngine.ini` (a layer UBT reads). The cook staged it into the pak (`bp/Config/UserEngine.ini` in
-   `Manifest_UFSFiles_Android.txt`): a secret inside the shipped APK. Moved to the per-user
+   `Manifest_UFSFiles_Android.txt`). The registry's intake (2026-11-18) found the engine's config strip list names
+   `KeyStorePassword`, so the password itself was probably removed from the staged file; the safety came from a list that
+   only knows the keys it already names. Moved to the per-user
    `%LOCALAPPDATA%\Unreal Engine\Engine\Config\UserEngine.ini` (UBT's `{USERSETTINGS}` layer, never staged). Caught only
    because the packaging script fails when any `Config/User*.ini` is in the staged manifest
    (`apps/vr/tools/package-quest.ps1`, commits 1909d088, then the fix). Rule: secrets for a build go in a layer the
