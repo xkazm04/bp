@@ -89,3 +89,6 @@ apps/vr/Content/BpData/*
 
 # companion brain and state ($BP_HOME default, spark companion-upgrade)
 .bp/
+
+# The Devpost submission text (owner-local; it carries the store app and build ids)
+submission.md

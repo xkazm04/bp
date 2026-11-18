@@ -45,7 +45,7 @@ Four refinements:
 - the plan set;
 - the planting plan.
 
-**Winner: the drawing set** (now in `prototypes/drawing-set/`).
+**Winner: the drawing set** (kept in `prototypes/drawing-set/` until 2026-11-18; in git history since).
 
 > Lets use D/1 as baseline and execute 2nd contest with attempt to visually perfect the baseline
 > concept. Some can achieve different theme for each len, some can redesign components, typography
@@ -59,7 +59,7 @@ Six variants built on the drawing set: perfected versions, a theme per lens, and
 Each added a simulated agent swarm, decisions waiting for a person, standing orders, and mass
 steering.
 
-**Winner: "The Drawing Set: Site Watch"** (now in `prototypes/site-watch/`). It was ported into this
+**Winner: "The Drawing Set: Site Watch"** (kept in `prototypes/site-watch/` until 2026-11-18; in git history since). It was ported into this
 Next.js app.
 
 > A/1 is the baseline winner, with difference each len won't color nodes but can reshape the

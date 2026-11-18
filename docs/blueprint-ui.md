@@ -40,7 +40,7 @@ Earlier standing decisions that still hold:
 ## The baseline to port
 
 A/1, "The Drawing Set: Site Watch":
-- Source: `prototypes/site-watch/` (`index.html`, `style.css`, `app.js`, about 230 KB of vanilla
+- Source: `prototypes/site-watch/` (removed from the tree 2026-11-18 after the submission; in git history before that date) (`index.html`, `style.css`, `app.js`, about 230 KB of vanilla
   canvas code; opens from disk). Read `NOTES.md` first. Its predecessor, round 2's winner, is
   `prototypes/drawing-set/`.
 

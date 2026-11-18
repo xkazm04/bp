@@ -258,7 +258,6 @@ packages/core/                 the logic, once (@bp/core; no React, DOM or Next:
 packages/schema/               app-structure v3 JSON Schemas + generators: TypeScript types and Unreal USTRUCTs
 docs/                          blueprint-ui.md (the UI and API contract), standard/ (app-structure v3), concepts/ (VR,
                                desk-to-table, demo video), research/, perf.md
-prototypes/                    the static HTML prototypes the app descends from
 scripts/                       the checks (check-*.ts|mjs), fixture generators, demos, perf and screenshot probes
 ```
 
